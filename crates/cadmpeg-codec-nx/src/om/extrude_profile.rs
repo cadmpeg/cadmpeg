@@ -66,16 +66,22 @@ pub(crate) fn extrude_profile_references(
         u64_from_index(record.payload().len()),
         "scan NX extrude profile references",
     )?;
-    let shape = unique_candidate(record.payload().len().checked_sub(6).into_iter().flat_map(|last| 0..last).filter_map(
-        |start| {
-            if record.payload().get(start..start + 2) != Some(&[0x01, 0x02])
-                || record.payload().get(start + 3) != Some(&0x01)
-            {
-                return None;
-            }
-            extrude_profile_reference_shape(record, start)
-        },
-    ));
+    let shape = unique_candidate(
+        record
+            .payload()
+            .len()
+            .checked_sub(6)
+            .into_iter()
+            .flat_map(|last| 0..last)
+            .filter_map(|start| {
+                if record.payload().get(start..start + 2) != Some(&[0x01, 0x02])
+                    || record.payload().get(start + 3) != Some(&0x01)
+                {
+                    return None;
+                }
+                extrude_profile_reference_shape(record, start)
+            }),
+    );
     let Some((start, count, references_start, witness_start)) = shape else {
         return Ok(None);
     };
@@ -157,18 +163,20 @@ mod tests {
     fn extrude_profile_references_refuse_collection_limit() {
         let bytes = b"\x01\x02\x00\x01\x03\xf0\x00\xf1\x01\x00\x01\x03\x79\x01\x03\xf0\x00\xf1\x01\x00\x00\x00";
         let record = OperationPayload::new(bytes, 100, "EXTRUDE").unwrap();
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        let error = super::extrude_profile_references(ctx, record).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = super::extrude_profile_references(ctx, record).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn relocation_preserves_the_shared_witness_and_checks_both_complete_spans() {

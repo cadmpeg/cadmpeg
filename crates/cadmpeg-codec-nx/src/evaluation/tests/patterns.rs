@@ -180,9 +180,15 @@ fn zero_occurrence_body_pattern_refuses_lineage() {
     let ir = complete_block_ir();
     let seed = ir.model.bodies[0].id.clone();
     let mut feature = ir.model.features[0].clone();
-    feature.evaluation.set_outputs(Default::default());
+    feature
+        .evaluation
+        .set_outputs(cadmpeg_ir::features::DistinctMembers::default());
     let mut bodies = std::collections::BTreeSet::from([seed.clone()]);
-    let seeds = [PatternSeed::Bodies(BodySelection::Bodies(vec![seed].try_into().unwrap()))];
-    assert!(matches!(super::super::apply_complete_body_pattern(&feature, &mut bodies, &seeds, Some(0), false),
-        Err((_, UnsupportedBodyCensusReason::InvalidOutputLineage))));
+    let seeds = [PatternSeed::Bodies(BodySelection::Bodies(
+        vec![seed].try_into().unwrap(),
+    ))];
+    assert!(matches!(
+        super::super::apply_complete_body_pattern(&feature, &mut bodies, &seeds, Some(0), false),
+        Err((_, UnsupportedBodyCensusReason::InvalidOutputLineage))
+    ));
 }

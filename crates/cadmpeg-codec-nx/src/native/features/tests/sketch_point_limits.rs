@@ -57,14 +57,14 @@ fn sketch_point_refusal(
             .expect("admitted sketch point route")
             > 0
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("sketch point resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("sketch point resource limit"),
+    )
 }
 
 macro_rules! sketch_point_limit_tests {
@@ -159,14 +159,14 @@ fn sketch_point_use_refusal(
             .len(),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("sketch point use resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("sketch point use resource limit"),
+    )
 }
 
 #[test]

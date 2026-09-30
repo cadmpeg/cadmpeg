@@ -19,7 +19,7 @@ fn block_dimensions_for_test(
 fn nx_block_dimensions_do_not_cross_expression_sections() {
     use crate::native::features::FeatureBlockConstruction;
     use crate::native::features::FeatureParameterBinding;
-    use crate::native::om::{ParameterFormula, ExpressionDeclaration, ExpressionUnit};
+    use crate::native::om::{ExpressionDeclaration, ExpressionUnit, ParameterFormula};
 
     let operation = "nx:feature-history:operation-label#0-1";
     let construction = FeatureBlockConstruction {
@@ -133,7 +133,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
 fn nx_block_dimensions_refuse_an_inch_length_that_overflows_millimeters() {
     use crate::native::features::FeatureBlockConstruction;
     use crate::native::features::FeatureParameterBinding;
-    use crate::native::om::{ParameterFormula, ExpressionDeclaration, ExpressionUnit};
+    use crate::native::om::{ExpressionDeclaration, ExpressionUnit, ParameterFormula};
 
     let operation = "nx:feature-history:operation-label#0-1";
     let construction = FeatureBlockConstruction {
@@ -222,7 +222,7 @@ fn block_dimension_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     use crate::native::features::{FeatureBlockConstruction, FeatureParameterBinding};
-    use crate::native::om::{ParameterFormula, ExpressionDeclaration, ExpressionUnit};
+    use crate::native::om::{ExpressionDeclaration, ExpressionUnit, ParameterFormula};
 
     let operation = "operation";
     let construction = FeatureBlockConstruction {
@@ -293,14 +293,14 @@ fn block_dimension_refusal(
             .len(),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("block dimension resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("block dimension resource limit"),
+    )
 }
 
 #[test]

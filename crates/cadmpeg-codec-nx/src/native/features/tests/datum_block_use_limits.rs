@@ -44,14 +44,14 @@ fn datum_block_use_refusal(
             .expect("admitted datum block use")
             > 0
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("datum block use resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("datum block use resource limit"),
+    )
 }
 
 macro_rules! datum_block_use_limit_tests {

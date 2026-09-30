@@ -129,20 +129,23 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
     assert_eq!(table.offset(), 0);
     assert_eq!(table.end_offset(), map_start);
     assert!(table.trailing_bytes().is_empty());
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(GROUP_COUNT - 1); }, |ctx| {
 
-    let error = operation_state_group_table_before_counter_map(ctx, &bytes, map_start, 0)
-        .expect_err("the final group exceeds the admitted collection count");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items =
+                cadmpeg_core::decode::u64_from_index(GROUP_COUNT - 1);
+        },
+        |ctx| {
+            let error = operation_state_group_table_before_counter_map(ctx, &bytes, map_start, 0)
+                .expect_err("the final group exceeds the admitted collection count");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            ));
+        },
+    );
 }
 
 #[test]
@@ -190,15 +193,23 @@ fn state_journal_refusal(
         0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,
         0x10, 0x2a, 0x13,
     ];
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { configure(policy); }, |ctx| {
 
-    crate::om::operation_state_journal_groups_before_boundary(ctx, &bytes, 0, bytes.len(), 0)
-        .unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::om::operation_state_journal_groups_before_boundary(
+                ctx,
+                &bytes,
+                0,
+                bytes.len(),
+                0,
+            )
+            .unwrap_err()
+        },
+    )
 }
 
 #[test]
@@ -269,14 +280,14 @@ fn audit_trail_refusal(
         0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
         0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x13, 0x04, 0x00,
     ];
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { configure(policy); }, |ctx| {
 
-    crate::om::audit_trail_rows(ctx, &bytes, 2, bytes.len(), 900).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::audit_trail_rows(ctx, &bytes, 2, bytes.len(), 900).unwrap_err(),
+    )
 }
 
 #[test]

@@ -22,17 +22,25 @@ fn preview_attachment_result(configure: impl FnOnce(&mut DecodePolicy)) -> Resul
         container,
         streams: Vec::new(),
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let mut unknowns = Vec::new();
-    super::super::attach_jpeg_preview_assets(ctx, &mut ir, &scan, &mut annotations, &mut unknowns)
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let mut unknowns = Vec::new();
+            super::super::attach_jpeg_preview_assets(
+                ctx,
+                &mut ir,
+                &scan,
+                &mut annotations,
+                &mut unknowns,
+            )
+        },
+    )
 }
 
 #[test]

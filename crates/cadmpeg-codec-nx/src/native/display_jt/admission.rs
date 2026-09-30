@@ -151,23 +151,20 @@ impl DisplayJtGraph {
 
     #[cfg(test)]
     fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        
         crate::test_support::with_decode_context(|ctx| {
-
-        Self::from_wire_with_context(
-            ctx,
-            DisplayJtGraphWire {
-                documents: namespace.arena_as("display_jt_documents")?,
-                segments: namespace.arena_as("display_jt_segments")?,
-                shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
-                compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
-                compressed_element_sequences: namespace
-                    .arena_as("display_jt_compressed_element_sequences")?,
-            },
-        )
-    
-})
-}
+            Self::from_wire_with_context(
+                ctx,
+                DisplayJtGraphWire {
+                    documents: namespace.arena_as("display_jt_documents")?,
+                    segments: namespace.arena_as("display_jt_segments")?,
+                    shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
+                    compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
+                    compressed_element_sequences: namespace
+                        .arena_as("display_jt_compressed_element_sequences")?,
+                },
+            )
+        })
+    }
 
     fn from_wire(
         ctx: &DecodeContext<'_>,
@@ -335,13 +332,8 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
-        
-        crate::test_support::with_decode_context(|ctx| {
-
-        Self::from_wire_with_context(ctx, wire)
-    
-})
-}
+        crate::test_support::with_decode_context(|ctx| Self::from_wire_with_context(ctx, wire))
+    }
 }
 
 #[cfg(test)]

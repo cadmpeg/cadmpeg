@@ -9,14 +9,14 @@ fn boolean_operation_refusal(
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x0aSUBTRACT\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x5e\x00\x01\x05\x90\x19\x5f\x90\x19\x44\x90\x19\x43\x90\x19\x60\x00";
     let labels = super::operation_labels(bytes, 100);
-    
-    
-    
-    crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
 
-    crate::om::boolean_operations_with_labels(ctx, bytes, 100, &labels).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::boolean_operations_with_labels(ctx, bytes, 100, &labels).unwrap_err(),
+    )
 }
 
 #[test]

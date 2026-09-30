@@ -246,53 +246,59 @@ mod tests {
     #[test]
     fn sketch_reference_field_refuses_collection_limit() {
         let bytes = b"\x01\x00\x01\x02\xf0\x42\x00\x00\xf0\x43\x01\x00\x00\x00";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
-        let error = crate::om::sketch_payload_references(ctx, record).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
+                let error = crate::om::sketch_payload_references(ctx, record).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn sketch_reference_field_refuses_retained_limit() {
         let bytes = b"\x01\x00\x01\x02\xf0\x42\x00\x00\xf0\x43\x01\x00\x00\x00";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-        let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
-        let error = crate::om::sketch_payload_references(ctx, record).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
+                let error = crate::om::sketch_payload_references(ctx, record).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn sketch_reference_field_refuses_work_limit() {
         let bytes = b"\x01\x00\x01\x02\xf0\x42\x00\x00\xf0\x43\x01\x00\x00\x00";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
 
-        let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
-        let error = crate::om::sketch_payload_references(ctx, record).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
+                let error = crate::om::sketch_payload_references(ctx, record).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn implicit_and_explicit_single_reference_fields_retain_distinct_counts() {

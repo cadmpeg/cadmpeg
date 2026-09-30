@@ -348,22 +348,25 @@ mod tests {
 
     fn route_refusal(row: &[u8], route: Route, dimension: ResourceDimension) -> CodecError {
         let container = column_container(row);
-        
-        
+
         let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-            ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
-            ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
-            ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
+            ResourceDimension::CollectionItems => |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            ResourceDimension::RetainedBytes => |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            ResourceDimension::WorkUnits => |policy| {
+                policy.limits.max_work_units = 0;
+            },
             _ => panic!("unsupported test dimension"),
         };
         crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+            route(ctx, &container).expect_err("column row resource refusal")
+        })
+    }
 
-        route(ctx, &container).expect_err("column row resource refusal")
-    
-})
-}
-
-#[test]
+    #[test]
     fn native_column_row_routes_keep_resolved_frames() {
         let routes: [(_, Route); 3] = [
             (INDEX_ROW, index_count),

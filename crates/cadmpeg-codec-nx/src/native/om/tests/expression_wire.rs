@@ -1,4 +1,4 @@
-use super::super::{ParameterFormula, ExpressionDeclaration};
+use super::super::{ExpressionDeclaration, ParameterFormula};
 
 const DECLARATION: &str = r#"{"id":"declaration","object_id":8,"record":"record","name":"p0008_radius","parameter_index":8,"qualifier":"radius","source_entry":"entry","source_offset":12}"#;
 const EXPRESSION: &str = r#"{"id":"expression","object_id":8,"record":"record","name":"p0008_radius","parameter_index":8,"qualifier":"radius","unit":"millimeter","expression":"2","source_entry":"entry","source_table":"table","source_offset":20}"#;
@@ -77,7 +77,9 @@ fn expression_wire_rejects_nonfinite_rust_values() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut wire: super::super::ExpressionWire = serde_json::from_str(EXPRESSION).unwrap();
         wire.value = Some(value);
-        assert!(ParameterFormula::try_from(wire).unwrap_err().contains("value"));
+        assert!(ParameterFormula::try_from(wire)
+            .unwrap_err()
+            .contains("value"));
     }
     let mut wire: super::super::ExpressionWire = serde_json::from_str(EXPRESSION).unwrap();
     wire.value = Some(-0.0);

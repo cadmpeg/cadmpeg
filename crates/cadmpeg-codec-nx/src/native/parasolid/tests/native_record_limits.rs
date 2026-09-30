@@ -6,30 +6,37 @@ fn parasolid_cached_records_refuse_collection_at_caller_limit() {
     let bytes = crate::test_support::test_prt::prt_with_partition(
         &crate::test_support::test_streams::blend_surface_topology_partition_stream(),
     );
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    let scan = crate::decode::scan(ctx, root).unwrap();
-    let parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |limited_ctx| {
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    let error = crate::native::parasolid::parasolid_blend_surface_records(limited_ctx, &parsed)
-        .expect_err("cached record refusal");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "NX Parasolid cached records"
-    ));
+            let scan = crate::decode::scan(ctx, root).unwrap();
+            let parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
 
-})
-
-})
+            crate::test_support::with_decode_context_over(
+                &bytes,
+                |policy| {
+                    policy.limits.max_collection_items = 0;
+                },
+                |limited_ctx| {
+                    let error = crate::native::parasolid::parasolid_blend_surface_records(
+                        limited_ctx,
+                        &parsed,
+                    )
+                    .expect_err("cached record refusal");
+                    assert!(matches!(
+                        error,
+                        cadmpeg_core::CodecError::ResourceLimit(limit)
+                            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                                && limit.operation == "NX Parasolid cached records"
+                    ));
+                },
+            );
+        },
+    );
 }
 
 struct OneScannedRecord;
@@ -62,32 +69,36 @@ impl crate::native::parasolid::ParasolidScanRecords for OneScannedRecord {
 #[test]
 fn parasolid_scanned_records_refuse_collection_at_caller_limit() {
     let bytes = crate::test_support::test_prt::prt_with_partition(&topology_partition_stream());
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    let scan = crate::decode::scan(ctx, root).unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |limited_ctx| {
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    let error = crate::native::parasolid::per_parasolid_scan::<OneScannedRecord>(
-        limited_ctx,
-        &scan.streams,
-    )
-    .expect_err("scanned record refusal");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "NX Parasolid scanned records"
-    ));
+            let scan = crate::decode::scan(ctx, root).unwrap();
 
-})
-
-})
+            crate::test_support::with_decode_context_over(
+                &bytes,
+                |policy| {
+                    policy.limits.max_collection_items = 0;
+                },
+                |limited_ctx| {
+                    let error = crate::native::parasolid::per_parasolid_scan::<OneScannedRecord>(
+                        limited_ctx,
+                        &scan.streams,
+                    )
+                    .expect_err("scanned record refusal");
+                    assert!(matches!(
+                        error,
+                        cadmpeg_core::CodecError::ResourceLimit(limit)
+                            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                                && limit.operation == "NX Parasolid scanned records"
+                    ));
+                },
+            );
+        },
+    );
 }
 
 #[test]
@@ -95,35 +106,41 @@ fn parasolid_attribute_definitions_refuse_collection_at_caller_limit() {
     let bytes = crate::test_support::test_prt::prt_with_partition(
         &crate::test_support::test_streams::parasolid_entity_records_stream(),
     );
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    let scan = crate::decode::scan(ctx, root).unwrap();
-    assert!(
-        !crate::native::parasolid::parasolid_attribute_definitions(ctx, &scan.streams)
-            .unwrap()
-            .is_empty()
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+            let scan = crate::decode::scan(ctx, root).unwrap();
+            assert!(
+                !crate::native::parasolid::parasolid_attribute_definitions(ctx, &scan.streams)
+                    .unwrap()
+                    .is_empty()
+            );
+
+            crate::test_support::with_decode_context_over(
+                &bytes,
+                |policy| {
+                    policy.limits.max_collection_items = 0;
+                },
+                |limited_ctx| {
+                    let error = crate::native::parasolid::parasolid_attribute_definitions(
+                        limited_ctx,
+                        &scan.streams,
+                    )
+                    .expect_err("attribute definition collection refusal");
+                    assert!(matches!(
+                        error,
+                        cadmpeg_core::CodecError::ResourceLimit(limit)
+                            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                                && limit.operation == "NX attribute definitions"
+                    ));
+                },
+            );
+        },
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |limited_ctx| {
-
-    let error =
-        crate::native::parasolid::parasolid_attribute_definitions(limited_ctx, &scan.streams)
-            .expect_err("attribute definition collection refusal");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "NX attribute definitions"
-    ));
-
-})
-
-})
 }
 
 #[test]
@@ -133,35 +150,41 @@ fn parasolid_field_names_refuse_collection_at_caller_limit() {
         0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
     ]);
     let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    let scan = crate::decode::scan(ctx, root).unwrap();
-    assert!(
-        !crate::native::parasolid::parasolid_field_names_records(ctx, &scan.streams)
-            .unwrap()
-            .is_empty()
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+            let scan = crate::decode::scan(ctx, root).unwrap();
+            assert!(
+                !crate::native::parasolid::parasolid_field_names_records(ctx, &scan.streams)
+                    .unwrap()
+                    .is_empty()
+            );
+
+            crate::test_support::with_decode_context_over(
+                &bytes,
+                |policy| {
+                    policy.limits.max_collection_items = 0;
+                },
+                |limited_ctx| {
+                    let error = crate::native::parasolid::parasolid_field_names_records(
+                        limited_ctx,
+                        &scan.streams,
+                    )
+                    .expect_err("field names collection refusal");
+                    assert!(matches!(
+                        error,
+                        cadmpeg_core::CodecError::ResourceLimit(limit)
+                            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                                && limit.operation == "NX field names records"
+                    ));
+                },
+            );
+        },
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |limited_ctx| {
-
-    let error =
-        crate::native::parasolid::parasolid_field_names_records(limited_ctx, &scan.streams)
-            .expect_err("field names collection refusal");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "NX field names records"
-    ));
-
-})
-
-})
 }
 
 #[test]
@@ -169,34 +192,41 @@ fn parasolid_entity_51_refuses_collection_at_caller_limit() {
     let bytes = crate::test_support::test_prt::prt_with_partition(
         &crate::test_support::test_streams::parasolid_entity_records_stream(),
     );
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    let scan = crate::decode::scan(ctx, root).unwrap();
-    assert!(
-        !crate::native::parasolid::parasolid_entity_51_records(ctx, &scan.streams)
-            .unwrap()
-            .is_empty()
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+            let scan = crate::decode::scan(ctx, root).unwrap();
+            assert!(
+                !crate::native::parasolid::parasolid_entity_51_records(ctx, &scan.streams)
+                    .unwrap()
+                    .is_empty()
+            );
+
+            crate::test_support::with_decode_context_over(
+                &bytes,
+                |policy| {
+                    policy.limits.max_collection_items = 0;
+                },
+                |limited_ctx| {
+                    let error = crate::native::parasolid::parasolid_entity_51_records(
+                        limited_ctx,
+                        &scan.streams,
+                    )
+                    .expect_err("entity 51 collection refusal");
+                    assert!(matches!(
+                        error,
+                        cadmpeg_core::CodecError::ResourceLimit(limit)
+                            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                                && limit.operation == "NX entity 51 records"
+                    ));
+                },
+            );
+        },
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |limited_ctx| {
-
-    let error = crate::native::parasolid::parasolid_entity_51_records(limited_ctx, &scan.streams)
-        .expect_err("entity 51 collection refusal");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "NX entity 51 records"
-    ));
-
-})
-
-})
 }
 #[test]
 fn unicode_record_wire_derives_exact_utf16_and_rejects_disagreement() {

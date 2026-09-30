@@ -25,27 +25,30 @@ fn deltas_event_limit_error(
             schema: None,
         },
     }];
-    
-    
-    crate::test_support::with_decode_context_over(&streams[0].inflated, |_| {}, |scan_ctx| {
 
-    let census = crate::deltas::census::walk(scan_ctx, &streams[0].inflated).unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+    crate::test_support::with_decode_context_over(
+        &streams[0].inflated,
+        |_| {},
+        |scan_ctx| {
+            let census = crate::deltas::census::walk(scan_ctx, &streams[0].inflated).unwrap();
 
-    crate::native::parasolid::parasolid_deltas_events_with_censuses(
-        ctx,
-        &streams,
-        vec![Some(census)],
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    configure(policy);
+                },
+                |ctx| {
+                    crate::native::parasolid::parasolid_deltas_events_with_censuses(
+                        ctx,
+                        &streams,
+                        vec![Some(census)],
+                    )
+                    .err()
+                    .expect("deltas event limit refusal")
+                },
+            )
+        },
     )
-    .err()
-    .expect("deltas event limit refusal")
-
-})
-
-})
 }
 
 #[test]

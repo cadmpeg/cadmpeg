@@ -327,7 +327,12 @@ fn legacy_type_definitions<'a>(
             at += 1;
         }
     }
-    for index in out.len().checked_sub(1).into_iter().flat_map(|last| 0..last) {
+    for index in out
+        .len()
+        .checked_sub(1)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         let tail_start = out[index].offset + out[index].name.len() + 1;
         let tail_end = out[index + 1].offset;
         out[index].registry_tail = &bytes[tail_start..tail_end];
@@ -343,13 +348,19 @@ pub(super) fn field_definitions<'a>(
 ) -> Result<Vec<FieldDefinition<'a>>, CodecError> {
     let mut out = Vec::new();
     let mut search = start;
-    let mut limit = start.checked_add(256).ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?.min(end);
+    let mut limit = start
+        .checked_add(256)
+        .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
+        .min(end);
     while let Some((definition, at)) = (search..limit)
         .find_map(|at| field_definition_at(bytes, at, end).map(|definition| (definition, at)))
     {
         let next = at + definition.name.len() + 2;
         search = next;
-        limit = search.checked_add(256).ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?.min(end);
+        limit = search
+            .checked_add(256)
+            .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
+            .min(end);
         ctx.reserve_retained_vec(&mut out, 1, "nx field definitions")?;
         out.push(definition);
     }
@@ -379,7 +390,12 @@ pub(super) fn all_field_definitions<'a>(
 }
 
 fn bound_field_registry_tails<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {
-    for index in definitions.len().checked_sub(1).into_iter().flat_map(|last| 0..last) {
+    for index in definitions
+        .len()
+        .checked_sub(1)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         let tail_start = definitions[index].offset + definitions[index].name.len() + 1;
         let tail_end = definitions[index + 1].offset;
         definitions[index].registry_tail = &bytes[tail_start..tail_end];

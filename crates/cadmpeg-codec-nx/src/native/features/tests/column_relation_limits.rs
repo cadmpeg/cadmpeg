@@ -119,14 +119,14 @@ fn column_relation_refusal(
             1
         }
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    route(ctx).expect_err("column relation resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| route(ctx).expect_err("column relation resource limit"),
+    )
 }
 
 macro_rules! column_relation_limit_tests {

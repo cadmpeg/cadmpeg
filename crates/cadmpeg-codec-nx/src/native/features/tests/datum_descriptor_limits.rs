@@ -56,14 +56,14 @@ fn datum_descriptor_refusal(
             .expect("admitted datum descriptor route")
             > 0
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("datum descriptor resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("datum descriptor resource limit"),
+    )
 }
 
 macro_rules! datum_descriptor_limit_tests {

@@ -103,31 +103,33 @@ pub(crate) fn counted_lanes(
 
 #[cfg(test)]
 mod tests {
-    fn counted_lane_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    fn counted_lane_limit_error(
+        adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
         let bytes = [0x01, 0x03, 0x42, 0x62, 0x01, 0x11];
-        
+
         crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
+            super::counted_lanes(ctx, &bytes).expect_err("counted lane resource refusal")
+        })
+    }
 
-        super::counted_lanes(ctx, &bytes).expect_err("counted lane resource refusal")
-    
-})
-}
-
-    fn abr_lane_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    fn abr_lane_limit_error(
+        adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
         let mut bytes = vec![0x11];
         bytes.extend_from_slice(&[0xff; 16]);
         bytes.extend_from_slice(&super::ABR_TERMINATOR);
-        
-        crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
 
-        super::abr_lanes(ctx, &bytes).expect_err("ABR lane resource refusal")
-    
-})
-}
+        crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
+            super::abr_lanes(ctx, &bytes).expect_err("ABR lane resource refusal")
+        })
+    }
 
     #[test]
     fn om_abr_lane_route_refuses_collection_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+            policy.limits.max_collection_items = 0;
+        };
         assert!(
             matches!(abr_lane_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -136,7 +138,9 @@ mod tests {
 
     #[test]
     fn om_abr_lane_route_refuses_retained_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+            policy.limits.max_retained_bytes = 0;
+        };
         assert!(
             matches!(abr_lane_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
@@ -145,7 +149,9 @@ mod tests {
 
     #[test]
     fn om_abr_lane_route_refuses_work_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+            policy.limits.max_work_units = 0;
+        };
         assert!(
             matches!(abr_lane_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
@@ -154,7 +160,9 @@ mod tests {
 
     #[test]
     fn om_counted_lane_route_refuses_collection_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+            policy.limits.max_collection_items = 0;
+        };
         assert!(
             matches!(counted_lane_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -163,7 +171,9 @@ mod tests {
 
     #[test]
     fn om_counted_lane_route_refuses_retained_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+            policy.limits.max_retained_bytes = 0;
+        };
         assert!(
             matches!(counted_lane_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
@@ -172,7 +182,9 @@ mod tests {
 
     #[test]
     fn om_counted_lane_route_refuses_work_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+            policy.limits.max_work_units = 0;
+        };
         assert!(
             matches!(counted_lane_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)

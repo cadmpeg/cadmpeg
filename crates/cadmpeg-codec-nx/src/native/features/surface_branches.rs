@@ -270,15 +270,15 @@ mod tests {
             .as_slice()
             .iter()
             .any(|(_, block)| block.is_some())));
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-        decode(ctx).expect_err("surface branch resource limit")
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| decode(ctx).expect_err("surface branch resource limit"),
+        )
+    }
 
     #[test]
     fn surface_branch_route_refuses_collection_limit() {

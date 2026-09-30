@@ -13,16 +13,19 @@ fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
     payload.extend([0x23, 1, 3, 0xf0, 0x31, 0xf0, 0x32, 1, 4]);
     payload.extend([0, 1, 1, 0, 0, 0, 0]);
     payload.extend([0xff, 1, 2, 0xf0, 0x33, 0, 0xaa]);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&payload, |policy| { configure(policy); }, |ctx| {
 
-    let record =
-        crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104").unwrap();
-    crate::om::swp104_payload_leading_branch(ctx, record).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        &payload,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
+                    .unwrap();
+            crate::om::swp104_payload_leading_branch(ctx, record).unwrap_err()
+        },
+    )
 }
 
 #[test]

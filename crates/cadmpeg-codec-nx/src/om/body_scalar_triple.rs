@@ -96,16 +96,18 @@ mod tests {
 
     fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
         let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
 
-        let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
-        super::operation_body_scalar_triples(ctx, record).unwrap_err()
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
+                super::operation_body_scalar_triples(ctx, record).unwrap_err()
+            },
+        )
+    }
 
     #[test]
     fn operation_body_scalar_triples_refuse_collection_limit() {

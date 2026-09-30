@@ -790,35 +790,37 @@ mod tests {
 
     #[test]
     fn fast_load_roster_refuses_candidate_work_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
-
-        let file = container(payload(&["plate"], &[1]));
-        let error = super::fast_load_component_roster(ctx, &file)
-            .expect_err("roster candidate selection needs work");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let file = container(payload(&["plate"], &[1]));
+                let error = super::fast_load_component_roster(ctx, &file)
+                    .expect_err("roster candidate selection needs work");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+                );
+            },
         );
-    
-})
-}
+    }
 
     fn fast_load_roster_refusal(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
-
-        let file = container(payload(&["plate"], &[1]));
-        super::fast_load_component_roster(ctx, &file).unwrap_err()
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let file = container(payload(&["plate"], &[1]));
+                super::fast_load_component_roster(ctx, &file).unwrap_err()
+            },
+        )
+    }
 
     #[test]
     fn fast_load_roster_refuses_collection_limit() {
@@ -1151,16 +1153,18 @@ mod tests {
             source_entry: "om".to_string(),
             source_offset: 0,
         };
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-        fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &[value])
-            .unwrap_err()
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &[value])
+                    .unwrap_err()
+            },
+        )
+    }
 
     #[test]
     fn fast_load_object_groups_refuse_collection_limit() {

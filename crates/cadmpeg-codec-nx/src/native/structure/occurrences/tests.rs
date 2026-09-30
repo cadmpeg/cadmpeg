@@ -7,12 +7,9 @@ use serde_json::{json, Value};
 use super::{FastLoadComponentOccurrenceWire, FastLoadOccurrences};
 
 fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
-    
     crate::test_support::with_decode_context(|ctx| {
-
-    crate::NxCodec::validate_native(ctx, ir).expect("validation fits service policy")
-
-})
+        crate::NxCodec::validate_native(ctx, ir).expect("validation fits service policy")
+    })
 }
 
 fn rows(form: u8) -> Value {

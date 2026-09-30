@@ -128,15 +128,17 @@ fn symbolic_thread_route_refusal(
     })
     .expect("admitted symbolic thread");
     assert_eq!(records.len(), 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::holes::feature_symbolic_threads(ctx, &container)
-        .expect_err("symbolic thread resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+                .expect_err("symbolic thread resource limit")
+        },
+    )
 }
 
 #[test]
@@ -524,14 +526,14 @@ fn template_route_refusal(
     })
     .expect("admitted hole template");
     assert_eq!(admitted, 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    call(ctx, &[label], &[record], &[string]).expect_err("hole template resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| call(ctx, &[label], &[record], &[string]).expect_err("hole template resource limit"),
+    )
 }
 
 #[test]
@@ -713,15 +715,19 @@ fn hole_package_lane_route_refusal(
     })
     .expect("admitted hole package lane");
     assert_eq!(admitted.len(), 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::holes::feature_hole_package_construction_group_lanes(ctx, &container)
-        .expect_err("hole package lane resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_hole_package_construction_group_lanes(
+                ctx, &container,
+            )
+            .expect_err("hole package lane resource limit")
+        },
+    )
 }
 
 #[test]
@@ -771,17 +777,19 @@ fn repeated_scalar_block_reference_route_refusal(
     })
     .expect("admitted repeated scalar block references");
     assert_eq!(admitted.len(), 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
         ctx, &container,
     )
     .expect_err("repeated scalar block reference resource limit")
-
-})
+        },
+    )
 }
 
 #[test]
@@ -836,15 +844,19 @@ fn repeated_scalar_lane_route_refusal(
     })
     .expect("admitted repeated scalar lane");
     assert_eq!(admitted.len(), 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(ctx, &container)
-        .expect_err("repeated scalar lane resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
+                ctx, &container,
+            )
+            .expect_err("repeated scalar lane resource limit")
+        },
+    )
 }
 
 #[test]
@@ -994,20 +1006,22 @@ fn simple_group_route_refusal(
     let (labels, lanes, references) = simple_group_inputs();
     let admitted = simple_hole_construction_groups(&labels, &lanes, &references);
     assert_eq!(admitted.len(), 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::holes::feature_simple_hole_construction_groups(
-        ctx,
-        &labels,
-        &lanes,
-        &references,
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_simple_hole_construction_groups(
+                ctx,
+                &labels,
+                &lanes,
+                &references,
+            )
+            .expect_err("simple hole group resource limit")
+        },
     )
-    .expect_err("simple hole group resource limit")
-
-})
 }
 
 #[test]
@@ -1303,19 +1317,21 @@ fn package_use_route_refusal(
     let admitted =
         hole_package_group_uses(std::slice::from_ref(&lane), std::slice::from_ref(&group));
     assert_eq!(admitted.len(), 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::holes::feature_hole_package_construction_group_uses(
-        ctx,
-        &[lane],
-        &[group],
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_hole_package_construction_group_uses(
+                ctx,
+                &[lane],
+                &[group],
+            )
+            .expect_err("hole package group use resource limit")
+        },
     )
-    .expect_err("hole package group use resource limit")
-
-})
 }
 
 #[test]

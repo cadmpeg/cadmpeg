@@ -780,8 +780,7 @@ fn locate_extref_string_table(
         let Some(remaining) = payload.len().checked_sub(start) else {
             continue;
         };
-        let Some(count) = bounded_len(u64::from(count), 3, remaining)
-        else {
+        let Some(count) = bounded_len(u64::from(count), 3, remaining) else {
             continue;
         };
         ctx.charge_work(

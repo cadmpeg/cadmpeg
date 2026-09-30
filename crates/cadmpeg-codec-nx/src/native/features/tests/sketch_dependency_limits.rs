@@ -77,14 +77,14 @@ fn dependency_refusal(
             .len(),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("datum dependency resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("datum dependency resource limit"),
+    )
 }
 
 #[test]

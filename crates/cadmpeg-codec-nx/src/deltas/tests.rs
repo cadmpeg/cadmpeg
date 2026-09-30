@@ -184,17 +184,19 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
 #[test]
 fn deltas_fixed_record_route_refuses_retained_limit() {
     let stream = status_framed_deltas_point_stream();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_retained_bytes = 39; }, |ctx| {
 
-    assert!(matches!(
-        crate::deltas::census::walk(ctx, &stream),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| {
+            policy.limits.max_retained_bytes = 39;
+        },
+        |ctx| {
+            assert!(matches!(
+                crate::deltas::census::walk(ctx, &stream),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        },
+    );
 }
 
 #[test]
@@ -360,17 +362,19 @@ fn deltas_value_record_route_refuses_retained_limit() {
     stream.extend_from_slice(&1u32.to_be_bytes());
     stream.extend_from_slice(&20u16.to_be_bytes());
     stream.extend_from_slice(&u32::MAX.to_be_bytes());
-    
-    
-    
-    crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_retained_bytes = 11; }, |ctx| {
 
-    assert!(matches!(
-        crate::deltas::census::walk(ctx, &stream),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| {
+            policy.limits.max_retained_bytes = 11;
+        },
+        |ctx| {
+            assert!(matches!(
+                crate::deltas::census::walk(ctx, &stream),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        },
+    );
 }
 
 #[test]
@@ -1410,56 +1414,62 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
 
 #[test]
 fn deltas_census_route_refuses_collection_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let bytes = [0, 29, 0, 11, 0, 1];
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-    let error = crate::deltas::census::walk(ctx, &bytes).expect_err("collection refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = crate::deltas::census::walk(ctx, &bytes).expect_err("collection refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems)
+            );
+        },
     );
-
-})
 }
 
 #[test]
 fn deltas_census_route_refuses_scoped_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let bytes = [0, 29, 0, 11, 0, 1];
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_materialized_bytes = 0; }, |ctx| {
 
-    let error = crate::deltas::census::walk(ctx, &bytes).expect_err("scoped refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = crate::deltas::census::walk(ctx, &bytes).expect_err("scoped refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes)
+            );
+        },
     );
-
-})
 }
 
 #[test]
 fn deltas_census_route_refuses_work_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let bytes = [0, 29, 0, 11, 0, 1];
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
 
-    let error = crate::deltas::census::walk(ctx, &bytes).expect_err("work refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = crate::deltas::census::walk(ctx, &bytes).expect_err("work refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits)
+            );
+        },
     );
-
-})
 }
 
 #[test]

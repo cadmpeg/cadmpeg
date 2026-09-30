@@ -30,14 +30,14 @@ fn sketch_reference_refusal(
     assert!(!crate::test_support::with_decode_context(|ctx| decode(ctx))
         .expect("admitted sketch references")
         .is_empty());
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("sketch reference resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("sketch reference resource limit"),
+    )
 }
 
 #[test]
@@ -110,14 +110,14 @@ fn sketch_payload_refusal(
             .expect("admitted sketch payload route")
             > 0
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("sketch payload resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("sketch payload resource limit"),
+    )
 }
 
 #[test]

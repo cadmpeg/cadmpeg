@@ -170,13 +170,23 @@ pub(super) struct GeometryReportFacts<'inputs> {
 }
 
 pub(super) fn build_geometry_report(
-ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-scan: &Scan,
-geometry_report_facts: GeometryReportFacts<'_>,
-ir: &CadIr,
-model: &crate::native::model::NativeModel,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan,
+    geometry_report_facts: &GeometryReportFacts<'_>,
+    ir: &CadIr,
+    model: &crate::native::model::NativeModel,
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
-    let GeometryReportFacts { unmatched_delta_tombstone_counts, counts, has_topology, has_unresolved_sub_bodies, tessellation_count, completion_budget, adaptive_geometry_exhausted, dialect_losses, notes } = geometry_report_facts;
+    let &GeometryReportFacts {
+        unmatched_delta_tombstone_counts,
+        counts,
+        has_topology,
+        has_unresolved_sub_bodies,
+        tessellation_count,
+        completion_budget,
+        adaptive_geometry_exhausted,
+        dialect_losses,
+        notes,
+    } = geometry_report_facts;
 
     let has_untransferred_attribute_fields =
         model.has_untransferred_parasolid_attribute_fields(ctx)?;
@@ -275,31 +285,40 @@ model: &crate::native::model::NativeModel,
     {
         let bounded_phases = [
             completion_budget
-                .pcurves.exact_boundary_exhausted
+                .pcurves
+                .exact_boundary_exhausted
                 .then_some("exact-boundary transfer"),
             completion_budget
-                .pcurves.transfer_exhausted
+                .pcurves
+                .transfer_exhausted
                 .then_some("opposite-chart transfer"),
             completion_budget
-                .serialized.samples_exhausted
+                .serialized
+                .samples_exhausted
                 .then_some("support-UV consistency checks"),
             completion_budget
-                .direct.samples_exhausted
+                .direct
+                .samples_exhausted
                 .then_some("EXT11 support-UV fitting"),
             completion_budget
-                .coupled.samples_exhausted
+                .coupled
+                .samples_exhausted
                 .then_some("coupled EXT11 support-UV fitting"),
             completion_budget
-                .pcurves.geometry_exhausted
+                .pcurves
+                .geometry_exhausted
                 .then_some("pcurve geometry fitting"),
             completion_budget
-                .serialized.geometry_exhausted
+                .serialized
+                .geometry_exhausted
                 .then_some("serialized support-UV geometry fitting"),
             completion_budget
-                .direct.geometry_exhausted
+                .direct
+                .geometry_exhausted
                 .then_some("support-UV geometry fitting"),
             completion_budget
-                .coupled.geometry_exhausted
+                .coupled
+                .geometry_exhausted
                 .then_some("coupled support-UV geometry fitting"),
             completion_budget
                 .support_uv_lane_geometry_exhausted
@@ -1023,7 +1042,7 @@ pub(crate) fn append_design_intent_losses(
 #[cfg(test)]
 mod tests {
     use super::append_design_intent_losses;
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
@@ -1044,35 +1063,37 @@ mod tests {
 
     #[test]
     fn design_intent_report_refuses_body_list_at_collection_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
-
-        assert!(matches!(
-            append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx report current body identities"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::CollectionItems
+                            && limit.operation == "nx report current body identities"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn design_intent_report_refuses_body_copy_at_retained_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
-
-        assert!(matches!(
-            append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx report current body identity"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx report current body identity"
+                ));
+            },
+        );
+    }
 }

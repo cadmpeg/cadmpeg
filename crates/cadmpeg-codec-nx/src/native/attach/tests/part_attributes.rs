@@ -6,24 +6,25 @@ use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::{AnnotationBuilder, CadIr};
 
 fn attach_one_attribute(configure: impl FnOnce(&mut DecodePolicy)) -> Result<CadIr, CodecError> {
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
-
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    super::super::attach_part_attributes(
-        ctx,
-        &mut ir,
-        std::iter::once(("nx:part:attribute#0", "Title", "Value", 0)),
-        &mut annotations,
-        &stream,
-    )?;
-    Ok(ir)
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+            super::super::attach_part_attributes(
+                ctx,
+                &mut ir,
+                std::iter::once(("nx:part:attribute#0", "Title", "Value", 0)),
+                &mut annotations,
+                &stream,
+            )?;
+            Ok(ir)
+        },
+    )
 }
 
 #[test]

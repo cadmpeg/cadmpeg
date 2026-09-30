@@ -287,18 +287,20 @@ mod tests {
         bytes.extend_from_slice(&shifted_f64_bytes(10.0));
         bytes.push(0);
         bytes.extend_from_slice(&shifted_f64_bytes(20.0));
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        let error = super::object_pairs(ctx, &bytes).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = super::object_pairs(ctx, &bytes).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {

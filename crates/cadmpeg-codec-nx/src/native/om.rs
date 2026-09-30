@@ -6639,22 +6639,23 @@ mod object_record_identity_tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
         let file = prt_with_indexed_om_section();
-        
-        
-        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
 
-        let container = crate::container::scan_bytes(scan_ctx, &file).unwrap();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let container = crate::container::scan_bytes(scan_ctx, &file).unwrap();
 
-        super::object_records(ctx, &container).unwrap_err()
-    
-})
-
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        configure(policy);
+                    },
+                    |ctx| super::object_records(ctx, &container).unwrap_err(),
+                )
+            },
+        )
+    }
 
     #[test]
     fn object_record_identity_route_refuses_work_limit() {

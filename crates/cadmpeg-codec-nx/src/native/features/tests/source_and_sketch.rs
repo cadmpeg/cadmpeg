@@ -114,49 +114,53 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
 
 #[test]
 fn nx_feature_source_content_orders_payload_text() {
-    
-    
     crate::test_support::with_decode_context(|ctx| {
-
-    let text = FeaturePayloadString {
-        id: "text".into(),
-        operation_record: "record".into(),
-        ordinal: 0,
-        value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
-        source_offset: 30,
-    };
-    let later = FeaturePayloadString {
-        id: "later".into(),
-        operation_record: "record".into(),
-        ordinal: 1,
-        value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
-        source_offset: 40,
-    };
-    let content =
-        crate::native::attach::feature_projection::feature_source_content(ctx, &[&later, &text])
-            .unwrap();
-    assert!(matches!(
-        &content[0],
-        cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
-    ));
-    assert!(matches!(
-        &content[1],
-        cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
-    ));
-
-})
+        let text = FeaturePayloadString {
+            id: "text".into(),
+            operation_record: "record".into(),
+            ordinal: 0,
+            value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
+            source_offset: 30,
+        };
+        let later = FeaturePayloadString {
+            id: "later".into(),
+            operation_record: "record".into(),
+            ordinal: 1,
+            value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
+            source_offset: 40,
+        };
+        let content = crate::native::attach::feature_projection::feature_source_content(
+            ctx,
+            &[&later, &text],
+        )
+        .unwrap();
+        assert!(matches!(
+            &content[0],
+            cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
+        ));
+        assert!(matches!(
+            &content[1],
+            cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
+        ));
+    });
 }
 
 fn feature_source_text_with_limit(
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    
-    
     let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| { policy.limits.max_materialized_bytes = 0; },
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| {
+            policy.limits.max_work_units = 0;
+        },
         _ => {
             return Err(cadmpeg_core::CodecError::InvalidInput(
                 "unsupported source text test limit".to_string(),
@@ -164,20 +168,18 @@ fn feature_source_text_with_limit(
         }
     };
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-
-    let text = FeaturePayloadString {
-        id: "text".into(),
-        operation_record: "record".into(),
-        ordinal: 0,
-        value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
-        source_offset: 30,
-    };
-    let content =
-        crate::native::attach::feature_projection::feature_source_content(ctx, &[&text])?;
-    assert_eq!(content.len(), 1);
-    Ok(())
-
-})
+        let text = FeaturePayloadString {
+            id: "text".into(),
+            operation_record: "record".into(),
+            ordinal: 0,
+            value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
+            source_offset: 30,
+        };
+        let content =
+            crate::native::attach::feature_projection::feature_source_content(ctx, &[&text])?;
+        assert_eq!(content.len(), 1);
+        Ok(())
+    })
 }
 
 #[test]
@@ -217,46 +219,42 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
 
-    
-    
     crate::test_support::with_decode_context(|ctx| {
+        let operation = FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            kind: FeatureBooleanKind::Subtract,
+            target: crate::test_support::native_references::boolean_reference(10, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                20, 1,
+            )],
+            source_offset: 0,
+        };
+        let roots = BTreeMap::from([(10, 10), (20, 10)]);
 
-
-    let operation = FeatureBooleanOperation {
-        id: "boolean#0".to_string(),
-        operation_label: "operation#0".to_string(),
-        kind: FeatureBooleanKind::Subtract,
-        target: crate::test_support::native_references::boolean_reference(10, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(
-            20, 1,
-        )],
-        source_offset: 0,
-    };
-    let roots = BTreeMap::from([(10, 10), (20, 10)]);
-
-    assert_eq!(
-        crate::native::attach::boolean_feature_definition(
-            ctx,
-            &operation,
-            &roots,
-            &crate::native::segments::BooleanOffsetStoreResolution::None,
-            &BTreeMap::new(),
-        )
-        .unwrap(),
-        FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Native("nx:om-object-index#10".to_string()),
-                BodySelection::Native("nx:om-object-indices#20".to_string())
+        assert_eq!(
+            crate::native::attach::boolean_feature_definition(
+                ctx,
+                &operation,
+                &roots,
+                &crate::native::segments::BooleanOffsetStoreResolution::None,
+                &BTreeMap::new(),
             )
             .unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Combine {
+                operands: cadmpeg_ir::features::CombineOperands::new(
+                    BodySelection::Native("nx:om-object-index#10".to_string()),
+                    BodySelection::Native("nx:om-object-indices#20".to_string())
+                )
+                .unwrap(),
 
-            op: BooleanKind::Cut,
-            keep_tools: false,
-        })
-    );
+                op: BooleanKind::Cut,
+                keep_tools: false,
+            })
+        );
 
-    let missing_tool = BTreeMap::from([(10, 10)]);
-    assert!(matches!(
+        let missing_tool = BTreeMap::from([(10, 10)]);
+        assert!(matches!(
         crate::native::attach::boolean_feature_definition(
             ctx,
             &operation,
@@ -268,8 +266,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
-
-})
+    });
 }
 
 #[test]
@@ -980,7 +977,7 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
             crate::om::csys_descriptor::CsysDescriptor::from_wire(
                 &[2, 1],
                 &plane.descriptor.identity().to_owned().try_into().unwrap(),
-                &[b'?', b'A'],
+                b"?A",
             )
             .unwrap(),
             20,
@@ -1321,19 +1318,21 @@ fn nx_operation_body_operands_refuse_collection_limit() {
         stream_role: 0,
         source_offset: 0,
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-    let error =
-        feature_operation_body_operands(ctx, &[member], &[], &[], &[], &[binding]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = feature_operation_body_operands(ctx, &[member], &[], &[], &[], &[binding])
+                .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
-
-})
 }
 
 fn operation_body_operand_store_refusal(
@@ -1377,15 +1376,17 @@ fn operation_body_operand_store_refusal(
         source_entry: "entry".to_string(),
         source_offset: 0,
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    feature_operation_body_operands(ctx, &[member], &[reference], &[input], &[block], &[])
-        .unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_operation_body_operands(ctx, &[member], &[reference], &[input], &[block], &[])
+                .unwrap_err()
+        },
+    )
 }
 
 #[test]
@@ -1528,19 +1529,21 @@ fn extrude_32_mapping_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let (reference, branch) = extrude_32_fixture();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::construction_records::feature_extrude_32_constructions(
-        ctx,
-        &[reference],
-        &[branch],
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::construction_records::feature_extrude_32_constructions(
+                ctx,
+                &[reference],
+                &[branch],
+            )
+            .unwrap_err()
+        },
     )
-    .unwrap_err()
-
-})
 }
 
 #[test]

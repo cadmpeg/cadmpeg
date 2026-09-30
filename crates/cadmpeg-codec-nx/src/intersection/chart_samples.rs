@@ -528,18 +528,20 @@ mod tests {
             vec![0.0, 1.0],
         )
         .unwrap();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
 
-        assert!(matches!(
-            samples.points_charged(ctx),
-            Err(CodecError::ResourceLimit(_))
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                assert!(matches!(
+                    samples.points_charged(ctx),
+                    Err(CodecError::ResourceLimit(_))
+                ));
+            },
+        );
+    }
 
     #[test]
     fn chart_parameter_projection_refuses_retained_limit() {
@@ -548,18 +550,20 @@ mod tests {
             vec![0.0, 1.0],
         )
         .unwrap();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 15; }, |ctx| {
 
-        assert!(matches!(
-            samples.parameters_charged(ctx),
-            Err(CodecError::ResourceLimit(_))
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 15;
+            },
+            |ctx| {
+                assert!(matches!(
+                    samples.parameters_charged(ctx),
+                    Err(CodecError::ResourceLimit(_))
+                ));
+            },
+        );
+    }
 
     #[test]
     fn chart_preamble_retains_finite_parameter_scale_and_angle() {

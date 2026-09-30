@@ -15,17 +15,19 @@ fn counted_pattern_references_refuse_collection_limit() {
         0, 0, 0, 0x37, 0xff, 0xff, 1, 0, 0, 0, 0x38, 0xff, 1, 0xff, 0xff, 0xff, 0xff, 1, 0xff,
     ]);
     let record = OperationPayload::new(&payload, 0, "Pattern Feature").unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&payload, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-    let error = CountedPatternReferences::read(ctx, record).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    crate::test_support::with_decode_context_over(
+        &payload,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = CountedPatternReferences::read(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
-
-})
 }
 
 #[test]

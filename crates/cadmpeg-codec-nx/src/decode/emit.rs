@@ -60,7 +60,6 @@ struct PendingFace {
     tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
 }
 
-
 pub(super) struct TopologyStream<'inputs> {
     pub(super) stream_index: usize,
     pub(super) graph: &'inputs Graph,
@@ -75,26 +74,42 @@ pub(super) struct TopologyStream<'inputs> {
     pub(super) procedural_start: usize,
 }
 
-
 pub(super) struct TopologyBudgets<'inputs> {
-    pub(super) exact_transfer_budget: &'inputs TransferBudget<'inputs>,
-    pub(super) completion_transfer_budget: &'inputs TransferBudget<'inputs>,
-    pub(super) adaptive_geometry_budget: &'inputs GeometryWorkBudget<'inputs>,
-    pub(super) completion_geometry_budget: &'inputs GeometryWorkBudget<'inputs>,
+    pub(super) exact_transfer: &'inputs TransferBudget<'inputs>,
+    pub(super) completion_transfer: &'inputs TransferBudget<'inputs>,
+    pub(super) adaptive_geometry: &'inputs GeometryWorkBudget<'inputs>,
+    pub(super) completion_geometry: &'inputs GeometryWorkBudget<'inputs>,
 }
 
 pub(super) fn emit_topology(
-ctx: &DecodeContext<'_>,
-ir: &mut CadIr,
-topology_stream: TopologyStream<'_>,
-annotations: &mut AnnotationBuilder,
-intersection_index: &mut IntersectionIncidenceIndex,
-topology_budgets: TopologyBudgets<'_>,
-topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    topology_stream: &TopologyStream<'_>,
+    annotations: &mut AnnotationBuilder,
+    intersection_index: &mut IntersectionIncidenceIndex,
+    topology_budgets: &TopologyBudgets<'_>,
+    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
-    let TopologyBudgets { exact_transfer_budget, completion_transfer_budget, adaptive_geometry_budget, completion_geometry_budget } = topology_budgets;
+    let &TopologyBudgets {
+        exact_transfer: exact_transfer_budget,
+        completion_transfer: completion_transfer_budget,
+        adaptive_geometry: adaptive_geometry_budget,
+        completion_geometry: completion_geometry_budget,
+    } = topology_budgets;
 
-    let TopologyStream { stream_index, graph, points, surfaces, curves, pcurves, pcurve_supports, trim_ranges, source_stream, intersection_starts, procedural_start } = topology_stream;
+    let &TopologyStream {
+        stream_index,
+        graph,
+        points,
+        surfaces,
+        curves,
+        pcurves,
+        pcurve_supports,
+        trim_ranges,
+        source_stream,
+        intersection_starts,
+        procedural_start,
+    } = topology_stream;
 
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut valid_face_xmts = BTreeSet::new();
@@ -588,13 +603,21 @@ topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
                 .map(|index| (curve, index))
         }) {
             synthesize_closed_edge_vertex_with_curve_index_and_budget(
-ctx,
-ir,
-annotations,
-ClosedEdge { scope: &scope, edge: node, curve, curve_index, range: param_range, source_stream, tolerance: decoded_tolerance(fields.tolerance) },
-&mut curve_point_cache,
-adaptive_geometry_budget,
-)?
+                ctx,
+                ir,
+                annotations,
+                &ClosedEdge {
+                    scope: &scope,
+                    edge: node,
+                    curve,
+                    curve_index,
+                    range: param_range,
+                    source_stream,
+                    tolerance: decoded_tolerance(fields.tolerance),
+                },
+                &mut curve_point_cache,
+                adaptive_geometry_budget,
+            )?
         } else {
             None
         };
@@ -652,11 +675,22 @@ adaptive_geometry_budget,
                 .map(|((curve_index, start), end)| (curve_index, start, end))
             {
                 orient_edge_range_for_geometry_with_budget(
-ctx,
-EdgeGeometryRange { geometry: &ir.model.curves[curve_index].geometry, curve: carrier, range, start_position, start_tolerance, end_position, end_tolerance, edge_tolerance: decoded_tolerance(fields.tolerance).map(cadmpeg_ir::scalar::PositiveReal::get), procedural_curve: procedural_curve_ids.contains(carrier) },
-&mut curve_point_cache,
-adaptive_geometry_budget,
-)?
+                    ctx,
+                    &EdgeGeometryRange {
+                        geometry: &ir.model.curves[curve_index].geometry,
+                        curve: carrier,
+                        range,
+                        start_position,
+                        start_tolerance,
+                        end_position,
+                        end_tolerance,
+                        edge_tolerance: decoded_tolerance(fields.tolerance)
+                            .map(cadmpeg_ir::scalar::PositiveReal::get),
+                        procedural_curve: procedural_curve_ids.contains(carrier),
+                    },
+                    &mut curve_point_cache,
+                    adaptive_geometry_budget,
+                )?
             } else {
                 None
             };
@@ -1298,7 +1332,6 @@ adaptive_geometry_budget,
     Ok(endpoint_witnesses)
 }
 
-
 pub(super) struct UnresolvedTopologyStream<'inputs> {
     pub(super) stream_index: usize,
     pub(super) graph: &'inputs Graph,
@@ -1309,12 +1342,19 @@ pub(super) struct UnresolvedTopologyStream<'inputs> {
 }
 
 pub(super) fn retain_unresolved_topology_carriers(
-ctx: &DecodeContext<'_>,
-ir: &mut CadIr,
-unresolved_topology_stream: UnresolvedTopologyStream<'_>,
-annotations: &mut AnnotationBuilder,
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    unresolved_topology_stream: UnresolvedTopologyStream<'_>,
+    annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let UnresolvedTopologyStream { stream_index, graph, surfaces, curves, pcurves, source_stream } = unresolved_topology_stream;
+    let UnresolvedTopologyStream {
+        stream_index,
+        graph,
+        surfaces,
+        curves,
+        pcurves,
+        source_stream,
+    } = unresolved_topology_stream;
 
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let unknown: UnknownId = IdScope::container().id_charged(
@@ -1451,7 +1491,6 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::Positi
     cadmpeg_ir::scalar::PositiveReal::new(value * 1000.0)
 }
 
-
 struct ClosedEdge<'inputs> {
     scope: &'inputs IdScope,
     edge: &'inputs Node,
@@ -1463,14 +1502,22 @@ struct ClosedEdge<'inputs> {
 }
 
 fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
-ctx: &DecodeContext<'_>,
-ir: &mut CadIr,
-annotations: &mut AnnotationBuilder,
-closed_edge: ClosedEdge<'_>,
-curve_point_cache: &mut CurvePointCache,
-geometry_budget: &GeometryWorkBudget<'_>,
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    closed_edge: &ClosedEdge<'_>,
+    curve_point_cache: &mut CurvePointCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<VertexId>, CodecError> {
-    let ClosedEdge { scope, edge, curve, curve_index, range, source_stream, tolerance } = closed_edge;
+    let &ClosedEdge {
+        scope,
+        edge,
+        curve,
+        curve_index,
+        range,
+        source_stream,
+        tolerance,
+    } = closed_edge;
 
     let parameter = {
         let geometry = &ir.model.curves[curve_index].geometry;
@@ -1626,11 +1673,21 @@ fn orient_edge_range_with_budget(
         .any(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(curve));
     let mut curve_point_cache = CurvePointCache::default();
     orient_edge_range_for_geometry_with_budget(
-ctx,
-EdgeGeometryRange { geometry, curve, range, start_position, start_tolerance, end_position, end_tolerance, edge_tolerance, procedural_curve },
-&mut curve_point_cache,
-geometry_budget,
-)
+        ctx,
+        &EdgeGeometryRange {
+            geometry,
+            curve,
+            range,
+            start_position,
+            start_tolerance,
+            end_position,
+            end_tolerance,
+            edge_tolerance,
+            procedural_curve,
+        },
+        &mut curve_point_cache,
+        geometry_budget,
+    )
     .expect("evaluator allocation succeeds")
 }
 
@@ -1678,7 +1735,6 @@ impl CurvePointCache {
     }
 }
 
-
 struct EdgeGeometryRange<'inputs> {
     geometry: &'inputs CurveGeometry,
     curve: &'inputs CurveId,
@@ -1692,12 +1748,22 @@ struct EdgeGeometryRange<'inputs> {
 }
 
 fn orient_edge_range_for_geometry_with_budget(
-ctx: &DecodeContext<'_>,
-edge_geometry_range: EdgeGeometryRange<'_>,
-curve_point_cache: &mut CurvePointCache,
-geometry_budget: &GeometryWorkBudget<'_>,
+    ctx: &DecodeContext<'_>,
+    edge_geometry_range: &EdgeGeometryRange<'_>,
+    curve_point_cache: &mut CurvePointCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<([f64; 2], bool)>, CodecError> {
-    let EdgeGeometryRange { geometry, curve, range, start_position, start_tolerance, end_position, end_tolerance, edge_tolerance, procedural_curve } = edge_geometry_range;
+    let &EdgeGeometryRange {
+        geometry,
+        curve,
+        range,
+        start_position,
+        start_tolerance,
+        end_position,
+        end_tolerance,
+        edge_tolerance,
+        procedural_curve,
+    } = edge_geometry_range;
 
     let range = if range[0] <= range[1] {
         range
@@ -2150,7 +2216,7 @@ mod tests {
     use crate::container::Container;
     use crate::decode::Scan;
     use crate::parasolid::Stream;
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -2183,75 +2249,75 @@ mod tests {
 
     #[test]
     fn unknown_stream_metadata_refuses_identity_text_at_retained_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
-
-        assert!(matches!(
-            unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx unknown stream id"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx unknown stream id"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn unknown_stream_metadata_refuses_digest_text_at_retained_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len()); }, |ctx| {
-
-        assert!(matches!(
-            unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx unknown stream digest"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len());
+            },
+            |ctx| {
+                assert!(matches!(
+                    unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx unknown stream digest"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn unknown_stream_metadata_refuses_digest_work_at_caller_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
-
-        assert!(matches!(
-            unknown_stream_metadata(ctx, 0, &preview_stream(vec![7])),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "hash NX unknown stream"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    unknown_stream_metadata(ctx, 0, &preview_stream(vec![7])),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::WorkUnits
+                            && limit.operation == "hash NX unknown stream"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn unknown_stream_metadata_preserves_identity_and_digest_under_service_profile() {
         let stream = preview_stream(vec![7]);
-        
-        
-        crate::test_support::with_decode_context(|ctx| {
 
-        let unknown = unknown_stream_metadata(ctx, 0, &stream).unwrap();
-        assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
-        assert_eq!(unknown.offset(), 0);
-        assert_eq!(unknown.data(), None);
-        let wire = serde_json::to_value(&unknown).unwrap();
-        assert_eq!(
-            wire["retention"]["sha256"],
-            cadmpeg_ir::hash::sha256_hex(&stream.inflated)
-        );
-    
-})
-}
+        crate::test_support::with_decode_context(|ctx| {
+            let unknown = unknown_stream_metadata(ctx, 0, &stream).unwrap();
+            assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
+            assert_eq!(unknown.offset(), 0);
+            assert_eq!(unknown.data(), None);
+            let wire = serde_json::to_value(&unknown).unwrap();
+            assert_eq!(
+                wire["retention"]["sha256"],
+                cadmpeg_ir::hash::sha256_hex(&stream.inflated)
+            );
+        });
+    }
 
     #[test]
     fn source_meta_refuses_first_attribute_node_at_collection_limit() {
@@ -2261,20 +2327,22 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        assert!(matches!(
-            source_meta(ctx, &scan, &dialects),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx source attributes"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    source_meta(ctx, &scan, &dialects),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::CollectionItems
+                            && limit.operation == "nx source attributes"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn source_meta_refuses_first_attribute_text_at_retained_limit() {
@@ -2284,20 +2352,22 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-        assert!(matches!(
-            source_meta(ctx, &scan, &dialects),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx source attribute text"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    source_meta(ctx, &scan, &dialects),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx source attribute text"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn source_meta_refuses_second_map_nodes_at_collection_limit() {
@@ -2307,94 +2377,96 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        
-        
-        crate::test_support::with_decode_context_over(&[], |_| {}, |service_ctx| {
 
-        let expected = source_meta(service_ctx, &scan, &dialects).unwrap();
-        assert_eq!(expected.attributes["file_size"], "0");
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items =
-            cadmpeg_core::decode::u64_from_index(expected.attributes.len()); }, |limited_ctx| {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |_| {},
+            |service_ctx| {
+                let expected = source_meta(service_ctx, &scan, &dialects).unwrap();
+                assert_eq!(expected.attributes["file_size"], "0");
 
-        assert!(matches!(
-            source_meta(limited_ctx, &scan, &dialects),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx source attribute names"
-        ));
-    
-})
-
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_collection_items =
+                            cadmpeg_core::decode::u64_from_index(expected.attributes.len());
+                    },
+                    |limited_ctx| {
+                        assert!(matches!(
+                            source_meta(limited_ctx, &scan, &dialects),
+                            Err(CodecError::ResourceLimit(limit))
+                                if limit.dimension == ResourceDimension::CollectionItems
+                                    && limit.operation == "nx source attribute names"
+                        ));
+                    },
+                );
+            },
+        );
+    }
 
     #[test]
     fn unknown_stream_copy_refuses_when_retained_budget_is_exhausted() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[0], |policy| { policy.limits.max_retained_bytes = 2; }, |ctx| {
-
-        let stream = Stream {
-            file_offset: 0,
-            consumed: 0,
-            inflated: vec![1, 2, 3],
-            body: crate::parasolid::StreamBody::Parasolid {
-                subtype: crate::parasolid::ParasolidSubtype::Partition,
-                schema: None,
+        crate::test_support::with_decode_context_over(
+            &[0],
+            |policy| {
+                policy.limits.max_retained_bytes = 2;
             },
-        };
+            |ctx| {
+                let stream = Stream {
+                    file_offset: 0,
+                    consumed: 0,
+                    inflated: vec![1, 2, 3],
+                    body: crate::parasolid::StreamBody::Parasolid {
+                        subtype: crate::parasolid::ParasolidSubtype::Partition,
+                        schema: None,
+                    },
+                };
 
-        assert!(matches!(
-            unknown_stream(ctx, 0, &stream),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && limit.operation == "retain NX unknown stream"
-        ));
-    
-})
-}
+                assert!(matches!(
+                    unknown_stream(ctx, 0, &stream),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                            && limit.operation == "retain NX unknown stream"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
-        
         crate::test_support::with_decode_context(|geometry_ctx| {
+            let curve =
+                CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
+            let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
+                    None,
+                    false,
+                )
+                .expect("valid test curve"),
+            ));
+            let geometry_budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(1024),
+            );
+            let mut cache = CurvePointCache::default();
 
+            crate::test_support::with_decode_context(|ctx| {
+                let first = cache
+                    .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
+                    .expect("evaluator allocation succeeds")
+                    .expect("NURBS evaluation");
+                let remaining_after_first = geometry_budget.remaining();
+                let second = cache
+                    .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
+                    .expect("evaluator allocation succeeds")
+                    .expect("cached NURBS evaluation");
 
-        let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
-        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
-                None,
-                false,
-            )
-            .expect("valid test curve"),
-        ));
-        let geometry_budget = GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(1024),
-        );
-        let mut cache = CurvePointCache::default();
-
-        crate::test_support::with_decode_context(|ctx| {
-            let first = cache
-                .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
-                .expect("evaluator allocation succeeds")
-                .expect("NURBS evaluation");
-            let remaining_after_first = geometry_budget.remaining();
-            let second = cache
-                .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
-                .expect("evaluator allocation succeeds")
-                .expect("cached NURBS evaluation");
-
-            assert_eq!(first, second);
-            assert_eq!(geometry_budget.remaining(), remaining_after_first);
+                assert_eq!(first, second);
+                assert_eq!(geometry_budget.remaining(), remaining_after_first);
+            });
         });
-    
-})
-}
+    }
 }

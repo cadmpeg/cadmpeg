@@ -410,22 +410,24 @@ mod tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> CodecError {
         let (graph, blocks) = fset_construction_fixture();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-        super::fset_construction_payload_from_group(
-            ctx,
-            &graph,
-            super::FeatureFsetReferenceGroup::First,
-            graph.references.first().as_slice(),
-            &blocks,
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                super::fset_construction_payload_from_group(
+                    ctx,
+                    &graph,
+                    super::FeatureFsetReferenceGroup::First,
+                    graph.references.first().as_slice(),
+                    &blocks,
+                )
+                .expect_err("FSET construction limit refusal")
+            },
         )
-        .expect_err("FSET construction limit refusal")
-    
-})
-}
+    }
 
     #[test]
     fn fset_construction_refuses_collection_limit() {
@@ -459,39 +461,36 @@ mod tests {
     #[test]
     fn fset_construction_preserves_first_and_second_source_groups() {
         let (graph, blocks) = fset_construction_fixture();
-        
-        
-        crate::test_support::with_decode_context(|ctx| {
 
-        for (group, source_blocks, expected_count, first_id) in [
-            (
-                super::FeatureFsetReferenceGroup::First,
-                graph.references.first().as_slice(),
-                2,
-                "nx:om-data-blocks-0:block#1",
-            ),
-            (
-                super::FeatureFsetReferenceGroup::Second,
-                graph.references.second().as_slice(),
-                3,
-                "nx:om-data-blocks-0:block#3",
-            ),
-        ] {
-            let payload = super::fset_construction_payload_from_group(
-                ctx,
-                &graph,
-                group,
-                source_blocks,
-                &blocks,
-            )
-            .expect("admitted source blocks")
-            .expect("complete FSET payload");
-            assert_eq!(payload.content.blocks().len(), expected_count);
-            assert_eq!(payload.content.blocks()[0].id, first_id);
-        }
-    
-})
-}
+        crate::test_support::with_decode_context(|ctx| {
+            for (group, source_blocks, expected_count, first_id) in [
+                (
+                    super::FeatureFsetReferenceGroup::First,
+                    graph.references.first().as_slice(),
+                    2,
+                    "nx:om-data-blocks-0:block#1",
+                ),
+                (
+                    super::FeatureFsetReferenceGroup::Second,
+                    graph.references.second().as_slice(),
+                    3,
+                    "nx:om-data-blocks-0:block#3",
+                ),
+            ] {
+                let payload = super::fset_construction_payload_from_group(
+                    ctx,
+                    &graph,
+                    group,
+                    source_blocks,
+                    &blocks,
+                )
+                .expect("admitted source blocks")
+                .expect("complete FSET payload");
+                assert_eq!(payload.content.blocks().len(), expected_count);
+                assert_eq!(payload.content.blocks()[0].id, first_id);
+            }
+        });
+    }
 
     #[test]
     fn fset_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {

@@ -607,7 +607,9 @@ pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>
 }
 
 fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {
-    offset.checked_add(2).and_then(|end| bytes.get(offset..end))
+    offset
+        .checked_add(2)
+        .and_then(|end| bytes.get(offset..end))
         .is_some_and(|tag| tag[0] == 0 && (0x4f..=0x63).contains(&tag[1]))
 }
 
@@ -648,7 +650,9 @@ pub(crate) fn extract_streams<'a>(
                 continue;
             };
             if !seen.insert(offset)
-                || offset.checked_add(2).and_then(|end| part.get(offset..end))
+                || offset
+                    .checked_add(2)
+                    .and_then(|end| part.get(offset..end))
                     .is_none_or(|header| !is_zlib_header(header[0], header[1]))
             {
                 continue;
@@ -782,7 +786,9 @@ pub(crate) fn extract_legacy_streams<'a>(
     let mut streams = Vec::new();
     let mut search = 0;
     while let Some(start) = legacy_stream_start(bytes, search) {
-        let next = start.checked_add(4).and_then(|next| legacy_stream_start(bytes, next));
+        let next = start
+            .checked_add(4)
+            .and_then(|next| legacy_stream_start(bytes, next));
         let end = next.unwrap_or(bytes.len());
         let payload = bytes.get(start..end).ok_or_else(|| {
             CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
@@ -821,7 +827,10 @@ fn legacy_stream_start(bytes: &[u8], mut search: usize) -> Option<usize> {
 }
 
 fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
-    let Some(description_len) = start.checked_add(2).and_then(|offset| View::u32_be_at(bytes, offset)) else {
+    let Some(description_len) = start
+        .checked_add(2)
+        .and_then(|offset| View::u32_be_at(bytes, offset))
+    else {
         return false;
     };
     let Ok(description_len) = usize::try_from(description_len) else {

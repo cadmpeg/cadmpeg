@@ -34,10 +34,15 @@ pub(crate) fn with_decode_context_over<T>(
 }
 
 pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
-    with_decode_context_over(bytes, |_| {}, |ctx| {
-        let root = cadmpeg_core::decode::View::over_retained(bytes);
-        let container =
-            crate::container::scan_bytes(ctx, bytes.to_vec()).expect("test SPLMSSTR container");
-        crate::parasolid::extract_streams(ctx, root, &container).expect("test Parasolid streams")
-    })
+    with_decode_context_over(
+        bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(bytes);
+            let container =
+                crate::container::scan_bytes(ctx, bytes.to_vec()).expect("test SPLMSSTR container");
+            crate::parasolid::extract_streams(ctx, root, &container)
+                .expect("test Parasolid streams")
+        },
+    )
 }

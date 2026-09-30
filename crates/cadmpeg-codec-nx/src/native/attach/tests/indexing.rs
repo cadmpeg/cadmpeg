@@ -6,75 +6,68 @@ use crate::native::attach::segment_binding_body_indexes;
 
 #[test]
 fn source_property_reference_preserves_block_and_numeric_fallback() {
-    
-    
     crate::test_support::with_decode_context(|ctx| {
-
-    let mut properties = std::collections::BTreeMap::new();
-    insert_source_property_reference(
-        ctx,
-        &mut properties,
-        format_args!("reference.{}", 0),
-        Some("source-block"),
-        17u32,
-    )
-    .unwrap();
-    insert_source_property_reference(
-        ctx,
-        &mut properties,
-        format_args!("reference.{}", 1),
-        None,
-        17u32,
-    )
-    .unwrap();
-    assert_eq!(properties["reference.0"], "source-block");
-    assert_eq!(properties["reference.1"], "17");
-
-})
+        let mut properties = std::collections::BTreeMap::new();
+        insert_source_property_reference(
+            ctx,
+            &mut properties,
+            format_args!("reference.{}", 0),
+            Some("source-block"),
+            17u32,
+        )
+        .unwrap();
+        insert_source_property_reference(
+            ctx,
+            &mut properties,
+            format_args!("reference.{}", 1),
+            None,
+            17u32,
+        )
+        .unwrap();
+        assert_eq!(properties["reference.0"], "source-block");
+        assert_eq!(properties["reference.1"], "17");
+    });
 }
 
 #[test]
 fn operation_body_operand_source_keys_follow_reference_ordinal() {
-    
-    
     crate::test_support::with_decode_context(|ctx| {
-
-    let mut properties = std::collections::BTreeMap::new();
-    for reference_ordinal in [0, 1] {
-        insert_source_property_reference(
-            ctx,
-            &mut properties,
-            format_args!("operation_body_operand.{}.{}", reference_ordinal, 0),
-            None,
-            20u32,
-        )
-        .unwrap();
-    }
-    assert_eq!(properties["operation_body_operand.0.0"], "20");
-    assert_eq!(properties["operation_body_operand.1.0"], "20");
-
-})
+        let mut properties = std::collections::BTreeMap::new();
+        for reference_ordinal in [0, 1] {
+            insert_source_property_reference(
+                ctx,
+                &mut properties,
+                format_args!("operation_body_operand.{}.{}", reference_ordinal, 0),
+                None,
+                20u32,
+            )
+            .unwrap();
+        }
+        assert_eq!(properties["operation_body_operand.0.0"], "20");
+        assert_eq!(properties["operation_body_operand.1.0"], "20");
+    });
 }
 
 fn source_property_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
-
-    let mut properties = std::collections::BTreeMap::new();
-    insert_source_property(
-        ctx,
-        &mut properties,
-        format_args!("body_write.{}", 7),
-        format_args!("{}", "write"),
-    )?;
-    assert_eq!(properties["body_write.7"], "write");
-    Ok(())
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut properties = std::collections::BTreeMap::new();
+            insert_source_property(
+                ctx,
+                &mut properties,
+                format_args!("body_write.{}", 7),
+                format_args!("{}", "write"),
+            )?;
+            assert_eq!(properties["body_write.7"], "write");
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -135,25 +128,27 @@ fn segment_body_index_with_limit(
         stream_role: 0,
         source_offset: 0,
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    let bindings = [binding];
-    let indexes = segment_binding_body_indexes(ctx, &ir, &bindings)?;
-    assert_eq!(
-        indexes.by_object[&10].as_slice(),
-        std::slice::from_ref(&body)
-    );
-    assert_eq!(
-        indexes.by_object[&11].as_slice(),
-        std::slice::from_ref(&body)
-    );
-    assert_eq!(indexes.by_binding["binding"], [body]);
-    Ok(())
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let bindings = [binding];
+            let indexes = segment_binding_body_indexes(ctx, &ir, &bindings)?;
+            assert_eq!(
+                indexes.by_object[&10].as_slice(),
+                std::slice::from_ref(&body)
+            );
+            assert_eq!(
+                indexes.by_object[&11].as_slice(),
+                std::slice::from_ref(&body)
+            );
+            assert_eq!(indexes.by_binding["binding"], [body]);
+            Ok(())
+        },
+    )
 }
 
 #[test]

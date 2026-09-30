@@ -302,16 +302,18 @@ mod tests {
         })
         .expect("admitted THRU_CURVE branch group");
         assert_eq!(groups.len(), 1);
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-        super::feature_thru_curve_construction_branch_groups(ctx, &container)
-            .expect_err("THRU_CURVE branch group resource limit")
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                super::feature_thru_curve_construction_branch_groups(ctx, &container)
+                    .expect_err("THRU_CURVE branch group resource limit")
+            },
+        )
+    }
 
     #[test]
     fn thru_curve_branch_group_route_refuses_collection_limit() {

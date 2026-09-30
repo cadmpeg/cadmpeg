@@ -14,14 +14,19 @@ impl TryFrom<[u8; 9]> for ThruCurveControls {
         let [first, second, third, fourth, fifth, sixth, seventh, eighth, 7] = bytes else {
             return Err("controls must end with marker 7");
         };
-        Ok(Self([first, second, third, fourth, fifth, sixth, seventh, eighth]))
+        Ok(Self([
+            first, second, third, fourth, fifth, sixth, seventh, eighth,
+        ]))
     }
 }
 
 impl From<ThruCurveControls> for [u8; 9] {
     fn from(value: ThruCurveControls) -> Self {
-        let ThruCurveControls([first, second, third, fourth, fifth, sixth, seventh, eighth]) = value;
-        [first, second, third, fourth, fifth, sixth, seventh, eighth, 7]
+        let ThruCurveControls([first, second, third, fourth, fifth, sixth, seventh, eighth]) =
+            value;
+        [
+            first, second, third, fourth, fifth, sixth, seventh, eighth, 7,
+        ]
     }
 }
 

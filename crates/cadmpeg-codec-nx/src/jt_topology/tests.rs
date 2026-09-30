@@ -5,130 +5,128 @@
 
 #[test]
 fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
-    
-    
     crate::test_support::with_decode_context(|ctx| {
+        let polygons = super::decode(
+            ctx,
+            [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
+            &[3, 3, 3, 3],
+            &[10, 12, 11, 13],
+            &[0, 0, 0, 0],
+            super::SplitLanes {
+                faces: &[],
+                positions: &[],
+            },
+            super::AttributeMaskLanes {
+                small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
+                context_7_next_30: &[],
+                context_7_upper_4: &[],
+                large_words: &[],
+            },
+        )
+        .expect("dual mesh decode resources admitted")
+        .expect("valid closed dual mesh");
 
-    let polygons = super::decode(
-        ctx,
-        [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
-        &[3, 3, 3, 3],
-        &[10, 12, 11, 13],
-        &[0, 0, 0, 0],
-        super::SplitLanes {
-            faces: &[],
-            positions: &[],
-        },
-        super::AttributeMaskLanes {
-            small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
-            context_7_next_30: &[],
-            context_7_upper_4: &[],
-            large_words: &[],
-        },
-    )
-    .expect("dual mesh decode resources admitted")
-    .expect("valid closed dual mesh");
-
-    assert_eq!(
-        polygons
-            .iter()
-            .map(|polygon| polygon
+        assert_eq!(
+            polygons
+                .iter()
+                .map(|polygon| polygon
+                    .corners
+                    .iter()
+                    .map(|&(vertex, _)| vertex)
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            vec![&[0, 1, 2], &[2, 1, 3], &[2, 3, 0], &[3, 1, 0]]
+        );
+        assert_eq!(
+            polygons
+                .iter()
+                .map(|polygon| polygon.group)
+                .collect::<Vec<_>>(),
+            vec![10, 12, 11, 13]
+        );
+        assert_eq!(
+            polygons[0]
                 .corners
                 .iter()
-                .map(|&(vertex, _)| vertex)
-                .collect::<Vec<_>>())
-            .collect::<Vec<_>>(),
-        vec![&[0, 1, 2], &[2, 1, 3], &[2, 3, 0], &[3, 1, 0]]
-    );
-    assert_eq!(
-        polygons
-            .iter()
-            .map(|polygon| polygon.group)
-            .collect::<Vec<_>>(),
-        vec![10, 12, 11, 13]
-    );
-    assert_eq!(
-        polygons[0]
-            .corners
-            .iter()
-            .map(|&(_, attribute)| attribute)
-            .collect::<Vec<_>>(),
-        vec![Some(0), Some(1), Some(2)]
-    );
-
-})
+                .map(|&(_, attribute)| attribute)
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(2)]
+        );
+    });
 }
 
 #[test]
 fn jt_vertex_face_slots_refuse_collection_limit() {
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 2; }, |ctx| {
-
-    let error = super::decode(
-        ctx,
-        [&[3], &[], &[], &[], &[], &[], &[], &[]],
-        &[3],
-        &[10],
-        &[0],
-        super::SplitLanes {
-            faces: &[],
-            positions: &[],
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 2;
         },
-        super::AttributeMaskLanes {
-            small: [&[]; 8],
-            context_7_next_30: &[],
-            context_7_upper_4: &[],
-            large_words: &[],
+        |ctx| {
+            let error = super::decode(
+                ctx,
+                [&[3], &[], &[], &[], &[], &[], &[], &[]],
+                &[3],
+                &[10],
+                &[0],
+                super::SplitLanes {
+                    faces: &[],
+                    positions: &[],
+                },
+                super::AttributeMaskLanes {
+                    small: [&[]; 8],
+                    context_7_next_30: &[],
+                    context_7_upper_4: &[],
+                    large_words: &[],
+                },
+            )
+            .expect_err("three vertex face slots exceed two items");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.used == 0
+                        && limit.additional == 3
+            ));
         },
-    )
-    .expect_err("three vertex face slots exceed two items");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 3
-    ));
-
-})
+    );
 }
 
 #[test]
 fn jt_face_vertex_slots_refuse_through_decode() {
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 10; }, |ctx| {
-
-    let error = super::decode(
-        ctx,
-        [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
-        &[3, 3, 3, 3],
-        &[10, 12, 11, 13],
-        &[0, 0, 0, 0],
-        super::SplitLanes {
-            faces: &[],
-            positions: &[],
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 10;
         },
-        super::AttributeMaskLanes {
-            small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
-            context_7_next_30: &[],
-            context_7_upper_4: &[],
-            large_words: &[],
+        |ctx| {
+            let error = super::decode(
+                ctx,
+                [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
+                &[3, 3, 3, 3],
+                &[10, 12, 11, 13],
+                &[0, 0, 0, 0],
+                super::SplitLanes {
+                    faces: &[],
+                    positions: &[],
+                },
+                super::AttributeMaskLanes {
+                    small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
+                    context_7_next_30: &[],
+                    context_7_upper_4: &[],
+                    large_words: &[],
+                },
+            )
+            .expect_err("three face slots exceed remaining collection items");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.used == 8
+                        && limit.additional == 3
+            ));
         },
-    )
-    .expect_err("three face slots exceed remaining collection items");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.used == 8
-                && limit.additional == 3
-    ));
-
-})
+    );
 }
 
 #[test]

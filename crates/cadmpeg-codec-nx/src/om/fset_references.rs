@@ -113,7 +113,14 @@ impl FsetReferences<()> {
             )
             .ok()
         };
-        super::unique_candidate(bytes.len().checked_sub(1).into_iter().flat_map(|last| 0..last).filter_map(decode))
+        super::unique_candidate(
+            bytes
+                .len()
+                .checked_sub(1)
+                .into_iter()
+                .flat_map(|last| 0..last)
+                .filter_map(decode),
+        )
     }
 
     pub(crate) fn resolve<B>(
@@ -160,24 +167,25 @@ mod tests {
 
     #[test]
     fn fset_resolution_returns_collection_refusal() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
-
-        let error = graph()
-            .resolve(0, |index| {
-                ctx.charge_collection_items(1, "NX FSET target")?;
-                Ok(Some(index))
-            })
-            .expect_err("target resolution refusal");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = graph()
+                    .resolve(0, |index| {
+                        ctx.charge_collection_items(1, "NX FSET target")?;
+                        Ok(Some(index))
+                    })
+                    .expect_err("target resolution refusal");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn fset_resolution_preserves_both_groups() {

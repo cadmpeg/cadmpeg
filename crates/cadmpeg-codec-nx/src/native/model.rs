@@ -145,13 +145,13 @@ use super::om::{
     ConfigurationAttributeUse, DataBlock, DataBlockColumnIndexTable,
     DataBlockControlClassReference, DataBlockControlForm, DataBlockControlHandlePair,
     DataBlockControlIndexValue, DataBlockControlReference, DataBlockControlValue,
-    DataBlockReference, ParameterFormula, ExpressionDeclaration, ExternalReference,
-    ExternalReferenceEmptyRecord, ExternalReferenceIndexedRecord, ExternalReferenceRecord,
-    ExternalReferenceRecordChild, ExternalReferenceRecordStringUse,
-    ExternalReferenceTailReferencePair, FieldDefinition, MaterialTextureCatalogEntry, ObjectRecord,
-    ObjectRecordHandlePair, ObjectReference, OmAuditTrailRow, OmOperationStateCounter,
-    OmOperationStateMessage, OmRecordArea, PartAttribute, PartColorDefinition, PartColorTable,
-    PersistentHandle, RmFastLoadObjectId, RmFastLoadObjectIdTable, StoreHeader, StringValue,
+    DataBlockReference, ExpressionDeclaration, ExternalReference, ExternalReferenceEmptyRecord,
+    ExternalReferenceIndexedRecord, ExternalReferenceRecord, ExternalReferenceRecordChild,
+    ExternalReferenceRecordStringUse, ExternalReferenceTailReferencePair, FieldDefinition,
+    MaterialTextureCatalogEntry, ObjectRecord, ObjectRecordHandlePair, ObjectReference,
+    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage, OmRecordArea,
+    ParameterFormula, PartAttribute, PartColorDefinition, PartColorTable, PersistentHandle,
+    RmFastLoadObjectId, RmFastLoadObjectIdTable, StoreHeader, StringValue,
 };
 use super::parasolid::{
     parasolid_attribute_class_uses, parasolid_attribute_definitions,
@@ -295,8 +295,7 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) group_records: Vec<ParasolidGroupRecord>,
     pub(super) group_members: Vec<ParasolidGroupMember>,
     pub(super) deltas_transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
-    pub(super) deltas_terminal_null_references:
-        Vec<ParasolidDeltasTerminalNullReferences>,
+    pub(super) deltas_terminal_null_references: Vec<ParasolidDeltasTerminalNullReferences>,
     pub(super) deltas_records: Vec<ParasolidDeltasRecord>,
     pub(super) deltas_tombstones: Vec<ParasolidDeltasTombstone>,
     pub(super) deltas_body_revisions: Vec<ParasolidDeltasBodyRevision>,
@@ -304,12 +303,10 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) deltas_tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(super) deltas_reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
     pub(super) deltas_reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
-    pub(super) deltas_schema_reference_preambles:
-        Vec<ParasolidDeltasSchemaReferencePreamble>,
+    pub(super) deltas_schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
     pub(super) deltas_reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(super) deltas_type_150_state_packets: Vec<ParasolidDeltasType150StatePacket>,
-    pub(super) deltas_inline_schema_declarations:
-        Vec<ParasolidDeltasInlineSchemaDeclaration>,
+    pub(super) deltas_inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
     pub(super) deltas_inline_body_states: Vec<ParasolidDeltasInlineBodyState>,
     pub(super) deltas_residual_spans: Vec<ParasolidDeltasResidualSpan>,
     pub(super) blend_surface_records: Vec<ParasolidBlendSurfaceRecord>,
@@ -337,8 +334,7 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) entity_51_structured_uses: Vec<ParasolidEntity51StructuredUse>,
     pub(super) attribute_class_uses: Vec<ParasolidAttributeClassUse>,
     pub(super) attribute_field_uses: Vec<ParasolidAttributeFieldUse>,
-    pub(super) topology_attribute_list_references:
-        Vec<ParasolidTopologyAttributeListReference>,
+    pub(super) topology_attribute_list_references: Vec<ParasolidTopologyAttributeListReference>,
     pub(super) topology_attribute_class_uses: Vec<ParasolidTopologyAttributeClassUse>,
 }
 
@@ -608,9 +604,18 @@ pub(crate) fn extract_segment_lineage(
     )?;
     let booleans = feature_boolean_operations(ctx, container)?;
     let statuses = segment_body_lineage_statuses(
-ctx,
-crate::native::segments::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &body_data_block_uses, data_blocks: &blocks, booleans: &booleans, operands: &operands, bindings: &bindings, inputs: &inputs },
-)?
+        ctx,
+        &crate::native::segments::BodyLineageInputs {
+            labels: &labels,
+            references: &references,
+            data_block_uses: &body_data_block_uses,
+            data_blocks: &blocks,
+            booleans: &booleans,
+            operands: &operands,
+            bindings: &bindings,
+            inputs: &inputs,
+        },
+    )?
     .unwrap_or_default();
     Ok(SegmentLineage {
         bindings,
@@ -1517,12 +1522,10 @@ impl NativeModel {
                 deltas_tagged_reference_lanes: deltas_events.tagged_reference_lanes,
                 deltas_reference_type_maps: deltas_events.reference_type_maps,
                 deltas_reference_state_packets: deltas_events.reference_state_packets,
-                deltas_schema_reference_preambles: deltas_events
-                    .schema_reference_preambles,
+                deltas_schema_reference_preambles: deltas_events.schema_reference_preambles,
                 deltas_reference_marker_packets: deltas_events.reference_marker_packets,
                 deltas_type_150_state_packets: deltas_events.type_150_state_packets,
-                deltas_inline_schema_declarations: deltas_events
-                    .inline_schema_declarations,
+                deltas_inline_schema_declarations: deltas_events.inline_schema_declarations,
                 deltas_inline_body_states: deltas_events.inline_body_states,
                 deltas_residual_spans: deltas_events.residual_spans,
                 blend_surface_records: parasolid_blend_surface_records,

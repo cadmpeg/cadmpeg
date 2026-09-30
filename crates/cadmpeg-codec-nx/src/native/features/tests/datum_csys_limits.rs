@@ -30,15 +30,17 @@ fn datum_csys_refusal(
     .expect("admitted datum CSYS constructions");
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].frame.members().len(), 8);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    feature_datum_csys_constructions(ctx, &container)
-        .expect_err("datum CSYS construction resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_datum_csys_constructions(ctx, &container)
+                .expect_err("datum CSYS construction resource limit")
+        },
+    )
 }
 
 #[test]

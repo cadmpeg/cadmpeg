@@ -232,22 +232,25 @@ mod tests {
 
     fn lane_refusal(lane: &[u8], route: Route, dimension: ResourceDimension) -> CodecError {
         let container = lane_container(lane);
-        
-        
+
         let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-            ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
-            ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
-            ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
+            ResourceDimension::CollectionItems => |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            ResourceDimension::RetainedBytes => |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            ResourceDimension::WorkUnits => |policy| {
+                policy.limits.max_work_units = 0;
+            },
             _ => panic!("unsupported test dimension"),
         };
         crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+            route(ctx, &container).expect_err("lane resource refusal")
+        })
+    }
 
-        route(ctx, &container).expect_err("lane resource refusal")
-    
-})
-}
-
-#[test]
+    #[test]
     fn native_compact_lane_routes_keep_resolved_frames() {
         let routes: [(_, Route); 2] = [(COUNTED, counted_count), (ABR, abr_count)];
         for (lane, route) in routes {

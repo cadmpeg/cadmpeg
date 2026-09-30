@@ -10,14 +10,16 @@ fn link_order_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> cadmpeg_core
         schema_role: crate::native::om::OmSchemaRole::FeatureHistory,
         location: crate::native::segments::om_location::OmLocation::new(1, 0).unwrap(),
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    crate::native::features::canonical_feature_history_links(ctx, vec![link]).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::canonical_feature_history_links(ctx, vec![link]).unwrap_err()
+        },
+    )
 }
 
 #[test]

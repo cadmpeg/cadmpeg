@@ -50,14 +50,14 @@ fn sketch_record_refusal(
             .expect("admitted sketch record route")
             > 0
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("sketch record resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("sketch record resource limit"),
+    )
 }
 
 macro_rules! sketch_record_limit_tests {

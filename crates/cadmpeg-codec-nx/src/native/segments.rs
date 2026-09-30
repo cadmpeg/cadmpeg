@@ -321,15 +321,6 @@ pub(super) struct SegmentOmLink {
     pub(super) location: OmLocation,
 }
 
-/// Return body objects whose latest decoded writer is not consumed by a later
-/// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
-/// the retained history area unless a decoded operation writes them. Primary
-/// references from operations with resolved offset-store inputs do not
-/// participate in object-identity lineage, including missing or ambiguous
-/// body ordinals or duplicate primary-body fields. The label arena is
-/// source/newest-first; all history positions below use oldest-first order
-/// within each section.
-
 pub(super) struct BodyLineageInputs<'inputs> {
     pub(super) labels: &'inputs [FeatureOperationLabel],
     pub(super) references: &'inputs [FeatureBodyReference],
@@ -341,11 +332,28 @@ pub(super) struct BodyLineageInputs<'inputs> {
     pub(super) inputs: &'inputs [FeatureInputBlock],
 }
 
+/// Return body objects whose latest decoded writer is not consumed by a later
+/// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
+/// the retained history area unless a decoded operation writes them. Primary
+/// references from operations with resolved offset-store inputs do not
+/// participate in object-identity lineage, including missing or ambiguous
+/// body ordinals or duplicate primary-body fields. The label arena is
+/// source/newest-first; all history positions below use oldest-first order
+/// within each section.
 fn terminal_feature_body_indices(
-ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-body_lineage_inputs: BodyLineageInputs<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    body_lineage_inputs: &BodyLineageInputs<'_>,
 ) -> Result<Option<BTreeSet<u32>>, cadmpeg_core::CodecError> {
-    let BodyLineageInputs { labels, references, data_block_uses, data_blocks, booleans, operands, bindings, inputs } = body_lineage_inputs;
+    let &BodyLineageInputs {
+        labels,
+        references,
+        data_block_uses,
+        data_blocks,
+        booleans,
+        operands,
+        bindings,
+        inputs,
+    } = body_lineage_inputs;
 
     let scan_work = references
         .len()
@@ -548,20 +556,15 @@ body_lineage_inputs: BodyLineageInputs<'_>,
 
 /// Resolve one atomic terminal status for every segment-bound body image.
 pub(super) fn segment_body_lineage_statuses(
-ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-body_lineage_inputs: BodyLineageInputs<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    body_lineage_inputs: &BodyLineageInputs<'_>,
 ) -> Result<Option<Vec<SegmentBodyLineageStatus>>, cadmpeg_core::CodecError> {
-    let BodyLineageInputs { labels, references, data_block_uses, data_blocks, booleans, operands, bindings, inputs } = body_lineage_inputs;
-
-    let terminal = terminal_feature_body_indices(
-ctx,
-BodyLineageInputs { labels, references, data_block_uses, data_blocks, booleans, operands, bindings, inputs },
-)?;
+    let terminal = terminal_feature_body_indices(ctx, body_lineage_inputs)?;
     let Some(terminal) = terminal else {
         return Ok(None);
     };
     let mut output = Vec::new();
-    for binding in bindings {
+    for binding in body_lineage_inputs.bindings {
         let statuses = [binding.body_object_index, binding.body_alias_object_index]
             .map(|identity| terminal.contains(&identity));
         if statuses[0] != statuses[1] {
@@ -1110,23 +1113,32 @@ mod tests {
         }];
         let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             super::segment_body_lineage_statuses(
-ctx,
-super::BodyLineageInputs { labels: &[], references: &[], data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
-)
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &[],
+                    references: &[],
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[],
+                },
+            )
         };
         let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
             .expect("admitted segment alias lineage")
             .expect("complete segment alias lineage");
         assert_eq!(admitted.len(), 1);
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-        route(ctx).expect_err("segment alias resource limit")
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| route(ctx).expect_err("segment alias resource limit"),
+        )
+    }
 
     #[test]
     fn segment_alias_lineage_refuses_collection_limit() {
@@ -1165,7 +1177,6 @@ super::BodyLineageInputs { labels: &[], references: &[], data_block_uses: &[], d
         );
     }
 
-
     use crate::test_support::test_om::segment_body_binding_payload;
     use crate::test_support::test_om::segment_body_binding_repeated_link_payload;
     use crate::test_support::test_om::segment_extended_wrapper_payload;
@@ -1201,32 +1212,34 @@ super::BodyLineageInputs { labels: &[], references: &[], data_block_uses: &[], d
 
     #[test]
     fn segment_index_rows_refuse_collection_limit_before_record_allocation() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
         let container =
             crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
                 .expect("valid segment-index container");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
 
-        let error = super::segment_index_rows(ctx, &container)
-            .expect_err("two native rows exceed one collection item");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx segment index rows"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                let error = super::segment_index_rows(ctx, &container)
+                    .expect_err("two native rows exceed one collection item");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::CollectionItems
+                            && limit.operation == "nx segment index rows"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn segment_index_rows_refuse_identity_retained_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
         let container =
@@ -1234,26 +1247,29 @@ super::BodyLineageInputs { labels: &[], references: &[], data_block_uses: &[], d
                 .expect("valid segment-index container");
         let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = u64::try_from(row_slots + first_id.len() - 1).unwrap(); }, |ctx| {
 
-        let error = super::segment_index_rows(ctx, &container)
-            .expect_err("first identity exceeds the retained limit by one byte");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx segment index row identity"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(row_slots + first_id.len() - 1).unwrap();
+            },
+            |ctx| {
+                let error = super::segment_index_rows(ctx, &container)
+                    .expect_err("first identity exceeds the retained limit by one byte");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx segment index row identity"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn segment_index_rows_refuse_source_entry_retained_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
         let container =
@@ -1262,23 +1278,25 @@ super::BodyLineageInputs { labels: &[], references: &[], data_block_uses: &[], d
         let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
         let source_entry = "/Root/UG_PART/UG_PART";
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes =
-            u64::try_from(row_slots + first_id.len() + source_entry.len() - 1).unwrap(); }, |ctx| {
 
-        let error = super::segment_index_rows(ctx, &container)
-            .expect_err("source entry exceeds the retained limit by one byte");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx segment index source entry"
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(row_slots + first_id.len() + source_entry.len() - 1).unwrap();
+            },
+            |ctx| {
+                let error = super::segment_index_rows(ctx, &container)
+                    .expect_err("source entry exceeds the retained limit by one byte");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx segment index source entry"
+                ));
+            },
+        );
+    }
 
     #[test]
     fn decode_links_segment_index_word_to_validated_stream_wrapper() {
@@ -1303,92 +1321,113 @@ super::BodyLineageInputs { labels: &[], references: &[], data_block_uses: &[], d
 
     #[test]
     fn segment_stream_links_refuse_matching_work_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
-        
-        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let error = super::segment_stream_links(ctx, &scan.container, &scan.streams)
-            .expect_err("stream matching needs work");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "nx segment stream matching"
-        ));
-    
-})
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
 
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_work_units = 0;
+                    },
+                    |ctx| {
+                        let error =
+                            super::segment_stream_links(ctx, &scan.container, &scan.streams)
+                                .expect_err("stream matching needs work");
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == ResourceDimension::WorkUnits
+                                    && limit.operation == "nx segment stream matching"
+                        ));
+                    },
+                );
+            },
+        );
+    }
 
     #[test]
     fn segment_stream_links_refuse_collection_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
-        
-        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let error = super::segment_stream_links(ctx, &scan.container, &scan.streams)
-            .expect_err("one stream link exceeds zero collection items");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx segment stream links"
-        ));
-    
-})
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
 
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_collection_items = 0;
+                    },
+                    |ctx| {
+                        let error =
+                            super::segment_stream_links(ctx, &scan.container, &scan.streams)
+                                .expect_err("one stream link exceeds zero collection items");
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == ResourceDimension::CollectionItems
+                                    && limit.operation == "nx segment stream links"
+                        ));
+                    },
+                );
+            },
+        );
+    }
 
     #[test]
     fn segment_stream_links_refuse_retained_identity_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
-        
-        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
-        let slot = std::mem::size_of::<super::SegmentStreamLink>();
-        let id = "nx:segment-stream-links:link#0";
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = u64::try_from(slot + id.len() - 1).unwrap(); }, |ctx| {
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let error = super::segment_stream_links(ctx, &scan.container, &scan.streams)
-            .expect_err("stream link identity exceeds the retained limit by one byte");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx segment stream link identity"
-        ));
-    
-})
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
+                let slot = std::mem::size_of::<super::SegmentStreamLink>();
+                let id = "nx:segment-stream-links:link#0";
 
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_retained_bytes =
+                            u64::try_from(slot + id.len() - 1).unwrap();
+                    },
+                    |ctx| {
+                        let error =
+                            super::segment_stream_links(ctx, &scan.container, &scan.streams)
+                                .expect_err(
+                                    "stream link identity exceeds the retained limit by one byte",
+                                );
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == ResourceDimension::RetainedBytes
+                                    && limit.operation == "nx segment stream link identity"
+                        ));
+                    },
+                );
+            },
+        );
+    }
 
     #[test]
     fn decode_binds_segment_body_object_index_to_partition_stream() {
@@ -1417,106 +1456,127 @@ let root = cadmpeg_core::decode::View::over_retained(&file);
 
     #[test]
     fn segment_body_bindings_refuse_collection_limit_before_record_allocation() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             segment_body_binding_payload("partition"),
         )]);
-        
-        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let error = super::segment_body_bindings(ctx, &scan.container, &scan.streams)
-            .expect_err("one binding exceeds zero collection items");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx segment body bindings"
-        ));
-    
-})
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
 
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_collection_items = 0;
+                    },
+                    |ctx| {
+                        let error =
+                            super::segment_body_bindings(ctx, &scan.container, &scan.streams)
+                                .expect_err("one binding exceeds zero collection items");
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == ResourceDimension::CollectionItems
+                                    && limit.operation == "nx segment body bindings"
+                        ));
+                    },
+                );
+            },
+        );
+    }
 
     #[test]
     fn segment_body_bindings_refuse_identity_retained_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             segment_body_binding_payload("partition"),
         )]);
-        
-        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-        let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
-        let first_id = "nx:segment-body-bindings:binding#0";
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes =
-            u64::try_from(binding_slot + first_id.len() - 1).unwrap(); }, |ctx| {
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let error = super::segment_body_bindings(ctx, &scan.container, &scan.streams)
-            .expect_err("binding identity exceeds retained limit by one byte");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx segment body binding identity"
-        ));
-    
-})
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
+                let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+                let first_id = "nx:segment-body-bindings:binding#0";
 
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_retained_bytes =
+                            u64::try_from(binding_slot + first_id.len() - 1).unwrap();
+                    },
+                    |ctx| {
+                        let error =
+                            super::segment_body_bindings(ctx, &scan.container, &scan.streams)
+                                .expect_err("binding identity exceeds retained limit by one byte");
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == ResourceDimension::RetainedBytes
+                                    && limit.operation == "nx segment body binding identity"
+                        ));
+                    },
+                );
+            },
+        );
+    }
 
     #[test]
     fn segment_body_bindings_refuse_stream_link_identity_retained_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             segment_body_binding_payload("partition"),
         )]);
-        
-        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-        let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
-        let binding_id = "nx:segment-body-bindings:binding#0";
-        let stream_link = "nx:segment-stream-links:link#0";
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes =
-            u64::try_from(binding_slot + binding_id.len() + stream_link.len() - 1).unwrap(); }, |ctx| {
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
 
-        let error = super::segment_body_bindings(ctx, &scan.container, &scan.streams)
-            .expect_err("stream-link identity exceeds retained limit by one byte");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx segment body stream link identity"
-        ));
-    
-})
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
+                let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+                let binding_id = "nx:segment-body-bindings:binding#0";
+                let stream_link = "nx:segment-stream-links:link#0";
 
-})
-}
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_retained_bytes =
+                            u64::try_from(binding_slot + binding_id.len() + stream_link.len() - 1)
+                                .unwrap();
+                    },
+                    |ctx| {
+                        let error =
+                            super::segment_body_bindings(ctx, &scan.container, &scan.streams)
+                                .expect_err(
+                                    "stream-link identity exceeds retained limit by one byte",
+                                );
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == ResourceDimension::RetainedBytes
+                                    && limit.operation == "nx segment body stream link identity"
+                        ));
+                    },
+                );
+            },
+        );
+    }
 
     #[test]
     fn decode_binds_segment_body_object_index_to_plain_cached_body_stream() {
@@ -1743,9 +1803,19 @@ let root = cadmpeg_core::decode::View::over_retained(&file);
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &[], inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &booleans,
+                    operands: &[],
+                    bindings: &[],
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([10].into_iter().collect())
         );
     }
@@ -1807,9 +1877,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &[],
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &booleans,
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -1879,9 +1959,19 @@ super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &booleans,
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -1920,9 +2010,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -1984,9 +2084,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2024,10 +2134,22 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
-        let statuses = crate::test_support::with_decode_context(|ctx| super::segment_body_lineage_statuses(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted segment lineage statuses")
+        let statuses = crate::test_support::with_decode_context(|ctx| {
+            super::segment_body_lineage_statuses(
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[],
+                },
+            )
+        })
+        .expect("admitted segment lineage statuses")
         .expect("complete delete-only lineage");
         assert_eq!(statuses.len(), 2);
         assert!(!statuses[0].terminal);
@@ -2073,10 +2195,22 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
             source_offset: 0,
         }];
 
-        let statuses = crate::test_support::with_decode_context(|ctx| super::segment_body_lineage_statuses(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &data_block_uses, data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted segment lineage statuses")
+        let statuses = crate::test_support::with_decode_context(|ctx| {
+            super::segment_body_lineage_statuses(
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &data_block_uses,
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[],
+                },
+            )
+        })
+        .expect("admitted segment lineage statuses")
         .expect("segment binding establishes lineage");
         assert_eq!(statuses.len(), 1);
         assert!(statuses[0].terminal);
@@ -2137,10 +2271,22 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
             source_offset: 0,
         }];
 
-        let statuses = crate::test_support::with_decode_context(|ctx| super::segment_body_lineage_statuses(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &blocks, booleans: &[], operands: &[], bindings: &bindings, inputs: &inputs },
-)).expect("admitted segment lineage statuses")
+        let statuses = crate::test_support::with_decode_context(|ctx| {
+            super::segment_body_lineage_statuses(
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &blocks,
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &inputs,
+                },
+            )
+        })
+        .expect("admitted segment lineage statuses")
         .expect("segment binding establishes lineage");
         assert_eq!(statuses.len(), 1);
         assert!(statuses[0].terminal);
@@ -2201,9 +2347,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &blocks, booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &[],
+                    data_block_uses: &[],
+                    data_blocks: &blocks,
+                    booleans: &booleans,
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2262,9 +2418,19 @@ super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &blocks, booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &[],
+                    data_block_uses: &[],
+                    data_blocks: &blocks,
+                    booleans: &booleans,
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2307,9 +2473,19 @@ super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -2352,9 +2528,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2399,9 +2585,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &[], inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &booleans,
+                    operands: &[],
+                    bindings: &[],
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2455,9 +2651,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
 
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &references,
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &booleans,
+                    operands: &[],
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2500,9 +2706,19 @@ super::BodyLineageInputs { labels: &labels, references: &references, data_block_
         }];
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &operands, bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &[],
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &operands,
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2545,9 +2761,19 @@ super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[
         }];
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-ctx,
-super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &operands, bindings: &bindings, inputs: &[] },
-)).expect("admitted terminal body lineage"),
+                ctx,
+                &super::BodyLineageInputs {
+                    labels: &labels,
+                    references: &[],
+                    data_block_uses: &[],
+                    data_blocks: &[],
+                    booleans: &[],
+                    operands: &operands,
+                    bindings: &bindings,
+                    inputs: &[]
+                },
+            ))
+            .expect("admitted terminal body lineage"),
             Some([20, 30].into_iter().collect())
         );
     }
