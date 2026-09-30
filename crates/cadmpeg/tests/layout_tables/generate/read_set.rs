@@ -21,7 +21,9 @@ impl Reads {
 
     pub(super) fn test_only(&self, record: &str, name: &str) -> bool {
         self.contains(record, name)
-            && !self.production.contains(&(record.to_string(), name.to_string()))
+            && !self
+                .production
+                .contains(&(record.to_string(), name.to_string()))
     }
 }
 
@@ -50,7 +52,8 @@ fn test_attribute(meta: &syn::Meta) -> bool {
     }
     if let syn::Meta::List(list) = meta {
         return list.path.is_ident("cfg")
-            && syn::parse2::<syn::Meta>(list.tokens.clone()).is_ok_and(|meta| requires_test(&meta));
+            && syn::parse2::<syn::Meta>(list.tokens.clone())
+                .is_ok_and(|meta| requires_test(&meta));
     }
     false
 }
@@ -67,13 +70,16 @@ fn production_tokens(stream: TokenStream) -> TokenStream {
             if !is_punct(hash, '#') || attribute.delimiter() != Delimiter::Bracket {
                 break;
             }
-            test_only |= syn::parse2::<syn::Meta>(attribute.stream()).is_ok_and(|meta| test_attribute(&meta));
+            test_only |= syn::parse2::<syn::Meta>(attribute.stream())
+                .is_ok_and(|meta| test_attribute(&meta));
             index += 2;
         }
         if test_only {
             while let Some(token) = tokens.get(index) {
                 index += 1;
-                if is_punct(token, ';') || matches!(token, TokenTree::Group(group) if group.delimiter() == Delimiter::Brace) {
+                if is_punct(token, ';')
+                    || matches!(token, TokenTree::Group(group) if group.delimiter() == Delimiter::Brace)
+                {
                     break;
                 }
             }
@@ -82,7 +88,10 @@ fn production_tokens(stream: TokenStream) -> TokenStream {
         output.extend(tokens[start..index].iter().cloned());
         if let Some(token) = tokens.get(index) {
             output.extend([match token {
-                TokenTree::Group(group) => TokenTree::Group(Group::new(group.delimiter(), production_tokens(group.stream()))),
+                TokenTree::Group(group) => TokenTree::Group(Group::new(
+                    group.delimiter(),
+                    production_tokens(group.stream()),
+                )),
                 token => token.clone(),
             }]);
             index += 1;
@@ -91,21 +100,39 @@ fn production_tokens(stream: TokenStream) -> TokenStream {
     output
 }
 
-fn test_modules(items: &[syn::Item], directory: &Path, inherited: bool, files: &mut BTreeSet<PathBuf>) -> Result<(), String> {
+fn test_modules(
+    items: &[syn::Item],
+    directory: &Path,
+    inherited: bool,
+    files: &mut BTreeSet<PathBuf>,
+) -> Result<(), String> {
     for item in items {
-        let syn::Item::Mod(module) = item else { continue; };
-        if module.ident == "layout" { continue; }
+        let syn::Item::Mod(module) = item else {
+            continue;
+        };
+        if module.ident == "layout" {
+            continue;
+        }
         let test_only = inherited || module.attrs.iter().any(|attr| test_attribute(&attr.meta));
         let child = directory.join(module.ident.to_string());
         if let Some((_, items)) = &module.content {
             test_modules(items, &child, test_only, files)?;
         } else {
             let sibling = child.with_extension("rs");
-            let path = if sibling.is_file() { sibling } else { child.join("mod.rs") };
-            if !path.is_file() { continue; }
-            if test_only { files.insert(path.clone()); }
+            let path = if sibling.is_file() {
+                sibling
+            } else {
+                child.join("mod.rs")
+            };
+            if !path.is_file() {
+                continue;
+            }
+            if test_only {
+                files.insert(path.clone());
+            }
             let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
-            let file = syn::parse_file(&source).map_err(|error| format!("{}: {error}", path.display()))?;
+            let file =
+                syn::parse_file(&source).map_err(|error| format!("{}: {error}", path.display()))?;
             test_modules(&file.items, &child, test_only, files)?;
         }
     }
@@ -235,7 +262,9 @@ fn sources(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<(), String> {
         let path = entry.map_err(|error| error.to_string())?.path();
         if path.is_dir() {
             sources(&path, paths)?;
-        } else if path.extension().is_some_and(|ext| ext == "rs") && path != directory.join("layout.rs") {
+        } else if path.extension().is_some_and(|ext| ext == "rs")
+            && path != directory.join("layout.rs")
+        {
             paths.push(path);
         }
     }
@@ -262,7 +291,9 @@ fn parent_imports(path: &Path, root: &Path) -> Result<Imports, String> {
             continue;
         }
         let source = std::fs::read_to_string(&parent).map_err(|error| error.to_string())?;
-        let tokens = source.parse::<TokenStream>().map_err(|error| error.to_string())?;
+        let tokens = source
+            .parse::<TokenStream>()
+            .map_err(|error| error.to_string())?;
         imports = scope(tokens, &imports)?.0;
     }
     Ok(imports)
@@ -281,7 +312,9 @@ pub(super) fn layout_reads(root: &Path) -> Result<Reads, String> {
     for path in paths {
         let result = (|| {
             let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
-            let tokens = source.parse::<TokenStream>().map_err(|error| error.to_string())?;
+            let tokens = source
+                .parse::<TokenStream>()
+                .map_err(|error| error.to_string())?;
             let imports = parent_imports(&path, root)?;
             scan(tokens.clone(), &imports, &mut reads.all)?;
             if !test_files.contains(&path) {
@@ -301,32 +334,64 @@ mod tests {
 
     fn reads(source: &str) -> Result<BTreeSet<(String, String)>, String> {
         let mut reads = BTreeSet::new();
-        scan(source.parse().map_err(|error: proc_macro2::LexError| error.to_string())?, &Imports::default(), &mut reads)?;
+        scan(
+            source
+                .parse()
+                .map_err(|error: proc_macro2::LexError| error.to_string())?,
+            &Imports::default(),
+            &mut reads,
+        )?;
         Ok(reads)
     }
 
     fn expected(items: &[(&str, &str)]) -> BTreeSet<(String, String)> {
-        items.iter().map(|(record, name)| (record.to_string(), name.to_string())).collect()
+        items
+            .iter()
+            .map(|(record, name)| (record.to_string(), name.to_string()))
+            .collect()
     }
 
     #[test]
     fn layout_reads_separate_test_only_items() -> Result<(), String> {
         let source = "use crate::layout::header as h; h::LEN; #[cfg(test)] mod tests { h::MAGIC; } #[test] fn test() { h::OFFSET; } #[cfg(all(feature = \"x\", test))] const C: usize = h::VALUE;";
         let mut production = BTreeSet::new();
-        scan(production_tokens(source.parse().map_err(|error: proc_macro2::LexError| error.to_string())?), &Imports::default(), &mut production)?;
+        scan(
+            production_tokens(
+                source
+                    .parse()
+                    .map_err(|error: proc_macro2::LexError| error.to_string())?,
+            ),
+            &Imports::default(),
+            &mut production,
+        )?;
         assert_eq!(production, expected(&[("header", "LEN")]));
-        assert_eq!(reads(source)?, expected(&[("header", "LEN"), ("header", "MAGIC"), ("header", "OFFSET"), ("header", "VALUE")]));
+        assert_eq!(
+            reads(source)?,
+            expected(&[
+                ("header", "LEN"),
+                ("header", "MAGIC"),
+                ("header", "OFFSET"),
+                ("header", "VALUE")
+            ])
+        );
         Ok(())
     }
 
     #[test]
-    fn layout_reads_follow_external_test_modules_and_ignore_generated_source() -> Result<(), Box<dyn std::error::Error>> {
+    fn layout_reads_follow_external_test_modules_and_ignore_generated_source(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let temporary = tempfile::tempdir()?;
         let root = temporary.path();
         std::fs::create_dir(root.join("reader"))?;
         std::fs::write(root.join("lib.rs"), "mod reader; mod layout;")?;
-        std::fs::write(root.join("reader.rs"), "use crate::layout::header as h; const C: usize = h::LEN; #[cfg(test)] mod checks;")?;
-        std::fs::write(root.join("reader/checks.rs"), "use super::h; const C: usize = h::MAGIC;")?;
+        std::fs::write(
+            root.join("reader.rs"),
+            "use crate::layout::header as h; const C: usize = h::LEN; #[cfg(test)] mod checks;",
+        )?;
+        std::fs::write(
+            root.join("reader/checks.rs"),
+            "use super::h; const C: usize = h::MAGIC;",
+        )?;
         std::fs::write(root.join("layout.rs"), "crate::layout::unread::OFFSET;")?;
         let reads = layout_reads(root)?;
         assert!(reads.contains("header", "LEN"));
@@ -339,9 +404,15 @@ mod tests {
     #[test]
     fn layout_reads_resolve_reference_forms() -> Result<(), String> {
         assert_eq!(reads("use crate::layout::header; header::LEN; use crate::layout::row as entry; entry::OFFSET;")?, expected(&[("header", "LEN"), ("row", "OFFSET")]));
-        assert_eq!(reads("use crate::layout::{header, row as entry}; header::LEN; entry::OFFSET;")?, expected(&[("header", "LEN"), ("row", "OFFSET")]));
+        assert_eq!(
+            reads("use crate::layout::{header, row as entry}; header::LEN; entry::OFFSET;")?,
+            expected(&[("header", "LEN"), ("row", "OFFSET")])
+        );
         assert_eq!(reads("crate::layout::header::LEN; super::layout::row::OFFSET; self::layout::token::TAG; layout::header::MAGIC_VALUE;")?, expected(&[("header", "LEN"), ("row", "OFFSET"), ("token", "TAG"), ("header", "MAGIC_VALUE")]));
-        assert_eq!(reads("use crate::{layout::{header as h, row}}; h::LEN; row::OFFSET;")?, expected(&[("header", "LEN"), ("row", "OFFSET")]));
+        assert_eq!(
+            reads("use crate::{layout::{header as h, row}}; h::LEN; row::OFFSET;")?,
+            expected(&[("header", "LEN"), ("row", "OFFSET")])
+        );
         assert_eq!(reads("use crate::layout as offsets; offsets::header::LEN; use crate::layout::row::{OFFSET as AT}; AT;")?, expected(&[("header", "LEN"), ("row", "OFFSET")]));
         Ok(())
     }
@@ -355,7 +426,10 @@ mod tests {
     #[test]
     fn layout_reads_keep_scoped_aliases_and_macro_paths() -> Result<(), String> {
         assert_eq!(reads("use crate::layout::header as h; fn f() { use crate::layout::row as h; m!(h::OFFSET); } h::LEN;")?, expected(&[("header", "LEN"), ("row", "OFFSET")]));
-        assert_eq!(reads("use crate::layout::header as h; mod tests { use super::h; h::LEN; }")?, expected(&[("header", "LEN")]));
+        assert_eq!(
+            reads("use crate::layout::header as h; mod tests { use super::h; h::LEN; }")?,
+            expected(&[("header", "LEN")])
+        );
         Ok(())
     }
 }
