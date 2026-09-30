@@ -15,9 +15,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain,
-    nurbs_pcurve_uv, nurbs_surface_isocurve, nurbs_surface_parameter_near_point,
+    nurbs_pcurve_uv, nurbs_surface_isocurve,
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
-    nurbs_surface_point, surface_point,
 };
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, SurfaceParameterAxis},
@@ -4373,9 +4372,7 @@ fn derive_spherical_pcurves(
                 fits = false;
                 break;
             };
-            let Some(lifted) = cadmpeg_ir::eval::finite_or_refusal(
-                surface_point(&surface.geometry, uv.u, uv.v),
-            )? else {
+            let Some(lifted) = super::evaluation::surface_point(ctx, &surface.geometry, uv.u, uv.v)? else {
                 fits = false;
                 break;
             };
@@ -4879,13 +4876,8 @@ fn intersection_support_pcurve(
             .into_iter()
             .zip(targets)
         {
-            let point = match surface_point(surface, parameters.u, parameters.v) {
-                Ok(point) => point.get(),
-                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-                    return Err(limit.into())
-                }
-                Err(_) => return Ok(None),
-            };
+            let Some(point) = super::evaluation::surface_point(ctx, surface, parameters.u, parameters.v)? else { return Ok(None); };
+            let point = point.get();
             if squared_distance(point, target) > tolerance * tolerance {
                 return Ok(None);
             }
@@ -4893,13 +4885,8 @@ fn intersection_support_pcurve(
         let mut mapped_points = Vec::new();
         ctx.reserve_collection_vec(&mut mapped_points, control_points.len(), "map intersection support controls")?;
         for parameters in &control_points {
-            let point = match surface_point(surface, parameters.u, parameters.v) {
-                Ok(point) => point.get(),
-                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-                    return Err(limit.into())
-                }
-                Err(_) => return Ok(None),
-            };
+            let Some(point) = super::evaluation::surface_point(ctx, surface, parameters.u, parameters.v)? else { return Ok(None); };
+            let point = point.get();
             mapped_points.push(point);
         }
         let mut control_errors = Vec::new();
@@ -5671,15 +5658,9 @@ fn extended_nurbs_isocurve_axis_candidate(
                     .chain(std::iter::once(point.get())),
             );
             if let Some(parameters) =
-                nurbs_surface_parameter_near_point(surface, point.get(), None)?
+                super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point.get(), None)?
             {
-                let mapped = match nurbs_surface_point(surface, parameters.u, parameters.v) {
-                    Ok(mapped) => Some(mapped),
-                    Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-                        return Err(limit.into())
-                    }
-                    Err(_) => None,
-                };
+                let mapped = super::evaluation::nurbs_surface_point(ctx, surface, parameters.u, parameters.v)?;
                 if mapped
                     .is_some_and(|mapped| Point3::distance(point.get(), mapped.get()) <= tolerance)
                 {
@@ -5850,15 +5831,15 @@ fn nurbs_edge_endpoint_parameters(
         NURBS_ENDPOINT_TOLERANCE_MM,
     );
     let project =
-        |point| -> Result<Option<cadmpeg_ir::math::Point2>, cadmpeg_core::decode::ResourceLimit> {
-            let Some(parameters) = nurbs_surface_parameter_near_point(surface, point, None)? else {
+        |point| -> Result<Option<cadmpeg_ir::math::Point2>, cadmpeg_core::CodecError> {
+            let Some(parameters) = super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point, None)? else {
                 return Ok(None);
             };
-            let Some(mapped) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+            let Some(mapped) = super::evaluation::nurbs_surface_point(ctx,
                 surface,
                 parameters.u,
                 parameters.v,
-            ))?
+            )?
             else {
                 return Ok(None);
             };
@@ -5891,22 +5872,22 @@ fn nurbs_curve_surface_deviation(
             return Ok(None);
         };
         let projected = match seed {
-            Some(seed) => nurbs_surface_parameter_near_point(surface, point.get(), Some(seed))?,
+            Some(seed) => super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point.get(), Some(seed))?,
             None => None,
         };
         let parameters = match projected {
             Some(parameters) => Some(parameters),
-            None => nurbs_surface_parameter_near_point(surface, point.get(), None)?,
+            None => super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point.get(), None)?,
         };
         let Some(parameters) = parameters else {
             return Ok(None);
         };
         let parameters = parameters.get();
-        let Some(surface_point) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+        let Some(surface_point) = super::evaluation::nurbs_surface_point(ctx,
             surface,
             parameters.u,
             parameters.v,
-        ))?
+        )?
         else {
             return Ok(None);
         };
@@ -5937,12 +5918,12 @@ fn nurbs_degree_one_cache_lanes(
         };
         let point = point.get();
         let projected = match seed {
-            Some(seed) => nurbs_surface_parameter_near_point(surface, point, Some(seed))?,
+            Some(seed) => super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point, Some(seed))?,
             None => None,
         };
         let parameters = match projected {
             Some(parameters) => Some(parameters),
-            None => nurbs_surface_parameter_near_point(surface, point, None)?,
+            None => super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point, None)?,
         };
         let Some(parameters) = parameters else {
             return Ok(None);
@@ -5972,7 +5953,7 @@ fn nurbs_degree_one_cache_lanes(
             return Ok(None);
         };
         let Some(mapped_point) =
-            cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, uv.u, uv.v))?
+            super::evaluation::nurbs_surface_point(ctx, surface, uv.u, uv.v)?
         else {
             return Ok(None);
         };
@@ -6143,12 +6124,12 @@ fn ruled_surface_line_pcurve(
         let (u0, v0) = parameters(varying_min);
         let (u1, v1) = parameters(varying_max);
         let Some(first) =
-            cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, u0, v0))?
+            super::evaluation::nurbs_surface_point(ctx, surface, u0, v0)?
         else {
             return Ok(None);
         };
         let Some(second) =
-            cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, u1, v1))?
+            super::evaluation::nurbs_surface_point(ctx, surface, u1, v1)?
         else {
             return Ok(None);
         };
