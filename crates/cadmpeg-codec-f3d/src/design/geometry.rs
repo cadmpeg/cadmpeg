@@ -1028,6 +1028,11 @@ fn arrangement_node(
     Ok(nodes.len() - 1)
 }
 
+fn arrangement_cycle_work(edge_count: usize, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+    edge_count.checked_mul(edge_count)
+        .ok_or_else(|| ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX))
+}
+
 /// Remove curve fragments that cannot bound a planar face.
 ///
 /// A sketch can contain construction-like open branches in the solved entity
@@ -1043,9 +1048,7 @@ fn arrangement_retain_cycle_edges(
 ) -> Result<(), CodecError> {
     loop {
         // Each retention pass may run a BFS per edge (O(E²) worst case).
-        let Some(work) = edges.len().checked_mul(edges.len()) else {
-            return Err(ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX));
-        };
+        let work = arrangement_cycle_work(edges.len(), ctx)?;
         if !budget.charge_by(work) {
             return Ok(());
         }

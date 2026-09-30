@@ -1761,3 +1761,20 @@ mod containment_limits;
 mod sort_limits;
 
 mod profile_limits;
+
+#[test]
+fn arrangement_cycle_work_rejects_unrepresentable_edge_square() {
+    let edge_count = 1usize << (usize::BITS / 2);
+    let error = crate::test_support::with_decode_context(|ctx| {
+        super::arrangement_cycle_work(edge_count, ctx)
+    }).expect_err("the squared work count cannot be represented");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "F3D arrangement cycle work"));
+}
+
+#[test]
+fn arrangement_cycle_work_preserves_representable_square() {
+    assert_eq!(crate::test_support::with_decode_context(|ctx| {
+        super::arrangement_cycle_work(1_000, ctx)
+    }).unwrap(), 1_000_000);
+}

@@ -228,44 +228,20 @@ impl From<&'static str> for TextureTableError {
     }
 }
 
-#[derive(Clone, Copy)]
-enum TextureTableAdmission<'ctx, 'arena> {
-    Charged(&'ctx DecodeContext<'arena>),
-    Admitted,
-}
-
-impl TextureTableAdmission<'_, '_> {
-    fn insert_set<T: Eq + std::hash::Hash>(
-        self,
-        values: &mut std::collections::HashSet<T>,
-        value: T,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        match self {
-            Self::Charged(ctx) => ctx.insert_hash_set(values, value, operation).map(|_inserted| ()),
-            Self::Admitted => {
-                DecodeContext::reserve_admitted_set(values, 1, operation)?;
-                values.insert(value);
-                Ok(())
-            }
-        }
-    }
-}
-
 impl DesignMeshTextureTable {
     pub(crate) fn new_charged(
         ctx: &DecodeContext<'_>,
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, CodecError> {
-        Self::new_inner(TextureTableAdmission::Charged(ctx), record, resources).map_err(|error| match error {
+        Self::new_inner(crate::records::admission::RecordAdmission::Charged(ctx), record, resources).map_err(|error| match error {
             TextureTableError::Payload(message) => CodecError::Malformed(message),
             TextureTableError::Resource(error) => error,
         })
     }
 
     fn new_inner(
-        admission: TextureTableAdmission<'_, '_>,
+        admission: crate::records::admission::RecordAdmission<'_, '_>,
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, TextureTableError> {
@@ -296,20 +272,23 @@ impl DesignMeshTextureTable {
                 return Err("textures.resource_guid must be unique ignoring letter case".into());
             }
 
-            admission.insert_set(
+            admission.reserve_set(
                 &mut flags,
-                resource.ordinal,
+                1,
                 "index F3D texture flag ordinals",
             )
             .map_err(TextureTableError::Resource)?;
-            admission.insert_set(
+            flags.insert(resource.ordinal);
+            admission.reserve_set(
                 &mut filenames,
-                resource.filename_ordinal,
+                1,
                 "index F3D texture filename ordinals",
             )
             .map_err(TextureTableError::Resource)?;
-            admission.insert_set(&mut guids, guid, "index F3D texture GUIDs")
+            filenames.insert(resource.filename_ordinal);
+            admission.reserve_set(&mut guids, 1, "index F3D texture GUIDs")
                 .map_err(TextureTableError::Resource)?;
+            guids.insert(guid);
         }
         Ok(Self { record, resources })
     }
@@ -404,7 +383,7 @@ impl DesignMeshTextureTable {
                 asset: row.asset,
             });
         }
-        let table = Self::new_inner(TextureTableAdmission::Admitted, record, resources).map_err(|error| match error { TextureTableError::Payload(message) => message, TextureTableError::Resource(error) => error.to_string() })?;
+        let table = Self::new_inner(crate::records::admission::RecordAdmission::Admitted, record, resources).map_err(|error| match error { TextureTableError::Payload(message) => message, TextureTableError::Resource(error) => error.to_string() })?;
         if table.flags_count_offset() != flags_count_offset
             || table.filename_count_offset() != filename_count_offset
         {

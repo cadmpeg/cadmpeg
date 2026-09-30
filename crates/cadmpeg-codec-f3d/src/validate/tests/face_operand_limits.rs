@@ -12,6 +12,7 @@ enum Case {
     Nodes,
     Record,
     Invalid,
+    OverflowNodeOffset,
 }
 
 fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
@@ -59,7 +60,7 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             vec![0, -1]
         };
         let next_byte_offset = program_offset + u64::try_from(program.len()).unwrap() * 4;
-        let operand = DesignFaceOperand::try_new(DesignFaceOperandDraft {
+        let mut operand = DesignFaceOperand::try_new(DesignFaceOperandDraft {
             id: format!("{stream}:design-face-operand#100"),
             scope_record_index: 10,
             scope_reference_ordinal: 2,
@@ -96,6 +97,10 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             next_byte_offset,
         })
         .unwrap();
+        if case == Case::OverflowNodeOffset {
+            operand.recipe_program_offset = u64::MAX;
+            operand.recipe_program = vec![0, -1, -1, 2];
+        }
         let mut native = crate::native::F3dNative {
             design_face_operands: vec![operand.clone()],
             ..Default::default()
@@ -281,4 +286,11 @@ fn face_operand_invalid_entity_refuses_retained_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
     );
+}
+
+#[test]
+fn face_operand_rejects_overflowed_node_offset() {
+    let error = face_error(Case::OverflowNodeOffset, u64::MAX, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
+        if message == "F3D face recipe node offset overflows"));
 }
