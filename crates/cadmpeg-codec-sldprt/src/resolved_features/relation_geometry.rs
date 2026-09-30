@@ -22,7 +22,7 @@ use super::relation_records::{
     circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
 };
 use super::transforms::{
-    marker_entities, sketch_entity_loci,
+    marker_entities, sketch_entity_locus_points,
     sketch_frame_marker_transform, ProfileAxis,
 };
 use super::typed_relations::{
@@ -2052,7 +2052,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             let mut candidates = entities
                 .iter()
                 .filter(|entity| entity.sketch == **sketch)
-                .flat_map(sketch_entity_loci)
+                .flat_map(|entity| sketch_entity_locus_points(entity).into_iter().flatten())
                 .filter_map(|(point, _)| {
                     let measured = match family {
                         PointPointDistanceFamily::Direct => {
