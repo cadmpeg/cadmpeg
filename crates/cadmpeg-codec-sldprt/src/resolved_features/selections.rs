@@ -1758,7 +1758,7 @@ fn compact_surface_reference_at(
     if let Some(path) = counted_surface_component_path_at(payload, marker) { return Ok(Some(path)); }
     if let Some(path) = compact_termination_reference_path_at(payload, marker) { return Ok(Some(path)); }
     if let Some(path) = compact_sketch_surface_component_path_at(payload, marker) { return Ok(Some(path)); }
-    Ok(inline_surface_reference_at(payload, marker))
+    inline_surface_reference_at(ctx, payload, marker)
 }
 
 pub(crate) fn surface_reference_matches_at(
@@ -1774,7 +1774,7 @@ pub(crate) fn surface_reference_matches_at(
         counted_surface_component_path_at(payload, marker),
         compact_termination_reference_path_at(payload, marker),
         compact_sketch_surface_component_path_at(payload, marker),
-        inline_surface_reference_at(payload, marker),
+        inline_surface_reference_at(ctx, payload, marker)?,
     ];
     for components in candidates.into_iter().flatten() {
         let work = u64_from_index(components.len()).checked_add(u64_from_index(expected.len()))
@@ -2199,9 +2199,22 @@ fn inline_surface_components_at(
 }
 
 fn inline_surface_reference_at(
-    payload: &[u8], offset: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    inline_surface_components_at(payload, offset)?.collect()
+    ctx: &DecodeContext<'_>, payload: &[u8], offset: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT inline surface reference";
+    ctx.charge_work(16, OPERATION)?;
+    let Some(mut parsed_components) = inline_surface_components_at(payload, offset) else {
+        return Ok(None);
+    };
+    let mut components = Vec::new();
+    loop {
+        ctx.charge_work(32, OPERATION)?;
+        let Some(component) = parsed_components.next() else { break; };
+        let Some(component) = component else { return Ok(None); };
+        ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+        components.push(component);
+    }
+    Ok(Some(components))
 }
 
 /// Decode persistent surface identities declared by `*SurfIdRep_c` classes.
