@@ -39,7 +39,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchNativeOperand, SpatialSketch,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchLocus, SketchNativeOperand, SpatialSketch,
     SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
 };
@@ -2014,12 +2014,13 @@ pub(crate) fn project_relation_solved_point_geometry(
                 }
                 continue;
             }
-            let resolved = [0, 1].map(|index| {
-                relation.operands[index]
-                    .entity_ref
-                    .as_deref()
-                    .and_then(|marker| marker_point_locus(marker, &markers_by_id, &loci_by_marker))
-            });
+            let resolve = |index: usize| -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+                match relation.operands[index].entity_ref.as_deref() {
+                    Some(marker) => marker_point_locus(ctx, marker, &markers_by_id, &loci_by_marker),
+                    None => Ok(None),
+                }
+            };
+            let resolved = [resolve(0)?, resolve(1)?];
             let (known, missing_index) = match resolved {
                 [Some(known), None] => (known, 1),
                 [None, Some(known)] => (known, 0),

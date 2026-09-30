@@ -1191,12 +1191,12 @@ fn relation_line_identity_ignores_self_identifying_geometry_link() {
     ]);
 
     assert_eq!(
-        single_marker_line_entity(
+        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), 
             relation.id(),
             &markers,
             &loci,
             &[line, first_entity, second_entity],
-        ),
+        ).unwrap(),
         Some(line_id)
     );
 }
@@ -1226,7 +1226,7 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
     ]);
 
     assert_eq!(
-        resolved_marker_locus(ambiguous.id(), &markers, &loci, &mut HashSet::new()),
+        resolved_marker_locus(&cadmpeg_test_support::service_decode_context(), ambiguous.id(), &markers, &loci, &mut HashSet::new()).unwrap(),
         Some(expected)
     );
     assert_eq!(
@@ -1274,7 +1274,7 @@ fn point_handle_does_not_inherit_a_constraint_sibling_locus() {
     )]);
 
     assert_eq!(
-        resolved_marker_locus(point.id(), &markers, &loci, &mut HashSet::new()),
+        resolved_marker_locus(&cadmpeg_test_support::service_decode_context(), point.id(), &markers, &loci, &mut HashSet::new()).unwrap(),
         None
     );
 }
