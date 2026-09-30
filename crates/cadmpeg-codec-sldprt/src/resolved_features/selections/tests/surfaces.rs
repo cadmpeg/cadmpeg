@@ -524,6 +524,10 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
 
 #[test]
 fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
+    let references_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let body_offset = 220;
     let marker = body_offset + 94;
     let mut payload = vec![0; marker - 12];
@@ -597,11 +601,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         sketch_entities: Vec::new(),
     };
     assert_eq!(
-        cosmetic_thread_diameter_child_tail(&feature, &lane),
+        cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
         Some(158..400)
     );
     let references =
-        cosmetic_thread_cylinder_references(&feature, &lane, 20, 100, &HashSet::from([0x802f]));
+        cosmetic_thread_cylinder_references(&references_ctx, &feature, &lane, 20, 100, &HashSet::from([0x802f])).unwrap();
     assert_eq!(
         references
             .iter()
@@ -623,18 +627,22 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
 
         operands: Vec::new(),
     });
-    assert!(cosmetic_thread_cylinder_references(
+    assert!(cosmetic_thread_cylinder_references(&references_ctx, 
         &feature,
         &lane,
         20,
         100,
         &HashSet::from([0x802f]),
-    )
+    ).unwrap()
     .is_empty());
 }
 
 #[test]
 fn cosmetic_thread_reads_a_direct_component_edge_reference() {
+    let references_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let class_name = "moCompEdge_c";
     let class_offset = 40;
     let body_offset = class_offset + 6 + class_name.len();
@@ -682,7 +690,7 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         sketch_entities: Vec::new(),
     };
 
-    let references = cosmetic_thread_component_references(&lane, 0, lane.native_payload.len());
+    let references = cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len()).unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -697,6 +705,10 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
 
 #[test]
 fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
+    let references_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let component_edge_name = "moCompEdge_c";
     let edge_ref_name = "moEdgeRef_c";
     let component_edge_offset = 40;
@@ -765,7 +777,7 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
         sketch_entities: Vec::new(),
     };
 
-    let references = cosmetic_thread_component_references(&lane, 0, lane.native_payload.len());
+    let references = cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len()).unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -780,6 +792,10 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
 
 #[test]
 fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_child() {
+    let references_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let component_token_offset = 40;
     let component_body = component_token_offset + 2;
     let edge_ref_token_offset = component_body + 70;
@@ -826,7 +842,7 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
         sketch_entities: Vec::new(),
     };
 
-    let references = cosmetic_thread_component_references(&lane, 0, lane.native_payload.len());
+    let references = cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len()).unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(

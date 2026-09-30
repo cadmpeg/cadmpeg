@@ -647,12 +647,13 @@ pub(super) fn compact_surface_selections(
             }
             NativeClassKind::CosmeticThread => {
                 let cylinder_references = cosmetic_thread_cylinder_references(
+                    ctx,
                     feature,
                     lane,
                     start,
                     end,
                     &cylinder_reference_tokens,
-                );
+                )?;
                 let mut component_face_references = Vec::new();
                 for class in &lane.classes {
                     ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
@@ -669,11 +670,9 @@ pub(super) fn compact_surface_selections(
                 // both forms for one support; admitting both would fail the
                 // single-selection invariant even though a canonical carrier is
                 // already authoritative.
-                let component_references = (cylinder_references.is_empty()
-                    && component_face_references.is_empty())
-                .then(|| cosmetic_thread_component_references(lane, start, end))
-                .into_iter()
-                .flatten();
+                let component_references = if cylinder_references.is_empty() && component_face_references.is_empty() {
+                    cosmetic_thread_component_references(ctx, lane, start, end)?
+                } else { Vec::new() };
                 let mut candidates = Vec::new();
                 for candidate in cylinder_references.into_iter().chain(component_references).chain(component_face_references) {
                     ctx.charge_work(1, OPERATION)?;
@@ -1176,32 +1175,38 @@ pub(crate) fn enrich_feature_object_sources(
 }
 
 fn cosmetic_thread_cylinder_references(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
     cylinder_reference_tokens: &HashSet<u16>,
-) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let mut ranges = Vec::with_capacity(2);
-    ranges.push(object_start..object_end);
-    if let Some(range) = cosmetic_thread_diameter_child_tail(feature, lane) {
-        ranges.push(range);
+) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT cosmetic cylinder references";
+    let diameter_tail = cosmetic_thread_diameter_child_tail(ctx, feature, lane)?;
+    let mut offsets = Vec::new();
+    for offset in std::iter::once(object_start..object_end).chain(diameter_tail).flatten() {
+        ctx.charge_work(2, OPERATION)?;
+        if View::u16_le_at(&lane.native_payload, offset).is_some_and(|token| cylinder_reference_tokens.contains(&token)) {
+            ctx.reserve_collection_vec(&mut offsets, 1, OPERATION)?;
+            offsets.push(offset);
+        }
     }
-    let mut offsets = ranges
-        .into_iter()
-        .flatten()
-        .filter(|offset| {
-            View::u16_le_at(&lane.native_payload, *offset)
-                .is_some_and(|token| cylinder_reference_tokens.contains(&token))
-        })
-        .collect::<Vec<_>>();
+    let levels = if offsets.len() > 1 { offsets.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(u64_from_index(offsets.len()).checked_mul(u64::from(levels) + 1)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     offsets.sort_unstable();
     offsets.dedup();
-    offsets
-        .into_iter()
-        .find_map(|offset| cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset))
-        .into_iter()
-        .collect()
+    let mut references = Vec::new();
+    for offset in offsets {
+        ctx.charge_work(1, OPERATION)?;
+        if let Some(reference) = cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset) {
+            ctx.reserve_collection_vec(&mut references, 1, OPERATION)?;
+            references.push(reference);
+            break;
+        }
+    }
+    Ok(references)
 }
 
 /// Decode component-edge references owned by a cosmetic-thread object.
@@ -1214,24 +1219,28 @@ fn cosmetic_thread_cylinder_references(
 /// single-candidate check in `compact_surface_selections`; unrelated compact
 /// vectors in the thread's other children must not become face selections.
 fn cosmetic_thread_component_references(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let mut classes = lane
-        .classes
-        .iter()
-        .filter_map(|class| {
-            let class_offset = usize::try_from(class.offset).ok()?;
-            (object_start..object_end)
-                .contains(&class_offset)
-                .then_some((class_offset, class))
-        })
-        .collect::<Vec<_>>();
+) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT cosmetic component references";
+    let mut classes = Vec::new();
+    for class in &lane.classes {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(offset) = usize::try_from(class.offset).ok().filter(|offset| (object_start..object_end).contains(offset)) else { continue; };
+        ctx.reserve_collection_vec(&mut classes, 1, OPERATION)?;
+        classes.push((offset, class));
+    }
+    let levels = if classes.len() > 1 { classes.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(u64_from_index(classes.len()).checked_mul(u64::from(levels))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     classes.sort_unstable_by_key(|(offset, _)| *offset);
 
     let mut class_ranges = Vec::<Range<usize>>::new();
     for (index, &(class_offset, class)) in classes.iter().enumerate() {
+        ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         if class.name != "moCompEdge_c" {
             continue;
         }
@@ -1244,6 +1253,7 @@ fn cosmetic_thread_component_references(
         if body >= direct_end {
             continue;
         }
+        ctx.reserve_collection_vec(&mut class_ranges, 1, OPERATION)?;
         class_ranges.push(body..direct_end);
 
         let Some((edge_ref_offset, edge_ref)) = classes.get(index + 1) else {
@@ -1261,50 +1271,49 @@ fn cosmetic_thread_component_references(
             .get(index + 2)
             .map_or(object_end, |(offset, _)| *offset);
         if edge_ref_body < edge_ref_end {
+            ctx.reserve_collection_vec(&mut class_ranges, 1, OPERATION)?;
             class_ranges.push(edge_ref_body..edge_ref_end);
         }
     }
-    class_ranges.extend(cosmetic_thread_repeated_component_edge_ranges(
-        &lane.native_payload,
-        object_start,
-        object_end,
-    ));
-    let mut references = class_ranges
-        .into_iter()
-        .flat_map(|range| {
-            range.filter(|marker| {
-                lane.native_payload
-                    .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                    == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-            })
-        })
-        .filter_map(|marker| {
-            compact_edge_component_path_at(&lane.native_payload, marker)
-                .map(|components| (marker, components))
-        })
-        .collect::<Vec<_>>();
-    references.sort_by_key(|(marker, _)| *marker);
+    let repeated = cosmetic_thread_repeated_component_edge_ranges(ctx, &lane.native_payload, object_start, object_end)?;
+    ctx.reserve_collection_vec(&mut class_ranges, repeated.len(), OPERATION)?;
+    class_ranges.extend(repeated);
+    let mut references = Vec::new();
+    for marker in class_ranges.into_iter().flatten() {
+        ctx.charge_work(16, OPERATION)?;
+        if lane.native_payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len()) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
+        if let Some(components) = compact_edge_component_path_at(&lane.native_payload, marker) {
+            ctx.reserve_collection_vec(&mut references, 1, OPERATION)?;
+            references.push((marker, components));
+        }
+    }
+    order_surface_candidates(ctx, &mut references, OPERATION)?;
+    ctx.charge_work(u64_from_index(references.len()), OPERATION)?;
     references.dedup_by_key(|(marker, _)| *marker);
-    references
+    Ok(references)
 }
 
 fn cosmetic_thread_repeated_component_edge_ranges(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     object_start: usize,
     object_end: usize,
-) -> Vec<Range<usize>> {
+) -> Result<Vec<Range<usize>>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT cosmetic component ranges";
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(last_token) = end.checked_sub(2 + component_edge::LEN) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if object_start > last_token {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut ranges = Vec::new();
     for token_offset in object_start..=last_token {
+        ctx.charge_work(u64_from_index(component_edge::LEN).checked_add(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         if !View::u16_le_at(payload, token_offset).is_some_and(is_class_token)
             || !cosmetic_thread_component_edge_wrapper_at(payload, token_offset + 2)
         {
@@ -1315,22 +1324,26 @@ fn cosmetic_thread_repeated_component_edge_ranges(
         let Some(last_child) = end.checked_sub(2 + repeated_edge_ref::LEN) else {
             continue;
         };
-        let child_token = if child_start <= last_child {
-            (child_start..=last_child).find(|offset| {
-                View::u16_le_at(payload, *offset).is_some_and(is_class_token)
-                    && payload.get(*offset + 2..*offset + 2 + repeated_edge_ref::LEN)
-                        == Some(repeated_edge_ref::PREFIX_VALUE.as_slice())
-            })
-        } else {
-            None
-        };
+        let mut child_token = None;
+        if child_start <= last_child {
+            for offset in child_start..=last_child {
+                ctx.charge_work(u64_from_index(repeated_edge_ref::LEN).checked_add(2)
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                if View::u16_le_at(payload, offset).is_some_and(is_class_token)
+                    && payload.get(offset + 2..offset + 2 + repeated_edge_ref::LEN) == Some(repeated_edge_ref::PREFIX_VALUE.as_slice()) {
+                    child_token = Some(offset);
+                    break;
+                }
+            }
+        }
+        ctx.reserve_collection_vec(&mut ranges, 1, OPERATION)?;
         if let Some(edge_ref_token) = child_token {
             ranges.push(edge_ref_token + 2..end);
         } else {
             ranges.push(body..end);
         }
     }
-    ranges
+    Ok(ranges)
 }
 
 fn cosmetic_thread_component_edge_wrapper_at(payload: &[u8], body: usize) -> bool {
@@ -1363,7 +1376,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     cylinder_reference_tokens: &HashSet<u16>,
 ) -> Result<Vec<(usize, Option<Vec<FeatureInputComponentPathEntry>>)>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT cosmetic thread cylinder markers";
-    let diameter_tail = cosmetic_thread_diameter_child_tail(feature, lane);
+    let diameter_tail = cosmetic_thread_diameter_child_tail(ctx, feature, lane)?;
     let mut markers = Vec::new();
     for body in std::iter::once(object_start..object_end).chain(diameter_tail).flatten() {
         ctx.charge_work(1, OPERATION)?;
@@ -1397,9 +1410,22 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
 }
 
 fn cosmetic_thread_diameter_child_tail(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
-) -> Option<std::ops::Range<usize>> {
+) -> Result<Option<std::ops::Range<usize>>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT cosmetic diameter interval";
+    for scalar in &lane.scalars {
+        ctx.charge_work(2, OPERATION)?;
+        for name in &lane.names {
+            let work = u64_from_index(name.id.len()).checked_add(u64_from_index(scalar.name.len()))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+        }
+    }
+    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
+    Ok((|| {
     let source_id = feature.source_value()?;
     let diameter_id = source_id.checked_sub(1)?;
     let mut diameters = lane.scalars.iter().filter(|scalar| {
@@ -1425,11 +1451,12 @@ fn cosmetic_thread_diameter_child_tail(
                 .filter(|name| name.object_id != Some(ObjectId::Absent))
                 .map(|name| name.offset),
         )
-        .filter(|offset| *offset >= start as u64)
+        .filter(|offset| *offset >= u64_from_index(start))
         .min()
         .and_then(|offset| usize::try_from(offset).ok())
         .unwrap_or(lane.native_payload.len());
     (start < end).then_some(start..end)
+    })())
 }
 
 fn cosmetic_thread_cylinder_reference_at(
