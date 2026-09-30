@@ -14,7 +14,7 @@ const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
-fn point_at(curve: &CurveGeometry, parameter: f64) -> Result<Option<Point3>, CodecError> {
+fn point_at(ctx: &DecodeContext<'_>, curve: &CurveGeometry, parameter: f64) -> Result<Option<Point3>, CodecError> {
     Ok(match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
@@ -67,9 +67,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Result<Option<Point3>, Cod
             if !(domain[0]..=domain[1]).contains(&parameter) {
                 return Ok(None);
             }
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
-                curve, parameter,
-            ))?
+            super::evaluation::nurbs_curve_point(ctx, curve, parameter)?
             .map(cadmpeg_ir::features::FinitePoint3::get)
         }
         _ => None,
@@ -138,10 +136,10 @@ pub(super) fn scan(
             values[4].get() * LEN_TO_MM,
             values[5].get() * LEN_TO_MM,
         );
-        let Some(evaluated_start) = point_at(geometry, values[6].get())? else {
+        let Some(evaluated_start) = point_at(ctx, geometry, values[6].get())? else {
             continue;
         };
-        let Some(evaluated_end) = point_at(geometry, values[7].get())? else {
+        let Some(evaluated_end) = point_at(ctx, geometry, values[7].get())? else {
             continue;
         };
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
@@ -309,6 +307,23 @@ mod tests {
     }
 
     #[test]
+    fn parasolid_subset_nurbs_evaluation_refuses_scoped_limit() {
+        let bytes = wrapper(0.005, false);
+        let carriers = nurbs_carriers();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 15;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = scan(&ctx, &bytes, &carriers).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes));
+        policy.limits.max_materialized_bytes = 16;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
+    }
+
+    #[test]
     fn decodes_bounds_that_evaluate_on_the_source_curve() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -367,6 +382,7 @@ mod tests {
         )
         .expect("valid rational test NURBS");
         let point = point_at(
+            &cadmpeg_test_support::service_decode_context(),
             &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             0.5,
         )
@@ -389,10 +405,10 @@ mod tests {
                 .unwrap(),
             ));
             assert_eq!(
-                point_at(&curve, 0.75 * d).expect("evaluation fits resource limits"),
+                point_at(&cadmpeg_test_support::service_decode_context(), &curve, 0.75 * d).expect("evaluation fits resource limits"),
                 Some(Point3::new(0.75, 0., 0.))
             );
-            assert!(point_at(&curve, 2. * d)
+            assert!(point_at(&cadmpeg_test_support::service_decode_context(), &curve, 2. * d)
                 .expect("evaluation fits resource limits")
                 .is_none());
         }
