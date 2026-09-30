@@ -406,6 +406,62 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_work(units, operation)
     }
 
+    /// Sort admitted values stably using fallible index scratch.
+    ///
+    /// `key_bytes` states the external bytes a comparison can read from each value.
+    /// Equal values retain input order. Values move in place without cloning children.
+    pub fn stable_sort_by<T>(
+        &self,
+        values: &mut [T],
+        mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+        key_bytes: impl Fn(&T) -> usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let count = super::u64_from_index(values.len());
+        self.charge_work(count, operation)?;
+        let bytes = values.iter().try_fold(0u64, |bytes, value| bytes.checked_add(super::u64_from_index(key_bytes(value))))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
+        let work = count.checked_mul(super::u64_from_index(std::mem::size_of::<T>()))
+            .and_then(|storage| storage.checked_add(bytes.checked_mul(2)?))
+            .and_then(|work| work.checked_mul(levels)).and_then(|work| work.checked_mul(8))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        self.charge_work(work, operation)?;
+        // Small runs use adjacent swaps, so their stable order needs no scratch.
+        if values.len() <= 20 {
+            for end in 1..values.len() {
+                let mut position = end;
+                while position > 0 && compare(&values[position], &values[position - 1]).is_lt() {
+                    values.swap(position, position - 1);
+                    position -= 1;
+                }
+            }
+            return Ok(());
+        }
+        let scratch_bytes = count.checked_mul(super::u64_from_index(std::mem::size_of::<usize>()))
+            .and_then(|bytes| bytes.checked_mul(2))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        let _scratch = self.reserve_scoped(scratch_bytes, operation)?;
+        let mut order = Vec::new();
+        order.try_reserve_exact(values.len())
+            .map_err(|_| self.budget.scoped_allocation_failed(scratch_bytes, operation))?;
+        order.extend(0..values.len());
+        let mut destinations = Vec::new();
+        destinations.try_reserve_exact(values.len())
+            .map_err(|_| self.budget.scoped_allocation_failed(scratch_bytes, operation))?;
+        destinations.resize(values.len(), 0usize);
+        order.sort_unstable_by(|&left, &right| compare(&values[left], &values[right]).then_with(|| left.cmp(&right)));
+        for (destination, source) in order.into_iter().enumerate() { destinations[source] = destination; }
+        for index in 0..values.len() {
+            while destinations[index] != index {
+                let destination = destinations[index];
+                values.swap(index, destination);
+                destinations.swap(index, destination);
+            }
+        }
+        Ok(())
+    }
+
     /// Permanently refuses a codec-local resource request.
     ///
     /// Codecs use this when a bounded recovery algorithm reaches a fixed
@@ -773,3 +829,6 @@ mod tests {
         assert!(ctx.finish_session().is_err());
     }
 }
+
+#[cfg(test)]
+mod sort_tests;

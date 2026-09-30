@@ -48,7 +48,7 @@ pub(crate) fn feature_hash(ctx: &DecodeContext<'_>, model: &cadmpeg_ir::document
             native_ref: feature.native_ref.as_deref(),
         })
         )?;
-    sort_hash_views(ctx, &mut features, |feature| feature.id.as_str())?;
+    ctx.stable_sort_by(&mut features, |left, right| left.id.cmp(right.id), |feature| feature.id.as_str().len(), "sort SLDPRT canonical hash views")?;
     hash_records(ctx, &features)
 }
 
@@ -81,7 +81,7 @@ pub(crate) fn configuration_hash(ctx: &DecodeContext<'_>,
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
     let mut configurations = collect_hash_views(ctx, configurations.iter())?;
-    sort_hash_views(ctx, &mut configurations, |configuration| configuration.id.as_str())?;
+    ctx.stable_sort_by(&mut configurations, |left, right| left.id.cmp(&right.id), |configuration| configuration.id.as_str().len(), "sort SLDPRT canonical hash views")?;
     hash_records(ctx, &configurations)
 }
 
@@ -120,14 +120,14 @@ pub(crate) fn native_configuration_hash(ctx: &DecodeContext<'_>,
         .iter()
         .flat_map(|history| &history.configurations)
         )?;
-    sort_hash_views(ctx, &mut configurations, |configuration| configuration.id.as_str())?;
+    ctx.stable_sort_by(&mut configurations, |left, right| left.id.cmp(&right.id), |configuration| configuration.id.as_str().len(), "sort SLDPRT canonical hash views")?;
     hash_records(ctx, &configurations)
 }
 
 /// Stable hash of neutral feature parameters.
 pub(crate) fn parameter_hash(ctx: &DecodeContext<'_>, parameters: &[DesignParameter]) -> Result<String, CodecError> {
     let mut parameters = collect_hash_views(ctx, parameters.iter())?;
-    sort_hash_views(ctx, &mut parameters, |parameter| parameter.id.as_str())?;
+    ctx.stable_sort_by(&mut parameters, |left, right| left.id.cmp(&right.id), |parameter| parameter.id.as_str().len(), "sort SLDPRT canonical hash views")?;
     hash_records(ctx, &parameters)
 }
 
@@ -146,7 +146,7 @@ pub(crate) fn native_parameter_hash(ctx: &DecodeContext<'_>, histories: &[Featur
             parameters.push((&feature.id, &feature.parameters, &feature.dimension_properties, dimensions));
         }
     }
-    sort_hash_views(ctx, &mut parameters, |parameter| parameter.0.as_str())?;
+    ctx.stable_sort_by(&mut parameters, |left, right| left.0.cmp(right.0), |parameter| parameter.0.as_str().len(), "sort SLDPRT canonical hash views")?;
     hash_records(ctx, &parameters)
 }
 
@@ -155,7 +155,7 @@ fn hash_keyed_records<'id, V: Serialize>(
     records: impl Iterator<Item = (&'id cadmpeg_ir::features::ConfigurationId, V)>,
 ) -> Result<String, CodecError> {
     let mut records = collect_hash_views(ctx, records)?;
-    sort_hash_views(ctx, &mut records, |record| record.0.as_str())?;
+    ctx.stable_sort_by(&mut records, |left, right| left.0.cmp(right.0), |record| record.0.as_str().len(), "sort SLDPRT canonical hash views")?;
     hash_records(ctx, &records)
 }
 
@@ -168,24 +168,6 @@ fn collect_hash_views<T>(ctx: &DecodeContext<'_>, mut values: impl Iterator<Item
         views.push(value);
     }
     Ok(views)
-}
-
-fn sort_hash_views<T>(ctx: &DecodeContext<'_>, values: &mut [T], key: impl Fn(&T) -> &str) -> Result<(), CodecError> {
-    const OPERATION: &str = "sort SLDPRT canonical hash views";
-    let count = u64_from_index(values.len());
-    ctx.charge_work(count, OPERATION)?;
-    let bytes = values.iter().try_fold(0u64, |bytes, value| bytes.checked_add(u64_from_index(key(value).len())))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    let work = count.checked_mul(u64_from_index(std::mem::size_of::<T>())).and_then(|storage| bytes.checked_add(storage))
-        .and_then(|bytes| bytes.checked_mul(levels)).and_then(|work| work.checked_mul(8))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
-    let scratch = count.checked_mul(u64_from_index(std::mem::size_of::<T>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let _scratch = ctx.reserve_scoped(scratch, OPERATION)?;
-    values.sort_by(|left, right| key(left).cmp(key(right)));
-    Ok(())
 }
 
 fn admit_feature_parents(ctx: &DecodeContext<'_>, model: &cadmpeg_ir::document::Model) -> Result<(), CodecError> {
