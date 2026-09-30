@@ -18,7 +18,7 @@ use super::markers::{
 use super::relation_loci::{
     canonical_profile_loci, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
     linked_single_ellipse_entity, linked_single_entities, marker_point_locus,
-    point_line_distance_value, profile_locus_point, relation_operand_loci, same_dimension_angle,
+    point_line_distance_value, profile_locus_point, profile_locus_point_charged, relation_operand_loci, same_dimension_angle,
     same_dimension_length,
 };
 use super::scalars::operand_kind;
@@ -571,17 +571,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 }
                 single.definition(marker_resolved_or_none!(entities.into_iter().next()))
             } else if let Some((same_coordinate, profile_axis)) = axes {
-                let loci =
-                    relation_operand_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
-                        unique_axis_aligned_linked_loci(
-                            marker,
-                            sketch,
-                            sketch_entities,
-                            markers_by_id,
-                            loci_by_marker,
-                            profile_axis,
-                        )
-                    });
+                let loci = match relation_operand_loci(marker, markers_by_id, loci_by_marker) {
+                    Some(loci) => Some(loci),
+                    None => unique_axis_aligned_linked_loci(ctx, marker, sketch, sketch_entities, markers_by_id, loci_by_marker, profile_axis)?,
+                };
                 let Some(loci) = loci else {
                     return Ok(Some(native()?));
                 };
@@ -1334,45 +1327,49 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
 }
 
 pub(super) fn unique_axis_aligned_linked_loci(
-    marker: &SketchInputEntity,
-    sketch: &SketchId,
-    sketch_entities: &[SketchEntity],
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-    axis: ProfileAxis,
-) -> Option<Vec<SketchLocus>> {
-    let links = marker
-        .links()
-        .iter()
-        .filter(|link| relation_link_is_geometric_operand(marker, link, markers_by_id))
-        .collect::<Vec<_>>();
-    let [first_link, second_link] = links.as_slice() else {
-        return None;
-    };
+    ctx: &DecodeContext<'_>, marker: &SketchInputEntity, sketch: &SketchId,
+    sketch_entities: &[SketchEntity], markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>, axis: ProfileAxis,
+) -> Result<Option<Vec<SketchLocus>>, CodecError> {
+    const OPERATION: &str = "select SLDPRT linked axis loci";
+    ctx.charge_work(u64_from_index(markers_by_id.len()), OPERATION)?;
+    let key_bytes = markers_by_id.keys().try_fold(0u64, |bytes, key| {
+        bytes.checked_add(u64_from_index(key.len())).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+    })?;
+    let mut links = [None, None];
+    let mut count = 0;
+    for link in marker.links() {
+        ctx.charge_work(key_bytes.checked_add(u64_from_index(link.entity_ref.len())).and_then(|bytes| bytes.checked_add(u64_from_index(marker.id().len())))
+            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(16))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !relation_link_is_geometric_operand(marker, link, markers_by_id) { continue; }
+        if count == links.len() { return Ok(None); }
+        links[count] = Some(link);
+        count += 1;
+    }
+    let [Some(first_link), Some(second_link)] = links else { return Ok(None); };
     let first = marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker);
     let second = marker_point_locus(&second_link.entity_ref, markers_by_id, loci_by_marker);
     let (known, known_is_first) = match (first, second) {
         (Some(known), None) => (known, true),
         (None, Some(known)) => (known, false),
-        _ => return None,
+        _ => return Ok(None),
     };
-    let known_point = profile_locus_point(&known, sketch_entities)?;
-    let mut candidates = canonical_profile_loci(sketch, sketch_entities)
-        .into_iter()
-        .filter_map(|(candidate_point, candidate)| {
-            let aligned = if axis == ProfileAxis::U {
-                same_dimension_length(candidate_point.v, known_point.v)
-            } else {
-                same_dimension_length(candidate_point.u, known_point.u)
-            };
-            (candidate != known && aligned).then_some(candidate)
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    let candidate = candidates.into_iter().next()?;
-    Some(if known_is_first { vec![known, candidate] } else { vec![candidate, known] })
+    let Some(known_point) = profile_locus_point_charged(ctx, &known, sketch_entities, OPERATION)? else { return Ok(None); };
+    let mut selected: Option<SketchLocus> = None;
+    for (candidate_point, candidate) in canonical_profile_loci(ctx, sketch, sketch_entities)? {
+        let selected_id = selected.as_ref().map_or("", |locus| locus_entity(locus).as_str());
+        let bytes = u64_from_index(locus_entity(&candidate).as_str().len()).checked_add(u64_from_index(locus_entity(&known).as_str().len()))
+            .and_then(|bytes| bytes.checked_add(u64_from_index(selected_id.len()))).and_then(|bytes| bytes.checked_mul(4))
+            .and_then(|work| work.checked_add(128)).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(bytes, OPERATION)?;
+        let aligned = if axis == ProfileAxis::U { same_dimension_length(candidate_point.v, known_point.v) } else { same_dimension_length(candidate_point.u, known_point.u) };
+        if candidate == known || !aligned { continue; }
+        if selected.as_ref().is_some_and(|selected| selected != &candidate) { return Ok(None); }
+        selected = Some(candidate);
+    }
+    let Some(candidate) = selected else { return Ok(None); };
+    Ok(Some(if known_is_first { vec![known, candidate] } else { vec![candidate, known] }))
 }
 
 fn axis_relation_point_loci(

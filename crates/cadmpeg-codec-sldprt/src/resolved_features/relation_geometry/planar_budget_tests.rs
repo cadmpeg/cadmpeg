@@ -675,3 +675,5 @@ fn planar_native_marker_refuses_retained_limit() {
 fn planar_native_marker_refuses_work_limit() {
     assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_native_marker_with_policy);
 }
+
+mod roster_points;

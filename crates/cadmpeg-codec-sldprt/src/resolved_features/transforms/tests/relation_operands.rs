@@ -931,23 +931,23 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     };
     let known_locus = SketchLocus::Entity(known.id().clone());
     assert_eq!(
-        unique_profile_distance_locus(
+        unique_profile_distance_locus(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &known_locus,
             &parameter,
             &[known.clone(), candidate.clone()],
-        ),
+        ).unwrap(),
         Some(SketchLocus::Entity(candidate.id().clone()))
     );
 
     let ambiguous = point("synthetic:test:id#ambiguous", -3.0, -4.0);
     assert_eq!(
-        unique_profile_distance_locus(
+        unique_profile_distance_locus(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &known_locus,
             &parameter,
             &[known, candidate, ambiguous],
-        ),
+        ).unwrap(),
         None
     );
 }
