@@ -973,7 +973,7 @@ fn inherit_configuration_hole_semantics(
             .map(|value| value.try_clone_charged(ctx, "copy SLDPRT configuration hole face")).transpose()?;
     }
     if profile.is_none() {
-        profile.clone_from(base_profile);
+        *profile = base_profile.as_ref().map(|value| value.try_clone_charged(ctx, "copy SLDPRT configuration hole profile")).transpose()?;
     }
     if profile_filter.is_none() {
         profile_filter.clone_from(base_profile_filter);
@@ -1031,7 +1031,7 @@ fn inherit_configuration_hole_semantics(
         .as_ref()
         .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
     {
-        extent.clone_from(base_extent);
+        *extent = base_extent.as_ref().map(|value| value.try_clone_charged(ctx, "copy SLDPRT configuration hole termination")).transpose()?;
     }
     if bottom.is_none() {
         bottom.clone_from(base_bottom);
