@@ -640,6 +640,18 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        let projected = super::project_occurrences(
+            &ctx,
+            &[ufrx_occurrence(4, 7, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        ).expect("one table for each of three indexes fits seven slots");
+        assert_eq!(projected.occurrences.len(), 1);
+
+        // Three unique indexes and the emitted-id set use four slots.
+        policy.limits.max_collection_items = 4;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(

@@ -63,6 +63,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
+        policy.limits.max_materialized_bytes = super::u64_from_index(4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (table, storage) = ctx.unique_index([(1_u32, 2), (1, 3), (1, 4), (2, 5)], |_| Ok(4), "unique test").expect("two slots");
         assert_eq!(table.len(), 1);
