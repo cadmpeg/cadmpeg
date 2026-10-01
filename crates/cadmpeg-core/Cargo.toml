@@ -17,6 +17,7 @@ schema = ["dep:schemars"]
 
 
 [dependencies]
+flate2.workspace = true
 memchr.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
