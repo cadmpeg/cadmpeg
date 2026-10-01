@@ -223,7 +223,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
                 scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                    Vec::new(),
+                    vec!["sldprt:test:scalar#unselected-1".into()],
                     None,
                     None,
                 )
@@ -245,7 +245,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
                 scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                    Vec::new(),
+                    vec!["sldprt:test:scalar#unselected-2".into()],
                     None,
                     None,
                 )
@@ -276,7 +276,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
                 scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                    Vec::new(),
+                    vec!["sldprt:test:scalar#unselected-3".into()],
                     None,
                     None,
                 )
@@ -298,7 +298,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
                 scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                    Vec::new(),
+                    vec!["sldprt:test:scalar#unselected-4".into()],
                     None,
                     None,
                 )
@@ -329,7 +329,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
                 scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                    Vec::new(),
+                    vec!["sldprt:test:scalar#unselected-5".into()],
                     None,
                     None,
                 )
@@ -360,7 +360,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
                 scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                    Vec::new(),
+                    vec!["sldprt:test:scalar#unselected-6".into()],
                     None,
                     None,
                 )
@@ -576,7 +576,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
             scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                Vec::new(),
+                vec!["sldprt:test:scalar#unselected-7".into()],
                 None,
                 None,
             )

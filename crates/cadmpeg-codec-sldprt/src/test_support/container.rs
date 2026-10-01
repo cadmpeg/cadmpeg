@@ -193,3 +193,12 @@ pub(crate) fn synthetic_sldprt() -> Vec<u8> {
     f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
     f
 }
+
+/// Scan a synthetic input with the service test context.
+pub(crate) fn scan(bytes: &[u8]) -> crate::container::ContainerScan<'_> {
+    crate::container::scan(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_core::decode::View::over_retained(bytes),
+    )
+    .expect("synthetic container fits service policy")
+}

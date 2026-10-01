@@ -8,7 +8,6 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
 use crate::test_support::container::sldprt_with_body;
@@ -21,7 +20,7 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
@@ -42,7 +41,7 @@ fn metadata_annotation_route_refuses_retained_text() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -59,7 +58,7 @@ fn metadata_annotation_route_refuses_collection_growth() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -76,7 +75,7 @@ fn metadata_annotation_route_refuses_work_at_minimum_admission() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let run = |policy: &DecodePolicy| {
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, policy).unwrap();
@@ -178,7 +177,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
     )
     .unwrap();
 
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     let payload = scan
         .blocks
         .iter()
@@ -373,7 +372,7 @@ fn decode_extracts_document_envelope() {
 fn scanned_metadata(payload: &[u8]) -> Vec<cadmpeg_ir::attributes::SourceAttribute> {
     let mut source = outer_header();
     source.extend(make_block(0x43, "SWObjects", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();

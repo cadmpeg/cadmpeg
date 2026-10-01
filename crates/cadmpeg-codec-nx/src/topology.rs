@@ -260,17 +260,22 @@ impl Node {
         self.pos + self.bytes.len()
     }
 
-    /// Locate the payload following the five-reference compact geometry header.
-    fn compact_tail_offset(&self) -> Option<usize> {
+    /// Decode the common-header sense and the following payload offset.
+    pub(crate) fn common_header(&self) -> Option<(Sense, usize)> {
         let mut at = 8 + self.shift;
         skip_sequence_at(&self.bytes, &mut at, 5)?;
-        matches!(self.bytes.get(at), Some(b'+' | b'-')).then_some(at + 1)
+        let sense = match self.bytes.get(at) {
+            Some(b'+') => Sense::Forward,
+            Some(b'-') => Sense::Reversed,
+            _ => return None,
+        };
+        Some((sense, at + 1))
     }
 
     /// Decode adjacent references at the start of a compact geometry payload.
-    pub(crate) fn compact_tail_references(&self, count: usize) -> Option<Vec<u32>> {
-        let mut at = self.compact_tail_offset()?;
-        read_sequence_at(&self.bytes, &mut at, count)
+    pub(crate) fn compact_tail_references<const N: usize>(&self) -> Option<[u32; N]> {
+        let mut at = self.common_header()?.1;
+        read_sequence_at::<N>(&self.bytes, &mut at)
     }
 
     /// Read a byte at its logical record offset.
@@ -295,7 +300,7 @@ impl Node {
         let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         at += 8;
-        let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
+        let refs = read_sequence_at::<5>(&self.bytes, &mut at)?;
         let sense = match self.bytes.get(at) {
             Some(b'+') => Sense::Forward,
             Some(b'-') => Sense::Reversed,
@@ -319,7 +324,7 @@ impl Node {
         let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         at += 8;
-        let refs = read_sequence_at(&self.bytes, &mut at, 7)?;
+        let refs = read_sequence_at::<7>(&self.bytes, &mut at)?;
         Some(EdgeFields {
             attributes: XmtTarget::from_wire(attributes),
             tolerance,
@@ -332,7 +337,7 @@ impl Node {
     pub(crate) fn shell_fields(&self) -> Option<ShellFields> {
         (self.kind == NodeKind::Shell).then_some(())?;
         let mut at = 8 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 8)?;
+        let refs = read_sequence_at::<8>(&self.bytes, &mut at)?;
         Some(ShellFields {
             attributes: XmtTarget::from_wire(refs[0]),
             body: XmtTarget::from_wire(refs[1]),
@@ -349,7 +354,7 @@ impl Node {
     pub(crate) fn loop_fields(&self) -> Option<LoopFields> {
         (self.kind == NodeKind::Loop).then_some(())?;
         let mut at = 8 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 4)?;
+        let refs = read_sequence_at::<4>(&self.bytes, &mut at)?;
         Some(LoopFields {
             attributes: XmtTarget::from_wire(refs[0]),
             fin: XmtTarget::from_wire(refs[1]),
@@ -362,7 +367,7 @@ impl Node {
     pub(crate) fn fin_fields(&self) -> Option<FinFields> {
         (self.kind == NodeKind::Fin).then_some(())?;
         let mut at = 4 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 9)?;
+        let refs = read_sequence_at::<9>(&self.bytes, &mut at)?;
         let sense = match self.bytes.get(at) {
             Some(b'+') => Sense::Forward,
             Some(b'-') => Sense::Reversed,
@@ -385,7 +390,7 @@ impl Node {
     pub(crate) fn vertex_fields(&self) -> Option<VertexFields> {
         (self.kind == NodeKind::Vertex).then_some(())?;
         let mut at = 8 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
+        let refs = read_sequence_at::<5>(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         Some(VertexFields {
             attributes: XmtTarget::from_wire(refs[0]),
@@ -418,7 +423,7 @@ impl Node {
                 | NodeKind::Torus
         )
         .then_some(())?;
-        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        let payload_shift = self.common_header()?.1.checked_sub(19)?;
         crate::geometry::decode_surface_record(&self.bytes, self.kind, payload_shift)
     }
 
@@ -429,7 +434,7 @@ impl Node {
             NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse
         )
         .then_some(())?;
-        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        let payload_shift = self.common_header()?.1.checked_sub(19)?;
         crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
 
@@ -454,14 +459,14 @@ impl Node {
                 vec![(ReferenceRole::Point, fields.point)]
             }),
             NodeKind::BlendSurface => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
                 if self.bytes.get(at) != Some(&b'R') {
                     return Vec::new();
                 }
                 at += 1;
-                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                read_sequence_at::<3>(&self.bytes, &mut at).map_or_else(Vec::new, |references| {
                     vec![
                         (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
                         (ReferenceRole::Surface, XmtTarget::from_wire(references[1])),
@@ -470,7 +475,7 @@ impl Node {
                 })
             }
             NodeKind::OffsetSurface => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
                 if !matches!(self.bytes.get(at), Some(b'V' | b'I' | b'U'))
@@ -484,7 +489,7 @@ impl Node {
                 })
             }
             NodeKind::TrimmedCurve => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
                 read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
@@ -492,10 +497,10 @@ impl Node {
                 })
             }
             NodeKind::SpCurve => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
-                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                read_sequence_at::<3>(&self.bytes, &mut at).map_or_else(Vec::new, |references| {
                     vec![
                         (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
                         (ReferenceRole::Curve, XmtTarget::from_wire(references[1])),
@@ -640,15 +645,14 @@ impl Graph {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::Intersection).filter_map(|node| {
                 let mut at = 8 + node.shift;
-                let header = read_sequence_at(&node.bytes, &mut at, 5)?;
+                let header = read_sequence_at::<5>(&node.bytes, &mut at)?;
                 let sense = match node.bytes.get(at) {
                     Some(b'+') => true,
                     Some(b'-') => false,
                     _ => return None,
                 };
                 at += 1;
-                let references: [u32; 6] =
-                    read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
+                let references: [u32; 6] = read_sequence_at::<6>(&node.bytes, &mut at)?;
                 let chart_with_optional_terms =
                     references[2] > 1 && references[3..=4].iter().all(|reference| *reference >= 1);
                 let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
@@ -657,9 +661,7 @@ impl Graph {
                     && (references[0] > 1 || references[1] > 1))
                     .then_some(CompositeCurve {
                         xmt: node.xmt,
-                        header_references: <[u32; 5]>::try_from(header)
-                            .ok()?
-                            .map(XmtTarget::from_wire),
+                        header_references: header.map(XmtTarget::from_wire),
                         sense,
                         references: references.map(XmtTarget::from_wire),
                         delta_twin: false,
@@ -773,10 +775,10 @@ impl Graph {
     ) -> Result<Vec<BlendSurface>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::BlendSurface).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
+                let mut at = node.common_header()?.1;
                 (*node.bytes.get(at)? == b'R').then_some(())?;
                 at += 1;
-                let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+                let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
                 let values = [
                     View::f64_be_at(&node.bytes, at)?,
                     View::f64_be_at(&node.bytes, at + 8)?,
@@ -816,7 +818,7 @@ impl Graph {
     ) -> Result<Vec<OffsetSurface>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::OffsetSurface).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
+                let mut at = node.common_header()?.1;
                 let discriminator =
                     OffsetSurfaceDiscriminator::try_from(char::from(*node.bytes.get(at)?)).ok()?;
                 at += 1;
@@ -857,8 +859,8 @@ impl Graph {
     ) -> Result<Vec<SurfaceCurve>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::SpCurve).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
-                let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+                let mut at = node.common_header()?.1;
+                let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
                 let tolerance = View::f64_be_at(&node.bytes, at)?;
                 Some(SurfaceCurve {
                     xmt: node.xmt,
@@ -889,7 +891,7 @@ impl Graph {
     ) -> Result<Vec<TrimmedCurve>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::TrimmedCurve).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
+                let mut at = node.common_header()?.1;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
                 let point_0 = vec3_be_at(&node.bytes, at)?;
                 let point_1 = vec3_be_at(&node.bytes, at + 24)?;
@@ -924,7 +926,7 @@ impl Graph {
         }
         if !baseline.has_complete_body_topology(ctx)?
             && full_domain.has_complete_body_topology(ctx)?
-            && full_domain.body_shape_face_count() != 0
+            && full_domain.body_shape_face_count(ctx)? != 0
         {
             full_domain_bytes.commit()?;
             Ok(full_domain)
@@ -1089,22 +1091,8 @@ impl Graph {
             Self::select_non_overlapping_candidates(ctx, stream, ownership_candidates)?;
         let (ownership, _ownership_unique_reservation) =
             Self::select_unique_candidates(ctx, non_overlapping_ownership)?;
-        let mut admitted_ownership = Vec::new();
-        let mut admitted_reservation = ctx.reserve_scoped(0, "NX admitted ownership candidates")?;
-        for candidate in ownership {
-            if selected
-                .iter()
-                .all(|selected| !selected.overlaps(candidate))
-            {
-                ctx.reserve_scoped_vec(
-                    &mut admitted_reservation,
-                    &mut admitted_ownership,
-                    1,
-                    "NX admitted ownership candidates",
-                )?;
-                admitted_ownership.push(candidate);
-            }
-        }
+        let (admitted_ownership, _admitted_reservation) =
+            Self::admit_disjoint_ownership(ctx, ownership, &selected)?;
         let mut graph = Self::default();
         let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
         for candidate in selected.into_iter().chain(admitted_ownership) {
@@ -1125,6 +1113,34 @@ impl Graph {
             keys.push(key);
         }
         Ok((graph, node_reservation))
+    }
+
+    fn admit_disjoint_ownership<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        ownership: Vec<NodeCandidate>,
+        selected: &[NodeCandidate],
+    ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
+        let work = ownership.len().checked_mul(selected.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("compare NX ownership overlaps", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_work(u64_from_index(work), "compare NX ownership overlaps")?;
+        let mut admitted_ownership = Vec::new();
+        let mut admitted_reservation = ctx.reserve_scoped(0, "NX admitted ownership candidates")?;
+        for candidate in ownership {
+            if selected
+                .iter()
+                .all(|selected| !selected.overlaps(candidate))
+            {
+                ctx.reserve_scoped_vec(
+                    &mut admitted_reservation,
+                    &mut admitted_ownership,
+                    1,
+                    "NX admitted ownership candidates",
+                )?;
+                admitted_ownership.push(candidate);
+            }
+        }
+        Ok((admitted_ownership, admitted_reservation))
     }
 
     fn fixed_record_candidates(
@@ -1323,6 +1339,23 @@ impl Graph {
             .filter_map(|key| self.nodes.get(key))
     }
 
+    /// Admit indexed node traversal before yielding records of one kind.
+    pub(crate) fn of_kind_charged<'graph>(
+        &'graph self,
+        ctx: &DecodeContext<'_>,
+        kind: NodeKind,
+    ) -> Result<impl Iterator<Item = &'graph Node>, CodecError> {
+        let count = self.by_kind.get(&kind).map_or(0, Vec::len);
+        let work = count.checked_mul(self.nodes.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("iterate NX topology records", u64::MAX, u64::MAX)
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "iterate NX topology records",
+        )?;
+        Ok(self.of_kind(kind))
+    }
+
     /// Resolve one current XMT identity from a unique kernel node identity.
     pub(crate) fn unique_xmt_by_node_id(&self, kind: NodeKind, node_id: u32) -> Option<u32> {
         let mut matches = self
@@ -1361,14 +1394,14 @@ impl Graph {
             ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
         }
         for node in self.of_kind(NodeKind::BlendSurface) {
-            let Some(mut at) = node.compact_tail_offset() else {
+            let Some((_, mut at)) = node.common_header() else {
                 continue;
             };
             if node.bytes.get(at) != Some(&b'R') {
                 continue;
             }
             at += 1;
-            if let Some(spine) = read_sequence_at(&node.bytes, &mut at, 3)
+            if let Some(spine) = read_sequence_at::<3>(&node.bytes, &mut at)
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {
@@ -1377,7 +1410,7 @@ impl Graph {
         }
         for node in self.of_kind(NodeKind::TrimmedCurve) {
             if let Some(reference) = node
-                .compact_tail_references(1)
+                .compact_tail_references::<1>()
                 .and_then(|items| items.first().copied())
                 .filter(|reference| *reference > 1)
             {
@@ -1386,7 +1419,7 @@ impl Graph {
         }
         for node in self.of_kind(NodeKind::SpCurve) {
             if let Some(reference) = node
-                .compact_tail_references(3)
+                .compact_tail_references::<3>()
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {
@@ -1452,9 +1485,21 @@ impl Graph {
     }
 
     /// Return SHELL nodes whose ownership fields define a body shape.
-    pub(crate) fn body_shape_shells(&self) -> impl Iterator<Item = &Node> + '_ {
-        self.of_kind(NodeKind::Shell)
-            .filter(|shell| self.is_body_shape_shell(shell))
+    pub(crate) fn body_shape_shells(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = &Node> + '_, CodecError> {
+        let shells = self.by_kind.get(&NodeKind::Shell).map_or(0, Vec::len);
+        let per_shell = self.shell_census_work_bound().ok_or_else(|| {
+            ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX)
+        })?;
+        let work = shells.checked_mul(per_shell).ok_or_else(|| {
+            ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_work(u64_from_index(work), "classify NX body shells")?;
+        Ok(self
+            .of_kind(NodeKind::Shell)
+            .filter(|shell| self.is_body_shape_shell(shell)))
     }
 
     /// Return whether every body-shape face has a non-empty valid loop chain
@@ -1464,7 +1509,7 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
-        let mut shells = self.body_shape_shells().peekable();
+        let mut shells = self.body_shape_shells(ctx)?.peekable();
         if shells.peek().is_none() {
             return Ok(false);
         }
@@ -1504,10 +1549,25 @@ impl Graph {
     }
 
     /// Count faces owned by validated body-shape shells.
-    pub(crate) fn body_shape_face_count(&self) -> usize {
-        self.body_shape_shells()
+    pub(crate) fn body_shape_face_count(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<usize, CodecError> {
+        let shells = self.body_shape_shells(ctx)?;
+        // The second census uses the same traversal bound as classification.
+        let count = self.by_kind.get(&NodeKind::Shell).map_or(0, Vec::len);
+        let work = self
+            .shell_census_work_bound()
+            .and_then(|n| n.checked_mul(count))
+            .ok_or_else(|| ctx.refuse_codec_limit("count NX body faces", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), "count NX body faces")?;
+        shells
             .filter_map(|shell| self.shell_face_count(shell))
-            .sum()
+            .try_fold(0usize, |count, next| {
+                count.checked_add(next).ok_or_else(|| {
+                    ctx.refuse_codec_limit("count NX body faces", u64::MAX - 1, u64::MAX)
+                })
+            })
     }
 
     /// Return the validated loop-to-FIN rings owned by a face.
@@ -1639,6 +1699,16 @@ impl Graph {
         }
     }
 
+    /// Two complete node traversals and one lookup per node bound a census.
+    /// Each lookup compares at most the full node population.
+    fn shell_census_work_bound(&self) -> Option<usize> {
+        self.nodes
+            .len()
+            .checked_mul(2)?
+            .checked_add(1)?
+            .checked_mul(self.nodes.len())
+    }
+
     fn is_body_shape_shell(&self, shell: &Node) -> bool {
         let Some(fields) = shell.shell_fields() else {
             return false;
@@ -1697,7 +1767,9 @@ impl Graph {
         shell: &Node,
     ) -> Result<Option<Vec<u32>>, CodecError> {
         ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.nodes.len()),
+            u64_from_index(self.shell_census_work_bound().ok_or_else(|| {
+                ctx.refuse_codec_limit("validate NX shell faces", u64::MAX - 1, u64::MAX)
+            })?),
             "validate NX shell faces",
         )?;
         let Some(count) = self.shell_face_count(shell) else {

@@ -7,6 +7,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 
 pub(crate) mod charged_clone;
 pub(crate) mod operand_tag;
@@ -28,7 +29,7 @@ pub(crate) struct PmiDimension {
     pub(crate) cad_text: String,
     /// Number of elements in the source `dimItems` array.
     #[serde(default = "default_pmi_item_count", skip_serializing_if = "is_one")]
-    pub(crate) item_count: u32,
+    pub(crate) item_count: NonZeroU32,
     /// Native PMI dimension subtype.
     pub(crate) subtype: String,
     /// Stored dimension value.
@@ -114,14 +115,13 @@ mod pmi_display_text_wire {
     );
 }
 
-fn default_pmi_item_count() -> u32 {
-    1
+fn default_pmi_item_count() -> NonZeroU32 {
+    NonZeroU32::MIN
 }
 
 // Serde's `skip_serializing_if` contract passes the field by reference.
-fn is_one(value: &impl std::borrow::Borrow<u32>) -> bool {
-    let value: &u32 = value.borrow();
-    *value == 1
+fn is_one(value: impl std::borrow::Borrow<NonZeroU32>) -> bool {
+    value.borrow().get() == 1
 }
 
 /// A named parametric-model variant (e.g. CAD "configuration") with its own
@@ -542,9 +542,9 @@ impl Clone for FeatureInputLane {
     }
 }
 
-/// Deserialization mirror admitting every sketch-entity marker against this lane's payload.
+/// Partial lane wire record; relation membership and sketch markers require admission.
 #[derive(Deserialize)]
-struct FeatureInputLaneWire {
+pub(crate) struct FeatureInputLaneWire {
     /// Stable source-derived identifier for this feature-input record.
     id: String,
     /// Configuration this input lane applies to, when the source scoped inputs
@@ -573,7 +573,7 @@ struct FeatureInputLaneWire {
     relation_bindings: Vec<FeatureInputRelationBinding>,
     /// Compact relation instances grouped by feature and operand identity.
     #[serde(default)]
-    relation_instances: Vec<FeatureInputRelationInstance>,
+    relation_instances: Vec<FeatureInputRelationInstanceWire>,
     /// Compact body-selection vectors owned by feature objects in this lane.
     #[serde(default)]
     body_selections: Vec<FeatureInputBodySelection>,
@@ -594,6 +594,44 @@ struct FeatureInputLaneWire {
     sketch_entities: Vec<SketchInputEntityWire>,
 }
 
+impl FeatureInputLaneWire {
+    pub(crate) fn admit(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+        let relations = ctx.try_collect_vec(
+            self.relation_instances
+                .into_iter()
+                .map(|relation| relation.admit(ctx)),
+            "admit SLDPRT inline relations",
+        )?;
+        let entities = ctx.try_collect_vec(
+            self.sketch_entities.into_iter().map(|entity| {
+                ctx.charge_work(1, "admit SLDPRT inline sketch marker")?;
+                SketchInputEntity::try_from_wire(entity, &self.native_payload)
+                    .map_err(cadmpeg_core::CodecError::malformed)
+            }),
+            "admit SLDPRT inline sketch entities",
+        )?;
+        Ok(FeatureInputLane {
+            id: self.id,
+            configuration: self.configuration,
+            native_payload: self.native_payload,
+            classes: self.classes,
+            names: self.names,
+            scalars: self.scalars,
+            relation_bindings: self.relation_bindings,
+            relation_instances: relations,
+            body_selections: self.body_selections,
+            edge_selections: self.edge_selections,
+            surface_selections: self.surface_selections,
+            generated_surface_identities: self.generated_surface_identities,
+            references: self.references,
+            sketch_entities: entities,
+        })
+    }
+}
+
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
@@ -601,6 +639,11 @@ impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
             .sketch_entities
             .into_iter()
             .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
+            .collect::<Result<Vec<_>, _>>()?;
+        let relation_instances = wire
+            .relation_instances
+            .into_iter()
+            .map(FeatureInputRelationInstance::try_from)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             id: wire.id,
@@ -610,7 +653,7 @@ impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
             names: wire.names,
             scalars: wire.scalars,
             relation_bindings: wire.relation_bindings,
-            relation_instances: wire.relation_instances,
+            relation_instances,
             body_selections: wire.body_selections,
             edge_selections: wire.edge_selections,
             surface_selections: wire.surface_selections,
@@ -850,6 +893,7 @@ pub(crate) struct FeatureInputRelationBinding {
 
 /// One compact sketch-relation instance represented by related scalar records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureInputRelationInstanceWire")]
 pub(crate) struct FeatureInputRelationInstance {
     /// Globally unique deterministic identifier for this relation instance.
     pub(crate) id: String,
@@ -870,6 +914,57 @@ pub(crate) struct FeatureInputRelationInstance {
     pub(crate) scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
     pub(crate) operands: Vec<FeatureInputOperand>,
+}
+
+/// Partial wire record; membership is admitted before it becomes a relation.
+#[derive(Deserialize)]
+pub(crate) struct FeatureInputRelationInstanceWire {
+    id: String,
+    parent: String,
+    ordinal: u32,
+    offset: u64,
+    family: FeatureInputRelationFamily,
+    class_ref: String,
+    feature_ref: String,
+    #[serde(flatten)]
+    scalars: relation_scalars::RelationScalarsWire,
+    operands: Vec<FeatureInputOperand>,
+}
+
+impl FeatureInputRelationInstanceWire {
+    pub(crate) fn admit(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<FeatureInputRelationInstance, cadmpeg_core::CodecError> {
+        Ok(FeatureInputRelationInstance {
+            id: self.id,
+            parent: self.parent,
+            ordinal: self.ordinal,
+            offset: self.offset,
+            family: self.family,
+            class_ref: self.class_ref,
+            feature_ref: self.feature_ref,
+            scalars: self.scalars.admit(ctx)?,
+            operands: self.operands,
+        })
+    }
+}
+
+impl TryFrom<FeatureInputRelationInstanceWire> for FeatureInputRelationInstance {
+    type Error = String;
+    fn try_from(wire: FeatureInputRelationInstanceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            parent: wire.parent,
+            ordinal: wire.ordinal,
+            offset: wire.offset,
+            family: wire.family,
+            class_ref: wire.class_ref,
+            feature_ref: wire.feature_ref,
+            scalars: wire.scalars.into_checked()?,
+            operands: wire.operands,
+        })
+    }
 }
 
 impl FeatureInputRelationInstance {
@@ -1569,12 +1664,13 @@ impl SketchInputEntity {
         kind: SketchInputKind,
     ) -> Self {
         let position = usize::try_from(offset).unwrap();
-        let mut payload = cadmpeg_core::decode::alloc_filled(
-            position.checked_add(39).unwrap(),
-            0,
-            "SLDPRT sketch marker fixture",
-        )
-        .unwrap();
+        let mut payload = cadmpeg_test_support::service_decode_context()
+            .alloc_filled(
+                position.checked_add(39).unwrap(),
+                0,
+                "SLDPRT sketch marker fixture",
+            )
+            .unwrap();
         if position >= 4 {
             payload[position - 4..position].fill(0xff);
         }
@@ -2084,6 +2180,7 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    use super::PmiDimension;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
@@ -2647,6 +2744,41 @@ mod tests {
         for key in ["source_id", "input_class", "text"] {
             states_the_key(key, &refusal::<super::Feature>(key));
         }
+    }
+
+    #[test]
+    fn pmi_dimension_count_refuses_zero_and_keeps_the_default_wire() {
+        let dimension = PmiDimension {
+            id: "dimension".into(),
+            parent: "block".into(),
+            offset: 0,
+            guid: "guid".into(),
+            cad_text: "D1@Pattern1".into(),
+            item_count: std::num::NonZeroU32::MIN,
+            subtype: String::new(),
+            value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test dimension"),
+            value_offset: 0,
+            precision: 0,
+            precision_offset: 0,
+            display_text: None,
+            basic: false,
+            basic_offset: 0,
+            inspection: false,
+            inspection_offset: 0,
+            reference_only: false,
+            reference_only_offset: 0,
+        };
+        let wire = serde_json::to_value(&dimension).unwrap();
+        assert!(wire.get("item_count").is_none());
+        let decoded: PmiDimension = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded, dimension);
+        let mut explicit = wire.clone();
+        explicit["item_count"] = serde_json::json!(1);
+        let decoded: PmiDimension = serde_json::from_value(explicit).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let mut zero = wire;
+        zero["item_count"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<PmiDimension>(zero).is_err());
     }
 }
 

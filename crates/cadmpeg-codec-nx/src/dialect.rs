@@ -90,8 +90,7 @@ impl LayerClassification {
         self.host.container_kind()
     }
 
-    pub(crate) fn into_report_parts(mut self) -> (DialectLayers, Vec<LossNote>) {
-        self.losses.extend(dialect_losses(&self.layers));
+    pub(crate) fn into_report_parts(self) -> (DialectLayers, Vec<LossNote>) {
         (self.layers, self.losses)
     }
 }
@@ -147,33 +146,39 @@ pub(crate) fn classify_layers(
         carriers.push((schema.clone(), cadmpeg_parasolid::Carrier::new(label)));
     }
     let extra = cadmpeg_parasolid::extra_layers(
+        ctx,
         carriers,
         // NX verifies no Parasolid schema itself; every kernel layer is residual.
         &[],
-    );
+    )?;
     let host = NxDialect::of_container(&scan.container);
     let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
-    let losses = cadmpeg_parasolid::push_extras(&mut layers, extra)
-        .into_iter()
-        .map(|message| NxLossCode::DialectLayerCollision.note(message))
-        .collect();
+    let mut losses = Vec::new();
+    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
+        ctx.push_retained_vec(
+            &mut losses,
+            NxLossCode::DialectLayerCollision.note(message),
+            "collect NX dialect collision losses",
+        )?;
+    }
+    ctx.charge_work(
+        u64_from_index(layers.iter().size_hint().0),
+        "scan NX kernel dialect losses",
+    )?;
+    for layer in layers.iter() {
+        if let Some(message) = cadmpeg_parasolid::unverified_message(ctx, layer)? {
+            ctx.push_retained_vec(
+                &mut losses,
+                NxLossCode::KernelDialectUnverified.note(message),
+                "collect NX kernel dialect losses",
+            )?;
+        }
+    }
     Ok(LayerClassification {
         host,
         layers,
         losses,
     })
-}
-
-/// Losses charged by every unverified layer in a classified document.
-///
-/// This walks the complete layer set rather than assuming the host primary is
-/// the only identity that can affect decode policy.
-fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
-    layers
-        .iter()
-        .filter_map(cadmpeg_parasolid::unverified_message)
-        .map(|message| NxLossCode::KernelDialectUnverified.note(message))
-        .collect()
 }
 
 impl NxDialect {

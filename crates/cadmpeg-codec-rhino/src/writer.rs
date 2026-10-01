@@ -11,7 +11,7 @@ use model::{
     WritablePcurve, WritableVertex,
 };
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -562,6 +562,8 @@ fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
 ) -> Result<WritePlan<'_>, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     if ir.tolerances.angular.get() > std::f64::consts::PI {
         return Err(CodecError::NotImplemented(
             "Rhino angular tolerance must not exceed pi".into(),
@@ -677,7 +679,7 @@ fn prepare_write(
     for scope in &breps {
         let body = &scope.ir.model.bodies[0];
         let model = WritableModel::try_new(&scope.ir)?;
-        let payload = brep_payload(&model, archive_version)?;
+        let payload = brep_payload(&ctx, &model, archive_version)?;
         brep_records.write_all(&brep_object_record(
             &payload,
             body.id.as_str(),
@@ -844,6 +846,7 @@ fn json_array_empty_or_missing(fields: &NativeFields, name: &str) -> bool {
 }
 
 fn brep_payload(
+    ctx: &DecodeContext<'_>,
     model: &WritableModel<'_>,
     archive_version: RhinoArchiveVersion,
 ) -> Result<BrepPayload, CodecError> {
@@ -1030,7 +1033,7 @@ fn brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = alloc_filled(model.faces.len(), 0_u8, "Rhino Brep mesh presence")?;
+    let mesh_presence = ctx.alloc_filled(model.faces.len(), 0_u8, "Rhino Brep mesh presence")?;
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence)?);
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence)?);
     let solid = if model.body.kind == BodyKind::Solid {

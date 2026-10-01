@@ -227,3 +227,38 @@ fn complete_extrude_feature(
         .set_outputs((outputs).try_into().unwrap());
     feature
 }
+
+#[test]
+fn body_census_result_rejects_noncanonical_and_contradictory_wire_states() {
+    use super::BodyCensusEvaluation;
+    let a = BodyId::mint("test:model:entity#a").unwrap();
+    let b = BodyId::mint("test:model:entity#b").unwrap();
+    for bodies in [vec![a.clone(), a.clone()], vec![b.clone(), a.clone()]] {
+        assert!(BodyCensusEvaluation::verified(bodies.clone()).is_err());
+        assert!(serde_json::from_value::<BodyCensusEvaluation>(
+            serde_json::json!({"kind": "verified", "bodies": bodies})
+        )
+        .is_err());
+    }
+    for invalid in [vec![a.clone(), a.clone()], vec![b.clone(), a.clone()]] {
+        for (rederived, saved) in [(invalid.clone(), vec![]), (vec![], invalid)] {
+            assert!(BodyCensusEvaluation::mismatch(rederived.clone(), saved.clone()).is_err());
+            assert!(serde_json::from_value::<BodyCensusEvaluation>(
+                serde_json::json!({"kind": "mismatch", "rederived": rederived, "saved": saved})
+            )
+            .is_err());
+        }
+    }
+    assert!(BodyCensusEvaluation::mismatch(vec![a.clone()], vec![a.clone()]).is_err());
+    assert!(serde_json::from_value::<BodyCensusEvaluation>(
+        serde_json::json!({"kind": "mismatch", "rederived": [a.clone()], "saved": [a.clone()]})
+    )
+    .is_err());
+    for wire in [
+        serde_json::json!({"kind": "verified", "bodies": [a.clone(), b.clone()]}),
+        serde_json::json!({"kind": "mismatch", "rederived": [a], "saved": [b]}),
+    ] {
+        let result: BodyCensusEvaluation = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(result).unwrap(), wire);
+    }
+}

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +17,8 @@ pub mod framing;
 
 /// Decoded property carriers and their serialized representation.
 pub mod property;
-use property::{DecodedProperty, PropertyContent, PropertyValue};
+use cadmpeg_ir::scalar::FiniteReal;
+use property::{DecodedProperty, PropertyContent, PropertyValue, RepeatedValues};
 
 /// Byte-offset constants generated from `docs/layouts/protein.toml`.
 mod layout;
@@ -34,6 +35,7 @@ pub const CONTINUATION_MARKER: &[u8] = &continuation_page::MARKER_VALUE;
 /// Terminal marker at page bytes 0..4.
 pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_RECOVERY_VALUES: u64 = 1_024;
 const XML_NODE_RESERVATION_BYTES: u64 = 192;
 const XML_ATTRIBUTE_RESERVATION_BYTES: u64 = 192;
 
@@ -75,29 +77,39 @@ fn read_entry_bounded(
     ctx: &DecodeContext<'_>,
     entry: &mut impl Read,
     declared_size: u64,
-    name: &str,
 ) -> Result<Vec<u8>, CodecError> {
     if declared_size > MAX_SCHEMA_BYTES {
-        return Err(CodecError::malformed(format_args!(
-            "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
-        )));
+        return Err(ctx.refuse_codec_limit(
+            "Protein schema bytes",
+            MAX_SCHEMA_BYTES,
+            declared_size,
+        ));
     }
-    let mut bytes = Vec::new();
+    let mut writer = ctx.begin_expand(ExpandSpec::Exact(declared_size))?;
     let mut limited = entry.take(MAX_SCHEMA_BYTES + 1);
     let mut chunk = [0_u8; 16 * 1024];
     loop {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(chunk.len()),
+            "Protein schema read",
+        )?;
         let read = limited.read(&mut chunk)?;
         if read == 0 {
             break;
         }
-        ctx.extend_retained_bytes(&mut bytes, &chunk[..read], "Protein schema allocation")?;
+        let count = cadmpeg_core::decode::u64_from_index(read);
+        let total = writer.written().checked_add(count).ok_or_else(|| {
+            ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, u64::MAX)
+        })?;
+        if total > MAX_SCHEMA_BYTES {
+            return Err(ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, total));
+        }
+        ctx.charge_retained(count, "Protein schema allocation")?;
+        ctx.charge_collection_items(count, "Protein schema allocation")?;
+        ctx.charge_work(count, "Protein schema copy")?;
+        writer.write(&chunk[..read])?;
     }
-    if cadmpeg_core::decode::u64_from_index(bytes.len()) > MAX_SCHEMA_BYTES {
-        return Err(CodecError::malformed(format_args!(
-            "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
-        )));
-    }
-    Ok(bytes)
+    writer.finalize_owned()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -155,10 +167,11 @@ impl SchemaCatalog {
                 continue;
             }
             if entry.uncompressed_size > MAX_SCHEMA_BYTES {
-                return Err(CodecError::malformed(format_args!(
-                    "Protein schema {} exceeds the {MAX_SCHEMA_BYTES}-byte limit",
-                    entry.name
-                )));
+                return Err(ctx.refuse_codec_limit(
+                    "Protein schema bytes",
+                    MAX_SCHEMA_BYTES,
+                    entry.uncompressed_size,
+                ));
             }
             let xml = archive.open(ctx, &entry.name)?;
             parse_schema_document(ctx, &entry.name, xml.window(), &mut schemas)?;
@@ -319,7 +332,7 @@ pub fn decode_detailed<'a>(
         },
     };
     let frames = framing::record_frames_admitted(ctx, instance.window())?;
-    decode_frames_admitted(ctx, &mut catalog, &frames)
+    decode_frames_admitted(ctx, &mut catalog, frames.frames())
 }
 
 /// Decode already framed records for source-retaining export edits.
@@ -356,50 +369,39 @@ fn decode_frames(
         ctx.charge_collection_items(1, "Protein record outcome")?;
         match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
             Ok(Some(record)) => {
+                ctx.reserve_retained_admitted_vec(
+                    &mut outcome.records,
+                    1,
+                    "Protein record outcome",
+                )?;
                 outcome.records.push(record);
             }
             Ok(None) => {
                 const DETAIL: &str = "Protein instance record header is malformed";
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(DETAIL.len()),
-                    "Protein rejected record detail",
+                let detail = ctx.copy_retained_text(DETAIL, "Protein rejected record detail")?;
+                ctx.reserve_retained_admitted_vec(
+                    &mut outcome.rejected,
+                    1,
+                    "Protein record outcome",
                 )?;
-                outcome.rejected.push(RejectedRecord {
-                    ordinal,
-                    detail: DETAIL.into(),
-                });
+                outcome.rejected.push(RejectedRecord { ordinal, detail });
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                ctx.charge_retained(
-                    rejection_detail_len(&error)?,
+                let detail = ctx.format_retained_with_work(
+                    format_args!("{error}"),
                     "Protein rejected record detail",
                 )?;
-                outcome.rejected.push(RejectedRecord {
-                    ordinal,
-                    detail: error.to_string(),
-                });
+                ctx.reserve_retained_admitted_vec(
+                    &mut outcome.rejected,
+                    1,
+                    "Protein record outcome",
+                )?;
+                outcome.rejected.push(RejectedRecord { ordinal, detail });
             }
         }
     }
     Ok(outcome)
-}
-
-fn rejection_detail_len(error: &CodecError) -> Result<u64, CodecError> {
-    struct Length(u64);
-    impl std::fmt::Write for Length {
-        fn write_str(&mut self, text: &str) -> std::fmt::Result {
-            self.0 = self
-                .0
-                .checked_add(cadmpeg_core::decode::u64_from_index(text.len()))
-                .ok_or(std::fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut length = Length(0);
-    std::fmt::write(&mut length, format_args!("{error}"))
-        .map_err(|_| CodecError::Malformed("Protein rejection detail length overflows".into()))?;
-    Ok(length.0)
 }
 
 /// Whether the Protein archive packages schema XML documents.
@@ -439,7 +441,7 @@ fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Sc
         }
         let size = entry.size();
         let name = entry.name().to_owned();
-        let bytes = read_entry_bounded(ctx, &mut entry, size, &name)?;
+        let bytes = read_entry_bounded(ctx, &mut entry, size)?;
         parse_schema_document(ctx, &name, &bytes, &mut schemas)?;
     }
     Ok(schemas)
@@ -523,6 +525,22 @@ fn parse_schema_document(
         let Some(id) = node.attribute("id") else {
             continue;
         };
+        let lookup_work = id
+            .len()
+            .checked_add(1)
+            .and_then(|width| width.checked_mul(schema.properties.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("Protein local property uniqueness", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(lookup_work),
+            "Protein local property uniqueness",
+        )?;
+        if schema.properties.contains_key(id) {
+            return Err(CodecError::malformed(format_args!(
+                "Protein schema {uid} declares property {id} more than once"
+            )));
+        }
         ctx.charge_collection_items(1, "Protein schema property")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(id.len()),
@@ -644,7 +662,7 @@ fn decode_record(
         let content = match property {
             Property::Reference { multiple } => {
                 let count = (*multiple)
-                    .then(|| read_count(record, &mut at, id))
+                    .then(|| read_count(ctx, record, &mut at, id))
                     .transpose()
                     .map_err(|error| value_error(error, at))?;
                 let targets = read_connections(ctx, record, &mut at)
@@ -653,7 +671,7 @@ fn decode_record(
                     Some(count) => match std::num::NonZeroUsize::new(count) {
                         Some(count) => PropertyContent::MultipleReferences { count, targets },
                         None => PropertyContent::Value {
-                            value: PropertyValue::Multiple(Vec::new()),
+                            value: PropertyValue::Multiple(RepeatedValues::default()),
                             connections: targets,
                         },
                     },
@@ -733,12 +751,18 @@ fn read_property(
         // multiple-value declaration does not add another count prefix.
         ValueLayout::TextureUri => read_texture_uri(ctx, bytes, at, id),
         ValueLayout::Multiple(carrier) => {
-            let count = read_count(bytes, at, id)?;
+            let count = read_count(ctx, bytes, at, id)?;
             let mut values = ctx.collection_vec(count, "Protein multiple property members")?;
             for _ in 0..count {
                 values.push(read_value(ctx, bytes, at, carrier, id)?);
             }
-            Ok(PropertyValue::Multiple(values))
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(values.len()),
+                "Protein repeated carrier validation",
+            )?;
+            Ok(PropertyValue::Multiple(
+                values.try_into().map_err(CodecError::malformed)?,
+            ))
         }
     }
 }
@@ -765,7 +789,7 @@ fn read_texture_uri(
             "Protein TextureURI property {id} has invalid kind {kind}"
         )));
     }
-    let count = read_count(bytes, at, id)?;
+    let count = read_count(ctx, bytes, at, id)?;
     let mut paths = ctx.collection_vec(count, "Protein texture URI paths")?;
     for _ in 0..count {
         paths.push(take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?);
@@ -773,15 +797,23 @@ fn read_texture_uri(
     Ok(PropertyValue::TextureUri(paths))
 }
 
-fn read_count(bytes: &[u8], at: &mut usize, id: &str) -> Result<usize, CodecError> {
+fn read_count(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+    id: &str,
+) -> Result<usize, CodecError> {
     let count = usize::try_from(read_u32_le(bytes, at).ok_or_else(|| {
         CodecError::malformed(format_args!("Protein property {id} is truncated"))
     })?)
     .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
-    if count > 1_024 {
-        return Err(CodecError::malformed(format_args!(
-            "Protein property {id} has implausible value count {count}"
-        )));
+    let population = cadmpeg_core::decode::u64_from_index(count);
+    if population > MAX_RECOVERY_VALUES {
+        return Err(ctx.refuse_codec_limit(
+            "Protein counted value recovery",
+            MAX_RECOVERY_VALUES,
+            population,
+        ));
     }
     Ok(count)
 }
@@ -832,7 +864,7 @@ fn read_value(
             take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?,
         ),
         ValueCarrier::Color => {
-            let mut rgba = [0.0; 4];
+            let mut rgba = [FiniteReal::ZERO; 4];
             for value in &mut rgba {
                 *value = finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?;
             }
@@ -841,10 +873,8 @@ fn read_value(
     })
 }
 
-fn finite_value(value: f64, id: &str) -> Result<f64, CodecError> {
-    value
-        .is_finite()
-        .then_some(value)
+fn finite_value(value: f64, id: &str) -> Result<FiniteReal, CodecError> {
+    FiniteReal::new(value)
         .ok_or_else(|| CodecError::malformed(format_args!("Protein property {id} is not finite")))
 }
 
@@ -879,7 +909,7 @@ fn read_connections(
             kind[0]
         )));
     }
-    let count = read_count(bytes, at, "connection")?;
+    let count = read_count(ctx, bytes, at, "connection")?;
     let mut connections = ctx.collection_vec(count, "Protein connected asset GUIDs")?;
     for _ in 0..count {
         connections.push(
@@ -909,8 +939,8 @@ mod tests {
 
     use super::{
         framing, instance_property_serializes, read_connections, read_texture_uri, read_value,
-        ValueCarrier, CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN,
-        TERMINAL_MARKER,
+        FiniteReal, RepeatedValues, ValueCarrier, CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER,
+        STREAM_HEADER_LEN, TERMINAL_MARKER,
     };
     use crate::property::{PropertyContent, PropertyValue};
 
@@ -951,17 +981,36 @@ mod tests {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
             let mut reader = Cursor::new(b"xml");
-            assert!(
-                matches!(super::read_entry_bounded(&ctx, &mut reader, 3, "schema"),
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == "Protein schema allocation")
-            );
+            assert!(matches!(super::read_entry_bounded(&ctx, &mut reader, 3),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == "Protein schema allocation"));
         }
         let (ctx, _) =
             DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3, "schema")
+            super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3)
                 .expect("service admission"),
             b"xml"
+        );
+    }
+
+    #[test]
+    fn schema_size_and_edit_expansion_limits_are_resource_refusals() {
+        with_service_context(&[], |ctx| {
+            let error =
+                super::read_entry_bounded(ctx, &mut Cursor::new(b""), super::MAX_SCHEMA_BYTES + 1)
+                    .expect_err("local byte ceiling");
+            assert!(
+                matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein schema bytes")))
+            );
+        });
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_per_expand = 2;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
+        let error = super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3)
+            .expect_err("caller expansion limit");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::DecompressedBytes)
         );
     }
 
@@ -1103,6 +1152,49 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_local_protein_properties_are_rejected() {
+        let xml = br#"<Schema><UID val="Simple"/><Float id="value"/><String id="value"/></Schema>"#;
+        with_service_context(xml, |ctx| {
+            let error = super::parse_schema_document(
+                ctx,
+                "schema",
+                xml,
+                &mut std::collections::HashMap::new(),
+            )
+            .expect_err("local ids must be unique");
+            assert!(
+                matches!(error, CodecError::Malformed(message) if message == "Protein schema Simple declares property value more than once")
+            );
+        });
+    }
+
+    #[test]
+    fn schema_archive_size_ceiling_is_a_resource_refusal() {
+        let mut bytes = schema_archive(&[(
+            "Schemas/SimpleSchema.xml",
+            "<Schema><UID val=\"Simple\"/></Schema>",
+        )]);
+        let size = u32::try_from(super::MAX_SCHEMA_BYTES + 1)
+            .expect("local ceiling fits ZIP32")
+            .to_le_bytes();
+        let central = bytes
+            .windows(4)
+            .position(|bytes| bytes == b"PK\x01\x02")
+            .expect("central header");
+        bytes[central + 24..central + 28].copy_from_slice(&size);
+        bytes[22..26].copy_from_slice(&size);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        let error = super::SchemaCatalog::load(&ctx, root)
+            .err()
+            .expect("local size ceiling");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein schema bytes")))
+        );
+    }
+
+    #[test]
     fn schema_xml_tree_refuses_before_parse_allocation() {
         let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
         let arena = DecodeArena::new();
@@ -1227,6 +1319,7 @@ mod tests {
         assert_eq!(
             framing::record_frames_admitted(&ctx, &stream)
                 .unwrap()
+                .frames()
                 .len(),
             1
         );
@@ -1242,6 +1335,12 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
+        let (small, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy).expect("input");
+        assert!(
+            matches!(framing::record_frames_admitted(&small, &stream), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+        policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(record.len() + super::RECORD_MARKER.len()) + 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("stream fits input limit");
         let frames = framing::record_frames_admitted(&ctx, &stream)
@@ -1253,7 +1352,7 @@ mod tests {
                 std::collections::BTreeMap::new(),
             )]),
         };
-        let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
+        let outcome = super::decode_frames_admitted(&ctx, &mut catalog, frames.frames())
             .expect("one outcome needs no second framing pass");
         assert_eq!(outcome.records.len(), 1);
         assert!(matches!(
@@ -1261,6 +1360,43 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
         ));
+    }
+
+    #[test]
+    fn large_complete_protein_lists_report_a_resource_ceiling() {
+        let mut repeated = 1_025_u32.to_le_bytes().to_vec();
+        repeated.extend(std::iter::repeat_n(0_u8, 1_025 * 4));
+        let mut paths = vec![0_u8];
+        paths.extend_from_slice(&repeated);
+        let mut connections = vec![1_u8, 1];
+        connections.extend_from_slice(&repeated);
+        with_service_context(&repeated, |ctx| {
+            let error = super::read_property(
+                ctx,
+                &repeated,
+                &mut 0,
+                super::ValueLayout::Multiple(ValueCarrier::Integer),
+                "values",
+            )
+            .expect_err("recovery ceiling");
+            assert!(
+                matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein counted value recovery")))
+            );
+        });
+        with_service_context(&paths, |ctx| {
+            let error =
+                read_texture_uri(ctx, &paths, &mut 0, "paths").expect_err("URI recovery ceiling");
+            assert!(
+                matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein counted value recovery")))
+            );
+        });
+        with_service_context(&connections, |ctx| {
+            let error = read_connections(ctx, &connections, &mut 0)
+                .expect_err("connection recovery ceiling");
+            assert!(
+                matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein counted value recovery")))
+            );
+        });
     }
 
     #[test]
@@ -1337,18 +1473,18 @@ mod tests {
     }
 
     #[test]
-    fn copied_record_range_refuses_before_frame_growth() {
+    fn temporary_record_range_refuses_before_frame_growth() {
         let stream = paged_stream(&[b"frame"]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
+        policy.limits.max_materialized_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("stream fits input limit");
         assert!(matches!(
             framing::record_frames_admitted(&ctx, &stream),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "Protein copied record range"
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "Protein temporary frames"
         ));
     }
 
@@ -1474,7 +1610,7 @@ mod tests {
             with_service_context(&bare, |ctx| {
                 assert_eq!(
                     read_value(ctx, &bare, &mut at, ValueCarrier::Color, id).unwrap(),
-                    PropertyValue::Color(rgba)
+                    PropertyValue::Color(rgba.map(|value| FiniteReal::new(value).expect("finite")))
                 );
             });
             assert_eq!(at, bare.len());
@@ -1555,7 +1691,7 @@ mod tests {
                         targets: vec!["target".into()],
                     },
                     None => PropertyContent::Value {
-                        value: PropertyValue::Multiple(Vec::new()),
+                        value: PropertyValue::Multiple(RepeatedValues::default()),
                         connections: vec!["target".into()],
                     },
                 }
@@ -1630,7 +1766,9 @@ mod tests {
         let properties = &records[0].properties;
         assert_eq!(
             properties["a_color"].value().unwrap().clone(),
-            PropertyValue::Color([0.1, 0.2, 0.3, 1.0])
+            PropertyValue::Color(
+                [0.1, 0.2, 0.3, 1.0].map(|value| FiniteReal::new(value).expect("finite"))
+            )
         );
         assert_eq!(
             properties["a_color"].connections(),
@@ -1641,7 +1779,7 @@ mod tests {
             properties["b_distance"].value().unwrap().clone(),
             PropertyValue::Distance {
                 unit: 0x2016,
-                value: 2.5,
+                value: FiniteReal::new(2.5).expect("finite"),
             }
         );
         assert_eq!(
@@ -1653,7 +1791,7 @@ mod tests {
         );
         assert_eq!(
             properties["d_unit_float"].value().unwrap().clone(),
-            PropertyValue::Float(4.5)
+            PropertyValue::Float(FiniteReal::new(4.5).expect("finite"))
         );
         assert_eq!(
             properties["e_reference"].connections(),
@@ -1661,7 +1799,14 @@ mod tests {
         );
         assert_eq!(
             properties["f_profile"].value().unwrap().clone(),
-            PropertyValue::Multiple(vec![PropertyValue::Float(0.25), PropertyValue::Float(0.75)])
+            PropertyValue::Multiple(
+                vec![
+                    PropertyValue::Float(FiniteReal::new(0.25).expect("finite")),
+                    PropertyValue::Float(FiniteReal::new(0.75).expect("finite"))
+                ]
+                .try_into()
+                .expect("same carrier")
+            )
         );
         assert_eq!(
             properties["metadata_still_serializes"]
