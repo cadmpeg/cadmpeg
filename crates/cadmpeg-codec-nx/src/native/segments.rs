@@ -853,10 +853,11 @@ pub(super) fn segment_om_links(
             let Some(relative_u64) = u64::try_from(relative).ok() else {
                 continue;
             };
-            let separated_marker = entry_offset
-                .checked_add(relative_u64)
-                .and_then(|offset| container.bounded_entry_bytes(offset, 4))
-                .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]);
+            let separated_marker = match entry_offset.checked_add(relative_u64) {
+                Some(offset) => container.bounded_entry_bytes(ctx, offset, 4)?
+                    .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]),
+                None => false,
+            };
             let role_at = |offset| {
                 sections
                     .iter()

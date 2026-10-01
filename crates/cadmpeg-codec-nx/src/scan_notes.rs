@@ -19,8 +19,8 @@ pub(super) fn summarize(
     scan: &Scan,
 ) -> Result<(crate::dialect::LayerClassification, Vec<String>), CodecError> {
     let c = &scan.container;
-    let header_entry_count = c.entry_count(crate::container::Region::Header);
-    let footer_entry_count = c.entry_count(crate::container::Region::Footer);
+    let header_entry_count = c.entry_count(ctx, crate::container::Region::Header)?;
+    let footer_entry_count = c.entry_count(ctx, crate::container::Region::Footer)?;
     let mut notes = Vec::new();
     match c.layout {
         crate::container::ContainerLayout::LegacyCfb { .. } => push_note(
@@ -55,10 +55,10 @@ pub(super) fn summarize(
         &mut notes,
         format_args!(
             "embedded streams: {} partition, {} deltas, {} plain (cached body), {} preview/non-Parasolid",
-            scan.count(StreamKind::Partition),
-            scan.count(StreamKind::Deltas),
-            scan.count(StreamKind::Plain),
-            scan.count(StreamKind::Preview),
+            scan.count(ctx, StreamKind::Partition)?,
+            scan.count(ctx, StreamKind::Deltas)?,
+            scan.count(ctx, StreamKind::Plain)?,
+            scan.count(ctx, StreamKind::Preview)?,
         ),
     )?;
     let (control_count, classified_control_count) = decode::offset_store_control_counts(ctx, c)?;
@@ -73,14 +73,18 @@ pub(super) fn summarize(
     }
     let framed_om_sections = c.om_sections(ctx)?;
     if !framed_om_sections.is_empty() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(framed_om_sections.len()), "count NX OM declarations")?;
         let declarations = framed_om_sections
             .iter()
             .map(|(_, section)| section.types.len())
-            .sum::<usize>();
+            .try_fold(0usize, |sum, next| sum.checked_add(next)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(framed_om_sections.len()), "count NX OM fields")?;
         let fields = framed_om_sections
             .iter()
             .map(|(_, section)| section.fields.len())
-            .sum::<usize>();
+            .try_fold(0usize, |sum, next| sum.checked_add(next)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)))?;
         push_note(
             ctx,
             &mut notes,
@@ -94,16 +98,21 @@ pub(super) fn summarize(
     }
     let om_sections = c.indexed_om_sections(ctx)?;
     if !om_sections.is_empty() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(om_sections.len()), "count NX indexed entities")?;
         let entities = om_sections
             .iter()
             .filter_map(|(_, section)| section.as_fixed())
             .map(<[crate::om::FixedEntityRecord<'_>]>::len)
-            .sum::<usize>();
+            .try_fold(0usize, |sum, next| sum.checked_add(next)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(om_sections.len()), "count NX offset blocks")?;
         let blocks = om_sections
             .iter()
             .filter_map(|(_, section)| section.as_offset_only())
-            .map(|(_control, _, records)| records.len() + 1)
-            .sum::<usize>();
+            .map(|(_control, _, records)| records.len().checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX offset blocks", u64::MAX, u64::MAX)))
+            .try_fold(0usize, |sum, next| sum.checked_add(next?)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)))?;
         if blocks == 0 {
             push_note(
                 ctx,
@@ -127,10 +136,8 @@ pub(super) fn summarize(
             )?;
         }
     }
-    if !scan.has_parasolid()
-        && c.entries
-            .iter()
-            .any(|e| e.name.contains("ExternalReferences"))
+    if !scan.has_parasolid(ctx)?
+        && c.has_external_references(ctx)?
     {
         push_note(
             ctx,

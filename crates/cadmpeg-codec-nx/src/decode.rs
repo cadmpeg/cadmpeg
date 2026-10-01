@@ -50,15 +50,17 @@ pub(crate) struct Scan<'a> {
 
 impl Scan<'_> {
     /// Count streams with the requested classification.
-    pub(super) fn count(&self, kind: StreamKind) -> usize {
-        self.streams.iter().filter(|s| s.kind() == kind).count()
+    pub(super) fn count(&self, ctx: &DecodeContext<'_>, kind: StreamKind) -> Result<usize, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.streams.len()), "count NX streams")?;
+        Ok(self.streams.iter().filter(|s| s.kind() == kind).count())
     }
 
     /// Return whether the file contains an inline Parasolid stream.
     ///
     /// NX assemblies may contain only references to external child parts.
-    pub(super) fn has_parasolid(&self) -> bool {
-        self.streams.iter().any(|s| s.kind().is_parasolid())
+    pub(super) fn has_parasolid(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.streams.len()), "scan NX Parasolid streams")?;
+        Ok(self.streams.iter().any(|s| s.kind().is_parasolid()))
     }
 }
 
@@ -337,12 +339,7 @@ fn build_container_body(
     dialect_losses: Vec<LossNote>,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
-    let assembly = scan
-        .container
-        .entries
-        .iter()
-        .any(|e| e.name.contains("ExternalReferences"))
-        && !scan.has_parasolid();
+    let assembly = scan.container.has_external_references(ctx)? && !scan.has_parasolid(ctx)?;
 
     let loss = if assembly {
         charge_loss_code(ctx, NxLossCode::AssemblyComponentsExternal)?;

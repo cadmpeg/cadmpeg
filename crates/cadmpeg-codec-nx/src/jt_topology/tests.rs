@@ -187,3 +187,59 @@ fn jt_reconstruction_refuses_ring_work_before_traversal() {
         },
     );
 }
+
+fn active_frontier(count: usize) -> super::Decoder<'static> {
+    let faces = crate::test_support::with_decode_context(|ctx| {
+        (0..count).map(|_| super::Face {
+            vertices: super::FaceSlots::new(ctx, 1).unwrap(),
+            attribute_mask: Vec::new(), attributes: Vec::new(),
+        }).collect()
+    });
+    super::Decoder {
+        symbols: super::Symbols {
+            degrees: [&[]; 8], degree_pos: [0; 8], valences: &[], groups: &[], flags: &[],
+            split_faces: &[], split_positions: &[],
+            attribute_masks: super::AttributeMaskLanes {
+                small: [&[]; 8], context_7_next_30: &[], context_7_upper_4: &[], large_words: &[],
+            },
+            attribute_mask_pos: [0; 8], large_mask_pos: 0, vertex_pos: 0, split_pos: 0,
+        },
+        vertices: Vec::new(), faces, active: (0..count).collect(), removed: vec![false; count],
+        slot_count: 0, attribute_count: 0,
+    }
+}
+
+#[test]
+fn jt_active_face_window_admits_large_unchanged_frontier() {
+    let mut decoder = active_frontier(10_000);
+    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 17, |ctx| {
+        assert_eq!(decoder.next_active_face(ctx).unwrap(), Some(9_999));
+        assert_eq!(decoder.active.len(), 10_000);
+    });
+}
+
+#[test]
+fn jt_active_suffix_refuses_before_the_next_pop() {
+    let mut decoder = active_frontier(3);
+    decoder.removed.fill(true);
+    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 2, |ctx| {
+        let error = decoder.next_active_face(ctx).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "check JT active suffix"));
+        assert_eq!(decoder.active, [0]);
+    });
+}
+
+#[test]
+fn jt_active_shift_refuses_before_moving_the_lane() {
+    let mut decoder = active_frontier(3);
+    decoder.removed[1] = true;
+    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 3, |ctx| {
+        let error = decoder.next_active_face(ctx).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "shift JT active faces" && limit.additional == 1));
+        assert_eq!(decoder.active, [0, 1, 2]);
+    });
+}

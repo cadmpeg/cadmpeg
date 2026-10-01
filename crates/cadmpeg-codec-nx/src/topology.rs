@@ -1334,6 +1334,11 @@ impl Graph {
             .filter_map(|key| self.nodes.get(key))
     }
 
+    /// Cardinality retained by the kind index, without walking node identities.
+    pub(crate) fn kind_count(&self, kind: NodeKind) -> usize {
+        self.by_kind.get(&kind).map_or(0, Vec::len)
+    }
+
     /// Admit indexed node traversal before yielding records of one kind.
     pub(crate) fn of_kind_charged<'graph>(
         &'graph self,

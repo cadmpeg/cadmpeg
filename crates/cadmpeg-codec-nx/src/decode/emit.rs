@@ -1891,7 +1891,7 @@ pub(super) fn source_meta(
         ctx,
         &mut attributes,
         "header_entry_count",
-        scan.container.entry_count(crate::container::Region::Header),
+        scan.container.entry_count(ctx, crate::container::Region::Header)?,
     )?;
     if let crate::container::ContainerLayout::Modern {
         footer_offset,
@@ -1904,7 +1904,7 @@ pub(super) fn source_meta(
             ctx,
             &mut attributes,
             "footer_entry_count",
-            scan.container.entry_count(crate::container::Region::Footer),
+            scan.container.entry_count(ctx, crate::container::Region::Footer)?,
         )?;
         insert_source_attribute(
             ctx,
@@ -1939,19 +1939,19 @@ pub(super) fn source_meta(
         ctx,
         &mut attributes,
         "partition_streams",
-        scan.count(StreamKind::Partition),
+        scan.count(ctx, StreamKind::Partition)?,
     )?;
     insert_source_attribute(
         ctx,
         &mut attributes,
         "deltas_streams",
-        scan.count(StreamKind::Deltas),
+        scan.count(ctx, StreamKind::Deltas)?,
     )?;
     insert_source_attribute(
         ctx,
         &mut attributes,
         "plain_streams",
-        scan.count(StreamKind::Plain),
+        scan.count(ctx, StreamKind::Plain)?,
     )?;
     for (index, path) in scan
         .container
