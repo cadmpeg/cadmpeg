@@ -1944,7 +1944,7 @@ pub(super) fn topology_body_node_ids(
 ) -> Result<BTreeMap<BodyId, BTreeSet<u32>>, CodecError> {
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut body_xmts = BTreeSet::new();
-    for shell in graph.body_shape_shells() {
+    for shell in graph.body_shape_shells(ctx)? {
         if let Some(body_xmt) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
