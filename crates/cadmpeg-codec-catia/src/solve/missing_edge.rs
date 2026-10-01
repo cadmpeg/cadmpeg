@@ -1061,26 +1061,25 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let mut face_handles = Vec::new();
-    ctx.reserve_vec(
-        &mut face_handles,
-        trims.len(),
+    let (face_handles, _face_handle_storage) = ctx.with_scoped_storage(
         "catia repeated edge face handles",
+        || {
+            let mut face_handles = ctx.collection_vec(
+                trims.len(), "catia repeated edge face handles",
+            )?;
+            for trim in trims {
+                let mut handles = HashSet::new();
+                ctx.reserve_set(
+                    &mut handles,
+                    trim.packet.handles().len(),
+                    "catia repeated edge face handle set",
+                )?;
+                handles.extend(trim.packet.handles().iter().copied());
+                face_handles.push(handles);
+            }
+            Ok::<_, CodecError>(face_handles)
+        },
     )?;
-    for trim in &trims {
-        let handle_count = u64_from_index(trim.packet.handles().len());
-        ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
-    }
-    for trim in trims {
-        let mut handles = HashSet::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_set(
-            &mut handles,
-            trim.packet.handles().len(),
-            "catia repeated edge face handle set",
-        )?;
-        handles.extend(trim.packet.handles().iter().copied());
-        face_handles.push(handles);
-    }
     repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
 }
 

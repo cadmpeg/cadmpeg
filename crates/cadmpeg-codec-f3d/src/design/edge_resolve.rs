@@ -9,7 +9,7 @@ use crate::records::{
         edge_identity::DesignEdgeOperand,
     },
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -1942,6 +1942,7 @@ fn bipartite_assignment(
         visited: &mut HashSet<i64>,
         edge_members: &mut HashMap<i64, usize>,
         ctx: &DecodeContext<'_>,
+        members_storage: &mut ScopedReservation<'_>,
     ) -> Result<bool, CodecError> {
         let _depth = Some((ctx.enter_nested("f3d edge assignment search"))?);
         for edge in &candidate_sets[member] {
@@ -1951,7 +1952,7 @@ fn bipartite_assignment(
             if forbidden == Some((member, *edge)) || visited.contains(edge) {
                 continue;
             }
-            DecodeContext::reserve_admitted_set(visited, 1, "f3d edge assignment visits")?;
+            ctx.reserve_set(visited, 1, "f3d edge assignment visits")?;
             visited.insert(*edge);
             let displaced = edge_members.get(edge).copied();
             let assignable = match displaced {
@@ -1961,16 +1962,15 @@ fn bipartite_assignment(
                     visited,
                     edge_members,
                     ctx,
+                    members_storage,
                 )?,
                 None => true,
             };
             if assignable {
                 if displaced.is_none() {
-                    DecodeContext::reserve_admitted_map(
-                        edge_members,
-                        1,
-                        "f3d edge assignment members",
-                    )?;
+                    members_storage.with_storage(|| ctx.reserve_map(
+                        edge_members, 1, "f3d edge assignment members",
+                    ))?;
                 }
                 edge_members.insert(*edge, member);
                 return Ok(true);
@@ -1979,38 +1979,24 @@ fn bipartite_assignment(
         Ok(false)
     }
 
-    let visit_count = candidate_sets
-        .iter()
-        .try_fold(0usize, |count, candidates| {
-            count.checked_add(candidates.len())
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d edge assignment visits", u64::MAX, u64::MAX))?;
-    let _visited_reservation = ctx.reserve_scoped(
-        u64_from_index(visit_count)
-            .checked_mul(u64::from(i64::BITS / 8))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("f3d edge assignment visits", u64::MAX, u64::MAX)
-            })?,
-        "f3d edge assignment visits",
-    )?;
+    let mut members_storage = ctx.reserve_scoped(0, "f3d edge assignment members")?;
     let mut edge_members = HashMap::new();
-    let _members_reservation = ctx.reserve_scoped(
-        u64_from_index(candidate_sets.len())
-            .checked_mul(u64_from_index(std::mem::size_of::<(i64, usize)>()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("f3d edge assignment members", u64::MAX, u64::MAX)
-            })?,
-        "f3d edge assignment members",
-    )?;
     for member in 0..candidate_sets.len() {
-        let mut visited = HashSet::new();
-        if !augment(
-            member,
-            (candidate_sets, forbidden),
-            &mut visited,
-            &mut edge_members,
-            ctx,
-        )? {
+        let (assigned, _visited_reservation) = ctx.with_scoped_storage(
+            "f3d edge assignment visits",
+            || {
+                let mut visited = HashSet::new();
+                augment(
+                    member,
+                    (candidate_sets, forbidden),
+                    &mut visited,
+                    &mut edge_members,
+                    ctx,
+                    &mut members_storage,
+                )
+            },
+        )?;
+        if !assigned {
             return Ok(None);
         }
     }

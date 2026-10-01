@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Collection reconstruction with caller admission or aggregate wire admission.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
@@ -44,7 +44,11 @@ impl RecordAdmission<'_, '_> {
     ) -> Result<(), CodecError> {
         match self {
             Self::Charged(ctx) => ctx.reserve_set(values, count, operation),
-            Self::Admitted => DecodeContext::reserve_admitted_set(values, count, operation),
+            Self::Admitted => values.try_reserve(count).map_err(|_| {
+                CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                    ResourceDimension::CollectionItems, u64::MAX, u64_from_index(count), operation,
+                ))
+            }),
         }
     }
 

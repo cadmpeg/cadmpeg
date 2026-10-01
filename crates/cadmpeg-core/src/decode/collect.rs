@@ -840,38 +840,6 @@ impl DecodeContext<'_> {
         }
     }
 
-    /// Reserves a hash map whose entries were charged by aggregate admission.
-    pub fn reserve_admitted_map<K: Eq + Hash, V>(
-        values: &mut HashMap<K, V>,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        values.try_reserve(additional).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                u64::MAX,
-                u64_from_index(additional),
-                operation,
-            ))
-        })
-    }
-
-    /// Reserves a hash set whose entries were charged by aggregate admission.
-    pub fn reserve_admitted_set<T: Eq + Hash>(
-        values: &mut HashSet<T>,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        values.try_reserve(additional).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                u64::MAX,
-                u64_from_index(additional),
-                operation,
-            ))
-        })
-    }
-
     /// Copies items whose slots were charged by aggregate admission.
     pub fn copy_admitted_slice<T: Copy>(
         values: &[T],
@@ -2151,7 +2119,7 @@ mod tests {
     );
     admitted_case!(
         reserve_admitted_map_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_map(
+        |ctx: &DecodeContext<'_>| ctx.reserve_map(
             &mut HashMap::<u8, u8>::new(),
             2,
             "test admitted"
@@ -2159,7 +2127,7 @@ mod tests {
     );
     admitted_case!(
         reserve_admitted_set_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_set(
+        |ctx: &DecodeContext<'_>| ctx.reserve_set(
             &mut HashSet::<u8>::new(),
             2,
             "test admitted"
