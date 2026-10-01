@@ -1093,7 +1093,9 @@ fn metadata_string(
     let admitted_document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => { return Ok(None); }
+        Err(_) => {
+            return Ok(None);
+        }
     };
     let document = admitted_document.document();
     let root = document.root_element();

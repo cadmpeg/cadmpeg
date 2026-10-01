@@ -142,7 +142,9 @@ fn docstruct_subtype_refuses_retained_limit() {
 fn redirections_design_collection_refuses_limit() {
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems, "admit F3D xref designs", 0,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "admit F3D xref designs",
+        0,
         |ctx| super::parse(ctx, bytes.as_bytes()),
     );
     assert!(
@@ -171,7 +173,9 @@ fn redirections_json_refuses_materialized_limit() {
 fn redirections_reference_collection_refuses_limit() {
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems, "admit F3D xref references", 0,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "admit F3D xref references",
+        0,
         |ctx| super::parse(ctx, bytes.as_bytes()),
     );
     assert!(
@@ -184,7 +188,9 @@ fn redirections_reference_collection_refuses_limit() {
 fn redirections_design_id_refuses_retained_limit() {
     let bytes = redirections_json("root.f3d", &[]);
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes, "retain F3D xref record ID", 0,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D xref record ID",
+        0,
         |ctx| super::parse(ctx, bytes.as_bytes()),
     );
     assert!(
@@ -197,7 +203,9 @@ fn redirections_design_id_refuses_retained_limit() {
 fn redirections_reference_id_refuses_retained_limit() {
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes, "retain F3D xref record ID", 2,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D xref record ID",
+        2,
         |ctx| super::parse(ctx, bytes.as_bytes()),
     );
     assert!(
@@ -897,8 +905,11 @@ fn invalid_json_utf8_refuses_work_before_validation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = super::parse_component_reference_data(&ctx, &[0xff]).unwrap_err()
-        else { panic!("work admission must precede malformed UTF-8"); };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        super::parse_component_reference_data(&ctx, &[0xff]).unwrap_err()
+    else {
+        panic!("work admission must precede malformed UTF-8");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "validate F3D JSON UTF-8");
     assert!(ctx.charge_work(0, "fused context").is_err());

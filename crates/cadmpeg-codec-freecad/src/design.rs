@@ -852,7 +852,10 @@ enum PostProcessControlState {
 }
 
 /// Resolve the exact persisted controls an operation carries.
-fn post_process_controls(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<PostProcessControlState, CodecError> {
+fn post_process_controls(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<PostProcessControlState, CodecError> {
     let refine = match unique_named_property(properties, "Refine") {
         NamedProperty::Present(property) => match direct_bool_value(ctx, property)? {
             Some(value) => Some(value),
@@ -940,15 +943,19 @@ fn append_spreadsheet(
             format_args!("spreadsheet {} has no cells property", object.id),
         )
     })?;
-    let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        malformed_design(
-            ctx,
-            format_args!("invalid spreadsheet {}: {error}", property.id),
-        )
-    })?;
+    let admitted_xml = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            malformed_design(
+                ctx,
+                format_args!("invalid spreadsheet {}: {error}", property.id),
+            )
+        })?;
     let xml = admitted_xml.document();
-    let cells = direct_spreadsheet_value(ctx, &xml, "Cells", &property.id)?;
+    let cells = direct_spreadsheet_value(ctx, xml, "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -1150,15 +1157,19 @@ fn spreadsheet_dimensions(
     else {
         return Ok(Vec::new());
     };
-    let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        malformed_design(
-            ctx,
-            format_args!("invalid spreadsheet dimension {}: {error}", property.id),
-        )
-    })?;
+    let admitted_xml = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            malformed_design(
+                ctx,
+                format_args!("invalid spreadsheet dimension {}: {error}", property.id),
+            )
+        })?;
     let xml = admitted_xml.document();
-    let root = direct_spreadsheet_value(ctx, &xml, container, &property.id)?;
+    let root = direct_spreadsheet_value(ctx, xml, container, &property.id)?;
     let found = root
         .children()
         .filter(|node| node.has_tag_name(element))
@@ -1668,15 +1679,19 @@ fn parse_sketch(
                 ),
             ));
         }
-        let admitted_xml = ctx.parse_xml(geometry.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-            malformed_design(
-                ctx,
-                format_args!("invalid sketch geometry {}: {error}", geometry.id),
-            )
-        })?;
-    let xml = admitted_xml.document();
-        let records = direct_counted_records(ctx, &xml, "GeometryList", "Geometry", &geometry.id)?;
+        let admitted_xml = ctx
+            .parse_xml(geometry.xml.text(), "FreeCAD XML tree")
+            .map_err(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return error;
+                };
+                malformed_design(
+                    ctx,
+                    format_args!("invalid sketch geometry {}: {error}", geometry.id),
+                )
+            })?;
+        let xml = admitted_xml.document();
+        let records = direct_counted_records(ctx, xml, "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
@@ -1730,19 +1745,23 @@ fn parse_sketch(
                 ),
             ));
         }
-        let admitted_xml = ctx.parse_xml(external_geometry.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-            malformed_design(
-                ctx,
-                format_args!(
-                    "invalid external sketch geometry {}: {error}",
-                    external_geometry.id
-                ),
-            )
-        })?;
-    let xml = admitted_xml.document();
+        let admitted_xml = ctx
+            .parse_xml(external_geometry.xml.text(), "FreeCAD XML tree")
+            .map_err(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return error;
+                };
+                malformed_design(
+                    ctx,
+                    format_args!(
+                        "invalid external sketch geometry {}: {error}",
+                        external_geometry.id
+                    ),
+                )
+            })?;
+        let xml = admitted_xml.document();
         let records =
-            direct_counted_records(ctx, &xml, "GeometryList", "Geometry", &external_geometry.id)?;
+            direct_counted_records(ctx, xml, "GeometryList", "Geometry", &external_geometry.id)?;
         validate_external_geo_prefix(ctx, &records, &external_geometry.id)?;
         let references = property(properties, "ExternalGeometry");
         if let Some(references) = references {
@@ -2022,7 +2041,9 @@ fn builtin_reference_usage(
     let admitted_xml = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => { return Ok((false, false, false)); }
+        Err(_) => {
+            return Ok((false, false, false));
+        }
     };
     let xml = admitted_xml.document();
     let mut horizontal = false;
@@ -2361,22 +2382,31 @@ fn feature_state(
     Ok(state)
 }
 
-fn bool_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {
-    Ok(required!(scalar_text(ctx, required!(property(properties, name)), |value| {
-        if value == "1" || value.eq_ignore_ascii_case("true") {
-            Some(true)
-        } else if value == "0" || value.eq_ignore_ascii_case("false") {
-            Some(false)
-        } else {
-            None
+fn bool_property(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<bool>, CodecError> {
+    Ok(required!(scalar_text(
+        ctx,
+        required!(property(properties, name)),
+        |value| {
+            if value == "1" || value.eq_ignore_ascii_case("true") {
+                Some(true)
+            } else if value == "0" || value.eq_ignore_ascii_case("false") {
+                Some(false)
+            } else {
+                None
+            }
         }
-    })?))
+    )?))
 }
 
 /// Read an operation enumeration while keeping absence distinct from malformed persistence.
 /// `FreeCAD` constructors provide the legacy default for an absent property; a present property
 /// must use the exact enumeration carrier before its value can select neutral semantics.
-fn enumeration_selector(ctx: &DecodeContext<'_>,
+fn enumeration_selector(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
     absent_default: u64,
@@ -2387,21 +2417,34 @@ fn enumeration_selector(ctx: &DecodeContext<'_>,
     if property.type_name != "App::PropertyEnumeration" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(ctx, property, "Integer", "value", str::parse::<i64>)?).ok());
+    let value = required!(required!(direct_root_value(
+        ctx,
+        property,
+        "Integer",
+        "value",
+        str::parse::<i64>
+    )?)
+    .ok());
     Ok(u64::try_from(value).ok())
 }
 
 /// Read a persisted boolean while keeping absence distinct from malformed persistence.
 /// `FreeCAD` constructors provide the legacy default for an absent property; a present property
 /// must use the exact boolean carrier before its value can select neutral semantics.
-fn bool_selector(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str, absent_default: bool) -> Result<Option<bool>, CodecError> {
+fn bool_selector(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: bool,
+) -> Result<Option<bool>, CodecError> {
     let Some(property) = property(properties, name) else {
         return Ok(Some(absent_default));
     };
     direct_bool_value(ctx, property)
 }
 
-fn finite_float_selector(ctx: &DecodeContext<'_>,
+fn finite_float_selector(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
     runtime_type: &str,
@@ -2413,28 +2456,53 @@ fn finite_float_selector(ctx: &DecodeContext<'_>,
     if property.type_name != runtime_type {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(ctx, property, "Float", "value", str::parse::<f64>)?).ok());
+    let value = required!(required!(direct_root_value(
+        ctx,
+        property,
+        "Float",
+        "value",
+        str::parse::<f64>
+    )?)
+    .ok());
     Ok(FiniteReal::new(value))
 }
 
-fn direct_bool_value(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Option<bool>, CodecError> {
+fn direct_bool_value(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Option<bool>, CodecError> {
     if property.type_name != "App::PropertyBool" {
         return Ok(None);
     }
-    Ok(required!(direct_root_value(ctx, property, "Bool", "value", |value| match value {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    })?))
+    Ok(required!(direct_root_value(
+        ctx,
+        property,
+        "Bool",
+        "value",
+        |value| match value {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }
+    )?))
 }
 
-fn direct_fuzzy_tolerance(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Option<FuzzyTolerance>, CodecError> {
+fn direct_fuzzy_tolerance(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Option<FuzzyTolerance>, CodecError> {
     if property.type_name != "App::PropertyFloatConstraint" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(ctx, property, "Float", "value", str::parse::<f64>)?)
-        .ok()
-        .and_then(FiniteReal::new));
+    let value = required!(required!(direct_root_value(
+        ctx,
+        property,
+        "Float",
+        "value",
+        str::parse::<f64>
+    )?)
+    .ok()
+    .and_then(FiniteReal::new));
     Ok(Some(
         match cadmpeg_ir::scalar::PositiveLength::from_assigned_real(value) {
             Some(explicit) => FuzzyTolerance::Explicit(explicit),
@@ -2463,15 +2531,19 @@ fn parse_constraints(
             ),
         ));
     }
-    let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        malformed_design(
-            ctx,
-            format_args!("invalid sketch constraints {}: {error}", property.id),
-        )
-    })?;
+    let admitted_xml = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            malformed_design(
+                ctx,
+                format_args!("invalid sketch constraints {}: {error}", property.id),
+            )
+        })?;
     let xml = admitted_xml.document();
-    let records = direct_counted_records(ctx, &xml, "ConstraintList", "Constrain", &property.id)?;
+    let records = direct_counted_records(ctx, xml, "ConstraintList", "Constrain", &property.id)?;
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
     for (index, node) in records.into_iter().enumerate() {
@@ -2674,12 +2746,14 @@ fn parse_constraints(
                     let Some(metadata) = node.attribute("MetaData") else {
                         return Ok(None);
                     };
-                    let (_reservation, metadata) = match ctx.parse_json_value(metadata, "fcstd constraint text metadata parse") {
-                    Ok((metadata, reservation)) => (reservation, metadata),
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(_) => return Ok(None),
-                };
-                let Some(text) = metadata.get("text").and_then(serde_json::Value::as_str)
+                    let (_reservation, metadata) = match ctx
+                        .parse_json_value(metadata, "fcstd constraint text metadata parse")
+                    {
+                        Ok((metadata, reservation)) => (reservation, metadata),
+                        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                        Err(_) => return Ok(None),
+                    };
+                    let Some(text) = metadata.get("text").and_then(serde_json::Value::as_str)
                     else {
                         return Ok(None);
                     };
@@ -4453,7 +4527,10 @@ fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a Property
     selected
 }
 
-fn revolution_axis(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<RevolutionAxis>, CodecError> {
+fn revolution_axis(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<Option<RevolutionAxis>, CodecError> {
     Ok(Some(RevolutionAxis {
         origin: vector_property(ctx, properties, "Base")?
             .map_or(cadmpeg_ir::features::FinitePoint3::ZERO, |vector| {
@@ -4687,7 +4764,8 @@ fn revolution_definition(
     )))
 }
 
-fn vector_property(ctx: &DecodeContext<'_>,
+fn vector_property(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<cadmpeg_ir::features::FiniteVector3>, CodecError> {
@@ -4695,19 +4773,24 @@ fn vector_property(ctx: &DecodeContext<'_>,
     if !is_vector_property_type(&property.type_name) {
         return Ok(None);
     }
-    Ok(required!(direct_root(ctx, property, "PropertyVector", |root| {
-        let component = |name: &str| {
-            root.attribute(name)?
-                .parse::<f64>()
-                .ok()
-                .and_then(FiniteReal::new)
-        };
-        Some(cadmpeg_ir::features::FiniteVector3::from_components(
-            component("valueX")?,
-            component("valueY")?,
-            component("valueZ")?,
-        ))
-    })?))
+    Ok(required!(direct_root(
+        ctx,
+        property,
+        "PropertyVector",
+        |root| {
+            let component = |name: &str| {
+                root.attribute(name)?
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(FiniteReal::new)
+            };
+            Some(cadmpeg_ir::features::FiniteVector3::from_components(
+                component("valueX")?,
+                component("valueY")?,
+                component("valueZ")?,
+            ))
+        }
+    )?))
 }
 
 fn vector_list_property(
@@ -4722,49 +4805,54 @@ fn vector_list_property(
     if property.type_name != "App::PropertyVectorList" {
         return Ok(None);
     }
-    direct_root(ctx, property, "VectorList", |root| -> Result<_, CodecError> {
-        let Some(file) = root.attribute("file") else {
-            return Ok(None);
-        };
-        if file.is_empty() {
-            return Ok(property.side_entries().is_empty().then(Vec::new));
-        }
-        if property.side_entries() != [file] {
-            return Ok(None);
-        }
-        let Some(data) = entries
-            .iter()
-            .find(|entry| entry.name() == file)
-            .map(crate::native::EntryRecord::data)
-        else {
-            return Ok(None);
-        };
-        let mut view = View::over_retained(data);
-        let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
-            return Ok(None);
-        };
-        if count > MAX_SKETCH_RECORDS
-            || view
-                .counted(cadmpeg_core::decode::u64_from_index(count), 24)
-                .is_none()
-        {
-            return Ok(None);
-        }
-        let mut points = ctx.collection_vec(count, "fcstd vector-list points")?;
-        for _ in 0..count {
-            let Some(point) = (|| {
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                    view.f64_le()?,
-                    view.f64_le()?,
-                    view.f64_le()?,
-                ))
-            })() else {
+    direct_root(
+        ctx,
+        property,
+        "VectorList",
+        |root| -> Result<_, CodecError> {
+            let Some(file) = root.attribute("file") else {
                 return Ok(None);
             };
-            points.push(point);
-        }
-        Ok(view.is_empty().then_some(points))
-    })?
+            if file.is_empty() {
+                return Ok(property.side_entries().is_empty().then(Vec::new));
+            }
+            if property.side_entries() != [file] {
+                return Ok(None);
+            }
+            let Some(data) = entries
+                .iter()
+                .find(|entry| entry.name() == file)
+                .map(crate::native::EntryRecord::data)
+            else {
+                return Ok(None);
+            };
+            let mut view = View::over_retained(data);
+            let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
+                return Ok(None);
+            };
+            if count > MAX_SKETCH_RECORDS
+                || view
+                    .counted(cadmpeg_core::decode::u64_from_index(count), 24)
+                    .is_none()
+            {
+                return Ok(None);
+            }
+            let mut points = ctx.collection_vec(count, "fcstd vector-list points")?;
+            for _ in 0..count {
+                let Some(point) = (|| {
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        view.f64_le()?,
+                        view.f64_le()?,
+                        view.f64_le()?,
+                    ))
+                })() else {
+                    return Ok(None);
+                };
+                points.push(point);
+            }
+            Ok(view.is_empty().then_some(points))
+        },
+    )?
     .unwrap_or(Ok(None))
 }
 
@@ -4809,120 +4897,124 @@ fn part_construction_geometry_definition(
             },
         )));
     }
-    Ok((|| -> Result<_, CodecError> {
-        let point = |x: &str, y: &str, z: &str| -> Result<_, CodecError> {
-            Ok(Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
-                required!(scalar_named(ctx, properties, x)?),
-                required!(scalar_named(ctx, properties, y)?),
-                required!(scalar_named(ctx, properties, z)?),
-            )))
-        };
-        let angle = |name: &str| -> Result<_, CodecError> {
-            Ok(scalar_named(ctx, properties, name)?
-                .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.get().to_radians())))
-        };
-        Ok(match kind {
-            "Part::Vertex" => Some(FeatureDefinition::Operation(
-                FeatureOperation::PointGeometry {
-                    position: required!(point("X", "Y", "Z")?),
-                },
-            )),
-            "Part::Line" => Some(FeatureDefinition::Operation(
-                FeatureOperation::LineSegment {
-                    segment: required!(cadmpeg_ir::features::FeatureLineSegment::from_parts(
-                        required!(point("X1", "Y1", "Z1")?),
-                        required!(point("X2", "Y2", "Z2")?),
-                    )),
-                },
-            )),
-            "Part::Circle" => {
-                let legacy_angles = property(properties, "Angle0").is_some();
-                Some(FeatureDefinition::Operation(
-                    FeatureOperation::CircularArc {
-                        arc: cadmpeg_ir::features::FeatureCircularArc::from_parts(
-                            cadmpeg_ir::features::FinitePoint3::ZERO,
-                            cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
-                            required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(required!(scalar_named(ctx,
-                                properties, "Radius",
-                            )?))),
-                            required!(cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+    let point = |x: &str, y: &str, z: &str| -> Result<_, CodecError> {
+        Ok(Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
+            required!(scalar_named(ctx, properties, x)?),
+            required!(scalar_named(ctx, properties, y)?),
+            required!(scalar_named(ctx, properties, z)?),
+        )))
+    };
+    let angle = |name: &str| -> Result<_, CodecError> {
+        Ok(scalar_named(ctx, properties, name)?
+            .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.get().to_radians())))
+    };
+    Ok(match kind {
+        "Part::Vertex" => Some(FeatureDefinition::Operation(
+            FeatureOperation::PointGeometry {
+                position: required!(point("X", "Y", "Z")?),
+            },
+        )),
+        "Part::Line" => Some(FeatureDefinition::Operation(
+            FeatureOperation::LineSegment {
+                segment: required!(cadmpeg_ir::features::FeatureLineSegment::from_parts(
+                    required!(point("X1", "Y1", "Z1")?),
+                    required!(point("X2", "Y2", "Z2")?),
+                )),
+            },
+        )),
+        "Part::Circle" => {
+            let legacy_angles = property(properties, "Angle0").is_some();
+            Some(FeatureDefinition::Operation(
+                FeatureOperation::CircularArc {
+                    arc: cadmpeg_ir::features::FeatureCircularArc::from_parts(
+                        cadmpeg_ir::features::FinitePoint3::ZERO,
+                        cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
+                        required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+                            required!(scalar_named(ctx, properties, "Radius",)?)
+                        )),
+                        required!(
+                            cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
                                 required!(angle(if legacy_angles { "Angle0" } else { "Angle1" })?),
                                 required!(angle(if legacy_angles { "Angle1" } else { "Angle2" })?),
                             ])
-                            .ok()),
+                            .ok()
                         ),
-                    },
-                ))
-            }
-            "Part::Ellipse" => {
-                Some(FeatureDefinition::Operation(
-                    FeatureOperation::EllipticArc {
-                        arc: required!(cadmpeg_ir::features::FeatureEllipticArc::new(
-                            Point3::new(0.0, 0.0, 0.0),
-                            Vector3::new(0.0, 0.0, 1.0),
-                            Vector3::new(1.0, 0.0, 0.0),
-                            [
-                                required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
-                                    required!(scalar_named(ctx, properties, "MajorRadius")?),
-                                )),
-                                required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
-                                    required!(scalar_named(ctx, properties, "MinorRadius")?),
-                                )),
-                            ],
-                            required!(cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
-                                required!(angle("Angle1")?),
-                                required!(angle("Angle2")?),
-                            ])
-                            .ok()),
+                    ),
+                },
+            ))
+        }
+        "Part::Ellipse" => Some(FeatureDefinition::Operation(
+            FeatureOperation::EllipticArc {
+                arc: required!(cadmpeg_ir::features::FeatureEllipticArc::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    [
+                        required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+                            required!(scalar_named(ctx, properties, "MajorRadius")?),
                         )),
-                    },
-                ))
-            }
-            "Part::Polygon" => {
-                let points = required!(polygon_points);
-                let closed = bool_property(ctx, properties, "Close")?.unwrap_or(false);
-                Some(FeatureDefinition::Operation(FeatureOperation::Polyline {
-                    chain: required!(cadmpeg_ir::features::FeaturePolyline::from_parts(points, closed)),
-                }))
-            }
-            "Part::RegularPolygon" => Some(FeatureDefinition::Operation(
-                FeatureOperation::RegularPolygonCurve {
-                    sides: required!(cadmpeg_ir::features::PolygonSideCount::new(
-                        required!(u32::try_from(required!(integer_property(ctx, properties, "Polygon")?)).ok()),
-                    )),
-                    circumradius: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
-                        required!(scalar_named(ctx, properties, "Circumradius")?),
-                    )),
-                },
-            )),
-            "Part::Plane" => Some(FeatureDefinition::Operation(
-                FeatureOperation::PlanarPatch {
-                    length: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(required!(scalar_named(ctx,
-                        properties, "Length",
-                    )?))),
-                    width: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(required!(scalar_named(ctx,
-                        properties, "Width",
-                    )?))),
-                },
-            )),
-            _ => None,
-        })
-    })()?)
+                        required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+                            required!(scalar_named(ctx, properties, "MinorRadius")?),
+                        )),
+                    ],
+                    required!(
+                        cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                            required!(angle("Angle1")?),
+                            required!(angle("Angle2")?),
+                        ])
+                        .ok()
+                    ),
+                )),
+            },
+        )),
+        "Part::Polygon" => {
+            let points = required!(polygon_points);
+            let closed = bool_property(ctx, properties, "Close")?.unwrap_or(false);
+            Some(FeatureDefinition::Operation(FeatureOperation::Polyline {
+                chain: required!(cadmpeg_ir::features::FeaturePolyline::from_parts(
+                    points, closed
+                )),
+            }))
+        }
+        "Part::RegularPolygon" => Some(FeatureDefinition::Operation(
+            FeatureOperation::RegularPolygonCurve {
+                sides: required!(cadmpeg_ir::features::PolygonSideCount::new(required!(
+                    u32::try_from(required!(integer_property(ctx, properties, "Polygon")?)).ok()
+                ),)),
+                circumradius: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+                    required!(scalar_named(ctx, properties, "Circumradius")?),
+                )),
+            },
+        )),
+        "Part::Plane" => Some(FeatureDefinition::Operation(
+            FeatureOperation::PlanarPatch {
+                length: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+                    required!(scalar_named(ctx, properties, "Length",)?)
+                )),
+                width: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+                    required!(scalar_named(ctx, properties, "Width",)?)
+                )),
+            },
+        )),
+        _ => None,
+    })
 }
 
-fn parametric_helix_definition(ctx: &DecodeContext<'_>,
+fn parametric_helix_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let radius = required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(required!(scalar_named(ctx,
-        properties, "Radius",
-    )?)));
+    let radius = required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+        required!(scalar_named(ctx, properties, "Radius",)?)
+    ));
     let segment_default = if kind == "Part::Spiral" {
         DEFAULT_PART_SPIRAL_SEGMENT_TURNS
     } else {
         0.0
     };
-    let segment_value = required!(finite_float_selector(ctx,
+    let segment_value = required!(finite_float_selector(
+        ctx,
         properties,
         "SegmentLength",
         "App::PropertyQuantityConstraint",
@@ -4936,12 +5028,12 @@ fn parametric_helix_definition(ctx: &DecodeContext<'_>,
         .transpose()
         .ok());
     let (shape, revolutions, clockwise, construction_style) = if kind == "Part::Helix" {
-        let pitch = required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(required!(scalar_named(ctx,
-            properties, "Pitch",
-        )?)));
-        let height = required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(required!(scalar_named(ctx,
-            properties, "Height",
-        )?)));
+        let pitch = required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+            required!(scalar_named(ctx, properties, "Pitch",)?)
+        ));
+        let height = required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+            required!(scalar_named(ctx, properties, "Height",)?)
+        ));
         let angle = scalar_named(ctx, properties, "Angle")?.map_or(0.0, FiniteReal::get);
         if angle.abs() >= 90.0 {
             return Ok(None);
@@ -4951,7 +5043,8 @@ fn parametric_helix_definition(ctx: &DecodeContext<'_>,
             1 => true,
             _ => return Ok(None),
         };
-        let construction_style = match required!(enumeration_selector(ctx, properties, "Style", 0)?) {
+        let construction_style = match required!(enumeration_selector(ctx, properties, "Style", 0)?)
+        {
             0 => Some(HelixConstructionStyle::Legacy),
             1 => Some(HelixConstructionStyle::Corrected),
             _ => return Ok(None),
@@ -4968,16 +5061,21 @@ fn parametric_helix_definition(ctx: &DecodeContext<'_>,
         };
         (
             shape,
-            required!(cadmpeg_ir::scalar::PositiveReal::new(height.get() / pitch.get())),
+            required!(cadmpeg_ir::scalar::PositiveReal::new(
+                height.get() / pitch.get()
+            )),
             clockwise,
             construction_style,
         )
     } else {
-        let growth = required!(cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real(
-            required!(scalar_named(ctx, properties, "Growth")?),
-        ));
-        let revolutions =
-            required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(scalar_named(ctx, properties, "Rotations")?)));
+        let growth = required!(
+            cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real(required!(
+                scalar_named(ctx, properties, "Growth")?
+            ),)
+        );
+        let revolutions = required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(
+            scalar_named(ctx, properties, "Rotations")?
+        )));
         (
             cadmpeg_ir::features::HelixShape::Spiral {
                 radial_growth: growth.into(),
@@ -4987,17 +5085,19 @@ fn parametric_helix_definition(ctx: &DecodeContext<'_>,
             None,
         )
     };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Helix {
-        axis_origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-        axis_direction: cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
-        radius,
-        shape,
-        revolutions,
-        start_angle: cadmpeg_ir::scalar::Angle::ZERO,
-        clockwise,
-        segment_turns,
-        construction_style,
-    })))
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::Helix {
+            axis_origin: cadmpeg_ir::features::FinitePoint3::ZERO,
+            axis_direction: cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
+            radius,
+            shape,
+            revolutions,
+            start_angle: cadmpeg_ir::scalar::Angle::ZERO,
+            clockwise,
+            segment_turns,
+            construction_style,
+        },
+    )))
 }
 
 /// The draft angles an extrude states, one per native taper property.
@@ -5029,7 +5129,8 @@ fn taper_angle(
     properties: &[&PropertyRecord],
     key: &str,
 ) -> Result<Option<cadmpeg_ir::scalar::SlopeAngle>, CodecError> {
-    let Some(degrees) = scalar_named(ctx, properties, key)?.filter(|angle| angle.get() != 0.0) else {
+    let Some(degrees) = scalar_named(ctx, properties, key)?.filter(|angle| angle.get() != 0.0)
+    else {
         return Ok(None);
     };
     cadmpeg_ir::scalar::SlopeAngle::try_from(degrees.get().to_radians())
@@ -5038,14 +5139,20 @@ fn taper_angle(
 }
 
 /// Whether the record states the legacy two-length extent.
-fn legacy_two_length_extent(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<bool, CodecError> {
+fn legacy_two_length_extent(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<bool, CodecError> {
     Ok(property(properties, "SideType").is_none()
         && enumeration_selector(ctx, properties, "Type", 0)? == Some(4))
 }
 
 /// The extent kind the extrude record states: 0 one-sided, 1 two-sided,
 /// 2 midplane.
-fn extrude_side_type(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<u64>, CodecError> {
+fn extrude_side_type(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<Option<u64>, CodecError> {
     Ok(if legacy_two_length_extent(ctx, properties)? {
         Some(1)
     } else if required!(bool_selector(ctx, properties, "Midplane", false)?) {
@@ -5156,10 +5263,12 @@ fn extrusion_shape(
                 }
                 _ => return Ok(None),
             };
-        let signed_length = |name| -> Result<_, CodecError> { Ok(match scalar_named(ctx, properties, name)? {
-            Some(value) => Some(value),
-            None => Some(FiniteReal::ZERO),
-        }) };
+        let signed_length = |name| -> Result<_, CodecError> {
+            Ok(match scalar_named(ctx, properties, name)? {
+                Some(value) => Some(value),
+                None => Some(FiniteReal::ZERO),
+            })
+        };
         let mut forward = required!(signed_length("LengthFwd")?).get();
         let reverse = required!(signed_length("LengthRev")?).get();
         if forward == 0.0 && reverse == 0.0 {
@@ -5250,7 +5359,8 @@ fn extrusion_shape(
         let face_maker = if property(properties, "FaceMakerClass").is_some() {
             let maker = required!(FaceMaker::new(required!(face_maker_class)));
             if property(properties, "FaceMakerMode").is_some()
-                && required!(u32::try_from(required!(integer_property(ctx,
+                && required!(u32::try_from(required!(integer_property(
+                    ctx,
                     properties,
                     "FaceMakerMode"
                 )?))
@@ -5306,7 +5416,8 @@ fn extrusion_shape(
             required!(enumeration_selector(ctx, properties, &type_name, 0)?)
         };
         let offset = if property(properties, &offset_name).is_some() {
-            Some(Length::from_assigned_real(required!(scalar_named(ctx,
+            Some(Length::from_assigned_real(required!(scalar_named(
+                ctx,
                 properties,
                 &offset_name,
             )?)))
@@ -5436,12 +5547,14 @@ fn extrusion_shape(
         };
         *vector = vector.reversed();
     }
-    let length_along_profile_normal = Some(required!(bool_selector(ctx,
+    let length_along_profile_normal = Some(required!(bool_selector(
+        ctx,
         properties,
         "AlongSketchNormal",
         true
     )?));
-    let allow_multi_profile_faces = Some(required!(bool_selector(ctx,
+    let allow_multi_profile_faces = Some(required!(bool_selector(
+        ctx,
         properties,
         "AllowMultiFace",
         false
@@ -5498,7 +5611,8 @@ fn scale_definition(
         return Ok(None);
     };
     let factor = |name| -> Result<_, CodecError> {
-        Ok(scalar_named(ctx, properties, name)?.and_then(cadmpeg_ir::scalar::NonZeroReal::from_finite))
+        Ok(scalar_named(ctx, properties, name)?
+            .and_then(cadmpeg_ir::scalar::NonZeroReal::from_finite))
     };
     let Some(uniform) = bool_selector(ctx, properties, "Uniform", true)? else {
         return Ok(None);
@@ -5548,21 +5662,23 @@ fn fillet_definition(
     } else {
         None
     };
-    Ok((|| -> Result<_, CodecError> {
-        let radius = if kind == "Part::Fillet" {
-            let values = required!(part_values);
-            let radius = required!(cadmpeg_ir::scalar::PositiveLength::new(required!(values.first())[0]));
-            required!(values
-                .iter()
-                .all(|[first, second]| *first == radius.get() && *second == radius.get())
-                .then_some(()));
-            radius
-        } else {
-            required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(required!(scalar_named(ctx,
-                properties, "Radius",
-            )?)))
-        };
-        Ok(Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
+    let radius = if kind == "Part::Fillet" {
+        let values = required!(part_values);
+        let radius = required!(cadmpeg_ir::scalar::PositiveLength::new(
+            required!(values.first())[0]
+        ));
+        required!(values
+            .iter()
+            .all(|[first, second]| *first == radius.get() && *second == radius.get())
+            .then_some(()));
+        radius
+    } else {
+        required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+            required!(scalar_named(ctx, properties, "Radius",)?)
+        ))
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges,
@@ -5570,8 +5686,8 @@ fn fillet_definition(
                     tangency_weight: None,
                 },
             ),
-        })))
-    })()?)
+        },
+    )))
 }
 
 fn chamfer_definition(
@@ -5592,36 +5708,38 @@ fn chamfer_definition(
     } else {
         None
     };
-    Ok((|| -> Result<_, CodecError> {
-        let spec = if kind == "Part::Chamfer" {
-            let values = required!(part_values);
-            let [first_raw, second_raw] = *required!(values.first());
-            let first = required!(cadmpeg_ir::scalar::PositiveLength::new(first_raw));
-            let second = required!(cadmpeg_ir::scalar::PositiveLength::new(second_raw));
-            if !values.iter().all(|[candidate_first, candidate_second]| {
-                *candidate_first == first.get() && *candidate_second == second.get()
-            }) {
-                return Ok(None);
-            }
-            if first == second {
-                ChamferSpec::Distance { distance: first }
-            } else {
-                ChamferSpec::TwoDistances { first, second }
-            }
+    let spec = if kind == "Part::Chamfer" {
+        let values = required!(part_values);
+        let [first_raw, second_raw] = *required!(values.first());
+        let first = required!(cadmpeg_ir::scalar::PositiveLength::new(first_raw));
+        let second = required!(cadmpeg_ir::scalar::PositiveLength::new(second_raw));
+        if !values.iter().all(|[candidate_first, candidate_second]| {
+            *candidate_first == first.get() && *candidate_second == second.get()
+        }) {
+            return Ok(None);
+        }
+        if first == second {
+            ChamferSpec::Distance { distance: first }
         } else {
-            required!(chamfer_spec(ctx, properties)?)
-        };
-        let flip_direction = if kind == "PartDesign::Chamfer" {
-            required!(bool_selector(ctx, properties, "FlipDirection", false)?)
-        } else {
-            false
-        };
-        let legacy_flip = kind == "PartDesign::Chamfer"
-            && program_version.is_some_and(|version| version.starts_with('0'))
-            && property(properties, "ChamferType")
-                .map(|property| scalar_value(ctx, property)).transpose()?.flatten()
-                .is_some_and(|value| value.get() == 1.0 || value.get() == 2.0);
-        Ok(Some(FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            ChamferSpec::TwoDistances { first, second }
+        }
+    } else {
+        required!(chamfer_spec(ctx, properties)?)
+    };
+    let flip_direction = if kind == "PartDesign::Chamfer" {
+        required!(bool_selector(ctx, properties, "FlipDirection", false)?)
+    } else {
+        false
+    };
+    let legacy_flip = kind == "PartDesign::Chamfer"
+        && program_version.is_some_and(|version| version.starts_with('0'))
+        && property(properties, "ChamferType")
+            .map(|property| scalar_value(ctx, property))
+            .transpose()?
+            .flatten()
+            .is_some_and(|value| value.get() == 1.0 || value.get() == 2.0);
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::ChamferGroup { edges, spec },
             ),
@@ -5630,8 +5748,8 @@ fn chamfer_definition(
             } else {
                 flip_direction
             },
-        })))
-    })()?)
+        },
+    )))
 }
 
 fn part_fillet_edge_values(
@@ -5681,24 +5799,41 @@ fn part_fillet_edge_values(
     Ok(view.is_empty().then_some(values))
 }
 
-fn shell_mode(ctx: &DecodeContext<'_>, kind: &str, properties: &[&PropertyRecord]) -> Result<Option<ShellMode>, CodecError> {
+fn shell_mode(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Result<Option<ShellMode>, CodecError> {
     let absent_default = u64::from(kind == "Part::Offset2D");
-    Ok(match required!(enumeration_selector(ctx, properties, "Mode", absent_default)?) {
-        0 => Some(ShellMode::Skin),
-        1 => Some(ShellMode::Pipe),
-        2 if kind != "Part::Offset2D" => Some(ShellMode::BothSides),
-        _ => None,
-    })
+    Ok(
+        match required!(enumeration_selector(
+            ctx,
+            properties,
+            "Mode",
+            absent_default
+        )?) {
+            0 => Some(ShellMode::Skin),
+            1 => Some(ShellMode::Pipe),
+            2 if kind != "Part::Offset2D" => Some(ShellMode::BothSides),
+            _ => None,
+        },
+    )
 }
 
-fn shell_join(ctx: &DecodeContext<'_>, kind: &str, properties: &[&PropertyRecord]) -> Result<Option<ShellJoin>, CodecError> {
-    Ok(match required!(enumeration_selector(ctx, properties, "Join", 0)?) {
-        0 => Some(ShellJoin::Arc),
-        1 if kind == "PartDesign::Thickness" => Some(ShellJoin::Intersection),
-        1 => Some(ShellJoin::Tangent),
-        2 => Some(ShellJoin::Intersection),
-        _ => None,
-    })
+fn shell_join(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Result<Option<ShellJoin>, CodecError> {
+    Ok(
+        match required!(enumeration_selector(ctx, properties, "Join", 0)?) {
+            0 => Some(ShellJoin::Arc),
+            1 if kind == "PartDesign::Thickness" => Some(ShellJoin::Intersection),
+            1 => Some(ShellJoin::Tangent),
+            2 => Some(ShellJoin::Intersection),
+            _ => None,
+        },
+    )
 }
 
 fn thickness_definition(
@@ -5748,7 +5883,9 @@ fn thickness_definition(
             }),
             mode: Some(mode),
             join: Some(join),
-            resolve_intersections: Some(bool_property(ctx, properties, "Intersection")?.unwrap_or(false)),
+            resolve_intersections: Some(
+                bool_property(ctx, properties, "Intersection")?.unwrap_or(false),
+            ),
             allow_self_intersections: Some(
                 bool_property(ctx, properties, "SelfIntersection")?.unwrap_or(false),
             ),
@@ -5891,14 +6028,19 @@ fn section_shape_definition(
         BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd section base identity")?);
     let tool =
         BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd section tool identity")?);
-    Ok(cadmpeg_ir::features::SectionOperands::new(base, tool)
+    cadmpeg_ir::features::SectionOperands::new(base, tool)
         .ok()
         .map(|operands| -> Result<_, CodecError> {
-            Ok(FeatureDefinition::Operation(FeatureOperation::SectionShape {
-                operands,
-                approximate: Some(bool_property(ctx, properties, "Approximation")?.unwrap_or(false)),
-            }))
-        }).transpose()?)
+            Ok(FeatureDefinition::Operation(
+                FeatureOperation::SectionShape {
+                    operands,
+                    approximate: Some(
+                        bool_property(ctx, properties, "Approximation")?.unwrap_or(false),
+                    ),
+                },
+            ))
+        })
+        .transpose()
 }
 
 fn mirror_shape_definition(
@@ -6027,8 +6169,14 @@ fn draft_definition(
             .iter()
             .any(|link| nonempty_link(link.as_ref()))
     }) {
-        axis_reference(ctx, properties, "PullDirection", objects, properties_by_owner)?
-            .map(|(_, direction)| direction)
+        axis_reference(
+            ctx,
+            properties,
+            "PullDirection",
+            objects,
+            properties_by_owner,
+        )?
+        .map(|(_, direction)| direction)
     } else {
         plane_normal
     };
@@ -6064,26 +6212,40 @@ fn draft_definition(
     )))
 }
 
-fn chamfer_spec(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<ChamferSpec>, CodecError> {
-    let mode = required!(property(properties, "ChamferType").map(|property| -> Result<_, CodecError> {
-        Ok(scalar_value(ctx, property)?.and_then(|value| match value.get() {
-            value if value > -1.0 && value < 1.0 => Some(0),
-            value if (1.0..2.0).contains(&value) => Some(1),
-            value if (2.0..3.0).contains(&value) => Some(2),
-            _ => None,
-        }))
-    }).transpose()?.unwrap_or(Some(0)));
+fn chamfer_spec(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<Option<ChamferSpec>, CodecError> {
+    let mode = required!(property(properties, "ChamferType")
+        .map(|property| -> Result<_, CodecError> {
+            Ok(
+                scalar_value(ctx, property)?.and_then(|value| match value.get() {
+                    value if value > -1.0 && value < 1.0 => Some(0),
+                    value if (1.0..2.0).contains(&value) => Some(1),
+                    value if (2.0..3.0).contains(&value) => Some(2),
+                    _ => None,
+                }),
+            )
+        })
+        .transpose()?
+        .unwrap_or(Some(0)));
     let first = property(properties, "Size")
-        .map(|property| scalar_value(ctx, property)).transpose()?.flatten()
+        .map(|property| scalar_value(ctx, property))
+        .transpose()?
+        .flatten()
         .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real);
     Ok(match (mode, first) {
         (0, Some(distance)) => Some(ChamferSpec::Distance { distance }),
         (1, Some(first)) => property(properties, "Size2")
-            .map(|property| scalar_value(ctx, property)).transpose()?.flatten()
+            .map(|property| scalar_value(ctx, property))
+            .transpose()?
+            .flatten()
             .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real)
             .map(|second| ChamferSpec::TwoDistances { first, second }),
         (2, Some(distance)) => property(properties, "Angle")
-            .map(|property| scalar_value(ctx, property)).transpose()?.flatten()
+            .map(|property| scalar_value(ctx, property))
+            .transpose()?
+            .flatten()
             .filter(|angle| angle.get() > 0.0 && angle.get() < 180.0)
             .and_then(|angle| {
                 Some(ChamferSpec::DistanceAngle {
@@ -6218,41 +6380,61 @@ fn text_value_tag(type_name: &str) -> Option<&'static str> {
     })
 }
 
-fn scalar_value(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Option<FiniteReal>, CodecError> {
+fn scalar_value(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Option<FiniteReal>, CodecError> {
     let tag = required!(scalar_value_tag(&property.type_name));
     if tag == "Bool" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(ctx, property, tag, "value", str::parse::<f64>)?).ok());
+    let value = required!(required!(direct_root_value(
+        ctx,
+        property,
+        tag,
+        "value",
+        str::parse::<f64>
+    )?)
+    .ok());
     Ok(FiniteReal::new(value))
 }
 
-fn scalar_text<T>(ctx: &DecodeContext<'_>, property: &PropertyRecord, use_value: impl FnOnce(&str) -> T) -> Result<Option<T>, CodecError> {
+fn scalar_text<T>(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+    use_value: impl FnOnce(&str) -> T,
+) -> Result<Option<T>, CodecError> {
     let tag = required!(text_value_tag(&property.type_name));
     direct_root_value(ctx, property, tag, "value", use_value)
 }
 
-fn direct_root_value<T>(ctx: &DecodeContext<'_>,
+fn direct_root_value<T>(
+    ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_tag: &str,
     attribute: &str,
     use_value: impl FnOnce(&str) -> T,
 ) -> Result<Option<T>, CodecError> {
-    Ok(required!(direct_root(ctx, property, expected_tag, |root| {
-        root.attribute(attribute).map(use_value)
-    })?))
+    Ok(required!(direct_root(
+        ctx,
+        property,
+        expected_tag,
+        |root| { root.attribute(attribute).map(use_value) }
+    )?))
 }
 
-fn direct_root<T>(ctx: &DecodeContext<'_>,
+fn direct_root<T>(
+    ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_tag: &str,
     use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
 ) -> Result<Option<T>, CodecError> {
-    let admitted_document = match ctx.parse_xml(property.xml.text(), "FreeCAD direct property XML tree") {
-        Ok(tree) => tree,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
+    let admitted_document =
+        match ctx.parse_xml(property.xml.text(), "FreeCAD direct property XML tree") {
+            Ok(tree) => tree,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(None),
+        };
     let document = admitted_document.document();
     let mut roots = document
         .root_element()
@@ -6279,7 +6461,8 @@ fn native_parameters(
     for property in properties {
         let Some(value) = scalar_text(ctx, property, |text| {
             ctx.copy_retained_text(text, "fcstd native parameter value")
-        })? else {
+        })?
+        else {
             continue;
         };
         let Some(name) = NonBlankString::new(
@@ -6306,15 +6489,23 @@ fn native_definition(
     }))
 }
 
-fn primitive_definition(ctx: &DecodeContext<'_>, kind: &str, properties: &[&PropertyRecord]) -> Result<Option<FeatureDefinition>, CodecError> {
+fn primitive_definition(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Result<Option<FeatureDefinition>, CodecError> {
     let length = |name: &str| -> Result<_, CodecError> {
         Ok(property(properties, name)
-            .map(|property| scalar_value(ctx, property)).transpose()?.flatten()
+            .map(|property| scalar_value(ctx, property))
+            .transpose()?
+            .flatten()
             .map(Length::from_assigned_real))
     };
     let angle = |name: &str| -> Result<_, CodecError> {
         Ok(property(properties, name)
-            .map(|property| scalar_value(ctx, property)).transpose()?.flatten()
+            .map(|property| scalar_value(ctx, property))
+            .transpose()?
+            .flatten()
             .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.get().to_radians())))
     };
     let solid = if kind.ends_with("Box") {
@@ -6370,7 +6561,10 @@ fn primitive_definition(ctx: &DecodeContext<'_>, kind: &str, properties: &[&Prop
         }
     } else if kind.ends_with("Prism") {
         PrimitiveSolidKind::Prism {
-            sides: required!(u32::try_from(required!(integer_property(ctx, properties, "Polygon")?)).ok()),
+            sides: required!(u32::try_from(required!(integer_property(
+                ctx, properties, "Polygon"
+            )?))
+            .ok()),
             circumradius: required!(length("Circumradius")?),
             height: required!(length("Height")?),
         }
@@ -6397,10 +6591,12 @@ fn primitive_definition(ctx: &DecodeContext<'_>, kind: &str, properties: &[&Prop
     } else {
         BooleanOp::NewBody
     };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Primitive {
-        solid: required!(PrimitiveSolid::new(solid).ok()),
-        op,
-    })))
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::Primitive {
+            solid: required!(PrimitiveSolid::new(solid).ok()),
+            op,
+        },
+    )))
 }
 
 fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
@@ -6836,220 +7032,238 @@ fn hole_definition(
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let profile = profile_ref(ctx, owner, properties, sketches)?;
-    let (designation_label, class_label, fit_label) =
-        if enumeration_selector(ctx, properties, "ThreadType", 0)?.is_some_and(|value| value != 0) {
-            let designation = enumeration_label(ctx, properties, "ThreadSize")?;
-            match bool_selector(ctx, properties, "Threaded", false)? {
-                Some(true) => (
-                    designation,
-                    enumeration_label(ctx, properties, "ThreadClass")?,
-                    None,
-                ),
-                Some(false) => (
-                    designation,
-                    None,
-                    enumeration_label(ctx, properties, "ThreadFit")?,
-                ),
-                None => (designation, None, None),
-            }
-        } else {
-            (None, None, None)
-        };
+    let (designation_label, class_label, fit_label) = if enumeration_selector(
+        ctx,
+        properties,
+        "ThreadType",
+        0,
+    )?
+    .is_some_and(|value| value != 0)
+    {
+        let designation = enumeration_label(ctx, properties, "ThreadSize")?;
+        match bool_selector(ctx, properties, "Threaded", false)? {
+            Some(true) => (
+                designation,
+                enumeration_label(ctx, properties, "ThreadClass")?,
+                None,
+            ),
+            Some(false) => (
+                designation,
+                None,
+                enumeration_label(ctx, properties, "ThreadFit")?,
+            ),
+            None => (designation, None, None),
+        }
+    } else {
+        (None, None, None)
+    };
     let ProfileRef::Planar(planar_profile) = profile else {
         return Ok(None);
     };
-    Ok((|| -> Result<_, CodecError> {
-        if matches!(&planar_profile, PlanarProfileRef::Unresolved(_)) {
-            return Ok(None);
-        }
-        let filter_bits = required!(integer_selector(ctx, properties, "BaseProfileType", 6)?);
-        let profile_filter = match filter_bits & 7 {
-            1 => HoleProfileFilter::Points,
-            2 => HoleProfileFilter::Circles,
-            3 => HoleProfileFilter::PointsAndCircles,
-            4 => HoleProfileFilter::Arcs,
-            5 => HoleProfileFilter::PointsAndArcs,
-            6 => HoleProfileFilter::CirclesAndArcs,
-            7 => HoleProfileFilter::All,
-            _ => return Ok(None),
-        };
-        let positive = |name| -> Result<_, CodecError> { Ok(scalar_named(ctx, properties, name)?.and_then(PositiveReal::from_finite)) };
-        let diameter = required!(positive("Diameter")?);
-        let cut_angle = || -> Result<_, CodecError> {
-            Ok(positive("HoleCutCountersinkAngle")?
-                .filter(|value| value.get() < 180.0)
-                .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.get().to_radians())))
-        };
-        let legacy_cut_types = program_version
-            .and_then(freecad_program_version)
-            .is_some_and(|version| version < (0, 21));
-        let kind = match required!(enumeration_selector(ctx, properties, "HoleCutType", 0)?) {
-            0 => HoleKind::Simple,
-            1 => HoleKind::Counterbore {
-                diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(
-                    required!(positive("HoleCutDiameter")?),
-                ),
-                depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(positive(
-                    "HoleCutDepth",
-                )?)),
-            },
-            2 => HoleKind::Countersink {
-                diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(
-                    required!(positive("HoleCutDiameter")?),
-                ),
-                angle: required!(cut_angle()?),
-            },
-            3 if !legacy_cut_types => HoleKind::Counterdrill {
-                diameters: required!(cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                    cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(positive(
-                        "HoleCutDiameter",
-                    )?)),
-                    None,
-                )
-                .ok()),
-
-                depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(positive(
-                    "HoleCutDepth",
-                )?)),
-                angle: required!(cut_angle()?),
-            },
-            3 | 5 if legacy_cut_types => HoleKind::Counterbore {
-                diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(
-                    required!(positive("HoleCutDiameter")?),
-                ),
-                depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(positive(
-                    "HoleCutDepth",
-                )?)),
-            },
-            4 if legacy_cut_types => HoleKind::Countersink {
-                diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(
-                    required!(positive("HoleCutDiameter")?),
-                ),
-                angle: required!(cut_angle()?),
-            },
-            _ => return Ok(None),
-        };
-        let extent = match required!(enumeration_selector(ctx, properties, "DepthType", 0)?) {
-            0 => LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(positive(
-                    "Depth",
-                )?))
-                .into(),
-            },
-            1 => LinearTermination::ThroughAll {},
-            _ => return Ok(None),
-        };
-        let bottom = match required!(enumeration_selector(ctx, properties, "DrillPoint", 1)?) {
-            0 => HoleBottom::Flat,
-            1 => HoleBottom::Angled {
-                included_angle: required!(cadmpeg_ir::scalar::InteriorAngle::new(
-                    required!(positive("DrillPointAngle")?).get().to_radians(),
+    if matches!(&planar_profile, PlanarProfileRef::Unresolved(_)) {
+        return Ok(None);
+    }
+    let filter_bits = required!(integer_selector(ctx, properties, "BaseProfileType", 6)?);
+    let profile_filter = match filter_bits & 7 {
+        1 => HoleProfileFilter::Points,
+        2 => HoleProfileFilter::Circles,
+        3 => HoleProfileFilter::PointsAndCircles,
+        4 => HoleProfileFilter::Arcs,
+        5 => HoleProfileFilter::PointsAndArcs,
+        6 => HoleProfileFilter::CirclesAndArcs,
+        7 => HoleProfileFilter::All,
+        _ => return Ok(None),
+    };
+    let positive = |name| -> Result<_, CodecError> {
+        Ok(scalar_named(ctx, properties, name)?.and_then(PositiveReal::from_finite))
+    };
+    let diameter = required!(positive("Diameter")?);
+    let cut_angle = || -> Result<_, CodecError> {
+        Ok(positive("HoleCutCountersinkAngle")?
+            .filter(|value| value.get() < 180.0)
+            .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.get().to_radians())))
+    };
+    let legacy_cut_types = program_version
+        .and_then(freecad_program_version)
+        .is_some_and(|version| version < (0, 21));
+    let kind = match required!(enumeration_selector(ctx, properties, "HoleCutType", 0)?) {
+        0 => HoleKind::Simple,
+        1 => HoleKind::Counterbore {
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("HoleCutDiameter")?
+            )),
+            depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("HoleCutDepth",)?
+            )),
+        },
+        2 => HoleKind::Countersink {
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("HoleCutDiameter")?
+            )),
+            angle: required!(cut_angle()?),
+        },
+        3 if !legacy_cut_types => HoleKind::Counterdrill {
+            diameters: required!(cadmpeg_ir::features::holes::CounterdrillDiameters::new(
+                cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                    positive("HoleCutDiameter",)?
                 )),
-                depth_to_tip: required!(bool_selector(ctx, properties, "DrillForDepth", false)?),
-            },
-            _ => return Ok(None),
-        };
-        let tapered = required!(bool_selector(ctx, properties, "Tapered", false)?);
-        let taper_angle = tapered
-            .then(|| -> Result<_, CodecError> {
-                Ok(positive("TaperedAngle")?
-                    .filter(|value| value.get() < 180.0)
-                    .and_then(|value| {
-                        cadmpeg_ir::scalar::InteriorAngle::new(value.get().to_radians())
-                    }))
-            }).transpose()?
-            .flatten();
-        if tapered && taper_angle.is_none() {
-            return Ok(None);
-        }
-        let thread_type = required!(enumeration_selector(ctx, properties, "ThreadType", 0)?);
-        let specification = if thread_type == 0 {
-            None
-        } else {
-            let threaded = required!(bool_selector(ctx, properties, "Threaded", false)?);
-            let standard = required!(cadmpeg_core::text::NonBlankString::new(required!(thread_standard(thread_type))));
-            let designation = designation_label;
-            let modeled = if property(properties, "ModelThread").is_some() {
-                required!(bool_selector(ctx, properties, "ModelThread", false)?)
-            } else {
-                required!(bool_selector(ctx, properties, "ModelActualThread", false)?)
-            };
-            let cosmetic = required!(bool_selector(ctx, properties, "CosmeticThread", false)?);
-            let hand = match required!(enumeration_selector(ctx, properties, "ThreadDirection", 0)?) {
-                0 => ThreadHand::Right,
-                1 => ThreadHand::Left,
-                _ => return Ok(None),
-            };
-            let depth = match required!(enumeration_selector(ctx, properties, "ThreadDepthType", 0)?) {
-                0 => HoleThreadDepth::HoleDepth,
-                1 => HoleThreadDepth::Blind {
-                    depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(
-                        required!(positive("ThreadDepth")?),
-                    ),
-                },
-                2 => HoleThreadDepth::TappedStandard,
-                _ => return Ok(None),
-            };
-            let clearance = if required!(bool_selector(ctx, properties, "UseCustomThreadClearance", false)?) {
-                Some(Length::from_assigned_real(required!(scalar_named(ctx,
-                    properties,
-                    "CustomThreadClearance",
-                )?)))
-            } else {
-                None
-            };
-            Some(Box::new(if threaded {
-                HoleSpecification::Threaded {
-                    standard,
-                    designation,
-                    class: class_label,
-                    modeled,
-                    cosmetic,
-                    pitch: positive("ThreadPitch")?
-                        .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
-                    major_diameter: positive("ThreadDiameter")?
-                        .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
-                    hand,
-                    depth,
-                    clearance,
-                }
-            } else {
-                HoleSpecification::Clearance {
-                    standard,
-                    designation,
-                    fit: fit_label,
-                    modeled,
-                    cosmetic,
-                    hand,
-                    depth,
-                    clearance,
-                }
-            }))
-        };
-        let direction = axis_reference(ctx, properties, "Profile", objects, properties_by_owner)?
-            .map(|(_, direction)| cadmpeg_ir::features::FeatureDirection3::from(direction));
-        Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
-            profile: Some(planar_profile),
-            profile_filter: Some(profile_filter),
-            face: None,
-            direction,
-            placements: None,
-            shape: required!(cadmpeg_ir::features::holes::HoleShape::new(
-                HoleConstruction::Form {
-                    kind,
-                    specification,
-                },
                 None,
-                Some(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(diameter)),
             )
             .ok()),
 
-            extent: Some(extent),
-            bottom: Some(bottom),
-            taper_angle,
-            allow_multi_profile_faces: Some(required!(bool_selector(ctx, properties, "AllowMultiFace", false)?)),
-        })))
-    })()?)
+            depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("HoleCutDepth",)?
+            )),
+            angle: required!(cut_angle()?),
+        },
+        3 | 5 if legacy_cut_types => HoleKind::Counterbore {
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("HoleCutDiameter")?
+            )),
+            depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("HoleCutDepth",)?
+            )),
+        },
+        4 if legacy_cut_types => HoleKind::Countersink {
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("HoleCutDiameter")?
+            )),
+            angle: required!(cut_angle()?),
+        },
+        _ => return Ok(None),
+    };
+    let extent = match required!(enumeration_selector(ctx, properties, "DepthType", 0)?) {
+        0 => LinearTermination::Blind {
+            length: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                positive("Depth",)?
+            ))
+            .into(),
+        },
+        1 => LinearTermination::ThroughAll {},
+        _ => return Ok(None),
+    };
+    let bottom = match required!(enumeration_selector(ctx, properties, "DrillPoint", 1)?) {
+        0 => HoleBottom::Flat,
+        1 => HoleBottom::Angled {
+            included_angle: required!(cadmpeg_ir::scalar::InteriorAngle::new(
+                required!(positive("DrillPointAngle")?).get().to_radians(),
+            )),
+            depth_to_tip: required!(bool_selector(ctx, properties, "DrillForDepth", false)?),
+        },
+        _ => return Ok(None),
+    };
+    let tapered = required!(bool_selector(ctx, properties, "Tapered", false)?);
+    let taper_angle = tapered
+        .then(|| -> Result<_, CodecError> {
+            Ok(positive("TaperedAngle")?
+                .filter(|value| value.get() < 180.0)
+                .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.get().to_radians())))
+        })
+        .transpose()?
+        .flatten();
+    if tapered && taper_angle.is_none() {
+        return Ok(None);
+    }
+    let thread_type = required!(enumeration_selector(ctx, properties, "ThreadType", 0)?);
+    let specification = if thread_type == 0 {
+        None
+    } else {
+        let threaded = required!(bool_selector(ctx, properties, "Threaded", false)?);
+        let standard = required!(cadmpeg_core::text::NonBlankString::new(required!(
+            thread_standard(thread_type)
+        )));
+        let designation = designation_label;
+        let modeled = if property(properties, "ModelThread").is_some() {
+            required!(bool_selector(ctx, properties, "ModelThread", false)?)
+        } else {
+            required!(bool_selector(ctx, properties, "ModelActualThread", false)?)
+        };
+        let cosmetic = required!(bool_selector(ctx, properties, "CosmeticThread", false)?);
+        let hand = match required!(enumeration_selector(ctx, properties, "ThreadDirection", 0)?) {
+            0 => ThreadHand::Right,
+            1 => ThreadHand::Left,
+            _ => return Ok(None),
+        };
+        let depth = match required!(enumeration_selector(ctx, properties, "ThreadDepthType", 0)?) {
+            0 => HoleThreadDepth::HoleDepth,
+            1 => HoleThreadDepth::Blind {
+                depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(required!(
+                    positive("ThreadDepth")?
+                )),
+            },
+            2 => HoleThreadDepth::TappedStandard,
+            _ => return Ok(None),
+        };
+        let clearance = if required!(bool_selector(
+            ctx,
+            properties,
+            "UseCustomThreadClearance",
+            false
+        )?) {
+            Some(Length::from_assigned_real(required!(scalar_named(
+                ctx,
+                properties,
+                "CustomThreadClearance",
+            )?)))
+        } else {
+            None
+        };
+        Some(Box::new(if threaded {
+            HoleSpecification::Threaded {
+                standard,
+                designation,
+                class: class_label,
+                modeled,
+                cosmetic,
+                pitch: positive("ThreadPitch")?
+                    .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
+                major_diameter: positive("ThreadDiameter")?
+                    .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
+                hand,
+                depth,
+                clearance,
+            }
+        } else {
+            HoleSpecification::Clearance {
+                standard,
+                designation,
+                fit: fit_label,
+                modeled,
+                cosmetic,
+                hand,
+                depth,
+                clearance,
+            }
+        }))
+    };
+    let direction = axis_reference(ctx, properties, "Profile", objects, properties_by_owner)?
+        .map(|(_, direction)| cadmpeg_ir::features::FeatureDirection3::from(direction));
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
+        profile: Some(planar_profile),
+        profile_filter: Some(profile_filter),
+        face: None,
+        direction,
+        placements: None,
+        shape: required!(cadmpeg_ir::features::holes::HoleShape::new(
+            HoleConstruction::Form {
+                kind,
+                specification,
+            },
+            None,
+            Some(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(diameter)),
+        )
+        .ok()),
+
+        extent: Some(extent),
+        bottom: Some(bottom),
+        taper_angle,
+        allow_multi_profile_faces: Some(required!(bool_selector(
+            ctx,
+            properties,
+            "AllowMultiFace",
+            false
+        )?)),
+    })))
 }
 
 fn freecad_program_version(value: &str) -> Option<(u64, u64)> {
@@ -7100,69 +7314,85 @@ fn helical_sweep_definition(
             3 => HelicalSweepLaw::HeightTurnsGrowth,
             _ => return Ok(None),
         };
-        let (axis_origin, axis_direction) =
-            match vector_property(ctx, properties, "Base")?.zip(vector_property(ctx, properties, "Axis")?) {
-                Some((origin, direction)) => (
-                    origin.as_point().get(),
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(direction.get())),
-                ),
-                None => required!(axis_reference(ctx, properties, "ReferenceAxis", objects, properties_by_owner)?),
-            };
+        let (axis_origin, axis_direction) = match vector_property(ctx, properties, "Base")?
+            .zip(vector_property(ctx, properties, "Axis")?)
+        {
+            Some((origin, direction)) => (
+                origin.as_point().get(),
+                required!(cadmpeg_ir::units::UnitVector3::normalized(direction.get())),
+            ),
+            None => required!(axis_reference(
+                ctx,
+                properties,
+                "ReferenceAxis",
+                objects,
+                properties_by_owner
+            )?),
+        };
         Ok(Some((law, axis_origin, axis_direction)))
-    })()? else {
+    })()?
+    else {
         return Ok(None);
     };
     let profile = profile_ref(ctx, owner, properties, sketches)?;
     let ProfileRef::Planar(planar_profile) = profile else {
         return Ok(None);
     };
-    Ok((|| -> Result<_, CodecError> {
-        if matches!(&planar_profile, PlanarProfileRef::Unresolved(_)) {
-            return Ok(None);
-        }
-        let construction = HelicalSweepConstruction {
-            profile: planar_profile,
-            axis_origin: required!(cadmpeg_ir::features::FinitePoint3::new(axis_origin)),
-            axis_direction,
-            law,
-            pitch: required!(cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real(required!(scalar_named(ctx,
-                properties, "Pitch",
-            )?))),
-            travel: required!(cadmpeg_ir::features::HelicalSweepTravel::new(
-                Length::from_assigned_real(required!(scalar_named(ctx, properties, "Height")?)),
-                Length::from_assigned_real(required!(scalar_named(ctx, properties, "Growth")?)),
-            )),
-            turns: required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(scalar_named(ctx,
-                properties, "Turns",
-            )?))),
-            cone_angle: required!(cadmpeg_ir::scalar::Angle::new(
-                required!(scalar_named(ctx, properties, "Angle")?).get().to_radians(),
-            )),
-            left_handed: required!(bool_selector(ctx, properties, "LeftHanded", false)?),
-            reversed: required!(bool_selector(ctx, properties, "Reversed", false)?),
-            tolerance: Some(required!(cadmpeg_ir::scalar::PositiveReal::from_finite(
-                required!(finite_float_selector(ctx,
-                    properties,
-                    "Tolerance",
-                    "App::PropertyFloatConstraint",
-                    required!(FiniteReal::new(DEFAULT_HELICAL_SWEEP_TOLERANCE)),
-                )?),
-            ))),
-            allow_multi_profile_faces: Some(required!(bool_selector(ctx, properties, "AllowMultiFace", false)?)),
-        };
-        let op = if kind.ends_with("SubtractiveHelix") {
-            if required!(bool_selector(ctx, properties, "Outside", false)?) {
-                BooleanOp::Intersect
-            } else {
-                BooleanOp::Cut
-            }
+    if matches!(&planar_profile, PlanarProfileRef::Unresolved(_)) {
+        return Ok(None);
+    }
+    let construction = HelicalSweepConstruction {
+        profile: planar_profile,
+        axis_origin: required!(cadmpeg_ir::features::FinitePoint3::new(axis_origin)),
+        axis_direction,
+        law,
+        pitch: required!(
+            cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real(required!(
+                scalar_named(ctx, properties, "Pitch",)?
+            ))
+        ),
+        travel: required!(cadmpeg_ir::features::HelicalSweepTravel::new(
+            Length::from_assigned_real(required!(scalar_named(ctx, properties, "Height")?)),
+            Length::from_assigned_real(required!(scalar_named(ctx, properties, "Growth")?)),
+        )),
+        turns: required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(
+            scalar_named(ctx, properties, "Turns",)?
+        ))),
+        cone_angle: required!(cadmpeg_ir::scalar::Angle::new(
+            required!(scalar_named(ctx, properties, "Angle")?)
+                .get()
+                .to_radians(),
+        )),
+        left_handed: required!(bool_selector(ctx, properties, "LeftHanded", false)?),
+        reversed: required!(bool_selector(ctx, properties, "Reversed", false)?),
+        tolerance: Some(required!(cadmpeg_ir::scalar::PositiveReal::from_finite(
+            required!(finite_float_selector(
+                ctx,
+                properties,
+                "Tolerance",
+                "App::PropertyFloatConstraint",
+                required!(FiniteReal::new(DEFAULT_HELICAL_SWEEP_TOLERANCE)),
+            )?),
+        ))),
+        allow_multi_profile_faces: Some(required!(bool_selector(
+            ctx,
+            properties,
+            "AllowMultiFace",
+            false
+        )?)),
+    };
+    let op = if kind.ends_with("SubtractiveHelix") {
+        if required!(bool_selector(ctx, properties, "Outside", false)?) {
+            BooleanOp::Intersect
         } else {
-            BooleanOp::Join
-        };
-        Ok(Some(FeatureDefinition::Operation(
-            FeatureOperation::HelicalSweep { construction, op },
-        )))
-    })()?)
+            BooleanOp::Cut
+        }
+    } else {
+        BooleanOp::Join
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::HelicalSweep { construction, op },
+    )))
 }
 
 fn binder_definition(
@@ -7207,8 +7437,13 @@ fn binder_definition(
         };
         BinderConstruction::Shape { trace_support }
     } else {
-        let Some(distance) =
-            finite_float_selector(ctx, properties, "Offset", "App::PropertyFloat", FiniteReal::ZERO)?
+        let Some(distance) = finite_float_selector(
+            ctx,
+            properties,
+            "Offset",
+            "App::PropertyFloat",
+            FiniteReal::ZERO,
+        )?
         else {
             return Ok(None);
         };
@@ -7218,10 +7453,12 @@ fn binder_definition(
         let Some(offset_fill) = bool_selector(ctx, properties, "OffsetFill", false)? else {
             return Ok(None);
         };
-        let Some(offset_open_result) = bool_selector(ctx, properties, "OffsetOpenResult", false)? else {
+        let Some(offset_open_result) = bool_selector(ctx, properties, "OffsetOpenResult", false)?
+        else {
             return Ok(None);
         };
-        let Some(offset_intersection) = bool_selector(ctx, properties, "OffsetIntersection", false)?
+        let Some(offset_intersection) =
+            bool_selector(ctx, properties, "OffsetIntersection", false)?
         else {
             return Ok(None);
         };
@@ -7276,7 +7513,8 @@ fn binder_definition(
         let Some(relative) = bool_selector(ctx, properties, "Relative", true)? else {
             return Ok(None);
         };
-        let Some(copy_on_change) = enumeration_selector(ctx, properties, "BindCopyOnChange", 0)? else {
+        let Some(copy_on_change) = enumeration_selector(ctx, properties, "BindCopyOnChange", 0)?
+        else {
             return Ok(None);
         };
         let Some(claim_children) = bool_selector(ctx, properties, "ClaimChildren", false)? else {
@@ -7379,7 +7617,9 @@ fn enumeration_label(
     let admitted_document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => { return Ok(None); }
+        Err(_) => {
+            return Ok(None);
+        }
     };
     let document = admitted_document.document();
     let root = document.root_element();
@@ -7707,25 +7947,25 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     };
 
     if kind.ends_with("Scaled") {
-        return Ok((|| -> Result<_, CodecError> {
-            let final_factor =
-                required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(scalar_named(ctx, properties, "Factor")?)));
-            Ok((count >= 2).then_some(
-                required!(PatternKind::new(PatternTransform::Scale {
-                    center: PatternScaleCenter::FirstSeedCentroid,
-                    final_factor,
-                    count,
-                })
-                .ok()),
-            ))
-        })()?);
+        let final_factor = required!(cadmpeg_ir::scalar::PositiveReal::from_finite(required!(
+            scalar_named(ctx, properties, "Factor")?
+        )));
+        return Ok(
+            (count >= 2).then_some(required!(PatternKind::new(PatternTransform::Scale {
+                center: PatternScaleCenter::FirstSeedCentroid,
+                final_factor,
+                count,
+            })
+            .ok())),
+        );
     }
 
     let pattern = if kind.ends_with("LinearPattern") {
         let Some(first) = linear_pattern_axis(ctx, properties, "", count, mode, sources)? else {
             return Ok(None);
         };
-        let Some(count2) = integer_constraint_selector(ctx, properties, "Occurrences2", 1, false)? else {
+        let Some(count2) = integer_constraint_selector(ctx, properties, "Occurrences2", 1, false)?
+        else {
             return Ok(None);
         };
         if count2 == 0 || count2 > cadmpeg_core::decode::u64_from_index(MAX_SKETCH_RECORDS) {
@@ -7849,9 +8089,14 @@ fn linear_pattern_axis(
         entries,
     } = sources;
     let name = |base: &str| format!("{base}{suffix}");
-    let mut direction =
-        axis_reference(ctx, properties, &name("Direction"), objects, properties_by_owner)?
-            .map(|(_, direction)| direction);
+    let mut direction = axis_reference(
+        ctx,
+        properties,
+        &name("Direction"),
+        objects,
+        properties_by_owner,
+    )?
+    .map(|(_, direction)| direction);
     let Some(reversed) = bool_selector(ctx, properties, &name("Reversed"), false)? else {
         return Ok(None);
     };
@@ -8034,7 +8279,8 @@ fn uniform_step(locations: &[FiniteReal]) -> Option<FiniteReal> {
         .then_some(step)
 }
 
-fn axis_reference(ctx: &DecodeContext<'_>,
+fn axis_reference(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
     objects: &[ObjectRecord],
@@ -8046,7 +8292,9 @@ fn axis_reference(ctx: &DecodeContext<'_>,
             required!(cadmpeg_ir::units::UnitVector3::normalized(direction.get())),
         )));
     }
-    let (link, selector) = required!(singular_reference_link(required!(property(properties, name))));
+    let (link, selector) = required!(singular_reference_link(required!(property(
+        properties, name
+    ))));
     let target = required!(link.object());
     let object = required!(objects.iter().find(|object| object.id == target));
     let owned = required!(properties_by_owner.get(target).map(Vec::as_slice));
@@ -8174,8 +8422,15 @@ fn is_link_property_type(type_name: &str) -> bool {
     )
 }
 
-fn scalar_named(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<FiniteReal>, CodecError> {
-    Ok(property(properties, name).map(|property| scalar_value(ctx, property)).transpose()?.flatten())
+fn scalar_named(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<FiniteReal>, CodecError> {
+    Ok(property(properties, name)
+        .map(|property| scalar_value(ctx, property))
+        .transpose()?
+        .flatten())
 }
 
 fn string_property_value(
@@ -8191,7 +8446,11 @@ fn string_property_value(
     .transpose()
 }
 
-fn integer_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<u64>, CodecError> {
+fn integer_property(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<u64>, CodecError> {
     let value = required!(scalar_named(ctx, properties, name)?);
     let value = value.get();
     if value < 0.0 || value.fract() != 0.0 {
@@ -8204,7 +8463,8 @@ fn integer_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], nam
     }))
 }
 
-fn integer_selector(ctx: &DecodeContext<'_>,
+fn integer_selector(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
     absent_default: u64,
@@ -8215,11 +8475,19 @@ fn integer_selector(ctx: &DecodeContext<'_>,
     if property.type_name != "App::PropertyInteger" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(ctx, property, "Integer", "value", str::parse::<i64>)?).ok());
+    let value = required!(required!(direct_root_value(
+        ctx,
+        property,
+        "Integer",
+        "value",
+        str::parse::<i64>
+    )?)
+    .ok());
     Ok(u64::try_from(value).ok())
 }
 
-fn integer_constraint_selector(ctx: &DecodeContext<'_>,
+fn integer_constraint_selector(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
     absent_default: u64,
@@ -8233,7 +8501,14 @@ fn integer_constraint_selector(ctx: &DecodeContext<'_>,
     {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(ctx, property, "Integer", "value", str::parse::<i64>)?).ok());
+    let value = required!(required!(direct_root_value(
+        ctx,
+        property,
+        "Integer",
+        "value",
+        str::parse::<i64>
+    )?)
+    .ok());
     Ok(u64::try_from(value).ok())
 }
 
@@ -8245,43 +8520,48 @@ fn numeric_list(
     if property.type_name != "App::PropertyFloatList" {
         return Ok(None);
     }
-    direct_root(ctx, property, "FloatList", |root| -> Result<_, CodecError> {
-        let Some(file) = root.attribute("file") else {
-            return Ok(None);
-        };
-        if file.is_empty() {
-            return Ok(property.side_entries().is_empty().then(Vec::new));
-        }
-        if property.side_entries() != [file] {
-            return Ok(None);
-        }
-        let Some(data) = entries
-            .iter()
-            .find(|entry| entry.name() == file)
-            .map(crate::native::EntryRecord::data)
-        else {
-            return Ok(None);
-        };
-        let mut view = View::over_retained(data);
-        let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
-            return Ok(None);
-        };
-        if count > MAX_SKETCH_RECORDS
-            || view
-                .counted(cadmpeg_core::decode::u64_from_index(count), 8)
-                .is_none()
-        {
-            return Ok(None);
-        }
-        let mut values = ctx.collection_vec(count, "fcstd numeric-list values")?;
-        for _ in 0..count {
-            let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
+    direct_root(
+        ctx,
+        property,
+        "FloatList",
+        |root| -> Result<_, CodecError> {
+            let Some(file) = root.attribute("file") else {
                 return Ok(None);
             };
-            values.push(value);
-        }
-        Ok(view.is_empty().then_some(values))
-    })?
+            if file.is_empty() {
+                return Ok(property.side_entries().is_empty().then(Vec::new));
+            }
+            if property.side_entries() != [file] {
+                return Ok(None);
+            }
+            let Some(data) = entries
+                .iter()
+                .find(|entry| entry.name() == file)
+                .map(crate::native::EntryRecord::data)
+            else {
+                return Ok(None);
+            };
+            let mut view = View::over_retained(data);
+            let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
+                return Ok(None);
+            };
+            if count > MAX_SKETCH_RECORDS
+                || view
+                    .counted(cadmpeg_core::decode::u64_from_index(count), 8)
+                    .is_none()
+            {
+                return Ok(None);
+            }
+            let mut values = ctx.collection_vec(count, "fcstd numeric-list values")?;
+            for _ in 0..count {
+                let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
+                    return Ok(None);
+                };
+                values.push(value);
+            }
+            Ok(view.is_empty().then_some(values))
+        },
+    )?
     .unwrap_or(Ok(None))
 }
 

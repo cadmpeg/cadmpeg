@@ -1688,7 +1688,8 @@ fn parse_uuid_text(value: &str) -> Option<Uuid> {
     (index == bytes.len() && nibble.is_none()).then_some(Uuid::from_canonical(bytes))
 }
 
-fn parse_legacy_rdk_material_instance_id(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn parse_legacy_rdk_material_instance_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     payload_range: Range<usize>,
 ) -> Result<Option<Uuid>, FramingError> {
@@ -1704,7 +1705,8 @@ enum RdkMaterialPayload {
     CallbackOwned,
 }
 
-fn classify_rdk_material_payload(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn classify_rdk_material_payload(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     payload_range: Range<usize>,
 ) -> Result<RdkMaterialPayload, FramingError> {
@@ -1737,17 +1739,24 @@ fn classify_rdk_material_payload(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if xml.last() == Some(&0) {
         return Ok(RdkMaterialPayload::CallbackOwned);
     }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(xml.len()), "validate Rhino RDK XML UTF-8")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(xml.len()),
+        "validate Rhino RDK XML UTF-8",
+    )?;
     let xml = std::str::from_utf8(xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
-    let admitted_document = ctx.parse_xml(xml, "Rhino legacy RDK XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error.into(); };
-        FramingError::structural(
-            payload_range.start,
-            format!("legacy RDK XML is malformed: {error}"),
-        )
-    })?;
+    let admitted_document = ctx
+        .parse_xml(xml, "Rhino legacy RDK XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error.into();
+            };
+            FramingError::structural(
+                payload_range.start,
+                format!("legacy RDK XML is malformed: {error}"),
+            )
+        })?;
     let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "xml" {
@@ -1793,11 +1802,16 @@ fn classify_rdk_material_payload(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 
 fn legacy_rdk_material_instance_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8], userdata: &[UserdataDescriptor],
+    data: &[u8],
+    userdata: &[UserdataDescriptor],
 ) -> Result<Option<Uuid>, CodecError> {
     for value in userdata.iter().filter_map(UserdataDescriptor::known).rev() {
-        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) { continue; }
+        if value.class_uuid != RDK_CLASS
+            || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
+        {
+            continue;
+        }
         match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
             Ok(Some(instance)) => return Ok(Some(instance)),
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
@@ -1809,13 +1823,18 @@ fn legacy_rdk_material_instance_id(
 
 fn rdk_material_userdata_requires_opaque(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8], userdata: &[UserdataDescriptor],
+    data: &[u8],
+    userdata: &[UserdataDescriptor],
 ) -> Result<bool, CodecError> {
     for value in userdata.iter().filter_map(UserdataDescriptor::known) {
-        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) { continue; }
+        if value.class_uuid != RDK_CLASS
+            || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
+        {
+            continue;
+        }
         match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
-            Ok(RdkMaterialPayload::Compatibility(_)) => {},
+            Ok(RdkMaterialPayload::Compatibility(_)) => {}
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => return Ok(true),
         }

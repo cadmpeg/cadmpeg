@@ -257,9 +257,17 @@ fn shape_payload_record_refuses_on_collection_limit() {
         vec![property.id.clone()],
         Vec::new(),
     );
-    let result = with_collection_limit(&[], 1, |ctx| parse_payloads(ctx, &[property], &[entry]));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD shape payload records"));
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "FreeCAD shape payload records",
+        |ctx| {
+            parse_payloads(
+                ctx,
+                std::slice::from_ref(&property),
+                std::slice::from_ref(&entry),
+            )
+        },
+    );
 }
 
 #[test]

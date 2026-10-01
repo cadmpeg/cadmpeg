@@ -876,8 +876,10 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
         "fcstd constraint text metadata parse",
         |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "fcstd constraint text metadata parse"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "fcstd constraint text metadata parse")
+    );
     let native = property("<Constrain Type=\"99\" First=\"0\" FirstPos=\"0\"/>");
     crate::test_support::assert_collection_refusal_at(
         &[],
@@ -1239,14 +1241,9 @@ fn design_numeric_list_refuses_at_collection_limit() {
         Vec::new(),
         data,
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(matches!(super::numeric_list(&ctx, &property, &[entry]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd numeric-list values"));
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd numeric-list values", |ctx| {
+        super::numeric_list(ctx, &property, std::slice::from_ref(&entry))
+    });
 }
 
 #[test]
@@ -1282,16 +1279,9 @@ fn design_vector_list_refuses_at_collection_limit() {
         Vec::new(),
         data,
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(
-        matches!(super::vector_list_property(&ctx, &[&property], "Nodes", &[entry]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd vector-list points")
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd vector-list points", |ctx| {
+        super::vector_list_property(ctx, &[&property], "Nodes", std::slice::from_ref(&entry))
+    });
 }
 
 #[test]

@@ -104,14 +104,21 @@ pub(super) fn model_root(
     scan: &ContainerScan<'_>,
 ) -> Result<(String, Option<String>), CodecError> {
     let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(manifest_bytes.len()), "validate F3Z JSON UTF-8")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(manifest_bytes.len()),
+        "validate F3Z JSON UTF-8",
+    )?;
     let text = std::str::from_utf8(manifest_bytes).map_err(|error| {
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
     })?;
-    let manifest: ManifestJson = ctx.parse_json(text, "parse F3Z manifest JSON").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
-    })?;
+    let manifest: ManifestJson =
+        ctx.parse_json(text, "parse F3Z manifest JSON")
+            .map_err(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return error;
+                };
+                CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+            })?;
     model_root_member(ctx, scan, &manifest.root)
 }
 
@@ -254,14 +261,25 @@ fn model_root_member(
     }
 
     let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(description_bytes.len()), "validate F3Z JSON UTF-8")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(description_bytes.len()),
+        "validate F3Z JSON UTF-8",
+    )?;
     let text = std::str::from_utf8(description_bytes).map_err(|error| {
-        CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"))
+        CodecError::malformed(format_args!(
+            "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
+        ))
     })?;
-    let description: DesignDescriptionJson = ctx.parse_json(text, "match F3Z derived model reference").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"))
-    })?;
+    let description: DesignDescriptionJson = ctx
+        .parse_json(text, "match F3Z derived model reference")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            CodecError::malformed(format_args!(
+                "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
+            ))
+        })?;
     let mut candidates = Vec::new();
     for graph in description.design_description.design_graphs {
         let mut root = None;
@@ -351,14 +369,15 @@ mod tests {
                     .unwrap();
             let error = crate::test_support::resource_refusal_at(
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
-                "match F3Z root object ID", 0,
+                "match F3Z root object ID",
+                0,
                 |ctx| super::model_root_member(ctx, &scan, "drawing.f2d"),
             );
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("root scan must refuse");
             };
             assert_eq!(limit.operation, "match F3Z root object ID");
-    });
+        });
     }
     #[test]
     fn manifest_extensions_preserve_work_and_depth_refusals() {
@@ -376,7 +395,9 @@ mod tests {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 match dimension {
                     cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = 0;
+                        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(
+                            scan.entry_bytes("Manifest.json").unwrap().len(),
+                        );
                     }
                     cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
                         policy.limits.max_recursion_depth = 1;

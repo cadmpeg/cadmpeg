@@ -149,7 +149,12 @@ fn design_boolean_scalar_keeps_case_insensitive_values_without_copy() {
             .expect("valid XML span"),
         };
         assert_eq!(
-            super::super::bool_property(&cadmpeg_test_support::service_decode_context(), &[&property], "Flag").expect("admitted XML"),
+            super::super::bool_property(
+                &cadmpeg_test_support::service_decode_context(),
+                &[&property],
+                "Flag"
+            )
+            .expect("admitted XML"),
             Some(expected)
         );
     }
@@ -265,7 +270,9 @@ fn design_boolean_scalar_propagates_tree_refusal() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::bool_property(&ctx, &[&property], "Refine").unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("tree admission must refuse"); };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("tree admission must refuse");
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(limit.operation, "FreeCAD direct property XML tree");
     assert_eq!(ctx.resource_refusal(), Some(limit));

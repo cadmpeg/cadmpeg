@@ -193,7 +193,9 @@ fn f3z_model_root_name_refuses_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes, "retain F3Z model root", 0,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3Z model root",
+        0,
         |ctx| crate::f3z::archive::model_root(ctx, &scan),
     );
     assert!(
@@ -212,7 +214,9 @@ fn f3z_model_candidate_refuses_collection_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems, "collect F3Z model candidates", 0,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3Z model candidates",
+        0,
         |ctx| crate::f3z::archive::model_root(ctx, &scan),
     );
     assert!(
@@ -231,7 +235,9 @@ fn f3z_derived_model_match_refuses_work_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits, "match F3Z derived model reference", 0,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "match F3Z derived model reference",
+        0,
         |ctx| crate::f3z::archive::model_root(ctx, &scan),
     );
     assert!(
@@ -250,7 +256,9 @@ fn f3z_drawing_root_copy_refuses_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes, "retain F3Z drawing root", 0,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3Z drawing root",
+        0,
         |ctx| crate::f3z::archive::model_root(ctx, &scan),
     );
     assert!(

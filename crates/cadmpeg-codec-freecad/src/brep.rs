@@ -2351,13 +2351,17 @@ fn direct_shape_entry(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {
-    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").or_else(|error| {
-        let CodecError::Malformed(error) = error else { return Err(error); };
-        Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("invalid exact-shape property XML {}: {error}", property.id),
-            "FreeCAD shape property XML diagnostic",
-        )?))
-    })?;
+    let admitted_document = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .or_else(|error| {
+            let CodecError::Malformed(error) = error else {
+                return Err(error);
+            };
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("invalid exact-shape property XML {}: {error}", property.id),
+                "FreeCAD shape property XML diagnostic",
+            )?))
+        })?;
     let document = admitted_document.document();
     let root = document.root_element();
     if !matches!(root.tag_name().name(), "Property" | "_Property") {

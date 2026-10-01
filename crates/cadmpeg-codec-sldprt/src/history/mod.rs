@@ -134,7 +134,9 @@ pub(crate) fn histories(
             let admitted_doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
                 Ok(tree) => tree,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => { return Ok(histories); }
+                Err(_) => {
+                    return Ok(histories);
+                }
             };
             let doc = admitted_doc.document();
             let root = doc.root_element();
