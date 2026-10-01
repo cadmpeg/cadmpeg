@@ -1050,3 +1050,14 @@ fn vertex_orbit_constructor_rejects_zero_empty_repeated_and_unordered_members() 
     let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
+
+#[test]
+fn topology_successor_and_open_tail_walks_refuse_work() {
+    let rows = [row(1, 2), row(2, 3), row(3, 99)];
+    let (edges, loops) = crate::test_support::assert_work_boundaries(
+        &["creo topology successor scan", "creo topology ring successor lookup", "creo topology open tail lookup"],
+        |ctx| build(ctx, &rows),
+    );
+    assert_eq!(edges.len(), 6);
+    assert!(loops.is_empty());
+}

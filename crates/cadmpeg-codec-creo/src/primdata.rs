@@ -425,6 +425,12 @@ mod tests {
     }
 
     #[test]
+    fn primitive_miss_searches_refuse_work() {
+        crate::test_support::assert_work_boundaries(&["creo primitive scalar discovery"], |ctx| scalar_arrays(ctx, &[0; 64]));
+        crate::test_support::assert_work_boundaries(&["creo primitive strip discovery"], |ctx| triangle_strips(ctx, &[0; 64]));
+    }
+
+    #[test]
     fn primitive_scalar_values_refuse_before_declared_count_growth() {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = named("p1", &[0], 1);

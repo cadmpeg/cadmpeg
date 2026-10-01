@@ -75,3 +75,28 @@ fn relation_quantity_serialization_preserves_base_power_fields() {
     let value = crate::curve::CurveExpressionQuantity::new(3.5, [1, 2, 0, 0, 0]).expect("finite residual quantity");
     assert_eq!(serde_json::to_string(&value).expect("quantity JSON"), r#"{"value":3.5,"length_power":1,"mass_power":2,"time_power":0,"angle_power":0,"temperature_power":0}"#);
 }
+
+fn nonlinear_ceiling_error(left: &str, seed: f64) -> CodecError {
+    use crate::curve::{refine_nonlinear_solution, CurveExpressionEquation, CurveExpressionSolveBlock, SolveUnknown, RelationDimension};
+    let block = CurveExpressionSolveBlock {
+        equations: vec![CurveExpressionEquation { left: left.to_owned(), right: "0".to_owned(), dependencies: vec!["x".to_owned()], offset: 0 }],
+        assignments: Vec::new(),
+        unknowns: vec![SolveUnknown { name: "x".to_owned(), solution: None }],
+        offset: 0,
+        for_offset: 1,
+    };
+    with_policy(DecodePolicy::service(), |ctx| refine_nonlinear_solution(ctx, &block, &BTreeMap::new(), &[RelationDimension::default()], &[seed], Default::default())).expect_err("local solver ceiling refuses")
+}
+
+#[test]
+fn nonlinear_iteration_ceiling_refuses_a_progressing_smooth_system() {
+    let error = nonlinear_ceiling_error("x+100000000000000000000*x*x*x+0.001", 0.0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo nonlinear iteration ceiling"));
+}
+
+#[test]
+fn nonlinear_line_search_ceiling_refuses_valid_non_improving_probes() {
+    const SMALL_NONZERO_SEED: f64 = 0.0000001;
+    let error = nonlinear_ceiling_error("x*x+1", SMALL_NONZERO_SEED);
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo nonlinear line-search ceiling"));
+}

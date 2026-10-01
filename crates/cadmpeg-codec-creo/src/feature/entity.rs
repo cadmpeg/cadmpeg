@@ -756,4 +756,11 @@ mod tests {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity tables"));
     }
+    #[test]
+    fn entity_graph_lossy_name_refuses_copy_work() {
+        let (entities, references) = crate::test_support::assert_work_boundaries(&["creo feature entity text work"], |ctx| entity_graph(ctx, GRAPH));
+        assert_eq!((entities.len(), references.len()), (2, 1));
+        assert_eq!(entities[1].name, "N\u{fffd}");
+    }
+
 }
