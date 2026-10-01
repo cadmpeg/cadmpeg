@@ -161,12 +161,11 @@ pub(crate) fn decode_kernel_carrier(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
     );
-    charge_header_copy(ctx, header, "copy Inventor kernel metadata")?;
     let brep = decode_with_header(
         ctx,
         &records,
         bytes,
-        Some(header.metadata.clone()),
+        Some(&header.metadata),
         &stream,
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,

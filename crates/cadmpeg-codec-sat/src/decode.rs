@@ -64,13 +64,13 @@ fn decode_asm_binary(
         ctx,
         &records,
         bytes,
-        Some(header.metadata.clone()),
+        Some(&header.metadata),
         "stream",
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Asm, &mut attributes);
+    header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
         header,
@@ -132,13 +132,13 @@ fn decode_acis_binary(
         ctx,
         &records,
         bytes,
-        Some(header.metadata.clone()),
+        Some(&header.metadata),
         "stream",
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Acis, &mut attributes);
+    header_attributes(ctx, &header.metadata, Family::Acis, &mut attributes)?;
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
@@ -170,11 +170,10 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     })?;
     let header = stream.header.as_kernel_header(ctx)?;
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, stream.terminator.into(), &mut attributes);
-    attributes.insert(
-        "scale".to_string(),
-        format!("{}", stream.header.scale().get()),
-    );
+    header_attributes(ctx, &header, stream.terminator.into(), &mut attributes)?;
+    let key = ctx.copy_retained_text("scale", "retain SAT scale attribute key")?;
+    let value = ctx.format_retained_with_work(format_args!("{}", stream.header.scale().get()), "retain SAT scale attribute")?;
+    ctx.insert_btree_map(&mut attributes, key, value, "collect SAT scale attribute")?;
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
     // through `classify`. Neither branch gates the record decode on it.
@@ -187,7 +186,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         ctx,
         &stream.records,
         bytes,
-        Some(header.clone()),
+        Some(&header),
         "stream",
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
@@ -298,16 +297,32 @@ fn build_result(
     };
 
     let mut annotations = AnnotationBuilder::new();
+    let annotation_count = cadmpeg_core::decode::u64_from_index(annotation_records.len());
+    ctx.charge_work(annotation_count, "scan SAT annotation records")?;
     for record in annotation_records {
-        let stream =
-            StreamHandle::new(cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream));
-        annotations
-            .note(&record.id, &stream, record.offset)
-            .tag(record.tag.as_str());
+        let id_bytes = cadmpeg_core::decode::u64_from_index(record.id.len());
+        let comparisons = annotation_count.checked_mul(2).and_then(|count| count.checked_add(1))
+            .and_then(|count| count.checked_mul(id_bytes))
+            .and_then(|count| count.checked_add(cadmpeg_core::decode::u64_from_index(record.tag.as_str().len())))
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT annotation work", u64::MAX, u64::MAX))?;
+        ctx.charge_work(comparisons, "copy and compare SAT provenance")?;
+        let name = ctx.format_retained_with_work(format_args!("sat:{}", record.stream), "retain SAT annotation stream")?;
+        let name = cadmpeg_ir::StreamName::try_from(name)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        ctx.charge_collection_items(1, "collect SAT annotation stream handles")?;
+        let stream = StreamHandle::new(name);
+        annotations.note_charged(ctx, &record.id, &stream, record.offset, record.tag.as_str())?;
+        let field_count = cadmpeg_core::decode::u64_from_index(record.derived_fields.len());
+        ctx.charge_work(field_count, "scan SAT derived fields")?;
         for field in record.derived_fields {
-            annotations
-                .derived(&record.id, field)
-                .map_err(CodecError::malformed)?;
+            let field_bytes = cadmpeg_core::decode::u64_from_index(field.len());
+            let work = annotation_count.checked_mul(2).and_then(|count| count.checked_add(1))
+                .and_then(|count| count.checked_mul(id_bytes))
+                .and_then(|count| field_count.checked_mul(2).and_then(|fields| fields.checked_add(1))
+                    .and_then(|fields| fields.checked_mul(field_bytes)).and_then(|fields| count.checked_add(fields)))
+                .ok_or_else(|| ctx.refuse_codec_limit("SAT exactness work", u64::MAX, u64::MAX))?;
+            ctx.charge_work(work, "copy and compare SAT exactness")?;
+            annotations.derived_charged(ctx, &record.id, field)?;
         }
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());

@@ -413,3 +413,30 @@ fn sat_encodings_admit_declared_and_actual_entities_once() {
         assert_eq!(decoded.ir().model.surfaces.len(), 1);
     }
 }
+
+#[test]
+fn sat_annotation_storage_uses_the_callers_collection_budget() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use crate::test_support::with_context;
+
+    let source = text_sphere_stream(1.0);
+    let header = with_context(&source, &DecodePolicy::service(), |ctx| {
+        cadmpeg_asm::sat::parse(ctx, &source).expect("text stream parses")
+            .header.as_kernel_header(ctx).expect("kernel header")
+    });
+    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+    brep.annotation_records.push(cadmpeg_asm::brep::annotations::AnnotationRecord {
+        id: "sat:brep:entity#1".into(), stream: "stream".into(), offset: 0,
+        tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("sphere-surface".into()),
+        derived_fields: Vec::new(),
+    });
+    let (matched, kernel) = crate::dialect::layers(&crate::dialect::StreamEvidence::Text(None));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 12;
+    let error = with_context(&[], &policy, |ctx| {
+        super::build_result(ctx, brep, Default::default(), &header, None, matched, &kernel)
+    }).expect_err("annotation stream handle exceeds the twelve native arena slots");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SAT annotation stream handles"));
+}
