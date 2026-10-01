@@ -1174,3 +1174,5 @@ fn topology_successor_and_open_tail_walks_refuse_work() {
     assert_eq!(edges.len(), 6);
     assert!(loops.is_empty());
 }
+
+mod work_admission;

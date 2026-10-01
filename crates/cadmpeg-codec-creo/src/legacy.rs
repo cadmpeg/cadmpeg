@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural grammar for legacy ASCII persistence records.
 
-use cadmpeg_core::CodecError;
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::ops::Range;
@@ -139,8 +139,8 @@ pub(crate) enum NumericPayload<T> {
 
 impl<T> NumericPayload<T> {
     /// Admits source runs whose count sum equals the extent product.
-    pub(crate) fn array(dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Option<Self> {
-        numeric_array::NumericArray::try_new(dimensions, runs).map(Self::Array)
+    pub(crate) fn array(ctx: &DecodeContext<'_>, dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Result<Option<Self>, CodecError> {
+        Ok(numeric_array::NumericArray::try_new(ctx, dimensions, runs)?.map(Self::Array))
     }
 
     /// Number of logical scalar elements represented by this payload.
@@ -1525,7 +1525,7 @@ where
                     } else {
                         Vec::new()
                     };
-                    let Some(payload) = NumericPayload::array(dimensions, runs) else {
+                    let Some(payload) = NumericPayload::array(ctx, dimensions, runs)? else {
                         unresolved += next_index - index;
                         index = next_index;
                         continue;

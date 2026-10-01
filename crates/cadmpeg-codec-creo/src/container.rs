@@ -1343,7 +1343,9 @@ fn read_array_count(
     let mut from = 0;
     let mut total = 0u32;
     let mut found = false;
-    while let Some(pos) = find(region, label, from) {
+    loop {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(region.len() - from), "creo geometry census search")?;
+        let Some(pos) = find(region, label, from) else { break; };
         let mut p = pos + label.len();
         // Require the NUL that terminates the namespace label.
         if region.get(p) == Some(&0) {
@@ -2068,12 +2070,16 @@ fn structural_feature_ids(
     curve_rows: &[CurveTopologyRow],
 ) -> Result<std::collections::BTreeSet<u32>, CodecError> {
     let mut ids = std::collections::BTreeSet::new();
+    let rows = surface_rows.len().checked_add(curve_rows.len()).ok_or_else(|| ctx.refuse_codec_limit("creo structural feature rows", u64::MAX, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows), "creo structural feature rows")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "creo structural feature sections")?;
     for id in surface_rows
         .iter()
         .map(|row| row.feature_id)
         .chain(curve_rows.iter().map(|row| row.feature_id))
         .filter(|id| *id != 0)
     {
+        ctx.charge_work(24 * (u64::from(usize::BITS - ids.len().leading_zeros()) + 1), "creo structural feature identity work")?;
         ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
     }
     for section in sections
@@ -2082,7 +2088,9 @@ fn structural_feature_ids(
     {
         let payload = section.region;
         let mut from = 0;
-        while let Some(found) = find(payload, b"parent_feats\0", from) {
+        loop {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len() - from), "creo parent-feature search")?;
+            let Some(found) = find(payload, b"parent_feats\0", from) else { break; };
             let start = found + b"parent_feats\0".len();
             let Some(&psb::token::ARRAY_OPEN) = payload.get(start) else {
                 from = start;
@@ -2090,11 +2098,13 @@ fn structural_feature_ids(
             };
             let (count, mut cursor) = psb::compact_int(payload, start + 1);
             for _ in 0..count {
+                ctx.charge_work(2, "creo parent-feature entries")?;
                 let (id, next) = psb::compact_int(payload, cursor);
                 if next == cursor {
                     break;
                 }
                 if id != 0 {
+                    ctx.charge_work(24 * (u64::from(usize::BITS - ids.len().leading_zeros()) + 1), "creo structural feature identity work")?;
                     ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
                 }
                 cursor = next;

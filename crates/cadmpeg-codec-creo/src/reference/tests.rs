@@ -15,7 +15,7 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    arc_z_coordinate, arc_z_fields, conic_local_system, conic_parameter, line3d_fields,
+    arc_z_coordinate, conic_local_system, conic_parameter, line3d_fields,
     positional_conic_local_system, scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse,
     ReferenceLineKind,
 };
@@ -53,6 +53,10 @@ fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
 
 fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
     with_reference_ctx(&[], |ctx| super::ellipse_carriers(ctx, conics))
+}
+
+fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<super::ReferenceCircle> {
+    with_reference_ctx(body, |ctx| super::arc_z_fields(ctx, body, cache, entity_id))
 }
 
 #[test]

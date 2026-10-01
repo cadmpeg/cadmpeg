@@ -1162,3 +1162,5 @@ fn nurbs_profile_point_append_refuses_before_growth_at_the_common_ceiling() {
         assert_eq!(points.last(), Some(&[0.0; 2]));
     });
 }
+
+mod work_admission;
