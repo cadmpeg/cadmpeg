@@ -404,20 +404,11 @@ pub(crate) fn docstruct(
     let Some(payload) = view.take(count) else {
         return Ok(None);
     };
-    let length = u64::try_from(payload.len())
-        .map_err(|_| ctx.refuse_codec_limit("preflight F3D properties JSON", 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(length, "preflight F3D properties JSON")?;
-    if !crate::json_budget::preflight(
-        ctx,
-        payload,
-        "preflight F3D properties JSON",
-        "scan F3D properties JSON",
-        "parse F3D properties JSON",
-    )? {
-        return Ok(None);
-    }
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(payload) else {
-        return Ok(None);
+    let Ok(text) = std::str::from_utf8(payload) else { return Ok(None); };
+    let (value, _reservation) = match ctx.parse_json_value(text, "parse F3D properties JSON") {
+        Ok(tree) => tree,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
     };
     let Some(docstruct) = value.get("docstruct") else {
         return Ok(None);
