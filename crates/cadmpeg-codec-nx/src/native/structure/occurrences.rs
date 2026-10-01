@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Roster-owned occurrence lane admission.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::features::NonEmptyMembers;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{Deserialize, Serialize, Serializer};
@@ -45,12 +46,26 @@ impl FastLoadOccurrences {
                 .map(move |record| FastLoadComponentOccurrenceWire::from((record, lane.form)))
         })
     }
-}
 
-impl TryFrom<Vec<FastLoadComponentOccurrenceWire>> for FastLoadOccurrences {
-    type Error = NativeConvertError;
+    pub(crate) fn from_namespace_with_context(
+        ctx: &DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        let wire: Vec<FastLoadComponentOccurrenceWire> = namespace.arena_as_charged(ctx, "fast_load_component_occurrences")?;
+        let work = wire.len().checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("admit NX occurrence roster", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), "admit NX occurrence roster")?;
+        let records = ctx.retained_vec(wire.len(), "NX admitted occurrence records")?;
+        Self::from_wire_with_storage(wire, records)
+    }
 
-    fn try_from(wire: Vec<FastLoadComponentOccurrenceWire>) -> Result<Self, Self::Error> {
+    fn from_wire_with_storage(
+        wire: Vec<FastLoadComponentOccurrenceWire>,
+        mut records: Vec<FastLoadComponentOccurrence>,
+    ) -> Result<Self, NativeConvertError> {
+        if records.capacity() < wire.len() {
+            return Err(NativeConvertError::InvalidCollection("occurrence output storage is too small".into()));
+        }
         let Some(first) = wire.first() else {
             return Ok(Self::default());
         };
@@ -64,11 +79,10 @@ impl TryFrom<Vec<FastLoadComponentOccurrenceWire>> for FastLoadOccurrences {
                     .into(),
             ));
         }
-        let records = wire
-            .into_iter()
-            .map(FastLoadComponentOccurrence::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| NativeConvertError::InvalidCollection(error.into()))?;
+        for record in wire {
+            records.push(FastLoadComponentOccurrence::try_from(record)
+                .map_err(|error| NativeConvertError::InvalidCollection(error.into()))?);
+        }
         Ok(Self(Some(OccurrenceLane {
             form,
             records: records.try_into().map_err(
@@ -77,6 +91,15 @@ impl TryFrom<Vec<FastLoadComponentOccurrenceWire>> for FastLoadOccurrences {
                 },
             )?,
         })))
+    }
+}
+
+impl TryFrom<Vec<FastLoadComponentOccurrenceWire>> for FastLoadOccurrences {
+    type Error = NativeConvertError;
+
+    fn try_from(wire: Vec<FastLoadComponentOccurrenceWire>) -> Result<Self, Self::Error> {
+        let records = DecodeContext::admitted_vec(wire.len(), "NX admitted occurrence records")?;
+        Self::from_wire_with_storage(wire, records)
     }
 }
 
