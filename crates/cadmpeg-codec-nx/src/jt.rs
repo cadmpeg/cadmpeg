@@ -123,15 +123,6 @@ pub(crate) fn unpack_predictor_residuals(
     Ok(values)
 }
 
-macro_rules! propagate_resource {
-    ($result:expr) => {
-        match $result {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        }
-    };
-}
-
 fn lossless_coordinate_component(
     ctx: &DecodeContext<'_>,
     exponents: &[i32],

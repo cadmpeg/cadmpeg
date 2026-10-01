@@ -338,7 +338,7 @@ pub(super) fn try_decode_geometry(
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
-        } = parsed.parse_nurbs(si);
+        } = parsed.parse_nurbs(ctx, si)?;
         for refusal in nurbs_refusals {
             ctx.reserve_vec(&mut carrier_refusals, 1, "nx carrier refusal losses")?;
             super::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
