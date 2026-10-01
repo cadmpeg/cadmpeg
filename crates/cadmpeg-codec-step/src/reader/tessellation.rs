@@ -997,11 +997,18 @@ fn distinct_placement_count(
 ) -> Result<usize, CodecError> {
     let count = u64_from_index(placements.len());
     // Every prior-placement comparison can read the complete transform.
-    let work = count.checked_mul(count)
-        .and_then(|comparisons| comparisons.checked_mul(u64_from_index(std::mem::size_of::<Transform>())))
-        .ok_or_else(|| ctx.refuse_codec_limit("step_tessellation_distinct_placements", u64::MAX, u64::MAX))?;
+    let work = count
+        .checked_mul(count)
+        .and_then(|comparisons| {
+            comparisons.checked_mul(u64_from_index(std::mem::size_of::<Transform>()))
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("step_tessellation_distinct_placements", u64::MAX, u64::MAX)
+        })?;
     ctx.charge_work(work, "step_tessellation_distinct_placements")?;
-    Ok(placements.iter().enumerate()
+    Ok(placements
+        .iter()
+        .enumerate()
         .filter(|(index, placement)| !placements[..*index].contains(placement))
         .count())
 }

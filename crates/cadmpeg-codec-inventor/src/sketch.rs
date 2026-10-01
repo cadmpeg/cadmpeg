@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, Cursor, PmDcContentHeader,
-    PmDcReference, PmDcReferenceList,
+    content_header, inventor_id, reference_list, Cursor, PmDcContentHeader, PmDcReference,
+    PmDcReferenceList,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};

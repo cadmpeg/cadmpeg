@@ -12,9 +12,7 @@ use cadmpeg_ir::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{
-    inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
-};
+use crate::pmdc::{inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};

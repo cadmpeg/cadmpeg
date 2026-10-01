@@ -47,7 +47,11 @@ fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
 #[test]
 fn product_record_collection_refuses_at_caller_limit() {
     let object = native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Assembly".into(), "Assembly".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Assembly".into(),
+            "Assembly".into(),
+        )
+        .expect("object identity"),
         type_name: "App::Part".into(),
         persistent_id: None,
         view_type: None,
@@ -72,7 +76,11 @@ fn product_record_collection_refuses_at_caller_limit() {
 #[test]
 fn product_native_identity_refuses_at_retained_limit() {
     let object = native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Assembly".into(), "Assembly".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Assembly".into(),
+            "Assembly".into(),
+        )
+        .expect("object identity"),
         type_name: "App::Part".into(),
         persistent_id: None,
         view_type: None,

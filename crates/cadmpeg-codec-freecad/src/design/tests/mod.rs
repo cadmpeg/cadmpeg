@@ -823,7 +823,11 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
         SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sketch".into(), "Sketch".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Sketch".into(),
+            "Sketch".into(),
+        )
+        .expect("object identity"),
         type_name: "Sketcher::SketchObject".into(),
         persistent_id: None,
         view_type: None,
@@ -1030,7 +1034,11 @@ fn design_nurbs_lanes_refuse_at_each_collection_limit() {
 #[test]
 fn design_constraint_parameter_admissions_refuse_at_matching_limits() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sketch".into(), "Sketch".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Sketch".into(),
+            "Sketch".into(),
+        )
+        .expect("object identity"),
         type_name: "Sketcher::SketchObject".into(),
         persistent_id: None,
         view_type: None,
@@ -1073,7 +1081,11 @@ fn design_constraint_parameter_admissions_refuse_at_matching_limits() {
 #[test]
 fn design_native_operand_position_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sketch".into(), "Sketch".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Sketch".into(),
+            "Sketch".into(),
+        )
+        .expect("object identity"),
         type_name: "Sketcher::SketchObject".into(),
         persistent_id: None,
         view_type: None,
@@ -1152,7 +1164,11 @@ fn design_feature_state_value_refuses_at_retained_limit() {
 #[test]
 fn design_operation_scalar_expression_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Box".into(), "Box".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Box".into(),
+            "Box".into(),
+        )
+        .expect("object identity"),
         type_name: "PartDesign::AdditiveBox".into(),
         persistent_id: None,
         view_type: None,
@@ -1283,7 +1299,11 @@ fn design_vector_list_refuses_at_collection_limit() {
 #[test]
 fn design_body_output_prefix_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Body".into(), "Body".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Body".into(),
+            "Body".into(),
+        )
+        .expect("object identity"),
         type_name: "PartDesign::Body".into(),
         persistent_id: None,
         view_type: None,
@@ -1372,7 +1392,11 @@ fn sketch_placement_error_refuses_at_retained_limit() {
 #[test]
 fn design_ordered_objects_refuse_at_caller_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Body".into(), "Body".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Body".into(),
+            "Body".into(),
+        )
+        .expect("object identity"),
         type_name: "PartDesign::Body".into(),
         persistent_id: None,
         view_type: None,
@@ -1479,7 +1503,11 @@ fn design_body_tip_identity_refuses_at_retained_limit() {
 #[test]
 fn design_unresolved_profile_identity_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Pad".into(), "Pad".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Pad".into(),
+            "Pad".into(),
+        )
+        .expect("object identity"),
         type_name: "PartDesign::Pad".into(),
         persistent_id: None,
         view_type: None,
@@ -1509,7 +1537,11 @@ fn design_unresolved_profile_identity_refuses_at_retained_limit() {
 #[test]
 fn design_feature_identity_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Feature".into(), "Feature".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Feature".into(),
+            "Feature".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -1527,7 +1559,11 @@ fn design_feature_identity_refuses_at_retained_limit() {
 #[test]
 fn design_composed_identities_refuse_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Shape%20A".into(), "Shape A".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Shape%20A".into(),
+            "Shape A".into(),
+        )
+        .expect("object identity"),
         type_name: "Sketcher::SketchObject".into(),
         persistent_id: None,
         view_type: None,
@@ -1586,7 +1622,11 @@ fn design_composed_identities_refuse_at_retained_limit() {
 #[test]
 fn design_parameter_object_name_index_refuses_at_collection_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Feature".into(), "Feature".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Feature".into(),
+            "Feature".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -1646,7 +1686,11 @@ fn design_parameter_candidates_refuse_at_collection_limit() {
 #[test]
 fn design_qualified_parameter_name_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Feature".into(), "Feature".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Feature".into(),
+            "Feature".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -1690,7 +1734,11 @@ fn parameter_dependency_fixture(
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Feature".into(), "Feature".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Feature".into(),
+            "Feature".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,

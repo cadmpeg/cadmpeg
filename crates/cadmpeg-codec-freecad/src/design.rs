@@ -322,7 +322,9 @@ pub(crate) fn transfer(
                 profile => profile,
             };
             let profile_normal = profile_target(&owned)
-                .and_then(|(_, target)| objects.iter().find(|object| object.id().as_str() == target))
+                .and_then(|(_, target)| {
+                    objects.iter().find(|object| object.id().as_str() == target)
+                })
                 .map(|profile_object| {
                     let profile_properties = properties_by_owner
                         .get(profile_object.id().as_str())
@@ -467,9 +469,9 @@ pub(crate) fn transfer(
                 )?;
                 if let Some(feature) = feature_ids.get(dependency) {
                     if declared
-                        || ordinal_by_feature
-                            .get(feature)
-                            .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id().as_str()])
+                        || ordinal_by_feature.get(feature).is_some_and(|ordinal| {
+                            *ordinal < feature_ordinals[object.id().as_str()]
+                        })
                     {
                         ctx.reserve_vec(&mut dependencies, 1, "fcstd design feature dependencies")?;
                         dependencies.push(
@@ -524,7 +526,9 @@ pub(crate) fn transfer(
                     .try_into()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
-            native_ref: Some(ctx.copy_retained_text(object.id(), "fcstd feature native reference")?),
+            native_ref: Some(
+                ctx.copy_retained_text(object.id(), "fcstd feature native reference")?,
+            ),
         });
     }
     let mut initial_cycle_affected_features = BTreeSet::new();
@@ -4350,7 +4354,12 @@ fn endpoint_candidates(
             }
         }
     }
-    ctx.sort_unstable_by(&mut matches, Ord::cmp, |_| 0, "FCStd profile candidate order")?;
+    ctx.sort_unstable_by(
+        &mut matches,
+        Ord::cmp,
+        |_| 0,
+        "FCStd profile candidate order",
+    )?;
     Ok(matches)
 }
 
@@ -7783,7 +7792,9 @@ fn pattern_definition(
             for link in transformations.links() {
                 let Some((object, owned)) = (|| {
                     let target = link.as_ref()?.object()?;
-                    let object = objects.iter().find(|object| object.id().as_str() == target)?;
+                    let object = objects
+                        .iter()
+                        .find(|object| object.id().as_str() == target)?;
                     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
                     Some((object, owned))
                 })() else {
@@ -8333,7 +8344,9 @@ fn plane_reference(
 ) -> Option<(Point3, cadmpeg_ir::units::UnitVector3)> {
     let (link, selector) = singular_reference_link(property(properties, name)?)?;
     let target = link.object()?;
-    let object = objects.iter().find(|object| object.id().as_str() == target)?;
+    let object = objects
+        .iter()
+        .find(|object| object.id().as_str() == target)?;
     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
     let normal = match object.type_name.as_str() {
@@ -8885,15 +8898,17 @@ pub(crate) fn census(
         .iter()
         .filter(|object| is_design_object(&object.type_name))
     {
-        let feature = features_by_native.get(object.id().as_str()).ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!(
-                    "design object {} has no neutral history projection",
-                    object.id()
-                ),
-            )
-        })?;
+        let feature = features_by_native
+            .get(object.id().as_str())
+            .ok_or_else(|| {
+                malformed_design(
+                    ctx,
+                    format_args!(
+                        "design object {} has no neutral history projection",
+                        object.id()
+                    ),
+                )
+            })?;
         let (definition, post_processed) = match feature.evaluation.definition() {
             FeatureDefinition::PostProcess { operation, .. } => (operation, true),
             FeatureDefinition::Operation(operation) => (operation, false),

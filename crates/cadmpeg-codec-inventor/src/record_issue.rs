@@ -113,14 +113,18 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
         let family = match (prefix, wire.type_id) {
             (Some("inventor:assembly:record-issue"), None) => RecordIssueFamily::Assembly,
             (Some("inventor:presentation:record-issue"), None) => RecordIssueFamily::Presentation,
-            (Some("inventor:pmdc:record-issue"), Some(type_id)) => {
-                RecordIssueFamily::Design { type_id: type_id.try_into().map_err(str::to_owned)? }
-            }
+            (Some("inventor:pmdc:record-issue"), Some(type_id)) => RecordIssueFamily::Design {
+                type_id: type_id.try_into().map_err(str::to_owned)?,
+            },
             (Some("inventor:pmdc:sketch-record-issue"), Some(type_id)) => {
-                RecordIssueFamily::Sketch { type_id: type_id.try_into().map_err(str::to_owned)? }
+                RecordIssueFamily::Sketch {
+                    type_id: type_id.try_into().map_err(str::to_owned)?,
+                }
             }
             (Some("inventor:pmdc:feature-record-issue"), Some(type_id)) => {
-                RecordIssueFamily::Feature { type_id: type_id.try_into().map_err(str::to_owned)? }
+                RecordIssueFamily::Feature {
+                    type_id: type_id.try_into().map_err(str::to_owned)?,
+                }
             }
             _ => return Err("record issue id family and type_id do not agree".into()),
         };
@@ -145,8 +149,17 @@ mod tests {
 
     #[test]
     fn record_issues_reject_invalid_type_guids() {
-        for prefix in ["inventor:pmdc:record-issue", "inventor:pmdc:sketch-record-issue", "inventor:pmdc:feature-record-issue"] {
-            for type_id in ["not-a-guid", "", "0001", "ABCDEF0123456789abcdef0123456789ab"] {
+        for prefix in [
+            "inventor:pmdc:record-issue",
+            "inventor:pmdc:sketch-record-issue",
+            "inventor:pmdc:feature-record-issue",
+        ] {
+            for type_id in [
+                "not-a-guid",
+                "",
+                "0001",
+                "ABCDEF0123456789abcdef0123456789ab",
+            ] {
                 let wire = serde_json::json!({"id": format!("{prefix}#segment-0"), "type_id": type_id, "segment_token": "segment", "record_ordinal": 0, "detail": "invalid"});
                 assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
             }
@@ -176,21 +189,30 @@ mod tests {
             ),
             (
                 RecordIssueFamily::Design {
-                    type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
+                    type_id: "0123456789abcdef0123456789abcdef"
+                        .to_owned()
+                        .try_into()
+                        .expect("GUID"),
                 },
                 "inventor:pmdc:record-issue",
                 true,
             ),
             (
                 RecordIssueFamily::Sketch {
-                    type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
+                    type_id: "0123456789abcdef0123456789abcdef"
+                        .to_owned()
+                        .try_into()
+                        .expect("GUID"),
                 },
                 "inventor:pmdc:sketch-record-issue",
                 true,
             ),
             (
                 RecordIssueFamily::Feature {
-                    type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
+                    type_id: "0123456789abcdef0123456789abcdef"
+                        .to_owned()
+                        .try_into()
+                        .expect("GUID"),
                 },
                 "inventor:pmdc:feature-record-issue",
                 true,
@@ -242,7 +264,10 @@ mod tests {
     fn record_issue_borrowed_wire_refuses_retained_limit_before_text_copy() {
         let issue = RecordIssue {
             family: RecordIssueFamily::Design {
-                type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
+                type_id: "0123456789abcdef0123456789abcdef"
+                    .to_owned()
+                    .try_into()
+                    .expect("GUID"),
             },
             segment_token: cadmpeg_ir::ids::IdentityKey::try_new("segment").expect("token"),
             record_ordinal: 1,

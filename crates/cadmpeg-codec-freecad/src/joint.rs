@@ -947,7 +947,11 @@ pub(crate) mod tests {
     #[test]
     fn joint_carrier_diagnostics_refuse_at_retained_limit() {
         let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Joint".into(), "Joint".into()).expect("object identity"),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#Joint".into(),
+                "Joint".into(),
+            )
+            .expect("object identity"),
             type_name: "App::FeaturePython".into(),
             persistent_id: None,
             view_type: None,
@@ -1014,7 +1018,11 @@ pub(crate) mod tests {
     #[test]
     fn joint_record_collection_refuses_at_caller_limit() {
         let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Joint".into(), "Joint".into()).expect("object identity"),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#Joint".into(),
+                "Joint".into(),
+            )
+            .expect("object identity"),
             type_name: "App::FeaturePython".into(),
             persistent_id: None,
             view_type: None,
@@ -1049,7 +1057,11 @@ pub(crate) mod tests {
     #[test]
     fn joint_native_identity_refuses_at_retained_limit() {
         let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Joint".into(), "Joint".into()).expect("object identity"),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#Joint".into(),
+                "Joint".into(),
+            )
+            .expect("object identity"),
             type_name: "App::FeaturePython".into(),
             persistent_id: None,
             view_type: None,

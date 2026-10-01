@@ -1263,7 +1263,11 @@ fn gui_object_name_index_refuses_at_caller_limit() {
     let text = "<Document><Camera/></Document>";
     let xml = roxmltree::Document::parse(text).expect("GUI document XML");
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#P".into(), "P".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#P".into(),
+            "P".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,

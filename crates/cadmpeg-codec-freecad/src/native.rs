@@ -186,16 +186,24 @@ fn encoded_segment_len(
 
 fn encoded_segment_bytes(key: &str) -> impl Iterator<Item = u8> + '_ {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    b"%EMPTY".iter().copied().take(if key.is_empty() { 6 } else { 0 })
+    b"%EMPTY"
+        .iter()
+        .copied()
+        .take(if key.is_empty() { 6 } else { 0 })
         .chain(key.bytes().flat_map(|byte| {
             if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
                 [byte, 0, 0].into_iter().take(1)
             } else {
-                [b'%', HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 0x0f)]].into_iter().take(3)
+                [
+                    b'%',
+                    HEX[usize::from(byte >> 4)],
+                    HEX[usize::from(byte & 0x0f)],
+                ]
+                .into_iter()
+                .take(3)
             }
         }))
 }
-
 
 #[cfg(test)]
 pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
@@ -729,7 +737,7 @@ mod tests {
         let bases = [
             serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
             serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
-            serde_json::json!({"id":"object", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
+            serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
             serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
         ];
         for (kind, base) in bases.into_iter().enumerate() {

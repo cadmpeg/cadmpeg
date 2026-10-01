@@ -1189,8 +1189,17 @@ fn link_child_framing_precedes_collection_admission() {
     ] {
         let tree = roxmltree::Document::parse(xml).expect("framed XML");
         crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
-            let result = super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx);
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))));
+            ctx.charge_collection_items(
+                ctx.policy().limits.max_collection_items,
+                "consume link-node allowance",
+            )
+            .expect("leave no node collection allowance");
+            let result =
+                super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx);
+            assert!(matches!(
+                result,
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
         });
     }
 }
@@ -1201,8 +1210,10 @@ fn link_child_scan_propagates_work_refusal() {
     let tree = roxmltree::Document::parse(xml).expect("framed XML");
     crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
         let refusal = ctx.refuse_codec_limit("test link work", 0, 1);
-        let error = super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx)
-            .err().expect("fused context");
+        let error =
+            super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx)
+                .err()
+                .expect("fused context");
         assert_eq!(error.to_string(), refusal.to_string());
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     });
@@ -1218,37 +1229,66 @@ fn object_declaration_framing_precedes_collection_admission() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
-        assert!(matches!(super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx), Err(cadmpeg_core::CodecError::Malformed(_))));
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            document.as_bytes(),
+            &arena,
+            &policy,
+        )
+        .expect("root");
+        assert!(matches!(
+            super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
 #[test]
 fn duplicate_object_name_comparisons_admit_prefix_bytes() {
     let prefix = "a".repeat(10000);
-    let document = format!(r#"<Document><Objects Count="2"><Object name="{prefix}A" type="Part::Feature"/><Object name="{prefix}B" type="Part::Feature"/></Objects><ObjectData Count="2"><Object name="{prefix}A"/><Object name="{prefix}B"/></ObjectData></Document>"#);
+    let document = format!(
+        r#"<Document><Objects Count="2"><Object name="{prefix}A" type="Part::Feature"/><Object name="{prefix}B" type="Part::Feature"/></Objects><ObjectData Count="2"><Object name="{prefix}A"/><Object name="{prefix}B"/></ObjectData></Document>"#
+    );
     let xml = roxmltree::Document::parse(&document).expect("XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 60000;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
-    let error = super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx).err().expect("prefix comparisons exceed allowance");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "FCStd duplicate object names" && Some(limit) == ctx.resource_refusal()));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+        .err()
+        .expect("prefix comparisons exceed allowance");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd duplicate object names" && Some(limit) == ctx.resource_refusal())
+    );
 }
 
 #[test]
 fn duplicate_property_name_comparisons_admit_lookup_and_prefix_bytes() {
     let prefix = "a".repeat(10000);
-    let document = format!(r#"<Properties Count="2"><Property name="{prefix}A" type="App::PropertyString"/><Property name="{prefix}B" type="App::PropertyString"/></Properties>"#);
+    let document = format!(
+        r#"<Properties Count="2"><Property name="{prefix}A" type="App::PropertyString"/><Property name="{prefix}B" type="App::PropertyString"/></Properties>"#
+    );
     let xml = roxmltree::Document::parse(&document).expect("XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 100;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
-    let error = super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), &ctx).expect_err("prefix comparisons exceed allowance");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "FCStd duplicate property names" && Some(limit) == ctx.resource_refusal()));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_properties(
+        &document,
+        xml.root_element(),
+        "owner",
+        &mut Vec::new(),
+        &ctx,
+    )
+    .expect_err("prefix comparisons exceed allowance");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd duplicate property names" && Some(limit) == ctx.resource_refusal())
+    );
 }
 
 #[test]
@@ -1258,22 +1298,34 @@ fn object_ceiling_is_resource_refusal() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_entities = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
-    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx).err().expect("object ceiling");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+        .err()
+        .expect("object ceiling");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "FCStd object count" && limit.limit == 1
-            && limit.used + limit.additional == 2 && Some(limit) == ctx.resource_refusal()));
+            && limit.used + limit.additional == 2 && Some(limit) == ctx.resource_refusal())
+    );
 }
 
 #[test]
 fn retained_property_xml_ceiling_is_resource_refusal() {
     let payload = "a".repeat(6 * 1024 * 1024);
-    let document = format!(r#"<Properties Count="1"><Property name="P" type="App::PropertyString"><Outer><Middle><Leaf>{payload}</Leaf></Middle></Outer></Property></Properties>"#);
+    let document = format!(
+        r#"<Properties Count="1"><Property name="P" type="App::PropertyString"><Outer><Middle><Leaf>{payload}</Leaf></Middle></Outer></Property></Properties>"#
+    );
     let xml = roxmltree::Document::parse(&document).expect("XML");
     crate::test_support::with_service_context(document.as_bytes(), |ctx| {
-        let error = super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), ctx).expect_err("cumulative descendant XML ceiling");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        let error =
+            super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), ctx)
+                .expect_err("cumulative descendant XML ceiling");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd property retained value XML"
-                && limit.limit == 16 * 1024 * 1024 && Some(limit) == ctx.resource_refusal()));
+                && limit.limit == 16 * 1024 * 1024 && Some(limit) == ctx.resource_refusal())
+        );
     });
 }
