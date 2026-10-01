@@ -24,9 +24,15 @@ use crate::F3dCodec;
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {
+    with_decode_policy(&cadmpeg_core::decode::DecodePolicy::service(), f)
+}
+
+pub(crate) fn with_decode_policy<T>(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
         .expect("test decode context");
     f(&ctx)
 }

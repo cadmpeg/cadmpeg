@@ -378,13 +378,18 @@ pub(super) fn exact_component_insert_construction(
             } else if scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "264"
             {
                 let (role, role_offset, carrier_transform_offset) =
-                    crate::xref::repeated_target_component_insert(
+                    match crate::xref::repeated_target_component_insert(
+                        ctx,
                         bytes,
                         carrier_at,
                         relation_at,
                         carrier_record_index,
                         transform.into(),
-                    )?;
+                    ) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
                 (
                     carrier_record_index,
                     vec![(role, role_offset, carrier_transform_offset)],
