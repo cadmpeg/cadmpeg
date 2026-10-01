@@ -5,7 +5,8 @@ use super::charged_clone::CloneCharged;
 use super::{FeatureInputScalar, FeatureInputScalarRole};
 use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Nonempty, distinct, nonblank scalar identities with disjoint selected roles.
 pub(crate) struct RelationScalars {
     refs: Vec<String>,
     parameter: Option<usize>,
@@ -38,6 +39,7 @@ impl RelationScalars {
         let mut duplicate_display = false;
         for scalar in scalars {
             ctx.charge_work(1, "select SLDPRT relation scalar roles")?;
+            admit_member(ctx, &refs, &scalar.id)?;
             let index = refs.len();
             match scalar.role {
                 FeatureInputScalarRole::Driving => {
@@ -57,6 +59,9 @@ impl RelationScalars {
                 "retain SLDPRT relation scalar identity",
             )?);
         }
+        if refs.is_empty() {
+            return Err(cadmpeg_core::CodecError::malformed("scalar_refs must be nonempty"));
+        }
         Ok(Self {
             parameter: if duplicate_parameter { None } else { parameter },
             display: if duplicate_display { None } else { display },
@@ -69,6 +74,10 @@ impl RelationScalars {
         parameter: Option<String>,
         display: Option<String>,
     ) -> Result<Self, String> {
+        if refs.is_empty() { return Err("scalar_refs must be nonempty".into()); }
+        for (index, id) in refs.iter().enumerate() {
+            check_member(&refs[..index], id).map_err(str::to_owned)?;
+        }
         let index = |id: Option<String>, field| {
             id.map(|id| {
                 refs.iter()
@@ -77,11 +86,12 @@ impl RelationScalars {
             })
             .transpose()
         };
-        Ok(Self {
-            parameter: index(parameter, "parameter_scalar_ref")?,
-            display: index(display, "display_scalar_ref")?,
-            refs,
-        })
+        let parameter = index(parameter, "parameter_scalar_ref")?;
+        let display = index(display, "display_scalar_ref")?;
+        if parameter.is_some() && parameter == display {
+            return Err("parameter_scalar_ref and display_scalar_ref must be distinct".into());
+        }
+        Ok(Self { parameter, display, refs })
     }
 
     pub(super) fn refs(&self) -> &[String] {
@@ -101,6 +111,7 @@ impl RelationScalars {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        admit_member(ctx, &self.refs, id)?;
         ctx.reserve_collection_vec(
             &mut self.refs,
             1,
@@ -119,6 +130,9 @@ impl RelationScalars {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        if self.parameter.is_some() {
+            return Err(cadmpeg_core::CodecError::malformed("parameter_scalar_ref is already selected"));
+        }
         let index = self.refs.len();
         self.push(ctx, id)?;
         self.parameter = Some(index);
@@ -134,6 +148,23 @@ impl RelationScalars {
     pub(crate) fn clear_display(&mut self) {
         self.display = None;
     }
+}
+
+fn check_member(refs: &[String], id: &str) -> Result<(), &'static str> {
+    if id.trim().is_empty() { return Err("scalar_refs identities must be nonblank"); }
+    if refs.iter().any(|member| member == id) { return Err("scalar_refs identities must be distinct"); }
+    Ok(())
+}
+
+fn admit_member(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, refs: &[String], id: &str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let length = cadmpeg_core::decode::u64_from_index(id.len());
+    let work = refs.iter().try_fold(length, |work, member| {
+        work.checked_add(length)?.checked_add(cadmpeg_core::decode::u64_from_index(member.len()))?.checked_add(1)
+    }).ok_or_else(|| ctx.refuse_codec_limit("check SLDPRT relation scalar identity", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "check SLDPRT relation scalar identity")?;
+    check_member(refs, id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 #[derive(Deserialize)]
@@ -203,10 +234,50 @@ mod tests {
                 "{wire}"
             );
         }
-        let absent: RelationScalars =
-            serde_json::from_value(serde_json::json!({"scalar_refs": []})).unwrap();
+        assert!(serde_json::from_value::<RelationScalars>(serde_json::json!({"scalar_refs": []})).is_err());
+        let absent: RelationScalars = serde_json::from_value(serde_json::json!({"scalar_refs": ["member"]})).unwrap();
         assert!(absent.parameter().is_none());
     }
+    #[test]
+    fn relation_membership_refuses_empty_blank_duplicate_and_conflicting_roles() {
+        for wire in [
+            serde_json::json!({"scalar_refs": []}),
+            serde_json::json!({"scalar_refs": [" "]}),
+            serde_json::json!({"scalar_refs": ["s", "s"]}),
+            serde_json::json!({"scalar_refs": ["s"], "parameter_scalar_ref": "s", "display_scalar_ref": "s"}),
+        ] {
+            assert!(serde_json::from_value::<RelationScalars>(wire).is_err());
+        }
+        assert!(RelationScalars::from_scalars(&cadmpeg_test_support::service_decode_context(), std::iter::empty()).is_err());
+    }
+
+    #[test]
+    fn relation_membership_mutation_refuses_invalid_changes_without_mutation() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut members = RelationScalars::from_refs(vec!["s".into()], None, Some("s".into())).unwrap();
+        let before = members.clone();
+        assert!(members.push(&ctx, "s").is_err());
+        assert!(members.push(&ctx, " ").is_err());
+        assert!(members.push_parameter(&ctx, "s").is_err());
+        assert_eq!(members, before);
+        members.push_parameter(&ctx, "driver").unwrap();
+        let before = members.clone();
+        assert!(members.push_parameter(&ctx, "other").is_err());
+        assert_eq!(members, before);
+    }
+
+    #[test]
+    fn relation_membership_checks_refuse_unadmitted_comparison_work() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut members = RelationScalars::from_refs(vec!["s".into()], None, None).unwrap();
+        let before = members.clone();
+        assert!(matches!(members.push(&ctx, "other"), Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        assert_eq!(members, before);
+    }
+
 }
 
 // Each optional key below names itself in whatever it refuses.
