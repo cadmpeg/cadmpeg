@@ -854,3 +854,44 @@ fn intersection_support_order_follows_type_38_values_marker() {
     assert_eq!(u32::from(curve.primary_support), 13);
     assert_eq!(curve.secondary_support.map(u32::from), Some(6));
 }
+
+#[test]
+fn physical_chart_parser_retains_single_and_coincident_point_lanes() {
+    for count in [1_usize, 2] {
+        let mut bytes = record(40, 60 + count * 24);
+        bytes[2..6].copy_from_slice(&u32::try_from(count).unwrap().to_be_bytes());
+        put_ref(&mut bytes, 6, 20);
+        put_f64(&mut bytes, 8, 0.0);
+        put_f64(&mut bytes, 16, 1.0);
+        bytes[24..28].copy_from_slice(&u32::try_from(count).unwrap().to_be_bytes());
+        put_f64(&mut bytes, 28, 0.01);
+        put_f64(&mut bytes, 36, 0.0);
+        put_f64(&mut bytes, 44, super::MISSING_PARAMETER);
+        put_f64(&mut bytes, 52, super::MISSING_PARAMETER);
+        for point in 0..count { put_vec3(&mut bytes, 60 + point * 24, [1.0, 2.0, 3.0]); }
+        crate::test_support::with_decode_context(|ctx| {
+            let records = super::chart_source_records(ctx, &bytes, super::ChartPointLayout::Xyz3).unwrap();
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].data.count(), u32::try_from(count).unwrap());
+            assert_eq!(records[0].data.points(), vec![cadmpeg_ir::math::Point3::new(1000.0, 2000.0, 3000.0); count]);
+            assert!(super::chart_records(ctx, &bytes, super::ChartPointLayout::Xyz3).unwrap().is_empty());
+        });
+    }
+}
+
+#[test]
+fn physical_support_uv_parser_retains_single_complete_tuples() {
+    for marker in [2_u8, 3, 4] {
+        let count = if marker == 4 { 4_usize } else { 2 };
+        let mut bytes = record(204, 9 + count * 8);
+        bytes[2..6].copy_from_slice(&u32::try_from(count).unwrap().to_be_bytes());
+        put_ref(&mut bytes, 6, 20);
+        bytes[8] = marker;
+        crate::test_support::with_decode_context(|ctx| {
+            let records = super::support_uv_records(ctx, &bytes).unwrap();
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].values.count(), u32::try_from(count).unwrap());
+            assert_eq!(records[0].values.marker(), marker);
+        });
+    }
+}

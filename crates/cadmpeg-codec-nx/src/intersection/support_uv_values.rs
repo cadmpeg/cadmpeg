@@ -54,8 +54,8 @@ impl SupportUvValues {
         mut finite: Vec<FiniteReal>,
     ) -> Result<Self, &'static str> {
         let count = u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
-        if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {
-            return Err("values: must contain at least two complete tuples for marker");
+        if values.is_empty() || !values.len().is_multiple_of(packing.width()) {
+            return Err("values: must contain nonempty complete tuples for marker");
         }
         if !finite.is_empty() || finite.capacity() < values.len() {
             return Err("values: admitted storage is too small or not empty");
@@ -110,6 +110,7 @@ impl SupportUvValues {
 
     #[cfg(test)]
     pub(super) fn support_uv(&self, sample_count: usize) -> SupportUv {
+        if sample_count < 2 { return [None, None]; }
         let first = self
             .values()
             .chunks_exact(self.packing.width())
@@ -136,7 +137,7 @@ impl SupportUvValues {
         sample_count: usize,
     ) -> Result<SupportUv, CodecError> {
         let count = self.values.len() / self.packing.width();
-        if count != sample_count {
+        if sample_count < 2 || count != sample_count {
             return Ok([None, None]);
         }
         let operation = "NX solved support-UV values";
@@ -198,7 +199,7 @@ mod tests {
             .unwrap();
             assert_eq!(values.marker(), marker);
             assert_eq!(values.support_uv(2)[1].is_some(), marker == 4);
-            for len in [0, width, width * 2 + 1] {
+            for len in [0, width * 2 + 1] {
                 assert!(SupportUvValues::new(
                     packing,
                     std::iter::repeat_n(0.0, len).collect::<Vec<_>>()
@@ -238,6 +239,28 @@ mod constructor_tests {
                     );
                 });
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod physical_lane_tests {
+    use super::{SupportUvPacking, SupportUvValues};
+
+    #[test]
+    fn single_support_uv_tuple_survives_without_chart_projection() {
+        for marker in [2, 3, 4] {
+            let packing = SupportUvPacking::try_from(marker).unwrap();
+            crate::test_support::with_decode_context(|ctx| {
+                let scalars = vec![0.0; packing.width()];
+                let values = SupportUvValues::new_charged(ctx, packing, scalars.clone()).unwrap().unwrap();
+                assert_eq!(values.count(), u32::try_from(scalars.len()).unwrap());
+                assert_eq!(values.marker(), marker);
+                assert_eq!(values.into_values(), scalars);
+                let values = SupportUvValues::new(packing, scalars).unwrap();
+                assert_eq!(values.support_uv_charged(ctx, 1).unwrap(), [None, None]);
+                assert_eq!(values.support_uv_charged(ctx, 2).unwrap(), [None, None]);
+            });
         }
     }
 }
