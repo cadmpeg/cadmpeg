@@ -696,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn decoded_kernel_metadata_refuses_retained_limit_before_clone() {
+    fn decoded_kernel_metadata_borrow_uses_only_the_owned_header_copy() {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
         let (service, view) =
@@ -711,16 +711,29 @@ mod tests {
             23,
         )
         .expect("carrier parses");
-        let needed = kernel_retained_refusal(&bytes, &carrier, "copy Inventor kernel metadata");
+        let header = carrier.header.as_ref().expect("header");
+        let needed =
+            kernel_retained_refusal(&bytes, &carrier, "copy Inventor decoded kernel header");
+        // The first refusal includes the family; the owned header also retains these fields.
+        let remaining = [&header.metadata.product_version, &header.metadata.save_date]
+            .into_iter()
+            .flatten()
+            .map(|value| cadmpeg_core::decode::u64_from_index(value.len()))
+            .sum::<u64>();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = needed - 1;
+        policy.limits.max_retained_bytes = needed + remaining;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        let decoded = decode_kernel_carrier(&limited, &carrier, header)
+            .expect("borrowed metadata needs no distinct retained copy");
+        assert_eq!(
+            decoded.header.metadata.product_family,
+            header.metadata.product_family
+        );
         assert!(matches!(
-            decode_kernel_carrier(&limited, &carrier, carrier.header.as_ref().expect("header")),
+            limited.charge_retained(1, "prove the owned header exhausts admission"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "copy Inventor kernel metadata"
         ));
         assert!(decode_test_carrier(&service, &carrier).is_ok());
     }

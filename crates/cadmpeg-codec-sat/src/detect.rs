@@ -79,13 +79,22 @@ pub(crate) fn header_attributes(
     attributes: &mut BTreeMap<String, String>,
 ) -> Result<(), CodecError> {
     for (key, value) in [
-        ("acis_save_format_version", header.save_format_version.map(u64::from)),
+        (
+            "acis_save_format_version",
+            header.save_format_version.map(u64::from),
+        ),
         ("kernel_entity_count", header.entity_count),
         ("kernel_flags", header.flags),
     ] {
         if let Some(value) = value {
-            let key = ctx.format_retained_with_work(format_args!("{key}"), "retain SAT header attribute key")?;
-            let value = ctx.format_retained_with_work(format_args!("{value}"), "retain SAT header attribute value")?;
+            let key = ctx.format_retained_with_work(
+                format_args!("{key}"),
+                "retain SAT header attribute key",
+            )?;
+            let value = ctx.format_retained_with_work(
+                format_args!("{value}"),
+                "retain SAT header attribute value",
+            )?;
             ctx.insert_btree_map(attributes, key, value, "collect SAT header attributes")?;
         }
     }
@@ -96,8 +105,14 @@ pub(crate) fn header_attributes(
         ("kernel_family", Some(family.as_str())),
     ] {
         if let Some(value) = value {
-            let key = ctx.format_retained_with_work(format_args!("{key}"), "retain SAT header attribute key")?;
-            let value = ctx.format_retained_with_work(format_args!("{value}"), "retain SAT header attribute value")?;
+            let key = ctx.format_retained_with_work(
+                format_args!("{key}"),
+                "retain SAT header attribute key",
+            )?;
+            let value = ctx.format_retained_with_work(
+                format_args!("{value}"),
+                "retain SAT header attribute value",
+            )?;
             ctx.insert_btree_map(attributes, key, value, "collect SAT header attributes")?;
         }
     }
@@ -167,12 +182,38 @@ pub(crate) fn inspect(
                 Ok((kernel, stream)) => {
                     header_attributes(ctx, kernel, stream.terminator.into(), &mut attributes)?;
                     for (key, value) in [
-                        ("scale", ctx.format_retained_with_work(format_args!("{}", stream.header.scale().get()), "retain SAT scale attribute")?),
-                        ("records", ctx.format_retained_with_work(format_args!("{}", stream.records.len()), "retain SAT record count attribute")?),
-                        ("terminator", ctx.format_retained_with_work(format_args!("{}", terminator_line(stream.terminator)), "retain SAT terminator attribute")?),
+                        (
+                            "scale",
+                            ctx.format_retained_with_work(
+                                format_args!("{}", stream.header.scale().get()),
+                                "retain SAT scale attribute",
+                            )?,
+                        ),
+                        (
+                            "records",
+                            ctx.format_retained_with_work(
+                                format_args!("{}", stream.records.len()),
+                                "retain SAT record count attribute",
+                            )?,
+                        ),
+                        (
+                            "terminator",
+                            ctx.format_retained_with_work(
+                                format_args!("{}", terminator_line(stream.terminator)),
+                                "retain SAT terminator attribute",
+                            )?,
+                        ),
                     ] {
-                        let key = ctx.format_retained_with_work(format_args!("{key}"), "retain SAT inspect attribute key")?;
-                        ctx.insert_btree_map(&mut attributes, key, value, "collect SAT inspect attributes")?;
+                        let key = ctx.format_retained_with_work(
+                            format_args!("{key}"),
+                            "retain SAT inspect attribute key",
+                        )?;
+                        ctx.insert_btree_map(
+                            &mut attributes,
+                            key,
+                            value,
+                            "collect SAT inspect attributes",
+                        )?;
                     }
                     Some(TextEvidence {
                         branch: stream.terminator,

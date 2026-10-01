@@ -13,7 +13,11 @@ fn distance_record(unit: u32, value: f64) -> crate::DecodedRecord {
             crate::property::DecodedProperty {
                 value_offset: 0,
                 content: crate::property::PropertyContent::Value {
-                    value: crate::property::PropertyValue::Distance { unit, value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite source distance") },
+                    value: crate::property::PropertyValue::Distance {
+                        unit,
+                        value: cadmpeg_ir::scalar::FiniteReal::new(value)
+                            .expect("finite source distance"),
+                    },
                     connections: Vec::new(),
                 },
             },
@@ -84,7 +88,10 @@ fn numerical_audit_distance_conversion_rejects_nonfinite_results() {
         (0x200e, f64::NAN),
     ] {
         let Some(value) = cadmpeg_ir::scalar::FiniteReal::new(value) else {
-            assert!(!value.is_finite(), "source is refused before constructing a distance");
+            assert!(
+                !value.is_finite(),
+                "source is refused before constructing a distance"
+            );
             continue;
         };
         let record = distance_record(unit, value.get());
@@ -125,7 +132,9 @@ fn float_record(schema: &str, suffix: &str, value: f64) -> crate::DecodedRecord 
         crate::property::DecodedProperty {
             value_offset: 0,
             content: crate::property::PropertyContent::Value {
-                value: crate::property::PropertyValue::Float(cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite source float")),
+                value: crate::property::PropertyValue::Float(
+                    cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite source float"),
+                ),
                 connections: Vec::new(),
             },
         },
@@ -145,7 +154,10 @@ fn a_non_finite_texture_float_property_is_refused() {
         "bumpmap_NormalScale",
     ] {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(cadmpeg_ir::scalar::FiniteReal::new(value).is_none(), "{suffix} {value} is refused before constructing the property");
+            assert!(
+                cadmpeg_ir::scalar::FiniteReal::new(value).is_none(),
+                "{suffix} {value} is refused before constructing the property"
+            );
         }
         let finite = float_record("BumpMapSchema", suffix, 0.5);
         assert!(texture_for_test(&finite).is_ok(), "{suffix}");
@@ -159,7 +171,12 @@ fn texture_projection_admits_work_before_searching_properties() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = match super::texture_asset(&ctx, &record) { Err(error) => error, Ok(_) => panic!("search is admitted") };
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let Err(error) = super::texture_asset(&ctx, &record) else {
+        panic!("search is admitted");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }

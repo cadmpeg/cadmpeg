@@ -64,41 +64,82 @@ pub fn record_frames_admitted<'ctx>(
 ) -> Result<RecordFrames<'ctx>, CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "Protein temporary frames")?;
     let frames = frame_records(bytes, ctx, Some(&mut reservation))?;
-    Ok(RecordFrames { frames, _reservation: reservation })
+    Ok(RecordFrames {
+        frames,
+        _reservation: reservation,
+    })
 }
 
-fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>, mut scope: Option<&mut ScopedReservation<'_>>) -> Result<Vec<RecordFrame>, CodecError> {
+fn frame_records(
+    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    mut scope: Option<&mut ScopedReservation<'_>>,
+) -> Result<Vec<RecordFrame>, CodecError> {
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
-        return Err(CodecError::Malformed("Protein page stream is shorter than its header and one page".into()));
+        return Err(CodecError::Malformed(
+            "Protein page stream is shorter than its header and one page".into(),
+        ));
     }
-    if View::u32_le_at(bytes, instance_stream_header::DECLARED_SIZE).map(cadmpeg_core::decode::index_from_u32) != Some(PAGE_SIZE) {
-        return Err(CodecError::Malformed("Protein declared page size is invalid".into()));
+    if View::u32_le_at(bytes, instance_stream_header::DECLARED_SIZE)
+        .map(cadmpeg_core::decode::index_from_u32)
+        != Some(PAGE_SIZE)
+    {
+        return Err(CodecError::Malformed(
+            "Protein declared page size is invalid".into(),
+        ));
     }
     if !(bytes.len() - STREAM_HEADER_LEN).is_multiple_of(PAGE_SIZE) {
-        return Err(CodecError::Malformed("Protein page stream has a partial trailing page".into()));
+        return Err(CodecError::Malformed(
+            "Protein page stream has a partial trailing page".into(),
+        ));
     }
     let mut records = Vec::new();
     let mut current: Option<RecordFrame> = None;
     let mut logical_offset = 0usize;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len() - STREAM_HEADER_LEN), "Protein page framing scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len() - STREAM_HEADER_LEN),
+        "Protein page framing scan",
+    )?;
     for page in bytes[STREAM_HEADER_LEN..].chunks_exact(PAGE_SIZE) {
-        let (payload, terminal) = if page.get(record_start_page::MARKER..record_start_page::BODY) == Some(RECORD_MARKER) {
+        let (payload, terminal) = if page.get(record_start_page::MARKER..record_start_page::BODY)
+            == Some(RECORD_MARKER)
+        {
             if let Some(record) = current.take() {
-                logical_offset = logical_offset.checked_add(record.bytes.len()).ok_or_else(|| CodecError::Malformed("Protein record-start logical offset overflow".into()))?;
+                logical_offset =
+                    logical_offset
+                        .checked_add(record.bytes.len())
+                        .ok_or_else(|| {
+                            CodecError::Malformed(
+                                "Protein record-start logical offset overflow".into(),
+                            )
+                        })?;
                 records.push(record);
             }
             (&page[record_start_page::BODY..], false)
-        } else if page.get(continuation_page::MARKER..continuation_page::BODY) == Some(CONTINUATION_MARKER) {
+        } else if page.get(continuation_page::MARKER..continuation_page::BODY)
+            == Some(CONTINUATION_MARKER)
+        {
             if current.is_none() {
-                return Err(CodecError::Malformed("Protein continuation page has no open record".into()));
+                return Err(CodecError::Malformed(
+                    "Protein continuation page has no open record".into(),
+                ));
             }
             (&page[continuation_page::BODY..], false)
         } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
-            let used = usize::from(View::u16_le_at(page, terminal_page::USED).ok_or_else(|| CodecError::Malformed("Protein terminal used-byte count is truncated".into()))?);
-            let payload = page.get(terminal_page::BODY..terminal_page::BODY + used).ok_or_else(|| CodecError::Malformed("Protein terminal payload is truncated".into()))?;
+            let used =
+                usize::from(View::u16_le_at(page, terminal_page::USED).ok_or_else(|| {
+                    CodecError::Malformed("Protein terminal used-byte count is truncated".into())
+                })?);
+            let payload = page
+                .get(terminal_page::BODY..terminal_page::BODY + used)
+                .ok_or_else(|| {
+                    CodecError::Malformed("Protein terminal payload is truncated".into())
+                })?;
             (payload, true)
         } else {
-            return Err(CodecError::Malformed("Protein page marker is unknown".into()));
+            return Err(CodecError::Malformed(
+                "Protein page marker is unknown".into(),
+            ));
         };
         if current.is_none() {
             if let Some(scope) = scope.as_deref_mut() {
@@ -106,27 +147,62 @@ fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>, mut scope: Option<&mut S
             } else {
                 ctx.reserve_retained_vec(&mut records, 1, "Protein logical record frame")?;
             }
-            let mut frame = RecordFrame { logical_offset, bytes: Vec::new() };
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()), "Protein copied record range")?;
+            let mut frame = RecordFrame {
+                logical_offset,
+                bytes: Vec::new(),
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()),
+                "Protein copied record range",
+            )?;
             if let Some(scope) = scope.as_deref_mut() {
-                ctx.reserve_scoped_vec(scope, &mut frame.bytes, RECORD_MARKER.len(), "Protein copied record range")?;
+                ctx.reserve_scoped_vec(
+                    scope,
+                    &mut frame.bytes,
+                    RECORD_MARKER.len(),
+                    "Protein copied record range",
+                )?;
             } else {
-                ctx.reserve_retained_vec(&mut frame.bytes, RECORD_MARKER.len(), "Protein copied record range")?;
+                ctx.reserve_retained_vec(
+                    &mut frame.bytes,
+                    RECORD_MARKER.len(),
+                    "Protein copied record range",
+                )?;
             }
             frame.bytes.extend_from_slice(RECORD_MARKER);
             current = Some(frame);
         }
-        let frame = current.as_mut().ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len()), "Protein copied record range")?;
+        let frame = current
+            .as_mut()
+            .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(payload.len()),
+            "Protein copied record range",
+        )?;
         if let Some(scope) = scope.as_deref_mut() {
-            ctx.reserve_scoped_vec(scope, &mut frame.bytes, payload.len(), "Protein copied record range")?;
+            ctx.reserve_scoped_vec(
+                scope,
+                &mut frame.bytes,
+                payload.len(),
+                "Protein copied record range",
+            )?;
         } else {
-            ctx.reserve_retained_vec(&mut frame.bytes, payload.len(), "Protein copied record range")?;
+            ctx.reserve_retained_vec(
+                &mut frame.bytes,
+                payload.len(),
+                "Protein copied record range",
+            )?;
         }
         frame.bytes.extend_from_slice(payload);
         if terminal {
-            let frame = current.take().ok_or_else(|| CodecError::Malformed("Protein terminal page has no record owner".into()))?;
-            logical_offset = logical_offset.checked_add(frame.bytes.len()).ok_or_else(|| CodecError::Malformed("Protein terminal logical offset overflow".into()))?;
+            let frame = current.take().ok_or_else(|| {
+                CodecError::Malformed("Protein terminal page has no record owner".into())
+            })?;
+            logical_offset = logical_offset
+                .checked_add(frame.bytes.len())
+                .ok_or_else(|| {
+                    CodecError::Malformed("Protein terminal logical offset overflow".into())
+                })?;
             records.push(frame);
         }
     }
@@ -142,7 +218,11 @@ mod tests {
     fn temporary_frames_release_their_live_storage() {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + crate::PAGE_SIZE];
         let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
-        bytes[offset..offset + 4].copy_from_slice(&u32::try_from(crate::PAGE_SIZE).expect("page size").to_le_bytes());
+        bytes[offset..offset + 4].copy_from_slice(
+            &u32::try_from(crate::PAGE_SIZE)
+                .expect("page size")
+                .to_le_bytes(),
+        );
         let page = &mut bytes[crate::STREAM_HEADER_LEN..];
         page[..4].copy_from_slice(crate::TERMINAL_MARKER);
         page[4..6].copy_from_slice(&5_u16.to_le_bytes());
@@ -153,14 +233,28 @@ mod tests {
         let live = std::mem::size_of::<super::RecordFrame>() + crate::RECORD_MARKER.len() + 5;
         policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let frames = super::record_frames_admitted(&ctx, &bytes).expect("temporary frames use no retained allowance");
-        assert_eq!(frames.frames()[0].bytes(), [crate::RECORD_MARKER, b"frame"].concat());
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
+        let frames = super::record_frames_admitted(&ctx, &bytes)
+            .expect("temporary frames use no retained allowance");
+        assert_eq!(
+            frames.frames()[0].bytes(),
+            [crate::RECORD_MARKER, b"frame"].concat()
+        );
         drop(frames);
-        let reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(live), "reuse frame storage").expect("frame owner released all scoped storage");
+        let reservation = ctx
+            .reserve_scoped(
+                cadmpeg_core::decode::u64_from_index(live),
+                "reuse frame storage",
+            )
+            .expect("frame owner released all scoped storage");
         drop(reservation);
-        let frames = super::record_frames_admitted(&ctx, &bytes).expect("frame storage can be reused");
-        assert!(matches!(ctx.reserve_scoped(1, "probe live frame storage"), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        let frames =
+            super::record_frames_admitted(&ctx, &bytes).expect("frame storage can be reused");
+        assert!(
+            matches!(ctx.reserve_scoped(1, "probe live frame storage"), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
         drop(frames);
     }
 
@@ -168,32 +262,56 @@ mod tests {
     fn valid_terminal_page_refuses_zero_work_before_scanning() {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + crate::PAGE_SIZE];
         let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
-        bytes[offset..offset + 4].copy_from_slice(&u32::try_from(crate::PAGE_SIZE).expect("page size").to_le_bytes());
-        bytes[crate::STREAM_HEADER_LEN..crate::STREAM_HEADER_LEN + crate::TERMINAL_MARKER.len()].copy_from_slice(crate::TERMINAL_MARKER);
+        bytes[offset..offset + 4].copy_from_slice(
+            &u32::try_from(crate::PAGE_SIZE)
+                .expect("page size")
+                .to_le_bytes(),
+        );
+        bytes[crate::STREAM_HEADER_LEN..crate::STREAM_HEADER_LEN + crate::TERMINAL_MARKER.len()]
+            .copy_from_slice(crate::TERMINAL_MARKER);
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root");
+        let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("root");
         let frames = super::record_frames_admitted(&service, &bytes).expect("valid terminal page");
         assert_eq!(frames.frames().len(), 1);
         assert_eq!(frames.frames()[0].bytes(), crate::RECORD_MARKER);
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = super::record_frames_admitted(&ctx, &bytes).expect_err("page work must be admitted");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
+        let error =
+            super::record_frames_admitted(&ctx, &bytes).expect_err("page work must be admitted");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "Protein page framing scan"));
+                && limit.operation == "Protein page framing scan")
+        );
     }
 
     #[test]
     fn page_framing_admits_work_before_scanning_pages() {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + crate::PAGE_SIZE];
         let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
-        bytes[offset..offset + 4].copy_from_slice(&u32::try_from(crate::PAGE_SIZE).expect("page size").to_le_bytes());
+        bytes[offset..offset + 4].copy_from_slice(
+            &u32::try_from(crate::PAGE_SIZE)
+                .expect("page size")
+                .to_le_bytes(),
+        );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = super::record_frames_admitted(&ctx, &bytes).expect_err("scan must be admitted before marker checks");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
+        let error = super::record_frames_admitted(&ctx, &bytes)
+            .expect_err("scan must be admitted before marker checks");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 }

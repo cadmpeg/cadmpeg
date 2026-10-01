@@ -96,7 +96,11 @@ pub(super) fn surface_block(
     for count in [n_uniq_u, n_uniq_v] {
         let count = u64::try_from(count).ok()?;
         if count > MAX_RECOVERY_UNIQUE_KNOTS {
-            return Some(Err(ctx.refuse_codec_limit("ASM unique knot recovery", MAX_RECOVERY_UNIQUE_KNOTS, count)));
+            return Some(Err(ctx.refuse_codec_limit(
+                "ASM unique knot recovery",
+                MAX_RECOVERY_UNIQUE_KNOTS,
+                count,
+            )));
         }
     }
 
@@ -113,21 +117,24 @@ pub(super) fn surface_block(
         degree_v
     )?);
     let Some(pole_count) = n_poles_u.checked_mul(n_poles_v) else {
-        return Some(Err(ctx.refuse_codec_limit("ASM surface pole recovery", MAX_RECOVERY_SURFACE_POLES, u64::MAX)));
+        return Some(Err(ctx.refuse_codec_limit(
+            "ASM surface pole recovery",
+            MAX_RECOVERY_SURFACE_POLES,
+            u64::MAX,
+        )));
     };
     let pole_population = cadmpeg_core::decode::u64_from_index(pole_count);
     if pole_population > MAX_RECOVERY_SURFACE_POLES {
-        return Some(Err(ctx.refuse_codec_limit("ASM surface pole recovery", MAX_RECOVERY_SURFACE_POLES, pole_population)));
+        return Some(Err(ctx.refuse_codec_limit(
+            "ASM surface pole recovery",
+            MAX_RECOVERY_SURFACE_POLES,
+            pole_population,
+        )));
     }
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let poles = propagate_resource!(control_points(
-        ctx,
-        &mut cur,
-        pole_count,
-        marker
-    )?);
+    let poles = propagate_resource!(control_points(ctx, &mut cur, pole_count, marker)?);
     let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
     let surface = NurbsSurface::new(
         NurbsSurfaceAxis::new(
@@ -169,7 +176,11 @@ pub(super) fn curve_block(
     }
     let knot_count = u64::try_from(n_uniq).ok()?;
     if knot_count > MAX_RECOVERY_UNIQUE_KNOTS {
-        return Some(Err(ctx.refuse_codec_limit("ASM unique knot recovery", MAX_RECOVERY_UNIQUE_KNOTS, knot_count)));
+        return Some(Err(ctx.refuse_codec_limit(
+            "ASM unique knot recovery",
+            MAX_RECOVERY_UNIQUE_KNOTS,
+            knot_count,
+        )));
     }
     let (knot_vector, n_poles) =
         propagate_resource!(knots(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)?);
@@ -653,26 +664,76 @@ mod tests {
     fn cached_nurbs_recovery_caps_preserve_resource_refusals() {
         use crate::sab::Token;
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-        let mut curve = vec![Token::Ident("nubs".into()), Token::Long(1), Token::Enum(0), Token::Long(1_001)];
-        for index in 0_u32..1_001 { curve.extend([Token::Double(f64::from(index)), Token::Long(1)]); }
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let mut curve = vec![
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(1_001),
+        ];
+        for index in 0_u32..1_001 {
+            curve.extend([Token::Double(f64::from(index)), Token::Long(1)]);
+        }
         curve.extend(std::iter::repeat_n(Token::Double(0.0), 1_001 * 3));
-        let error = super::curve_block(&ctx, &curve, 0).expect("ceiling is a recognized cache refusal").expect_err("knot ceiling");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery"))));
-        let mut surface = vec![Token::Ident("nubs".into()), Token::Long(1), Token::Long(1), Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Long(2), Token::Long(1_001)];
-        for count in [2_u32, 1_001] { for index in 0..count { surface.extend([Token::Double(f64::from(index)), Token::Long(1)]); } }
+        let error = super::curve_block(&ctx, &curve, 0)
+            .expect("ceiling is a recognized cache refusal")
+            .expect_err("knot ceiling");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery")))
+        );
+        let mut surface = vec![
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(1_001),
+        ];
+        for count in [2_u32, 1_001] {
+            for index in 0..count {
+                surface.extend([Token::Double(f64::from(index)), Token::Long(1)]);
+            }
+        }
         surface.extend(std::iter::repeat_n(Token::Double(0.0), 2 * 1_001 * 3));
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-        let error = super::surface_block(&ctx, &surface, 0).expect("ceiling is a recognized cache refusal").expect_err("knot ceiling");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery"))));
-        let mut grid = vec![Token::Ident("nubs".into()), Token::Long(1), Token::Long(1), Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Long(449), Token::Long(449)];
-        for _ in 0..2 { for index in 0_u32..449 { grid.extend([Token::Double(f64::from(index)), Token::Long(1)]); } }
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let error = super::surface_block(&ctx, &surface, 0)
+            .expect("ceiling is a recognized cache refusal")
+            .expect_err("knot ceiling");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery")))
+        );
+        let mut grid = vec![
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(449),
+            Token::Long(449),
+        ];
+        for _ in 0..2 {
+            for index in 0_u32..449 {
+                grid.extend([Token::Double(f64::from(index)), Token::Long(1)]);
+            }
+        }
         grid.extend(std::iter::repeat_n(Token::Double(0.0), 449 * 449 * 3));
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-        let error = super::surface_block(&ctx, &grid, 0).expect("pole ceiling is a recognized cache refusal").expect_err("pole ceiling");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM surface pole recovery"))));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let error = super::surface_block(&ctx, &grid, 0)
+            .expect("pole ceiling is a recognized cache refusal")
+            .expect_err("pole ceiling");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM surface pole recovery")))
+        );
     }
 
     #[test]

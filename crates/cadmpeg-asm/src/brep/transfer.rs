@@ -93,12 +93,26 @@ pub fn transfer_into_ir<'ir>(
     } = brep;
 
     let entity_count = [
-        bodies.len(), regions.len(), shells.len(), faces.len(), loops.len(),
-        coedges.len(), edges.len(), vertices.len(), points.len(), surfaces.len(),
-        curves.len(), pcurves.len(), procedural_surfaces.len(),
-        procedural_curves.len(), attributes.len(),
-    ].into_iter().try_fold(0_u64, |total, count| {
-        total.checked_add(cadmpeg_core::decode::u64_from_index(count))
+        bodies.len(),
+        regions.len(),
+        shells.len(),
+        faces.len(),
+        loops.len(),
+        coedges.len(),
+        edges.len(),
+        vertices.len(),
+        points.len(),
+        surfaces.len(),
+        curves.len(),
+        pcurves.len(),
+        procedural_surfaces.len(),
+        procedural_curves.len(),
+        attributes.len(),
+    ]
+    .into_iter()
+    .try_fold(0_u64, |total, count| {
+        total
+            .checked_add(cadmpeg_core::decode::u64_from_index(count))
             .ok_or_else(|| ctx.refuse_codec_limit("admit ASM entities", u64::MAX, u64::MAX))
     })?;
     ctx.charge_entities(entity_count, "admit ASM entities")?;
@@ -230,7 +244,8 @@ mod tests {
             shells: Vec::new(),
         });
         let mut ir = CadIr::empty();
-        let error = transfer_into_ir(&ctx, &mut ir, "test", brep).err()
+        let error = transfer_into_ir(&ctx, &mut ir, "test", brep)
+            .err()
             .expect("one entity exceeds zero entities");
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected entity refusal: {error:?}");

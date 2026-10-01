@@ -56,6 +56,8 @@ impl TextureAsset {
     }
 }
 
+const PROPERTY_SEARCHES: u64 = 18;
+
 /// Result of projecting one record as a texture asset.
 pub enum TextureAssetResult {
     /// The record describes another asset type.
@@ -82,11 +84,23 @@ pub fn texture_asset(
         return Ok(TextureAssetResult::NotTexture);
     }
     // Projection performs at most eighteen searches, each with two name comparisons.
-    const PROPERTY_SEARCHES: u64 = 18;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.properties.len()), "inventory Protein texture search work")?;
-    let search_work = record.properties.keys().try_fold(0_u64, |total, id| {
-        cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(2)?.checked_add(1)?.checked_mul(PROPERTY_SEARCHES)?.checked_add(total)
-    }).ok_or_else(|| ctx.refuse_codec_limit("Protein texture property searches", u64::MAX, u64::MAX))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(record.properties.len()),
+        "inventory Protein texture search work",
+    )?;
+    let search_work = record
+        .properties
+        .keys()
+        .try_fold(0_u64, |total, id| {
+            cadmpeg_core::decode::u64_from_index(id.len())
+                .checked_mul(2)?
+                .checked_add(1)?
+                .checked_mul(PROPERTY_SEARCHES)?
+                .checked_add(total)
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("Protein texture property searches", u64::MAX, u64::MAX)
+        })?;
     ctx.charge_work(search_work, "Protein texture property searches")?;
     let mut distances = [Length::ZERO; 5];
     let mut unknown_count = 0_usize;
@@ -170,14 +184,17 @@ pub fn texture_asset(
         u_scale: finite_float_property(record, "UScale", FiniteReal::ONE),
         v_scale: finite_float_property(record, "VScale", FiniteReal::ONE),
         // A finite angle in degrees is finite in radians: the factor is below one.
-        rotation: Angle::new(finite_float_property(record, "WAngle", FiniteReal::ZERO).get().to_radians()).ok_or_else(
-            || {
-                CodecError::malformed(format_args!(
-                    "Protein asset {} property WAngle is non-finite in radians",
-                    record.guid
-                ))
-            },
-        )?,
+        rotation: Angle::new(
+            finite_float_property(record, "WAngle", FiniteReal::ZERO)
+                .get()
+                .to_radians(),
+        )
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "Protein asset {} property WAngle is non-finite in radians",
+                record.guid
+            ))
+        })?,
         repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
         repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
         real_world_offset_x: distances[0],

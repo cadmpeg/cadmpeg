@@ -162,11 +162,12 @@ impl AsmEditSet {
         let limit =
             asm_header::solved_record_limit_with_header(bytes, &header).unwrap_or(bytes.len());
         let ref_width = header.width;
-        let records = sab::frame(&ctx, bytes, start, limit, ref_width, None).map_err(|failure| {
-            failure.into_codec_error(&ctx, |error| {
-                CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
-            })
-        })?;
+        let records =
+            sab::frame(&ctx, bytes, start, limit, ref_width, None).map_err(|failure| {
+                failure.into_codec_error(&ctx, |error| {
+                    CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
+                })
+            })?;
         let header_scale = header.metadata.scale.unwrap_or(1.0);
         Ok(Self::from_framed(records, ref_width, header_scale))
     }

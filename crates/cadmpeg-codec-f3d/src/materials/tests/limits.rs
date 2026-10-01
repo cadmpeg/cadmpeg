@@ -200,7 +200,9 @@ fn schema_appearance_property_map_refuses_collection_limit() {
     let property = cadmpeg_protein::property::DecodedProperty {
         value_offset: 0,
         content: cadmpeg_protein::property::PropertyContent::Value {
-            value: cadmpeg_protein::property::PropertyValue::Float(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite")),
+            value: cadmpeg_protein::property::PropertyValue::Float(
+                cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite"),
+            ),
             connections: Vec::new(),
         },
     };
@@ -220,7 +222,9 @@ fn schema_appearance_property_name_refuses_retained_limit() {
     let property = cadmpeg_protein::property::DecodedProperty {
         value_offset: 0,
         content: cadmpeg_protein::property::PropertyContent::Value {
-            value: cadmpeg_protein::property::PropertyValue::Float(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite")),
+            value: cadmpeg_protein::property::PropertyValue::Float(
+                cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite"),
+            ),
             connections: Vec::new(),
         },
     };
