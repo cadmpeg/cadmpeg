@@ -5719,11 +5719,17 @@ fn attach_standard_topology(
                 "catia_limit_endpoint_pairs",
             )
             .map_err(StandardTopologyError::Resource)?;
-            limit_pairs.extend(bindings.iter().map(|binding| {
+            for binding in bindings {
                 let mut points = binding.points;
-                points.sort_unstable();
-                points
-            }));
+                ctx.sort_unstable_by(
+                    &mut points,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_limit_endpoint_pair_sort",
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                limit_pairs.push(points);
+            }
             ctx
                 .sort_unstable_by(&mut limit_pairs, Ord::cmp, |_| 0, "catia_limit_endpoint_pairs_sort")
                 .map_err(StandardTopologyError::Resource)?;
@@ -8041,14 +8047,18 @@ fn standard_curve_edge_classes(
     let mut classes = Vec::new();
     ctx.reserve_vec(&mut classes, supports.len(), "catia_standard_edge_classes")?;
     for (edge, support) in supports.iter().enumerate() {
-        let class = supports[..edge]
-            .iter()
-            .position(|candidate| {
-                let mut candidate_faces = candidate.faces;
-                candidate_faces.sort_unstable();
-                let mut support_faces = support.faces;
-                support_faces.sort_unstable();
-                candidate_faces == support_faces
+        let mut support_faces = support.faces;
+        ctx.sort_unstable_by(&mut support_faces, Ord::cmp, |_| 0, "catia_standard_edge_class_faces")?;
+        let mut found = None;
+        for (index, candidate) in supports[..edge].iter().enumerate() {
+            let mut candidate_faces = candidate.faces;
+            ctx.sort_unstable_by(
+                &mut candidate_faces,
+                Ord::cmp,
+                |_| 0,
+                "catia_standard_edge_class_faces",
+            )?;
+            if candidate_faces == support_faces
                     && match (&candidate.geometry, &support.geometry) {
                         (
                             crate::families::standard::records::StandardCurveGeometry::Circle {
@@ -8071,8 +8081,12 @@ fn standard_curve_edge_classes(
                         ) => true,
                         _ => false,
                     }
-            })
-            .map_or(edge, |candidate| classes[candidate]);
+            {
+                found = Some(index);
+                break;
+            }
+        }
+        let class = found.map_or(edge, |candidate| classes[candidate]);
         classes.push(class);
     }
     Ok(classes)

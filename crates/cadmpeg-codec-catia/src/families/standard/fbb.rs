@@ -300,19 +300,16 @@ pub(super) fn parse_standard_motif(
         };
         ctx.push_vec(&mut edge_points, [*first, *last], "catia_motif_edge_points")?;
     }
-    let anchors_match = edge_points
-        .iter()
-        .zip(circle_anchors)
-        .all(|(points, anchor)| {
-            anchor.is_none_or(|mut anchor| {
-                anchor.sort_unstable();
-                let mut points = *points;
-                points.sort_unstable();
-                points == anchor
-            })
-        });
-    if !anchors_match {
-        return Ok(None);
+    for (points, anchor) in edge_points.iter().zip(circle_anchors) {
+        let Some(mut anchor) = anchor else {
+            continue;
+        };
+        ctx.sort_unstable_by(&mut anchor, Ord::cmp, |_| 0, "catia_motif_anchor_sort")?;
+        let mut points = *points;
+        ctx.sort_unstable_by(&mut points, Ord::cmp, |_| 0, "catia_motif_edge_points_sort")?;
+        if points != anchor {
+            return Ok(None);
+        }
     }
     reconstruct_incidence(
         ctx,

@@ -477,8 +477,13 @@ fn incidence_choice_components<'storage>(
         }
     }
     if let Some(domains) = boundary_domains {
-        let mut connect = |mut edges: Vec<usize>| {
-            edges.sort_unstable();
+        let mut connect = |mut edges: Vec<usize>| -> Result<(), CodecError> {
+            ctx.sort_unstable_by(
+                &mut edges,
+                Ord::cmp,
+                |_| 0,
+                "catia_incidence_boundary_edges_sort",
+            )?;
             edges.dedup();
             let mut ambiguous = edges.into_iter().filter(|edge| {
                 choices[*edge].len() > 1 || (choices[*edge].is_empty() && mesh_quotient.is_some())
@@ -488,6 +493,7 @@ fn incidence_choice_components<'storage>(
                     union.union(first, edge);
                 }
             }
+            Ok(())
         };
         for domain in domains {
             match domain {
@@ -497,7 +503,7 @@ fn incidence_choice_components<'storage>(
                         for use_ in boundary {
                             ctx.push_vec(&mut edges, use_.edge, "catia_incidence_boundary_edges")?;
                         }
-                        connect(edges);
+                        connect(edges)?;
                     }
                 }
                 MeshFaceBoundaryDomain::Ordered(assignments) => {
@@ -508,10 +514,10 @@ fn incidence_choice_components<'storage>(
                     {
                         ctx.push_vec(&mut edges, use_.edge, "catia_incidence_boundary_edges")?;
                     }
-                    connect(edges);
+                    connect(edges)?;
                 }
                 MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                    connect(ctx.copy_slice(edges, "catia_incidence_boundary_edges")?);
+                    connect(ctx.copy_slice(edges, "catia_incidence_boundary_edges")?)?;
                 }
                 MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                     let mut edges =
@@ -519,7 +525,7 @@ fn incidence_choice_components<'storage>(
                     for (use_, _) in domain.cycles.iter().flat_map(|cycle| &cycle.exact_uses) {
                         ctx.push_vec(&mut edges, use_.edge, "catia_incidence_boundary_edges")?;
                     }
-                    connect(edges);
+                    connect(edges)?;
                 }
             }
         }
