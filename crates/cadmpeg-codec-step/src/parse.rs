@@ -126,7 +126,7 @@ pub(crate) struct PartialRecord {
 }
 
 pub(crate) mod partials {
-    use super::{CodecError, DecodeContext, ParseError, PartialRecord};
+    use super::{DecodeContext, ParseError, PartialRecord};
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
@@ -146,11 +146,6 @@ pub(crate) mod partials {
             let mut records = Vec::new();
             budget.push_vec(&mut records, first, "step_parse_record_partials")?;
             Ok(Self(records))
-        }
-
-        /// Compact retained storage and report its allocation charge.
-        pub(super) fn compact_storage(&mut self) -> Result<u64, CodecError> {
-            super::compact_vec(&mut self.0)
         }
 
         /// The first partial record, which always exists.
@@ -761,14 +756,16 @@ impl Parser<'_, '_, '_> {
             self.budget
                 .push_vec(&mut self.diagnostics, diagnostic, "step_parse_diagnostics")?;
         }
-        let schema_names_for_matching =
-            schema_names_for_matching(&header_admission.schema_identifiers, self.budget)?;
-        let header_data_references = match validate_header_sections(
+        let (schema_names_for_matching, _schema_names_storage) = self.budget.with_scoped_storage(
+            "step schema matching storage",
+            || schema_names_for_matching(&header_admission.schema_identifiers, self.budget),
+        )?;
+        let (header_data_references, _header_reference_storage) = match self.budget.with_scoped_storage("step header reference storage", || validate_header_sections(
             implementation_level,
             &header,
             &schema_names_for_matching,
             self.budget,
-        ) {
+        )) {
             Ok(references) => references,
             Err(ValidationError::Invalid(message)) => return self.err(message),
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
@@ -807,14 +804,12 @@ impl Parser<'_, '_, '_> {
                         return self.err("invalid anchor tag item");
                     }
                     self.punct(&TokenKind::RBrace)?;
-                    self.budget.push_vec(
-                        &mut tags,
-                        AnchorTag { name, value },
-                        "step_parse_anchor_tags",
-                    )?;
+                    self.budget.reserve_capacity(&mut tags, 1, "step_anchor_tag_storage")?;
+                    self.budget.charge_collection_items(1, "step_parse_anchor_tags")?;
+                    tags.push(AnchorTag { name, value });
                 }
                 tags.shrink_to_fit();
-                self.charge_vec_storage(&tags, "step_anchor_tag_storage")?;
+
                 self.punct(&TokenKind::Semicolon)?;
                 self.budget.push_vec(
                     &mut anchors,
@@ -827,6 +822,7 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut reference_entries = Vec::new();
+        let mut external_storage = self.budget.reserve_scoped(0, "step external identity lookup")?;
         let mut external_reference_ids = BTreeSet::new();
         let mut external_value_reference_ids = BTreeSet::new();
         if self.peek_name("REFERENCE") {
@@ -852,8 +848,8 @@ impl Parser<'_, '_, '_> {
                 if same_kind.contains(&id) {
                     return self.err("duplicate reference name");
                 }
-                self.budget
-                    .insert_btree_set(same_kind, id, "step_parse_external_reference_ids")?;
+                external_storage.with_storage(|| self.budget
+                    .insert_btree_set(same_kind, id, "step_parse_external_reference_ids"))?;
                 if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
                 }
@@ -874,6 +870,7 @@ impl Parser<'_, '_, '_> {
         }
         let mut data: Vec<DataSection> = Vec::new();
         let mut records = BTreeMap::new();
+        let mut data_name_storage = self.budget.reserve_scoped(0, "step data name lookup")?;
         let mut data_section_names = BTreeSet::new();
         while self.peek_name("DATA") {
             self.next_kind()?;
@@ -891,13 +888,13 @@ impl Parser<'_, '_, '_> {
                     return self.err("2;1 forbids DATA section parameters");
                 }
                 let parameters = self.parameter_nesting(Self::parameters_inner)?;
-                if let Err(message) = valid_data_parameters(
+                if let Err(message) = data_name_storage.with_storage(|| valid_data_parameters(
                     &parameters,
                     &schema_names_for_matching,
                     implementation_level,
                     &mut data_section_names,
                     self.budget,
-                ) {
+                )) {
                     match message {
                         ValidationError::Invalid(message) => return self.err(message),
                         ValidationError::Resource(error) => {
@@ -916,26 +913,20 @@ impl Parser<'_, '_, '_> {
             let mut ids = Vec::new();
             while !self.peek_name("ENDSEC") {
                 let (id, record) = self.record()?;
-                self.budget.charge_retained(
-                    btree_node_storage::<u64, RawRecord>()?,
-                    "step_parse_record_table_storage",
-                )?;
+
                 if records.contains_key(&id) {
                     return self.err("duplicate instance name");
                 }
-                self.budget.insert_btree_map(
-                    &mut records,
-                    id,
-                    record,
-                    "step_parse_record_table_items",
-                )?;
+                self.budget.admit_btree_node_storage::<u64, RawRecord>(records.len(), "step_parse_record_table_storage")?;
+                self.budget.charge_collection_items(1, "step_parse_record_table_items")?;
+                records.insert(id, record);
                 self.budget
                     .push_vec(&mut ids, id, "step_parse_section_ids")?;
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
             ids.shrink_to_fit();
-            self.charge_vec_storage(&ids, "step_parse_section_storage")?;
+
             self.budget.push_vec(
                 &mut data,
                 DataSection {
@@ -1064,11 +1055,6 @@ impl Parser<'_, '_, '_> {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
 
-                self.budget.charge_retained(
-                    u64_from_index(size_of::<Value>()),
-                    "step_omitted_name_recovery_storage",
-                )?;
-
                 self.budget
                     .reserve_vec(parameters, 1, "step_omitted_name_recovery_item")?;
                 record.partials[0]
@@ -1085,12 +1071,13 @@ impl Parser<'_, '_, '_> {
                 }
             }
         }
+        let mut reference_storage = self.budget.reserve_scoped(0, "step reference lookup")?;
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
         for anchor in &anchors {
             refs.clear();
             value_refs.clear();
-            references(&anchor.value, &mut refs, &mut value_refs, self.budget)?;
+            reference_storage.with_storage(|| references(&anchor.value, &mut refs, &mut value_refs, self.budget))?;
             if refs
                 .iter()
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1106,7 +1093,7 @@ impl Parser<'_, '_, '_> {
             for tag in &anchor.tags {
                 refs.clear();
                 value_refs.clear();
-                references(&tag.value, &mut refs, &mut value_refs, self.budget)?;
+                reference_storage.with_storage(|| references(&tag.value, &mut refs, &mut value_refs, self.budget))?;
                 if refs
                     .iter()
                     .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1126,7 +1113,7 @@ impl Parser<'_, '_, '_> {
             value_refs.clear();
             for partial in &record.partials {
                 for value in &partial.parameters {
-                    references(value, &mut refs, &mut value_refs, self.budget)?;
+                    reference_storage.with_storage(|| references(value, &mut refs, &mut value_refs, self.budget))?;
                 }
             }
             if refs
@@ -1169,16 +1156,11 @@ impl Parser<'_, '_, '_> {
                 "step_parse_diagnostics",
             )?;
         }
-        for capacity in [
-            compact_vec(&mut header)?,
-            compact_vec(&mut anchors)?,
-            compact_vec(&mut reference_entries)?,
-            compact_vec(&mut data)?,
-            compact_vec(&mut signatures)?,
-        ] {
-            self.budget
-                .charge_retained(capacity, "step_parse_exchange_storage")?;
-        }
+        header.shrink_to_fit();
+        anchors.shrink_to_fit();
+        reference_entries.shrink_to_fit();
+        data.shrink_to_fit();
+        signatures.shrink_to_fit();
         let entity_ids = EntityIndex::build(&records, self.budget)?;
         Ok((
             Exchange {
@@ -1213,13 +1195,14 @@ impl Parser<'_, '_, '_> {
                     .push_vec(&mut parts.0, partial, "step_parse_record_partials")?;
             }
             self.next_kind()?;
+            let mut name_storage = self.budget.reserve_scoped(0, "step partial name lookup")?;
             let mut canonical_names = Vec::new();
             for part in &parts {
-                self.budget.push_vec(
+                name_storage.with_storage(|| self.budget.push_vec(
                     &mut canonical_names,
                     part.name.as_str(),
                     "step_parse_canonical_partial_names",
-                )?;
+                ))?;
             }
             self.budget.sort_unstable_by(
                 &mut canonical_names,
@@ -1257,8 +1240,7 @@ impl Parser<'_, '_, '_> {
             let first = self.partial()?;
             partials::RecordPartials::single_charged(first, self.budget)?
         };
-        self.budget
-            .charge_retained(partials.compact_storage()?, "step_parse_record_storage")?;
+        partials.0.shrink_to_fit();
         self.punct(&TokenKind::Semicolon)?;
         Ok((
             id,
@@ -1423,17 +1405,7 @@ impl Parser<'_, '_, '_> {
         }
         Ok(token)
     }
-    fn charge_vec_storage<T>(
-        &self,
-        values: &Vec<T>,
-        operation: &'static str,
-    ) -> Result<(), ParseError> {
-        self.budget.charge_retained(
-            allocation_bytes(values.capacity(), size_of::<T>())?,
-            operation,
-        )?;
-        Ok(())
-    }
+
     fn current_offset(&self) -> usize {
         self.current
             .as_ref()
@@ -1455,24 +1427,6 @@ impl Parser<'_, '_, '_> {
 
 fn storage_overflow() -> CodecError {
     cadmpeg_core::decode::refuse_local_limit("step allocation bytes", u64::MAX, u64::MAX)
-}
-
-fn allocation_bytes(capacity: usize, element_size: usize) -> Result<u64, CodecError> {
-    u64_from_index(capacity)
-        .checked_mul(u64_from_index(element_size))
-        .ok_or_else(storage_overflow)
-}
-
-fn compact_vec<T>(values: &mut Vec<T>) -> Result<u64, CodecError> {
-    values.shrink_to_fit();
-    allocation_bytes(values.capacity(), size_of::<T>())
-}
-
-fn btree_node_storage<K, V>() -> Result<u64, CodecError> {
-    let size = size_of::<(K, V)>()
-        .checked_add(3 * size_of::<usize>())
-        .ok_or_else(storage_overflow)?;
-    allocation_bytes(1, size)
 }
 
 /// Validate the three required header records, and admit the `FILE_SCHEMA`
@@ -2183,8 +2137,8 @@ fn schema_identifier_matches(
     budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let trimmed = schema_name.trim();
-    budget.charge_retained(u64_from_index(trimmed.len()), "step_schema_name_matching")?;
-    let schema_name = trimmed.to_ascii_uppercase();
+    let (mut schema_name, _storage) = budget.with_scoped_storage("step_schema_name_matching", || budget.copy_retained_text(trimmed, "step_schema_name_matching"))?;
+    schema_name.make_ascii_uppercase();
     Ok(schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
         identifier == schema_name
@@ -2254,10 +2208,11 @@ fn schema_names_for_matching(
     let mut names = Vec::new();
     for identifier in admitted {
         let source = identifier.text();
-        budget.charge_retained(u64_from_index(source.len()), "step_schema_matching_name")?;
+        let mut name = budget.copy_retained_text(source, "step_schema_matching_name")?;
+        name.make_ascii_uppercase();
         budget.push_vec(
             &mut names,
-            source.to_ascii_uppercase(),
+            name,
             "step_schema_matching_names",
         )?;
     }

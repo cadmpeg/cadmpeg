@@ -141,9 +141,10 @@ fn parse_document(
             "ObjectDeps records do not match the Objects dependency envelope".into(),
         ));
     }
+    let mut dependency_storage = ctx.reserve_scoped(0, "FCStd dependency lookup")?;
     let mut dependency_map = HashMap::<String, DependencyInfo>::new();
     for (order, node) in dependency_records.into_iter().enumerate() {
-        let name = retained_attr(ctx, node, "Name", "FCStd dependency owner name")?;
+        let name = dependency_storage.with_storage(|| retained_attr(ctx, node, "Name", "FCStd dependency owner name"))?;
         let dependency_item_count = node
             .children()
             .filter(|child| child.has_tag_name("Dep"))
@@ -189,7 +190,7 @@ fn parse_document(
                 "FCStd persistence diagnostic",
             ));
         }
-        ctx.reserve_map(&mut dependency_map, 1, "FCStd dependency lookup")?;
+        dependency_storage.with_storage(|| ctx.reserve_map(&mut dependency_map, 1, "FCStd dependency lookup"))?;
         dependency_map.insert(
             name,
             DependencyInfo {
@@ -200,13 +201,14 @@ fn parse_document(
         );
     }
 
+    let mut data_storage = ctx.reserve_scoped(0, "FCStd object data lookup")?;
     let mut data_by_name = HashMap::new();
     for node in data_node
         .children()
         .filter(|node| node.has_tag_name(record_tag))
     {
-        ctx.reserve_map(&mut data_by_name, 1, "FCStd object data lookup")?;
-        let name = retained_attr(ctx, node, "name", "FCStd object data name")?;
+        data_storage.with_storage(|| ctx.reserve_map(&mut data_by_name, 1, "FCStd object data lookup"))?;
+        let name = data_storage.with_storage(|| retained_attr(ctx, node, "name", "FCStd object data name"))?;
         if data_by_name.contains_key(&name) {
             return Err(crate::resource::malformed_charged(
                 ctx,
@@ -449,6 +451,7 @@ fn parse_document(
                 ));
             }
         }
+        let mut extension_storage = ctx.reserve_scoped(0, "FCStd extension lookup")?;
         let mut extension_ids_by_start = HashMap::new();
         if let Some(extensions_node) = extension_container {
             let extension_count = extensions_node
@@ -496,8 +499,8 @@ fn parse_document(
                         "FCStd persistence diagnostic",
                     ));
                 }
-                ctx.reserve_set(&mut extension_names, 1, "FCStd extension name set")?;
-                extension_names.insert(ctx.copy_retained_text(&name, "FCStd extension name copy")?);
+                extension_storage.with_storage(|| ctx.reserve_set(&mut extension_names, 1, "FCStd extension name set"))?;
+                extension_names.insert(extension_storage.with_storage(|| ctx.copy_retained_text(&name, "FCStd extension name copy"))?);
                 if extension_types.contains(&type_name) {
                     return Err(crate::resource::malformed_charged(
                         ctx,
@@ -505,18 +508,18 @@ fn parse_document(
                         "FCStd persistence diagnostic",
                     ));
                 }
-                ctx.reserve_set(&mut extension_types, 1, "FCStd extension type set")?;
+                extension_storage.with_storage(|| ctx.reserve_set(&mut extension_types, 1, "FCStd extension type set"))?;
                 extension_types
-                    .insert(ctx.copy_retained_text(&type_name, "FCStd extension type copy")?);
+                    .insert(extension_storage.with_storage(|| ctx.copy_retained_text(&type_name, "FCStd extension type copy"))?);
                 let id = extension_id(ctx, &object.id, &name, order)?;
-                ctx.reserve_map(
+                extension_storage.with_storage(|| ctx.reserve_map(
                     &mut extension_ids_by_start,
                     1,
                     "FCStd extension identity lookup",
-                )?;
+                ))?;
                 extension_ids_by_start.insert(
                     node.range().start,
-                    ctx.copy_retained_text(&id, "FCStd extension identity copy")?,
+                    extension_storage.with_storage(|| ctx.copy_retained_text(&id, "FCStd extension identity copy"))?,
                 );
                 ctx.charge_collection_items(
                     cadmpeg_core::decode::u64_from_index(1),

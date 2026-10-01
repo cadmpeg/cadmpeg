@@ -300,13 +300,13 @@ fn schema_oid_diagnostic_text_refuses_retained_limit() {
 fn schema_name_matching_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
+    policy.limits.max_materialized_bytes = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(b"AP242", &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
         super::super::schema_identifier_matches(&[String::from("AP242")], "AP242", &ctx),
         Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_schema_name_matching"
     ));
 }
@@ -789,8 +789,10 @@ fn reference_stack_refuses_retained_limit() {
     }];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        super::super::btree_node_storage::<ReferenceName, &str>().expect("node size fits u64");
+    let binding_bytes = 11 * (std::mem::size_of::<ReferenceName>() + std::mem::size_of::<&str>())
+        + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>();
+    let stack_bytes = 4 * std::mem::size_of::<ReferenceName>();
+    policy.limits.max_materialized_bytes = u64::try_from(binding_bytes + stack_bytes - 1).expect("small storage");
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
         .expect("root fits selected profile");
     let error = ReferenceResolver::new(&references, &anchors, &ctx)
@@ -800,7 +802,7 @@ fn reference_stack_refuses_retained_limit() {
     assert!(matches!(
         error,
         ResolveError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
+            if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "step_reference_stack_storage"
     ));
 }
@@ -896,7 +898,7 @@ fn parser_propagates_binary_lexeme_resource_refusal() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(\"0A1F2\");ENDSEC;END-ISO-10303-21;";
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 4;
+    policy.limits.max_materialized_bytes = 4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>() + "AP242".len());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits the test policy");
     let error = crate::parse::parse_with_context(source, &ctx)
