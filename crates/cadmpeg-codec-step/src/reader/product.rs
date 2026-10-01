@@ -543,11 +543,13 @@ pub(super) fn decode(
             let parent_path = occurrence_paths.get(&parent);
             let depth_limit = assembly_depth_limit(ctx);
             if parent_path.is_some_and(|path| path.len() >= depth_limit) {
-                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "NAUO #{usage_id} exceeds the {depth_limit}-level assembly depth limit"
-                )));
-                continue;
+                return Err(ctx.refuse_codec_limit(
+                    "step_assembly_depth_limit",
+                    u64_from_index(depth_limit),
+                    u64_from_index(depth_limit).checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("step_assembly_depth_limit", u64::MAX, u64::MAX)
+                    })?,
+                ));
             }
             if parent_path.is_some_and(|path| path.contains(&usage.child_definition)) {
                 ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
