@@ -210,7 +210,7 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneWire> for FeatureSimpleHoleRepea
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            values: NonEmpty::from_vec(values).ok_or("values must contain a repeated scalar")?,
+            values: NonEmpty::from_admitted_vec(values).ok_or("values must contain a repeated scalar")?,
         })
     }
 }

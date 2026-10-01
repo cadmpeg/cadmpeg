@@ -35,9 +35,9 @@ impl<'a> OperationStateBlock<'a> {
         messages.iter().try_fold(after_status, |end, message| {
             end.checked_add(message.byte_len())
         })?;
-        let body = match NonEmpty::from_vec(entries) {
+        let body = match NonEmpty::from_admitted_vec(entries) {
             Some(entries) => BlockBody::Statuses { entries, messages },
-            None => BlockBody::Messages(NonEmpty::from_vec(messages)?),
+            None => BlockBody::Messages(NonEmpty::from_admitted_vec(messages)?),
         };
         Some(Self { offset, body })
     }
