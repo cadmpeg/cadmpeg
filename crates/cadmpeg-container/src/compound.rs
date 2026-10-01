@@ -886,7 +886,7 @@ impl CompoundState {
         if root == NO_STREAM {
             return Ok(());
         }
-        validate_sibling_tree(&self.directory, root)?;
+        validate_sibling_tree(ctx, &self.directory, root)?;
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
             let entry = self
@@ -1306,7 +1306,7 @@ impl CompoundPrefixProbe {
         if let Err(error) = validate_root(&directory) {
             return Self::Malformed(error.to_string());
         }
-        if let Err(error) = validate_sibling_tree(&directory, root.child) {
+        if let Err(error) = validate_sibling_tree(ctx, &directory, root.child) {
             return Self::Malformed(error.to_string());
         }
         let mut names = Vec::new();
@@ -1334,7 +1334,7 @@ impl CompoundPrefixProbe {
             pending.push((entry.left, parent.clone()));
             pending.push((entry.right, parent.clone()));
             if entry.kind == DirectoryKind::Storage {
-                if let Err(error) = validate_sibling_tree(&directory, entry.child) {
+                if let Err(error) = validate_sibling_tree(ctx, &directory, entry.child) {
                     return Self::Malformed(error.to_string());
                 }
                 pending.push((entry.child, path));
@@ -1548,7 +1548,11 @@ fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn validate_sibling_tree(directory: &[DirectorySlot], root: u32) -> Result<(), CodecError> {
+fn validate_sibling_tree(
+    ctx: &DecodeContext<'_>,
+    directory: &[DirectorySlot],
+    root: u32,
+) -> Result<(), CodecError> {
     if root == NO_STREAM {
         return Ok(());
     }
@@ -1561,10 +1565,11 @@ fn validate_sibling_tree(directory: &[DirectorySlot], root: u32) -> Result<(), C
     if root_entry.color != DirectoryColor::Black {
         return malformed("CFB sibling-tree root is not black");
     }
-    visit_sibling_tree(directory, root, None, None, false, &mut BTreeSet::new())
+    visit_sibling_tree(ctx, directory, root, None, None, false, &mut BTreeSet::new())
 }
 
 fn visit_sibling_tree(
+    ctx: &DecodeContext<'_>,
     directory: &[DirectorySlot],
     id: u32,
     lower: Option<&str>,
@@ -1575,6 +1580,7 @@ fn visit_sibling_tree(
     if id == NO_STREAM {
         return Ok(());
     }
+    let _depth = ctx.enter_nested("validate CFB sibling tree")?;
     let entry = directory
         .get(cadmpeg_core::decode::index_from_u32(id))
         .ok_or_else(|| CodecError::Malformed("CFB sibling link is out of range".into()))?;
@@ -1593,8 +1599,8 @@ fn visit_sibling_tree(
     if red && parent_red {
         return malformed("CFB sibling tree contains adjacent red nodes");
     }
-    visit_sibling_tree(directory, entry.left, lower, Some(&entry.name), red, seen)?;
-    visit_sibling_tree(directory, entry.right, Some(&entry.name), upper, red, seen)
+    visit_sibling_tree(ctx, directory, entry.left, lower, Some(&entry.name), red, seen)?;
+    visit_sibling_tree(ctx, directory, entry.right, Some(&entry.name), upper, red, seen)
 }
 
 fn cfb_name_cmp(left: &str, right: &str) -> Ordering {
@@ -1849,19 +1855,20 @@ mod tests {
 
     use super::{
         cfb_name_cmp, cfb_upper_unit, parse_directory, path_key, range_lock_sector,
-        read_detection_prefix, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot,
+        read_detection_prefix, validate_sibling_tree, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot,
         CompoundVersion, DirectorySlot, DIFAT_SECTOR, END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, MAGIC,
         NO_STREAM, RANGE_LOCK_END,
     };
 
     const SECTOR_SIZE: usize = 512;
 
-    fn with_service_context<T>(
+    fn with_context<T>(
         bytes: &[u8],
+        policy: &DecodePolicy,
         use_context: impl FnOnce(&DecodeContext<'_>) -> T,
     ) -> T {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, policy)
             .expect("fixture fits service profile");
         use_context(&ctx)
     }
@@ -1877,6 +1884,23 @@ mod tests {
             self.bytes_read += read;
             Ok(read)
         }
+    }
+
+    #[test]
+    fn sibling_tree_refuses_depth_before_descending_black_chain() {
+        let mut directory = [0_u8; 384];
+        directory_entry(&mut directory, 0, "Root Entry", 5, NO_STREAM, NO_STREAM, 1, END_OF_CHAIN, 0);
+        directory_entry(&mut directory, 1, "A", 2, NO_STREAM, 2, NO_STREAM, END_OF_CHAIN, 0);
+        directory_entry(&mut directory, 2, "B", 2, NO_STREAM, NO_STREAM, NO_STREAM, END_OF_CHAIN, 0);
+        let entries = with_context(&directory, &DecodePolicy::service(), |ctx| {
+            parse_directory(ctx, &directory, CompoundVersion::V3).expect("directory parses")
+        });
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 1;
+        let error = with_context(&[], &policy, |ctx| validate_sibling_tree(ctx, &entries, 1))
+            .expect_err("second black node exceeds active depth");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth));
     }
 
     #[test]
@@ -2172,7 +2196,7 @@ mod tests {
             0x1_0000_0001,
         );
         assert_eq!(
-            with_service_context(&directory, |ctx| parse_directory(
+            with_context(&directory, &DecodePolicy::service(), |ctx| parse_directory(
                 ctx,
                 &directory,
                 CompoundVersion::V4
@@ -2184,7 +2208,7 @@ mod tests {
             0x1_0000_0001
         );
         assert_eq!(
-            with_service_context(&directory, |ctx| parse_directory(
+            with_context(&directory, &DecodePolicy::service(), |ctx| parse_directory(
                 ctx,
                 &directory,
                 CompoundVersion::V3
@@ -2284,7 +2308,7 @@ mod tests {
         let mut directory = vec![0_u8; 128];
         directory[68..80].fill(0xff);
         directory[8] = 1;
-        let entries = with_service_context(&directory, |ctx| {
+        let entries = with_context(&directory, &DecodePolicy::service(), |ctx| {
             parse_directory(ctx, &directory, CompoundVersion::V3)
         })
         .expect("unallocated slot is skipped");
