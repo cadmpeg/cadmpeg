@@ -652,6 +652,29 @@ impl ValidatedProfile {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         entities: ExtrusionProfile,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        for entity in &entities {
+            if matches!(entity.geometry, ProfileGeometry::Nurbs { .. }) {
+                let scale = entity.start.iter().chain(&entity.end).map(|value| value.abs()).fold(1.0, f64::max);
+                let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
+                let Some(polyline) = profile_nurbs_polyline(ctx, entity, tolerance)? else {
+                    return Ok(None);
+                };
+                let segments = polyline.points.windows(2);
+                for (first_index, first) in segments.clone().enumerate() {
+                    for (second_index, second) in segments.clone().enumerate().skip(first_index + 1) {
+                        if second_index == first_index + 1
+                            || (first_index == 0 && second_index + 1 == segments.len()
+                                && polyline.points.first() == polyline.points.last()) {
+                            continue;
+                        }
+                        ctx.charge_work(1, "creo NURBS carrier self intersection pairs")?;
+                        if segments_intersect([first[0], first[1]], [second[0], second[1]], tolerance) {
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+        }
         Ok(extrusion_profile_signed_area(ctx, &entities)?.map(|area| Self { entities, area }))
     }
 
@@ -1509,3 +1532,6 @@ pub(in super::super) fn ordered_extrusion_profiles(
 
 #[cfg(test)]
 mod evaluation_tests;
+
+#[cfg(test)]
+mod admission_tests;
