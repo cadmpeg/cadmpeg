@@ -4545,7 +4545,7 @@ pub(super) fn sketch_records<'a>(
                     },
                 )?
             },
-            equations: crate::decode::collect_items(
+            equations: crate::decode::project_items(
                 ctx,
                 crate::feature::definitions::equation_table(
                     ctx,
@@ -4555,7 +4555,9 @@ pub(super) fn sketch_records<'a>(
                 )?
                 .into_iter()
                 .flat_map(|table| table.rows)
-                .map(|equation| CreoSketchEquation {
+                ,
+                "creo native sketch equations",
+                |equation| Ok(CreoSketchEquation {
                     equation_id: equation.equation_id,
                     function_id: equation.function_id,
                     explicit_argument_count: equation.explicit_argument_count,
@@ -4563,9 +4565,8 @@ pub(super) fn sketch_records<'a>(
                     arguments_body: equation.arguments_body,
                     auxiliary_body: equation.auxiliary_body,
                     body: equation.body,
-                    offset: equation.offset,
+                    offset: definition.body_position(equation.offset)?.source()?.get(),
                 }),
-                "creo native sketch equations",
             )?,
             segments: crate::decode::project_items(
                 ctx,
