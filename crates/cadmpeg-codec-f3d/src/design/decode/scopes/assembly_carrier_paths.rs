@@ -3,7 +3,8 @@
 
 use cadmpeg_core::decode::index_from_u32;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
 
@@ -30,25 +31,30 @@ use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope::DesignParameterScope;
 
 pub(super) fn exact_variable_reference_operand_qualifiers(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
-) -> Option<[DesignAssemblyOperandQualifier; 2]> {
-    let [first, second] = frames.each_ref().map(|frame| {
-        exact_class_363_operand_path(bytes, records, scope, frame)
+) -> Result<Option<[DesignAssemblyOperandQualifier; 2]>, CodecError> {
+    let mut qualifiers = [None, None];
+    for (qualifier, frame) in qualifiers.iter_mut().zip(frames) {
+        *qualifier = exact_class_363_operand_path(ctx, bytes, records, scope, frame)?
             .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-            .or_else(|| exact_class_307_joint_origin(bytes, records, frame))
-    });
-    Some([first?, second?])
+            .or_else(|| exact_class_307_joint_origin(bytes, records, frame));
+    }
+    let [Some(first), Some(second)] = qualifiers else { return Ok(None); };
+    Ok(Some([first, second]))
 }
 
 fn exact_class_363_operand_path(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
-) -> Option<DesignAssemblyOperandPath> {
+) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    (|| {
     let (carrier_at, carrier_paired_at) = exact_class_264_record_frame(
         bytes,
         records,
@@ -140,9 +146,17 @@ fn exact_class_363_operand_path(
         }
     }
     let (occurrence_guid, identity_guid, occurrence_guid_offset, identity_guid_offset) =
-        exact_class_363_identity_guids(bytes, leading_identity.start)?;
+        match exact_class_363_identity_guids(ctx, bytes, leading_identity.start) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
     let (terminal_occurrence_guid, terminal_identity_guid, _, _) =
-        exact_class_363_identity_guids(bytes, terminal_identity.start)?;
+        match exact_class_363_identity_guids(ctx, bytes, terminal_identity.start) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
     if occurrence_guid != terminal_occurrence_guid || identity_guid != terminal_identity_guid {
         return None;
     }
@@ -184,7 +198,8 @@ fn exact_class_363_operand_path(
             offset: identity_guid_offset,
         }],
     )
-    .ok()
+    .ok().map(Ok)
+    })().transpose()
 }
 
 fn exact_class_307_joint_origin(
@@ -375,27 +390,38 @@ fn exact_class_264_record_frame(
 }
 
 fn exact_class_363_identity_guids(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-) -> Option<(
+) -> Result<Option<(
     crate::records::mesh::DesignRelaxedGuidText,
     crate::records::mesh::DesignRelaxedGuidText,
     u64,
     u64,
-)> {
+)>, CodecError> {
+    (|| {
     let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
     let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
-    let (occurrence_guid, occurrence_end) = fixed_relaxed_guid_text(bytes, occurrence_at)?;
-    let (identity_guid, identity_end) = fixed_relaxed_guid_text(bytes, identity_at)?;
+    let (occurrence_guid, occurrence_end) = match fixed_relaxed_guid_text(ctx, bytes, occurrence_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+    let (identity_guid, identity_end) = match fixed_relaxed_guid_text(ctx, bytes, identity_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
     if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
         return None;
     }
-    Some((
+    Some(Ok((
         occurrence_guid,
         identity_guid,
         u64::try_from(occurrence_at.checked_add(4)?).ok()?,
         u64::try_from(identity_at.checked_add(4)?).ok()?,
-    ))
+    )))
+    })().transpose()
 }
 
 #[cfg(test)]
@@ -574,7 +600,7 @@ mod tests {
                 })
             );
             let (occurrence, identity, _, _) =
-                exact_class_363_identity_guids(&bytes, 0).expect("identity GUID prefix");
+                exact_class_363_identity_guids(&cadmpeg_test_support::service_decode_context(), &bytes, 0).expect("GUID admission").expect("identity GUID prefix");
             assert_eq!(occurrence.as_str(), guid);
             assert_eq!(identity.as_str(), guid);
         }

@@ -455,10 +455,18 @@ fn exact_assembly_axial_selector(
         cursor = cursor.checked_add(4)?;
         let selector_asset_at = cursor;
         let (selector_asset_id, after_selector_asset_id) =
-            fixed_relaxed_guid_text(bytes, selector_asset_at)?;
+            match fixed_relaxed_guid_text(ctx, bytes, selector_asset_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let selector_context_at = after_selector_asset_id;
         let (selector_context_id, after_selector_context_id) =
-            fixed_relaxed_guid_text(bytes, selector_context_at)?;
+            match fixed_relaxed_guid_text(ctx, bytes, selector_context_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if View::u32_le_at(bytes, after_selector_context_id)? != 2
             || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
             || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
@@ -507,7 +515,11 @@ fn exact_assembly_axial_selector(
         }
         let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
         let (occurrence_role, after_occurrence_role) =
-            fixed_relaxed_guid_text(bytes, occurrence_role_at)?;
+            match fixed_relaxed_guid_text(ctx, bytes, occurrence_role_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if after_occurrence_role > limit {
             return None;
         }

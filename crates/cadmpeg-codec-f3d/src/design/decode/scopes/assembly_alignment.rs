@@ -244,9 +244,11 @@ pub(super) fn exact_assembly_alignment(
                 .ok()?
         } else if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
             let qualifiers = if legacy_class_383 {
-                exact_legacy_class_383_operand_paths(bytes, records, scope, &frames).map(|paths| {
-                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-                })
+                let paths = match exact_legacy_class_383_operand_paths(ctx, bytes, records, scope, &frames) {
+                    Ok(paths) => paths,
+                    Err(error) => return Some(Err(error)),
+                };
+                paths.map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
             } else if legacy_class_388 {
                 let paths = match exact_legacy_class_388_operand_paths(ctx, bytes, records, scope) {
                     Ok(paths) => paths,
@@ -259,10 +261,12 @@ pub(super) fn exact_assembly_alignment(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
-                let direct =
-                    super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
-                        bytes, records, scope, &frames,
-                    );
+                let direct = match super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
+                    ctx, bytes, records, scope, &frames,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
                 if direct.is_some() {
                     direct
                 } else {
