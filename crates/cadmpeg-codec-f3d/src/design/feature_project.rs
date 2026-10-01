@@ -8824,6 +8824,7 @@ fn project_extrude(
 }
 
 fn spatial_sketch_entity_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &cadmpeg_ir::sketches::SpatialSketchEntity,
 ) -> Result<Option<[Point3; 2]>, CodecError> {
     use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
@@ -8856,13 +8857,13 @@ fn spatial_sketch_entity_endpoints(
             let start = curve.knots()[degree];
             let end = curve.knots()[curve.pole_count()];
             let Some(first) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::nurbs_curve_point_at(curve, start),
+                cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, curve, start)?,
             )?
             else {
                 return Ok(None);
             };
             let Some(last) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::nurbs_curve_point_at(curve, end),
+                cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, curve, end)?,
             )?
             else {
                 return Ok(None);
@@ -8922,7 +8923,7 @@ pub(super) fn closed_spatial_sketch_profiles(
                 }
             }
             _ => {
-                if let Some(ends) = spatial_sketch_entity_endpoints(entity)? {
+                if let Some(ends) = spatial_sketch_entity_endpoints(ctx, entity)? {
                     ctx.push_vec(&mut edges, (entity, ends), "f3d spatial profile edge")?;
                 }
             }

@@ -169,11 +169,22 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.reserve_scoped_vec_limit(reservation, values, count, operation).map_err(Into::into)
+    }
+
+    /// Reserves storage with a resource-only refusal channel.
+    pub fn reserve_scoped_vec_limit<T>(
+        &self,
+        reservation: &mut ScopedReservation<'_>,
+        values: &mut Vec<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         let bytes = count
             .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        reservation.grow(u64_from_index(bytes))?;
-        self.reserve_vec(values, count, operation)
+            .ok_or_else(|| self.refuse_local_limit(operation, u64::MAX, u64::MAX))?;
+        reservation.grow_limit(u64_from_index(bytes))?;
+        self.reserve_vec_limit(values, count, operation)
     }
 
     /// Appends one item with scoped storage and a charged collection slot.
@@ -539,10 +550,20 @@ impl DecodeContext<'_> {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.charge_collection_items(u64_from_index(additional), operation)?;
+        self.reserve_vec_limit(values, additional, operation).map_err(Into::into)
+    }
+
+    /// Reserves storage with a resource-only refusal channel.
+    pub fn reserve_vec_limit<T>(
+        &self,
+        values: &mut Vec<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.charge_collection_items_limit(u64_from_index(additional), operation)?;
         values
             .try_reserve(additional)
-            .map_err(|_| self.collection_allocation_failed(additional, operation))
+            .map_err(|_| self.collection_allocation_failed_limit(additional, operation))
     }
 
     /// Builds a vector of indexed values after charging all slots.

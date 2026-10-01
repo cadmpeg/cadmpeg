@@ -856,7 +856,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     } = tolerant_pcurve_fit;
 
     let evaluate = |parameter| -> Result<Option<Point3>, cadmpeg_core::CodecError> {
-        let Some(uv) = finite_or_refusal(pcurve_uv(pcurve, parameter))? else {
+        let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?)? else {
             return Ok(None);
         };
         Ok(decoded_surface_point_inner_with_budget(
@@ -904,7 +904,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                 };
                 let alignment =
                     |candidate: &PcurveGeometry| -> Result<Option<f64>, cadmpeg_core::CodecError> {
-                        let Some(uv) = finite_or_refusal(pcurve_uv(candidate, range[0]))? else {
+                        let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, candidate, range[0])?)? else {
                             return Ok(None);
                         };
                         let Some(uv_tangent) =
@@ -1082,8 +1082,8 @@ fn reverse_pcurve_over_range(
             if reflection != 0.0 && start.is_finite() && end.is_finite() && start < end =>
         {
             let (Ok(first), Ok(last), Ok(tangent)) = (
-                pcurve_uv(pcurve, end),
-                pcurve_uv(pcurve, start),
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, end)?,
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, start)?,
                 pcurve_tangent(pcurve, end),
             ) else {
                 return Ok(None);

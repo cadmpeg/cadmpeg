@@ -336,22 +336,22 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
     let points = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
     let root_two = std::f64::consts::SQRT_2;
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, points, [root_two, root_two, 0.0])
+        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); periodic_conic_edge_parameter_range(&ctx, &circle, points, [root_two, root_two, 0.0]) })
             .expect("evaluation resources"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, points, [-root_two, -root_two, 0.0])
+        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); periodic_conic_edge_parameter_range(&ctx, &circle, points, [-root_two, -root_two, 0.0]) })
             .expect("evaluation resources"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], [-2.0, 0.0, 0.0],)
+        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); periodic_conic_edge_parameter_range(&ctx, &circle, [points[0], points[0]], [-2.0, 0.0, 0.0],) })
             .expect("evaluation resources"),
         Some([0.0, std::f64::consts::TAU])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], points[0])
+        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); periodic_conic_edge_parameter_range(&ctx, &circle, [points[0], points[0]], points[0]) })
             .expect("evaluation resources"),
         None
     );
@@ -368,17 +368,17 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
         [points[0], [0.0, 4.0, 0.0]],
     ));
     assert_eq!(
-        periodic_conic_edge_parameter_range(&ellipse, points, [2.0 * root_two, root_two, 0.0],)
+        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); periodic_conic_edge_parameter_range(&ctx, &ellipse, points, [2.0 * root_two, root_two, 0.0],) })
             .expect("evaluation resources"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&ellipse, points, [-2.0 * root_two, -root_two, 0.0],)
+        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); periodic_conic_edge_parameter_range(&ctx, &ellipse, points, [-2.0 * root_two, -root_two, 0.0],) })
             .expect("evaluation resources"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&ellipse, [points[0], points[0]], [-4.0, 0.0, 0.0],)
+        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); periodic_conic_edge_parameter_range(&ctx, &ellipse, [points[0], points[0]], [-4.0, 0.0, 0.0],) })
             .expect("evaluation resources"),
         Some([0.0, std::f64::consts::TAU])
     );

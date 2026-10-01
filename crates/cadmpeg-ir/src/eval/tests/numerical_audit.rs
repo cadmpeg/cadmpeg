@@ -41,6 +41,7 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
 
 #[test]
 fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() {
+    crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
     use super::super::{
         nurbs_curve_derivative, nurbs_curve_point_at, nurbs_surface_isocurve,
         nurbs_surface_second_partials, CurveDerivative, SurfaceParameterAxis,
@@ -68,7 +69,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
         assert_eq!(
             nurbs_curve_derivative(
-                &super::super::admitted::Scratch::default(),
+                &super::super::decode::Scratch::new(ctx),
                 1,
                 &knots,
                 &admitted,
@@ -82,7 +83,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         );
         assert_eq!(
             nurbs_curve_derivative(
-                &super::super::admitted::Scratch::default(),
+                &super::super::decode::Scratch::new(ctx),
                 1,
                 &knots,
                 &admitted,
@@ -110,6 +111,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
             [Point3::new(3.0, 0.0, 0.0), Point3::new(3.0, 1.0, 0.0)]
         );
     }
+});
 }
 
 #[test]
@@ -276,6 +278,7 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
 
 #[test]
 fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
+    crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
     use super::super::pcurve_uv_differential;
     use crate::geometry::pcurve::PcurveGeometry;
     use crate::geometry::pcurve::{PolarHarmonicPcurve, SphericalGreatCirclePcurve};
@@ -293,7 +296,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             .unwrap(),
         );
         let result = pcurve_uv_differential(
-            &super::super::admitted::Scratch::default(),
+            &super::super::decode::Scratch::new(ctx),
             &curve,
             crate::scalar::FiniteReal::HALF,
         )
@@ -306,7 +309,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
         SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
     );
     let result = pcurve_uv_differential(
-        &super::super::admitted::Scratch::default(),
+        &super::super::decode::Scratch::new(ctx),
         &curve,
         crate::scalar::FiniteReal::HALF,
     )
@@ -316,6 +319,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
     assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
     assert!((result.acceleration.unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON);
+});
 }
 
 #[test]

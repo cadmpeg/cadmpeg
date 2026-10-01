@@ -6193,7 +6193,7 @@ fn polyline(
         ctx.push_vec(&mut knots, knot, "step_polyline_knots")?;
     }
     ctx.push_vec(&mut knots, last, "step_polyline_knots")?;
-    match NurbsCurve::from_lanes(1, knots, control_points, None, false) {
+    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, knots, control_points, None, false)? {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             ctx.push_vec(

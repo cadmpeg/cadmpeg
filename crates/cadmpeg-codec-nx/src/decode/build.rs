@@ -42,7 +42,7 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, pcurve::Pcurve, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve,
+    pcurve::Pcurve, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve,
     CurveGeometry, IntcurveSupportContext, ProceduralCurve, ProceduralCurveDefinition,
     ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     Surface, SurfaceGeometry,
@@ -1012,16 +1012,10 @@ pub(super) fn try_decode_geometry(
                 id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        NurbsCurve::from_lanes(
-                            1,
-                            linear_knots(
+                        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, linear_knots(
                                 &charted.samples.parameters_charged(ctx)?,
                                 &adaptive_geometry_budget,
-                            )?,
-                            charted.samples.points_charged(ctx)?,
-                            None,
-                            false,
-                        )
+                            )?, charted.samples.points_charged(ctx)?, None, false)?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     ))
                 } else if uncharted.is_some() {

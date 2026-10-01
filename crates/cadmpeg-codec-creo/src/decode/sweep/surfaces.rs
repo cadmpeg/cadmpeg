@@ -489,7 +489,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         "creo revolved NURBS v knots",
     )?;
     v_knots.extend(angular_knots);
-    match NurbsSurface::from_lanes_admitted(
+    match NurbsSurface::from_lanes_for_decode(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(directrix.degree(), u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),

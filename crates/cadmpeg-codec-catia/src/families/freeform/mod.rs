@@ -1219,12 +1219,12 @@ fn attach_standalone_wires(
             return Ok(false);
         };
         let Some(start) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, range[0]))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(admission.context(), geometry, range[0])?)?
         else {
             return Ok(false);
         };
         let Some(end) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, range[1]))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(admission.context(), geometry, range[1])?)?
         else {
             return Ok(false);
         };
@@ -1616,24 +1616,23 @@ fn standard_carrier_surface_ids(
 }
 
 fn standard_carrier_endpoint_loci(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     surface: &SurfaceGeometry,
     range: [f64; 2],
 ) -> Result<Option<[Point3; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    let start = match cadmpeg_ir::eval::pcurve_uv(pcurve, range[0]) {
+    let start = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[0])? {
         Ok(start) => start,
         Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
         Err(_) => return Ok(None),
     };
-    let end = match cadmpeg_ir::eval::pcurve_uv(pcurve, range[1]) {
+    let end = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[1])? {
         Ok(end) => end,
         Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
         Err(_) => return Ok(None),
     };
     // A non-finite locus is kept as the evaluation reached it.
-    let locus = |uv: cadmpeg_ir::units::FinitePoint2| match cadmpeg_ir::eval::surface_point(
-        surface, uv.u, uv.v,
-    ) {
+    let locus = |uv: cadmpeg_ir::units::FinitePoint2| match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)? {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     };
@@ -1922,7 +1921,7 @@ pub(super) fn append_freeform_surface_pools(
                 .into_iter()
                 .map(|point| Point3::new(point[0], point[1], point[2])),
         );
-        let geometry = NurbsCurve::from_lanes(guide.degree, knots, poles, None, false)?;
+        let geometry = NurbsCurve::from_lanes_for_decode(admission.context(), guide.degree, knots, poles, None, false)??;
         let id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),
@@ -2509,7 +2508,7 @@ fn append_resolved_consolidated_surface_curves(
                     continue;
                 };
                 if standard_endpoint_loci.is_none() {
-                    standard_endpoint_loci = standard_carrier_endpoint_loci(
+                    standard_endpoint_loci = standard_carrier_endpoint_loci(admission.context(),
                         &geometry,
                         surface_geometry,
                         resolved.block.parameters.range.endpoints(),
@@ -2859,7 +2858,7 @@ fn append_resolved_consolidated_surface_curves(
                             )),
                         ));
                     }
-                    let carrier = unique_paired_surface_lift_match(
+                    let carrier = unique_paired_surface_lift_match(admission.context(),
                         &resolved_pcurve.geometry,
                         resolved_geometry,
                         &partner_pcurve,
@@ -3194,7 +3193,7 @@ fn append_resolved_consolidated_surface_curves(
                                 .copied()
                                 .flatten()
                                 .map_or(edge_allowance, |value| edge_allowance.max(value.get()));
-                            if pcurve_lift_reaches_endpoints(
+                            if pcurve_lift_reaches_endpoints(admission.context(),
                                 &geometry,
                                 solved_surface,
                                 resolved.block.parameters.range.endpoints(),
@@ -3518,7 +3517,7 @@ fn solve_planar_chart_rechart(
                 };
                 let uv = cadmpeg_ir::math::Point2::from(uv);
                 let Some(back) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::surface_point(target, uv.u, uv.v),
+                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, target, uv.u, uv.v)?,
                 )?
                 else {
                     return Ok(None);
@@ -3666,6 +3665,7 @@ fn solve_planar_chart_rechart(
 ///
 /// A carrier with no geometry has no chart and therefore admits no witness.
 fn pcurve_lift_reaches_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     surface: &SolvedSurfaceGeometry,
     range: [f64; 2],
@@ -3677,12 +3677,12 @@ fn pcurve_lift_reaches_endpoints(
     }
     // A non-finite lift is measured as a finite one is.
     let lift = |parameter| {
-        let uv = match cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) {
+        let uv = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)? {
             Ok(uv) => uv,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
         };
-        match cadmpeg_ir::eval::surface_point_solved(surface, uv.u, uv.v) {
+        match cadmpeg_ir::eval::decode::surface_point_solved_for_decode(ctx, surface, uv.u, uv.v)? {
             Ok(point) => Ok(Some(point.get())),
             Err(failure) => failure.non_finite(),
         }
@@ -3711,6 +3711,7 @@ fn unique_endpoint_pair_match<T>(
 }
 
 fn unique_paired_surface_lift_match<'a, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     resolved_pcurve: &PcurveGeometry,
     resolved_surface: &SurfaceGeometry,
     partner_pcurve: &PcurveGeometry,
@@ -3732,27 +3733,17 @@ fn unique_paired_surface_lift_match<'a, T>(
     let parameters = [parameter_range[0], midpoint, parameter_range[1]];
     let resolved_lift =
         |parameter| -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(
-                resolved_pcurve,
-                parameter,
-            ))?
+            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, resolved_pcurve, parameter)?)?
             else {
                 return Ok(None);
             };
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
-                resolved_surface,
-                uv.u,
-                uv.v,
-            ))
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, resolved_surface, uv.u, uv.v)?)
         };
     let mut resolved_loci = [None; 3];
     let mut partner_uv = [None; 3];
     for (index, parameter) in parameters.into_iter().enumerate() {
         resolved_loci[index] = resolved_lift(parameter)?;
-        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(
-            partner_pcurve,
-            parameter,
-        ))?;
+        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, partner_pcurve, parameter)?)?;
         if resolved_loci[index].is_none() || partner_uv[index].is_none() {
             return Ok(None);
         }
@@ -3765,7 +3756,7 @@ fn unique_paired_surface_lift_match<'a, T>(
                 return Ok(None);
             };
             let Some(partner) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v),
+                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?,
             )?
             else {
                 matches = false;
@@ -4899,23 +4890,23 @@ mod tests {
         let matching = plane(0.001);
         let distant = plane(1.0);
         assert_eq!(
-            unique_paired_surface_lift_match(
+            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(ctx,
                 &pcurve,
                 &resolved,
                 &pcurve,
                 [0.0, 1.0],
                 [(7, &matching), (8, &distant)].into_iter(),
-            ),
+            )),
             Ok(Some(7))
         );
         assert_eq!(
-            unique_paired_surface_lift_match(
+            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(ctx,
                 &pcurve,
                 &resolved,
                 &pcurve,
                 [0.0, 1.0],
                 [(7, &matching), (9, &matching)].into_iter(),
-            ),
+            )),
             Ok(None)
         );
     }
@@ -4938,13 +4929,13 @@ mod tests {
             .expect("valid pcurve"),
         );
         assert_eq!(
-            unique_paired_surface_lift_match(
+            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(ctx,
                 &pcurve,
                 &plane,
                 &pcurve,
                 [-f64::MAX, f64::MAX],
                 [(7, &plane)].into_iter(),
-            ),
+            )),
             Ok(Some(7))
         );
     }

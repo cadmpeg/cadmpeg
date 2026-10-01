@@ -154,15 +154,31 @@ impl<'a> DecodeContext<'a> {
         Self::from_bytes(bytes, arena, policy, false)
     }
 
+    /// Builds a root context with a resource-only refusal channel.
+    pub fn from_root_bytes_limit(
+        bytes: &'a [u8], arena: &'a DecodeArena, policy: &DecodePolicy,
+    ) -> Result<(Self, View<'a>), ResourceLimit> {
+        Self::from_bytes_limit(bytes, arena, policy, false)
+    }
+
     fn from_bytes(
         bytes: &'a [u8],
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
         container_only: bool,
     ) -> Result<(Self, View<'a>), CodecError> {
+        Self::from_bytes_limit(bytes, arena, policy, container_only).map_err(Into::into)
+    }
+
+    fn from_bytes_limit(
+        bytes: &'a [u8],
+        arena: &'a DecodeArena,
+        policy: &DecodePolicy,
+        container_only: bool,
+    ) -> Result<(Self, View<'a>), ResourceLimit> {
         let length = u64_from_index(bytes.len());
         if length > policy.limits.max_input_bytes {
-            return Err(root_error(
+            return Err(root_limit(
                 ResourceFailure::BudgetExceeded,
                 policy.limits.max_input_bytes,
                 length,
@@ -489,6 +505,11 @@ impl<'a> DecodeContext<'a> {
 
     /// Enters one recursive nesting level until the returned guard is dropped.
     pub fn enter_nested(&self, operation: &'static str) -> Result<DepthGuard<'_>, CodecError> {
+        self.enter_nested_limit(operation).map_err(Into::into)
+    }
+
+    /// Enters one nesting level with a resource-only refusal.
+    pub fn enter_nested_limit(&self, operation: &'static str) -> Result<DepthGuard<'_>, ResourceLimit> {
         self.budget.enter_nested(operation)
     }
 
@@ -497,7 +518,8 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_work(units, operation)
     }
 
-    pub(crate) fn charge_work_limit(
+    /// Charges work with a resource-only refusal channel.
+    pub fn charge_work_limit(
         &self,
         units: u64,
         operation: &'static str,
@@ -588,17 +610,17 @@ impl<'a> DecodeContext<'a> {
     /// local ceiling instead of a session-wide dimension. The refusal fuses
     /// the session so a caller cannot accidentally turn it into a semantic
     /// fallback or report success after the limit was reached.
-    pub fn refuse_codec_limit(
+    pub(crate) fn refuse_local_limit(
         &self,
         operation: &'static str,
         limit: u64,
         requested: u64,
-    ) -> CodecError {
+    ) -> ResourceLimit {
         let (used, additional) = match requested.checked_sub(limit) {
             Some(excess) => (limit, excess),
             None => (requested, 0),
         };
-        self.budget.refuse(
+        self.budget.refuse_limit(
             ResourceDimension::Codec(operation),
             ResourceFailure::BudgetExceeded,
             limit,
@@ -606,6 +628,16 @@ impl<'a> DecodeContext<'a> {
             additional,
             operation,
         )
+    }
+
+    /// Permanently refuses a codec-local resource request.
+    pub fn refuse_codec_limit(
+        &self,
+        operation: &'static str,
+        limit: u64,
+        requested: u64,
+    ) -> CodecError {
+        self.refuse_local_limit(operation, limit, requested).into()
     }
 
     /// Creates a local work slice that also draws from the session allowance.
@@ -797,25 +829,29 @@ impl<'a> DecodeContext<'a> {
 
 /// Builds the root-input resource error before a context exists.
 fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
+    root_limit(reason, limit, used).into()
+}
+
+fn root_limit(reason: ResourceFailure, limit: u64, used: u64) -> ResourceLimit {
     if used <= limit {
-        return CodecError::ResourceLimit(ResourceLimit {
+        return ResourceLimit {
             dimension: ResourceDimension::InputBytes,
             reason,
             limit,
             used,
             additional: 0,
             operation: "read_root",
-        });
+        };
     }
     let additional = used - limit;
-    CodecError::ResourceLimit(ResourceLimit {
+    ResourceLimit {
         dimension: ResourceDimension::InputBytes,
         reason,
         limit,
         used,
         additional,
         operation: "read_root",
-    })
+    }
 }
 
 /// How much output an expansion is expected to produce.

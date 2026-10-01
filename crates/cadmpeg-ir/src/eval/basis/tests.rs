@@ -19,10 +19,11 @@ fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
 
 #[test]
 fn low_degree_second_derivative_basis_borrows_zeros() {
+    crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
     use std::borrow::Cow;
 
     let constant = crate::eval::basis::bspline_basis_second_derivative(
-        &crate::eval::admitted::Scratch::default(),
+        &crate::eval::decode::Scratch::new(ctx),
         &[],
         0,
         0,
@@ -30,7 +31,7 @@ fn low_degree_second_derivative_basis_borrows_zeros() {
     )
     .expect("degree-zero second derivative");
     let linear = crate::eval::basis::bspline_basis_second_derivative(
-        &crate::eval::admitted::Scratch::default(),
+        &crate::eval::decode::Scratch::new(ctx),
         &[],
         1,
         0,
@@ -41,10 +42,12 @@ fn low_degree_second_derivative_basis_borrows_zeros() {
     assert!(matches!(linear, Cow::Borrowed(_)));
     assert_eq!(constant.as_ref(), &[0.0]);
     assert_eq!(linear.as_ref(), &[0.0, 0.0]);
+});
 }
 
 #[test]
 fn admitted_scaled_derivatives_refuse_each_collection() {
+    crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
     for (degree, cap, operation) in [
         (0, 0, "IR scaled B-spline first basis"),
         (0, 1, "IR scaled B-spline second basis"),
@@ -59,7 +62,7 @@ fn admitted_scaled_derivatives_refuse_each_collection() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let result = with_policy(policy, |ctx| {
-            let scratch = crate::eval::admitted::Scratch::new(ctx);
+            let scratch = crate::eval::decode::Scratch::new(ctx);
             let result = crate::eval::basis::bspline_basis_scaled_derivatives(
                 &scratch,
                 &knots,
@@ -68,13 +71,13 @@ fn admitted_scaled_derivatives_refuse_each_collection() {
                 0.5,
                 crate::scalar::PositiveReal::ONE,
             );
-            scratch.finish(result)
+            scratch.finish(result).map_err(CodecError::from)
         });
         assert!(
             matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
         );
         let result = with_policy(DecodePolicy::service(), |ctx| {
-            let scratch = crate::eval::admitted::Scratch::new(ctx);
+            let scratch = crate::eval::decode::Scratch::new(ctx);
             let result = crate::eval::basis::bspline_basis_scaled_derivatives(
                 &scratch,
                 &knots,
@@ -83,13 +86,13 @@ fn admitted_scaled_derivatives_refuse_each_collection() {
                 0.5,
                 crate::scalar::PositiveReal::ONE,
             );
-            scratch.finish(result)
+            scratch.finish(result).map_err(CodecError::from)
         })
         .expect("service");
         assert_eq!(
             result,
             crate::eval::basis::bspline_basis_scaled_derivatives(
-                &crate::eval::admitted::Scratch::default(),
+                &crate::eval::decode::Scratch::new(ctx),
                 &knots,
                 degree,
                 degree,
@@ -99,6 +102,7 @@ fn admitted_scaled_derivatives_refuse_each_collection() {
         );
         assert!(result.is_some());
     }
+});
 }
 
 #[test]
@@ -113,7 +117,7 @@ fn admitted_derivative_arithmetic_refuses_each_work_loop() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let result = with_policy(policy, |ctx| {
-            let scratch = crate::eval::admitted::Scratch::new(ctx);
+            let scratch = crate::eval::decode::Scratch::new(ctx);
             let result = match kind {
                 0 => crate::eval::basis::bspline_basis_derivative(&scratch, &knots, 2, 2, 0.5)
                     .map(|_| ()),
@@ -131,7 +135,7 @@ fn admitted_derivative_arithmetic_refuses_each_work_loop() {
                 )
                 .map(|_| ()),
             };
-            scratch.finish(result)
+            scratch.finish(result).map_err(CodecError::from)
         });
         assert!(
             matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)

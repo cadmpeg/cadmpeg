@@ -1449,7 +1449,7 @@ fn linear_nurbs_boundary_points(
     )?;
     for parameter in parameters {
         let Some(point) =
-            finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter))?
+            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, nurbs, parameter)?)?
         else {
             return Ok(None);
         };

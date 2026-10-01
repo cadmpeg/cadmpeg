@@ -5,7 +5,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -196,13 +195,13 @@ pub(super) fn oriented_circle_plan(
         let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
         let start =
-            match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[0])) {
+            match cadmpeg_ir::eval::finite_or_refusal(match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, parameter_range[0]) { Ok(value) => value, Err(error) => return Some(Err(error.into())) }) {
                 Ok(Some(point)) => point,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit.into())),
             };
         let end =
-            match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[1])) {
+            match cadmpeg_ir::eval::finite_or_refusal(match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, parameter_range[1]) { Ok(value) => value, Err(error) => return Some(Err(error.into())) }) {
                 Ok(Some(point)) => point,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit.into())),
@@ -298,12 +297,12 @@ pub(super) fn oriented_nurbs_range(
             return None;
         }
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
-        let start = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, range[0])) {
+        let start = match cadmpeg_ir::eval::finite_or_refusal(match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, range[0]) { Ok(value) => value, Err(error) => return Some(Err(error.into())) }) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit.into())),
         };
-        let end = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, range[1])) {
+        let end = match cadmpeg_ir::eval::finite_or_refusal(match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, range[1]) { Ok(value) => value, Err(error) => return Some(Err(error.into())) }) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit.into())),
@@ -439,7 +438,7 @@ pub(super) fn lifted_curve_geometry(
             })
             .transpose()?;
         return Ok(
-            NurbsCurve::from_lanes(pcurve.degree, knots, points, weights, false)
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, pcurve.degree, knots, points, weights, false)?
                 .ok()
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved),

@@ -5175,9 +5175,7 @@ fn derive_spherical_pcurves(
             std::f64::consts::PI,
             -std::f64::consts::FRAC_PI_2,
         ] {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(
-                &geometry, parameter,
-            ))?
+            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, parameter)?)?
             else {
                 fits = false;
                 break;
@@ -5189,10 +5187,7 @@ fn derive_spherical_pcurves(
                 break;
             };
             let Some(curve_point) =
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(
-                    &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
-                    parameter,
-                ))?
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)), parameter)?)?
             else {
                 fits = false;
                 break;
@@ -6508,13 +6503,7 @@ fn clamp_nurbs_curve_to_domain(
     else {
         return Ok(None);
     };
-    Ok(Some(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        curve.degree(),
-        segment_knots,
-        control_points,
-        weights,
-        false,
-    )?))
+    Ok(Some(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, curve.degree(), segment_knots, control_points, weights, false)??))
 }
 
 fn extended_nurbs_isocurve_axis_candidate(

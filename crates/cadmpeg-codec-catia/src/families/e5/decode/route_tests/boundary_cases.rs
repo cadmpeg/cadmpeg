@@ -538,19 +538,19 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
         .expect("valid CircleCurve fixture"),
     ));
     assert!(!equivalent_e5_curve_carriers(&left, &shifted_reference));
-    assert!(e5_circle_carriers_have_same_ordered_sweep(
+    assert!(crate::test_support::with_service_context(|ctx| e5_circle_carriers_have_same_ordered_sweep(ctx,
         &left,
         [0.0, std::f64::consts::PI],
         &shifted_reference,
         [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
-    )
+    ))
     .expect("evaluation resources"));
-    assert!(!e5_circle_carriers_have_same_ordered_sweep(
+    assert!(!crate::test_support::with_service_context(|ctx| e5_circle_carriers_have_same_ordered_sweep(ctx,
         &left,
         [0.0, std::f64::consts::PI],
         &shifted_reference,
         [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2],
-    )
+    ))
     .expect("evaluation resources"));
     let displaced = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

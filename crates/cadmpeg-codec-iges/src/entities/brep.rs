@@ -183,6 +183,7 @@ fn topology_vertex(
 }
 
 fn source_edge_for_vertices<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'a CadIr,
     candidates: &[usize],
     curve_geometry: &CurveGeometry,
@@ -199,7 +200,7 @@ fn source_edge_for_vertices<'a>(
             continue;
         };
         let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::curve_point(curve_geometry, range[0]))
+            finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[0]).map_err(SourceEdgeSelectionError::ResourceLimit)?)
                 .map_err(SourceEdgeSelectionError::ResourceLimit)?
         else {
             continue;
@@ -209,7 +210,7 @@ fn source_edge_for_vertices<'a>(
         if !start_agrees {
             continue;
         }
-        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::curve_point(curve_geometry, range[1]))
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[1]).map_err(SourceEdgeSelectionError::ResourceLimit)?)
             .map_err(SourceEdgeSelectionError::ResourceLimit)?
         else {
             continue;
@@ -332,7 +333,7 @@ fn resolve_pcurve_uses<'a>(
             return Ok(None);
         };
         let (Some(start), Some(end)) = (
-            finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(&geometry, range[0]))
+            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, range[0])?)
                 .map_err(CodecError::from)?
                 .map(|uv| {
                     surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
@@ -341,7 +342,7 @@ fn resolve_pcurve_uses<'a>(
                 })
                 .transpose()?
                 .flatten(),
-            finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(&geometry, range[1]))
+            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, range[1])?)
                 .map_err(CodecError::from)?
                 .map(|uv| {
                     surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
@@ -1380,7 +1381,7 @@ pub(super) fn project(
                                 valid = false;
                                 break;
                             };
-                            let source_edge = match source_edge_for_vertices(
+                            let source_edge = match source_edge_for_vertices(ctx,
                                 ir,
                                 candidates,
                                 &curve.geometry,

@@ -482,7 +482,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         *direction,
         cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0)
     );
-    let range = circle_parameter_range_from_surface_branch(
+    let range = crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
         crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
             surface: &surface,
             center: Point3::new(0.0, 0.0, 0.0),
@@ -494,7 +494,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
             pcurve_origin: *line_pcurve.origin(),
             pcurve_direction: (*line_pcurve.direction()).into(),
         },
-    )
+    ))
     .expect("circle evaluation resources")
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -540,7 +540,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(*direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
 
-    let range = circle_parameter_range_from_surface_branch(
+    let range = crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
         crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
             surface: &surface,
             center: Point3::new(5.0, 0.0, 0.0),
@@ -552,7 +552,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
             pcurve_origin: *line_pcurve.origin(),
             pcurve_direction: (*line_pcurve.direction()).into(),
         },
-    )
+    ))
     .expect("circle evaluation resources")
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);

@@ -28,7 +28,7 @@ impl<'a> WorkScratch<'a> {
     /// Returns the original resource refusal from an attached decode session.
     pub fn grow(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
         if let Some(reservation) = &mut self.reservation {
-            reservation.grow_resource(bytes)?;
+            reservation.grow_limit(bytes)?;
         }
         Ok(())
     }

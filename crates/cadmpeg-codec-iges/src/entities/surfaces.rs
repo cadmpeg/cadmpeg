@@ -457,7 +457,7 @@ fn bounded_evaluable_curve<'a>(
         return Ok(None);
     }
     for parameter in parameter_interval {
-        if finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, parameter))?.is_none() {
+        if finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter)?)?.is_none() {
             return Ok(None);
         }
     }
@@ -1930,10 +1930,7 @@ pub(super) fn project(
                 continue;
             };
             let source_interval = source_parameter_interval(directrix_geometry, carrier_interval);
-            let Some(start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
-                directrix_geometry,
-                carrier_interval[0],
-            ))?
+            let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, directrix_geometry, carrier_interval[0])?)?
             else {
                 super::push_entity_loss(
                     ctx,
@@ -2108,10 +2105,7 @@ pub(super) fn project(
                 }
             }
         };
-        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
-            &placed_directrix,
-            cached_interval[0],
-        ))?
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &placed_directrix, cached_interval[0])?)?
         else {
             super::push_entity_loss(
                 ctx,

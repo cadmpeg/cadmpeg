@@ -138,7 +138,7 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
     .expect("service budget admits context")
     .expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
-    let (cached, cached_range) = e5_occurrence_intersection_cache(&sides)
+    let (cached, cached_range) = crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
         .expect("evaluation resources")
         .expect("wide exact carrier cache");
     assert_eq!(cached, &line);
@@ -266,7 +266,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
             curve: Some((nurbs, [100.0, 110.0])),
         },
     ];
-    let (cache, range) = e5_occurrence_intersection_cache(&sides)
+    let (cache, range) = crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
         .expect("evaluation resources")
         .expect("analytic cache");
     assert_eq!(cache, &line);
@@ -284,7 +284,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         )),
         [0.0, 1.0],
     ));
-    assert!(e5_occurrence_intersection_cache(&sides)
+    assert!(crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
         .expect("evaluation resources")
         .is_none());
 
@@ -311,7 +311,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         right_circle,
         [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
     ));
-    let (cache, range) = e5_occurrence_intersection_cache(&sides)
+    let (cache, range) = crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
         .expect("evaluation resources")
         .expect("frame-gauged circle cache");
     assert_eq!(cache, &left_circle);
