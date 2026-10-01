@@ -266,14 +266,10 @@ pub(crate) fn source_attributes(
             .transpose()?,
     ) {
         ctx.admit_retained_btree_record::<NonBlankString, String>(
-            key.len(),
+            0,
             "FCStd source attribute records",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(key.len()),
-            "FCStd source attribute key",
-        )?;
-        let key = NonBlankString::new(DecodeContext::copy_admitted_text(
+        let key = NonBlankString::new(ctx.copy_retained_text(
             key,
             "FCStd source attribute key",
         )?)

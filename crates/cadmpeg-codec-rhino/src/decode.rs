@@ -324,33 +324,19 @@ fn snapshot_instance_links<'a>(
     records: &[UnknownRecord],
 ) -> Result<InstanceLinkSnapshot<'a>, cadmpeg_core::CodecError> {
     const BYTES: &str = "Rhino instance link snapshot bytes";
-    let bytes = records
-        .iter()
-        .flat_map(UnknownRecord::links)
-        .try_fold(0_u64, |total, link| {
-            total.checked_add(u64_from_index(link.len()))
-        })
-        .ok_or({
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: u64::MAX,
-                used: u64::MAX,
-                additional: 1,
-                operation: BYTES,
-            })
-        })?;
-    let reservation = ctx.reserve_scoped(bytes, BYTES)?;
-    let mut links = ctx.collection_vec(records.len(), "Rhino instance link snapshot rows")?;
-    for record in records {
-        let mut row =
-            ctx.collection_vec(record.links().len(), "Rhino instance link snapshot entries")?;
-        for link in record.links() {
-            let copy = cadmpeg_core::decode::DecodeContext::copy_admitted_text(link, BYTES)?;
-            row.push(copy);
+    let (links, reservation) = ctx.with_scoped_storage(BYTES, || {
+        ctx.charge_collection_items(u64_from_index(records.len()), "Rhino instance link snapshot rows")?;
+        let mut links = ctx.retained_admitted_vec(records.len(), BYTES)?;
+        for record in records {
+            ctx.charge_collection_items(u64_from_index(record.links().len()), "Rhino instance link snapshot entries")?;
+            let mut row = ctx.retained_admitted_vec(record.links().len(), BYTES)?;
+            for link in record.links() {
+                row.push(ctx.copy_retained_text(link, BYTES)?);
+            }
+            links.push(row);
         }
-        links.push(row);
-    }
+        Ok::<_, cadmpeg_core::CodecError>(links)
+    })?;
     Ok(InstanceLinkSnapshot {
         links,
         _bytes: reservation,
@@ -368,23 +354,13 @@ fn snapshot_instance_statuses<'a>(
     cadmpeg_core::CodecError,
 > {
     const BYTES: &str = "Rhino instance status snapshot bytes";
-    let bytes = u64_from_index(statuses.len())
-        .checked_mul(u64_from_index(
-            std::mem::size_of::<Option<GeometryOutcome>>(),
-        ))
-        .ok_or({
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: u64::MAX,
-                used: u64::MAX,
-                additional: 1,
-                operation: BYTES,
-            })
-        })?;
-    let reservation = ctx.reserve_scoped(bytes, BYTES)?;
-    let mut copy = ctx.collection_vec(statuses.len(), "Rhino instance status snapshot")?;
-    copy.extend_from_slice(statuses);
+    let (copy, reservation) = ctx.with_scoped_storage(BYTES, || {
+        ctx.charge_collection_items(u64_from_index(statuses.len()), "Rhino instance status snapshot")?;
+        let mut copy = ctx.retained_admitted_vec(statuses.len(), BYTES)?;
+        ctx.charge_work(u64_from_index(statuses.len()), BYTES)?;
+        copy.extend_from_slice(statuses);
+        Ok::<_, cadmpeg_core::CodecError>(copy)
+    })?;
     Ok((copy, reservation))
 }
 

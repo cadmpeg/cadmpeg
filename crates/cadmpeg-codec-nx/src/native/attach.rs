@@ -6389,26 +6389,15 @@ fn attach_sketch_graph(
             let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
                 return Ok(None);
             };
-            let copy_bytes = pair
-                .id
-                .len()
-                .checked_add("nx-coordinate-pair".len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX coordinate-pair sketch entity",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(pair.id.len()),
-                    )
-                })?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(copy_bytes),
+                cadmpeg_core::decode::u64_from_index("nx-coordinate-pair".len()),
                 "NX coordinate-pair sketch entity",
             )?;
             let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-coordinate-pair")
             else {
                 return Ok(None);
             };
-            let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+            let native_ref = ctx.copy_retained_text(
                 &pair.id,
                 "allocate NX sketch text",
             )?;
@@ -6584,12 +6573,7 @@ fn attach_sketch_graph(
         let Some(entity_id) = sketch_entity_identity(ctx, "point-", entity_key)? else {
             return Ok(None);
         };
-        let copy_bytes = native_ref_source.len();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(copy_bytes),
-            "NX sketch point entity",
-        )?;
-        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+        let native_ref = ctx.copy_retained_text(
             native_ref_source,
             "allocate NX sketch text",
         )?;
@@ -6819,31 +6803,12 @@ fn emit_sketch(
         entities.len(),
         "NX sketch output entities",
     )?;
-    let sketch_bytes = std::mem::size_of::<Sketch>()
-        .checked_add(label.id.len())
-        .and_then(|bytes| bytes.checked_add(label.value.len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sketch output",
-                0,
-                cadmpeg_core::decode::u64_from_index(label.value.len()),
-            )
-        })?;
-    ctx.charge_collection_items(1, "NX sketch output")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(sketch_bytes),
-        "NX sketch output",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut ir.model.sketches,
-        1,
-        "NX sketch output",
-    )?;
-    let name = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+    ctx.reserve_vec(&mut ir.model.sketches, 1, "NX sketch output")?;
+    let name = ctx.copy_retained_text(
         &label.value,
         "allocate NX sketch text",
     )?;
-    let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+    let native_ref = ctx.copy_retained_text(
         &label.id,
         "allocate NX sketch text",
     )?;
@@ -6903,25 +6868,14 @@ fn native_fixed_point_entities(
         let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
             return Ok(None);
         };
-        let copy_bytes = point
-            .id
-            .len()
-            .checked_add("nx-fixed-point".len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX fixed-point sketch entity",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(point.id.len()),
-                )
-            })?;
         ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(copy_bytes),
+            cadmpeg_core::decode::u64_from_index("nx-fixed-point".len()),
             "NX fixed-point sketch entity",
         )?;
         let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-fixed-point") else {
             return Ok(None);
         };
-        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+        let native_ref = ctx.copy_retained_text(
             &point.id,
             "allocate NX sketch text",
         )?;

@@ -245,21 +245,6 @@ impl DecodeContext<'_> {
         Ok((copy, reservation))
     }
 
-    /// Copies text whose byte storage was admitted in aggregate.
-    pub fn copy_admitted_text(text: &str, operation: &'static str) -> Result<String, CodecError> {
-        let mut copy = String::new();
-        copy.try_reserve_exact(text.len()).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::RetainedBytes,
-                u64::MAX,
-                u64_from_index(text.len()),
-                operation,
-            ))
-        })?;
-        copy.push_str(text);
-        Ok(copy)
-    }
-
     /// Collects retained text and charges both vector storage and text bytes.
     pub fn collect_retained_texts<'text>(
         &self,
@@ -2521,8 +2506,10 @@ mod tests {
 
     #[test]
     fn copy_admitted_text_preserves_utf8() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
         assert_eq!(
-            DecodeContext::copy_admitted_text("aé", "test admitted text").expect("admitted text"),
+            ctx.copy_retained_text("aé", "test admitted text").expect("admitted text"),
             "aé"
         );
     }

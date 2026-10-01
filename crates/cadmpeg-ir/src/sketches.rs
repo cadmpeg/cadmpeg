@@ -410,8 +410,7 @@ impl SketchProfiles {
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        let mut decisions = Vec::new();
-        ctx.reserve_vec(&mut decisions, count, OPERATION)?;
+        let (mut decisions, _decision_storage) = ctx.temporary_vec(count, OPERATION)?;
         for profile in &self.0 {
             for usage in profile {
                 ctx.charge_work(
