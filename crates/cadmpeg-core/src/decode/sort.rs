@@ -41,8 +41,8 @@ impl DecodeContext<'_> {
 #[cfg(test)]
 mod tests {
     use super::DecodeContext;
-    use crate::CodecError;
     use crate::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use crate::CodecError;
 
     #[test]
     fn charged_unstable_sort_work_refusal_preserves_input() {
@@ -52,8 +52,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         // Three elements, eight bytes each, three levels, eight work units per byte.
         policy.limits.max_work_units = 3 + 3 * 8 * 3 * 8 - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         assert!(matches!(
             ctx.sort_unstable_by(&mut values, Ord::cmp, |_| 0, "test unstable sort"),
             Err(CodecError::ResourceLimit(limit))
@@ -68,8 +68,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         ctx.sort_unstable_by(&mut values, Ord::cmp, |_| 0, "test unstable sort")
             .expect("sort is admitted");
         assert_eq!(values, [1, 1, 2, 3]);

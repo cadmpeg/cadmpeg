@@ -1435,12 +1435,17 @@ mod tests {
         for _ in 0..256 {
             let (limited, _) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
-            let error = snapshot.physical_ledger(&limited).expect_err("ledger must refuse");
+            let error = snapshot
+                .physical_ledger(&limited)
+                .expect_err("ledger must refuse");
             let CodecError::ResourceLimit(limit) = error else {
                 panic!("expected work refusal: {error:?}");
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+            let threshold = limit
+                .used
+                .checked_add(limit.additional)
+                .expect("finite test budget");
             if limit.operation == operation {
                 target_charges += 1;
             }
@@ -1478,15 +1483,29 @@ mod tests {
     #[test]
     fn partition_sort_preserves_equal_region_order() {
         let regions = [
-            PhysicalSpan { start: 4, end: 8, role: ZipSpanRole::EndRecord },
-            PhysicalSpan { start: 0, end: 4, role: ZipSpanRole::Zip64EndRecord },
-            PhysicalSpan { start: 0, end: 4, role: ZipSpanRole::Zip64EndLocator },
+            PhysicalSpan {
+                start: 4,
+                end: 8,
+                role: ZipSpanRole::EndRecord,
+            },
+            PhysicalSpan {
+                start: 0,
+                end: 4,
+                role: ZipSpanRole::Zip64EndRecord,
+            },
+            PhysicalSpan {
+                start: 0,
+                end: 4,
+                role: ZipSpanRole::Zip64EndLocator,
+            },
         ];
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
             .expect("empty root");
-        assert_eq!(super::partition(&ctx, 8, &regions).expect("complete partition"),
-                   vec![regions[1].clone(), regions[0].clone()]);
+        assert_eq!(
+            super::partition(&ctx, 8, &regions).expect("complete partition"),
+            vec![regions[1].clone(), regions[0].clone()]
+        );
     }
 
     #[test]
