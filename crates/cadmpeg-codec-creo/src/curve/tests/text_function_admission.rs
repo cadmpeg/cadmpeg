@@ -141,7 +141,7 @@ fn relation_regex_preserves_service_match_and_invalid_pattern() {
         )
     })
     .expect("service pattern");
-    assert_eq!(matched, Some(CurveExpressionValue::Number(1.0)));
+    assert_eq!(matched, Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"))));
     let invalid = crate::decode::with_test_decode_ctx(|ctx| {
         crate::curve::parse_relation_expression::<CurveExpressionValue>(
             ctx,
@@ -159,7 +159,7 @@ fn relation_power_rejects_text_without_copying_the_invalid_operand() {
     use crate::curve::CreoMathFunction;
     let arguments = [
         CurveExpressionValue::String("abc".to_owned()),
-        CurveExpressionValue::Number(2.0),
+        CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")),
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -193,14 +193,14 @@ fn relation_power_rejects_text_without_copying_the_invalid_operand() {
             CreoMathFunction::Pow,
             None,
             &[
-                CurveExpressionValue::Number(2.0),
-                CurveExpressionValue::Number(3.0)
+                CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")),
+                CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture"))
             ],
             RelationEvaluationContext::default(),
             &ctx,
         )
         .expect("numeric power needs no retained copy"),
-        Some(CurveExpressionValue::Number(8.0))
+        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(8.0).expect("finite relation fixture")))
     );
 }
 

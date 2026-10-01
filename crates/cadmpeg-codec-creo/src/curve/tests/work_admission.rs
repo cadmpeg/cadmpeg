@@ -50,3 +50,28 @@ fn affine_matrix_elimination_refuses_work() {
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo matrix row normalization"));
     crate::decode::with_test_decode_ctx(|ctx| assert_eq!(solve_unique_affine_system(ctx, &mut [AffineEquationRow { coefficients: vec![1.0], rhs: 2.0 }], 1).expect("service"), Some(vec![2.0])));
 }
+
+#[test]
+fn relation_values_reject_nonfinite_numbers_and_dedicated_residual_dimensions() {
+    use crate::curve::{quantity_value, CurveExpressionQuantity, RelationDimension};
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for dimension in [RelationDimension::default(), RelationDimension::LENGTH, RelationDimension::ANGLE, RelationDimension::TIME] {
+            assert!(quantity_value(value, dimension).is_none());
+        }
+        assert!(CurveExpressionQuantity::new(value, [0, 0, 1, 0, 0]).is_none());
+    }
+    for powers in [[0; 5], [1, 0, 0, 0, 0], [0, 0, 0, 1, 0]] {
+        assert!(CurveExpressionQuantity::new(1.0, powers).is_none());
+    }
+    let value = quantity_value(1.0, RelationDimension::default()).expect("finite number");
+    assert!(matches!(value, CurveExpressionValue::Number(_)));
+    assert_eq!(value.truth(), Some(true));
+    assert!(matches!(quantity_value(1.0, RelationDimension::LENGTH), Some(CurveExpressionValue::Length(_))));
+    assert!(matches!(quantity_value(1.0, RelationDimension::ANGLE), Some(CurveExpressionValue::Angle(_))));
+}
+
+#[test]
+fn relation_quantity_serialization_preserves_base_power_fields() {
+    let value = crate::curve::CurveExpressionQuantity::new(3.5, [1, 2, 0, 0, 0]).expect("finite residual quantity");
+    assert_eq!(serde_json::to_string(&value).expect("quantity JSON"), r#"{"value":3.5,"length_power":1,"mass_power":2,"time_power":0,"angle_power":0,"temperature_power":0}"#);
+}

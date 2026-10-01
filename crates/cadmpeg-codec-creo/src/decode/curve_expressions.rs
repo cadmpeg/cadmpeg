@@ -612,7 +612,7 @@ fn curve_expression_properties(
             &mut properties,
             "evaluated_canonical_value",
             ctx.format_retained(
-                format_args!("{}", quantity.value),
+                format_args!("{}", quantity.value()),
                 "creo curve-expression canonical value",
             )?,
         )?;
@@ -623,11 +623,11 @@ fn curve_expression_properties(
             ctx.format_retained(
                 format_args!(
                     "length:{},mass:{},time:{},angle:{},temperature:{}",
-                    quantity.length_power,
-                    quantity.mass_power,
-                    quantity.time_power,
-                    quantity.angle_power,
-                    quantity.temperature_power
+                    quantity.powers()[0],
+                    quantity.powers()[1],
+                    quantity.powers()[2],
+                    quantity.powers()[3],
+                    quantity.powers()[4]
                 ),
                 "creo curve-expression dimension value",
             )?,
@@ -904,13 +904,13 @@ pub(super) fn transfer_curve_expression_features(
                 }
                 other => other.and_then(|value| match value {
                     crate::curve::CurveExpressionValue::Number(value) => Some(
-                        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
+                        ParameterValue::Real(*value),
                     ),
                     crate::curve::CurveExpressionValue::Length(value) => Some(
-                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
+                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value.get())?),
                     ),
                     crate::curve::CurveExpressionValue::Angle(value) => Some(
-                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.to_radians())?),
+                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.get().to_radians())?),
                     ),
                     crate::curve::CurveExpressionValue::Quantity(_)
                     | crate::curve::CurveExpressionValue::String(_) => None,

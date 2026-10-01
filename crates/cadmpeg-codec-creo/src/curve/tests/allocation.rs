@@ -516,7 +516,7 @@ evaluation_collection_test!(
 evaluation_retained_test!(
     external_value_names_refuse,
     &[],
-    external_symbol(Some(super::super::CurveExpressionValue::Number(1.0))),
+    external_symbol(Some(super::super::CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))),
     "creo external value names"
 );
 evaluation_retained_test!(
