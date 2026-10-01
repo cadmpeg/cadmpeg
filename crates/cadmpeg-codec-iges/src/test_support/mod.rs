@@ -66,7 +66,7 @@ pub(crate) fn detect_and_decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResu
     use cadmpeg_ir::codec::Codec as _;
 
     assert_eq!(
-        crate::IgesCodec.detect(&bytes),
+        cadmpeg_test_support::detection::confidence(&crate::IgesCodec, &bytes),
         cadmpeg_ir::codec::Confidence::High
     );
     crate::IgesCodec

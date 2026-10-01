@@ -156,7 +156,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             bytes, repeated,
             "STEP output must be deterministic for {schema:?}"
         );
-        assert_eq!(StepCodec::default().detect(&bytes), Confidence::High);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&StepCodec::default(), &bytes), Confidence::High);
         let result = EditableDecodeResult::from(
             StepCodec::default()
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

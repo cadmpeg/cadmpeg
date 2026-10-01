@@ -13,11 +13,11 @@ use std::io::Cursor;
 #[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
-    assert_eq!(codec.detect(b"#UGC:2 P foo"), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, b"#UGC:2 P foo"), Confidence::High);
     // A Siemens NX `.prt` (shares the extension) must not be claimed here.
-    assert_eq!(codec.detect(b"\x0e\x93\x13\x01NX"), Confidence::No);
-    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::No);
-    assert_eq!(codec.detect(b""), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, b"\x0e\x93\x13\x01NX"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, b"PK\x03\x04"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, b""), Confidence::No);
 }
 
 #[test]

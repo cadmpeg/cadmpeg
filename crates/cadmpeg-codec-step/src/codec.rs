@@ -49,19 +49,21 @@ impl EncoderBackend for StepCodec {
 impl CodecBackend for StepCodec {
     const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect input")?;
         if starts_with_step_magic(prefix) {
-            Confidence::High
+            Ok(Confidence::High)
         } else if archive::has_root_marker(prefix)
             || is_part26_hdf5(prefix)
             || is_part28_xml(prefix)
             || is_ap242_bo_model_xml(prefix)
         {
-            Confidence::Medium
+            Ok(Confidence::Medium)
         } else if archive::has_zip_magic(prefix) {
-            Confidence::Low
+            Ok(Confidence::Low)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 
@@ -94,7 +96,7 @@ impl CodecBackend for StepCodec {
             return decode_zip(ctx, root);
         }
         refuse_alternate_encoding(bytes)?;
-        if self.detect_impl(bytes) == Confidence::No {
+        if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
         reader::decode(bytes, ctx, reader::Packaging::Bare)
@@ -147,7 +149,7 @@ fn inspect_exchange(
 ) -> Result<InspectedExchange, CodecError> {
     let bytes = root.window();
     refuse_alternate_encoding(bytes)?;
-    if codec.detect_impl(bytes) == Confidence::No {
+    if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
@@ -420,7 +422,7 @@ fn inspect_zip(
     } = archive::open_root(ctx, root)?;
     let root_bytes = root_view.window();
     refuse_alternate_encoding(root_bytes)?;
-    if StepCodec::default().detect_impl(root_bytes) == Confidence::No {
+    if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(root_bytes, ctx)?;
@@ -967,13 +969,13 @@ mod tests {
         let codec = StepCodec::default();
 
         assert!(starts_with_step_magic(source));
-        assert_eq!(codec.detect(source), Confidence::High);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&codec, source), Confidence::High);
         codec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode Part 21 with ignored framing octets");
 
         let with_bom = [b"\xEF\xBB\xBF".as_slice(), source].concat();
-        assert_eq!(codec.detect(&with_bom), Confidence::No);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &with_bom), Confidence::No);
         assert!(!starts_with_step_magic(b"/* incomplete ISO-10303-21;"));
     }
 

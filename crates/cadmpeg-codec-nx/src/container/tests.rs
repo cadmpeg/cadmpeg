@@ -674,7 +674,7 @@ fn fuzz_oom_splmsstr_header_is_rejected_without_count_allocation() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, bytes.to_vec()))
             .is_err()
     );
-    let _ = NxCodec.detect(bytes);
+    let _ = cadmpeg_test_support::detection::confidence(&NxCodec, bytes);
     let _probe = NxCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
     let _probe = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }

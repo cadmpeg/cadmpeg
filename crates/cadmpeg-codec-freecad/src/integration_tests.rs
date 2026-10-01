@@ -296,7 +296,7 @@ fn container_pipeline_handles_stored_deflated_streaming_and_zip64_layouts() {
         streaming_archive_with_options(document, SimpleFileOptions::default().large_file(true)),
     ];
     for bytes in fixtures {
-        assert_eq!(FcstdCodec.detect(&bytes), Confidence::High);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&FcstdCodec, &bytes), Confidence::High);
         let summary = FcstdCodec
             .inspect(
                 &mut Cursor::new(&bytes),

@@ -11,6 +11,12 @@ impl DecodeContext<'_> {
     /// Input storage is governed by the input-byte dimension.
     pub fn read_input_prefix(&self, reader: &mut dyn Read, length: usize) -> Result<Vec<u8>, CodecError> {
         let mut bytes = Vec::new();
+        self.extend_input_prefix(reader, &mut bytes, length)?;
+        Ok(bytes)
+    }
+
+    /// Extends admitted input storage up to a total bounded length.
+    pub fn extend_input_prefix(&self, reader: &mut dyn Read, bytes: &mut Vec<u8>, length: usize) -> Result<(), CodecError> {
         let mut chunk = [0_u8; 8192];
         while bytes.len() < length {
             let count = (length - bytes.len()).min(chunk.len());
@@ -28,7 +34,19 @@ impl DecodeContext<'_> {
                 u64_from_index(read), "input prefix storage"))?;
             bytes.extend_from_slice(&chunk[..read]);
         }
-        Ok(bytes)
+        Ok(())
+    }
+
+    /// Acquires the remaining input without reading or charging the prefix twice.
+    pub fn complete_input(&self, reader: &mut dyn Read, bytes: &mut Vec<u8>) -> Result<(), CodecError> {
+        let max = self.policy().limits.max_input_bytes;
+        let length = usize::try_from(max).map_or(usize::MAX, std::convert::identity);
+        self.extend_input_prefix(reader, bytes, length)?;
+        self.charge_work(1, "input end probe")?;
+        if reader.read(&mut [0_u8; 1])? != 0 {
+            return Err(self.refuse_input_limit(1, "complete input"));
+        }
+        Ok(())
     }
 
     /// Raises a typed input-byte refusal without changing its dimension.

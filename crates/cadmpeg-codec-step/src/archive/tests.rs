@@ -260,8 +260,8 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(bytes), Confidence::High);
-    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::Low);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, b"PK\x03\x04"), Confidence::Low);
 
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
@@ -287,7 +287,7 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
     let source = b"/* preamble */\n  iso-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(source), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, source), Confidence::High);
     codec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("Part 21 leading trivia and case-insensitive magic");
@@ -304,11 +304,11 @@ fn zip_root_detection_uses_structured_entry_names() {
         (ROOT_NAME, root, CompressionMethod::Stored),
     ]);
     assert!(has_root_marker(&root_after_payload));
-    assert_eq!(codec.detect(&root_after_payload), Confidence::Medium);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &root_after_payload), Confidence::Medium);
 
     let marker_in_payload = step_zip(&[("preview.bin", marker_payload, CompressionMethod::Stored)]);
     assert!(!has_root_marker(&marker_in_payload));
-    assert_eq!(codec.detect(&marker_in_payload), Confidence::Low);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &marker_in_payload), Confidence::Low);
 
     let marker_in_filename = step_zip(&[(
         "parts/ISO-10303.p21.preview",
@@ -316,14 +316,14 @@ fn zip_root_detection_uses_structured_entry_names() {
         CompressionMethod::Stored,
     )]);
     assert!(!has_root_marker(&marker_in_filename));
-    assert_eq!(codec.detect(&marker_in_filename), Confidence::Low);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &marker_in_filename), Confidence::Low);
 
     let marker_in_comment = step_zip_with_comment(
         &[("preview.bin", b"ancillary", CompressionMethod::Stored)],
         ROOT_NAME,
     );
     assert!(!has_root_marker(&marker_in_comment));
-    assert_eq!(codec.detect(&marker_in_comment), Confidence::Low);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &marker_in_comment), Confidence::Low);
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
     ]);
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(&bytes), Confidence::Medium);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &bytes), Confidence::Medium);
     let summary = codec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("inspect STEP ZIP");

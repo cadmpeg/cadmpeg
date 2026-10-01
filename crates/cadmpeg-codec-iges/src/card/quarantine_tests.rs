@@ -101,7 +101,7 @@ fn a_line_carrying_two_cards_divides_into_cards_with_one_framing_loss() {
 fn a_terminator_free_card_stride_decodes_its_authored_coordinates() {
     let bytes = stride(&point_file());
     assert_eq!(bytes.len() % 80, 0);
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes), Confidence::High);
 
     let result = decode(bytes);
 

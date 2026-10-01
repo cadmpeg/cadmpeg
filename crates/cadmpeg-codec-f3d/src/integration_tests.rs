@@ -49,7 +49,7 @@ fn assert_valid(result: &EditableDecodeResult) {
 #[test]
 fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
     let bytes = f3d_with_smbh(&synthetic_geometry_smbh());
-    assert_eq!(F3dCodec.detect(&bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&F3dCodec, &bytes), Confidence::High);
     let summary = F3dCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("F3D inspection");
@@ -202,7 +202,7 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
-    assert_eq!(F3dCodec.detect(&bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&F3dCodec, &bytes), Confidence::High);
     let round_trip = decode(bytes);
     assert_eq!(round_trip.ir().model.bodies.len(), 1);
     assert_eq!(round_trip.ir().model.faces.len(), 6);

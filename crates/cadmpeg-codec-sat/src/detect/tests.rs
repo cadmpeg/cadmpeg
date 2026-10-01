@@ -37,20 +37,20 @@ fn binary_classification_propagates_header_string_limit() {
 
 #[test]
 fn detection_is_content_based() {
-    assert_eq!(SatCodec.detect(b"ASM BinaryFile8\x00"), Confidence::High);
-    assert_eq!(SatCodec.detect(b"ACIS BinaryFile\x00"), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&SatCodec, b"ASM BinaryFile8\x00"), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&SatCodec, b"ACIS BinaryFile\x00"), Confidence::High);
     assert_eq!(
-        SatCodec.detect(b"23200 0 2 2 \n16 Autodesk Neutron"),
+        cadmpeg_test_support::detection::confidence(&SatCodec, b"23200 0 2 2 \n16 Autodesk Neutron"),
         Confidence::Medium
     );
     assert_eq!(
-        SatCodec.detect(b"700 0 6 0           \n30 Autodesk"),
+        cadmpeg_test_support::detection::confidence(&SatCodec, b"700 0 6 0           \n30 Autodesk"),
         Confidence::Medium
     );
     // Numeric text without the four-word first line is not a stream.
-    assert_eq!(SatCodec.detect(b"123 456\n789"), Confidence::No);
-    assert_eq!(SatCodec.detect(b"ISO-10303-21;\nHEADER;"), Confidence::No);
-    assert_eq!(SatCodec.detect(b"{\"ir_version\":\"5\"}"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&SatCodec, b"123 456\n789"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&SatCodec, b"ISO-10303-21;\nHEADER;"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&SatCodec, b"{\"ir_version\":\"5\"}"), Confidence::No);
 }
 
 #[test]

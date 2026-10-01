@@ -505,7 +505,7 @@ mod sldprt {
     #[cfg(test)]
     mod tests {
         use super::sldprt_with_body_and_material;
-        use cadmpeg_container::compression::inflate_bounded_probe;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
         #[test]
         fn material_name_length_counts_utf16_units_and_refuses_overflow() {
@@ -524,8 +524,9 @@ mod sldprt {
             let payload_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 16)
                 .expect("material block payload length");
             let payload_len = usize::try_from(payload_len).expect("host payload length");
-            let material = inflate_bounded_probe(&file[at + 24 + name_len..], payload_len)
-                .expect("material block");
+            let arena = DecodeArena::new();
+            let (ctx, root) = DecodeContext::from_root_bytes(&file[at + 24 + name_len..], &arena, &DecodePolicy::default()).expect("root");
+            let (material, _storage) = ctx.inflate_probe(root, payload_len, false).expect("probe").expect("material block");
             assert!(material
                 .windows(6)
                 .any(|bytes| bytes == [0xff, 0xfe, 0xff, 1, 0xe9, 0]));

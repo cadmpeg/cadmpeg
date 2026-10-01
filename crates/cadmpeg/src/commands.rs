@@ -185,6 +185,8 @@ pub(crate) fn inspect(
         Err(InspectError::Io(error)) => {
             return Err(inspect_io_error(path, limits.max_input_bytes, error).into());
         }
+        Err(InspectError::Detection(error)) => return Err(error.into()),
+        Err(InspectError::Unresolved(cadmpeg_registry::ResolveSourceError::Codec(error))) => return Err(error.into()),
         Err(InspectError::Unresolved(error)) => {
             return Err(loader::detection_failure(&error).into());
         }
