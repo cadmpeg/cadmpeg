@@ -7957,7 +7957,7 @@ pub(crate) fn bind_section_owners(
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
     let mut ordered_operations =
-        crate::decode::collect_items(ctx, operations.iter(), "creo section ordered operations")?;
+        ctx.collect_vec(operations.iter(), "creo section ordered operations")?;
     ctx.stable_sort_by(
         ordered_operations.as_mut_slice(),
         |left, right| left.offset.cmp(&right.offset),

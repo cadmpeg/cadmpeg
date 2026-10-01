@@ -805,15 +805,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             edge_index
                         ),
                         sense: Sense::Reversed,
-                        pcurves: crate::decode::collect_items(
-                            ctx,
-                            [PcurveUse {
+                        pcurves: ctx.collect_vec([PcurveUse {
                                 pcurve: bottom_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            }],
-                            "creo extrusion bottom coedge pcurve uses",
-                        )?,
+                            }], "creo extrusion bottom coedge pcurve uses")?,
                         use_curve: None,
                     },
                 )?;
@@ -878,15 +874,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             ring_index
                         ),
                         sense: Sense::Forward,
-                        pcurves: crate::decode::collect_items(
-                            ctx,
-                            [PcurveUse {
+                        pcurves: ctx.collect_vec([PcurveUse {
                                 pcurve: top_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            }],
-                            "creo extrusion top coedge pcurve uses",
-                        )?,
+                            }], "creo extrusion top coedge pcurve uses")?,
                         use_curve: None,
                     },
                 )?;
@@ -1042,15 +1034,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             edge: copy_id!(edge_uses[use_index].0),
                             radial_next,
                             sense: edge_uses[use_index].1,
-                            pcurves: crate::decode::collect_items(
-                                ctx,
-                                [PcurveUse {
+                            pcurves: ctx.collect_vec([PcurveUse {
                                     pcurve,
                                     isoparametric: None,
                                     parameter_range: None,
-                                }],
-                                "creo extrusion side coedge pcurve uses",
-                            )?,
+                                }], "creo extrusion side coedge pcurve uses")?,
                             use_curve: None,
                         },
                     )?;
@@ -1069,11 +1057,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             Sense::Reversed
                         },
                         loops: cadmpeg_ir::topology::FaceLoops::unspecified(
-                            crate::decode::collect_items(
-                                ctx,
-                                [loop_id],
-                                "creo extrusion side face loop IDs",
-                            )?,
+                            ctx.collect_vec([loop_id], "creo extrusion side face loop IDs")?,
                         ),
                         name: None,
                         color: None,
@@ -1128,11 +1112,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ir.model.regions.push(Region {
             id: copy_id!(region_id),
             body: copy_id!(body_id),
-            shells: crate::decode::collect_items(
-                ctx,
-                [shell_id],
-                "creo extrusion region shell IDs",
-            )?,
+            shells: ctx.collect_vec([shell_id], "creo extrusion region shell IDs")?,
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
@@ -1141,11 +1121,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: crate::decode::collect_items(
-                    ctx,
-                    [region_id],
-                    "creo extrusion body region IDs",
-                )?,
+                regions: ctx.collect_vec([region_id], "creo extrusion body region IDs")?,
                 transform: None,
                 name: None,
                 color: None,

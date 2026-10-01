@@ -13,33 +13,6 @@ use cadmpeg_ir::codec::Decoded;
 
 use crate::container;
 
-pub(crate) fn collect_items<T>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = T>,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut result = Vec::new();
-    for value in values {
-        ctx.reserve_vec(&mut result, 1, operation)?;
-        result.push(value);
-    }
-    Ok(result)
-}
-
-pub(crate) fn project_items<I, T>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = I>,
-    operation: &'static str,
-    mut project: impl FnMut(I) -> Result<T, CodecError>,
-) -> Result<Vec<T>, CodecError> {
-    let mut result = Vec::new();
-    for value in values {
-        ctx.reserve_vec(&mut result, 1, operation)?;
-        result.push(project(value)?);
-    }
-    Ok(result)
-}
-
 mod analytic;
 mod build;
 mod coverage;

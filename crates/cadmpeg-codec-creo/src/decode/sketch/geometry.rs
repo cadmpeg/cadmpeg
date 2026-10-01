@@ -917,14 +917,10 @@ pub(in crate::decode) fn saved_profile_chains(
         let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else {
             continue;
         };
-        let uses = crate::decode::collect_items(
-            ctx,
-            [SketchEntityUse {
+        let uses = ctx.collect_vec([SketchEntityUse {
                 entity,
                 reversed: false,
-            }],
-            "creo saved circular profile uses",
-        )?;
+            }], "creo saved circular profile uses")?;
         ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;
         profiles.push(uses);
     }

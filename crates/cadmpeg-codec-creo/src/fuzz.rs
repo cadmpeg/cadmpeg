@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `()`-returning wrappers over internal parsers for the `cadmpeg-fuzz` targets.
+//! Parser probes for the `cadmpeg-fuzz` targets.
 //!
-//! Each wrapper feeds arbitrary bytes to one internal parser and discards the
-//! result. The contract is that no input may panic.
+//! Context-taking probes return `Result<(), CodecError>`. They discard
+//! successful parser values and propagate parser and resource errors.
+//! Context-independent primitive probes return `()` and discard their results.
+//! Every probe must accept arbitrary bytes without panicking.
 #![doc(hidden)]
 
 use crate::scalar::{decode, decode_in_lane, ScalarCache};
