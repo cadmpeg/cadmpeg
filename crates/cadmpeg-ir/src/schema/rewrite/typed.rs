@@ -8,6 +8,16 @@ use cadmpeg_core::CodecError;
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
+    /// Visit borrowed typed references without projecting a value tree.
+    /// Values whose owners expose no references admit one scalar visit.
+    fn visit_identity_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        ctx.charge_work(1, "walk typed reference scalar")
+    }
+
     /// Return the rewritten value or the original resource refusal.
     fn rewrite_identities<F>(
         self,
@@ -113,6 +123,10 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 }
 
 impl RewriteIdentities for crate::ids::Identity {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        ctx.charge_work(1, "walk typed identity reference")?;
+        visitor(self.as_str())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let target = map.identity(ctx, self.as_str())?;
         ctx.charge_work(u64_from_index(target.len()), "rewrite identity grammar")?;
@@ -140,6 +154,12 @@ impl RewriteIdentities for String {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed reference option")?;
+        ctx.charge_work(1, "walk typed reference option")?;
+        if let Some(value) = self { value.visit_identity_references(ctx, visitor)?; }
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite option")?;
         ctx.charge_work(1, "identity rewrite option")?;
@@ -148,6 +168,12 @@ impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed reference sequence")?;
+        ctx.charge_work(1, "walk typed reference sequence")?;
+        for value in self { value.visit_identity_references(ctx, visitor)?; }
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite sequence")?;
         ctx.try_collect_vec(self.into_iter().map(|value| value.rewrite_identities(ctx, map)), "identity rewrite sequence")
@@ -155,6 +181,12 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
 }
 
 impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed reference array")?;
+        ctx.charge_work(1, "walk typed reference array")?;
+        for value in self { value.visit_identity_references(ctx, visitor)?; }
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite array")?;
         let mut storage = ctx.reserve_scoped(0, "identity rewrite array")?;
@@ -170,6 +202,12 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
 }
 
 impl<K: RewriteIdentities + Ord + std::hash::Hash, V: RewriteIdentities> RewriteIdentities for BTreeMap<K, V> {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed reference map")?;
+        ctx.charge_work(1, "walk typed reference map")?;
+        for (key, value) in self { key.visit_identity_references(ctx, visitor)?; value.visit_identity_references(ctx, visitor)?; }
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite map")?;
         let mut rewritten = Self::new();
@@ -196,6 +234,12 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
 rewrite_scalars!(std::num::NonZeroI64, std::num::NonZeroU32);
 
 impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed reference box")?;
+        ctx.charge_work(1, "walk typed reference box")?;
+        self.as_ref().visit_identity_references(ctx, visitor)?;
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite box")?;
         ctx.charge_collection_items(1, "identity rewrite box")?;
@@ -207,6 +251,13 @@ impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
 macro_rules! rewrite_tuple {
     ($($type:ident: $field:ident),*) => {
         impl<$($type: RewriteIdentities),*> RewriteIdentities for ($($type,)*) {
+            fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+                let _depth = ctx.enter_nested("walk typed reference tuple")?;
+                ctx.charge_work(1, "walk typed reference tuple")?;
+                let ($($field,)*) = self;
+                $($field.visit_identity_references(ctx, visitor)?;)*
+                Ok(())
+            }
             fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, RewriteMapFn>) -> Result<Self, CodecError> {
                 let _depth = ctx.enter_nested("identity rewrite tuple")?;
                 let ($($field,)*) = self;

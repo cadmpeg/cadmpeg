@@ -256,15 +256,6 @@ pub enum DraftError {
         /// The violated graph invariant and affected identities.
         message: String,
     },
-    /// A staged entity cannot state its own typed references.
-    #[error("staged entity {owner} cannot state its typed references: {source}")]
-    ReferenceWalk {
-        /// Staged entity whose schema walk failed.
-        owner: String,
-        /// Walk failure raised by the entity's own serialization.
-        #[source]
-        source: crate::schema::ReferenceWalkError,
-    },
 }
 
 impl From<CodecError> for DraftError {
@@ -436,34 +427,15 @@ impl<A> ModelDraft<A> {
                 $(for entity in &self.model.$field {
                     let owner = entity.identity();
                     let mut missing = None;
-                    let mut refusal = None;
-                    let walk = entity.visit_reference_ids(&mut |target| {
-                        if missing.is_some() || refusal.is_some() {
-                            return;
+                    entity.visit_reference_ids(ctx, &mut |target| {
+                        if missing.is_some() {
+                            return Ok(());
                         }
-                        let resolved = contains(target).and_then(|committed| {
-                            if committed {
-                                Ok(true)
-                            } else {
-                                identity_index_contains(&self.model, &identity_index, target, ctx)
-                            }
-                        });
-                        match resolved {
-                            Ok(true) => {}
-                            Ok(false) => match ctx.copy_retained_text(target, "draft missing reference") {
-                                Ok(target) => missing = Some(target),
-                                Err(error) => refusal = Some(error),
-                            },
-                            Err(error) => refusal = Some(error),
+                        if !contains(target)? && !identity_index_contains(&self.model, &identity_index, target, ctx)? {
+                            missing = Some(ctx.copy_retained_text(target, "draft missing reference")?);
                         }
-                    });
-                    if let Some(error) = refusal {
-                        return Err(error);
-                    }
-                    if let Err(source) = walk {
-                        let owner = ctx.copy_retained_text(owner, "draft reference walk owner")?;
-                        return Ok(Err(DraftError::ReferenceWalk { owner, source }));
-                    }
+                        Ok(())
+                    })?;
                     if let Some(target) = missing {
                         let owner = ctx.copy_retained_text(owner, "draft missing reference owner")?;
                         return Ok(Err(DraftError::UnresolvedReference { owner, target }));

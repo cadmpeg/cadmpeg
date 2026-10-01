@@ -406,6 +406,9 @@ rewrite_enum!(VertexBlendTwists<P>, [P]; {
 });
 
 impl<const CAPACITY: usize, R: crate::schema::rewrite::typed::RewriteIdentities, V: crate::schema::rewrite::typed::RewriteIdentities> crate::schema::rewrite::typed::RewriteIdentities for super::CompoundLoftScales<CAPACITY, R, V> {
+    fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+        self.0.visit_identity_references(ctx, visitor)
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError> {
         self.0.rewrite_identities(ctx, map).map(Self)
     }

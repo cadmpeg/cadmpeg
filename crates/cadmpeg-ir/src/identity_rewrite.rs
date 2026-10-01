@@ -16,6 +16,12 @@ macro_rules! rewrite_scalar {
 macro_rules! rewrite_record {
     ($type:ty, [$($generic:ident $(: $bound:path)?),*]; {$($field:ident),* $(,)?}) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk typed reference fields")?;
+                ctx.charge_work(1, "walk typed reference fields")?;
+                $(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
+                Ok(())
+            }
             fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
             where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
                 let _depth = rewrite_context.enter_nested("typed rewrite record")?;
@@ -27,6 +33,13 @@ macro_rules! rewrite_record {
     };
     ($type:ty, [$($generic:ident $(: $bound:path)?),*]; ($($field:ident),* $(,)?)) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk typed reference fields")?;
+                ctx.charge_work(1, "walk typed reference fields")?;
+                let Self($($field),*) = self;
+                $(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($field, ctx, visitor)?;)*
+                Ok(())
+            }
             fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
             where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
                 let _depth = rewrite_context.enter_nested("typed rewrite tuple")?;
@@ -46,6 +59,17 @@ macro_rules! rewrite_enum {
         $($variant:ident $(($($tuple:ident),*))? $({$($field:ident),*})?),* $(,)?
     }) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk typed reference fields")?;
+                ctx.charge_work(1, "walk typed reference fields")?;
+                match self {
+                    $(Self::$variant $(($($tuple),*))? $({$($field),*})? => {
+                        $($(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($tuple, ctx, visitor)?;)*)?
+                        $($(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($field, ctx, visitor)?;)*)?
+                        Ok(())
+                    },)*
+                }
+            }
             fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
             where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
                 let _depth = rewrite_context.enter_nested("typed rewrite variant")?;
