@@ -20,7 +20,7 @@ pub(crate) enum StateStatusPayload<S, B> {
     },
 }
 
-impl<S: AsRef<str>, B: AsRef<[u8]>> StateStatusPayload<S, B> {
+impl<S: crate::immutable_text::ImmutableText, B: AsRef<[u8]>> StateStatusPayload<S, B> {
     fn byte_len(&self) -> usize {
         match self {
             Self::Plain => 1,
@@ -38,7 +38,7 @@ pub(crate) struct StateStatus<S, B> {
     pub(crate) payload: StateStatusPayload<S, B>,
 }
 
-impl<S: AsRef<str>, B: AsRef<[u8]>> StateStatus<S, B> {
+impl<S: crate::immutable_text::ImmutableText, B: AsRef<[u8]>> StateStatus<S, B> {
     pub(crate) fn byte_len(&self) -> usize {
         usize::from(self.status_code.byte_len())
             + usize::from(self.object_index.byte_len())

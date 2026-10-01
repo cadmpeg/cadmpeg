@@ -83,6 +83,7 @@ macro_rules! propagate_resource {
     };
 }
 
+mod immutable_text;
 mod canonical_uuid;
 mod container;
 mod decode;
