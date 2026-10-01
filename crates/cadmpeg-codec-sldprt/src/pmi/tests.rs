@@ -147,7 +147,7 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
         offset: 0,
         guid: "guid".into(),
         cad_text: "D1@Pattern1".into(),
-        item_count: 1,
+        item_count: std::num::NonZeroU32::MIN,
         subtype: subtype.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test dimension"),
         value_offset: 0,
@@ -478,7 +478,7 @@ fn parses_array16_dim_items() {
     let records = parse_payload(&payload, &mut losses);
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].item_count, 16);
+    assert_eq!(records[0].item_count.get(), 16);
     assert_eq!(records[0].value.get(), 0.025);
 }
 
@@ -834,7 +834,7 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
             .find(|record| record.guid == guid)
             .expect("PMI dimension");
         assert_eq!(dimension.value.get(), value);
-        assert_eq!(dimension.item_count, item_count);
+        assert_eq!(dimension.item_count.get(), item_count);
         assert!(decoded.report().losses.iter().all(|loss| {
             !loss.message.contains("semantic-record-malformed")
                 && !loss.message.contains("failed to parse MessagePack map")
@@ -893,7 +893,7 @@ fn multi_item_pmi_dimension_is_not_bound() {
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one native PMI dimension");
     };
-    assert_eq!(dimension.item_count, 2);
+    assert_eq!(dimension.item_count.get(), 2);
     assert!(!decoded
         .ir()
         .model
@@ -1425,4 +1425,20 @@ fn pmi_patch_preserves_native_load_depth_refusal() {
         }
         errors => panic!("{errors:?}"),
     }
+}
+
+#[test]
+fn pmi_dimension_count_refuses_zero_and_keeps_the_default_wire() {
+    let dimension = dimension("", 1.0);
+    let wire = serde_json::to_value(&dimension).unwrap();
+    assert!(wire.get("item_count").is_none());
+    let decoded: PmiDimension = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(decoded, dimension);
+    let mut explicit = wire.clone();
+    explicit["item_count"] = serde_json::json!(1);
+    let decoded: PmiDimension = serde_json::from_value(explicit).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    let mut zero = wire;
+    zero["item_count"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<PmiDimension>(zero).is_err());
 }
