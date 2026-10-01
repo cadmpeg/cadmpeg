@@ -34,8 +34,7 @@ use crate::layout::zlb_wrapper_header as zlb_hdr;
 /// Marker shared by block, cache-cell, and directory frames.
 pub(crate) const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 
-/// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
-/// from driving an unbounded allocation. Real part streams sit far below this.
+/// Resource ceiling on the expansion of one native block.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Classified decompressed payload signature.
@@ -748,7 +747,7 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
     let comp = index_from_u32(comp_sz);
     let pre = index_from_u32(pre_sz);
     let uncomp = index_from_u32(uncomp_sz);
-    if comp == 0 || uncomp == 0 || uncomp > MAX_UNCOMP {
+    if comp == 0 || uncomp == 0 {
         return None;
     }
     let payload_start = off + block_hdr::LEN + pre;
@@ -830,6 +829,9 @@ fn try_block_budgeted<'a>(
     let Some((frame, payload_start, payload_end)) = read_block_frame(bytes, off) else {
         return Ok(None);
     };
+    if index_from_u32(frame.uncomp_sz) > MAX_UNCOMP {
+        return Err(ctx.refuse_codec_limit("expand SLDPRT native block", u64_from_index(MAX_UNCOMP), u64::from(frame.uncomp_sz)));
+    }
     let Some(abs_start) = root.start().checked_add(payload_start) else {
         return Ok(None);
     };

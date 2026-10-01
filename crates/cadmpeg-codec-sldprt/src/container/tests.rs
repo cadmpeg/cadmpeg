@@ -589,3 +589,15 @@ fn bad_block_crc_refuses_before_checksum_scan() {
     let error = super::block_from_inflated(&ctx, &[], 0, &frame, vec![1; 4]).err().unwrap();
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "validate SLDPRT block CRC"));
 }
+
+#[test]
+fn oversized_block_expansion_is_a_resource_refusal() {
+    let mut source = outer_header();
+    let mut block = make_block(0x20, "PreviewPNG", b"png");
+    let declared = u32::try_from(super::MAX_UNCOMP).unwrap() + 1;
+    block[super::block_hdr::UNCOMP_SZ..super::block_hdr::UNCOMP_SZ + 4].copy_from_slice(&declared.to_le_bytes());
+    source.extend(block);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let error = container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&source)).err().unwrap();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "expand SLDPRT native block" && limit.additional == 1));
+}
