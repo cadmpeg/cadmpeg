@@ -730,7 +730,12 @@ fn push_presentation_record<T>(
         cadmpeg_core::decode::u64_from_index(token.as_str().len()),
         "retain Inventor presentation record segment token",
     )?;
-    records.push(Located::new(value, crate::record_identity::RecordTypeId::from_bytes(type_id), token, ordinal));
+    records.push(Located::new(
+        value,
+        crate::record_identity::RecordTypeId::from_bytes(type_id),
+        token,
+        ordinal,
+    ));
     Ok(())
 }
 
@@ -1136,11 +1141,14 @@ impl<'a> Cursor<'a> {
             None => None,
             Some(crate::pmdc::PmDcListMetadata::U32(values)) => Some(values),
             Some(crate::pmdc::PmDcListMetadata::U16(_)) => {
-                return Err(CodecError::malformed("graphics reference metadata must be u32"));
+                return Err(CodecError::malformed(
+                    "graphics reference metadata must be u32",
+                ));
             }
         };
-        PmDcPairedReferenceList::new(metadata, references)
-            .ok_or_else(|| CodecError::malformed("graphics reference metadata disagrees with length"))
+        PmDcPairedReferenceList::new(metadata, references).ok_or_else(|| {
+            CodecError::malformed("graphics reference metadata disagrees with length")
+        })
     }
 
     fn utf16(
@@ -1245,26 +1253,35 @@ mod tests {
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
 
-
     #[test]
     fn graphics_reference_lists_use_bounded_retained_grammar() {
         let mut bytes = vec![2_u8, 0, 0, 0x30];
         bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 8]);
         crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
-            assert!(matches!(super::Cursor::new(root).reference_list(ctx, "test"), Err(CodecError::Malformed(_))));
+            assert!(matches!(
+                super::Cursor::new(root).reference_list(ctx, "test"),
+                Err(CodecError::Malformed(_))
+            ));
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert!(matches!(super::Cursor::new(root).reference_list(&ctx, "test"), Err(CodecError::Malformed(_))));
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(
+            super::Cursor::new(root).reference_list(&ctx, "test"),
+            Err(CodecError::Malformed(_))
+        ));
         bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 4]);
         policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
         policy.limits.max_retained_bytes = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert!(matches!(super::Cursor::new(root).reference_list(&ctx, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(
+            matches!(super::Cursor::new(root).reference_list(&ctx, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]

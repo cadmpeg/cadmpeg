@@ -534,7 +534,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             transform.identity.type_id.as_str(),
         ) || !references_resolve(
             transform.identity.segment_token.as_str(),
-            &[transform.header.next.index(), transform.header.context.index()],
+            &[
+                transform.header.next.index(),
+                transform.header.context.index(),
+            ],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -613,7 +616,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             direction.identity.type_id.as_str(),
         ) || !references_resolve(
             direction.identity.segment_token.as_str(),
-            &[direction.header.next.index(), direction.header.context.index()],
+            &[
+                direction.header.next.index(),
+                direction.header.context.index(),
+            ],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -817,7 +823,10 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for property in &data.pm_dc_feature_properties {
-        let mut references = vec![property.header.next.index(), property.header.context.index()];
+        let mut references = vec![
+            property.header.next.index(),
+            property.header.context.index(),
+        ];
         match &property.kind {
             PmDcFeaturePropertyKind::References { items, .. } => {
                 references.extend(items.references().iter().map(|reference| reference.index()));
@@ -836,7 +845,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 radius,
                 selection,
                 continuity,
-            } => references.extend([edges.index(), radius.index(), selection.index(), continuity.index()]),
+            } => references.extend([
+                edges.index(),
+                radius.index(),
+                selection.index(),
+                continuity.index(),
+            ]),
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
@@ -1135,7 +1149,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         findings,
         data.pm_graphics_style_collections
             .iter()
-            .map(|record| record.id()),
+            .map(PmGraphicsStyleCollectionRecord::id),
         "PmGraphics style-collection id",
     );
     unique(

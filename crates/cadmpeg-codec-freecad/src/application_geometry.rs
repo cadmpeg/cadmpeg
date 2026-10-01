@@ -71,7 +71,13 @@ pub(crate) fn transfer(
                 .push(parse_mesh(ctx, property, entry.data())?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
-            let points = parse_points(ctx, property, entry.data(), cadmpeg_core::decode::u64_from_index(ir.model.entity_count()), admitted_entities)?;
+            let points = parse_points(
+                ctx,
+                property,
+                entry.data(),
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                admitted_entities,
+            )?;
             ctx.reserve_vec(&mut ir.model.points, points.len(), "FreeCAD point records")?;
             ir.model.points.extend(points);
             transferred = true;
@@ -160,12 +166,19 @@ fn parse_mesh(
     reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;
     let point_count = reader.count(byte_order, "mesh point count")?;
     let facet_count = reader.count(byte_order, "mesh facet count")?;
-    let vertex_bytes = point_count.checked_mul(12)
-        .and_then(|len| facet_count.checked_mul(mesh_facet::LEN).and_then(|facets| len.checked_add(facets)))
+    let vertex_bytes = point_count
+        .checked_mul(12)
+        .and_then(|len| {
+            facet_count
+                .checked_mul(mesh_facet::LEN)
+                .and_then(|facets| len.checked_add(facets))
+        })
         .and_then(|len| len.checked_add(24))
         .ok_or_else(|| CodecError::malformed("mesh population extent overflows"))?;
     if reader.remaining() < vertex_bytes {
-        return Err(CodecError::malformed("mesh population exceeds remaining payload"));
+        return Err(CodecError::malformed(
+            "mesh population exceeds remaining payload",
+        ));
     }
     let mut vertices = ctx.retained_vec(point_count, "FreeCAD mesh vertices")?;
     for _ in 0..point_count {
@@ -229,11 +242,19 @@ fn parse_points(
 ) -> Result<Vec<Point>, CodecError> {
     let mut reader = Reader::new(bytes);
     let count = reader.count(ByteOrder::Little, "point-cloud point count")?;
-    reader.counted(cadmpeg_core::decode::u64_from_index(count), 12)
+    reader
+        .counted(cadmpeg_core::decode::u64_from_index(count), 12)
         .ok_or_else(|| CodecError::malformed("point-cloud count exceeds remaining payload"))?;
-    let population = current_entities.checked_add(cadmpeg_core::decode::u64_from_index(count))
-        .ok_or_else(|| ctx.refuse_codec_limit("FreeCAD point-cloud entities", u64::MAX, u64::MAX))?;
-    ctx.admit_entities(population, admitted_entities, "FreeCAD point-cloud entities")?;
+    let population = current_entities
+        .checked_add(cadmpeg_core::decode::u64_from_index(count))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("FreeCAD point-cloud entities", u64::MAX, u64::MAX)
+        })?;
+    ctx.admit_entities(
+        population,
+        admitted_entities,
+        "FreeCAD point-cloud entities",
+    )?;
     let transform = point_transform(ctx, property)?;
     let mut points = ctx.retained_vec(count, "FreeCAD point-cloud points")?;
     for index in 0..count {
@@ -486,16 +507,29 @@ pub(crate) mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
         let mut admitted = 0;
-        assert!(matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.additional == 2));
+        assert!(
+            matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.additional == 2)
+        );
         assert_eq!(admitted, 0);
         policy.limits.max_entities = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert_eq!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted).expect("admitted points").len(), 2);
-        ctx.admit_entities(2, &mut admitted, "aggregate").expect("already admitted");
-        assert!(matches!(ctx.charge_entities(1, "next entity"), Err(CodecError::ResourceLimit(_))));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert_eq!(
+            parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted)
+                .expect("admitted points")
+                .len(),
+            2
+        );
+        ctx.admit_entities(2, &mut admitted, "aggregate")
+            .expect("already admitted");
+        assert!(matches!(
+            ctx.charge_entities(1, "next entity"),
+            Err(CodecError::ResourceLimit(_))
+        ));
     }
 
     #[test]
@@ -608,8 +642,12 @@ pub(crate) mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert!(matches!(parse_mesh(&ctx, &resource_test_property(), &bytes), Err(CodecError::Malformed(_))));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(
+            parse_mesh(&ctx, &resource_test_property(), &bytes),
+            Err(CodecError::Malformed(_))
+        ));
     }
 
     #[test]
@@ -665,25 +703,36 @@ pub(crate) mod tests {
     fn truncated_point_cloud_is_malformed_before_collection_admission() {
         let bytes = 1_000_000_u32.to_le_bytes();
         crate::test_support::with_service_context(&bytes, |ctx| {
-            assert!(matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0),
+            assert!(
+                matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0),
                 Err(CodecError::Malformed(message))
-                    if message == "point-cloud count exceeds remaining payload"));
-            assert_eq!(ctx.policy().limits.max_collection_items, DecodePolicy::service().limits.max_collection_items);
+                    if message == "point-cloud count exceeds remaining payload")
+            );
+            assert_eq!(
+                ctx.policy().limits.max_collection_items,
+                DecodePolicy::service().limits.max_collection_items
+            );
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert!(matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut 0), Err(CodecError::Malformed(_))));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(
+            parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut 0),
+            Err(CodecError::Malformed(_))
+        ));
     }
 
     #[test]
     fn point_cloud_storage_refuses_before_record_construction() {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         bytes.extend_from_slice(&[0; 12]);
-        crate::test_support::assert_retained_refusal_at(&bytes, "FreeCAD point-cloud points", |ctx| {
-            parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0)
-        });
+        crate::test_support::assert_retained_refusal_at(
+            &bytes,
+            "FreeCAD point-cloud points",
+            |ctx| parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0),
+        );
     }
 
     #[test]
@@ -696,7 +745,9 @@ pub(crate) mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
             crate::native::model_id("point", &property.id, "0").len(),
-        ) + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::topology::Point>()) - 1;
+        ) + cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<cadmpeg_ir::topology::Point>(),
+        ) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
             .expect("root points are within the input limit");
         assert!(matches!(parse_points(&ctx, &property, &points, 0, &mut 0),

@@ -1993,7 +1993,11 @@ fn project_geometry(
                 start.index(),
                 entities,
             )?;
-            let end = resolve_point(entity.identity.segment_token.as_str(), end.index(), entities)?;
+            let end = resolve_point(
+                entity.identity.segment_token.as_str(),
+                end.index(),
+                entities,
+            )?;
             if !line_carrier_matches(
                 origin.map(FiniteReal::get),
                 direction.map(FiniteReal::get),

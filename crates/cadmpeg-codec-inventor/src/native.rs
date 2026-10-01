@@ -825,9 +825,12 @@ impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
             header_value: wire.header_value,
             header_id: wire.header_id,
             flags: wire.flags,
-            styles: PmDcReference::new(wire.styles_reference, wire.styles_reference_qualified).ok_or("reference index exceeds 31 bits")?,
-            surface: PmDcReference::new(wire.surface_reference, wire.surface_reference_qualified).ok_or("reference index exceeds 31 bits")?,
-            parent: PmDcReference::new(wire.parent_reference, wire.parent_reference_qualified).ok_or("reference index exceeds 31 bits")?,
+            styles: PmDcReference::new(wire.styles_reference, wire.styles_reference_qualified)
+                .ok_or("reference index exceeds 31 bits")?,
+            surface: PmDcReference::new(wire.surface_reference, wire.surface_reference_qualified)
+                .ok_or("reference index exceeds 31 bits")?,
+            parent: PmDcReference::new(wire.parent_reference, wire.parent_reference_qualified)
+                .ok_or("reference index exceeds 31 bits")?,
             state: wire.state,
             edge_references: PmDcPairedReferenceList::new(
                 wire.edge_list_metadata,
@@ -860,7 +863,8 @@ impl PmGraphicsStyleCollectionRecord {
         segment_version_major: u8,
         style_references: PmDcPairedReferenceList<[u32; 2]>,
     ) -> Result<Self, String> {
-        let suffix = id.strip_prefix("inventor:presentation:graphics-style-collection#")
+        let suffix = id
+            .strip_prefix("inventor:presentation:graphics-style-collection#")
             .and_then(|value| value.rsplit_once('-'));
         if !suffix.is_some_and(|(token, ordinal)| {
             token == segment_token.as_str()
@@ -870,12 +874,24 @@ impl PmGraphicsStyleCollectionRecord {
         }) {
             return Err("graphics style collection id disagrees with its location".into());
         }
-        Ok(Self { id, segment_token, record_ordinal, segment_version_major, style_references })
+        Ok(Self {
+            id,
+            segment_token,
+            record_ordinal,
+            segment_version_major,
+            style_references,
+        })
     }
 
-    pub(crate) fn id(&self) -> &str { &self.id }
-    pub(crate) fn segment_token(&self) -> &str { self.segment_token.as_str() }
-    pub(crate) fn record_ordinal(&self) -> u32 { self.record_ordinal }
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+    pub(crate) fn segment_token(&self) -> &str {
+        self.segment_token.as_str()
+    }
+    pub(crate) fn record_ordinal(&self) -> u32 {
+        self.record_ordinal
+    }
 }
 
 impl Serialize for PmGraphicsStyleCollectionRecord {
@@ -913,13 +929,15 @@ impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionR
     fn try_from(wire: PmGraphicsStyleCollectionRecordWire) -> Result<Self, Self::Error> {
         Self::new(
             wire.id,
-            cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token).map_err(|error| error.to_string())?,
+            cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token)
+                .map_err(|error| error.to_string())?,
             wire.record_ordinal,
             wire.segment_version_major,
             PmDcPairedReferenceList::new(
                 wire.list_metadata,
                 PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
-            ).ok_or("list_metadata disagrees with style_references")?,
+            )
+            .ok_or("list_metadata disagrees with style_references")?,
         )
     }
 }
@@ -1645,14 +1663,27 @@ mod tests {
     #[test]
     fn graphics_style_collection_checks_location_and_reference_indices() {
         let valid = serde_json::json!({"id": "inventor:presentation:graphics-style-collection#segment-0", "segment_token": "segment", "record_ordinal": 0, "segment_version_major": 26, "style_references": [], "style_reference_qualifiers": [], "list_metadata": null});
-        let record: super::PmGraphicsStyleCollectionRecord = serde_json::from_value(valid.clone()).expect("valid location");
+        let record: super::PmGraphicsStyleCollectionRecord =
+            serde_json::from_value(valid.clone()).expect("valid location");
         assert_eq!(serde_json::to_value(record).expect("wire"), valid);
-        for (field, value) in [("id", serde_json::json!("")), ("id", serde_json::json!("inventor:presentation:graphics-style-collection#other-0")), ("segment_token", serde_json::json!("")), ("segment_token", serde_json::json!("has#separator")), ("record_ordinal", serde_json::json!(1))] {
-            let mut wire = valid.clone(); wire[field] = value;
-            assert!(serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err());
+        for (field, value) in [
+            ("id", serde_json::json!("")),
+            (
+                "id",
+                serde_json::json!("inventor:presentation:graphics-style-collection#other-0"),
+            ),
+            ("segment_token", serde_json::json!("")),
+            ("segment_token", serde_json::json!("has#separator")),
+            ("record_ordinal", serde_json::json!(1)),
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = value;
+            assert!(
+                serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err()
+            );
         }
         let mut wire = valid;
-        wire["style_references"] = serde_json::json!([2147483648_u32]);
+        wire["style_references"] = serde_json::json!([2_147_483_648_u32]);
         wire["style_reference_qualifiers"] = serde_json::json!([false]);
         wire["list_metadata"] = serde_json::json!([0, 0]);
         assert!(serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err());
@@ -1730,7 +1761,7 @@ mod tests {
     #[test]
     fn graphics_style_references_stream_once_with_retained_limit() {
         let expected = serde_json::json!({
-            "id": "inventor:pmdc:graphics-style-collection#1", "segment_token": "segment",
+            "id": "inventor:presentation:graphics-style-collection#segment-0", "segment_token": "segment",
             "record_ordinal": 0, "segment_version_major": 17,
             "style_references": [], "style_reference_qualifiers": [],
             "list_metadata": null

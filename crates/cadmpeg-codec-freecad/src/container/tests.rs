@@ -143,7 +143,9 @@ fn archive_span_identity_refuses_at_retained_limit() {
 fn source_domain_list_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         scan.document.domains.push("Part".into());
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd source domain list", |ctx| super::source_attributes(ctx, scan));
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd source domain list", |ctx| {
+            super::source_attributes(ctx, scan)
+        });
     });
 }
 
@@ -151,7 +153,11 @@ fn source_domain_list_refuses_at_retained_limit() {
 fn source_program_version_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         scan.document.program_version = Some("1.2.3".into());
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd source program version", |ctx| super::source_attributes(ctx, scan));
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FCStd source program version",
+            |ctx| super::source_attributes(ctx, scan),
+        );
     });
 }
 
@@ -282,18 +288,22 @@ fn entry_data_copy_refuses_at_retained_limit() {
 }
 
 fn resource_entry_record() -> crate::native::EntryRecord {
-    crate::test_support::entry_record("fcstd:native:entry#GuiDocument.xml".into(), "GuiDocument.xml".into(), cadmpeg_core::container::ContainerRole::GuiDocument, Vec::new(), Vec::new())
+    crate::test_support::entry_record(
+        "fcstd:native:entry#GuiDocument.xml".into(),
+        "GuiDocument.xml".into(),
+        cadmpeg_core::container::ContainerRole::GuiDocument,
+        Vec::new(),
+        Vec::new(),
+    )
 }
 
 #[test]
 fn gui_entry_reference_refuses_at_collection_limit() {
     collection_context(0, |ctx| {
         let mut entry = resource_entry_record();
-        assert!(
-            matches!(entry.add_reference(ctx, "owner"),
+        assert!(matches!(entry.add_reference(ctx, "fcstd:native:gui#owner"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd GUI entry references")
-        );
+                if limit.operation == "FCStd GUI entry references"));
     });
 }
 
@@ -301,12 +311,13 @@ fn gui_entry_reference_refuses_at_collection_limit() {
 fn gui_entry_reference_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("owner".len()) - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("fcstd:native:gui#owner".len()) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut entry = resource_entry_record();
     assert!(
-        matches!(entry.add_reference(&ctx, "owner"),
+        matches!(entry.add_reference(&ctx, "fcstd:native:gui#owner"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FCStd GUI entry reference identity")
     );
@@ -410,7 +421,9 @@ fn summary_schema_note_refuses_on_retained_limit() {
     let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &scan_arena, &scan_policy)
         .expect("archive fits input policy");
     let scan = super::scan(&scan_ctx, root).expect("valid archive scan");
-    crate::test_support::assert_retained_refusal_at(&[], "FCStd schema note", |ctx| super::summary_notes(ctx, &scan));
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd schema note", |ctx| {
+        super::summary_notes(ctx, &scan)
+    });
 }
 
 #[test]
@@ -730,10 +743,19 @@ fn retains_every_reference_to_a_shared_side_entry() {
 
     let mut corrupted = result.ir().clone();
     let mut corrupted_entries = entries.clone();
-    let shared = corrupted_entries.iter_mut().find(|entry| entry.name() == "Shared.bin").expect("shared entry");
+    let shared = corrupted_entries
+        .iter_mut()
+        .find(|entry| entry.name() == "Shared.bin")
+        .expect("shared entry");
     let mut references = shared.referenced_by().to_vec();
     references.pop();
-    *shared = crate::test_support::entry_record(shared.id().to_owned(), shared.name().to_owned(), shared.role, references, shared.data().to_vec());
+    *shared = crate::test_support::entry_record(
+        shared.id().to_owned(),
+        shared.name().to_owned(),
+        shared.role,
+        references,
+        shared.data().to_vec(),
+    );
     corrupted
         .native
         .namespace_mut("fcstd")
@@ -768,19 +790,58 @@ fn detects_marker_but_not_arbitrary_zip() {
 #[test]
 fn summary_notes_admit_slots_and_retained_storage_before_text() {
     with_scanned_document(|scan| {
-        crate::test_support::assert_collection_refusal_at(&[], "FCStd summary notes", |ctx| super::summary_notes(ctx, scan));
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd summary notes", |ctx| super::summary_notes(ctx, scan));
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd object count note", |ctx| super::summary_notes(ctx, scan));
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd physical ledger note", |ctx| super::summary_notes(ctx, scan));
+        crate::test_support::assert_collection_refusal_at(&[], "FCStd summary notes", |ctx| {
+            super::summary_notes(ctx, scan)
+        });
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd summary notes", |ctx| {
+            super::summary_notes(ctx, scan)
+        });
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd object count note", |ctx| {
+            super::summary_notes(ctx, scan)
+        });
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd physical ledger note", |ctx| {
+            super::summary_notes(ctx, scan)
+        });
     });
 }
 
 #[test]
 fn source_attributes_admit_keys_values_and_map_records() {
     with_scanned_document(|scan| {
-        crate::test_support::assert_collection_refusal_at(&[], "FCStd source attribute records", |ctx| super::source_attributes(ctx, scan));
-        for operation in ["FCStd source root", "FCStd source object count", "FCStd source kind", "FCStd source entry count", "FCStd source ledger spans", "FCStd source archive bytes", "FCStd source attribute records"] {
-            crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| super::source_attributes(ctx, scan));
+        crate::test_support::assert_collection_refusal_at(
+            &[],
+            "FCStd source attribute records",
+            |ctx| super::source_attributes(ctx, scan),
+        );
+        for operation in [
+            "FCStd source root",
+            "FCStd source object count",
+            "FCStd source kind",
+            "FCStd source entry count",
+            "FCStd source ledger spans",
+            "FCStd source archive bytes",
+            "FCStd source attribute records",
+        ] {
+            crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+                super::source_attributes(ctx, scan)
+            });
         }
+    });
+}
+
+#[test]
+fn source_attribute_copies_and_summary_formatting_refuse_work() {
+    with_scanned_document(|scan| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(
+            matches!(super::source_attributes(&ctx, scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "FCStd source root")
+        );
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(
+            matches!(super::summary_notes(&ctx, scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "FCStd schema note")
+        );
     });
 }

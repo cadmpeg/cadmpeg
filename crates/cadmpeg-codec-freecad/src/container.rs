@@ -180,26 +180,105 @@ pub(crate) fn source_attributes(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan.document.root_name.len()),
+        "FCStd source root",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan.document.document_kind().as_str().len()),
+        "FCStd source kind",
+    )?;
+    for (index, domain) in scan.document.domains.iter().enumerate() {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(domain.len()),
+            "FCStd source domain list",
+        )?;
+        if index != 0 {
+            ctx.charge_work(1, "FCStd source domain list")?;
+        }
+    }
+    if let Some(version) = &scan.document.program_version {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(version.len()),
+            "FCStd source program version",
+        )?;
+    }
     let mut attributes = BTreeMap::new();
     for (key, value) in [
-        ("document_root", ctx.copy_retained_text(&scan.document.root_name, "FCStd source root")?),
-        ("object_count", ctx.format_retained_with_work(format_args!("{}", scan.document.object_count), "FCStd source object count")?),
-        ("document_kind", ctx.copy_retained_text(scan.document.document_kind().as_str(), "FCStd source kind")?),
-        ("application_domains", ctx.join_retained(&scan.document.domains, ",", "FCStd source domain list")?),
-        ("archive_entry_count", ctx.format_retained_with_work(format_args!("{}", scan.entries.len()), "FCStd source entry count")?),
-        ("physical_ledger_spans", ctx.format_retained_with_work(format_args!("{}", scan.ledger.len()), "FCStd source ledger spans")?),
-    ].into_iter().chain(
-        scan.ledger.last().map(|last| {
-            Ok::<_, CodecError>(("physical_archive_bytes", ctx.format_retained_with_work(format_args!("{}", last.span.end()), "FCStd source archive bytes")?))
-        }).transpose()?
-    ).chain(
-        scan.document.program_version.as_ref().map(|value| {
-            Ok::<_, CodecError>(("program_version", ctx.copy_retained_text(value, "FCStd source program version")?))
-        }).transpose()?
+        (
+            "document_root",
+            ctx.copy_retained_text(&scan.document.root_name, "FCStd source root")?,
+        ),
+        (
+            "object_count",
+            ctx.format_retained_with_work(
+                format_args!("{}", scan.document.object_count),
+                "FCStd source object count",
+            )?,
+        ),
+        (
+            "document_kind",
+            ctx.copy_retained_text(scan.document.document_kind().as_str(), "FCStd source kind")?,
+        ),
+        (
+            "application_domains",
+            ctx.join_retained(&scan.document.domains, ",", "FCStd source domain list")?,
+        ),
+        (
+            "archive_entry_count",
+            ctx.format_retained_with_work(
+                format_args!("{}", scan.entries.len()),
+                "FCStd source entry count",
+            )?,
+        ),
+        (
+            "physical_ledger_spans",
+            ctx.format_retained_with_work(
+                format_args!("{}", scan.ledger.len()),
+                "FCStd source ledger spans",
+            )?,
+        ),
+    ]
+    .into_iter()
+    .chain(
+        scan.ledger
+            .last()
+            .map(|last| {
+                Ok::<_, CodecError>((
+                    "physical_archive_bytes",
+                    ctx.format_retained_with_work(
+                        format_args!("{}", last.span.end()),
+                        "FCStd source archive bytes",
+                    )?,
+                ))
+            })
+            .transpose()?,
+    )
+    .chain(
+        scan.document
+            .program_version
+            .as_ref()
+            .map(|value| {
+                Ok::<_, CodecError>((
+                    "program_version",
+                    ctx.copy_retained_text(value, "FCStd source program version")?,
+                ))
+            })
+            .transpose()?,
     ) {
-        ctx.admit_retained_btree_record::<NonBlankString, String>(key.len(), "FCStd source attribute records")?;
-        let key = NonBlankString::new(DecodeContext::copy_admitted_text(key, "FCStd source attribute key")?)
-            .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
+        ctx.admit_retained_btree_record::<NonBlankString, String>(
+            key.len(),
+            "FCStd source attribute records",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(key.len()),
+            "FCStd source attribute key",
+        )?;
+        let key = NonBlankString::new(DecodeContext::copy_admitted_text(
+            key,
+            "FCStd source attribute key",
+        )?)
+        .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
         attributes.insert(key, value);
     }
     Ok(attributes)
@@ -245,31 +324,39 @@ pub(crate) fn summary_notes(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<Vec<String>, CodecError> {
-    let mut notes = ctx.retained_vec(6 + usize::from(scan.document.program_version.is_some()), "FCStd summary notes")?;
+    let mut notes = ctx.retained_vec(
+        6 + usize::from(scan.document.program_version.is_some()),
+        "FCStd summary notes",
+    )?;
     notes.extend([
-        ctx.retained_suffix("SchemaVersion=", &scan.schema_version, "FCStd schema note")?,
-        ctx.retained_suffix(
-            "FileVersion=",
-            scan.document.file_version.as_str(),
+        ctx.format_retained_with_work(
+            format_args!("SchemaVersion={}", scan.schema_version),
+            "FCStd schema note",
+        )?,
+        ctx.format_retained_with_work(
+            format_args!("FileVersion={}", scan.document.file_version.as_str()),
             "FCStd file version note",
         )?,
-        ctx.retained_suffix(
-            "document root=",
-            &scan.document.root_name,
+        ctx.format_retained_with_work(
+            format_args!("document root={}", scan.document.root_name),
             "FCStd document root note",
         )?,
-        ctx.retained_suffix(
-            "document kind=",
-            scan.document.document_kind().as_str(),
+        ctx.format_retained_with_work(
+            format_args!("document kind={}", scan.document.document_kind().as_str()),
             "FCStd document kind note",
         )?,
-        ctx.format_retained(format_args!("object count={}", scan.document.object_count), "FCStd object count note")?,
-        ctx.format_retained(format_args!("physical ledger spans={} coverage=exact", scan.ledger.len()), "FCStd physical ledger note")?,
+        ctx.format_retained_with_work(
+            format_args!("object count={}", scan.document.object_count),
+            "FCStd object count note",
+        )?,
+        ctx.format_retained_with_work(
+            format_args!("physical ledger spans={} coverage=exact", scan.ledger.len()),
+            "FCStd physical ledger note",
+        )?,
     ]);
     if let Some(version) = &scan.document.program_version {
-        notes.push(ctx.retained_suffix(
-            "ProgramVersion=",
-            version,
+        notes.push(ctx.format_retained_with_work(
+            format_args!("ProgramVersion={version}"),
             "FCStd program version note",
         )?);
     }
@@ -533,8 +620,7 @@ pub(crate) fn logical_ledger(
     }
     let mut output = Vec::new();
     for entry in entries {
-        if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name())
-        {
+        if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name()) {
             push_logical_span(
                 ctx,
                 &mut output,

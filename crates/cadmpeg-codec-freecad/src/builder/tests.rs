@@ -83,7 +83,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         entries
             .iter()
             .find(|entry| entry.name() == "Payload.bin")
-            .map(|entry| entry.data()),
+            .map(crate::native::EntryRecord::data),
         Some(b"edited payload".as_slice())
     );
 }

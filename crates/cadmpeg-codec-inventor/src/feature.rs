@@ -1549,7 +1549,12 @@ fn project_fillet(
             return None;
         }
         let radius = cadmpeg_ir::scalar::PositiveLength::new(
-            length_reference(source.identity.segment_token.as_str(), radius.index(), index)?.get(),
+            length_reference(
+                source.identity.segment_token.as_str(),
+                radius.index(),
+                index,
+            )?
+            .get(),
         )?;
         if let Err(error) = ctx.charge_collection_items(1, "collect Inventor fillet group") {
             return Some(Err(error));
@@ -2522,7 +2527,8 @@ mod tests {
     }
 
     fn reference(index: u32) -> crate::pmdc::PmDcReference {
-        crate::pmdc::PmDcReference::new(index, index != 0).expect("test reference index fits 31 bits")
+        crate::pmdc::PmDcReference::new(index, index != 0)
+            .expect("test reference index fits 31 bits")
     }
 
     fn reference_list(values: &[u32]) -> PmDcReferenceList {
@@ -2555,7 +2561,8 @@ mod tests {
                 header: test_header(),
                 kind,
             },
-            crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}")).expect("test GUID"),
+            crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
+                .expect("test GUID"),
             &segment(),
             ordinal,
         )
@@ -2666,7 +2673,10 @@ mod tests {
                 tolerance: 0,
                 terminal_value: 0,
             },
-            crate::record_identity::RecordTypeId::try_from("264d8790d011f8d10008cabc0663dc09".to_owned()).expect("test GUID"),
+            crate::record_identity::RecordTypeId::try_from(
+                "264d8790d011f8d10008cabc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             &segment(),
             ordinal,
         )
@@ -3269,7 +3279,10 @@ mod tests {
                 values: [0; 2],
                 auxiliary: None,
             },
-            crate::record_identity::RecordTypeId::try_from("114d8790d011f8d10008cabc0663dc09".to_owned()).expect("test GUID"),
+            crate::record_identity::RecordTypeId::try_from(
+                "114d8790d011f8d10008cabc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             &segment(),
             50,
         );
@@ -3301,7 +3314,10 @@ mod tests {
                     cadmpeg_ir::scalar::FiniteReal::ONE,
                 ],
             },
-            crate::record_identity::RecordTypeId::try_from("40df52ced011d0d20008ccbc0663dc09".to_owned()).expect("test GUID"),
+            crate::record_identity::RecordTypeId::try_from(
+                "40df52ced011d0d20008ccbc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             &segment(),
             60,
         );
@@ -3485,7 +3501,10 @@ mod tests {
                 )
                 .expect("finite explicit matrix fixture"),
             },
-            crate::record_identity::RecordTypeId::try_from("184d8790d011f8d10008cabc0663dc09".to_owned()).expect("test GUID"),
+            crate::record_identity::RecordTypeId::try_from(
+                "184d8790d011f8d10008cabc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             &segment(),
             60,
         );
@@ -3502,7 +3521,10 @@ mod tests {
                     cadmpeg_ir::scalar::FiniteReal::ONE.negated(),
                 ],
             },
-            crate::record_identity::RecordTypeId::try_from("40df52ced011d0d20008ccbc0663dc09".to_owned()).expect("test GUID"),
+            crate::record_identity::RecordTypeId::try_from(
+                "40df52ced011d0d20008ccbc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             &segment(),
             61,
         );
@@ -3823,7 +3845,8 @@ mod tests {
             id: &'static str,
             value: &'a PmDcFeatureLabelPayload,
         }
-        let reference = crate::pmdc::PmDcReference::new(1, false).expect("test reference index fits 31 bits");
+        let reference =
+            crate::pmdc::PmDcReference::new(1, false).expect("test reference index fits 31 bits");
         let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
             save_version_major: 16,
             header: PmDcLinkedHeader {

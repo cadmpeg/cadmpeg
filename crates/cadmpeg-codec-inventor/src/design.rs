@@ -812,9 +812,12 @@ fn render_expression<'a>(
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {
-                let unit = resolve_unit(token, expression.unit.index(), units).ok_or_else(|| {
-                    CodecError::Malformed("Inventor expression unit changed during render".into())
-                })?;
+                let unit =
+                    resolve_unit(token, expression.unit.index(), units).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "Inventor expression unit changed during render".into(),
+                        )
+                    })?;
                 let scalar = plan.lengths[&ordinal].scalar.ok_or_else(|| {
                     CodecError::Malformed("Inventor measured expression scalar is missing".into())
                 })?;
@@ -920,7 +923,8 @@ impl ExpressionRenderPlan<'_, '_> {
         self.visiting.insert(ordinal);
         let measured = match &expression.kind {
             PmDcExpressionKind::Value { value, .. } => {
-                let Some(unit) = resolve_unit(self.token, expression.unit.index(), self.units) else {
+                let Some(unit) = resolve_unit(self.token, expression.unit.index(), self.units)
+                else {
                     return Ok(None);
                 };
                 if unit.scale_to_internal.get() == 0.0 {
