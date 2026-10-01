@@ -422,6 +422,16 @@ pub(super) fn decode(
             kind!("occurrence"),
             key_word!("definition").dash(definition),
         ));
+        let occurrence_cap = occurrence_limit(ctx);
+        if ir.model.occurrences.len() >= occurrence_cap {
+            return Err(ctx.refuse_codec_limit(
+                "step_assembly_occurrence_limit",
+                u64_from_index(occurrence_cap),
+                u64_from_index(ir.model.occurrences.len()).checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("step_assembly_occurrence_limit", u64::MAX, u64::MAX)
+                })?,
+            ));
+        }
         ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_root_occurrence_items")?;
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
@@ -512,7 +522,7 @@ pub(super) fn decode(
         grouped.push(usage_id);
     }
     let had_roots = !pending_occurrences.is_empty();
-    'expansion: while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
+    while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
         for &usage_id in usages_by_parent
             .get(&parent_definition)
             .into_iter()
@@ -564,11 +574,13 @@ pub(super) fn decode(
             ));
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
-                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "assembly occurrence expansion exceeds the {occurrence_cap}-occurrence limit"
-                )));
-                break 'expansion;
+                return Err(ctx.refuse_codec_limit(
+                    "step_assembly_occurrence_limit",
+                    u64_from_index(occurrence_cap),
+                    u64_from_index(ir.model.occurrences.len()).checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("step_assembly_occurrence_limit", u64::MAX, u64::MAX)
+                    })?,
+                ));
             }
             if !child_ordinals.contains_key(&parent) {
                 ctx.charge_collection_items(1, "step_child_occurrence_ordinals")?;
