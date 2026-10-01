@@ -4,7 +4,7 @@ use super::*;
 use cadmpeg_core::CodecError;
 
 #[test]
-fn sketch_nurbs_point_refuses_pole_copy_limit() {
+fn sketch_nurbs_point_refuses_polynomial_input_copy_limit() {
     let curve = PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -20,11 +20,11 @@ fn sketch_nurbs_point_refuses_pole_copy_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == "f3d nurbs evaluator poles"));
+        if limit.operation == "f3d nurbs evaluator input"));
 }
 
 #[test]
-fn sketch_nurbs_point_refuses_weight_copy_limit() {
+fn sketch_nurbs_point_refuses_rational_input_copy_limit() {
     let curve = PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -40,7 +40,7 @@ fn sketch_nurbs_point_refuses_weight_copy_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == "f3d nurbs evaluator weights"));
+        if limit.operation == "f3d nurbs evaluator input"));
 }
 
 #[test]
@@ -167,4 +167,22 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
         crate::design::dimensions::exact_coincident_loci(&[&nurbs, &point], &ctx),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
     ));
+}
+
+#[test]
+fn sketch_nurbs_point_preserves_caller_scratch_refusal() {
+    let curve = PcurveNurbs::from_lanes(
+        3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(2.0, 0.0), Point2::new(3.0, 0.0)],
+        None, false,
+    ).unwrap();
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let error = super::super::sketch_geometry_point(&geometry, 0.5, ctx).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && ctx.resource_refusal() == Some(limit)));
+    });
 }

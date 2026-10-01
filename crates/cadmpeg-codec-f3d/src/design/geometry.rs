@@ -1476,14 +1476,16 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
-                curve.degree(),
-                curve.knots(),
-                &control_points,
-                weights.as_deref(),
-                parameter,
-            ))?
+            let copies = cadmpeg_core::decode::u64_from_index(curve.knots().len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(curve.pole_rows().count()))
+                .ok_or_else(|| ctx.refuse_codec_limit("f3d nurbs evaluator input", 0, u64::MAX))?;
+            ctx.charge_work(copies, "copy f3d nurbs evaluator input")?;
+            let geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+                nurbs: curve.try_clone_for_decode(ctx, "f3d nurbs evaluator input")?,
+            };
+            cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, parameter)?,
+            )?
             .map(Point2::from)
         }
         _ => None,
