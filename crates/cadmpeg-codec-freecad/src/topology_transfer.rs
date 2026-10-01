@@ -1514,6 +1514,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .compose(self.tables.location(representation.location())?)
             .map_err(location_transform_error)?;
         let scale = uniform_scale(carrier_transform)?;
+        let mut sample_storage = self
+            .ctx
+            .reserve_scoped(0, "FreeCAD polygon sample inputs")?;
         let IndexedPolygon {
             mut samples,
             deflection,
@@ -1522,14 +1525,23 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let polygon = &self.tables.polygons3d[polygon - 1];
                 IndexedPolygon::try_new(
                     self.ctx,
-                    self.ctx
-                        .copy_slice(&polygon.nodes, "FreeCAD standalone polygon nodes")?,
+                    if polygon.parameters.is_some() {
+                        sample_storage.with_storage(|| {
+                            self.ctx
+                                .copy_slice(&polygon.nodes, "FreeCAD standalone polygon nodes")
+                        })?
+                    } else {
+                        self.ctx
+                            .copy_slice(&polygon.nodes, "FreeCAD standalone polygon nodes")?
+                    },
                     polygon
                         .parameters
                         .as_ref()
                         .map(|parameters| {
-                            self.ctx
-                                .copy_slice(parameters, "FreeCAD standalone polygon parameters")
+                            sample_storage.with_storage(|| {
+                                self.ctx
+                                    .copy_slice(parameters, "FreeCAD standalone polygon parameters")
+                            })
                         })
                         .transpose()?,
                     polygon.deflection,

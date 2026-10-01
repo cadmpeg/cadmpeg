@@ -4350,7 +4350,12 @@ fn endpoint_candidates(
             }
         }
     }
-    ctx.sort_unstable_by(&mut matches, Ord::cmp, |_| 0, "FCStd profile candidate order")?;
+    ctx.sort_unstable_by(
+        &mut matches,
+        Ord::cmp,
+        |_| 0,
+        "FCStd profile candidate order",
+    )?;
     Ok(matches)
 }
 
@@ -7776,10 +7781,8 @@ fn pattern_definition(
                 cadmpeg_core::decode::u64_from_index(transformations.links().len()),
                 "freecad pattern stages",
             )?;
-            let mut stages = ctx.vector_storage(
-                transformations.links().len(),
-                "freecad pattern stages",
-            )?;
+            let mut stages =
+                ctx.vector_storage(transformations.links().len(), "freecad pattern stages")?;
             for link in transformations.links() {
                 let Some((object, owned)) = (|| {
                     let target = link.as_ref()?.object()?;

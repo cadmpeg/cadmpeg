@@ -24,7 +24,12 @@ fn persistence_object_identity_refuses_at_retained_limit() {
     assert_retained_operation(
         &parse_with_retained_limit(
             document,
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::ObjectRecord>() + "Body".len() + "Part::Feature".len() + id_len) - 1,
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<super::ObjectRecord>()
+                    + "Body".len()
+                    + "Part::Feature".len()
+                    + id_len,
+            ) - 1,
         ),
         "FreeCAD native identity",
     );
@@ -43,14 +48,22 @@ fn persistence_object_data_name_refuses_at_matching_retained_limit() {
     // Core XML admission keeps its tree bound live during graph construction.
     let xml = (2 * nodes + 4) * (128 + 64)
         + (2 * attributes + 16) * (128 * 2)
-        + (2 + 4) * (64 + 2) + (2 * nodes + 4) * 2
-        + (nodes + attributes + 1) * 32 + 8 * document.len() + 1024;
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(xml + lookup + "Body".len() - 1);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("source context");
-    assert!(matches!(super::parse_with_context(document.as_bytes(), "4", &ctx),
+        + (2 + 4) * (64 + 2)
+        + (2 * nodes + 4) * 2
+        + (nodes + attributes + 1) * 32
+        + 8 * document.len()
+        + 1024;
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(xml + lookup + "Body".len() - 1);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("source context");
+    assert!(
+        matches!(super::parse_with_context(document.as_bytes(), "4", &ctx),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "FCStd object data name"));
+                && limit.operation == "FCStd object data name")
+    );
 }
 
 #[test]
@@ -496,7 +509,11 @@ fn x63_nested_value_xml_charges_the_actual_copied_bytes() {
         &parse_with_retained_limit(
             document,
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::native::ValueRecord>())
-                + 1 + cadmpeg_core::decode::u64_from_index("App::PropertyString".len()) + 6 + 5 + 1,
+                + 1
+                + cadmpeg_core::decode::u64_from_index("App::PropertyString".len())
+                + 6
+                + 5
+                + 1,
         ),
         "FCStd value XML",
     );
@@ -517,7 +534,11 @@ fn x63_link_target_attribute_copy_is_charged() {
     assert_retained_operation(
         &parse_with_retained_limit(
             &document,
-            cadmpeg_core::decode::u64_from_index(prior_copies + std::mem::size_of::<crate::native::ValueRecord>() + std::mem::size_of::<Option<crate::native::LinkTarget>>()),
+            cadmpeg_core::decode::u64_from_index(
+                prior_copies
+                    + std::mem::size_of::<crate::native::ValueRecord>()
+                    + std::mem::size_of::<Option<crate::native::LinkTarget>>(),
+            ),
         ),
         "FCStd link object",
     );

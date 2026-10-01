@@ -25,14 +25,18 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<SemanticAnnotationRecord>, CodecError> {
+    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD annotation owner storage")?;
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.reserve_map(&mut by_owner, 1, "fcstd annotation owner index")?;
+            owner_storage.with_storage(|| {
+                ctx.reserve_map(&mut by_owner, 1, "fcstd annotation owner index")
+            })?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            ctx.reserve_vec(owned, 1, "fcstd annotation owner properties")?;
+            owner_storage
+                .with_storage(|| ctx.reserve_vec(owned, 1, "fcstd annotation owner properties"))?;
             owned.push(property);
         }
     }
@@ -43,8 +47,9 @@ pub(crate) fn transfer(
             let source = by_owner
                 .get(object.id.as_str())
                 .map_or(&[][..], Vec::as_slice);
-            let mut owned =
-                ctx.collection_vec(source.len(), "fcstd annotation selected properties")?;
+            let mut owned = owner_storage.with_storage(|| {
+                ctx.collection_vec(source.len(), "fcstd annotation selected properties")
+            })?;
             owned.extend_from_slice(source);
             ctx.stable_sort_by(
                 &mut owned,
@@ -133,17 +138,23 @@ pub(crate) fn transfer_neutral(
     properties: &[PropertyRecord],
     drawings: &[DrawingRecord],
 ) -> Result<(), CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD annotation neutral lookup")?;
     let mut drawing_ids = HashMap::new();
-    ctx.reserve_map(
-        &mut drawing_ids,
-        drawings.len(),
-        "fcstd annotation drawing index",
-    )?;
+    lookup_storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut drawing_ids,
+            drawings.len(),
+            "fcstd annotation drawing index",
+        )
+    })?;
     for drawing in drawings {
-        drawing_ids.insert(
-            drawing.object.as_str(),
-            crate::native::model_id_charged(ctx, "drawing", &drawing.object, "entity")?,
-        );
+        lookup_storage.with_storage(|| {
+            drawing_ids.insert(
+                drawing.object.as_str(),
+                crate::native::model_id_charged(ctx, "drawing", &drawing.object, "entity")?,
+            );
+            Ok::<_, CodecError>(())
+        })?;
     }
     for (order, record) in records.iter().enumerate() {
         let schema = annotation_schema(record.kind);
@@ -151,7 +162,8 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .count();
-        let mut owned = ctx.collection_vec(count, "fcstd neutral annotation properties")?;
+        let mut owned = lookup_storage
+            .with_storage(|| ctx.collection_vec(count, "fcstd neutral annotation properties"))?;
         owned.extend(
             properties
                 .iter()
@@ -900,16 +912,9 @@ pub(crate) mod tests {
             order: 0,
             data: None,
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::native_id("annotation", &object.name).len(),
-        ) - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::transfer(&ctx, &[object], &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD native identity"));
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+            super::transfer(ctx, std::slice::from_ref(&object), &[])
+        });
     }
 
     #[test]
@@ -969,18 +974,15 @@ pub(crate) mod tests {
             parameters: std::collections::BTreeMap::default(),
             side_entries: Vec::new(),
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::model_id("semantic-annotation", &record.object, "content").len(),
-        ) - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(
-            matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD model identity")
-        );
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD model identity", |ctx| {
+            super::transfer_neutral(
+                ctx,
+                &mut cadmpeg_ir::document::Model::default(),
+                std::slice::from_ref(&record),
+                &[],
+                &[],
+            )
+        });
     }
 
     #[test]

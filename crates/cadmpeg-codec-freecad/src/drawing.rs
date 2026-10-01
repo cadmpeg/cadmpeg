@@ -24,14 +24,17 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<DrawingRecord>, CodecError> {
+    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD drawing owner storage")?;
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.reserve_map(&mut by_owner, 1, "fcstd drawing owner index")?;
+            owner_storage
+                .with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd drawing owner index"))?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            ctx.reserve_vec(owned, 1, "fcstd drawing owner properties")?;
+            owner_storage
+                .with_storage(|| ctx.reserve_vec(owned, 1, "fcstd drawing owner properties"))?;
             owned.push(property);
         }
     }
@@ -43,7 +46,9 @@ pub(crate) fn transfer(
         let source = by_owner
             .get(object.id.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = ctx.collection_vec(source.len(), "fcstd drawing selected properties")?;
+        let mut owned = owner_storage.with_storage(|| {
+            ctx.collection_vec(source.len(), "fcstd drawing selected properties")
+        })?;
         owned.extend_from_slice(source);
         ensure_unique_property_names(ctx, &owned)?;
         let kind = if is_page_type(&object.type_name) {
@@ -134,30 +139,37 @@ pub(crate) fn transfer_neutral(
     records: &[DrawingRecord],
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD drawing neutral lookup")?;
     let mut neutral_ids = HashMap::new();
-    ctx.reserve_map(
-        &mut neutral_ids,
-        records.len(),
-        "fcstd drawing neutral identities",
-    )?;
+    lookup_storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut neutral_ids,
+            records.len(),
+            "fcstd drawing neutral identities",
+        )
+    })?;
     for record in records {
-        neutral_ids.insert(
-            record.object.as_str(),
-            DrawingId::mint(crate::native::model_id_charged(
-                ctx,
-                "drawing",
-                &record.object,
-                "entity",
-            )?)
-            .map_err(CodecError::malformed)?,
-        );
+        lookup_storage.with_storage(|| {
+            neutral_ids.insert(
+                record.object.as_str(),
+                DrawingId::mint(crate::native::model_id_charged(
+                    ctx,
+                    "drawing",
+                    &record.object,
+                    "entity",
+                )?)
+                .map_err(CodecError::malformed)?,
+            );
+            Ok::<_, CodecError>(())
+        })?;
     }
     for (order, record) in records.iter().enumerate() {
         let count = properties
             .iter()
             .filter(|property| property.owner == record.object)
             .count();
-        let mut owned = ctx.collection_vec(count, "fcstd neutral drawing properties")?;
+        let mut owned = lookup_storage
+            .with_storage(|| ctx.collection_vec(count, "fcstd neutral drawing properties"))?;
         owned.extend(
             properties
                 .iter()
