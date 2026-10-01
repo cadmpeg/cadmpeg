@@ -106,12 +106,18 @@ fn validate_value_root(
     property: &PropertyRecord,
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
-        Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("invalid geometry property XML {}: {error}", property.id),
-            "FreeCAD geometry XML error",
-        )?))
-    })?;
+    let admitted_document = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .or_else(|error| {
+            let CodecError::Malformed(error) = error else {
+                return Err(error);
+            };
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("invalid geometry property XML {}: {error}", property.id),
+                "FreeCAD geometry XML error",
+            )?))
+        })?;
+    let document = admitted_document.document();
     let mut roots = document
         .root_element()
         .children()
@@ -279,12 +285,18 @@ fn point_transform(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
-        Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("invalid point property XML {}: {error}", property.id),
-            "FreeCAD point XML error",
-        )?))
-    })?;
+    let admitted_document = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .or_else(|error| {
+            let CodecError::Malformed(error) = error else {
+                return Err(error);
+            };
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("invalid point property XML {}: {error}", property.id),
+                "FreeCAD point XML error",
+            )?))
+        })?;
+    let document = admitted_document.document();
     let Some(text) = document
         .root_element()
         .children()
@@ -687,15 +699,10 @@ pub(crate) mod tests {
     fn point_cloud_collection_limit_refuses_before_allocation() {
         let mut points = 1_u32.to_le_bytes().to_vec();
         points.extend_from_slice(&[0; 12]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
-            .expect("root points are within the input limit");
-        assert!(
-            matches!(parse_points(&ctx, &resource_test_property(), &points, 0, &mut 0),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD point-cloud points")
+        crate::test_support::assert_collection_refusal_at(
+            &points,
+            "FreeCAD point-cloud points",
+            |ctx| parse_points(ctx, &resource_test_property(), &points, 0, &mut 0),
         );
     }
 

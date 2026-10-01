@@ -97,9 +97,11 @@ fn string_table_value_word_refuses_on_collection_limit() {
 #[test]
 fn string_table_record_refuses_on_collection_limit() {
     let document = b"<Document><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\" new=\"1\"/><StringHasher2 count=\"0\"/></Document>";
-    let result = with_collection_limit(document, 0, |ctx| parse(ctx, document, 1, &[], &[]));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD string table records"));
+    crate::test_support::assert_collection_refusal_at(
+        document,
+        "FreeCAD string table records",
+        |ctx| parse(ctx, document, 1, &[], &[]),
+    );
 }
 
 #[test]

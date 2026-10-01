@@ -1095,9 +1095,14 @@ fn metadata_string(
     if property.type_name != "App::PropertyString" {
         return Ok(None);
     }
-    let Ok(document) = roxmltree::Document::parse(property.xml.text()) else {
-        return Ok(None);
+    let admitted_document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
+        Ok(tree) => tree,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => {
+            return Ok(None);
+        }
     };
+    let document = admitted_document.document();
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return Ok(None);

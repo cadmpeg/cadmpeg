@@ -1510,13 +1510,29 @@ fn scan_solidworks_envelopes<'a>(
         let Some(text) = admission.text(payload)? else {
             continue;
         };
-        let Ok(document) = roxmltree::Document::parse(&text.text) else {
-            continue;
+        let admitted;
+        let probe_document;
+        let document = match admission {
+            ScanAdmission::Decode(ctx) => {
+                admitted = match ctx.parse_xml(&text.text, "SLDPRT envelope XML tree") {
+                    Ok(tree) => tree,
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => continue,
+                };
+                admitted.document()
+            }
+            ScanAdmission::Probe => {
+                probe_document = match roxmltree::Document::parse(&text.text) {
+                    Ok(document) => document,
+                    Err(_) => continue,
+                };
+                &probe_document
+            }
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(admission, &document)?);
+                .merge(manifest_active_configuration_in(admission, document)?);
         }
         if root.tag_name().name().contains("Keywords") {
             for configuration in document
