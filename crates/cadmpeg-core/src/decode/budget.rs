@@ -793,6 +793,54 @@ impl<'a> WorkBudget<'a> {
         Ok(WorkBudgetRecursionGuard { account: WorkRecursionAccount::Independent(self) })
     }
 
+    /// Copy the active cycle path and admit one new frame slot.
+    /// The reservation covers the copied path until the frame leaves.
+    pub fn copy_recursion_path<T: Copy>(
+        &self,
+        path: &[T],
+    ) -> Result<(Vec<T>, super::work_scratch::WorkScratch<'a>), ResourceLimit> {
+        const OPERATION: &str = "model evaluation cycle path";
+        let capacity = path.len().checked_add(1).ok_or_else(|| ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::BudgetExceeded,
+            limit: u64::MAX,
+            used: u64_from_index(path.len()),
+            additional: 1,
+            operation: OPERATION,
+        })?;
+        let bytes = u64_from_index(capacity)
+            .checked_mul(u64_from_index(std::mem::size_of::<T>()))
+            .ok_or_else(|| ResourceLimit {
+                dimension: ResourceDimension::MaterializedBytes,
+                reason: ResourceFailure::BudgetExceeded,
+                limit: u64::MAX,
+                used: 0,
+                additional: u64::MAX,
+                operation: OPERATION,
+            })?;
+        if let Some(session) = self.session {
+            session.charge_collection_items_limit(u64_from_index(capacity), OPERATION)?;
+            // Copy each path member and compare it once when binding the frame.
+            session.charge_work_limit(bytes.checked_add(u64_from_index(path.len())).ok_or_else(|| {
+                session.refuse_limit(ResourceDimension::WorkUnits, ResourceFailure::BudgetExceeded,
+                    u64::MAX, bytes, u64_from_index(path.len()), OPERATION)
+            })?, OPERATION)?;
+        }
+        let storage = self.reserve_scratch(bytes, OPERATION)?;
+        let mut copied = Vec::new();
+        copied.try_reserve_exact(capacity).map_err(|_| match self.session {
+            Some(session) => session.refuse_limit(
+                ResourceDimension::MaterializedBytes,
+                ResourceFailure::AllocationFailed,
+                session.materialized_allowance(),
+                session.materialized.get(), bytes, OPERATION),
+            None => ResourceLimit::allocation_failed(
+                ResourceDimension::MaterializedBytes, bytes, bytes, OPERATION),
+        })?;
+        copied.extend_from_slice(path);
+        Ok((copied, storage))
+    }
+
     /// Creates an independent child slice capped by this budget's remainder.
     pub fn child_slice(&self, limit: usize) -> WorkBudget<'static> {
         WorkBudget::new(limit.min(self.remaining()))

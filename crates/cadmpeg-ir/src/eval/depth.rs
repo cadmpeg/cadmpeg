@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared depth account for recursive model evaluation.
+//! Session depth and distinct cycle admission for model evaluation.
 
 use std::cell::{Cell, RefCell};
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit, WorkBudget, WorkBudgetRecursionGuard};
+
+use cadmpeg_core::decode::work_scratch::WorkScratch;
 
 use super::EvaluationFailure;
 use crate::geometry::{Curve, Surface};
 use crate::math::Point3;
 
-const MAX_MODEL_EVALUATION_DEPTH: usize = 256;
+const INDEPENDENT_MODEL_EVALUATION_DEPTH: usize = 256;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ModelEvaluationIdentity {
@@ -18,80 +20,122 @@ pub(super) enum ModelEvaluationIdentity {
 }
 
 thread_local! {
-    static MODEL_EVALUATION_DEPTH: Cell<usize> = const { Cell::new(0) };
-    static MODEL_EVALUATION_DEPTH_EXCEEDED: Cell<bool> = const { Cell::new(false) };
-    static MODEL_EVALUATION_IDENTITIES: RefCell<[Option<ModelEvaluationIdentity>; MAX_MODEL_EVALUATION_DEPTH]> =
-        const { RefCell::new([None; MAX_MODEL_EVALUATION_DEPTH]) };
+    static MODEL_EVALUATION_CYCLE: Cell<bool> = const { Cell::new(false) };
+    static MODEL_EVALUATION_REFUSAL: Cell<Option<ResourceLimit>> = const { Cell::new(None) };
+    static MODEL_EVALUATION_IDENTITIES: RefCell<Vec<Option<ModelEvaluationIdentity>>> = const { RefCell::new(Vec::new()) };
 }
 
-/// One curve or surface carrier frame in the current thread's model walk.
-pub(super) struct ModelEvaluationDepthGuard {
-    slot: usize,
+/// One carrier frame and the temporary identity path it owns.
+pub(super) struct ModelEvaluationDepthGuard<'budget, 'session> {
+    previous: Vec<Option<ModelEvaluationIdentity>>,
+    _depth: Option<WorkBudgetRecursionGuard<'budget, 'session>>,
+    _storage: WorkScratch<'session>,
 }
 
-impl ModelEvaluationDepthGuard {
-    pub(super) fn enter(budget: Option<&WorkBudget<'_>>) -> Option<Self> {
-        MODEL_EVALUATION_DEPTH.with(|depth| {
-            let current = depth.get();
-            if current == 0 {
-                MODEL_EVALUATION_DEPTH_EXCEEDED.with(|exceeded| exceeded.set(false));
+impl<'budget, 'session> ModelEvaluationDepthGuard<'budget, 'session> {
+    pub(super) fn enter(budget: Option<&'budget WorkBudget<'session>>) -> Result<Self, ResourceLimit> {
+        let result = MODEL_EVALUATION_IDENTITIES.with(|identities| {
+            let mut identities = identities.borrow_mut();
+            if identities.is_empty() {
+                MODEL_EVALUATION_CYCLE.with(|cycle| cycle.set(false));
+                MODEL_EVALUATION_REFUSAL.with(|refusal| refusal.set(None));
             }
-            if current >= MAX_MODEL_EVALUATION_DEPTH {
-                MODEL_EVALUATION_DEPTH_EXCEEDED.with(|exceeded| exceeded.set(true));
-                if let Some(budget) = budget {
-                    budget.exhaust();
+            let depth = if let Some(budget) = budget {
+                Some(budget.recursion_guard()?)
+            } else {
+                if identities.len() >= INDEPENDENT_MODEL_EVALUATION_DEPTH {
+                    return Err(ResourceLimit {
+                        dimension: ResourceDimension::RecursionDepth,
+                        reason: ResourceFailure::BudgetExceeded,
+                        limit: cadmpeg_core::decode::u64_from_index(INDEPENDENT_MODEL_EVALUATION_DEPTH),
+                        used: cadmpeg_core::decode::u64_from_index(identities.len()),
+                        additional: 1,
+                        operation: "independent model evaluation recursion",
+                    });
                 }
                 None
-            } else {
-                depth.set(current + 1);
-                Some(Self { slot: current })
-            }
+            };
+            let (mut current, storage) = match budget {
+                Some(budget) => budget.copy_recursion_path(&identities)?,
+                None => WorkBudget::new(usize::MAX).copy_recursion_path(&identities)?,
+            };
+            current.push(None);
+            let previous = std::mem::replace(&mut *identities, current);
+            Ok(Self { previous, _depth: depth, _storage: storage })
+        });
+        result.map_err(|limit| {
+            MODEL_EVALUATION_REFUSAL.with(|refusal| {
+                if refusal.get().is_none() { refusal.set(Some(limit)); }
+            });
+            limit
         })
     }
 
-    /// Refuse a carrier reached again in the current model evaluation.
-    pub(super) fn bind(
-        &self,
-        identity: ModelEvaluationIdentity,
-        budget: Option<&WorkBudget<'_>>,
-    ) -> bool {
-        let repeated = MODEL_EVALUATION_IDENTITIES.with(|identities| {
-            let mut identities = identities.borrow_mut();
-            if identities[..self.slot].contains(&Some(identity)) {
-                true
-            } else {
-                identities[self.slot] = Some(identity);
-                false
-            }
-        });
+    /// A repeated carrier is a cycle, independent of the session depth limit.
+    pub(super) fn bind(&self, identity: ModelEvaluationIdentity, budget: Option<&WorkBudget<'_>>) -> bool {
+        let repeated = self.previous.contains(&Some(identity));
         if repeated {
-            MODEL_EVALUATION_DEPTH_EXCEEDED.with(|exceeded| exceeded.set(true));
-            if let Some(budget) = budget {
-                budget.exhaust();
-            }
+            MODEL_EVALUATION_CYCLE.with(|cycle| cycle.set(true));
+            if let Some(budget) = budget { budget.exhaust(); }
+        } else {
+            MODEL_EVALUATION_IDENTITIES.with(|identities| {
+                if let Some(slot) = identities.borrow_mut().last_mut() { *slot = Some(identity); }
+            });
         }
         !repeated
     }
 
-    /// A depth refusal in a nested arm exhausts its enclosing work slice.
-    pub(super) fn finish_budgeted<T>(
-        budget: &WorkBudget<'_>,
-        result: Result<T, EvaluationFailure<Point3>>,
-    ) -> Result<T, EvaluationFailure<Point3>> {
-        if MODEL_EVALUATION_DEPTH_EXCEEDED.with(Cell::get) {
+    /// Preserve the first resource refusal across evaluator fallback branches.
+    pub(super) fn finish_budgeted<T>(budget: &WorkBudget<'_>, result: Result<T, EvaluationFailure<Point3>>) -> Result<T, EvaluationFailure<Point3>> {
+        if let Some(limit) = MODEL_EVALUATION_REFUSAL.with(Cell::get) {
+            Err(EvaluationFailure::ResourceLimit(limit))
+        } else if MODEL_EVALUATION_CYCLE.with(Cell::get) {
             budget.exhaust();
             Err(EvaluationFailure::NoValue)
-        } else {
-            result
-        }
+        } else { result }
     }
 }
 
-impl Drop for ModelEvaluationDepthGuard {
+impl Drop for ModelEvaluationDepthGuard<'_, '_> {
     fn drop(&mut self) {
         MODEL_EVALUATION_IDENTITIES.with(|identities| {
-            identities.borrow_mut()[self.slot] = None;
+            drop(std::mem::replace(&mut *identities.borrow_mut(), std::mem::take(&mut self.previous)));
         });
-        MODEL_EVALUATION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ModelEvaluationDepthGuard, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    #[test]
+    fn model_depth_preserves_the_zero_session_refusal() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let budget = ctx.work_budget(100);
+        let Err(limit) = ModelEvaluationDepthGuard::enter(Some(&budget)) else { panic!("zero session depth must refuse"); };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(limit.limit, 0);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+    }
+
+    #[test]
+    fn attached_model_depth_uses_the_session_ceiling_above_256() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 300;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let budget = ctx.work_budget(100_000);
+        let mut guards = Vec::new();
+        for _ in 0..300 { guards.push(ModelEvaluationDepthGuard::enter(Some(&budget)).unwrap()); }
+        let Err(limit) = ModelEvaluationDepthGuard::enter(Some(&budget)) else { panic!("session ceiling must refuse"); };
+        assert_eq!(limit.limit, 300);
+        assert_eq!(limit.used, 300);
+        while let Some(guard) = guards.pop() { drop(guard); }
     }
 }
