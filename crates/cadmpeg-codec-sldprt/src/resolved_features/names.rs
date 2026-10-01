@@ -80,43 +80,20 @@ pub(crate) fn object_names(
 ) -> Result<Vec<FeatureInputName>, cadmpeg_core::CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut names = Vec::new();
-    for (ordinal, (offset, object_id, units)) in payload_names(payload).enumerate() {
-        let mut length = 0usize;
-        let mut valid = true;
-        for character in std::char::decode_utf16(utf16_units(units)) {
-            let Ok(character) = character else {
-                valid = false;
-                break;
-            };
-            let Some(next) = length.checked_add(character.len_utf8()) else {
-                return Err(ctx.refuse_codec_limit(
-                    "retain SLDPRT feature input name",
-                    u64::MAX - 1,
-                    u64::MAX,
-                ));
-            };
-            length = next;
-        }
-        if !valid {
+    ctx.charge_work(u64_from_index(payload.len()), "scan SLDPRT feature input names")?;
+    for (offset, object_id, units) in payload_name_candidates(payload) {
+        let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(units, units.len() / 2, false, "decode SLDPRT feature input name") {
+            Ok(text) => text,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
+            Err(error) => return Err(error),
+        };
+        ctx.charge_work(u64_from_index(decoded.len()), "validate SLDPRT feature input name")?;
+        if decoded.chars().any(char::is_control) {
             continue;
         }
-        let mut value = String::new();
-        crate::text_admission::reserve_retained_string(
-            ctx,
-            &mut value,
-            length,
-            "retain SLDPRT feature input name",
-        )?;
-        for character in std::char::decode_utf16(utf16_units(units)) {
-            let Ok(character) = character else {
-                valid = false;
-                break;
-            };
-            value.push(character);
-        }
-        if !valid {
-            continue;
-        }
+        let ordinal = names.len();
+        ctx.charge_work(u64_from_index(decoded.len()), "retain SLDPRT feature input name")?;
+        let value = ctx.copy_retained_text(&decoded, "retain SLDPRT feature input name")?;
         let id = record_id(ctx, "name", lane_key, offset)?;
         let parent = retained_text(ctx, parent, "retain SLDPRT feature input name parent")?;
         let ordinal = u32::try_from(ordinal).map_err(|_| {
@@ -153,7 +130,7 @@ pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
     (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
-fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+fn payload_name_candidates(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
     let mut name_marker = [0; 5];
     name_marker.copy_from_slice(NAME_MARKER);
     if let Some(token) = name_class_token(payload) {
@@ -171,19 +148,18 @@ fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId
             let start = offset + NAME_MARKER.len() + 1;
             let end = start.checked_add(length.checked_mul(2)?)?;
             let units = payload.get(start..end)?;
-            let value = std::char::decode_utf16(utf16_units(units));
-            if value.into_iter().any(|character| match character {
-                Ok(character) => character.is_control(),
-                Err(_) => true,
-            }) {
-                return None;
-            }
             let object_id = end
                 .checked_add(8)
                 .and_then(|position| View::u32_le_at(payload, position))
                 .and_then(|value| ObjectId::try_from(value).ok());
             Some((offset, object_id, units))
         })
+}
+
+fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+    payload_name_candidates(payload).filter(|(_, _, units)| {
+        std::char::decode_utf16(utf16_units(units)).all(|character| character.is_ok_and(|character| !character.is_control()))
+    })
 }
 
 fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {

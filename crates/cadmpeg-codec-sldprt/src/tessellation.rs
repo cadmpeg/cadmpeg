@@ -827,33 +827,16 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
-        let mut units = Vec::new();
-        ctx.reserve_collection_vec(&mut units, count, "decode display-list reference units")?;
-        for (index, _) in raw.chunks_exact(2).enumerate() {
-            let Some(unit) = View::u16_le_at(raw, index * 2) else {
-                break;
-            };
-            units.push(unit);
-        }
-        if units.len() != count {
-            at = end;
-            continue;
-        }
-        let (mut text, _text_reservation) =
-            ctx.reserve_scoped_text(count * 3, "decode display-list reference text")?;
-        let mut malformed_text = false;
-        for character in std::char::decode_utf16(units) {
-            if let Ok(character) = character {
-                text.push(character);
-            } else {
-                malformed_text = true;
-                break;
+        let (text, _text_reservation) = match ctx.utf16le_scoped_text(raw, count, false, "decode display-list reference text") {
+            Ok(text) => text,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => {
+                at = end;
+                continue;
             }
-        }
-        if malformed_text {
-            at = end;
-            continue;
-        }
+            Err(error) => return Err(error),
+        };
+        let parse_work = text.len().checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit("parse display-list reference text", 0, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(parse_work), "parse display-list reference text")?;
         let mut fields = text.trim().split(',');
         let Some(_class_name) = fields
             .next()
