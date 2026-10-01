@@ -379,7 +379,7 @@ fn a_revolution_frame_admitted_when_read_converts_to_a_torus_without_a_second_ax
     let bindings = with_admission(|admission| {
         super::super::append_consolidated_revolutions(
             &mut CadIr::empty(),
-            &mut AnnotationBuilder::default(),
+            &mut AnnotationBuilder::<()>::default(),
             &resolved,
             admission,
         )
@@ -432,7 +432,7 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
         with_admission(|admission| {
             super::super::append_consolidated_revolutions(
                 &mut CadIr::empty(),
-                &mut AnnotationBuilder::default(),
+                &mut AnnotationBuilder::<()>::default(),
                 &resolved,
                 admission,
             )

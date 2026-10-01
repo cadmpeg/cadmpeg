@@ -472,7 +472,7 @@ pub(super) struct EmittedFaceInputs<'a> {
 /// face with its loops and coedges, closing radial-next rings by shared edge.
 pub(super) fn emit_faces(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     plan: &TransferPlan,
     emitted: &EmittedFaceInputs<'_>,

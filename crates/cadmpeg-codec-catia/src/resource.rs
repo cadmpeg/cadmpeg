@@ -162,7 +162,7 @@ pub(crate) fn push_loss(
 
 pub(crate) fn derived_annotation(
     ctx: &DecodeContext<'_>,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     id: impl std::fmt::Display,
     field: &str,
     operation: &'static str,

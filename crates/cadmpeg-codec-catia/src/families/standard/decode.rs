@@ -103,7 +103,7 @@ const NURBS_LINE_FACE_SAMPLES: [f64; 3] = [0.25, 0.5, 0.75];
 fn bind_consolidated_revolution_faces_and_seams(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     revolutions: &[ConsolidatedRevolutionBinding],
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     const TOLERANCE: f64 = 2e-3;
@@ -1258,7 +1258,7 @@ mod consolidated_analytic_refinement_tests {
 fn attach_free_vertices(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if ir.model.vertices.is_empty() {
@@ -1337,7 +1337,7 @@ fn attach_free_vertices(
 /// Materialize one exact object-stream support surface once.
 fn standard_extrusion_support_id(
     ctx: &DecodeContext<'_>,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surfaces: &mut Vec<Surface>,
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     surface_object_id: u32,
@@ -1381,7 +1381,7 @@ fn standard_extrusion_support_id(
 fn emit_standard_extrusion_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     (surfaces, procedural_supports): (&mut Vec<Surface>, &mut HashMap<u32, SurfaceId>),
     extrusion_definitions: &mut HashMap<
         u32,
@@ -3073,7 +3073,7 @@ fn try_decode_standard_population(
         admitted!(annotate(ctx, &mut annotations, &id, stream, u64_from_index(offset), tag, exactness));
     }
     let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
-    let mut topology_annotations = admitted!(annotations.try_clone_for_decode(ctx, "catia_standard_topology_annotations"));
+    let mut topology_annotations = admitted!(annotations.copy_transaction(ctx, "catia_standard_topology_annotations"));
     match attach_standard_faces(
         ctx,
         &mut topology_ir,
@@ -3104,7 +3104,7 @@ fn try_decode_standard_population(
     let topology_attached = topology_failure.is_none();
     if topology_attached {
         ir = topology_ir;
-        annotations = topology_annotations;
+        annotations = admitted!(topology_annotations.into_retained());
     } else {
         // The candidate adds only topology and native edge-support carriers.
         // Restore the source carriers for the analytic fallback by discarding
@@ -4417,7 +4417,7 @@ fn merge_standard_evidence_part<T: PartialEq>(
 fn attach_standard_faces(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -4589,7 +4589,7 @@ fn attach_standard_faces(
 fn partition_standard_face_components(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     components: &[Vec<usize>],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -5212,10 +5212,9 @@ struct AttachStandardTopologyInputs<
     'input16,
     'input17,
     'input18,
-    'input19,
-> {
+    'input19, AnnotationAccount> {
     ir: &'input0 mut CadIr,
-    annotations: &'input1 mut AnnotationBuilder,
+    annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     bindings: &'input2 [(SurfaceId, bool, usize)],
     records: &'input3 [crate::families::standard::records::StandardSurfaceRecord],
     face_bounds: &'input4 [Option<crate::families::standard::records::StandardFaceBounds>],
@@ -5258,7 +5257,7 @@ fn attach_standard_topology(
         '_,
         '_,
         '_,
-    >,
+    impl cadmpeg_ir::annotations::AnnotationStorage, >,
 ) -> Result<(), StandardTopologyError> {
     let AttachStandardTopologyInputs {
         ir,
@@ -7035,7 +7034,7 @@ struct StandardTopologyValidation<'a> {
 fn validate_standard_topology(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     topology: &mut crate::families::standard::topology::StandardTopology,
     point_assignment: &[usize],
     validation: StandardTopologyValidation<'_>,
@@ -7220,10 +7219,9 @@ struct EmitStandardTopologyInputs<
     'input13,
     'input14,
     'input15,
-    'input16,
-> {
+    'input16, AnnotationAccount> {
     ir: &'input0 mut CadIr,
-    annotations: &'input1 mut AnnotationBuilder,
+    annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     bindings: &'input2 [(SurfaceId, bool, usize)],
     brep: &'input3 [u8],
     surface_indices: &'input4 HashMap<SurfaceId, usize>,
@@ -7258,7 +7256,7 @@ fn emit_standard_topology(
         '_,
         '_,
         '_,
-    >,
+    impl cadmpeg_ir::annotations::AnnotationStorage, >,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let EmitStandardTopologyInputs {
         ir,
@@ -9488,7 +9486,7 @@ struct StandardConsolidatedSource<'a> {
 fn bind_standard_a5_owner_surfaces(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     source: StandardConsolidatedSource<'_>,
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget<'_>,

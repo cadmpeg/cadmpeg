@@ -128,7 +128,7 @@ fn closed_wire_loop_members<'a>(
 fn append_oriented_wire_curve(
     admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     curve_id: CurveId,
     geometry: CurveGeometry,
     source_pos: usize,
@@ -290,7 +290,7 @@ fn source_wire_procedural(
 fn transfer_closed_wire_loops(
     admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
@@ -1337,7 +1337,7 @@ pub(in crate::families) fn try_decode_zero_entity(
 
     let topology_counts = {
         let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
-        let mut candidate_annotations = admitted!(annotations.try_clone_for_decode(ctx, "catia_zero_topology_annotations"));
+        let mut candidate_annotations = admitted!(annotations.copy_transaction(ctx, "catia_zero_topology_annotations"));
         let topology_budget = ctx.work_budget(
             u64_from_index(crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS),
         );
@@ -1364,7 +1364,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         match counts {
             Ok(Some(counts)) if admissible => {
                 ir = candidate_ir;
-                annotations = candidate_annotations;
+                annotations = admitted!(candidate_annotations.into_retained());
                 Some(counts)
             }
             Err(error) => return Some(Err(error)),
