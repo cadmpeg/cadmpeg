@@ -942,3 +942,24 @@ fn external_reference_routes_refuse_unadmitted_names() {
         });
     }
 }
+
+#[test]
+fn external_reference_materialization_refuses_each_string_byte_pass() {
+    let text = "A".repeat(1000);
+    let mut bytes = vec![1];
+    bytes.extend(1u32.to_le_bytes());
+    bytes.extend(1000u16.to_le_bytes());
+    bytes.extend(text.as_bytes());
+    for (work_limit, operation) in [(3504, "read NX external reference UTF-8"), (4504, "nx external reference string")] {
+        crate::test_support::with_decode_context_over(&bytes,
+            |policy| policy.limits.max_work_units = work_limit,
+            |ctx| {
+                let error = super::parse_extref_string_table(ctx, &bytes).unwrap_err();
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+            });
+    }
+    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+        let (_, values) = super::parse_extref_string_table(ctx, &bytes).unwrap().unwrap();
+        assert_eq!(values, [(7, text)]);
+    });
+}

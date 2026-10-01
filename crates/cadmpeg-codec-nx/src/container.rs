@@ -869,11 +869,11 @@ fn parse_extref_string_table(
         let Some(raw) = payload.get(string_offset..end) else {
             return Ok(None);
         };
+        ctx.charge_work(u64_from_index(raw.len()), "read NX external reference UTF-8")?;
         let Ok(value) = std::str::from_utf8(raw) else {
             return Ok(None);
         };
-        let mut copy = ctx.retained_string(value.len(), "nx external reference string")?;
-        copy.push_str(value);
+        let copy = ctx.copy_retained_text(value, "nx external reference string")?;
         out.push((string_offset, copy));
         pos = end;
     }
