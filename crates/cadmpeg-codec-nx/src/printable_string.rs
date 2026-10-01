@@ -80,8 +80,14 @@ mod tests {
         for _ in 0..3 {
             assert_eq!(borrowed.as_str(), text);
             assert_eq!(owned.as_str(), text);
-            assert_eq!(serde_json::to_string(&borrowed).unwrap(), serde_json::to_string(text).unwrap());
-            assert_eq!(serde_json::to_string(&owned).unwrap(), serde_json::to_string(text).unwrap());
+            assert_eq!(
+                serde_json::to_string(&borrowed).unwrap(),
+                serde_json::to_string(text).unwrap()
+            );
+            assert_eq!(
+                serde_json::to_string(&owned).unwrap(),
+                serde_json::to_string(text).unwrap()
+            );
         }
     }
 }

@@ -50,8 +50,15 @@ pub(crate) struct Scan<'a> {
 
 impl Scan<'_> {
     /// Count streams with the requested classification.
-    pub(super) fn count(&self, ctx: &DecodeContext<'_>, kind: StreamKind) -> Result<usize, CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.streams.len()), "count NX streams")?;
+    pub(super) fn count(
+        &self,
+        ctx: &DecodeContext<'_>,
+        kind: StreamKind,
+    ) -> Result<usize, CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.streams.len()),
+            "count NX streams",
+        )?;
         Ok(self.streams.iter().filter(|s| s.kind() == kind).count())
     }
 
@@ -59,7 +66,10 @@ impl Scan<'_> {
     ///
     /// NX assemblies may contain only references to external child parts.
     pub(super) fn has_parasolid(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.streams.len()), "scan NX Parasolid streams")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.streams.len()),
+            "scan NX Parasolid streams",
+        )?;
         Ok(self.streams.iter().any(|s| s.kind().is_parasolid()))
     }
 }
@@ -92,8 +102,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
-        let (ir, annotations, unknowns, native_losses) =
-            build_metadata_ir(ctx, &scan, &dialects)?;
+        let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
         let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
         ctx.extend_vec(&mut body.losses, native_losses, "nx decode losses")?;
         report_untransferred_streams(ctx, &scan, &mut body, TypedNative::ContainerOnly)?;
@@ -111,8 +120,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
-    let (ir, annotations, unknowns, native_losses) =
-        build_metadata_ir(ctx, &scan, &dialects)?;
+    let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
     let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
     ctx.extend_vec(&mut body.losses, native_losses, "nx decode losses")?;
     report_untransferred_streams(ctx, &scan, &mut body, TypedNative::Available)?;

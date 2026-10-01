@@ -10,17 +10,17 @@
 
 use crate::framing::node_kind::NodeKind;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
-    fixed_record_boundary, fixed_record_candidates as framed_record_candidates,
-    read_and_advance, read_sequence_at, read_xmt, skip_sequence_at,
+    fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_and_advance,
+    read_sequence_at, read_xmt, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
@@ -228,24 +228,36 @@ pub(crate) struct VertexFields {
 }
 
 impl FaceFields {
-    pub(crate) fn tolerance(self) -> f64 { self.tolerance.get() }
+    pub(crate) fn tolerance(self) -> f64 {
+        self.tolerance.get()
+    }
 }
 
 impl EdgeFields {
-    pub(crate) fn tolerance(self) -> f64 { self.tolerance.get() }
+    pub(crate) fn tolerance(self) -> f64 {
+        self.tolerance.get()
+    }
 }
 
 impl CurveEdgeWitness {
-    pub(crate) fn tolerance(self) -> f64 { self.tolerance.get() }
+    pub(crate) fn tolerance(self) -> f64 {
+        self.tolerance.get()
+    }
 }
 
 impl VertexFields {
-    pub(crate) fn tolerance(self) -> f64 { self.tolerance.get() }
+    pub(crate) fn tolerance(self) -> f64 {
+        self.tolerance.get()
+    }
 }
 
 impl Node {
-    pub(crate) fn xmt(&self) -> u32 { u32::from(self.xmt) }
-    pub(crate) fn pos(&self) -> usize { self.pos }
+    pub(crate) fn xmt(&self) -> u32 {
+        u32::from(self.xmt)
+    }
+    pub(crate) fn pos(&self) -> usize {
+        self.pos
+    }
     /// Kernel node identity serialized by fixed topology families.
     pub(crate) fn node_id(&self) -> Option<u32> {
         matches!(
@@ -269,8 +281,16 @@ impl Node {
             | NodeKind::Face
             | NodeKind::Loop
             | NodeKind::Edge
-            | NodeKind::Vertex => self.pos.checked_add(8)?.checked_add(self.shift).filter(|at| *at < self.end),
-            NodeKind::Fin => self.pos.checked_add(4)?.checked_add(self.shift).filter(|at| *at < self.end),
+            | NodeKind::Vertex => self
+                .pos
+                .checked_add(8)?
+                .checked_add(self.shift)
+                .filter(|at| *at < self.end),
+            NodeKind::Fin => self
+                .pos
+                .checked_add(4)?
+                .checked_add(self.shift)
+                .filter(|at| *at < self.end),
             _ => None,
         }
     }
@@ -934,10 +954,9 @@ impl Graph {
         let (mut baseline, mut baseline_bytes) = Self::parse_fixed_records(ctx, stream, false)?;
         let (full_domain, full_domain_bytes) = Self::parse_fixed_records(ctx, stream, true)?;
         let preserves_baseline = baseline.nodes.iter().all(|(key, node)| {
-            full_domain
-                .nodes
-                .get(key)
-                .is_some_and(|candidate| candidate.pos() == node.pos() && candidate.bytes == node.bytes)
+            full_domain.nodes.get(key).is_some_and(|candidate| {
+                candidate.pos() == node.pos() && candidate.bytes == node.bytes
+            })
         });
         if !preserves_baseline {
             baseline_bytes.commit()?;
@@ -1061,10 +1080,9 @@ impl Graph {
             let Ok(kind) = NodeKind::try_from(stream[pos + 1]) else {
                 continue;
             };
-            for candidate in
-                Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
-                    .into_iter()
-                    .flatten()
+            for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
+                .into_iter()
+                .flatten()
             {
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
                     ctx.reserve_scoped_vec(
@@ -1380,7 +1398,7 @@ impl Graph {
         let mut matches = self
             .of_kind(kind)
             .filter(|node| node.node_id() == Some(node_id))
-            .map(|node| node.xmt());
+            .map(Node::xmt);
         let xmt = matches.next()?;
         matches.next().is_none().then_some(xmt)
     }
@@ -1804,7 +1822,7 @@ impl Graph {
                         face.face_fields()
                             .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt()))
                     })
-                    .map(|face| face.xmt()),
+                    .map(Node::xmt),
             );
         } else {
             let mut face_xmt = fields.first_face;
@@ -1858,8 +1876,12 @@ struct NodeCandidate {
 }
 
 impl NodeCandidate {
-    fn xmt(self) -> u32 { u32::from(self.xmt) }
-    fn pos(self) -> usize { self.pos }
+    fn xmt(self) -> u32 {
+        u32::from(self.xmt)
+    }
+    fn pos(self) -> usize {
+        self.pos
+    }
     fn end(self) -> usize {
         self.end
     }

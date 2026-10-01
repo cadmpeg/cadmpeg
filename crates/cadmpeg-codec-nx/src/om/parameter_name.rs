@@ -86,7 +86,10 @@ mod tests {
         for _ in 0..3 {
             assert_eq!(borrowed.as_str(), text);
             assert_eq!(owned.as_str(), text);
-            assert_eq!((borrowed.index(), borrowed.qualifier()), (12, Some("face_A")));
+            assert_eq!(
+                (borrowed.index(), borrowed.qualifier()),
+                (12, Some("face_A"))
+            );
             assert_eq!((owned.index(), owned.qualifier()), (12, Some("face_A")));
         }
     }

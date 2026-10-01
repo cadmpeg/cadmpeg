@@ -83,7 +83,6 @@ macro_rules! propagate_resource {
     };
 }
 
-mod immutable_text;
 mod canonical_uuid;
 mod container;
 mod decode;
@@ -92,6 +91,7 @@ mod dialect;
 mod evaluation;
 mod framing;
 mod geometry;
+mod immutable_text;
 mod inspect;
 mod intersection;
 mod iter_wire;

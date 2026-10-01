@@ -804,7 +804,7 @@ fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
         })
         .unwrap();
         assert_eq!(
-            graph.get(NodeKind::Shell, 3).map(|node| node.pos()),
+            graph.get(NodeKind::Shell, 3).map(super::Node::pos),
             Some(shell)
         );
         assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
@@ -828,7 +828,7 @@ fn topology_iterates_each_record_family_in_physical_order() {
     assert_eq!(
         graph
             .of_kind(NodeKind::Point)
-            .map(|node| node.xmt())
+            .map(super::Node::xmt)
             .collect::<Vec<_>>(),
         vec![77, 3]
     );
@@ -859,8 +859,8 @@ fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
     assert_eq!(graph.of_kind(NodeKind::Body).count(), 2);
-    assert_eq!(graph.at_pos(0).map(|node| node.xmt()), Some(65_536));
-    assert_eq!(graph.at_pos(26).map(|node| node.xmt()), Some(3));
+    assert_eq!(graph.at_pos(0).map(super::Node::xmt), Some(65_536));
+    assert_eq!(graph.at_pos(26).map(super::Node::xmt), Some(3));
 }
 
 #[test]
@@ -884,9 +884,9 @@ fn topology_disambiguates_direct_large_index_from_escaped_compact_record() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    assert_eq!(graph.at_pos(0).map(|node| node.xmt()), Some(32_896));
+    assert_eq!(graph.at_pos(0).map(super::Node::xmt), Some(32_896));
     assert_eq!(graph.at_pos(0).map(crate::topology::Node::end), Some(25));
-    assert_eq!(graph.at_pos(25).map(|node| node.xmt()), Some(7));
+    assert_eq!(graph.at_pos(25).map(super::Node::xmt), Some(7));
 
     let mut ambiguous = stream[..25].to_vec();
     ambiguous.extend_from_slice(&[0; 5]);
@@ -996,8 +996,8 @@ fn topology_resolves_ownership_overlap_before_duplicate_identity() {
     stream.extend(successor);
 
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    assert_eq!(graph.get(NodeKind::Body, 7).map(|node| node.pos()), Some(0));
-    assert_eq!(graph.get(NodeKind::Body, 8).map(|node| node.pos()), Some(24));
+    assert_eq!(graph.get(NodeKind::Body, 7).map(super::Node::pos), Some(0));
+    assert_eq!(graph.get(NodeKind::Body, 8).map(super::Node::pos), Some(24));
 }
 
 #[test]
@@ -1244,7 +1244,9 @@ fn topology_nodes_retain_the_admitted_header_identity_and_source_span() {
         let graph = Graph::parse(ctx, &bytes).unwrap();
         for node in graph.nodes.values() {
             let cloned = node.clone();
-            let (identity, _) = crate::framing::read_xmt(&cloned.bytes, 2 + usize::from(cloned.bytes[2] == 0xff)).unwrap();
+            let (identity, _) =
+                crate::framing::read_xmt(&cloned.bytes, 2 + usize::from(cloned.bytes[2] == 0xff))
+                    .unwrap();
             assert_eq!(cloned.xmt(), identity);
             assert!(cloned.xmt() > 1);
             assert_eq!(cloned.end(), cloned.pos() + cloned.bytes.len());
@@ -1261,19 +1263,38 @@ fn topology_field_tolerances_require_finite_native_values() {
     let bytes = topology_partition_stream();
     crate::test_support::with_decode_context(|ctx| {
         let graph = Graph::parse(ctx, &bytes).unwrap();
-        for (kind, identity, offset) in [(NodeKind::Face, 4, 10), (NodeKind::Edge, 8, 10), (NodeKind::Vertex, 10, 18)] {
+        for (kind, identity, offset) in [
+            (NodeKind::Face, 4, 10),
+            (NodeKind::Edge, 8, 10),
+            (NodeKind::Vertex, 10, 18),
+        ] {
             let mut node = graph.get(kind, identity).unwrap().clone();
-            for value in [-1.0, 0.0, f64::MAX, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for value in [
+                -1.0,
+                0.0,
+                f64::MAX,
+                f64::NAN,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+            ] {
                 put_f64(&mut node.bytes, offset, value);
                 let tolerance = match kind {
-                    NodeKind::Face => node.face_fields().map(|fields| fields.tolerance()),
-                    NodeKind::Edge => node.edge_fields().map(|fields| fields.tolerance()),
-                    NodeKind::Vertex => node.vertex_fields().map(|fields| fields.tolerance()),
+                    NodeKind::Face => node.face_fields().map(super::FaceFields::tolerance),
+                    NodeKind::Edge => node.edge_fields().map(super::EdgeFields::tolerance),
+                    NodeKind::Vertex => node.vertex_fields().map(super::VertexFields::tolerance),
                     _ => panic!("test family"),
                 };
-                if value.is_finite() { assert_eq!(tolerance, Some(value)); } else { assert_eq!(tolerance, None); }
+                if value.is_finite() {
+                    assert_eq!(tolerance, Some(value));
+                } else {
+                    assert_eq!(tolerance, None);
+                }
             }
         }
-        assert!(graph.unique_curve_edge_witness(9).unwrap().tolerance().is_finite());
+        assert!(graph
+            .unique_curve_edge_witness(9)
+            .unwrap()
+            .tolerance()
+            .is_finite());
     });
 }

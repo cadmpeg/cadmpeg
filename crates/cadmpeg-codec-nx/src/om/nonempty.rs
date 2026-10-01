@@ -14,7 +14,10 @@ impl<T> NonEmpty<T> {
     /// Transfer admitted storage without allocation, copying or shifting elements.
     pub(crate) fn from_admitted_vec(mut values: Vec<T>) -> Option<Self> {
         let last = values.pop()?;
-        Some(Self { initial: values, last })
+        Some(Self {
+            initial: values,
+            last,
+        })
     }
 
     #[cfg(test)]
@@ -26,28 +29,30 @@ impl<T> NonEmpty<T> {
         ctx: &DecodeContext<'_>,
         values: impl IntoIterator<Item = T>,
     ) -> Result<Option<Self>, CodecError> {
-        let mut values = values.into_iter();
-        let Some(mut last) = values.next() else { return Ok(None); };
-        ctx.charge_collection_items(1, "NX nonempty entries")?;
-        let mut initial = Vec::new();
-        for value in values {
-            initial.len().checked_add(2).ok_or_else(|| ctx.refuse_codec_limit("NX nonempty entries", u64::MAX, u64::MAX))?;
-            ctx.reserve_retained_vec(&mut initial, 1, "NX nonempty entries")?;
-            initial.push(last);
-            last = value;
-        }
-        Ok(Some(Self { initial, last }))
+        Ok(Self::from_admitted_vec(
+            ctx.collect_retained_vec(values, "NX nonempty entries")?,
+        ))
     }
 
     pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> + Clone {
         self.initial.iter().chain(std::iter::once(&self.last))
     }
 
-    pub(crate) fn len(&self) -> usize { self.initial.len() + 1 }
-    pub(crate) fn first(&self) -> &T { self.initial.first().unwrap_or(&self.last) }
-    pub(crate) fn last(&self) -> &T { &self.last }
+    pub(crate) fn len(&self) -> usize {
+        self.initial.len() + 1
+    }
+    pub(crate) fn first(&self) -> &T {
+        self.initial.first().unwrap_or(&self.last)
+    }
+    pub(crate) fn last(&self) -> &T {
+        &self.last
+    }
     pub(crate) fn get(&self, index: usize) -> Option<&T> {
-        if index == self.initial.len() { Some(&self.last) } else { self.initial.get(index) }
+        if index == self.initial.len() {
+            Some(&self.last)
+        } else {
+            self.initial.get(index)
+        }
     }
 
     pub(crate) fn map_charged<U>(
@@ -57,10 +62,16 @@ impl<T> NonEmpty<T> {
     ) -> Result<NonEmpty<U>, CodecError> {
         let mut initial = Vec::new();
         for value in self.initial {
+            ctx.charge_work(1, "NX nonempty mapped entries")?;
             ctx.reserve_retained_vec(&mut initial, 1, "nx nonempty mapped entries")?;
             initial.push(map(value));
         }
-        Ok(NonEmpty { initial, last: map(self.last) })
+        ctx.charge_work(1, "NX nonempty mapped entries")?;
+        ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
+        Ok(NonEmpty {
+            initial,
+            last: map(self.last),
+        })
     }
 
     pub(crate) fn try_map_charged<U>(
@@ -70,17 +81,27 @@ impl<T> NonEmpty<T> {
     ) -> Result<Option<NonEmpty<U>>, CodecError> {
         let mut initial = Vec::new();
         for value in self.initial {
-            let Some(value) = map(value) else { return Ok(None); };
+            ctx.charge_work(1, "NX nonempty mapped entries")?;
+            let Some(value) = map(value) else {
+                return Ok(None);
+            };
             ctx.reserve_retained_vec(&mut initial, 1, "NX nonempty mapped entries")?;
             initial.push(value);
         }
-        let Some(last) = map(self.last) else { return Ok(None); };
+        ctx.charge_work(1, "NX nonempty mapped entries")?;
+        ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
+        let Some(last) = map(self.last) else {
+            return Ok(None);
+        };
         Ok(Some(NonEmpty { initial, last }))
     }
 }
 
 impl<T> NonEmpty<Option<T>> {
-    pub(super) fn transpose_charged(self, ctx: &DecodeContext<'_>) -> Result<Option<NonEmpty<T>>, CodecError> {
+    pub(super) fn transpose_charged(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<NonEmpty<T>>, CodecError> {
         self.try_map_charged(ctx, |value| value)
     }
 }
@@ -88,7 +109,9 @@ impl<T> NonEmpty<Option<T>> {
 impl<T> IntoIterator for NonEmpty<T> {
     type Item = T;
     type IntoIter = std::iter::Chain<std::vec::IntoIter<T>, std::iter::Once<T>>;
-    fn into_iter(self) -> Self::IntoIter { self.initial.into_iter().chain(std::iter::once(self.last)) }
+    fn into_iter(self) -> Self::IntoIter {
+        self.initial.into_iter().chain(std::iter::once(self.last))
+    }
 }
 
 #[cfg(test)]
@@ -117,23 +140,60 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| {
             for input in [vec![10], vec![10, 20, 30]] {
                 let mut visited = Vec::new();
-                let mapped = NonEmpty::from_admitted_vec(input.clone()).unwrap()
-                    .map_charged(ctx, |value| { visited.push(value); value + 1 }).unwrap();
+                let mapped = NonEmpty::from_admitted_vec(input.clone())
+                    .unwrap()
+                    .map_charged(ctx, |value| {
+                        visited.push(value);
+                        value + 1
+                    })
+                    .unwrap();
                 assert_eq!(visited, input);
-                assert_eq!(mapped.into_iter().collect::<Vec<_>>(), input.iter().map(|value| value + 1).collect::<Vec<_>>());
+                assert_eq!(
+                    mapped.into_iter().collect::<Vec<_>>(),
+                    input.iter().map(|value| value + 1).collect::<Vec<_>>()
+                );
                 visited.clear();
-                let mapped = NonEmpty::from_admitted_vec(input.clone()).unwrap()
-                    .try_map_charged(ctx, |value| { visited.push(value); Some(value + 1) }).unwrap().unwrap();
+                let mapped = NonEmpty::from_admitted_vec(input.clone())
+                    .unwrap()
+                    .try_map_charged(ctx, |value| {
+                        visited.push(value);
+                        Some(value + 1)
+                    })
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(visited, input);
-                assert_eq!(mapped.into_iter().collect::<Vec<_>>(), input.iter().map(|value| value + 1).collect::<Vec<_>>());
+                assert_eq!(
+                    mapped.into_iter().collect::<Vec<_>>(),
+                    input.iter().map(|value| value + 1).collect::<Vec<_>>()
+                );
             }
         });
     }
 
     #[test]
+    fn nonempty_collection_refuses_unadmitted_work() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                assert!(
+                    matches!(NonEmpty::new_charged(ctx, [1, 2]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+                );
+            },
+        );
+    }
+
+    #[test]
     fn nonempty_collection_refuses_the_live_context() {
-        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_collection_items = 0, |ctx| {
-            assert!(matches!(NonEmpty::new_charged(ctx, [1, 2]), Err(cadmpeg_core::CodecError::ResourceLimit(_))));
-        });
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_collection_items = 0,
+            |ctx| {
+                assert!(matches!(
+                    NonEmpty::new_charged(ctx, [1, 2]),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
+                ));
+            },
+        );
     }
 }

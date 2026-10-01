@@ -195,7 +195,10 @@ mod tests {
             for identity in [0, 1] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire["xmt"] = serde_json::json!(identity);
-                assert!(serde_json::from_value::<ParasolidChartRecord>(wire).unwrap_err().to_string().contains("xmt"));
+                assert!(serde_json::from_value::<ParasolidChartRecord>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("xmt"));
             }
             let chart: ParasolidChartRecord = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&chart).unwrap(), json);

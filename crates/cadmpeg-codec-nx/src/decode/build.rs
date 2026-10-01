@@ -425,7 +425,12 @@ pub(super) fn try_decode_geometry(
                 geometry,
                 source_object: None,
             });
-            ctx.insert_btree_map(&mut surfaces_by_xmt, node.xmt(), id, "nx surface node index")?;
+            ctx.insert_btree_map(
+                &mut surfaces_by_xmt,
+                node.xmt(),
+                id,
+                "nx surface node index",
+            )?;
         }
         for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
@@ -446,7 +451,12 @@ pub(super) fn try_decode_geometry(
                 source_object: None,
             });
             if let Some(node) = graph.at_pos(surf.pos) {
-                ctx.insert_btree_map(&mut surfaces_by_xmt, node.xmt(), id, "nx surface node index")?;
+                ctx.insert_btree_map(
+                    &mut surfaces_by_xmt,
+                    node.xmt(),
+                    id,
+                    "nx surface node index",
+                )?;
             }
         }
         let saved_offset_carriers = saved_offset_carriers(

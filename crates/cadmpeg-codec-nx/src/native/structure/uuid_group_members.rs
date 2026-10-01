@@ -23,19 +23,34 @@ impl UuidGroupMembers {
         if occurrences.len() != object_uuid_values.len() {
             return Ok(None);
         }
-        let Some(occurrences) = NonEmpty::new_charged(ctx, occurrences)? else { return Ok(None); };
-        let Some(object_uuid_values) = NonEmpty::new_charged(ctx, object_uuid_values)? else { return Ok(None); };
-        Ok(Some(Self { occurrences, object_uuid_values }))
+        let Some(occurrences) = NonEmpty::new_charged(ctx, occurrences)? else {
+            return Ok(None);
+        };
+        let Some(object_uuid_values) = NonEmpty::new_charged(ctx, object_uuid_values)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            occurrences,
+            object_uuid_values,
+        }))
     }
 
     /// Transfer the two wire-admitted lists without building another collection.
-    fn from_admitted_lists(occurrences: Vec<String>, object_uuid_values: Vec<String>) -> Result<Self, &'static str> {
+    fn from_admitted_lists(
+        occurrences: Vec<String>,
+        object_uuid_values: Vec<String>,
+    ) -> Result<Self, &'static str> {
         if occurrences.len() != object_uuid_values.len() {
             return Err("occurrences/object_uuid_values: list lengths must match");
         }
-        let occurrences = NonEmpty::from_admitted_vec(occurrences).ok_or("occurrences/object_uuid_values: lists must be nonempty")?;
-        let object_uuid_values = NonEmpty::from_admitted_vec(object_uuid_values).ok_or("occurrences/object_uuid_values: lists must be nonempty")?;
-        Ok(Self { occurrences, object_uuid_values })
+        let occurrences = NonEmpty::from_admitted_vec(occurrences)
+            .ok_or("occurrences/object_uuid_values: lists must be nonempty")?;
+        let object_uuid_values = NonEmpty::from_admitted_vec(object_uuid_values)
+            .ok_or("occurrences/object_uuid_values: lists must be nonempty")?;
+        Ok(Self {
+            occurrences,
+            object_uuid_values,
+        })
     }
 
     #[cfg(test)]
@@ -72,7 +87,8 @@ impl<'de> Deserialize<'de> for UuidGroupMembers {
             object_uuid_values: Vec<String>,
         }
         let wire = Wire::deserialize(deserializer)?;
-        Self::from_admitted_lists(wire.occurrences, wire.object_uuid_values).map_err(serde::de::Error::custom)
+        Self::from_admitted_lists(wire.occurrences, wire.object_uuid_values)
+            .map_err(serde::de::Error::custom)
     }
 }
 

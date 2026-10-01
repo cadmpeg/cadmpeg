@@ -1004,24 +1004,16 @@ impl NativeModel {
             display_jt_string_property_atoms(ctx, container, &display_jt_segments)?;
         let display_jt_shape_lod_bindings =
             display_jt_shape_lod_bindings(ctx, container, &display_jt_segments)?;
-        let display_jt_base_node_data = display_jt_base_node_data(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
+        let display_jt_base_node_data =
+            display_jt_base_node_data(ctx, container, &display_jt_segments, &display_jt_documents)?;
         let display_jt_group_node_data = display_jt_group_node_data(
             ctx,
             container,
             &display_jt_segments,
             &display_jt_documents,
         )?;
-        let display_jt_instance_nodes = display_jt_instance_nodes(
-            ctx,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
+        let display_jt_instance_nodes =
+            display_jt_instance_nodes(ctx, container, &display_jt_segments, &display_jt_documents)?;
         let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
             ctx,
             container,

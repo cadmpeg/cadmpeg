@@ -46,10 +46,18 @@ pub(crate) struct FixedRecordFrame {
 }
 
 impl FixedRecordFrame {
-    pub(crate) fn xmt(self) -> NonNullXmt { self.xmt }
-    pub(crate) fn shift(self) -> usize { self.shift }
-    pub(crate) fn payload_shift(self) -> usize { self.payload_shift }
-    pub(crate) fn end(self) -> usize { self.end }
+    pub(crate) fn xmt(self) -> NonNullXmt {
+        self.xmt
+    }
+    pub(crate) fn shift(self) -> usize {
+        self.shift
+    }
+    pub(crate) fn payload_shift(self) -> usize {
+        self.payload_shift
+    }
+    pub(crate) fn end(self) -> usize {
+        self.end
+    }
 }
 
 /// The framing grammar admits at most the direct and escaped readings at one
@@ -65,13 +73,19 @@ pub(crate) fn fixed_record_candidates(
 ) -> FixedRecordCandidates {
     let mut candidates = [None; 2];
     let len = fixed_len(kind);
-    let Some(identity_at) = pos.checked_add(2) else { return candidates; };
-    if stream.get(pos..identity_at) != Some(&[0, kind.code()]) { return candidates; }
+    let Some(identity_at) = pos.checked_add(2) else {
+        return candidates;
+    };
+    if stream.get(pos..identity_at) != Some(&[0, kind.code()]) {
+        return candidates;
+    }
     if let Some((xmt, shift)) = read_xmt(stream, identity_at) {
         candidates[0] = complete_frame(stream, pos, kind, len, xmt, shift);
     }
     if stream.get(identity_at) == Some(&0xff) {
-        let Some(escaped_at) = identity_at.checked_add(1) else { return candidates; };
+        let Some(escaped_at) = identity_at.checked_add(1) else {
+            return candidates;
+        };
         if let Some((xmt, shift)) = read_xmt(stream, escaped_at) {
             candidates[1] = complete_frame(stream, pos, kind, len, xmt, shift + 1);
         }
@@ -351,12 +365,23 @@ mod tests {
         assert_eq!(u32::from(frame.xmt()), 2);
         assert_eq!(frame.end(), bytes.len());
         assert_eq!((frame.shift(), frame.payload_shift()), (0, 0));
-        assert!(super::fixed_record_candidates(&bytes[..48], 9, super::NodeKind::Point).iter().all(Option::is_none));
-        assert!(super::fixed_record_candidates(&bytes, usize::MAX, super::NodeKind::Point).iter().all(Option::is_none));
+        assert!(
+            super::fixed_record_candidates(&bytes[..48], 9, super::NodeKind::Point)
+                .iter()
+                .all(Option::is_none)
+        );
+        assert!(
+            super::fixed_record_candidates(&bytes, usize::MAX, super::NodeKind::Point)
+                .iter()
+                .all(Option::is_none)
+        );
         for identity in [0_u16, 1] {
             bytes[11..13].copy_from_slice(&identity.to_be_bytes());
-            assert!(super::fixed_record_candidates(&bytes, 9, super::NodeKind::Point).iter().all(Option::is_none));
+            assert!(
+                super::fixed_record_candidates(&bytes, 9, super::NodeKind::Point)
+                    .iter()
+                    .all(Option::is_none)
+            );
         }
     }
-
 }

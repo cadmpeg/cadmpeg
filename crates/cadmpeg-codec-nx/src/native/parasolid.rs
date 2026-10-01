@@ -2241,8 +2241,13 @@ mod term_use_identity_tests {
     #[test]
     fn term_use_wire_rejects_reserved_record_identities() {
         for identity in [0, 1] {
-            let json = format!(r#"{{"id":"term","stream_ordinal":0,"xmt":{identity},"count":2,"form":"TF","point":[0.0,0.0,1.0],"framing":"direct","inflated_offset":10}}"#);
-            assert!(serde_json::from_str::<super::ParasolidTermUseRecord>(&json).unwrap_err().to_string().contains("xmt"));
+            let json = format!(
+                r#"{{"id":"term","stream_ordinal":0,"xmt":{identity},"count":2,"form":"TF","point":[0.0,0.0,1.0],"framing":"direct","inflated_offset":10}}"#
+            );
+            assert!(serde_json::from_str::<super::ParasolidTermUseRecord>(&json)
+                .unwrap_err()
+                .to_string()
+                .contains("xmt"));
         }
     }
 }

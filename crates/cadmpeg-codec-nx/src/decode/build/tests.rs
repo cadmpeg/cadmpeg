@@ -24,8 +24,6 @@ fn geometry_route_limit_error(
                 .into_report_parts();
 
             crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
-
-
                 match super::try_decode_geometry(ctx, &scan, &dialects, &[], &[], &mut 0) {
                     Err(error) => error,
                     Ok(_) => panic!("geometry route must refuse the low limit"),

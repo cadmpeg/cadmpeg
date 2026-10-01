@@ -54,9 +54,15 @@ fn container_parses_header_and_directory() {
     else {
         panic!("SPLMSSTR input must have modern layout facts");
     };
-    assert_eq!(crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Header)).unwrap(), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Header)).unwrap(),
+        1
+    );
     assert_eq!(file_tag, 0x33_22_11);
-    assert_eq!(crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Footer)).unwrap(), 0);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Footer)).unwrap(),
+        0
+    );
     assert_eq!(footer_fingerprint, [0; 4]);
     assert!(c
         .entries
@@ -137,12 +143,36 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 1, 2)).unwrap(), Some(&payload[1..3]));
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 1, 3)).unwrap(), None);
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 3, 3)).unwrap(), Some(&payload[3..6]));
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 1)).unwrap(), Some(&payload[1..3]));
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 4)).unwrap(), Some(&payload[4..6]));
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 6)).unwrap(), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 1, 2))
+            .unwrap(),
+        Some(&payload[1..3])
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 1, 3))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 3, 3))
+            .unwrap(),
+        Some(&payload[3..6])
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 1))
+            .unwrap(),
+        Some(&payload[1..3])
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 4))
+            .unwrap(),
+        Some(&payload[4..6])
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 6))
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -371,8 +401,16 @@ fn container_counts_admitted_entries_in_each_region() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("one entry in each counted region");
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Header)).unwrap(), 1);
-    assert_eq!(crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Footer)).unwrap(), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Header))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Footer))
+            .unwrap(),
+        1
+    );
     assert_eq!(container.entries.len(), 2);
 }
 
@@ -392,8 +430,20 @@ fn service_profile_admits_both_directory_regions() {
         |ctx| {
             let container =
                 container::scan_bytes(ctx, file.as_slice()).expect("service directory admission");
-            assert_eq!(crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Header)).unwrap(), 1);
-            assert_eq!(crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Footer)).unwrap(), 1);
+            assert_eq!(
+                crate::test_support::with_decode_context(
+                    |ctx| container.entry_count(ctx, Region::Header)
+                )
+                .unwrap(),
+                1
+            );
+            assert_eq!(
+                crate::test_support::with_decode_context(
+                    |ctx| container.entry_count(ctx, Region::Footer)
+                )
+                .unwrap(),
+                1
+            );
         },
     );
 }
@@ -889,57 +939,94 @@ fn overlapping_extref_candidates_refuse_string_scan_work() {
         let marker = ordinal * 256;
         bytes[marker] = 1;
         bytes[marker + 1..marker + 5].copy_from_slice(&1_u32.to_le_bytes());
-        bytes[marker + 5..marker + 7].copy_from_slice(&u16::try_from(32_768 - marker).unwrap().to_le_bytes());
+        bytes[marker + 5..marker + 7]
+            .copy_from_slice(&u16::try_from(32_768 - marker).unwrap().to_le_bytes());
     }
     *bytes.last_mut().unwrap() = 0;
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 100_000, |ctx| {
-        let error = super::locate_extref_string_table(ctx, &bytes).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 100_000,
+        |ctx| {
+            let error = super::locate_extref_string_table(ctx, &bytes).unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && matches!(limit.operation, "validate NX external reference UTF-8" | "validate NX external reference controls")));
-    });
-    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-        assert_eq!(super::locate_extref_string_table(ctx, &bytes).unwrap(), None);
-    });
+        },
+    );
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            assert_eq!(
+                super::locate_extref_string_table(ctx, &bytes).unwrap(),
+                None
+            );
+        },
+    );
 }
 
 #[test]
 fn bounded_entry_reads_refuse_directory_work() {
     let file = single_part_prt();
-    let container = crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, file)).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, file)).unwrap();
     let (offset, len) = container.entries[0].file_span().unwrap();
     for tail in [false, true] {
-        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 0, |ctx| {
-            let error = if tail { container.bounded_entry_tail(ctx, offset) } else { container.bounded_entry_bytes(ctx, offset, len) }.unwrap_err();
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let error = if tail {
+                    container.bounded_entry_tail(ctx, offset)
+                } else {
+                    container.bounded_entry_bytes(ctx, offset, len)
+                }
+                .unwrap_err();
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "bound NX directory entry"));
-        });
+            },
+        );
     }
 }
 
 #[test]
 fn directory_counts_refuse_exhausted_scan_work() {
-    let container = crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, single_part_prt())).unwrap();
-    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 0, |ctx| {
-        let error = container.entry_count(ctx, Region::Header).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
+    let container =
+        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, single_part_prt()))
+            .unwrap();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = container.entry_count(ctx, Region::Header).unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "count NX directory entries"));
-    });
+        },
+    );
 }
 
 #[test]
 fn external_reference_routes_refuse_unadmitted_names() {
-    let container = crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, single_part_prt())).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, single_part_prt()))
+            .unwrap();
     for route in 0..4 {
-        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 1, |ctx| {
-            let error = match route {
-                0 => container.has_external_references(ctx).err(),
-                1 => container.external_reference_strings(ctx).err(),
-                2 => container.external_reference_records(ctx).err(),
-                _ => container.external_reference_indexed_records(ctx).err(),
-            }.expect("name scan must refuse");
-            assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "scan NX external reference names"));
-        });
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                let error = match route {
+                    0 => container.has_external_references(ctx).err(),
+                    1 => container.external_reference_strings(ctx).err(),
+                    2 => container.external_reference_records(ctx).err(),
+                    _ => container.external_reference_indexed_records(ctx).err(),
+                }
+                .expect("name scan must refuse");
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "scan NX external reference names")
+                );
+            },
+        );
     }
 }
 
@@ -950,16 +1037,29 @@ fn external_reference_materialization_refuses_each_string_byte_pass() {
     bytes.extend(1u32.to_le_bytes());
     bytes.extend(1000u16.to_le_bytes());
     bytes.extend(text.as_bytes());
-    for (work_limit, operation) in [(3504, "read NX external reference UTF-8"), (4504, "nx external reference string")] {
-        crate::test_support::with_decode_context_over(&bytes,
+    for (work_limit, operation) in [
+        (3504, "read NX external reference UTF-8"),
+        (4504, "nx external reference string"),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &bytes,
             |policy| policy.limits.max_work_units = work_limit,
             |ctx| {
                 let error = super::parse_extref_string_table(ctx, &bytes).unwrap_err();
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
-            });
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+                );
+            },
+        );
     }
-    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-        let (_, values) = super::parse_extref_string_table(ctx, &bytes).unwrap().unwrap();
-        assert_eq!(values, [(7, text)]);
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let (_, values) = super::parse_extref_string_table(ctx, &bytes)
+                .unwrap()
+                .unwrap();
+            assert_eq!(values, [(7, text)]);
+        },
+    );
 }

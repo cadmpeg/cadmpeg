@@ -1154,7 +1154,9 @@ pub(crate) fn chart_source_record_at(
         let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
             continue;
         };
-        let Ok(xmt) = NonNullXmt::try_from(xmt) else { continue; };
+        let Ok(xmt) = NonNullXmt::try_from(xmt) else {
+            continue;
+        };
         let preamble = base + 4 + xmt_len;
         let Some(mut head) = View::over_retained(stream).child(preamble, stream.len()) else {
             continue;
@@ -1532,7 +1534,9 @@ fn uv_at(
     let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
         return Ok(None);
     };
-    let Ok(xmt) = NonNullXmt::try_from(xmt) else { return Ok(None); };
+    let Ok(xmt) = NonNullXmt::try_from(xmt) else {
+        return Ok(None);
+    };
     let Some(payload) = base.checked_add(4).and_then(|at| at.checked_add(xmt_len)) else {
         return Ok(None);
     };
