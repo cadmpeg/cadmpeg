@@ -17,6 +17,8 @@ thread_local! {
 }
 
 pub mod rewrite;
+/// Caller-accounted structural value projection and reconstruction.
+pub mod structural;
 
 struct ReferenceWalkScope(bool);
 
