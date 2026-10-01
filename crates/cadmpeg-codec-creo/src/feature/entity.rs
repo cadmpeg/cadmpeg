@@ -150,17 +150,29 @@ pub(crate) enum EntryPayload {
     /// Class `200` source-section identifier, present when the compact id parsed.
     Source { entity: Option<u32> },
     /// Related entity carried by class `210`, related-form `214`, `219`, or `2017`.
-    Related {
-        /// The related class that owns the pair.
-        class: RelatedClass,
-        entity: u32,
-        state: RelatedState,
-    },
+    Related(RelatedPayload),
     /// Any other class, or a related class whose pair did not parse.
     Plain {
         /// The positional entry class.
         class: PlainClass,
     },
+}
+
+/// Related entity with the state domain of its owning class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RelatedPayload {
+    class: RelatedClass,
+    entity: u32,
+    state: RelatedState,
+}
+
+impl RelatedPayload {
+    pub(crate) fn new(class: RelatedClass, entity: u32, state: RelatedState) -> Option<Self> {
+        if state == RelatedState::One && class != RelatedClass::Class2017 {
+            return None;
+        }
+        Some(Self { class, entity, state })
+    }
 }
 
 /// A positional entry class that owns no payload of its own. Class `200`
@@ -262,11 +274,8 @@ pub(crate) fn entry_payload(
             related_entity_id,
             related_entity_state.and_then(RelatedState::from_byte),
         ) {
-            (Some(entity), Some(state)) => EntryPayload::Related {
-                class,
-                entity,
-                state,
-            },
+            (Some(entity), Some(state)) => RelatedPayload::new(class, entity, state)
+                .map(EntryPayload::Related).unwrap_or_else(|| plain_payload(class_id)),
             _ => plain_payload(class_id),
         },
         _ => plain_payload(class_id),
@@ -295,7 +304,7 @@ impl FeatureEntityTableEntry {
     pub(crate) fn class_id(&self) -> u32 {
         match self.payload {
             EntryPayload::Source { .. } => 200,
-            EntryPayload::Related { class, .. } => class.class_id(),
+            EntryPayload::Related(related) => related.class.class_id(),
             EntryPayload::Plain { class } => class.get(),
         }
     }
@@ -309,14 +318,14 @@ impl FeatureEntityTableEntry {
 
     pub(crate) fn related_entity_id(&self) -> Option<u32> {
         match self.payload {
-            EntryPayload::Related { entity, .. } => Some(entity),
+            EntryPayload::Related(related) => Some(related.entity),
             _ => None,
         }
     }
 
     pub(crate) fn related_entity_state(&self) -> Option<u8> {
         match self.payload {
-            EntryPayload::Related { state, .. } => Some(state.as_u8()),
+            EntryPayload::Related(related) => Some(related.state.as_u8()),
             _ => None,
         }
     }
@@ -489,11 +498,7 @@ pub(super) fn read_entries(
                             _ => return None,
                         };
                         Some((
-                            EntryPayload::Related {
-                                class,
-                                entity,
-                                state,
-                            },
+                            EntryPayload::Related(RelatedPayload::new(class, entity, state)?),
                             after_related,
                         ))
                     })
@@ -516,7 +521,7 @@ pub(super) fn read_entries(
                     .get(body_start)
                     .copied()
                     .filter(|state| matches!(state, 0 | 1)),
-                EntryPayload::Related { state, .. } => Some(state.as_u8()),
+                EntryPayload::Related(related) => Some(related.state.as_u8()),
                 EntryPayload::Plain { .. } => None,
             };
             let terminal_table_separator = (index + 1 == count
@@ -607,11 +612,20 @@ pub(crate) fn entity_tables(
 
 #[cfg(test)]
 mod tests {
+    use super::{RelatedClass, RelatedPayload, RelatedState};
     use super::{dummy_table_entry, entity_graph, entity_tables, read_entries, FeatureEntityTable};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
+
+    #[test]
+    fn related_payload_enforces_class_state_domain() {
+        for class in [RelatedClass::Class210, RelatedClass::Class214, RelatedClass::Class219, RelatedClass::Class2017] {
+            assert!(RelatedPayload::new(class, 1, RelatedState::Zero).is_some());
+            assert_eq!(RelatedPayload::new(class, 1, RelatedState::One).is_some(), class == RelatedClass::Class2017);
+        }
+    }
 
     #[test]
     fn entity_table_borrowed_readers_preserve_duplicate_source_order() {

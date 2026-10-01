@@ -854,21 +854,13 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     );
 
     let mut conflicting = table.clone();
-    conflicting.entries[3].payload = crate::feature::entity::EntryPayload::Related {
-        class: crate::feature::entity::RelatedClass::Class210,
-        entity: 101,
-        state: crate::feature::entity::RelatedState::Zero,
-    };
+    conflicting.entries[3].payload = crate::feature::entity::EntryPayload::Related(crate::feature::entity::RelatedPayload::new(crate::feature::entity::RelatedClass::Class210, 101, crate::feature::entity::RelatedState::Zero).expect("valid related fixture"));
     assert_eq!(
         feature_surface_transitions_with_service(17, &[conflicting], &rows),
         None
     );
     let mut wrong_predecessor_class = table.clone();
-    wrong_predecessor_class.entries[0].payload = crate::feature::entity::EntryPayload::Related {
-        class: crate::feature::entity::RelatedClass::Class219,
-        entity: 11,
-        state: crate::feature::entity::RelatedState::Zero,
-    };
+    wrong_predecessor_class.entries[0].payload = crate::feature::entity::EntryPayload::Related(crate::feature::entity::RelatedPayload::new(crate::feature::entity::RelatedClass::Class219, 11, crate::feature::entity::RelatedState::Zero).expect("valid related fixture"));
     wrong_predecessor_class
         .entries
         .push(entry(999, 214, Some(888)));
