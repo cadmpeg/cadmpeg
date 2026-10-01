@@ -1924,7 +1924,7 @@ fn append_legacy_brep(
         values
     };
     group_roots.extend_from_slice(&roots);
-    group_roots.sort_unstable();
+    ctx.sort_unstable_by(&mut group_roots, Ord::cmp, |_| 0, "Rhino V1 Brep unique roots sort")?;
     group_roots.dedup();
     admit_v1_temporary_items::<(usize, NurbsCurve)>(
         ctx,

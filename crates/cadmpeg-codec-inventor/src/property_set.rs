@@ -250,7 +250,12 @@ pub(crate) fn parse_property_set_stream<'a>(
         directories.push((fmtid, cursor.offset("section offset")?));
     }
     let header_end = cursor.position();
-    directories.sort_by_key(|(_, offset)| *offset);
+    ctx.stable_sort_by(
+        &mut directories,
+        |left, right| left.1.cmp(&right.1),
+        |_| 0,
+        "OLE section directories sort",
+    )?;
     let mut previous_end = header_end;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(section_count),
@@ -344,7 +349,7 @@ fn parse_section<'a>(
         directory.push((offset, id));
     }
     let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
-    directory.sort_unstable();
+    ctx.sort_unstable_by(&mut directory, Ord::cmp, |_| 0, "OLE property directory sort")?;
     for pair in directory.windows(2) {
         if pair[0].0 == pair[1].0 {
             return Err(CodecError::Malformed(
@@ -421,7 +426,12 @@ fn parse_section<'a>(
             raw,
         });
     }
-    properties.sort_by_key(|property| property.id);
+    ctx.stable_sort_by(
+        &mut properties,
+        |left, right| left.id.cmp(&right.id),
+        |_| 0,
+        "OLE properties sort",
+    )?;
     Ok(PropertySection {
         fmtid,
         code_page,
@@ -794,20 +804,8 @@ fn decode_code_page(
                 "OLE Unicode code-page string has an odd byte length".into(),
             ));
         }
-        let mut view = View::over_retained(bytes);
-        let utf8_len = crate::reader::utf16_utf8_len(view, bytes.len() / 2)
-            .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "decode OLE code-page UTF-16 units",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_len),
-            "retain OLE property string",
-        )?;
-        let value = view
-            .utf16_le(bytes.len() / 2)
-            .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
+        let value =
+            ctx.utf16le_text(bytes, bytes.len() / 2, false, "retain OLE property string")?;
         return require_and_remove_null(value, "OLE Unicode code-page string");
     }
     let (content, had_null) = bytes
@@ -1012,32 +1010,13 @@ impl<'a> Cursor<'a> {
         count: usize,
         field: &'static str,
     ) -> Result<String, CodecError> {
-        let byte_len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
-        })?;
-        if self.view.remaining() < byte_len {
-            return Err(CodecError::truncated(self.view.location(), field));
-        }
-        let utf8_len = crate::reader::utf16_utf8_len(self.view, count).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
-        })?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(byte_len),
-            "decode OLE Unicode property units",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_len),
+        let value = crate::reader::utf16_text(
+            ctx,
+            &mut self.view,
+            count,
+            field,
             "retain OLE Unicode property string",
         )?;
-        // `utf16_le` proves the byte count before it reads a code unit, so a
-        // short window is refused with the view still at the read's start.
-        let value = self.view.utf16_le(count).ok_or_else(|| {
-            if self.view.remaining() < byte_len {
-                CodecError::truncated(self.view.location(), field)
-            } else {
-                CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
-            }
-        })?;
         require_and_remove_null(value, field)
     }
 

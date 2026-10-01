@@ -826,7 +826,12 @@ where
             }
             ctx.reserve_vec(&mut source_records, added.len(), "catia_source_records")?;
             source_records.extend(added);
-            source_records.sort_by_key(|record| record.source_range.start);
+            ctx.stable_sort_by(
+                &mut source_records,
+                |left, right| left.source_range.start.cmp(&right.source_range.start),
+                |_| 0,
+                "catia_source_records_sort",
+            )?;
         }
         ctx.reserve_vec(
             &mut records,

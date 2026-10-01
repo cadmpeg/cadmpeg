@@ -390,38 +390,54 @@ fn populate_gap_events(
         }
     }
 
-    census
-        .events
-        .tagged_reference_lanes
-        .sort_unstable_by_key(|lane| lane.offset);
-    census
-        .events
-        .reference_type_maps
-        .sort_unstable_by_key(|map| map.offset);
-    census
-        .events
-        .reference_state_packets
-        .sort_unstable_by_key(|packet| packet.offset);
-    census
-        .events
-        .schema_reference_preambles
-        .sort_unstable_by_key(|preamble| preamble.offset);
-    census
-        .events
-        .inline_schema_declarations
-        .sort_unstable_by_key(|declaration| declaration.offset);
-    census
-        .events
-        .inline_body_states
-        .sort_unstable_by_key(|state| state.offset);
-    census
-        .events
-        .reference_marker_packets
-        .sort_unstable_by_key(|packet| packet.offset);
-    census
-        .events
-        .type_150_state_packets
-        .sort_unstable_by_key(|packet| packet.offset);
+    ctx.sort_unstable_by(
+        &mut census.events.tagged_reference_lanes,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas tagged reference lanes",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.reference_type_maps,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas reference type maps",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.reference_state_packets,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas reference state packets",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.schema_reference_preambles,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas schema reference preambles",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.inline_schema_declarations,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas inline schema declarations",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.inline_body_states,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas inline body states",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.reference_marker_packets,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas reference marker packets",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.type_150_state_packets,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas type 150 state packets",
+    )?;
     Ok(admitted_bytes)
 }
 

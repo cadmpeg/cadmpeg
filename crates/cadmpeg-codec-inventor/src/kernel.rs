@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
-use cadmpeg_asm::kernel_header::BinaryHeader;
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
@@ -92,23 +92,34 @@ fn parse_kernel_header(
     Ok(parsed.ok_or_else(|| absent.to_owned()))
 }
 
-fn charge_header_copy(
+fn copy_kernel_header(
     ctx: &DecodeContext<'_>,
     header: &BinaryHeader,
     operation: &'static str,
-) -> Result<(), CodecError> {
-    for value in [
-        &header.metadata.product_family,
-        &header.metadata.product_version,
-        &header.metadata.save_date,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        let length = cadmpeg_core::decode::u64_from_index(value.len());
-        ctx.charge_retained(length, operation)?;
-    }
-    Ok(())
+) -> Result<BinaryHeader, CodecError> {
+    let copy_text = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(|value| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+                ctx.copy_retained_text(value, operation)
+            })
+            .transpose()
+    };
+    Ok(BinaryHeader {
+        width: header.width,
+        metadata: KernelHeader {
+            save_format_version: header.metadata.save_format_version,
+            entity_count: header.metadata.entity_count,
+            flags: header.metadata.flags,
+            product_family: copy_text(&header.metadata.product_family)?,
+            product_version: copy_text(&header.metadata.product_version)?,
+            save_date: copy_text(&header.metadata.save_date)?,
+            scale: header.metadata.scale,
+            linear: header.metadata.linear,
+            angular: header.metadata.angular,
+        },
+    })
 }
 
 pub(crate) fn decode_kernel_carrier(
@@ -170,9 +181,8 @@ pub(crate) fn decode_kernel_carrier(
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,
     )?;
-    charge_header_copy(ctx, header, "copy Inventor decoded kernel header")?;
     Ok(DecodedKernelCarrier {
-        header: header.clone(),
+        header: copy_kernel_header(ctx, header, "copy Inventor decoded kernel header")?,
         brep,
     })
 }
@@ -410,6 +420,94 @@ mod tests {
     use crate::test_support::test_fixtures::acis_sphere_kernel_stream;
     use cadmpeg_core::decode::View;
     use cadmpeg_core::CodecError;
+
+    fn header_copy_fixture() -> cadmpeg_asm::kernel_header::BinaryHeader {
+        cadmpeg_asm::kernel_header::BinaryHeader {
+            width: cadmpeg_asm::kernel_header::RefWidth::Eight,
+            metadata: cadmpeg_asm::kernel_header::KernelHeader {
+                save_format_version: Some(700),
+                entity_count: Some(12),
+                flags: Some(3),
+                product_family: Some("family".to_owned()),
+                product_version: Some("version".to_owned()),
+                save_date: Some("date".to_owned()),
+                scale: Some(2.0),
+                linear: Some(0.125),
+                angular: Some(0.25),
+            },
+        }
+    }
+
+    #[test]
+    fn kernel_header_copy_charges_each_string_once_and_preserves_metadata() {
+        let header = header_copy_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 17;
+        policy.limits.max_work_units = 17;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+        assert_eq!(
+            super::copy_kernel_header(&ctx, &header, "header copy test")
+                .expect("header strings fit exact byte and work admission"),
+            header
+        );
+        assert!(matches!(ctx.charge_retained(1, "after header copy"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 17));
+    }
+
+    #[test]
+    fn kernel_header_copy_refuses_retained_limit_before_copy() {
+        let header = header_copy_fixture();
+        for retained in [0, 16] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+            assert!(
+                matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "header copy test")
+            );
+        }
+    }
+
+    #[test]
+    fn kernel_header_copy_refuses_work_before_copy() {
+        let header = header_copy_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+        assert!(
+            matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 6
+                    && limit.operation == "header copy test")
+        );
+    }
+
+    #[test]
+    fn kernel_header_copy_preserves_absent_and_empty_strings_without_charges() {
+        let mut header = header_copy_fixture();
+        header.metadata.product_family = None;
+        header.metadata.product_version = Some(String::new());
+        header.metadata.save_date = None;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+        assert_eq!(
+            super::copy_kernel_header(&ctx, &header, "header copy test")
+                .expect("empty header strings need no admission"),
+            header
+        );
+    }
 
     #[test]
     fn parsed_kernel_header_refuses_retained_limit_before_product_copy() {

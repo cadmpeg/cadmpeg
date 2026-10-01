@@ -2186,7 +2186,7 @@ fn parse_texture(
     }
     let id = uuid(&mut reader)?;
     let mapping_channel_id = reader.u32()?;
-    let legacy_file_path = crate::settings::utf16_deferred(&mut reader)?;
+    let legacy_file_path = crate::settings::utf16_deferred(ctx, &mut reader)?;
     let enabled = reader.bool()?;
     let texture_type = reader.u32()?;
     let mode = reader.u32()?;
@@ -2519,7 +2519,7 @@ fn parse_v2_v3_material(
 
     let archive_index = reader.i32()?;
     let plugin = uuid(&mut reader)?;
-    crate::settings::utf16_deferred(&mut reader)?;
+    crate::settings::utf16_deferred(ctx, &mut reader)?;
     let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino V2/V3 material name")?;
     let (id, reflection, transparent, index_of_refraction) = if minor >= 1 {
         (
@@ -2675,7 +2675,7 @@ fn parse_material(
     let transparency = read_finite(&mut reader, "transparency")?;
     let textures = texture_array(ctx, data, &mut reader, archive, losses)?;
     if !modern && minor >= 1 {
-        crate::settings::utf16_deferred(&mut reader)?;
+        crate::settings::utf16_deferred(ctx, &mut reader)?;
     }
     if minor >= 2 || modern {
         let count = reader.i32()?;
@@ -4798,24 +4798,9 @@ fn parse_text_style(
             &mut reader,
             "Rhino legacy text style description",
         )?;
-        let mut face_units = [0_u16; 64];
-        for unit in &mut face_units {
-            *unit = reader.u16()?;
-        }
-        let face_end = face_units.iter().position(|unit| *unit == 0).unwrap_or(64);
-        let face_units = &face_units[..face_end];
-        let mut face_len = 0_usize;
-        for character in std::char::decode_utf16(face_units.iter().copied()) {
-            face_len = face_len
-                .checked_add(character.unwrap_or(char::REPLACEMENT_CHARACTER).len_utf8())
-                .ok_or_else(|| {
-                    FramingError::structural(reader.position(), "legacy font face length overflow")
-                })?;
-        }
-        let mut windows_logfont_name = ctx.retained_string(face_len, "Rhino legacy font face")?;
-        for character in std::char::decode_utf16(face_units.iter().copied()) {
-            windows_logfont_name.push(character.unwrap_or(char::REPLACEMENT_CHARACTER));
-        }
+        let face_bytes = reader.take(128)?;
+        let windows_logfont_name =
+            ctx.utf16le_lossy_text(face_bytes, 64, true, "Rhino legacy font face")?;
         let named_description =
             !description.is_empty() && !description.eq_ignore_ascii_case("Default");
         let postscript_name = if named_description
@@ -5737,7 +5722,12 @@ pub(crate) fn install(
         } else {
             Vec::new()
         };
-        group.links.sort();
+        ctx.stable_sort_by(
+            &mut group.links,
+            Ord::cmp,
+            std::string::String::len,
+            "Rhino group link sort",
+        )?;
     }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "groups", &groups)?;

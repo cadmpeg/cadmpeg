@@ -222,7 +222,12 @@ pub(crate) fn spatial_sketches(
                 "merge SLDPRT spatial lines",
             )?;
             projected.extend(projected_lines);
-            projected.sort_unstable_by_key(|(offset, ..)| *offset);
+            ctx.sort_unstable_by(
+                &mut projected,
+                |left, right| left.0.cmp(&right.0),
+                |_| 0,
+                "sort SLDPRT spatial projected points",
+            )?;
             let sketch_record_id = clone_spatial_sketch_id(ctx, &sketch_id)?;
             let name = feature
                 .name
@@ -1442,7 +1447,12 @@ pub(crate) fn reference_cells_charged(
         }
     }
     for declared in declarations.values_mut() {
-        declared.sort_unstable_by_key(|class| class.offset);
+        ctx.sort_unstable_by(
+            declared.as_mut_slice(),
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            "sort SLDPRT reference declarations",
+        )?;
         declared.dedup_by_key(|class| class.id.as_str());
     }
     for cell in &mut cells {

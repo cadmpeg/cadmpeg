@@ -741,3 +741,29 @@ fn inventory_compound_classification_refuses_work_before_signature_scan() {
         matches!(container::summarize(&ctx, &scan, dialects), Err(CodecError::ResourceLimit(limit)) if limit.operation == "classify SLDPRT inventory payload")
     );
 }
+
+#[test]
+fn xml_utf16_replacement_admits_exact_scoped_bytes() {
+    for temporary in [2, 3] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = temporary;
+        policy.limits.max_work_units = 10;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let result =
+            container::xml_text_charged(&ctx, &[0xff, 0xfe, 0, 0xd8, 0x5a], "XML replacement test");
+        if temporary == 2 {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0 && limit.additional == 3 && limit.operation == "XML replacement test"));
+        } else {
+            assert_eq!(
+                result
+                    .expect("exact temporary budget")
+                    .expect("UTF-16 XML")
+                    .as_str(),
+                "�"
+            );
+        }
+    }
+}

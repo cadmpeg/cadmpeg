@@ -424,9 +424,12 @@ pub(super) fn attach(
     )?;
     attach_current_feature_states(ctx, ir, annotations)?;
     attach_active_configuration_feature_states(ctx, ir, annotations)?;
-    ir.model
-        .features
-        .sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut ir.model.features,
+        |first, second| first.id.cmp(&second.id),
+        |feature| feature.id.as_str().len(),
+        "sort NX features",
+    )?;
     let namespace = ir.native.namespace_mut("nx");
     NATIVE_CATALOGUE
         .emit_all(ctx, model, namespace)
@@ -1388,18 +1391,12 @@ fn resolve_rm_face_color_bindings(
             source_offset,
         });
     }
-    let sort_work = bindings.len().checked_mul(bindings.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX RM face color binding order",
-            0,
-            cadmpeg_core::decode::u64_from_index(bindings.len()),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "NX RM face color binding order",
+    ctx.stable_sort_by(
+        &mut bindings,
+        |left, right| left.face_id.cmp(&right.face_id),
+        |binding| binding.face_id.len(),
+        "sort NX RM face color bindings",
     )?;
-    bindings.sort_by(|left, right| left.face_id.cmp(&right.face_id));
     Ok(bindings)
 }
 
@@ -1929,21 +1926,15 @@ fn attach_initial_segment_bodies(
         return Ok(None);
     }
 
-    let sorting_work = body_count.checked_mul(body_count).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX retained-history body order",
-            0,
-            cadmpeg_core::decode::u64_from_index(body_count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sorting_work),
-        "NX retained-history body order",
-    )?;
     let (mut sorted_bodies, _sorting) =
         ctx.temporary_vec(body_count, "NX retained-history body order")?;
     sorted_bodies.extend(&ir.model.bodies);
-    sorted_bodies.sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut sorted_bodies,
+        |first, second| first.id.cmp(&second.id),
+        |body| body.id.as_str().len(),
+        "sort NX retained-history bodies",
+    )?;
 
     let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history")).id(
         &cadmpeg_ir::identity_component!("feature"),
@@ -3093,7 +3084,15 @@ fn attach_feature_operations(
         )?;
     }
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
-        triples.sort_by_key(|triple| triple.body_reference_ordinal);
+        ctx.stable_sort_by(
+            triples,
+            |left, right| {
+                left.body_reference_ordinal
+                    .cmp(&right.body_reference_ordinal)
+            },
+            |_| 0,
+            "sort NX operation body scalar triples",
+        )?;
     }
     let mut operation_body_members_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyMember>>::new();
@@ -6429,22 +6428,16 @@ fn attach_sketch_graph(
         )? {
             return Ok(None);
         }
-        let sort_work = entities.len().checked_mul(entities.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sketch entity order",
-                0,
-                cadmpeg_core::decode::u64_from_index(entities.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
+        ctx.stable_sort_by(
+            &mut entities,
+            |(first_offset, first), (second_offset, second)| {
+                first_offset
+                    .cmp(second_offset)
+                    .then_with(|| first.id().cmp(second.id()))
+            },
+            |(_, entity)| entity.id().as_str().len(),
             "NX sketch entity order",
         )?;
-        entities.sort_by(|(first_offset, first), (second_offset, second)| {
-            first_offset
-                .cmp(second_offset)
-                .then_with(|| first.id().cmp(second.id()))
-        });
         for (source_offset, entity) in &entities {
             let tag = match entity.geometry.definition() {
                 SketchGeometryDefinition::Native { native_kind }
@@ -6619,22 +6612,16 @@ fn attach_sketch_graph(
     )? {
         return Ok(None);
     }
-    let sort_work = entities.len().checked_mul(entities.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX sketch entity order",
-            0,
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
+    ctx.stable_sort_by(
+        &mut entities,
+        |(first_offset, first), (second_offset, second)| {
+            first_offset
+                .cmp(second_offset)
+                .then_with(|| first.id().cmp(second.id()))
+        },
+        |(_, entity)| entity.id().as_str().len(),
         "NX sketch entity order",
     )?;
-    entities.sort_by(|(first_offset, first), (second_offset, second)| {
-        first_offset
-            .cmp(second_offset)
-            .then_with(|| first.id().cmp(second.id()))
-    });
     if entities.is_empty() {
         return Ok(None);
     }
@@ -7307,7 +7294,6 @@ fn attach_parasolid_topology_string_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid string attribute lookups")?;
     let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .strings
@@ -7323,21 +7309,12 @@ fn attach_parasolid_topology_string_attributes(
         "NX Parasolid attribute use groups",
     )?;
     for uses in uses_by_entity.values_mut() {
-        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid string attribute ordering",
-                0,
-                cadmpeg_core::decode::u64_from_index(uses.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
+        ctx.stable_sort_by(
+            uses,
+            |left, right| left.position.cmp(&right.position),
+            |_| 0,
             "NX Parasolid string attribute ordering",
         )?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-            uses.as_slice(),
-        )))?;
-        uses.sort_by_key(|string_use| string_use.position);
     }
     for context in &attribute_index.contexts {
         let reference = context.reference;
@@ -7385,9 +7362,12 @@ fn attach_parasolid_topology_string_attributes(
             push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
-    ir.model
-        .attributes
-        .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    ctx.stable_sort_by(
+        &mut ir.model.attributes,
+        |first, second| first.id.as_str().cmp(second.id.as_str()),
+        |attribute| attribute.id.as_str().len(),
+        "sort NX Parasolid string attributes",
+    )?;
     Ok(())
 }
 
@@ -8261,7 +8241,6 @@ fn attach_parasolid_topology_numeric_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid numeric attribute lookups")?;
     let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .integers
@@ -8284,21 +8263,12 @@ fn attach_parasolid_topology_numeric_attributes(
         "NX Parasolid attribute use groups",
     )?;
     for uses in uses_by_entity.values_mut() {
-        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid numeric attribute ordering",
-                0,
-                cadmpeg_core::decode::u64_from_index(uses.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
+        ctx.stable_sort_by(
+            uses,
+            |left, right| left.position.cmp(&right.position),
+            |_| 0,
             "NX Parasolid numeric attribute ordering",
         )?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-            uses.as_slice(),
-        )))?;
-        uses.sort_by_key(|numeric_use| numeric_use.position);
     }
     for context in &attribute_index.contexts {
         let reference = context.reference;
@@ -8370,9 +8340,12 @@ fn attach_parasolid_topology_numeric_attributes(
             push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
-    ir.model
-        .attributes
-        .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    ctx.stable_sort_by(
+        &mut ir.model.attributes,
+        |first, second| first.id.as_str().cmp(second.id.as_str()),
+        |attribute| attribute.id.as_str().len(),
+        "sort NX Parasolid numeric attributes",
+    )?;
     Ok(())
 }
 
@@ -8391,7 +8364,6 @@ fn attach_parasolid_topology_structured_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid structured attribute lookups")?;
     let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .vectors
@@ -8428,21 +8400,12 @@ fn attach_parasolid_topology_structured_attributes(
         "NX Parasolid attribute use groups",
     )?;
     for uses in uses_by_entity.values_mut() {
-        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid structured attribute ordering",
-                0,
-                cadmpeg_core::decode::u64_from_index(uses.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
+        ctx.stable_sort_by(
+            uses,
+            |left, right| left.position.cmp(&right.position),
+            |_| 0,
             "NX Parasolid structured attribute ordering",
         )?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-            uses.as_slice(),
-        )))?;
-        uses.sort_by_key(|structured_use| structured_use.position);
     }
     for context in &attribute_index.contexts {
         let reference = context.reference;
@@ -8552,9 +8515,12 @@ fn attach_parasolid_topology_structured_attributes(
             push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
-    ir.model
-        .attributes
-        .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    ctx.stable_sort_by(
+        &mut ir.model.attributes,
+        |first, second| first.id.as_str().cmp(second.id.as_str()),
+        |attribute| attribute.id.as_str().len(),
+        "sort NX Parasolid structured attributes",
+    )?;
     Ok(())
 }
 

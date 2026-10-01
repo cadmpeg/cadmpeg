@@ -1146,15 +1146,6 @@ fn variable_fillet_radius_groups<'a>(
     selections: &[&'a FeatureInputEdgeSelection],
 ) -> Result<Option<Vec<RadiusSelectionGroup<'a>>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "project SLDPRT variable fillet radii";
-    let charge_sort = |len: usize| {
-        let levels = if len > 1 { len.ilog2() + 1 } else { 1 };
-        let count = u64::try_from(len)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        let units = count
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(units, OPERATION)
-    };
     let Some(history) = histories.iter().find(|history| {
         history
             .features
@@ -1218,8 +1209,12 @@ fn variable_fillet_radius_groups<'a>(
             };
             ordered_parameters.push(parameter);
         }
-        charge_sort(ordered_parameters.len())?;
-        ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
+        ctx.sort_unstable_by(
+            &mut ordered_parameters,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            OPERATION,
+        )?;
         if ordered_parameters
             .iter()
             .enumerate()
@@ -1229,8 +1224,12 @@ fn variable_fillet_radius_groups<'a>(
             ctx.reserve_collection_vec(&mut selections_copy, selections.len(), OPERATION)?;
             selections_copy.extend_from_slice(selections);
             let mut selections = selections_copy;
-            charge_sort(selections.len())?;
-            selections.sort_unstable_by_key(|selection| selection.ordinal);
+            ctx.sort_unstable_by(
+                &mut selections,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                OPERATION,
+            )?;
             let points = ordered_parameters
                 .into_iter()
                 .enumerate()
@@ -1270,8 +1269,12 @@ fn variable_fillet_radius_groups<'a>(
                 objects.push((name.offset, candidate));
             }
         }
-        charge_sort(objects.len())?;
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            OPERATION,
+        )?;
         let Some(index) = objects
             .iter()
             .position(|(_, candidate)| candidate.id == feature_ref)
@@ -1367,8 +1370,12 @@ fn variable_fillet_radius_groups<'a>(
             };
             ordered_parameters.push(parameter);
         }
-        charge_sort(ordered_parameters.len())?;
-        ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
+        ctx.sort_unstable_by(
+            &mut ordered_parameters,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            OPERATION,
+        )?;
         if ordered_parameters
             .iter()
             .enumerate()
@@ -1403,8 +1410,12 @@ fn variable_fillet_radius_groups<'a>(
         ctx.reserve_collection_vec(&mut selections_copy, selections.len(), OPERATION)?;
         selections_copy.extend_from_slice(selections);
         let mut selections = selections_copy;
-        charge_sort(selections.len())?;
-        selections.sort_unstable_by_key(|selection| selection.ordinal);
+        ctx.sort_unstable_by(
+            &mut selections,
+            |left, right| left.ordinal.cmp(&right.ordinal),
+            |_| 0,
+            OPERATION,
+        )?;
         let points = ordered_parameters
             .into_iter()
             .enumerate()
@@ -1500,10 +1511,12 @@ fn variable_fillet_radius_groups<'a>(
     if groups.len() == 1 {
         ctx.reserve_precharged_vec(&mut groups[0].1, unassigned.len(), OPERATION)?;
         groups[0].1.append(&mut unassigned);
-        charge_sort(groups[0].1.len())?;
-        groups[0]
-            .1
-            .sort_unstable_by_key(|selection| selection.ordinal);
+        ctx.sort_unstable_by(
+            &mut groups[0].1,
+            |left, right| left.ordinal.cmp(&right.ordinal),
+            |_| 0,
+            OPERATION,
+        )?;
     } else if !unassigned.is_empty() {
         return Ok(None);
     }
@@ -2753,7 +2766,12 @@ fn cut_with_surface_selection_pair<'a>(
         if lane_selections.len() != 2 {
             return Ok(None);
         }
-        lane_selections.sort_unstable_by_key(|selection| selection.offset);
+        ctx.sort_unstable_by(
+            &mut lane_selections,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            OPERATION,
+        )?;
         let pair = (lane_selections[0], lane_selections[1]);
         if let Some((target, tool)) = consensus {
             if !same_surface_selection_semantics(target, pair.0)
@@ -2981,19 +2999,12 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         references.push((key, components.map(std::borrow::Cow::Owned), None));
                     }
                 }
-                let count = u64::try_from(references.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
-                let levels = if references.len() > 1 {
-                    references.len().ilog2() + 1
-                } else {
-                    1
-                };
-                let sort_work = count.checked_mul(u64::from(levels)).ok_or_else(|| {
-                    ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
-                ctx.charge_work(sort_work, NATIVE_OPERATION)?;
-                references.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+                ctx.sort_unstable_by(
+                    &mut references,
+                    |left, right| left.0.cmp(&right.0),
+                    |reference| reference.0.len(),
+                    NATIVE_OPERATION,
+                )?;
                 let native = if references.is_empty() {
                     None
                 } else {

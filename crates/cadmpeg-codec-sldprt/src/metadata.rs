@@ -117,6 +117,10 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
+    ctx.charge_work(
+        u64_from_index(payload.len()),
+        "scan SLDPRT linear unit names",
+    )?;
     for offset in payload
         .windows(TOKEN.len())
         .enumerate()
@@ -143,6 +147,10 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
+        ctx.charge_work(
+            u64_from_index(bytes.len() / 2),
+            "validate SLDPRT linear unit name",
+        )?;
         let scalars = || {
             char::decode_utf16(
                 (0..bytes.len() / 2).filter_map(|index| View::u16_le_at(bytes, index * 2)),
@@ -152,21 +160,12 @@ fn scan_length_user_units(
         if scalars().all(char::is_whitespace) {
             continue;
         }
-        let text_bytes = scalars().try_fold(0_usize, |size, scalar| {
-            size.checked_add(scalar.len_utf8()).ok_or_else(|| {
-                ctx.refuse_codec_limit("retain SLDPRT linear unit name", u64::MAX, u64::MAX)
-            })
-        })?;
-        let mut value = String::new();
-        crate::text_admission::reserve_retained_string(
-            ctx,
-            &mut value,
-            text_bytes,
+        let value = ctx.utf16le_lossy_text(
+            bytes,
+            bytes.len() / 2,
+            false,
             "retain SLDPRT linear unit name",
         )?;
-        for scalar in scalars() {
-            value.push(scalar);
-        }
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,

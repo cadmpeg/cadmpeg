@@ -465,24 +465,12 @@ pub(super) fn blend_feature_definition(
     if surfaces.is_empty() {
         return Ok(None);
     }
-    let sort_work = surfaces
-        .len()
-        .checked_mul(
-            usize::try_from(usize::BITS - surfaces.len().leading_zeros())
-                .map_err(|_| ctx.refuse_codec_limit("NX blend result sort", 0, 1))?,
-        )
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX blend result sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(surfaces.len()),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
+    ctx.stable_sort_by(
+        &mut surfaces,
+        Ord::cmp,
+        |surface| surface.as_str().len(),
         "NX blend result sort",
     )?;
-    surfaces.sort();
     let radius = if constant_radii {
         if uniform_radii {
             first_radius
@@ -763,24 +751,12 @@ pub(super) fn unique_carrier_supports(
         ctx.reserve_vec(&mut supports, 1, "NX offset support output")?;
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
-    let sort_work = supports
-        .len()
-        .checked_mul(
-            usize::try_from(usize::BITS - supports.len().leading_zeros())
-                .map_err(|_| ctx.refuse_codec_limit("NX offset support sort", 0, 1))?,
-        )
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX offset support sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(supports.len()),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
+    ctx.stable_sort_by(
+        &mut supports,
+        Ord::cmp,
+        |support| support.as_str().len(),
         "NX offset support sort",
     )?;
-    supports.sort();
     Ok(supports)
 }
 
@@ -1061,26 +1037,12 @@ pub(in crate::native) fn feature_source_content(
         )?;
         sorted.push(value);
     }
-    let count = sorted.len();
-    let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX feature source text sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    let work = count.checked_mul(passes).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX feature source text sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
+    ctx.stable_sort_by(
+        &mut sorted,
+        |first, second| first.source_offset.cmp(&second.source_offset),
+        |_| 0,
         "NX feature source text sort",
     )?;
-    sorted.sort_by_key(|value| value.source_offset);
     let mut content = Vec::new();
     for value in sorted {
         let text = value.value.as_str();
@@ -1229,26 +1191,12 @@ pub(super) fn block_placement(
         band: &mut PlaneBand,
         linear_tolerance: f64,
     ) -> Result<Option<PlaneExtent>, CodecError> {
-        let count = band.offsets.len();
-        let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX block plane sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        let work = count.checked_mul(passes).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX block plane sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
+        ctx.stable_sort_by(
+            &mut band.offsets,
+            f64::total_cmp,
+            |_| 0,
             "NX block plane sort",
         )?;
-        band.offsets.sort_by(f64::total_cmp);
         let mut first: Option<[f64; 2]> = None;
         let mut second: Option<[f64; 2]> = None;
         for &offset in &band.offsets {
@@ -1395,14 +1343,19 @@ pub(super) fn block_placement(
         return Ok(None);
     };
     let mut extents = [first, second, third];
-    extents.sort_by(|left, right| {
-        right
-            .normal
-            .x
-            .total_cmp(&left.normal.x)
-            .then_with(|| right.normal.y.total_cmp(&left.normal.y))
-            .then_with(|| right.normal.z.total_cmp(&left.normal.z))
-    });
+    ctx.stable_sort_by(
+        &mut extents,
+        |left, right| {
+            right
+                .normal
+                .x
+                .total_cmp(&left.normal.x)
+                .then_with(|| right.normal.y.total_cmp(&left.normal.y))
+                .then_with(|| right.normal.z.total_cmp(&left.normal.z))
+        },
+        |_| 0,
+        "sort NX block plane extents",
+    )?;
     let permutations = [
         [0usize, 1usize, 2usize],
         [0, 2, 1],
@@ -2243,23 +2196,6 @@ pub(super) fn primary_hole_outputs(
     Ok(outputs)
 }
 
-pub(super) fn charge_hole_sort_work(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-) -> Result<(), CodecError> {
-    let work = count.checked_mul(count).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX hole operation sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX hole operation sort",
-    )
-}
-
 pub(super) fn simple_hole_operations(
     ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
@@ -2299,13 +2235,17 @@ pub(super) fn simple_hole_operations(
     if ordered_templates.is_empty() {
         return Ok(None);
     }
-    charge_hole_sort_work(ctx, ordered_templates.len())?;
-    ordered_templates.sort_by(|first, second| {
-        operation_positions
-            .get(first.operation_label.as_str())
-            .cmp(&operation_positions.get(second.operation_label.as_str()))
-            .then_with(|| first.operation_label.cmp(&second.operation_label))
-    });
+    ctx.stable_sort_by(
+        &mut ordered_templates,
+        |first, second| {
+            operation_positions
+                .get(first.operation_label.as_str())
+                .cmp(&operation_positions.get(second.operation_label.as_str()))
+                .then_with(|| first.operation_label.cmp(&second.operation_label))
+        },
+        |template| template.operation_label.len(),
+        "sort NX simple hole templates",
+    )?;
     let mut selected_group = None;
     for group in groups {
         let comparisons = group
@@ -2417,13 +2357,17 @@ pub(super) fn selected_hole_operations(
     {
         return Ok(None);
     }
-    charge_hole_sort_work(ctx, operations.len())?;
-    operations.sort_by(|first, second| {
-        operation_positions
-            .get(first.as_str())
-            .cmp(&operation_positions.get(second.as_str()))
-            .then_with(|| first.cmp(second))
-    });
+    ctx.stable_sort_by(
+        &mut operations,
+        |first, second| {
+            operation_positions
+                .get(first.as_str())
+                .cmp(&operation_positions.get(second.as_str()))
+                .then_with(|| first.cmp(second))
+        },
+        String::len,
+        "sort NX hole operations",
+    )?;
     Ok(Some(operations))
 }
 
@@ -3111,7 +3055,12 @@ pub(super) fn hole_axis_placements_for_body(
         ctx.reserve_retained_vec(&mut placements, 1, "NX hole axis placements")?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
-    placements.sort_by_key(hole_placement_key);
+    ctx.stable_sort_by(
+        &mut placements,
+        |first, second| hole_placement_key(first).cmp(&hole_placement_key(second)),
+        |_| 0,
+        "sort NX hole axis placements",
+    )?;
     Ok(placements)
 }
 
@@ -3568,7 +3517,12 @@ pub(super) fn plane_annulus_witness(
         if !valid {
             continue;
         }
-        boundaries.sort_by(|(first, _), (second, _)| first.total_cmp(second));
+        ctx.stable_sort_by(
+            &mut boundaries,
+            |(first, _), (second, _)| first.total_cmp(second),
+            |_| 0,
+            "sort NX annulus boundaries",
+        )?;
         let [(inner, inner_boundary), (outer, outer_boundary)] = boundaries.as_slice() else {
             continue;
         };
@@ -4034,8 +3988,12 @@ pub(super) fn simple_hole_chamfers(
     if operations.is_empty() {
         return Ok(BTreeMap::new());
     }
-    charge_hole_sort_work(ctx, operations.len())?;
-    operations.sort();
+    ctx.stable_sort_by(
+        &mut operations,
+        Ord::cmp,
+        String::len,
+        "sort NX chamfer selected operations",
+    )?;
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {
         return Ok(BTreeMap::new());
     };
@@ -4221,10 +4179,18 @@ pub(super) fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
-        charge_hole_sort_work(ctx, outer_radii.len())?;
-        charge_hole_sort_work(ctx, included_angles.len())?;
-        outer_radii.sort_by(f64::total_cmp);
-        included_angles.sort_by(f64::total_cmp);
+        ctx.stable_sort_by(
+            &mut outer_radii,
+            f64::total_cmp,
+            |_| 0,
+            "sort NX chamfer outer radii",
+        )?;
+        ctx.stable_sort_by(
+            &mut included_angles,
+            f64::total_cmp,
+            |_| 0,
+            "sort NX chamfer included angles",
+        )?;
         let (Some(&widest), Some(&narrowest), Some(&largest), Some(&smallest)) = (
             outer_radii.last(),
             outer_radii.first(),

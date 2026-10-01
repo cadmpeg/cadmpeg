@@ -154,14 +154,12 @@ fn native_dimensioned_circle_construction_state(
             ctx.reserve_collection_vec(&mut roster, 1, DIMENSIONED_CARRIER_OPERATION)?;
             roster.push(marker);
         }
-        let levels = u64::from(roster.len().checked_ilog2().unwrap_or(0))
-            .checked_add(1)
-            .and_then(|levels| levels.checked_mul(32))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(DIMENSIONED_CARRIER_OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
-        charge_dimensioned_carrier_work(ctx, roster.len(), levels)?;
-        roster.sort_unstable_by_key(|marker| marker.offset());
+        ctx.sort_unstable_by(
+            &mut roster,
+            |left, right| left.offset().cmp(&right.offset()),
+            |_| 0,
+            DIMENSIONED_CARRIER_OPERATION,
+        )?;
         charge_dimensioned_carrier_work(ctx, lane.native_payload.len(), 512)?;
         for (_, radial_index, construction) in radial_circle_records(&lane.native_payload) {
             ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
@@ -1681,8 +1679,12 @@ fn terminal_repeated_radial_circle_pairs<'a>(
             return Ok(None);
         }
     }
-    charge_marker_circle_sort(ctx, pairs.len())?;
-    pairs.sort_unstable_by_key(|(center, _)| center.offset());
+    ctx.sort_unstable_by(
+        &mut pairs,
+        |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+        |_| 0,
+        MARKER_CIRCLE_OPERATION,
+    )?;
     Ok(Some(pairs))
 }
 
@@ -2082,17 +2084,6 @@ fn insert_marker_circle_key<T: Eq + std::hash::Hash>(
     Ok(keys.insert(key))
 }
 
-fn charge_marker_circle_sort(
-    ctx: &DecodeContext<'_>,
-    len: usize,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let levels = u64::from(len.checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(32))
-        .ok_or_else(|| ctx.refuse_codec_limit(MARKER_CIRCLE_OPERATION, u64::MAX - 1, u64::MAX))?;
-    charge_marker_circle_work(ctx, len, levels)
-}
-
 fn marker_circle_text(
     ctx: &DecodeContext<'_>,
     text: &str,
@@ -2432,8 +2423,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                     )
                 }),
             )?;
-            charge_marker_circle_sort(ctx, roster.len())?;
-            roster.sort_unstable_by_key(|(marker, _)| marker.offset());
+            ctx.sort_unstable_by(
+                &mut roster,
+                |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+                |_| 0,
+                OPERATION,
+            )?;
             // Only this suffix can have exactly one witness per dimension.
             if let Some(center_index) = roster
                 .len()
@@ -2602,8 +2597,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                     .filter(|marker| marker.coordinates_m.is_some()),
             )?;
-            charge_marker_circle_sort(ctx, roster.len())?;
-            roster.sort_unstable_by_key(|marker| marker.offset());
+            ctx.sort_unstable_by(
+                &mut roster,
+                |left, right| left.offset().cmp(&right.offset()),
+                |_| 0,
+                OPERATION,
+            )?;
             for (parameter, radius) in &radial_dimensions {
                 let Some(pairs) = terminal_repeated_radial_circle_pairs(
                     ctx,
@@ -2781,8 +2780,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 .map(|coordinates| (marker, coordinates.get()))
                         }),
                 )?;
-                charge_marker_circle_sort(ctx, roster.len())?;
-                roster.sort_unstable_by_key(|(marker, _)| marker.offset());
+                ctx.sort_unstable_by(
+                    &mut roster,
+                    |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+                    |_| 0,
+                    OPERATION,
+                )?;
                 let Some((radial, [ru, rv])) = roster.get(radial_index).copied() else {
                     continue;
                 };
@@ -2821,9 +2824,15 @@ pub(crate) fn project_marker_dimensioned_circles(
                         radius,
                     ));
                 }
-                charge_marker_circle_sort(ctx, candidates.len())?;
-                candidates
-                    .sort_unstable_by_key(|(center, marker, _, _)| (*center, marker.offset()));
+                ctx.sort_unstable_by(
+                    &mut candidates,
+                    |(left_center, left_marker, _, _), (right_center, right_marker, _, _)| {
+                        (*left_center, left_marker.offset())
+                            .cmp(&(*right_center, right_marker.offset()))
+                    },
+                    |_| 0,
+                    OPERATION,
+                )?;
                 charge_marker_circle_work(ctx, candidates.len(), 64)?;
                 candidates.dedup_by_key(|(center, _, _, _)| *center);
                 let [(center, marker, parameter, radius)] = candidates.as_slice() else {

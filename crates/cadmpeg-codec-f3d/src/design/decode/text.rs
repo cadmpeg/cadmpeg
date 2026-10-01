@@ -47,15 +47,22 @@ pub(in crate::design::decode) fn fixed_guid_ascii(
 
 /// Read a fixed-width relaxed GUID into its native value after code-unit validation.
 pub(in crate::design::decode) fn fixed_relaxed_guid_text(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     count_at: usize,
-) -> Option<(crate::records::mesh::DesignRelaxedGuidText, usize)> {
-    let (guid, end) = fixed_guid_ascii(bytes, count_at)?;
-    let text = String::from_utf8(guid.to_vec()).ok()?;
-    Some((
-        crate::records::mesh::DesignRelaxedGuidText::try_from(text).ok()?,
-        end,
-    ))
+) -> Result<Option<(crate::records::mesh::DesignRelaxedGuidText, usize)>, CodecError> {
+    ctx.charge_work(36, "validate F3D relaxed GUID code units")?;
+    let Some((guid, end)) = fixed_guid_ascii(bytes, count_at) else {
+        return Ok(None);
+    };
+    // UTF-8 validation, copy, GUID validation, and identity-key validation.
+    ctx.charge_work(36 * 4, "copy and admit F3D relaxed GUID")?;
+    let guid = std::str::from_utf8(&guid)
+        .map_err(|_| CodecError::malformed("validated F3D relaxed GUID is not ASCII"))?;
+    let text = ctx.copy_retained_text(guid, "retain F3D relaxed GUID")?;
+    let value = crate::records::mesh::DesignRelaxedGuidText::try_from(text)
+        .map_err(CodecError::malformed)?;
+    Ok(Some((value, end)))
 }
 
 /// Validate an exact 36-code-unit relaxed GUID in UTF-16LE without copying it.
@@ -105,6 +112,44 @@ pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
 mod tests {
     use super::{class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq, relaxed_guid_end};
     use crate::bytes::lp_ascii_filtered_view;
+
+    #[test]
+    fn fixed_relaxed_guid_text_refuses_retained_limit_and_preserves_bytes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let value = "ABCDEF12-3456-7890-ABCD-EF1234567890";
+        let bytes = crate::bytes::lp_utf16_bytes(value).unwrap();
+        for retained in [0, 35, 36] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::fixed_relaxed_guid_text(&ctx, &bytes, 0);
+            if retained < 36 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "retain F3D relaxed GUID" && limit.additional == 36));
+            } else {
+                let (guid, end) = result.unwrap().unwrap();
+                assert_eq!(guid.as_str(), value);
+                assert_eq!(end, bytes.len());
+                assert!(ctx.charge_retained(1, "after GUID copy").is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_relaxed_guid_text_refuses_work_before_scanning() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = crate::bytes::lp_utf16_bytes("ABCDEF12-3456-7890-ABCD-EF1234567890").unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::fixed_relaxed_guid_text(&ctx, &bytes, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits));
+    }
 
     #[test]
     fn relaxed_guid_scan_matches_owned_validation_at_each_admitted_length() {

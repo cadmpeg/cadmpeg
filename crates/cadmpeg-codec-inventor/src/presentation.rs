@@ -213,16 +213,21 @@ fn project_default_bindings(
             selected.push(matches[0]);
         }
     }
-    selected.sort_by(|left, right| {
-        left.identity
-            .segment_token
-            .cmp(&right.identity.segment_token)
-            .then_with(|| {
-                left.identity
-                    .record_ordinal
-                    .cmp(&right.identity.record_ordinal)
-            })
-    });
+    ctx.stable_sort_by(
+        &mut selected,
+        |left, right| {
+            left.identity
+                .segment_token
+                .cmp(&right.identity.segment_token)
+                .then_with(|| {
+                    left.identity
+                        .record_ordinal
+                        .cmp(&right.identity.record_ordinal)
+                })
+        },
+        |style| style.identity.segment_token.as_str().len(),
+        "Inventor default rendering styles sort",
+    )?;
     selected.dedup_by(|left, right| {
         left.identity.segment_token == right.identity.segment_token
             && left.identity.record_ordinal == right.identity.record_ordinal
@@ -385,7 +390,12 @@ fn project_face_bindings(
         "order Inventor presentation faces",
     )?;
     let mut ordered_face_keys = face_keys.iter().collect::<Vec<_>>();
-    ordered_face_keys.sort_unstable_by_key(|(left, _)| *left);
+    ctx.sort_unstable_by(
+        &mut ordered_face_keys,
+        |(left, _), (right, _)| left.cmp(right),
+        |(face_id, _)| face_id.as_str().len(),
+        "Inventor presentation face keys sort",
+    )?;
     for (face_id, key) in ordered_face_keys {
         let mut matching_faces = Vec::new();
         ctx.charge_work(
@@ -1169,18 +1179,21 @@ impl<'a> Cursor<'a> {
                 "Inventor presentation {field} byte length overflows"
             ))
         })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(byte_len),
-            "retain Inventor PmApp UTF-16 string",
+        let bytes = crate::reader::take(&mut self.source, byte_len, field)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(units),
+            "trim Inventor PmApp UTF-16 string",
         )?;
-        self.source
-            .utf16_le(units)
-            .map(|value| value.trim_end_matches('\0').to_owned())
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "Inventor presentation {field} is invalid UTF-16"
-                ))
-            })
+        let mut length = bytes.len();
+        while length >= 2 && bytes.get(length - 2..length) == Some(&[0, 0]) {
+            length -= 2;
+        }
+        ctx.utf16le_text(
+            &bytes[..length],
+            length / 2,
+            false,
+            "retain Inventor PmApp UTF-16 string",
+        )
     }
 
     fn guid(&mut self, field: &'static str) -> Result<String, CodecError> {
@@ -1252,6 +1265,31 @@ mod tests {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+    #[test]
+    fn presentation_utf16_text_charges_trimmed_utf8_size_and_keeps_interior_nul() {
+        let mut bytes = Vec::new();
+        utf16(&mut bytes, "ࠀ\0A\0\0");
+        for retained in [4, 5] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("test root fits input admission");
+            let result = Cursor::new(root).utf16(&ctx, "label");
+            if retained == 4 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 5));
+            } else {
+                assert_eq!(
+                    result.expect("trimmed text fits five retained bytes"),
+                    "ࠀ\0A"
+                );
+                assert!(ctx.charge_retained(1, "after presentation text").is_err());
+            }
+        }
+    }
 
     #[test]
     fn graphics_reference_lists_use_bounded_retained_grammar() {
@@ -2045,7 +2083,9 @@ mod tests {
         let face_keys = std::collections::HashMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        // The one-key face sort takes its count plus a sixteen-byte pair and twice the
+        // twenty-byte face id over two levels at eight units each, leaving nothing for the scan.
+        policy.limits.max_work_units = 1 + (16 + 2 * 20) * 2 * 8;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(

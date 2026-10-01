@@ -1434,13 +1434,18 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         ctx.reserve_vec(&mut candidates, 1, "nx opposite chart candidates")?;
         candidates.push((priority, procedural.id.as_str(), procedural_index));
     }
-    candidates.sort_by(|first, second| {
-        first
-            .0
-            .cmp(&second.0)
-            .then_with(|| first.1.cmp(second.1))
-            .then_with(|| first.2.cmp(&second.2))
-    });
+    ctx.stable_sort_by(
+        &mut candidates,
+        |first, second| {
+            first
+                .0
+                .cmp(&second.0)
+                .then_with(|| first.1.cmp(second.1))
+                .then_with(|| first.2.cmp(&second.2))
+        },
+        |(_, id, _)| id.len(),
+        "sort NX opposite chart candidates",
+    )?;
     let candidate_count = candidates.len();
     let mut replacements = Vec::new();
     for (candidate_index, (_, _, procedural_index)) in candidates.into_iter().enumerate() {

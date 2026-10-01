@@ -1123,7 +1123,12 @@ impl<'a> FixedEntityRecord<'a> {
                 },
             });
         }
-        references.sort_by_key(|reference| reference.offset);
+        ctx.stable_sort_by(
+            &mut references,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            "sort NX record references",
+        )?;
         Ok(references)
     }
 }
@@ -2742,7 +2747,12 @@ pub(crate) fn sketch_payload_scalar_lanes(
             lanes.push(lane);
         }
     }
-    lanes.sort_by_key(FramedScalarRun::offset);
+    ctx.stable_sort_by(
+        &mut lanes,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort NX sketch payload scalar lanes",
+    )?;
     Ok(lanes)
 }
 
@@ -2793,7 +2803,12 @@ pub(crate) fn sketch_payload_fixed_pairs(
             });
         }
     }
-    pairs.sort_by_key(|pair| pair.offset);
+    ctx.stable_sort_by(
+        &mut pairs,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort NX sketch payload pairs",
+    )?;
     Ok(pairs)
 }
 
@@ -2904,7 +2919,12 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
             });
         }
     }
-    pairs.sort_by_key(|pair| pair.offset);
+    ctx.stable_sort_by(
+        &mut pairs,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort NX datum csys payload pairs",
+    )?;
     Ok(pairs)
 }
 
@@ -3015,7 +3035,12 @@ pub(crate) fn draft_construction_binary32_lanes(
             lanes.push(lane);
         }
     }
-    lanes.sort_by_key(FramedScalarRun::offset);
+    ctx.stable_sort_by(
+        &mut lanes,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort NX draft construction lanes",
+    )?;
     Ok(lanes)
 }
 
@@ -3330,7 +3355,14 @@ fn operation_state_group_table_before_counter_map(
         )?;
         candidates.push((at, end));
     }
-    candidates.sort_by_key(|(start, end)| (*end, *start));
+    ctx.stable_sort_by(
+        &mut candidates,
+        |(left_start, left_end), (right_start, right_end)| {
+            (left_end, left_start).cmp(&(right_end, right_start))
+        },
+        |_| 0,
+        "sort NX operation state group candidates",
+    )?;
 
     let predecessor_bytes = candidates
         .len()
@@ -3707,7 +3739,12 @@ pub(crate) fn operation_common_frames(
             frames.push(frame);
         }
     }
-    frames.sort_by_key(CommonFrame::<usize>::offset);
+    ctx.stable_sort_by(
+        &mut frames,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort NX common frames",
+    )?;
     Ok(frames)
 }
 
@@ -3992,7 +4029,12 @@ fn record_references(
             out.push(*tagged);
         }
     }
-    out.sort_by_key(|reference| reference.offset);
+    ctx.stable_sort_by(
+        &mut out,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort NX direct references",
+    )?;
     Ok(out)
 }
 

@@ -119,12 +119,20 @@ pub(super) fn decode(
         grouped.push(definition);
     }
     for definitions in definitions_by_product_in_source_order.values_mut() {
-        definitions.sort_by_key(|definition| {
-            exchange
-                .records()
-                .get(definition)
-                .map_or(usize::MAX, |record| record.span.start)
-        });
+        ctx.stable_sort_by(
+            definitions,
+            |left, right| {
+                let start = |definition: &u64| {
+                    exchange
+                        .records()
+                        .get(definition)
+                        .map_or(usize::MAX, |record| record.span.start)
+                };
+                start(left).cmp(&start(right))
+            },
+            |_| 0,
+            "step_product_definition_group_sort",
+        )?;
     }
     let mut definition_descriptions = BTreeMap::<u64, String>::new();
     for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
@@ -300,7 +308,12 @@ pub(super) fn decode(
                     .iter()
                     .any(|candidate| candidate.id == *body)
             });
-            bodies.sort();
+            ctx.stable_sort_by(
+                &mut bodies,
+                Ord::cmp,
+                |body| body.as_str().len(),
+                "step_product_body_sort",
+            )?;
             bodies.dedup();
             let owner = definition.map_or_else(
                 || format!("PRODUCT #{step_id}"),
@@ -1180,7 +1193,12 @@ fn occurrence_placements(
             )?;
             copied.extend_from_slice(source_ids);
             let mut source_ids = copied;
-            source_ids.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut source_ids,
+                Ord::cmp,
+                |_| 0,
+                "step_ambiguous_context_source_sort",
+            )?;
             source_ids.dedup();
             ctx.insert_btree_map(
                 ambiguous,
@@ -1281,7 +1299,12 @@ fn occurrence_placements(
                 "step_competing_mapped_sources",
             )?;
             source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
-            source_ids.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut source_ids,
+                Ord::cmp,
+                |_| 0,
+                "step_competing_mapped_source_sort",
+            )?;
             source_ids.dedup();
             result.remove(&usage_id);
             let mut copied = Vec::new();
@@ -1319,7 +1342,12 @@ fn occurrence_placements(
                     "step_ambiguous_mapped_sources",
                 )?;
                 source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
-                source_ids.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut source_ids,
+                    Ord::cmp,
+                    |_| 0,
+                    "step_ambiguous_mapped_source_sort",
+                )?;
                 source_ids.dedup();
                 ctx.insert_btree_map(
                     ambiguous,

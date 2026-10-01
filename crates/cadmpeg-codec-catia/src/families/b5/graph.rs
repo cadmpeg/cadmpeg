@@ -2282,7 +2282,12 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     for record in candidates.into_values().flatten() {
         ctx.push_vec(&mut records, record, "catia_b5_targeted_geometry_records")?;
     }
-    records.sort_by_key(|record| record.offset);
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "catia_b5_targeted_geometry_sort",
+    )?;
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
 }
 
@@ -3013,7 +3018,12 @@ fn bind_native_vertices(
         }
     }
     let mut ranked = ctx.collect_vec(logical_coordinates, "catia_b5_ranked_logical_vertices")?;
-    ranked.sort_unstable_by_key(|(vertex, _)| *vertex);
+    ctx.sort_unstable_by(
+        &mut ranked,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "catia_b5_ranked_logical_vertices_sort",
+    )?;
     let mut logical_vertex_indices = HashMap::new();
     let mut logical_vertices = Vec::new();
     for (rank, (object_id, point)) in ranked.into_iter().enumerate() {
@@ -5842,7 +5852,12 @@ fn admit_dependency_records(
         if found.is_empty() {
             break;
         }
-        found.sort_unstable_by_key(|record| record.offset);
+        ctx.sort_unstable_by(
+            &mut found,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            "catia_b5_dependency_found_sort",
+        )?;
         pending.clear();
         for candidate in found {
             ctx.insert_hash_set(
@@ -5927,11 +5942,16 @@ fn framed_records_and_dependency_candidates(
         )?;
         ctx.push_vec(&mut records, (frame.end, record), "catia_b5_framed_records")?;
     }
-    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
-        left_end
-            .cmp(right_end)
-            .then_with(|| right.offset.cmp(&left.offset))
-    });
+    ctx.sort_unstable_by(
+        &mut records,
+        |(left_end, left), (right_end, right)| {
+            left_end
+                .cmp(right_end)
+                .then_with(|| right.offset.cmp(&left.offset))
+        },
+        |_| 0,
+        "catia_b5_framed_records_sort",
+    )?;
     let mut ordered = Vec::new();
     for (_, record) in records {
         ctx.push_vec(&mut ordered, record, "catia_b5_ordered_framed_records")?;
@@ -6004,11 +6024,16 @@ fn indexed_topology_records_and_dependency_candidates(
             "catia_b5_indexed_topology_records",
         )?;
     }
-    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
-        left_end
-            .cmp(right_end)
-            .then_with(|| right.offset.cmp(&left.offset))
-    });
+    ctx.sort_unstable_by(
+        &mut records,
+        |(left_end, left), (right_end, right)| {
+            left_end
+                .cmp(right_end)
+                .then_with(|| right.offset.cmp(&left.offset))
+        },
+        |_| 0,
+        "catia_b5_indexed_topology_records_sort",
+    )?;
     let mut ordered = Vec::new();
     for (_, record) in records {
         ctx.push_vec(&mut ordered, record, "catia_b5_ordered_indexed_records")?;
@@ -6590,10 +6615,17 @@ pub(in crate::families) fn select_object_stream_population(
             )?;
         }
         let mut isolated = isolated_values;
-        isolated.sort_unstable_by_key(|index| {
-            let run = &runs[*index];
-            (run.stream_index, run.range.start)
-        });
+        ctx.sort_unstable_by(
+            &mut isolated,
+            |left, right| {
+                let left_run = &runs[*left];
+                let right_run = &runs[*right];
+                (left_run.stream_index, left_run.range.start)
+                    .cmp(&(right_run.stream_index, right_run.range.start))
+            },
+            |_| 0,
+            "catia_b5_selected_isolated_sort",
+        )?;
         for index in isolated {
             let run = &runs[index];
             let stream = &streams[run.stream_index];
@@ -6686,7 +6718,12 @@ fn owned_object_stream_population(
         )?;
     }
     let mut isolated = isolated_values;
-    isolated.sort_by_key(|(offset, _, _, _)| *offset);
+    ctx.stable_sort_by(
+        &mut isolated,
+        |(left, _, _, _), (right, _, _, _)| left.cmp(right),
+        |_| 0,
+        "catia_b5_population_isolated_sort",
+    )?;
 
     let mut population = ctx.copy_retained_slice(run, "catia_b5_topology_run_bytes")?;
     for (_, _, _, frame) in isolated {

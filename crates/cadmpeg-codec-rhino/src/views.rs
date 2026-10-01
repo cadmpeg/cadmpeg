@@ -375,7 +375,7 @@ fn parse_trace_image(
             "trace-image version is unsupported",
         ));
     }
-    let legacy_file_path = utf16_deferred(&mut reader)?;
+    let legacy_file_path = utf16_deferred(ctx, &mut reader)?;
     let width_mm = scaled_coordinate(reader.f64()?, scale)
         .ok_or_else(|| FramingError::structural(reader.position() - 8, "trace width is invalid"))?;
     let height_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {

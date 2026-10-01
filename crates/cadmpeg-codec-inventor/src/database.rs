@@ -408,23 +408,13 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count(field, maximum)?;
-        let len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
-        })?;
-        let utf8_bytes = crate::reader::utf16_utf8_len(self.source, count).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
-        })?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(len),
-            "decode RSe table UTF-16 units",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+        crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            count,
+            field,
             "retain RSe table UTF-16 field",
-        )?;
-        self.source.utf16_le(count).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
-        })
+        )
     }
 
     fn id_list(
@@ -527,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn database_note_refuses_retained_and_materialized_limits_before_utf16_decode() {
+    fn database_note_refuses_retained_limit_and_needs_no_utf16_scratch() {
         let bytes = database_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -543,15 +533,12 @@ mod tests {
         ));
 
         policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index("synthetic database".len() * 2 - 1);
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("database fits input cap");
         assert!(matches!(
             parse_database(&ctx, &bytes),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "decode RSe table UTF-16 units"
+            Ok(DatabaseHeader::Supported(database)) if database.note == "synthetic database"
         ));
 
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())

@@ -212,7 +212,12 @@ pub(super) fn historical_edge_context(
             }),
         "collect F3D historical incident loops",
     )?;
-    incident_loops.sort_by_key(|context| context.coedge_slot);
+    decode.stable_sort_by(
+        &mut incident_loops,
+        |left, right| left.coedge_slot.cmp(&right.coedge_slot),
+        |_| 0,
+        "sort F3D historical incident loops",
+    )?;
     Ok(
         crate::records::topology::historical_context::DesignHistoricalEdgeContext {
             edge_slot: edge,
@@ -628,7 +633,12 @@ impl HistoricalIdentityIndex {
                     .flat_map(|membership| membership.states.iter().copied()),
                 "collect F3D reconstructed revision states",
             )?;
-            revision.states.sort_unstable();
+            decode.sort_unstable_by(
+                &mut revision.states,
+                Ord::cmp,
+                |_| 0,
+                "sort F3D reconstructed revision states",
+            )?;
             revision.states.dedup();
         }
         Ok(Self {
@@ -816,7 +826,12 @@ fn component_histories<'a>(
             selected.push(history);
         }
     }
-    selected.sort_by(|left, right| left.id.cmp(&right.id));
+    decode.stable_sort_by(
+        &mut selected,
+        |left, right| left.id.cmp(&right.id),
+        |history| history.id.len(),
+        "sort F3D component histories",
+    )?;
     selected.dedup_by(|left, right| left.id == right.id);
     Ok(Some(selected))
 }
@@ -1144,7 +1159,12 @@ fn hole_transition_face_candidate(
             }),
         "collect F3D Hole transition faces",
     )?;
-    candidates.sort_unstable();
+    decode.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D Hole transition faces",
+    )?;
     candidates.dedup();
     let [face_slot] = candidates.as_slice() else {
         return Ok(None);
@@ -2066,7 +2086,12 @@ pub(super) fn entity_selection_edge_candidates(
             historical_identity_edges(decode, kind, entity_ref, topology)?,
             "collect F3D selected identity edges",
         )?;
-        edge_slots.sort_unstable();
+        decode.sort_unstable_by(
+            &mut edge_slots,
+            Ord::cmp,
+            |_| 0,
+            "sort F3D selected identity edges",
+        )?;
         if edge_slots.is_empty() {
             continue;
         }

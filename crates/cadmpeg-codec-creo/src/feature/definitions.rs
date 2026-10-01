@@ -6311,7 +6311,7 @@ fn saved_positional_generated_entities(
             starts.push(row_start);
         }
     }
-    starts.sort_unstable();
+    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo saved generated row starts sort")?;
     starts.dedup();
 
     let mut entities = Vec::new();
@@ -7384,7 +7384,12 @@ fn definition_starts(
             positional: false,
         });
     }
-    starts.sort_unstable_by_key(|entry| entry.offset);
+    ctx.sort_unstable_by(
+        &mut starts,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo feature definition starts sort",
+    )?;
     let labeled_count = starts.len();
     for index in 0..labeled_count {
         let start = starts[index].offset;
@@ -7405,7 +7410,12 @@ fn definition_starts(
             });
         }
     }
-    starts.sort_unstable_by_key(|entry| entry.offset);
+    ctx.sort_unstable_by(
+        &mut starts,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo feature definition starts sort",
+    )?;
     starts.dedup_by_key(|entry| entry.offset);
     Ok(starts)
 }
@@ -7479,7 +7489,12 @@ pub(crate) fn definitions(
             });
         }
     }
-    starts.sort_unstable_by_key(|entry| entry.offset);
+    ctx.sort_unstable_by(
+        &mut starts,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo feature definition starts sort",
+    )?;
     starts.dedup_by_key(|entry| entry.offset);
     let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
     definitions.retain(|definition| retained_offsets.contains(&definition.offset));
@@ -7515,7 +7530,12 @@ pub(crate) fn depdb_definitions(
             });
         }
     }
-    starts.sort_unstable_by_key(|entry| entry.offset);
+    ctx.sort_unstable_by(
+        &mut starts,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo feature definition starts sort",
+    )?;
     starts.dedup_by_key(|entry| entry.offset);
     definitions_in_ranges(ctx, payload, &starts)
 }
@@ -7602,7 +7622,12 @@ pub(crate) fn positional_replay_definitions(
             });
         }
     }
-    starts.sort_unstable_by_key(|entry| entry.offset);
+    ctx.sort_unstable_by(
+        &mut starts,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo feature definition starts sort",
+    )?;
     starts.dedup_by_key(|entry| entry.offset);
     let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
     definitions.retain(|definition| pending_offsets.contains(&definition.offset));

@@ -765,28 +765,24 @@ fn assert_jt_string_resource_limit(
 }
 
 #[test]
-fn jt_string_code_units_refuse_before_collection_growth() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_collection_items = 2;
-    };
-    assert_jt_string_resource_limit(
-        adjust_policy,
-        ResourceDimension::CollectionItems,
-        "decode DisplayJT string code units",
-    );
-}
-
-#[test]
-fn jt_string_code_units_refuse_before_scoped_allocation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_materialized_bytes = 5;
-    };
-    assert_jt_string_resource_limit(
-        adjust_policy,
-        ResourceDimension::MaterializedBytes,
-        "decode DisplayJT string code units",
+fn jt_string_code_units_need_no_scratch_allocation() {
+    let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
+    body.extend_from_slice(&3_u32.to_le_bytes());
+    body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            assert_eq!(
+                super::parse_jt_string_property_atom_body(ctx, &body)
+                    .expect("no unit buffer")
+                    .as_deref(),
+                Some("NXΩ")
+            );
+        },
     );
 }
 
@@ -812,7 +808,7 @@ fn jt_string_scan_refuses_before_utf16_work() {
     assert_jt_string_resource_limit(
         adjust_policy,
         ResourceDimension::WorkUnits,
-        "decode DisplayJT string code units",
+        "retain DisplayJT string property",
     );
 }
 
@@ -1690,7 +1686,16 @@ fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
     for value in [-3.0_f32, -2.0, -1.0, 0.0, 1.0, 2.0] {
         body.extend_from_slice(&value.to_le_bytes());
     }
-    let node = super::parse_jt9_partition_node_body(&body).expect("required invariant");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty root context");
+    let node = super::parse_jt9_partition_node_body(&ctx, &body)
+        .expect("admitted partition")
+        .expect("required invariant");
     assert_eq!(node.group_version, 1);
     assert_eq!(node.child_object_ids, [2]);
     assert_eq!(node.file_name, "x");
@@ -1709,8 +1714,23 @@ fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
         )
     );
 
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |limited| {
+            assert!(
+                matches!(super::parse_jt9_partition_node_body(limited, &body), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.additional == 1 && limit.operation == "retain DisplayJT partition name")
+            );
+        },
+    );
+
     body.pop();
-    assert!(super::parse_jt9_partition_node_body(&body).is_none());
+    assert!(super::parse_jt9_partition_node_body(&ctx, &body)
+        .expect("admitted partition")
+        .is_none());
 }
 
 #[test]

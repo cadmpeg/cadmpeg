@@ -275,7 +275,16 @@ fn endpoint_pair_candidates_with_budget(
             if radial_matches[pair[0]].len() == 1 && radial_matches[pair[1]].len() == 1 {
                 continue;
             }
-            pair.sort_by_key(|index| occurrences[*index].support_record_ordinal);
+            ctx.stable_sort_by(
+                &mut pair,
+                |left, right| {
+                    occurrences[*left]
+                        .support_record_ordinal
+                        .cmp(&occurrences[*right].support_record_ordinal)
+                },
+                |_| 0,
+                "catia_zero_pair_support_order",
+            )?;
             let [first, second] = [occurrences[pair[0]], occurrences[pair[1]]];
             ctx.push_vec(
                 &mut candidates,
@@ -292,7 +301,15 @@ fn endpoint_pair_candidates_with_budget(
             )?;
         }
     }
-    candidates.sort_by_key(|candidate| candidate.support_record_ordinals);
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| {
+            left.support_record_ordinals
+                .cmp(&right.support_record_ordinals)
+        },
+        |_| 0,
+        "catia_zero_endpoint_pairs_sort",
+    )?;
     Ok(Some(candidates))
 }
 
@@ -394,7 +411,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                 }
             }
         }
-        component.sort_unstable();
+        ctx.sort_unstable_by(&mut component, Ord::cmp, |_| 0, "catia_zero_locus_component_sort")?;
         let representative_point = endpoints[component[0]].2;
         let mut maximum_deviation = 0.0_f64;
         let mut complete = true;
@@ -494,7 +511,7 @@ fn endpoint_match_graph(
         }
     }
     for neighbors in &mut matches {
-        neighbors.sort_unstable();
+        ctx.sort_unstable_by(neighbors, Ord::cmp, |_| 0, "catia_zero_match_edges_sort")?;
     }
     Ok(Some(matches))
 }

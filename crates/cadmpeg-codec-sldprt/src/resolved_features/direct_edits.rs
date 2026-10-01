@@ -191,7 +191,12 @@ pub(crate) fn enrich_history_move_face_translations(
                 }
             }
         }
-        starts.sort_unstable_by_key(|entry| entry.0);
+        ctx.sort_unstable_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT move-face feature starts",
+        )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveFace)
@@ -356,7 +361,12 @@ pub(crate) fn enrich_history_move_body_translations(
                 }
             }
         }
-        starts.sort_unstable_by_key(|entry| entry.0);
+        ctx.sort_unstable_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT move-body feature starts",
+        )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveBody)

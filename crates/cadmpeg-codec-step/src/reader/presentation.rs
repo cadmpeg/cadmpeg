@@ -293,7 +293,12 @@ pub(super) fn decode(
             )?;
         }
     }
-    styles.sort_by_key(|(_, order)| *order);
+    ctx.stable_sort_by(
+        &mut styles,
+        |(_, left), (_, right)| left.cmp(right),
+        |_| 0,
+        "step_presentation_style_ids_sort",
+    )?;
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {

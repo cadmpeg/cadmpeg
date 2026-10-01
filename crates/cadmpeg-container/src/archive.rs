@@ -768,7 +768,12 @@ fn physical_ledger(
     let mut regions = Vec::new();
     let mut local_order = ctx.collection_vec(entries.len(), "ZIP ledger local order")?;
     local_order.extend(entries.iter());
-    local_order.sort_by_key(|entry| entry.header_start);
+    ctx.stable_sort_by(
+        &mut local_order,
+        |left, right| left.header_start.cmp(&right.header_start),
+        |_| 0,
+        "ZIP ledger local order",
+    )?;
     if central_begin > len {
         return Err(CodecError::Malformed(
             "ZIP central directory begins after the archive".into(),
@@ -880,7 +885,12 @@ fn physical_ledger(
 
     let mut central_order = ctx.collection_vec(entries.len(), "ZIP ledger central order")?;
     central_order.extend(entries.iter());
-    central_order.sort_by_key(|entry| entry.central_start);
+    ctx.stable_sort_by(
+        &mut central_order,
+        |left, right| left.central_start.cmp(&right.central_start),
+        |_| 0,
+        "ZIP ledger central order",
+    )?;
     let mut central_end = central_begin;
     for entry in central_order {
         if signature_at(bytes, entry.central_start) != Some(*b"PK\x01\x02") {
@@ -1063,7 +1073,12 @@ fn partition(
     points.extend(boundaries);
     let mut ordered_regions = ctx.collection_vec(regions.len(), "ZIP ledger ordered regions")?;
     ordered_regions.extend(regions.iter());
-    ordered_regions.sort_by_key(|region| (region.start, region.end));
+    ctx.stable_sort_by(
+        &mut ordered_regions,
+        |left, right| (left.start, left.end).cmp(&(right.start, right.end)),
+        |_| 0,
+        "ZIP ledger ordered regions",
+    )?;
     let mut region_index = 0_usize;
     let mut spans = Vec::new();
     for pair in points.windows(2) {
@@ -1405,6 +1420,92 @@ mod tests {
         assert!(matches!(snapshot.physical_ledger(&limited),
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "ZIP ledger local order"));
+    }
+
+    fn assert_ledger_sort_work_refusal(operation: &str) {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let mut target_charges = 0;
+        for _ in 0..256 {
+            let (limited, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
+            let error = snapshot
+                .physical_ledger(&limited)
+                .expect_err("ledger must refuse");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("expected work refusal: {error:?}");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            let threshold = limit
+                .used
+                .checked_add(limit.additional)
+                .expect("finite test budget");
+            if limit.operation == operation {
+                target_charges += 1;
+            }
+            // The sort admits its key scan, then its comparison work.
+            if limit.operation == operation && target_charges == 2 {
+                policy.limits.max_work_units = threshold - 1;
+                let (limited, _) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
+                assert!(matches!(snapshot.physical_ledger(&limited),
+                    Err(CodecError::ResourceLimit(ref refusal))
+                        if refusal.dimension == ResourceDimension::WorkUnits
+                            && refusal.operation == operation));
+                return;
+            }
+            policy.limits.max_work_units = threshold;
+        }
+        panic!("{operation} comparison work was not reached");
+    }
+
+    #[test]
+    fn physical_ledger_local_sort_refuses_work() {
+        assert_ledger_sort_work_refusal("ZIP ledger local order");
+    }
+
+    #[test]
+    fn physical_ledger_central_sort_refuses_work() {
+        assert_ledger_sort_work_refusal("ZIP ledger central order");
+    }
+
+    #[test]
+    fn physical_ledger_region_sort_refuses_work() {
+        assert_ledger_sort_work_refusal("ZIP ledger ordered regions");
+    }
+
+    #[test]
+    fn partition_sort_preserves_equal_region_order() {
+        let regions = [
+            PhysicalSpan {
+                start: 4,
+                end: 8,
+                role: ZipSpanRole::EndRecord,
+            },
+            PhysicalSpan {
+                start: 0,
+                end: 4,
+                role: ZipSpanRole::Zip64EndRecord,
+            },
+            PhysicalSpan {
+                start: 0,
+                end: 4,
+                role: ZipSpanRole::Zip64EndLocator,
+            },
+        ];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("empty root");
+        assert_eq!(
+            super::partition(&ctx, 8, &regions).expect("complete partition"),
+            vec![regions[1].clone(), regions[0].clone()]
+        );
     }
 
     #[test]

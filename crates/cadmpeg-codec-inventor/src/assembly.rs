@@ -543,16 +543,13 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        let len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor {field} length overflows"))
-        })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(len),
+        crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            count,
+            field,
             "retain Inventor assembly string",
-        )?;
-        self.source
-            .utf16_le(count)
-            .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))
+        )
     }
 
     fn transform(&mut self) -> Result<(bool, CompactMatrix), CodecError> {
@@ -611,6 +608,29 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
     use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
+
+    #[test]
+    fn assembly_utf16_text_charges_utf8_size_and_preserves_refusal() {
+        let bytes = [1, 0, 0, 0, 0, 8];
+        for retained in [2, 3] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test root fits input admission");
+            let mut cursor = super::Cursor::new(root);
+            let result = cursor.utf16(&ctx, "label", 256);
+            if retained == 2 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
+                assert_eq!(cursor.source.position(), 4);
+            } else {
+                assert_eq!(result.expect("three retained bytes fit exact text"), "ࠀ");
+                assert_eq!(cursor.source.position(), bytes.len());
+                assert!(ctx.charge_retained(1, "after assembly text").is_err());
+            }
+        }
+    }
 
     fn project_under_service(
         ufrx_occurrences: &[UfrxOccurrenceRecord],
@@ -855,17 +875,19 @@ mod tests {
 
     #[test]
     fn assembly_record_tokens_refuse_retained_limit_before_copy() {
-        for (kind, type_id, payload, operation) in [
+        for (kind, type_id, payload, label, operation) in [
             (
                 SegmentKind::AmDc,
                 OCCURRENCE_TYPE,
                 occurrence_fixture(7, &[]),
+                "DCx",
                 "retain Inventor assembly occurrence token",
             ),
             (
                 SegmentKind::AmGraphics,
                 PLACEMENT_TYPE_CA,
                 placement_fixture(7, false, 0x8421, 0x7bde, &[]),
+                "GRx",
                 "retain Inventor assembly placement token",
             ),
         ] {
@@ -875,13 +897,14 @@ mod tests {
             let token_len = admitted.3.as_deref().expect("record token").len();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(6 + token_len - 1);
+                cadmpeg_core::decode::u64_from_index(label.len() + token_len - 1);
             assert!(matches!(
                 inventory_with_record(kind, type_id, &payload, policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                    && limit.used == 6
+                        && limit.used == cadmpeg_core::decode::u64_from_index(label.len())
+                        && limit.additional == cadmpeg_core::decode::u64_from_index(token_len)
             ));
         }
     }

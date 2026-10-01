@@ -323,7 +323,14 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 })
                 .enumerate(),
         )?;
-        objects.sort_unstable_by_key(|(index, (name, _))| (name.offset, *index));
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left_index, (left_name, _)), (right_index, (right_name, _))| {
+                (left_name.offset, *left_index).cmp(&(right_name.offset, *right_index))
+            },
+            |_| 0,
+            "sort SLDPRT component path objects",
+        )?;
         let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
             let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
             if is_profile_feature_object(feature) {
