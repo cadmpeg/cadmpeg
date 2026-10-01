@@ -999,18 +999,6 @@ fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], Framing
     Ok(&bytes[..bytes.len() - 2])
 }
 
-pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
-    let bytes = utf16_payload(reader)?;
-    if bytes.is_empty() {
-        return Ok(String::new());
-    }
-    View::utf16le_at(bytes, 0, bytes.len() / 2)
-        .map(|(value, _)| value)
-        .ok_or_else(|| {
-            FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence")
-        })
-}
-
 fn visit_utf16(
     bytes: &[u8],
     error_offset: usize,
@@ -1044,35 +1032,39 @@ pub(crate) fn utf16_retained(
     reader: &mut BoundedReader<'_>,
     operation: &'static str,
 ) -> Result<String, FramingError> {
-    utf16_deferred(reader)?.admit(ctx, operation)
+    let bytes = utf16_payload(reader)?;
+    decode_utf16_retained(ctx, bytes, reader.position(), operation)
 }
 
-/// Validates UTF-16 bytes and measures their UTF-8 length without allocating.
+fn decode_utf16_retained(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    error_offset: usize,
+    operation: &'static str,
+) -> Result<String, FramingError> {
+    ctx.utf16le_text(bytes, bytes.len() / 2, false, operation).map_err(|error| {
+        match error {
+            CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+            _ => FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"),
+        }
+    })
+}
+
+/// A validated UTF-16 window whose retained copy can be deferred.
 pub(crate) struct DeferredUtf16<'a> {
     bytes: &'a [u8],
-    length: usize,
     error_offset: usize,
 }
 
 pub(crate) fn utf16_deferred<'a>(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'a>,
 ) -> Result<DeferredUtf16<'a>, FramingError> {
     let bytes = utf16_payload(reader)?;
     let error_offset = reader.position();
-    let mut length = 0_usize;
-    visit_utf16(bytes, error_offset, |character| {
-        length = length
-            .checked_add(character.len_utf8())
-            .ok_or(FramingError::Overflow {
-                offset: error_offset,
-            })?;
-        Ok(())
-    })?;
-    Ok(DeferredUtf16 {
-        bytes,
-        length,
-        error_offset,
-    })
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len() / 2), "validate Rhino deferred UTF-16")?;
+    visit_utf16(bytes, error_offset, |_| Ok(()))?;
+    Ok(DeferredUtf16 { bytes, error_offset })
 }
 
 impl DeferredUtf16<'_> {
@@ -1081,12 +1073,7 @@ impl DeferredUtf16<'_> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<String, FramingError> {
-        let mut value = ctx.retained_string(self.length, operation)?;
-        visit_utf16(self.bytes, self.error_offset, |character| {
-            value.push(character);
-            Ok(())
-        })?;
-        Ok(value)
+        decode_utf16_retained(ctx, self.bytes, self.error_offset, operation)
     }
 }
 
@@ -1450,7 +1437,7 @@ fn parse_units_reader(
     };
     let custom = if !legacy && version >= 102 {
         let scale = reader.f64()?;
-        let name = utf16_deferred(reader)?;
+        let name = utf16_deferred(ctx, reader)?;
         Some((scale, name))
     } else {
         None
@@ -1530,6 +1517,7 @@ fn anonymous_version(
 }
 
 fn parse_plugin_reference<'a>(
+    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -1539,11 +1527,11 @@ fn parse_plugin_reference<'a>(
     uuid(&mut payload)?;
     payload.i32()?;
     for _ in 0..3 {
-        utf16_deferred(&mut payload)?;
+        utf16_deferred(ctx, &mut payload)?;
     }
     if version.1 >= 1 {
         for _ in 0..8 {
-            utf16_deferred(&mut payload)?;
+            utf16_deferred(ctx, &mut payload)?;
         }
         if version.1 >= 2 {
             for _ in 0..3 {
@@ -1556,6 +1544,7 @@ fn parse_plugin_reference<'a>(
 }
 
 fn parse_plugin_list(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1578,13 +1567,14 @@ fn parse_plugin_list(
         count_offset,
     )?;
     for _ in 0..count {
-        parse_plugin_reference(data, &mut reader, archive)?;
+        parse_plugin_reference(ctx, data, &mut reader, archive)?;
     }
     reader.skip_remaining()?;
     Ok(())
 }
 
 fn parse_earth_anchor<'a>(
+    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -1601,7 +1591,7 @@ fn parse_earth_anchor<'a>(
         payload.i32()?;
         uuid(&mut payload)?;
         for _ in 0..4 {
-            utf16_deferred(&mut payload)?;
+            utf16_deferred(ctx, &mut payload)?;
         }
         if version.1 >= 2 {
             payload.i32()?;
@@ -1771,7 +1761,7 @@ fn parse_settings_attributes(
     }
     if version.1 >= 3 {
         point(&mut reader)?;
-        parse_earth_anchor(data, &mut reader, archive)?;
+        parse_earth_anchor(ctx, data, &mut reader, archive)?;
     }
     if version.1 >= 4 {
         reader.bool()?;
@@ -2130,7 +2120,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     }
     if version.0 == 1 {
         payload.i32()?;
-        utf16_deferred(&mut payload)?;
+        utf16_deferred(ctx, &mut payload)?;
         read_segments(&mut payload)?;
         if version.1 >= 1 {
             uuid(&mut payload)?;
@@ -2935,7 +2925,7 @@ fn parse_setting(
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
     match record.typecode {
-        PLUGIN_LIST => parse_plugin_list(data, record, archive),
+        PLUGIN_LIST => parse_plugin_list(ctx, data, record, archive),
         UNITS => parse_units(ctx, data, record).map(|value| settings.units = Some(value)),
         RENDER_MESH | ANALYSIS_MESH => parse_mesh_record(data, record, archive),
         ATTRIBUTES => parse_settings_attributes(ctx, data, record, archive),
