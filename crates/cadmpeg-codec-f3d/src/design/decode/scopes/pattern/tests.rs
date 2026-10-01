@@ -1608,3 +1608,41 @@ fn rectangular_pattern_local_search_ceilings_refuse() {
         assert_eq!(Some(limit), ctx.resource_refusal());
     });
 }
+
+#[test]
+fn rectangular_pattern_aggregate_search_span_refuses() {
+    const INSTANCE_COUNT: u32 = 17;
+    const RECORD_SPAN: usize = 1_048_576;
+    let (_, _, mut scope, construction) = rectangular_instance_fixture();
+    let mut references = vec![100, 50, 51, 52, 53, 110];
+    references.extend(1000..1000 + INSTANCE_COUNT - 1);
+    references.push(2000);
+    scope.try_edit(|draft| {
+        draft.reference_members = crate::records::identity::ReferenceRun::unlocated(references);
+        draft.layout_fixture_references();
+        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+        draft.layout_fixture_tail();
+    }).unwrap();
+    let mut bytes = Vec::new();
+    append_transform_record(&mut bytes, 100, [0., 0., 0.]);
+    bytes.resize(RECORD_SPAN, 0);
+    for index in 50..=53 { append_header(&mut bytes, index); }
+    append_header(&mut bytes, 110);
+    for index in 1000..1000 + INSTANCE_COUNT - 1 {
+        let start = bytes.len();
+        append_transform_record(&mut bytes, index, [0., 0., 0.]);
+        bytes.resize(start + RECORD_SPAN, 0);
+    }
+    append_header(&mut bytes, 2000);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let mut wire = crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(construction);
+    wire.u_count = INSTANCE_COUNT;
+    let construction = crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        let error = super::exact_rectangular_pattern_instances(ctx, &bytes, &records, &scope, &construction).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("aggregate span must refuse"); };
+        assert_eq!(limit.operation, "F3D rectangular pattern aggregate span");
+        assert_eq!(Some(limit), ctx.resource_refusal());
+    });
+}
