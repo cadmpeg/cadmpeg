@@ -90,8 +90,12 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
     ir.model.coedges.reverse();
     let model =
         WritableModel::try_new(&ir).expect("references resolve independently of arena order");
-    let actual = super::super::brep_payload(&cadmpeg_test_support::service_decode_context(), &model, crate::RhinoArchiveVersion::V8)
-        .expect("permuted triangle payload");
+    let actual = super::super::brep_payload(
+        &cadmpeg_test_support::service_decode_context(),
+        &model,
+        crate::RhinoArchiveVersion::V8,
+    )
+    .expect("permuted triangle payload");
     assert_eq!(actual.body, expected.body);
     assert_eq!(actual.direct, expected.direct);
     assert_eq!(model.loops[0].coedges, vec![0, 1, 2]);
@@ -141,7 +145,8 @@ fn brep_mesh_presence_refuses_one_below_collection_need() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = super::super::brep_payload(&ctx, &model, crate::RhinoArchiveVersion::V8)
-        .err().expect("one face exceeds zero slots");
+        .err()
+        .expect("one face exceeds zero slots");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "Rhino Brep mesh presence"));

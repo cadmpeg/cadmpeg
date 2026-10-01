@@ -1383,10 +1383,10 @@ pub fn read_detection_prefix(
         "compound detection prefix bytes",
     )
     .map_err(io::Error::other)?;
-    let mut chunk =
-        ctx.alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
-            .map_err(io::Error::other)?
-            .into_boxed_slice();
+    let mut chunk = ctx
+        .alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
+        .map_err(io::Error::other)?
+        .into_boxed_slice();
     while bytes.len() < phase_one_len {
         let chunk_len = (phase_one_len - bytes.len()).min(chunk.len());
         let read = source.read(&mut chunk[..chunk_len])?;

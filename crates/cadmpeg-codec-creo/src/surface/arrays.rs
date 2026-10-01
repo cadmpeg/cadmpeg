@@ -86,12 +86,14 @@ impl CountedScalars {
     pub(crate) fn empty(count: u32) -> Result<Self, CodecError> {
         Ok(Self {
             shape: count,
-            values: crate::decode::with_test_decode_ctx(|ctx| ctx.alloc_filled(
-                usize::try_from(count)
-                    .map_err(|_| CodecError::malformed("test scalar array count"))?,
-                None,
-                "creo scalar slots",
-            ))?,
+            values: crate::decode::with_test_decode_ctx(|ctx| {
+                ctx.alloc_filled(
+                    usize::try_from(count)
+                        .map_err(|_| CodecError::malformed("test scalar array count"))?,
+                    None,
+                    "creo scalar slots",
+                )
+            })?,
             tokens: None,
         })
     }

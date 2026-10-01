@@ -66,20 +66,27 @@ fn closest_pcurve_controls_refuse_one_below_collection_need() {
 
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            1, vec![0.0, 0.0, 1.0, 1.0],
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-            None, false,
-        ).expect("polynomial pcurve"),
+            None,
+            false,
+        )
+        .expect("polynomial pcurve"),
     };
     let error = crate::test_support::with_decode_context_over(
-        &[], |policy| policy.limits.max_collection_items = 1,
+        &[],
+        |policy| policy.limits.max_collection_items = 1,
         |ctx| super::closest_pcurve_parameters(ctx, &pcurve, Point2::new(0.5, 0.0), None),
-    ).expect_err("two controls exceed one slot");
+    )
+    .expect_err("two controls exceed one slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "nx blend pcurve controls"));
-    let result = crate::test_support::with_decode_context(|ctx|
+    let result = crate::test_support::with_decode_context(|ctx| {
         super::closest_pcurve_parameters(ctx, &pcurve, Point2::new(0.5, 0.0), None)
-    ).expect("service admission").expect("linear closest parameter");
+    })
+    .expect("service admission")
+    .expect("linear closest parameter");
     assert_eq!(result, vec![0.5]);
 }

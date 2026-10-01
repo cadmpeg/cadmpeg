@@ -1016,9 +1016,9 @@ mod tests {
         bytes[8192] = 0x7f;
         let mut reader = Cursor::new(bytes.clone());
         let arena = DecodeArena::new();
-        let (_, root) = DecodeContext::read_root(
-            &mut reader, &arena, &DecodePolicy::default(), false,
-        ).expect("root is admitted");
+        let (_, root) =
+            DecodeContext::read_root(&mut reader, &arena, &DecodePolicy::default(), false)
+                .expect("root is admitted");
         assert_eq!(root.window(), bytes.as_slice());
     }
 
