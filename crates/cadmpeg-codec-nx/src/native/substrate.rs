@@ -564,15 +564,14 @@ impl<'a> ParsedStreams<'a> {
             .map(|(ordinal, stream)| (ordinal, &stream.views))
     }
 
-    /// The prepared delta-extended semantic bytes of the stream at `ordinal`.
-    pub(crate) fn semantic_bytes(&self, ordinal: usize) -> &[u8] {
-        &self.streams[ordinal].semantic_bytes
-    }
-
     /// Parse NURBS geometry for the selected semantic stream when requested.
-    pub(crate) fn parse_nurbs(&self, ordinal: usize) -> crate::nurbs::Parsed {
+    pub(crate) fn parse_nurbs(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ordinal: usize,
+    ) -> Result<crate::nurbs::Parsed, CodecError> {
         let stream = &self.streams[ordinal];
-        crate::nurbs::parse_with_graph(&stream.semantic_bytes, &stream.nurbs_graph)
+        crate::nurbs::parse_with_graph(ctx, &stream.semantic_bytes, &stream.nurbs_graph)
     }
 }
 
@@ -1078,11 +1077,16 @@ mod tests {
             ParsedStreams::parse(ctx, &scan).expect("test parsed streams")
         });
 
-        let expected = crate::nurbs::parse_with_graph(
-            parsed.semantic_bytes(1),
-            &parsed.streams[1].nurbs_graph,
-        );
-        let actual = parsed.parse_nurbs(1);
+        let expected = crate::test_support::with_decode_context(|ctx| {
+            crate::nurbs::parse_with_graph(
+                ctx,
+                &parsed.streams[1].semantic_bytes,
+                &parsed.streams[1].nurbs_graph,
+            )
+        })
+        .unwrap();
+        let actual =
+            crate::test_support::with_decode_context(|ctx| parsed.parse_nurbs(ctx, 1)).unwrap();
         assert_eq!(actual.surfaces.len(), expected.surfaces.len());
         assert_eq!(actual.curves.len(), expected.curves.len());
         assert_eq!(actual.pcurves.len(), expected.pcurves.len());

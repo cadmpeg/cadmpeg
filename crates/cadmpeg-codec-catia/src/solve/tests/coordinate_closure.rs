@@ -213,13 +213,13 @@ fn mesh_endpoint_validation_accepts_equal_points_only_for_closed_ports() {
 
 #[test]
 fn quotient_merges_roots_forced_to_one_coordinate_identity() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         [0, 1, 0, 2]
             .into_iter()
             .map(|point| Arc::new(HashSet::from([point])))
             .collect(),
     );
-    catia_test_context!(ctx);
 
     assert!(quotient
         .merge_singleton_coordinate_roots(&ctx, &[Vec::new(), Vec::new()])
@@ -231,9 +231,9 @@ fn quotient_merges_roots_forced_to_one_coordinate_identity() {
 #[test]
 fn singleton_coordinate_root_merges_are_batched() {
     const ROOT_COUNT: usize = 10_000;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let candidates = vec![Vec::new(); ROOT_COUNT / 2];
-    catia_test_context!(ctx);
 
     assert!(quotient
         .merge_singleton_coordinate_roots(&ctx, &candidates)

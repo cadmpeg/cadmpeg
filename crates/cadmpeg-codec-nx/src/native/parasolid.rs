@@ -2985,8 +2985,6 @@ pub(in crate::native) struct ParasolidEntityValueRecords {
     pub(super) axes: Vec<ParasolidEntity57AxisRecord>,
     pub(super) tags: Vec<ParasolidEntity58TagRecord>,
     pub(super) unicode: Vec<ParasolidEntity62UnicodeRecord>,
-    /// Value-record frames whose payload did not materialize.
-    pub(super) unmaterialized: Vec<crate::parasolid::value_records::UnmaterializedValueRecord>,
 }
 
 /// Numeric value-record family referenced by a type-81 record.
@@ -3342,7 +3340,13 @@ pub(super) fn parasolid_attribute_definitions(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX attribute definition stream ordinal", 0, 1))?;
-        for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
+        let crate::parasolid::AttributeScan {
+            records: scanned,
+            slots: _scan_slots,
+            payloads,
+        } = crate::parasolid::attribute_definitions(ctx, &stream.inflated)?;
+        payloads.commit()?;
+        for definition in scanned {
             ctx.reserve_retained_vec(&mut records, 1, "NX attribute definitions")?;
             let name_len = definition.name.as_str().len();
             let mut name = ctx.retained_string(name_len, "retain NX attribute definition name")?;
@@ -3389,7 +3393,13 @@ pub(super) fn parasolid_field_names_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX field names stream ordinal", 0, 1))?;
-        for record in crate::parasolid::field_names_records(&stream.inflated) {
+        let crate::parasolid::AttributeScan {
+            records: scanned,
+            slots: _scan_slots,
+            payloads,
+        } = crate::parasolid::field_names_records(ctx, &stream.inflated)?;
+        payloads.commit()?;
+        for record in scanned {
             ctx.reserve_retained_vec(&mut records, 1, "NX field names records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3697,7 +3707,13 @@ pub(super) fn parasolid_entity_51_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX entity 51 stream ordinal", 0, 1))?;
-        for record in crate::parasolid::entity_51_records(&stream.inflated) {
+        let crate::parasolid::AttributeScan {
+            records: scanned,
+            slots: _scan_slots,
+            payloads,
+        } = crate::parasolid::entity_51_records(ctx, &stream.inflated)?;
+        payloads.commit()?;
+        for record in scanned {
             ctx.reserve_retained_vec(&mut records, 1, "NX entity 51 records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3740,7 +3756,6 @@ pub(super) fn parasolid_entity_value_records(
         axes: Vec::new(),
         tags: Vec::new(),
         unicode: Vec::new(),
-        unmaterialized: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         let ordinal = u32::try_from(stream_ordinal)
@@ -3780,24 +3795,18 @@ pub(super) fn parasolid_entity_value_records(
                 offsets
             }
             StreamKind::Partition | StreamKind::Plain => {
-                let offsets = crate::parasolid::referenced_value_record_offsets(&stream.inflated);
-                ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(offsets.len()),
-                    "NX value record owner offsets",
-                )?;
-                let bytes = offsets
-                    .len()
-                    .checked_mul(std::mem::size_of::<usize>())
-                    .ok_or_else(|| ctx.refuse_codec_limit("NX value record owner offsets", 0, 1))?;
-                offsets_guard.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+                let (offsets, guard) =
+                    crate::parasolid::referenced_value_record_offsets(ctx, &stream.inflated)?;
+                offsets_guard = guard;
                 offsets
             }
             StreamKind::Preview => continue,
         };
         let values = crate::parasolid::value_records::entity_value_records_at(
+            ctx,
             &stream.inflated,
             owned_offsets,
-        );
+        )?;
         drop(offsets_guard);
         for record in values.integers {
             ctx.reserve_retained_vec(&mut records.integers, 1, "NX Parasolid value records")?;
@@ -3963,12 +3972,6 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        ctx.reserve_retained_vec(
-            &mut records.unmaterialized,
-            values.unmaterialized.len(),
-            "NX Parasolid unmaterialized value records",
-        )?;
-        records.unmaterialized.extend(values.unmaterialized);
     }
     let sort_units = [
         records.integers.len(),

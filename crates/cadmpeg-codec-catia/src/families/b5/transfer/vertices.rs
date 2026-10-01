@@ -43,7 +43,7 @@ pub(super) fn transfer_vertex_tolerances(
             continue;
         };
         for support in supports {
-            let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves)? else {
+            let Some(lifted) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
                 continue;
             };
             let forward = [

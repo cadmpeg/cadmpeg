@@ -14,22 +14,27 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn admitted_unsafe_and_duplicate_entry_names_are_writer_limits() {
-    let entry = |name: &str| crate::native::EntryRecord {
-        id: format!("test:native:entry#{name}"),
-        name: name.into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
-        data: Vec::new(),
-    };
-    let unsafe_error = validate_entry_names(&[entry("../Document.xml")])
-        .expect_err("unsafe output paths are refused");
-    let duplicate_error = validate_entry_names(&[entry("Document.xml"), entry("Document.xml")])
+fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() {
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(crate::native::EntryRecord::new(
+            ctx,
+            "test:native:entry#unsafe".into(),
+            "../Document.xml".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            Vec::new()
+        )
+        .is_err());
+    });
+    let entry = crate::test_support::entry_record(
+        "test:native:entry#document".into(),
+        "Document.xml".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        Vec::new(),
+    );
+    let duplicate_error = validate_entry_names(&[entry.clone(), entry])
         .expect_err("duplicate output paths are refused");
-    assert!(matches!(
-        unsafe_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
-    ));
     assert!(matches!(
         duplicate_error,
         cadmpeg_core::CodecError::NotImplemented(_)
@@ -37,23 +42,23 @@ fn admitted_unsafe_and_duplicate_entry_names_are_writer_limits() {
 }
 
 #[test]
-fn x65_backslash_entry_is_refused_by_writer_reader_and_native_record() {
-    let entry = crate::native::EntryRecord {
-        id: "test:native:entry#backslash".into(),
-        name: r"..\outside".into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
-        data: Vec::new(),
-    };
-    let error = validate_entry_names(std::slice::from_ref(&entry))
-        .expect_err("writer refuses a backslash in an archive name");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("unsafe FCStd output entry name"));
-    let wire = serde_json::to_value(&entry).expect("entry serialization");
+fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
+    crate::test_support::with_service_context(&[], |ctx| {
+        let error = crate::native::EntryRecord::new(
+            ctx,
+            "test:native:entry#backslash".into(),
+            r"..\outside".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect_err("constructor refuses backslash");
+        assert!(error.to_string().contains("unsafe ZIP entry path"));
+    });
+    let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": []});
     let error = serde_json::from_value::<crate::native::EntryRecord>(wire)
-        .expect_err("native entry refuses a backslash in an archive name");
+        .expect_err("native entry refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
-
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("Document.xml", xml), (r"..\outside", b"payload")]);
     let error = FcstdCodec
@@ -61,7 +66,7 @@ fn x65_backslash_entry_is_refused_by_writer_reader_and_native_record() {
             &mut Cursor::new(bytes),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .expect_err("reader refuses a backslash in an archive name");
+        .expect_err("reader refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
 }
 
@@ -186,13 +191,13 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
         .expect("entries");
     for source in source_entries
         .iter()
-        .filter(|entry| entry.name != "Document.xml")
+        .filter(|entry| entry.name() != "Document.xml")
     {
         let output = output_entries
             .iter()
-            .find(|entry| entry.name == source.name)
+            .find(|entry| entry.name() == source.name())
             .expect("preserved entry");
-        assert_eq!(output.data, source.data, "{}", source.name);
+        assert_eq!(output.data(), source.data(), "{}", source.name());
     }
     assert!(crate::test_support::validate_native(round_trip.ir()).is_empty());
 }

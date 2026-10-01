@@ -4697,7 +4697,7 @@ mod detached_legacy_sketch_tests {
                 class_ref: class_id.into(),
                 feature_ref: feature_id.into(),
                 scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                    Vec::new(),
+                    vec!["sldprt:test:scalar#unselected-1".into()],
                     None,
                     None,
                 )

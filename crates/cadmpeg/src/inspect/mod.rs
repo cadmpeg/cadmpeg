@@ -24,7 +24,7 @@ use std::process::ExitCode;
 
 use crate::application::artifact_store::OptionalFileDestination;
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::LimitProfile;
@@ -518,6 +518,8 @@ fn file_len(path: &Path) -> Result<u64> {
 /// Seeking past end of file is an error rather than an empty result, because an
 /// offset outside the file is always a mistake worth reporting.
 fn read_window(path: &Path, offset: u64, len: u64) -> Result<Vec<u8>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let size = file_len(path)?;
     if offset > size {
         bail!(
@@ -531,7 +533,7 @@ fn read_window(path: &Path, offset: u64, len: u64) -> Result<Vec<u8>> {
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     file.seek(SeekFrom::Start(offset))
         .with_context(|| format!("seeking to 0x{offset:x} in {}", path.display()))?;
-    let mut buffer = alloc_filled(want, 0_u8, "cli inspect read window")?;
+    let mut buffer = ctx.alloc_filled(want, 0_u8, "cli inspect read window")?;
     file.read_exact(&mut buffer).with_context(|| {
         format!(
             "reading {want} bytes at 0x{offset:x} from {}",

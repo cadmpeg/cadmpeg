@@ -68,24 +68,48 @@ fn container_parses_header_and_directory() {
 fn legacy_scan_refuses_work_after_directory_traversal() {
     let file = legacy_cfb_with_two_streams();
 
-    // The CFB directory has one storage and two streams.
-
+    // Start with the same small policy and advance across the shared CFB charges.
+    let mut cap = 3;
+    let mut reached = false;
+    for _ in 0..256 {
+        let limit = crate::test_support::with_decode_context_over(
+            &file,
+            |policy| policy.limits.max_work_units = cap,
+            |ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
+                let error = container::scan_legacy(ctx, root)
+                    .expect_err("the legacy NX scan must refuse before its next operation");
+                let CodecError::ResourceLimit(limit) = error else {
+                    panic!("expected a work refusal: {error}");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.limit, cap);
+                limit
+            },
+        );
+        if limit.operation == "scan legacy NX directory" {
+            reached = true;
+            break;
+        }
+        let needed = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("fixture work fits");
+        assert!(needed > cap);
+        cap = needed;
+    }
+    assert!(
+        reached,
+        "CFB admission must reach the legacy NX directory refusal"
+    );
     crate::test_support::with_decode_context_over(
         &file,
-        |policy| {
-            policy.limits.max_work_units = 3;
-        },
+        |_| {},
         |ctx| {
-            let root = cadmpeg_core::decode::View::over_retained(&file);
-
-            let error = container::scan_legacy(ctx, root)
-                .expect_err("the legacy NX directory scan needs one more work unit");
-            assert!(matches!(
-                error,
-                CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "scan legacy NX directory"
-            ));
+            assert!(
+                container::scan_legacy(ctx, cadmpeg_core::decode::View::over_retained(&file))
+                    .is_ok()
+            );
         },
     );
 }

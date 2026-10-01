@@ -76,7 +76,7 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
             Ok(crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)) => break,
             Ok(_) => panic!("closed compact boundary must advance"),
             Err(error) => panic!("unexpected refusal: {error}"),
-        }
+        };
     }
     for operation in [
         "catia compact boundary edges",
@@ -128,11 +128,14 @@ fn compact_boundary_advance_refuses_nested_ordered_alternative_copies() {
             vec![(quotient.clone(), HashSet::new())],
             &budget,
         )
+        .map(|outcome| {
+            matches!(
+                outcome,
+                crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
+            )
+        })
     };
-    assert!(matches!(
-        run(&service_ctx).expect("service resource budget"),
-        crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
-    ));
+    assert!(run(&service_ctx).expect("service resource budget"));
 
     let mut refused = HashSet::new();
     for limit in 0..128 {
@@ -146,7 +149,7 @@ fn compact_boundary_advance_refuses_nested_ordered_alternative_copies() {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 refused.insert(error.operation);
             }
-            Ok(crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)) => break,
+            Ok(true) => break,
             Ok(_) => panic!("ordered compact boundary must advance"),
             Err(error) => panic!("unexpected refusal: {error}"),
         }
@@ -216,7 +219,7 @@ fn compact_boundary_advance_charges_existing_oriented_edges() {
             Ok(crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)) => break,
             Ok(_) => panic!("closed compact boundary must advance"),
             Err(error) => panic!("unexpected refusal: {error}"),
-        }
+        };
     }
     assert!(refused.contains("catia_compact_boundary_oriented_copy"));
 }

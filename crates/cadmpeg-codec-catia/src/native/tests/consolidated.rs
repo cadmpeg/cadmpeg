@@ -169,7 +169,7 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
     assert_eq!(records[0].source_index, 0);
     assert_eq!(records[0].source_offset, records[0].frame.pos);
     assert_eq!(
-        records[1].frame.width,
+        records[1].frame.width(),
         crate::wire::records::ConsolidatedFrameWidth::Two
     );
     assert!(records
@@ -1569,8 +1569,8 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     let uses = node.uses.as_ref().expect("edge-owned oriented uses");
     assert_eq!(uses.references, [[4, 5], [5, 6]]);
     let definition = node.definition.as_ref().expect("edge-owned definition");
-    assert_eq!(u8::from(definition.class), 0x23);
-    assert!(definition.frame.pos < node.byte_offset);
+    assert_eq!(u8::from(definition.class()), 0x23);
+    assert!(definition.frame().pos < node.byte_offset);
     assert_eq!(native.consolidated_vertex_identities.len(), 2);
     assert_eq!(native.consolidated_vertex_identities[0].identity, 139);
     assert_eq!(
