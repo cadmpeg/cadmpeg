@@ -478,3 +478,26 @@ fn bounded_plane_linear_nurbs_proofs_propagate_work_refusals() {
         assert!(reached, "{operation}");
     }
 }
+
+#[test]
+fn bounded_plane_polyline_proofs_propagate_work_refusals() {
+    use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples};
+    let points = vec![Point3::new(0.0,0.0,0.0), Point3::new(1.0,0.0,0.0),
+        Point3::new(1.0,1.0,0.0), Point3::new(0.0,1.0,0.0), Point3::new(0.0,0.0,0.0)];
+    let geometry = SolvedCurveGeometry::Polyline(PolylineCurve::new(
+        PolylineSamples::Unparameterized { points: points.try_into().unwrap() },0.0).unwrap());
+    let ir = CadIr::empty();
+    let index = ModelIndex::new(&ir);
+    for operation in ["iges closed polyline duplicate comparisons", "iges planar self-intersection comparisons"] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                let context = super::super::PlaneBoundarySimplicity { index: &index,
+                    plane:(Point3::new(0.0,0.0,0.0),Vector3::new(0.0,0.0,1.0)),
+                    resolution:0.001, transform:Transform::identity(), ctx };
+                super::super::bounded_plane_curve_is_simple(&geometry,context,false,None,&mut BTreeSet::new())
+            })
+        });
+    }
+}
