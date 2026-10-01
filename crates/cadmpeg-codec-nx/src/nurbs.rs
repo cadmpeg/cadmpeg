@@ -146,7 +146,7 @@ fn decode_surfaces(
                     weights.push(weight);
                 }
             }
-            let normal_reversed = node.byte_at(18)? == b'-';
+            let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
             let surface = NurbsPoleGrid::from_checked_lanes(
                 control_points
                     .chunks(descriptor.v_count)

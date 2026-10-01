@@ -260,16 +260,21 @@ impl Node {
         self.pos + self.bytes.len()
     }
 
-    /// Locate the payload following the five-reference compact geometry header.
-    fn compact_tail_offset(&self) -> Option<usize> {
+    /// Decode the common-header sense and the following payload offset.
+    pub(crate) fn common_header(&self) -> Option<(Sense, usize)> {
         let mut at = 8 + self.shift;
         skip_sequence_at(&self.bytes, &mut at, 5)?;
-        matches!(self.bytes.get(at), Some(b'+' | b'-')).then_some(at + 1)
+        let sense = match self.bytes.get(at) {
+            Some(b'+') => Sense::Forward,
+            Some(b'-') => Sense::Reversed,
+            _ => return None,
+        };
+        Some((sense, at + 1))
     }
 
     /// Decode adjacent references at the start of a compact geometry payload.
     pub(crate) fn compact_tail_references(&self, count: usize) -> Option<Vec<u32>> {
-        let mut at = self.compact_tail_offset()?;
+        let mut at = self.common_header()?.1;
         read_sequence_at(&self.bytes, &mut at, count)
     }
 
@@ -418,7 +423,7 @@ impl Node {
                 | NodeKind::Torus
         )
         .then_some(())?;
-        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        let payload_shift = self.common_header()?.1.checked_sub(19)?;
         crate::geometry::decode_surface_record(&self.bytes, self.kind, payload_shift)
     }
 
@@ -429,7 +434,7 @@ impl Node {
             NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse
         )
         .then_some(())?;
-        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        let payload_shift = self.common_header()?.1.checked_sub(19)?;
         crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
 
@@ -454,7 +459,7 @@ impl Node {
                 vec![(ReferenceRole::Point, fields.point)]
             }),
             NodeKind::BlendSurface => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
                 if self.bytes.get(at) != Some(&b'R') {
@@ -470,7 +475,7 @@ impl Node {
                 })
             }
             NodeKind::OffsetSurface => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
                 if !matches!(self.bytes.get(at), Some(b'V' | b'I' | b'U'))
@@ -484,7 +489,7 @@ impl Node {
                 })
             }
             NodeKind::TrimmedCurve => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
                 read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
@@ -492,7 +497,7 @@ impl Node {
                 })
             }
             NodeKind::SpCurve => {
-                let Some(mut at) = self.compact_tail_offset() else {
+                let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
                 read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
@@ -773,7 +778,7 @@ impl Graph {
     ) -> Result<Vec<BlendSurface>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::BlendSurface).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
+                let mut at = node.common_header()?.1;
                 (*node.bytes.get(at)? == b'R').then_some(())?;
                 at += 1;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
@@ -816,7 +821,7 @@ impl Graph {
     ) -> Result<Vec<OffsetSurface>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::OffsetSurface).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
+                let mut at = node.common_header()?.1;
                 let discriminator =
                     OffsetSurfaceDiscriminator::try_from(char::from(*node.bytes.get(at)?)).ok()?;
                 at += 1;
@@ -857,7 +862,7 @@ impl Graph {
     ) -> Result<Vec<SurfaceCurve>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::SpCurve).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
+                let mut at = node.common_header()?.1;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
                 let tolerance = View::f64_be_at(&node.bytes, at)?;
                 Some(SurfaceCurve {
@@ -889,7 +894,7 @@ impl Graph {
     ) -> Result<Vec<TrimmedCurve>, CodecError> {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::TrimmedCurve).filter_map(|node| {
-                let mut at = node.compact_tail_offset()?;
+                let mut at = node.common_header()?.1;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
                 let point_0 = vec3_be_at(&node.bytes, at)?;
                 let point_1 = vec3_be_at(&node.bytes, at + 24)?;
@@ -1361,7 +1366,7 @@ impl Graph {
             ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
         }
         for node in self.of_kind(NodeKind::BlendSurface) {
-            let Some(mut at) = node.compact_tail_offset() else {
+            let Some((_, mut at)) = node.common_header() else {
                 continue;
             };
             if node.bytes.get(at) != Some(&b'R') {
