@@ -960,7 +960,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                cadmpeg_core::decode::u64_from_index(offset),
+                cadmpeg_core::decode::u64_from_index(definition.body_position(offset)?.source()?.get()),
                 "section_equation_constraint",
                 Exactness::ByteExact,
             )?;
@@ -984,7 +984,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                cadmpeg_core::decode::u64_from_index(offset),
+                cadmpeg_core::decode::u64_from_index(definition.body_position(offset)?.source()?.get()),
                 "section_native_equation_constraint",
                 Exactness::ByteExact,
             )?;

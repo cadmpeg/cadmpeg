@@ -1390,6 +1390,35 @@ pub(crate) struct FeatureDefinition {
     pub(crate) offset: usize,
 }
 
+/// A position inside one definition's copied body.
+pub(crate) struct DefinitionBodyPosition<'a> {
+    definition: &'a FeatureDefinition,
+    relative: usize,
+}
+
+/// A checked position in the source stream.
+pub(crate) struct SourcePosition(usize);
+
+impl FeatureDefinition {
+    pub(crate) fn body_position(&self, relative: usize) -> Result<DefinitionBodyPosition<'_>, CodecError> {
+        if relative >= self.body.len() {
+            return Err(CodecError::malformed("Creo definition body position is outside its body"));
+        }
+        Ok(DefinitionBodyPosition { definition: self, relative })
+    }
+}
+
+impl DefinitionBodyPosition<'_> {
+    pub(crate) fn source(self) -> Result<SourcePosition, CodecError> {
+        self.definition.offset.checked_add(self.relative).map(SourcePosition)
+            .ok_or_else(|| CodecError::malformed("Creo definition source position overflows"))
+    }
+}
+
+impl SourcePosition {
+    pub(crate) fn get(self) -> usize { self.0 }
+}
+
 /// Definition naming before and after a join selects the owner as its identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DefinitionIdentity {

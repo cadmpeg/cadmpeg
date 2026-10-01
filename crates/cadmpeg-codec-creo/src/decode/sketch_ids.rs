@@ -76,7 +76,7 @@ pub(super) fn sketch_table_headers(
                 entity_ref: table.entity_ref,
             },
             table.rows.len(),
-            table.offset,
+            definition.body_position(table.offset)?.source()?.get(),
         )?;
     }
     if let Some(table) = &definition.segments {
