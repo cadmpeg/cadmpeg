@@ -85,6 +85,40 @@ pub(crate) fn assert_collection_refusal_at<T>(
     panic!("{operation} was not reached within 4096 collection admissions");
 }
 
+pub(crate) fn materialized_refusal_at<T>(
+    operation: &str,
+    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    for _ in 0..1024 {
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = decode(&ctx) else {
+            panic!("{operation} must refuse before decode completes");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        let threshold = limit.used.checked_add(limit.additional).expect("materialized admission fits u64");
+        assert!(threshold > policy.limits.max_materialized_bytes);
+        if limit.operation == operation {
+            policy.limits.max_materialized_bytes = threshold - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = decode(&ctx) else {
+                panic!("{operation} must refuse one byte below its boundary");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(refusal.operation, operation);
+            assert_eq!(refusal.used + refusal.additional, threshold);
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
+            return cadmpeg_core::CodecError::ResourceLimit(refusal);
+        }
+        policy.limits.max_materialized_bytes = threshold;
+    }
+    panic!("{operation} was not reached within 1024 materialized admissions");
+}
+
 pub(crate) fn validate_native(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
