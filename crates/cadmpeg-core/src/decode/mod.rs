@@ -12,6 +12,7 @@ mod error;
 mod policy;
 mod probe;
 mod space;
+pub mod tree;
 mod view;
 pub mod work_scratch;
 
