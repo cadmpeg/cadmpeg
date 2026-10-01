@@ -289,11 +289,9 @@ pub(super) fn fast_load_component_object_groups(
             "NX fast-load group temporary lists",
         )?;
         let mut uses = Vec::new();
-        temporary.with_storage(|| ctx.reserve_capacity(
-            &mut uses,
-            use_count,
-            "allocate NX fast-load group uses",
-        ))?;
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(&mut uses, use_count, "allocate NX fast-load group uses")
+        })?;
         for occurrence in occurrences
             .iter()
             .filter(|occurrence| occurrence.component_uuid == uuid.id)
@@ -301,11 +299,13 @@ pub(super) fn fast_load_component_object_groups(
             uses.push(ctx.copy_retained_text(&occurrence.id, "allocate NX fast-load group use")?);
         }
         let mut values = Vec::new();
-        temporary.with_storage(|| ctx.reserve_capacity(
-            &mut values,
-            value_count,
-            "allocate NX fast-load group values",
-        ))?;
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(
+                &mut values,
+                value_count,
+                "allocate NX fast-load group values",
+            )
+        })?;
         for value in object_uuid_values
             .iter()
             .filter(|value| value.uuid == uuid.uuid)

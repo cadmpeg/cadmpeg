@@ -910,10 +910,7 @@ pub(super) fn try_decode_geometry(
                         .as_ref()
                         .map(|lane| {
                             crate::intersection::SupportUvLane::from_checked(
-                                ctx.copy_slice(
-                                    lane.as_slice(),
-                                    "NX solved support-UV lane copy",
-                                )?,
+                                ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                                 lane.as_slice().len(),
                             )
                             .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
@@ -925,10 +922,7 @@ pub(super) fn try_decode_geometry(
                         .as_ref()
                         .map(|lane| {
                             crate::intersection::SupportUvLane::from_checked(
-                                ctx.copy_slice(
-                                    lane.as_slice(),
-                                    "NX solved support-UV lane copy",
-                                )?,
+                                ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                                 lane.as_slice().len(),
                             )
                             .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))

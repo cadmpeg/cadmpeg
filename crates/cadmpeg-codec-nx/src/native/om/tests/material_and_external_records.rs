@@ -1532,8 +1532,7 @@ fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
     // sixteen trailing control bytes and at most fifteen alignment bytes.
     let map_bytes = 64 * std::mem::size_of::<(u32, usize)>() + 64 + 16 + 15;
     let adjust_policy = |policy: &mut DecodePolicy| {
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(map_bytes - 1);
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(map_bytes - 1);
     };
     let error =
         native_fastload_result(adjust_policy).expect_err("identity map needs one more byte");
@@ -1596,8 +1595,7 @@ fn fastload_native_copies_refuse_retained_limit_before_creation() {
     let directory_bytes =
         4 * std::mem::size_of::<crate::container::DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
     let parsed_id_bytes = 50 * std::mem::size_of::<u32>();
-    let native_bytes = 50
-        * (2 * member_id_len + table_id.len())
+    let native_bytes = 50 * (2 * member_id_len + table_id.len())
         + table_id.len()
         + std::mem::size_of::<super::super::RmFastLoadObjectIdTable>()
         + "/Root/FastLoad/RMFastLoad".len()

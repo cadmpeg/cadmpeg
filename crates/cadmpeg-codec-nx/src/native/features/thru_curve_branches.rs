@@ -120,12 +120,16 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
     fn try_from(wire: GroupWire) -> Result<Self, Self::Error> {
         let mut branches = {
             let mut storage = Vec::new();
-            storage.try_reserve_exact(wire.branches.len()).map(|()| storage)
+            storage
+                .try_reserve_exact(wire.branches.len())
+                .map(|()| storage)
         }
         .map_err(|_| "branches: allocation failed")?;
         let mut locations = {
             let mut storage = Vec::new();
-            storage.try_reserve_exact(wire.branches.len()).map(|()| storage)
+            storage
+                .try_reserve_exact(wire.branches.len())
+                .map(|()| storage)
         }
         .map_err(|_| "locations: allocation failed")?;
         for (ordinal, branch) in wire.branches.into_iter().enumerate() {
@@ -136,14 +140,18 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
                 return Err("declared_count must equal members length plus one");
             }
             let mut members = {
-            let mut storage = Vec::new();
-            storage.try_reserve_exact(branch.members.len()).map(|()| storage)
-        }
+                let mut storage = Vec::new();
+                storage
+                    .try_reserve_exact(branch.members.len())
+                    .map(|()| storage)
+            }
             .map_err(|_| "members: allocation failed")?;
             let mut positions = {
-            let mut storage = Vec::new();
-            storage.try_reserve_exact(branch.members.len()).map(|()| storage)
-        }
+                let mut storage = Vec::new();
+                storage
+                    .try_reserve_exact(branch.members.len())
+                    .map(|()| storage)
+            }
             .map_err(|_| "positions: allocation failed")?;
             for (ordinal, reference) in branch.members.into_iter().enumerate() {
                 if cadmpeg_core::decode::index_from_u32(reference.ordinal) != ordinal {
@@ -248,11 +256,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_vec(
-                    &mut groups,
-                    1,
-                    "NX thru-curve construction branch groups",
-                )?;
+                ctx.reserve_vec(&mut groups, 1, "NX thru-curve construction branch groups")?;
                 Ok(FeatureThruCurveConstructionBranchGroup {
                     id,
                     operation_label,

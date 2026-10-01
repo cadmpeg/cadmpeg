@@ -713,11 +713,7 @@ impl<'a> Container<'a> {
             .map_err(|_| CodecError::NotImplemented("FastLoad ID count exceeds u64".into()))?;
         ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
         let mut object_ids = Vec::new();
-        ctx.reserve_capacity(
-            &mut object_ids,
-            count,
-            "retain NX FastLoad object IDs",
-        )?;
+        ctx.reserve_capacity(&mut object_ids, count, "retain NX FastLoad object IDs")?;
         for ordinal in 0..count {
             let offset = ids_start + ordinal * 4;
             let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
@@ -897,7 +893,8 @@ fn parse_extref_records(
                 return Ok(None);
             }
         }
-        let mut handles = ctx.collection_vec(handle_token_count, "nx external reference handles")?;
+        let mut handles =
+            ctx.collection_vec(handle_token_count, "nx external reference handles")?;
         for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             let Some(handle) = View::u32_be_at(bytes, token + 1) else {
@@ -1366,7 +1363,11 @@ pub(crate) fn scan_bytes<'a>(
         Region::Footer,
         footer_directory_end,
     )?;
-    ctx.reserve_capacity(&mut entries, footer_entries.len(), "join NX directory regions")?;
+    ctx.reserve_capacity(
+        &mut entries,
+        footer_entries.len(),
+        "join NX directory regions",
+    )?;
     entries.extend(footer_entries);
     if header_end > fo {
         return Err(CodecError::Malformed(
@@ -1463,13 +1464,16 @@ pub(crate) fn scan_legacy<'a>(
             .checked_add(byte_len)
             .ok_or_else(|| CodecError::Malformed("legacy CFB logical image overflows".into()))?;
 
-        workspace.with_storage(|| ctx.insert_btree_map(
-            &mut stream_spans,
-            stream.id(),
-            span,
-            "legacy NX stream spans",
-        ))?;
-        workspace.with_storage(|| ctx.reserve_vec(&mut stream_views, 1, "legacy NX stream views"))?;
+        workspace.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut stream_spans,
+                stream.id(),
+                span,
+                "legacy NX stream spans",
+            )
+        })?;
+        workspace
+            .with_storage(|| ctx.reserve_vec(&mut stream_views, 1, "legacy NX stream views"))?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;
@@ -1485,21 +1489,13 @@ pub(crate) fn scan_legacy<'a>(
                 }),
             CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
-        ctx.reserve_capacity(
-            &mut entries,
-            1,
-            "retain legacy NX directory entry",
-        )?;
+        ctx.reserve_capacity(&mut entries, 1, "retain legacy NX directory entry")?;
         let name_len = "/Root/"
             .len()
             .checked_add(entry.path().len())
             .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
         let mut name = String::new();
-        ctx.try_reserve_retained_text(
-            &mut name,
-            name_len,
-            "retain legacy NX directory entry",
-        )?;
+        ctx.try_reserve_retained_text(&mut name, name_len, "retain legacy NX directory entry")?;
         name.push_str("/Root/");
         name.push_str(entry.path());
         entries.push(DirEntry {
@@ -1556,11 +1552,7 @@ fn directory_region(
     }
     ctx.charge_collection_items(u64::from(count), "admit NX directory entries")?;
     let mut entries = Vec::new();
-    ctx.reserve_capacity(
-        &mut entries,
-        capacity,
-        "retain NX directory entries",
-    )?;
+    ctx.reserve_capacity(&mut entries, capacity, "retain NX directory entries")?;
     let mut at = entries_offset;
     for ordinal in 0..count {
         let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
@@ -1618,11 +1610,7 @@ fn try_entry(
         return Ok(None);
     };
     let mut name = String::new();
-    ctx.try_reserve_retained_text(
-        &mut name,
-        name_len,
-        "retain NX directory name",
-    )?;
+    ctx.try_reserve_retained_text(&mut name, name_len, "retain NX directory name")?;
     name.push_str(value);
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (

@@ -129,7 +129,9 @@ pub(super) fn feature_operation_chronological_labels<'a>(
     let mut section_reservation = ctx.reserve_scoped(0, "NX feature label sections")?;
     for label in labels {
         let section_key = label.section_link.as_str();
-        section_reservation.with_storage(|| ctx.admit_btree_entry(&sections, &section_key, "NX feature label sections"))?;
+        section_reservation.with_storage(|| {
+            ctx.admit_btree_entry(&sections, &section_key, "NX feature label sections")
+        })?;
 
         sections
             .entry(section_key)
@@ -3706,12 +3708,9 @@ fn assign_operation_header_identities(
     labels: &mut [FeatureOperationLabel],
     block_identities: &BTreeMap<u32, Option<String>>,
 ) -> Result<(), CodecError> {
-
-    let mut keys_guard = ctx.reserve_scoped(
-        0,
-        "reserve NX operation header keys",
-    )?;
-    let mut keys = keys_guard.with_storage(|| ctx.collection_vec(labels.len(), "NX operation header keys"))?;
+    let mut keys_guard = ctx.reserve_scoped(0, "reserve NX operation header keys")?;
+    let mut keys =
+        keys_guard.with_storage(|| ctx.collection_vec(labels.len(), "NX operation header keys"))?;
     for label in labels.iter() {
         keys.push(operation_header_identity_key(
             ctx,
@@ -3720,22 +3719,22 @@ fn assign_operation_header_identities(
         )?);
     }
 
-    let mut counts_guard = ctx.reserve_scoped(
-        0,
-        "reserve NX operation header counts",
-    )?;
+    let mut counts_guard = ctx.reserve_scoped(0, "reserve NX operation header counts")?;
     let mut counts = BTreeMap::<String, usize>::new();
     for key in keys.iter().flatten() {
         if !counts.contains_key(key.as_str()) {
-
             let mut copy = String::new();
-            counts_guard.with_storage(|| ctx.try_reserve_retained_text(
-                &mut copy,
-                key.len(),
-                "allocate NX operation header count key",
-            ))?;
+            counts_guard.with_storage(|| {
+                ctx.try_reserve_retained_text(
+                    &mut copy,
+                    key.len(),
+                    "allocate NX operation header count key",
+                )
+            })?;
             copy.push_str(key);
-            counts_guard.with_storage(|| ctx.insert_btree_map(&mut counts, copy, 0, "NX operation header counts"))?;
+            counts_guard.with_storage(|| {
+                ctx.insert_btree_map(&mut counts, copy, 0, "NX operation header counts")
+            })?;
         }
         let count = counts
             .get_mut(key.as_str())
@@ -3848,16 +3847,15 @@ pub(super) fn feature_operation_labels(
             .checked_ilog10()
             .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1)
             .max(10);
-        let mut section_key_guard = ctx.reserve_scoped(
-            0,
-            "NX feature label section key",
-        )?;
+        let mut section_key_guard = ctx.reserve_scoped(0, "NX feature label section key")?;
         let mut section_key = String::new();
-        section_key_guard.with_storage(|| ctx.try_reserve_retained_text(
-            &mut section_key,
-            section_key_len,
-            "allocate NX feature label section key",
-        ))?;
+        section_key_guard.with_storage(|| {
+            ctx.try_reserve_retained_text(
+                &mut section_key,
+                section_key_len,
+                "allocate NX feature label section key",
+            )
+        })?;
         write!(&mut section_key, "{section_ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("write NX feature label section key", 0, 1))?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -3968,11 +3966,7 @@ pub(super) fn feature_boolean_operations(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX Boolean operations")
                 .and_then(|()| {
-                    ctx.reserve_capacity(
-                        &mut operations,
-                        1,
-                        "allocate NX Boolean operations",
-                    )
+                    ctx.reserve_capacity(&mut operations, 1, "allocate NX Boolean operations")
                 })
             {
                 failure = Some(error);
@@ -4039,20 +4033,23 @@ pub(super) fn feature_operation_records(
                             ctx.refuse_codec_limit("count NX operation record identities", 0, 1)
                         })?;
                     } else {
-
                         let mut copy = String::new();
-                        counts_reservation.with_storage(|| ctx.try_reserve_retained_text(
-                            &mut copy,
-                            key.len(),
-                            "allocate NX operation record identity key",
-                        ))?;
+                        counts_reservation.with_storage(|| {
+                            ctx.try_reserve_retained_text(
+                                &mut copy,
+                                key.len(),
+                                "allocate NX operation record identity key",
+                            )
+                        })?;
                         copy.push_str(key);
-                        counts_reservation.with_storage(|| ctx.insert_btree_map(
-                            &mut identity_counts,
-                            copy,
-                            1,
-                            "NX operation record identity counts",
-                        ))?;
+                        counts_reservation.with_storage(|| {
+                            ctx.insert_btree_map(
+                                &mut identity_counts,
+                                copy,
+                                1,
+                                "NX operation record identity counts",
+                            )
+                        })?;
                     }
                 }
                 let ordinal = u32::try_from(operation_ordinal)
@@ -4097,11 +4094,7 @@ pub(super) fn feature_operation_records(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX feature operation records")
                 .and_then(|()| {
-                    ctx.reserve_capacity(
-                        &mut records,
-                        1,
-                        "allocate NX feature operation records",
-                    )
+                    ctx.reserve_capacity(&mut records, 1, "allocate NX feature operation records")
                 })
             {
                 failure = Some(error);
@@ -4307,11 +4300,7 @@ pub(super) fn feature_operation_body_writes(
                 if let Err(error) = ctx
                     .charge_collection_items(1, "NX operation body writes")
                     .and_then(|()| {
-                        ctx.reserve_capacity(
-                            &mut writes,
-                            1,
-                            "allocate NX operation body writes",
-                        )
+                        ctx.reserve_capacity(&mut writes, 1, "allocate NX operation body writes")
                     })
                 {
                     failure = Some(error);
@@ -5240,8 +5229,9 @@ pub(super) fn unique_feature_body_references<'a>(
             continue;
         }
         if unique.remove(key).is_some() {
-
-            ambiguous_reservation.with_storage(|| ctx.insert_btree_set(&mut ambiguous, key, "NX ambiguous body references"))?;
+            ambiguous_reservation.with_storage(|| {
+                ctx.insert_btree_set(&mut ambiguous, key, "NX ambiguous body references")
+            })?;
             continue;
         }
 
@@ -5341,16 +5331,21 @@ pub(super) fn feature_body_segment_uses(
     bindings: &[SegmentBodyBinding],
     object_frames: &[DataBlockObjectFrame],
 ) -> Result<Vec<FeatureBodySegmentUse>, CodecError> {
-    let (unique_references, _unique_references_storage) = ctx.with_scoped_storage("NX local unique_references storage", || unique_feature_body_references(ctx, references))?;
+    let (unique_references, _unique_references_storage) = ctx
+        .with_scoped_storage("NX local unique_references storage", || {
+            unique_feature_body_references(ctx, references)
+        })?;
     let mut counts_reservation = ctx.reserve_scoped(0, "NX body offset-store reference counts")?;
     let mut offset_store_reference_counts = BTreeMap::<&str, usize>::new();
     for use_ in data_block_uses {
         let reference_key = use_.feature_body_reference.as_str();
-        counts_reservation.with_storage(|| ctx.admit_btree_entry(
-            &offset_store_reference_counts,
-            &reference_key,
-            "NX body offset-store reference counts",
-        ))?;
+        counts_reservation.with_storage(|| {
+            ctx.admit_btree_entry(
+                &offset_store_reference_counts,
+                &reference_key,
+                "NX body offset-store reference counts",
+            )
+        })?;
 
         let count = offset_store_reference_counts
             .entry(reference_key)
@@ -5359,8 +5354,14 @@ pub(super) fn feature_body_segment_uses(
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("count NX body offset-store references", 0, 1))?;
     }
-    let (offset_store_operations, _offset_store_operations_storage) = ctx.with_scoped_storage("NX local offset_store_operations storage", || feature_input_store_operations(ctx, inputs, blocks))?;
-    let (store_sections, _store_sections_storage) = ctx.with_scoped_storage("NX local store_sections storage", || feature_input_store_sections(ctx, inputs, blocks))?;
+    let (offset_store_operations, _offset_store_operations_storage) = ctx
+        .with_scoped_storage("NX local offset_store_operations storage", || {
+            feature_input_store_operations(ctx, inputs, blocks)
+        })?;
+    let (store_sections, _store_sections_storage) = ctx
+        .with_scoped_storage("NX local store_sections storage", || {
+            feature_input_store_sections(ctx, inputs, blocks)
+        })?;
     let scan_work = references
         .len()
         .checked_mul(data_block_uses.len())
@@ -5463,7 +5464,10 @@ pub(super) fn feature_input_store_operations(
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> Result<BTreeSet<String>, CodecError> {
-    let (sections, _sections_storage) = ctx.with_scoped_storage("NX local sections storage", || feature_input_store_sections(ctx, inputs, blocks))?;
+    let (sections, _sections_storage) = ctx
+        .with_scoped_storage("NX local sections storage", || {
+            feature_input_store_sections(ctx, inputs, blocks)
+        })?;
     let mut operations = BTreeSet::new();
     for (label, sections) in sections {
         if sections.is_empty() {
@@ -5485,13 +5489,14 @@ fn feature_input_store_sections(
     let mut block_reservation = ctx.reserve_scoped(0, "NX input-store block index")?;
     let mut blocks_by_id = BTreeMap::new();
     for block in blocks {
-
-        block_reservation.with_storage(|| ctx.insert_btree_map(
-            &mut blocks_by_id,
-            block.id.as_str(),
-            block,
-            "NX input-store block index",
-        ))?;
+        block_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut blocks_by_id,
+                block.id.as_str(),
+                block,
+                "NX input-store block index",
+            )
+        })?;
     }
     let work = inputs
         .len()
@@ -5511,7 +5516,10 @@ fn feature_input_store_sections(
 
         if let Some(sections) = sections_by_operation.get_mut(input.operation_label.as_str()) {
             if !sections.contains(&block.section_ordinal) {
-                ctx.admit_btree_node_storage::<u32, ()>(sections.len(), "NX input-store section identities")?;
+                ctx.admit_btree_node_storage::<u32, ()>(
+                    sections.len(),
+                    "NX input-store section identities",
+                )?;
             }
             sections.insert(block.section_ordinal);
             continue;
@@ -5729,8 +5737,13 @@ pub(super) fn feature_input_block_identity_groups(
     let mut by_block = BTreeMap::<&str, Vec<&FeatureInputBlock>>::new();
     for input in inputs {
         if !by_block.contains_key(input.data_block.as_str()) {
-            map_reservation.with_storage(|| ctx.admit_btree_entry(&by_block, &input.data_block.as_str(), "NX input block group index"))?;
-
+            map_reservation.with_storage(|| {
+                ctx.admit_btree_entry(
+                    &by_block,
+                    &input.data_block.as_str(),
+                    "NX input block group index",
+                )
+            })?;
         }
         let members = by_block.entry(input.data_block.as_str()).or_default();
         ctx.reserve_scoped_vec(
@@ -6293,10 +6306,15 @@ pub(super) fn feature_datum_plane_payloads(
         }
         let mut reservation = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
         let mut data_blocks = Vec::new();
-        for source in header.resolved_data_blocks(DatumPlaneBlockLane::Object).map(String::as_str) {
+        for source in header
+            .resolved_data_blocks(DatumPlaneBlockLane::Object)
+            .map(String::as_str)
+        {
             ctx.charge_work(1, "copy NX datum plane source blocks")?;
             let owned = ctx.copy_retained_text(source, "copy NX datum plane source blocks")?;
-            reservation.with_storage(|| ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks"))?;
+            reservation.with_storage(|| {
+                ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks")
+            })?;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
@@ -6924,8 +6942,9 @@ pub(super) fn feature_sketch_records(
             .iter()
             .filter(|input| input.operation_label == label.id)
         {
-
-            input_reservation.with_storage(|| ctx.reserve_vec(&mut input_blocks, 1, "NX sketch input block order"))?;
+            input_reservation.with_storage(|| {
+                ctx.reserve_vec(&mut input_blocks, 1, "NX sketch input block order")
+            })?;
             input_blocks.push(input);
         }
         ctx.stable_sort_by(
@@ -6945,8 +6964,9 @@ pub(super) fn feature_sketch_records(
             .iter()
             .filter(|reference| reference.operation_label == label.id)
         {
-
-            reference_reservation.with_storage(|| ctx.reserve_vec(&mut payload_references, 1, "NX sketch reference order"))?;
+            reference_reservation.with_storage(|| {
+                ctx.reserve_vec(&mut payload_references, 1, "NX sketch reference order")
+            })?;
             payload_references.push(reference);
         }
         ctx.stable_sort_by(
@@ -7014,8 +7034,9 @@ pub(super) fn feature_sketch_construction_inputs(
             .iter()
             .filter(|reference| reference.operation_label == sketch.operation_label)
         {
-
-            field_reservation.with_storage(|| ctx.reserve_vec(&mut field, 1, "NX sketch construction reference order"))?;
+            field_reservation.with_storage(|| {
+                ctx.reserve_vec(&mut field, 1, "NX sketch construction reference order")
+            })?;
             field.push(reference);
         }
         ctx.stable_sort_by(
@@ -7119,8 +7140,15 @@ pub(super) fn feature_sketch_construction_payloads(
         let mut data_blocks = Vec::new();
         for source in source_ids {
             ctx.charge_work(1, "copy NX sketch construction source blocks")?;
-            let owned = ctx.copy_retained_text(source, "copy NX sketch construction source blocks")?;
-            reservation.with_storage(|| ctx.push_vec(&mut data_blocks, owned, "copy NX sketch construction source blocks"))?;
+            let owned =
+                ctx.copy_retained_text(source, "copy NX sketch construction source blocks")?;
+            reservation.with_storage(|| {
+                ctx.push_vec(
+                    &mut data_blocks,
+                    owned,
+                    "copy NX sketch construction source blocks",
+                )
+            })?;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
@@ -7341,22 +7369,22 @@ fn offset_data_block_bytes_for_section<'a>(
         )?;
 
         let mut key = String::new();
-        reservation.with_storage(|| ctx.try_reserve_retained_text(
-            &mut key,
-            length,
-            "NX offset block view storage",
-        ))?;
+        reservation.with_storage(|| {
+            ctx.try_reserve_retained_text(&mut key, length, "NX offset block view storage")
+        })?;
         write!(&mut key, "{prefix}{section_ordinal}{infix}{block_ordinal}")
             .map_err(|_| ctx.refuse_codec_limit("format NX offset block view key", 0, 1))?;
         let offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view source offset", 0, 1))?;
-        reservation.with_storage(|| ctx.insert_btree_map(
-            blocks,
-            key,
-            (block.bytes, offset),
-            "NX offset block view entries",
-        ))?;
+        reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                blocks,
+                key,
+                (block.bytes, offset),
+                "NX offset block view entries",
+            )
+        })?;
     }
     Ok(())
 }
@@ -7882,7 +7910,9 @@ pub(super) fn feature_sketch_point_groups(
             continue;
         }
 
-        grouped_reservation.with_storage(|| ctx.insert_btree_set(&mut grouped, key, "NX sketch point group keys"))?;
+        grouped_reservation.with_storage(|| {
+            ctx.insert_btree_set(&mut grouped, key, "NX sketch point group keys")
+        })?;
         let matches = |candidate: &&FeatureSketchPoint| {
             candidate.operation_label == point.operation_label && candidate.name == point.name
         };
@@ -8091,20 +8121,20 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             "index NX preceding named-point references",
         )?;
         let operation_key = reference.operation_label.as_str();
-        index_reservation.with_storage(|| ctx.admit_btree_entry(
-            &references_by_operation,
-            &operation_key,
-            "NX preceding named-point operation index",
-        ))?;
+        index_reservation.with_storage(|| {
+            ctx.admit_btree_entry(
+                &references_by_operation,
+                &operation_key,
+                "NX preceding named-point operation index",
+            )
+        })?;
         let group = match references_by_operation.entry(operation_key) {
-            Entry::Vacant(entry) => {
-
-                entry.insert(Vec::new())
-            }
+            Entry::Vacant(entry) => entry.insert(Vec::new()),
             Entry::Occupied(entry) => entry.into_mut(),
         };
 
-        index_reservation.with_storage(|| ctx.reserve_vec(group, 1, "NX preceding named-point references"))?;
+        index_reservation
+            .with_storage(|| ctx.reserve_vec(group, 1, "NX preceding named-point references"))?;
         group.push(reference);
     }
     let mut uses = Vec::new();
@@ -8253,8 +8283,9 @@ pub(super) fn feature_sketch_point_uses(
             candidate.operation_label == block_use.operation_label
                 && candidate.named_point == block_use.named_point
         }) {
-
-            order_reservation.with_storage(|| ctx.reserve_vec(&mut point_block_uses, 1, "NX sketch point block use order"))?;
+            order_reservation.with_storage(|| {
+                ctx.reserve_vec(&mut point_block_uses, 1, "NX sketch point block use order")
+            })?;
             point_block_uses.push(candidate);
         }
         ctx.stable_sort_by(
@@ -8352,28 +8383,33 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         Shared(&'a str),
         Consecutive(&'a str, &'a str),
     }
-    let (ordered_labels, _ordered_labels_storage) = ctx.with_scoped_storage("NX local ordered_labels storage", || feature_operation_chronological_labels(ctx, labels))?;
+    let (ordered_labels, _ordered_labels_storage) = ctx
+        .with_scoped_storage("NX local ordered_labels storage", || {
+            feature_operation_chronological_labels(ctx, labels)
+        })?;
     let mut positions = BTreeMap::new();
     let mut position_reservation = ctx.reserve_scoped(0, "NX sketch datum label positions")?;
     for (position, label) in ordered_labels.iter().enumerate() {
-
-        position_reservation.with_storage(|| ctx.insert_btree_map(
-            &mut positions,
-            label.id.as_str(),
-            position,
-            "NX sketch datum label positions",
-        ))?;
+        position_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut positions,
+                label.id.as_str(),
+                position,
+                "NX sketch datum label positions",
+            )
+        })?;
     }
     let mut points = BTreeMap::new();
     let mut point_reservation = ctx.reserve_scoped(0, "NX sketch datum named points")?;
     for point in named_points {
-
-        point_reservation.with_storage(|| ctx.insert_btree_map(
-            &mut points,
-            point.id.as_str(),
-            point,
-            "NX sketch datum named points",
-        ))?;
+        point_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut points,
+                point.id.as_str(),
+                point,
+                "NX sketch datum named points",
+            )
+        })?;
     }
     let mut dependencies = Vec::new();
     for construction in constructions {

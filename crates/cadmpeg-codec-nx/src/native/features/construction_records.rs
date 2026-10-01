@@ -72,11 +72,7 @@ pub(super) fn resolved_feature_payload_references(
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
                     let section_key = ctx
                         .copy_retained_text(section_key, "NX resolved feature reference section")?;
-                    ctx.reserve_vec(
-                        &mut references,
-                        1,
-                        "NX resolved feature payload references",
-                    )?;
+                    ctx.reserve_vec(&mut references, 1, "NX resolved feature payload references")?;
                     references.push(ResolvedFeaturePayloadReference {
                         section_key,
                         operation_ordinal,
@@ -234,7 +230,9 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
                 break;
             };
 
-            block_reservation.with_storage(|| ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs"))?;
+            block_reservation.with_storage(|| {
+                ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs")
+            })?;
             let mut copy = String::new();
             ctx.try_reserve_retained_text(
                 &mut copy,
@@ -632,11 +630,7 @@ pub(in crate::native) fn feature_thru_curve_construction_envelopes(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_vec(
-                    &mut envelopes,
-                    1,
-                    "NX thru-curve construction envelopes",
-                )?;
+                ctx.reserve_vec(&mut envelopes, 1, "NX thru-curve construction envelopes")?;
                 Ok(FeatureThruCurveConstructionEnvelope {
                     id,
                     operation_label,
@@ -803,11 +797,13 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         };
         let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
         let mut data_blocks = Vec::new();
-        source_id_storage.with_storage(|| ctx.reserve_vec(
-            &mut data_blocks,
-            14,
-            "NX surface construction source blocks",
-        ))?;
+        source_id_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut data_blocks,
+                14,
+                "NX surface construction source blocks",
+            )
+        })?;
         for reference in graph {
             let Some(block) = reference.data_block.as_deref() else {
                 break;
@@ -1330,16 +1326,11 @@ pub(in crate::native) fn feature_operation_body_operands(
                 .len()
                 .checked_add(7 + 10)
                 .ok_or_else(|| ctx.refuse_codec_limit("retain NX operand data block id", 0, 1))?;
-            let mut candidate = ctx.reserve_scoped(
-                0,
-                "format NX operand data block id",
-            )?;
+            let mut candidate = ctx.reserve_scoped(0, "format NX operand data block id")?;
             let mut id = String::new();
-            candidate.with_storage(|| ctx.try_reserve_retained_text(
-                &mut id,
-                length,
-                "allocate NX operand data block id",
-            ))?;
+            candidate.with_storage(|| {
+                ctx.try_reserve_retained_text(&mut id, length, "allocate NX operand data block id")
+            })?;
             write!(id, "{store}:block#{}", member.member.atom.value())
                 .map_err(|_| ctx.refuse_codec_limit("write NX operand data block id", 0, 1))?;
             if blocks.iter().any(|block| block.id == id) {
@@ -1572,11 +1563,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.reserve_vec(
-                                    &mut references,
-                                    1,
-                                    "NX body compact references",
-                                )?;
+                                ctx.reserve_vec(&mut references, 1, "NX body compact references")?;
                                 references.push(ConstructionReference {
                                     token: value.atom,
                                     data_block,
@@ -1602,11 +1589,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.reserve_vec(
-                                    &mut references,
-                                    1,
-                                    "NX body object references",
-                                )?;
+                                ctx.reserve_vec(&mut references, 1, "NX body object references")?;
                                 references.push(ConstructionReference {
                                     token: value.token,
                                     data_block,
@@ -2021,11 +2004,7 @@ pub(in crate::native) fn feature_block_construction_references(
                     )?;
                     let data_block =
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                    ctx.reserve_vec(
-                        &mut references,
-                        1,
-                        "NX block construction references",
-                    )?;
+                    ctx.reserve_vec(&mut references, 1, "NX block construction references")?;
                     references.push(FeatureBlockConstructionReference {
                         id,
                         operation_label,
@@ -2172,10 +2151,21 @@ pub(in crate::native) fn feature_block_construction_payloads(
     for construction in constructions {
         let mut reservation = ctx.reserve_scoped(0, "NX block construction source blocks")?;
         let mut data_blocks = Vec::new();
-        for source in construction.members.iter().map(|member| member.data_block.as_str()).chain(std::iter::once(construction.terminal_data_block.as_str())) {
+        for source in construction
+            .members
+            .iter()
+            .map(|member| member.data_block.as_str())
+            .chain(std::iter::once(construction.terminal_data_block.as_str()))
+        {
             ctx.charge_work(1, "NX block construction source blocks")?;
             let owned = ctx.copy_retained_text(source, "NX block construction source blocks")?;
-            reservation.with_storage(|| ctx.push_vec(&mut data_blocks, owned, "NX block construction source blocks"))?;
+            reservation.with_storage(|| {
+                ctx.push_vec(
+                    &mut data_blocks,
+                    owned,
+                    "NX block construction source blocks",
+                )
+            })?;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;

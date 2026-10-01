@@ -984,9 +984,9 @@ impl Graph {
                 ctx.insert_btree_set(&mut required, target, "NX topology required targets")?;
             }
             ctx.charge_collection_items(2, "NX topology admitted node indices")?;
-            let bytes = reservation.with_storage(|| ctx.copy_slice(
-                &candidate.bytes, "NX topology admitted node bytes",
-            ))?;
+            let bytes = reservation.with_storage(|| {
+                ctx.copy_slice(&candidate.bytes, "NX topology admitted node bytes")
+            })?;
             self.by_pos.insert(candidate.pos, key);
             self.nodes.insert(
                 key,

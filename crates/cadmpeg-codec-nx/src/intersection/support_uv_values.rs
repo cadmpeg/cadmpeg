@@ -90,7 +90,7 @@ impl SupportUvValues {
             let mut storage = Vec::new();
             storage.try_reserve_exact(values.len()).map(|()| storage)
         }
-            .map_err(|_| "values: storage allocation failed")?;
+        .map_err(|_| "values: storage allocation failed")?;
         Self::with_storage(packing, values, finite)
     }
 

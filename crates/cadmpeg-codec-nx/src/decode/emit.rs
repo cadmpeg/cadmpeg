@@ -2168,19 +2168,11 @@ fn insert_source_attribute(
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
 
     let mut key_text = String::new();
-    ctx.try_reserve_retained_text(
-        &mut key_text,
-        key_len.0,
-        "nx source attribute text",
-    )?;
+    ctx.try_reserve_retained_text(&mut key_text, key_len.0, "nx source attribute text")?;
     write!(&mut key_text, "{key}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     let mut value_text = String::new();
-    ctx.try_reserve_retained_text(
-        &mut value_text,
-        value_len.0,
-        "nx source attribute text",
-    )?;
+    ctx.try_reserve_retained_text(&mut value_text, value_len.0, "nx source attribute text")?;
     write!(&mut value_text, "{value}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     ctx.insert_btree_map(attributes, key_text, value_text, "nx source attributes")?;

@@ -302,16 +302,15 @@ fn fset_construction_payload_from_group(
         cadmpeg_core::decode::u64_from_index(source_blocks.len()),
         "NX FSET source block references",
     )?;
-    let mut source_reservation = ctx.reserve_scoped(
-        0,
-        "NX FSET source block references",
-    )?;
+    let mut source_reservation = ctx.reserve_scoped(0, "NX FSET source block references")?;
     let mut data_blocks = Vec::new();
-    source_reservation.with_storage(|| ctx.reserve_capacity(
-        &mut data_blocks,
-        source_blocks.len(),
-        "allocate NX FSET source block references",
-    ))?;
+    source_reservation.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut data_blocks,
+            source_blocks.len(),
+            "allocate NX FSET source block references",
+        )
+    })?;
     for (_, target) in source_blocks {
         let Some(block) = target else {
             return Ok(None);

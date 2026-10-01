@@ -142,7 +142,8 @@ fn display_jt_index_result_storage_refuses_before_vector_reservation() {
         cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndexRow>());
     let row_id = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len());
     let index_id = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0".len());
-    let index = cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndex>());
+    let index =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndex>());
     assert_eq!(
         refused_at(|_| {}, None, Some(rows + row_id + index_id + index - 1)),
         (

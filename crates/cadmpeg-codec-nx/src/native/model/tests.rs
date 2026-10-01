@@ -182,7 +182,8 @@ fn terminal_body_selection_refuses_prefix_materialization_limit() {
             let status_node = 11 * std::mem::size_of::<(&str, &SegmentBodyLineageStatus)>()
                 + 16 * std::mem::size_of::<usize>()
                 + 2 * std::mem::align_of::<usize>();
-            policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(status_node) + 5;
+            policy.limits.max_materialized_bytes =
+                cadmpeg_core::decode::u64_from_index(status_node) + 5;
         },
         |ctx| {
             let error = terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses)
