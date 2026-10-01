@@ -34,9 +34,9 @@
 //!
 //! Decode reports can accompany a usable model. Untyped support carriers become
 //! opaque geometry linked to retained bytes, while their resolvable topology
-//! remains in the IR. Failure to build a Parasolid graph yields a metadata-only
-//! IR with blocking diagnostics. Set [`DecodeOptions::container_only`] to request
-//! that result without attempting geometry.
+//! remains in the IR. No usable geometry yields metadata with diagnostics.
+//! Set [`DecodeOptions::container_only`] to omit geometry decoding explicitly.
+//! Semantic Parasolid graph errors propagate as decode errors.
 //!
 //! [`Codec::inspect`] inventories the outer blocks, section directory, cache
 //! cells, payload families, and Parasolid schemas. It does not build model
@@ -47,8 +47,9 @@
 //! The outer container uses an 8-byte header, CRC-validated raw-DEFLATE blocks,
 //! a fixed-cell section index, and a tail directory. Embedded Parasolid
 //! `partition` and `deltas` streams supply the B-rep record graph. The decoder
-//! groups related body streams by site, selects the richest resulting B-rep,
-//! and merges alternate sites as configuration-specific bodies. Parasolid
+//! groups related body streams by site and selects the resolved active site.
+//! Without a resolved active site, the first site is a deterministic merge
+//! accumulator. Alternate sites become configuration-specific bodies. Parasolid
 //! lengths are metres; decoded `CadIr` coordinates are millimetres. Directions,
 //! normals, and ratios remain dimensionless.
 //!

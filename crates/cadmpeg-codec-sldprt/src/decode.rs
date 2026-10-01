@@ -5483,7 +5483,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 /// Moves the structurally untouched B-rep arenas out of `ir`, hashes the same
 /// normalized partition [`brep_local_sha256`] builds, and moves them back in
 /// their original order. The two arenas the normalization filters —
-/// `appearances` and `appearance_bindings` — are copied. Body display fields
+/// `appearances` and `appearance_bindings` — are moved into admitted partitions. Body display fields
 /// move into a charged vector and back, so `ir` is bit-identical afterwards and both entry
 /// points produce the same digest for the same document.
 fn brep_local_sha256_in_place(
@@ -5508,15 +5508,9 @@ fn brep_local_sha256_in_place(
         })?,
         "filter SLDPRT digest appearances",
     )?;
-    let mut binding_partition = digest_partition::DigestPartition::prepare(
+    let appearance_partition = digest_partition::DigestPartition::prepare(
         ctx,
-        &ir.model.appearance_bindings,
-        |binding| matches!(binding.target, AppearanceTarget::Face(_)),
-        "partition SLDPRT digest bindings",
-    )?;
-    let mut appearance_partition = digest_partition::DigestPartition::prepare(
-        ctx,
-        &ir.model.appearances,
+        &mut ir.model.appearances,
         |appearance| {
             ir.model.appearance_bindings.iter().any(|binding| {
                 matches!(binding.target, AppearanceTarget::Face(_))
@@ -5525,21 +5519,20 @@ fn brep_local_sha256_in_place(
         },
         "partition SLDPRT digest appearances",
     )?;
+    let binding_partition = digest_partition::DigestPartition::prepare(
+        ctx,
+        &mut ir.model.appearance_bindings,
+        |binding| matches!(binding.target, AppearanceTarget::Face(_)),
+        "partition SLDPRT digest bindings",
+    )?;
     let mut saved_body_display = Vec::new();
     ctx.reserve_collection_vec(
         &mut saved_body_display,
         ir.model.bodies.len(),
         "save SLDPRT body display fields for digest",
     )?;
-    binding_partition.move_from(&mut ir.model.appearance_bindings, |binding| {
-        matches!(binding.target, AppearanceTarget::Face(_))
-    });
-    appearance_partition.move_from(&mut ir.model.appearances, |appearance| {
-        binding_partition
-            .kept()
-            .iter()
-            .any(|binding| binding.appearance == appearance.id)
-    });
+    let mut binding_partition = binding_partition.move_from();
+    let mut appearance_partition = appearance_partition.move_from();
     for body in &mut ir.model.bodies {
         saved_body_display.push((take(&mut body.name), body.color));
     }
