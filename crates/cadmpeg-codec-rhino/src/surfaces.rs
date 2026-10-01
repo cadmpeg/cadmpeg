@@ -894,28 +894,7 @@ fn copy_rows<T: Copy>(
             "Rhino surface grid has inconsistent rows",
         ));
     }
-    let row_count = values.len() / row_len;
-    let item_count = values.len().checked_add(row_count).ok_or_else(|| {
-        GeometryError::not_implemented("Rhino surface grid count exceeds address space")
-    })?;
-    let value_bytes = values
-        .len()
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino surface grid bytes exceed address space")
-        })?;
-    let header_bytes = row_count
-        .checked_mul(std::mem::size_of::<Vec<T>>())
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino surface grid bytes exceed address space")
-        })?;
-    let bytes = value_bytes.checked_add(header_bytes).ok_or_else(|| {
-        GeometryError::not_implemented("Rhino surface grid bytes exceed address space")
-    })?;
-    let bytes = cadmpeg_core::decode::u64_from_index(bytes);
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(item_count), operation)?;
-    ctx.charge_retained(bytes, operation)?;
-    let rows = DecodeContext::copy_admitted_rows(values, row_len, operation)?;
+    let rows = ctx.copy_rows(values, row_len, operation, operation)?;
     Ok(rows)
 }
 
