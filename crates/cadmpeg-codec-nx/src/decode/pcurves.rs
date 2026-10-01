@@ -91,38 +91,6 @@ pub(super) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
     Some(range)
 }
 
-fn charge_derived_field(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    field: &str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = id
-        .len()
-        .checked_add(field.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx derived annotation text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx derived annotation text",
-    )?;
-    ctx.charge_collection_items(2, "nx derived annotations")
-}
-
-fn charge_annotation_note(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    tag: &str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = id
-        .len()
-        .checked_add(tag.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx pcurve annotation text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx pcurve annotation text",
-    )?;
-    ctx.charge_collection_items(1, "nx pcurve provenance annotations")
-}
-
 fn vertex_point_positions(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -792,10 +760,8 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 std::mem::swap(&mut edge.start, &mut edge.end);
             }
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
-            charge_derived_field(ctx, edge.id.as_str(), "param_range")?;
             annotations
-                .derived(&edge.id, "param_range")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                .derived_for_decode(ctx, &edge.id, "param_range").map_err(cadmpeg_core::CodecError::from)?;
         }
     }
     Ok(())
@@ -1920,10 +1886,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
-            charge_derived_field(ctx, edge.id.as_str(), "param_range")?;
             annotations
-                .derived(&edge.id, "param_range")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                .derived_for_decode(ctx, &edge.id, "param_range").map_err(cadmpeg_core::CodecError::from)?;
         }
     }
     Ok(())
@@ -4527,36 +4491,18 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             curve_id.try_clone_for_decode(ctx, "nx tolerant edge curve identity")?,
         ))
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        charge_derived_field(ctx, edge_id.as_str(), "curve")?;
         annotations
-            .derived(&edge_id, "curve")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .derived_for_decode(ctx, &edge_id, "curve").map_err(cadmpeg_core::CodecError::from)?;
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
-            charge_annotation_note(ctx, curve_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
             annotations
-                .note(
-                    &curve_id,
-                    source_stream,
-                    cadmpeg_core::decode::u64_from_index(node.pos),
-                )
-                .tag("TOLERANT_EDGE_INTERSECTION");
-            charge_annotation_note(ctx, procedural_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
+                .note_for_decode(ctx, &curve_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos), Some("TOLERANT_EDGE_INTERSECTION"))?;
             annotations
-                .note(
-                    &procedural_id,
-                    source_stream,
-                    cadmpeg_core::decode::u64_from_index(node.pos),
-                )
-                .tag("TOLERANT_EDGE_INTERSECTION");
+                .note_for_decode(ctx, &procedural_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos), Some("TOLERANT_EDGE_INTERSECTION"))?;
         }
-        charge_derived_field(ctx, curve_id.as_str(), "geometry")?;
         annotations
-            .derived(&curve_id, "geometry")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        charge_derived_field(ctx, procedural_id.as_str(), "definition")?;
+            .derived_for_decode(ctx, &curve_id, "geometry").map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(&procedural_id, "definition")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .derived_for_decode(ctx, &procedural_id, "definition").map_err(cadmpeg_core::CodecError::from)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx tolerant edge curves")?;
         ir.model.curves.push(Curve {
             id: curve_id.try_clone_for_decode(ctx, "nx tolerant carrier identity")?,

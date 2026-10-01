@@ -1045,17 +1045,7 @@ fn decode_container<'a>(
     let mut source_fidelity = SourceFidelity::default();
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
-        admit_kernel_annotation(ctx, &record)?;
-        let stream =
-            StreamHandle::new(cadmpeg_ir::stream_name!("inventor:").with_suffix(&record.stream));
-        annotations
-            .note(&record.id, &stream, record.offset)
-            .tag(record.tag.as_str());
-        for field in record.derived_fields {
-            annotations
-                .derived(&record.id, field)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-        }
+        admit_kernel_annotation(ctx, &mut annotations, &record)?;
     }
     source_fidelity.annotations = annotations.build();
     if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
@@ -1502,41 +1492,15 @@ fn admit_coverage_entries(
 
 fn admit_kernel_annotation(
     ctx: &DecodeContext<'_>,
+    annotations: &mut AnnotationBuilder,
     record: &cadmpeg_asm::brep::annotations::AnnotationRecord,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "collect Inventor kernel provenance")?;
-    let stream_len = "inventor:"
-        .len()
-        .checked_add(record.stream.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("Inventor annotation stream length", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(stream_len),
-        "retain Inventor annotation stream name",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record.id.len()),
-        "retain Inventor annotation entity id",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(stream_len),
-        "retain Inventor provenance stream copy",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record.tag.as_str().len()),
-        "retain Inventor annotation tag",
-    )?;
+    let name = ctx.format_retained(format_args!("inventor:{}", record.stream), "retain Inventor annotation stream name")?;
+    let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
+    let stream = StreamHandle::new_for_decode(ctx, name, "collect Inventor kernel provenance")?;
+    annotations.note_for_decode(ctx, &record.id, &stream, record.offset, Some(record.tag.as_str()))?;
     for field in &record.derived_fields {
-        ctx.charge_collection_items(2, "collect Inventor derived field annotation")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(record.id.len()),
-            "retain Inventor derived entity id",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(field.len()),
-            "retain Inventor derived field path",
-        )?;
+        annotations.derived_for_decode(ctx, &record.id, field).map_err(CodecError::from)?;
     }
     Ok(())
 }

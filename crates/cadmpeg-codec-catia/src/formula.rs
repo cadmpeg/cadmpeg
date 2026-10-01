@@ -1947,7 +1947,7 @@ fn copy_design_parameter(
     if !source.dependencies.is_empty() {
         dependencies.reserve_for_decode(ctx, source.dependencies.len(), operation)?;
         for dependency in &source.dependencies {
-            dependencies.insert(dependency.try_clone_for_decode(ctx, operation)?);
+            dependencies.insert_for_decode(ctx, dependency.try_clone_for_decode(ctx, operation)?, operation)?;
         }
     }
     let mut properties = BTreeMap::new();

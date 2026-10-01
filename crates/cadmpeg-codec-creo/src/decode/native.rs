@@ -113,7 +113,7 @@ pub(super) fn annotate(
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), CodecError> {
-    annotations.annotate_admitted(
+    annotations.annotate(
         ctx,
         id,
         format_args!("creo:{source_stream}"),

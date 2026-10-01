@@ -347,18 +347,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 face: cap_face
                     .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                        ctx,
-                        circular_item(
+                    cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, circular_item(
                             ctx,
                             cap_coedge.try_clone_for_decode(
                                 ctx,
                                 "creo circular extrusion identity copy",
                             )?,
                             "creo circular cap ring coedges",
-                        )?,
-                        Vec::new(),
-                    )?
+                        )?, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
@@ -453,18 +449,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 face: side_face
                     .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                        ctx,
-                        circular_item(
+                    cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, circular_item(
                             ctx,
                             coedge.try_clone_for_decode(
                                 ctx,
                                 "creo circular extrusion identity copy",
                             )?,
                             "creo circular side ring coedges",
-                        )?,
-                        Vec::new(),
-                    )?
+                        )?, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });

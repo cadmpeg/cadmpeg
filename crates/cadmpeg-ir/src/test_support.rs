@@ -24,3 +24,11 @@ pub(crate) fn make_first_face_surface_unknown(
 
 pub(crate) mod evaluation_cycles;
 pub(crate) mod nurbs;
+
+/// Run one IR operation under the service decode policy.
+pub(crate) fn with_service_decode_context<T>(operation: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>) -> Result<T, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    operation(&ctx)
+}

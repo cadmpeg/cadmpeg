@@ -1466,7 +1466,7 @@ fn insert_configuration_dependency(
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
     if !dependencies.contains(feature) {
         let id = copy_configuration_feature_id(ctx, feature, OPERATION)?;
-        dependencies.try_insert_charged(id, ctx, OPERATION)?;
+        dependencies.insert_for_decode(ctx, id, OPERATION)?;
     }
     Ok(())
 }

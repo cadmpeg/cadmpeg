@@ -485,11 +485,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     features[profile_index].id.as_str(),
                 )?)
                 .map_err(CodecError::malformed)?;
-                features[index].dependencies.try_insert_charged(
-                    dependency,
-                    ctx,
-                    "collect SLDPRT adjacent profile dependencies",
-                )?;
+                features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT adjacent profile dependencies")?;
             }
             features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
@@ -793,11 +789,7 @@ pub(crate) fn project_dissected_sketches(
                 .dependencies
                 .retain(|dependency| dependency != &child);
             if !feature.dependencies.contains(&owner) {
-                feature.dependencies.try_insert_charged(
-                    owner,
-                    ctx,
-                    "collect SLDPRT dissected profile dependencies",
-                )?;
+                feature.dependencies.insert_for_decode(ctx, owner, "collect SLDPRT dissected profile dependencies")?;
             }
         }
     }

@@ -700,16 +700,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 id: copy_id!(bottom_loop),
                 face: copy_id!(bottom_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                        ctx,
-                        copy_ring_coedges(
+                    cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, copy_ring_coedges(
                             ctx,
                             &bottom_coedges,
                             "creo extrusion bottom ring coedge copies",
                             "creo extrusion bottom ring coedge identities",
-                        )?,
-                        Vec::new(),
-                    )?
+                        )?, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
@@ -719,16 +715,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 id: copy_id!(top_loop),
                 face: copy_id!(top_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                        ctx,
-                        copy_ring_coedges(
+                    cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, copy_ring_coedges(
                             ctx,
                             &top_coedges,
                             "creo extrusion top ring coedge copies",
                             "creo extrusion top ring coedge identities",
-                        )?,
-                        Vec::new(),
-                    )?
+                        )?, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
@@ -961,16 +953,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id: copy_id!(loop_id),
                     face: copy_id!(face_id),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                            ctx,
-                            copy_ring_coedges(
+                        cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, copy_ring_coedges(
                                 ctx,
                                 &coedges,
                                 "creo extrusion side ring coedge copies",
                                 "creo extrusion side ring coedge identities",
-                            )?,
-                            Vec::new(),
-                        )?
+                            )?, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });

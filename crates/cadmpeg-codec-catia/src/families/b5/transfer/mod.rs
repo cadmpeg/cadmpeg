@@ -9,7 +9,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::families::FamilyEntityAdmission;
@@ -1693,23 +1692,7 @@ fn annotate(
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let id = ctx.format_retained(format_args!("{id}"), "catia_b5_annotation_id")?;
-    let exactness_id = ctx.copy_retained_text(&id, "catia_b5_annotation_exactness_id")?;
-    let stream_name =
-        ctx.format_retained(format_args!("catia:{stream}"), "catia_b5_annotation_stream")?;
-    let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
-        .map_err(cadmpeg_core::CodecError::malformed)?;
-    let stream_bytes = u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
-    ctx.charge_retained(stream_bytes, "catia_b5_annotation_stream_handle")?;
-    let tag = ctx.copy_retained_text(tag, "catia_b5_annotation_tag")?;
-    ctx.charge_collection_items(1, "catia_b5_annotation_provenance")?;
-    if exactness != Exactness::ByteExact {
-        ctx.charge_collection_items(1, "catia_b5_annotation_exactness")?;
-    }
-    let stream = StreamHandle::new(stream_name);
-    annotations.note_owned(id, &stream, 0).tag(tag);
-    annotations.exactness_owned(exactness_id, exactness);
-    Ok(())
+    annotations.annotate(ctx, id, format_args!("catia:{stream}"), 0, tag, exactness)
 }
 
 fn vector(value: [f64; 3]) -> Vector3 {

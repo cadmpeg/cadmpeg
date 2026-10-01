@@ -2153,7 +2153,7 @@ fn merge_standard_population_annotations(
     let mut annotations = AnnotationBuilder::resume(source);
     annotations.retain_exactness(|id| id.starts_with("catia:standard:"));
     source = annotations.build();
-    if let Err(collision) = source.map_ids_charged(
+    if let Err(collision) = source.map_ids_for_decode(
         ctx,
         |id| match id.strip_prefix("catia:standard:") {
             Some(rest) => ctx.format_retained(
@@ -2166,7 +2166,7 @@ fn merge_standard_population_annotations(
     )? {
         return Ok(Err(collision));
     }
-    target.append_charged(ctx, source, "catia_standard_population_annotation_append")
+    target.append_for_decode(ctx, source, "catia_standard_population_annotation_append")
 }
 
 fn try_decode_standard_populations(
@@ -3119,7 +3119,7 @@ fn try_decode_standard_population(
         admitted!(annotate(ctx, &mut annotations, &id, stream, u64_from_index(offset), tag, exactness));
     }
     let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
-    let mut topology_annotations = admitted!(annotations.copy_charged(ctx, "catia_standard_topology_annotations"));
+    let mut topology_annotations = admitted!(annotations.try_clone_for_decode(ctx, "catia_standard_topology_annotations"));
     match attach_standard_faces(
         ctx,
         &mut topology_ir,
@@ -7480,7 +7480,7 @@ fn emit_standard_topology(
                 ctx.push_vec(&mut coedges, coedge, "catia_standard_ring_members")?;
             }
             let ring =
-                cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, coedges, vertex_uses)?
+                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, vertex_uses).map_err(cadmpeg_core::CodecError::from)?
                     .map_err(CodecError::malformed)?;
             let coedge_ids = ring.coedges();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {

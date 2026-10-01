@@ -479,7 +479,7 @@ fn project_parameter_dependencies(
             continue;
         }
         ctx.charge_work(dependencies.as_slice().len() as u64, OPERATION)?;
-        dependencies.try_insert_charged(copy_parameter_id(ctx, dependency)?, ctx, OPERATION)?;
+        dependencies.insert_for_decode(ctx, copy_parameter_id(ctx, dependency)?, OPERATION)?;
     }
     Ok(dependencies)
 }

@@ -699,8 +699,7 @@ impl<T: CloneForDecode> CloneForDecode for Vec<T> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let mut copied = Vec::new();
-        ctx.reserve_retained_vec(&mut copied, self.len(), operation)?;
+        let mut copied = ctx.retained_vec(self.len(), operation)?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
         for member in self {
             copied.push(member.try_clone_for_decode(ctx, operation)?);

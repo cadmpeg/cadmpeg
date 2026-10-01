@@ -572,7 +572,7 @@ pub(crate) fn project_parameters(
             dependencies.len(),
             "collect Inventor parameter dependencies",
         )?;
-        dependency_members.extend(dependencies);
+        dependency_members.extend_for_decode(ctx, dependencies, "collect Inventor parameter dependencies")?;
         projected.push(DesignParameter {
             id,
             owner: None,

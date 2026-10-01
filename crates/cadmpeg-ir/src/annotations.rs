@@ -9,6 +9,9 @@ use std::sync::Arc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit, u64_from_index};
+use cadmpeg_core::CodecError;
+
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
 /// Document-wide provenance and exactness tables keyed by globally unique
@@ -40,6 +43,60 @@ pub struct AnnotationIdentityCollision {
 impl From<AnnotationIdentityCollision> for cadmpeg_core::CodecError {
     fn from(error: AnnotationIdentityCollision) -> Self {
         Self::Malformed(error.to_string())
+    }
+}
+
+/// Failure to admit annotation identity changes.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AnnotationIdentityError {
+    /// Two identities would name one annotation.
+    #[error("{0}")]
+    Collision(AnnotationIdentityCollision),
+    /// The budget or allocator refused admission.
+    #[error("decode resource limit: {0:?}")]
+    Resource(ResourceLimit),
+    /// The remapping callback refused an identity.
+    #[error("{0}")]
+    Callback(String),
+}
+
+impl From<ResourceLimit> for AnnotationIdentityError {
+    fn from(limit: ResourceLimit) -> Self { Self::Resource(limit) }
+}
+
+impl From<AnnotationIdentityError> for CodecError {
+    fn from(error: AnnotationIdentityError) -> Self {
+        match error { AnnotationIdentityError::Collision(error) => error.into(), AnnotationIdentityError::Resource(limit) => limit.into(), AnnotationIdentityError::Callback(message) => Self::Malformed(message) }
+    }
+}
+
+/// Failure to admit field exactness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AnnotationFieldError {
+    /// A field name is empty.
+    #[error("{0}")]
+    Invalid(&'static str),
+    /// The budget or allocator refused admission.
+    #[error("decode resource limit: {0:?}")]
+    Resource(ResourceLimit),
+}
+
+impl From<ResourceLimit> for AnnotationFieldError {
+    fn from(limit: ResourceLimit) -> Self { Self::Resource(limit) }
+}
+
+impl From<CodecError> for AnnotationFieldError {
+    fn from(error: CodecError) -> Self {
+        match error {
+            CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            _ => Self::Invalid("cannot format annotation identity"),
+        }
+    }
+}
+
+impl From<AnnotationFieldError> for CodecError {
+    fn from(error: AnnotationFieldError) -> Self {
+        match error { AnnotationFieldError::Invalid(message) => Self::malformed(message), AnnotationFieldError::Resource(limit) => limit.into() }
     }
 }
 
@@ -264,6 +321,15 @@ impl StreamHandle {
     pub fn new(stream: StreamName) -> Self {
         Self(Arc::new(stream))
     }
+
+
+    /// Allocate one shared stream name under the caller's decode budget.
+    pub fn new_for_decode(ctx: &DecodeContext<'_>, stream: StreamName, operation: &'static str) -> Result<Self, CodecError> {
+        let bytes = std::mem::size_of::<StreamName>() + 2 * std::mem::size_of::<usize>();
+        ctx.charge_retained(u64_from_index(bytes), operation)?;
+        ctx.charge_collection_items(1, operation)?;
+        Ok(Self::new(stream))
+    }
 }
 
 /// Incrementally constructs document provenance and exactness annotations.
@@ -273,41 +339,9 @@ pub struct AnnotationBuilder {
 }
 
 impl AnnotationBuilder {
-    /// Copy a speculative annotation set under the active decode budget.
-    pub fn copy_charged(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut annotations = Annotations::default();
-        for (id, source) in &self.annotations.provenance {
-            ctx.charge_collection_items(1, operation)?;
-            let id = ctx.copy_retained_text(id, operation)?;
-            annotations
-                .provenance
-                .insert(id, source.try_clone_for_decode(ctx, operation)?);
-        }
-        for (id, note) in &self.annotations.exactness {
-            ctx.charge_collection_items(1, operation)?;
-            let id = ctx.copy_retained_text(id, operation)?;
-            let mut fields = BTreeMap::new();
-            for (field, exactness) in note.fields() {
-                ctx.charge_collection_items(1, operation)?;
-                let field = FieldName(ctx.copy_retained_text(field.as_str(), operation)?);
-                fields.insert(field, *exactness);
-            }
-            let note = match note {
-                ExactnessNote::Entity { entity, .. } => ExactnessNote::Entity {
-                    entity: *entity,
-                    fields,
-                },
-                ExactnessNote::Fields { .. } => ExactnessNote::Fields {
-                    fields: NonEmptyMap(fields),
-                },
-            };
-            annotations.exactness.insert(id, note);
-        }
-        Ok(Self { annotations })
+    /// Copy the annotation tables under the caller's decode budget.
+    pub fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        self.annotations.try_clone_for_decode(ctx, operation).map(|annotations| Self { annotations })
     }
 
     /// Create an empty annotation builder.
@@ -326,70 +360,15 @@ impl AnnotationBuilder {
         &self.annotations
     }
 
-    /// Record one provenance and exactness annotation through the caller's decode budget.
-    pub fn annotate_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        id: impl Display,
-        stream: impl Display,
-        offset: u64,
-        tag: &str,
-        exactness: Exactness,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let id = ctx.format_retained(format_args!("{id}"), "annotation identity")?;
+    /// Record provenance and entity exactness under the decode budget.
+    pub fn annotate(&mut self, ctx: &DecodeContext<'_>, id: impl Display, stream: impl Display, offset: u64, tag: &str, exactness: Exactness) -> Result<(), CodecError> {
+        let mut scratch = ctx.reserve_scoped(0, "annotation identity")?;
+        let id = ctx.format_scoped_text(&mut scratch, format_args!("{id}"), "annotation identity")?;
         let stream = ctx.format_retained(format_args!("{stream}"), "annotation stream name")?;
-        let stream = StreamName::try_from(stream)
-            .map_err(|_| cadmpeg_core::CodecError::malformed("annotation stream name is empty"))?;
-        ctx.charge_collection_items(1, "annotation stream handles")?;
-        let stream = Arc::new(stream);
-        let tag = ctx.copy_retained_text(tag, "annotation tag")?;
-        if !self.annotations.provenance.contains_key(&id) {
-            ctx.charge_collection_items(1, "annotation provenance nodes")?;
-        }
-        let entity_exactness = Inexactness::try_from(exactness).ok();
-        let retained_fields = self.annotations.exactness.get(&id).is_some_and(|note| {
-            let fields = match note {
-                ExactnessNote::Entity { fields, .. } => fields,
-                ExactnessNote::Fields {
-                    fields: NonEmptyMap(fields),
-                } => fields,
-            };
-            fields.values().any(|value| *value != exactness)
-        });
-        let exactness_id = if entity_exactness.is_some() || retained_fields {
-            let copied = ctx.copy_retained_text(&id, "annotation exactness identity")?;
-            ctx.charge_collection_items(1, "annotation exactness nodes")?;
-            Some(copied)
-        } else {
-            None
-        };
-        let mut fields = match self.annotations.exactness.remove(&id) {
-            Some(
-                ExactnessNote::Entity { fields, .. }
-                | ExactnessNote::Fields {
-                    fields: NonEmptyMap(fields),
-                },
-            ) => fields,
-            None => BTreeMap::new(),
-        };
-        fields.retain(|_, value| *value != exactness);
-        self.annotations.provenance.insert(
-            id,
-            AnnotationProvenance::annotation(stream, offset, Some(tag)),
-        );
-        if let Some(entity) = entity_exactness {
-            if let Some(exactness_id) = exactness_id {
-                self.annotations
-                    .exactness
-                    .insert(exactness_id, ExactnessNote::Entity { entity, fields });
-            }
-        } else if let Ok(fields) = NonEmptyMap::try_from(fields) {
-            if let Some(exactness_id) = exactness_id {
-                self.annotations
-                    .exactness
-                    .insert(exactness_id, ExactnessNote::Fields { fields });
-            }
-        }
+        let stream = StreamName::try_from(stream).map_err(|_| CodecError::malformed("annotation stream name is empty"))?;
+        let stream = StreamHandle::new_for_decode(ctx, stream, "annotation stream handles")?;
+        self.note_for_decode(ctx, &id, &stream, offset, Some(tag))?;
+        self.exactness_for_decode(ctx, &id, exactness)?;
         Ok(())
     }
 
@@ -406,38 +385,19 @@ impl AnnotationBuilder {
         self.note_owned(id.to_string(), stream, offset)
     }
 
-    /// Record a source location after admitting its identity, tag and map entry.
-    pub fn note_charged(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        id: &str,
-        stream: &StreamHandle,
-        offset: u64,
-        tag: &str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.note_charged_optional(ctx, id, stream, offset, Some(tag))
-    }
-
-    /// Record an optionally tagged source location under the caller's budget.
-    pub fn note_charged_optional(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        id: &str,
-        stream: &StreamHandle,
-        offset: u64,
-        tag: Option<&str>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        if !self.annotations.provenance.contains_key(id) {
-            ctx.charge_collection_items(1, "collect source provenance")?;
-        }
-        let id = ctx.copy_retained_text(id, "retain source provenance identity")?;
-        let tag = tag
-            .map(|tag| ctx.copy_retained_text(tag, "retain source provenance tag"))
-            .transpose()?;
-        let note = self.note_owned(id, stream, offset);
-        if let Some(tag) = tag {
-            note.tag(tag);
-        }
+    /// Record an optional provenance tag under the caller's decode budget.
+    pub fn note_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, stream: &StreamHandle, offset: u64, tag: Option<&str>) -> Result<(), CodecError> {
+        let mut scratch = ctx.reserve_scoped(0, "source provenance lookup")?;
+        let id = ctx.format_scoped_text(&mut scratch, format_args!("{id}"), "source provenance lookup")?;
+        admit_identity_work(ctx, self.annotations.provenance.len(), id.len(), "collect source provenance")?;
+        let stored_id = if self.annotations.provenance.contains_key(&id) { id } else {
+            admit_annotation_record::<String, AnnotationProvenance>(ctx, "collect source provenance")?;
+            ctx.copy_retained_text(&id, "retain source provenance identity")?
+        };
+        let tag = tag.map(|tag| ctx.copy_retained_text(tag, "retain source provenance tag")).transpose()?;
+        ctx.charge_work(1, "share source provenance stream")?;
+        let note = self.note_owned(stored_id, stream, offset);
+        if let Some(tag) = tag { note.tag(tag); }
         Ok(())
     }
 
@@ -472,126 +432,109 @@ impl AnnotationBuilder {
 
     /// Set entity exactness with an already admitted identity.
     pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
-        let fields = match self.annotations.exactness.remove(&id) {
-            Some(
-                ExactnessNote::Entity { mut fields, .. }
-                | ExactnessNote::Fields {
-                    fields: NonEmptyMap(mut fields),
-                },
-            ) => {
-                fields.retain(|_, value| *value != exactness);
-                fields
-            }
-            None => BTreeMap::new(),
-        };
-        match Inexactness::try_from(exactness) {
-            Ok(entity) => {
-                self.annotations
-                    .exactness
-                    .insert(id, ExactnessNote::Entity { entity, fields });
-            }
-            Err(_) => {
-                if let Ok(fields) = NonEmptyMap::try_from(fields) {
-                    self.annotations
-                        .exactness
-                        .insert(id, ExactnessNote::Fields { fields });
-                }
-            }
+        if let Some(note) = self.annotations.exactness.get_mut(&id) {
+            note.fields_mut().retain(|_, value| *value != exactness);
+            let fields = std::mem::take(note.fields_mut());
+            *note = match Inexactness::try_from(exactness) {
+                Ok(entity) => ExactnessNote::Entity { entity, fields },
+                Err(_) => ExactnessNote::Fields { fields: NonEmptyMap(fields) },
+            };
+            if exactness == Exactness::ByteExact && note.fields().is_empty() { self.annotations.exactness.remove(&id); }
+        } else if let Ok(entity) = Inexactness::try_from(exactness) {
+            self.annotations.exactness.insert(id, ExactnessNote::Entity { entity, fields: BTreeMap::new() });
         }
         self
     }
 
+    /// Set entity exactness after admitting any new retained record.
+    pub fn exactness_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, exactness: Exactness) -> Result<&mut Self, CodecError> {
+        let mut scratch = ctx.reserve_scoped(0, "source exactness lookup")?;
+        let id = ctx.format_scoped_text(&mut scratch, format_args!("{id}"), "source exactness lookup")?;
+        admit_identity_work(ctx, self.annotations.exactness.len(), id.len(), "collect source exactness entities")?;
+        let fields = self.annotations.exactness.get(&id).map_or(0, |note| note.fields().len());
+        ctx.charge_work(u64_from_index(fields), "retain source exactness fields")?;
+        let id = if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
+            admit_annotation_record::<String, ExactnessNote>(ctx, "collect source exactness entities")?;
+            ctx.copy_retained_text(&id, "retain source exactness identity")?
+        } else { id };
+        Ok(self.exactness_owned(id, exactness))
+    }
+
     /// Mark one serialized field as deterministically derived.
-    pub fn derived(
-        &mut self,
-        id: impl Display,
-        field: impl Into<String>,
-    ) -> Result<&mut Self, &'static str> {
+    pub fn derived(&mut self, id: impl Display, field: impl Into<String>) -> Result<&mut Self, AnnotationFieldError> {
         self.field_exactness(id, field, Exactness::Derived)
     }
 
-    /// Mark a derived field after admitting its identity and map entries.
-    pub fn derived_charged(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        id: &str,
-        field: &str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let existing = self.annotations.exactness.get(id);
-        if existing.is_none() {
-            ctx.charge_collection_items(1, "collect source exactness entities")?;
-        }
-        if existing.is_none_or(|note| !note.fields().contains_key(field)) {
-            ctx.charge_collection_items(1, "collect source exactness fields")?;
-        }
-        let id = ctx.copy_retained_text(id, "retain source exactness identity")?;
-        let field = ctx.copy_retained_text(field, "retain source exactness field")?;
-        self.derived_owned(id, field)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        Ok(())
+    /// Mark a derived field under the caller's decode budget.
+    pub fn derived_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: &str) -> Result<&mut Self, AnnotationFieldError> {
+        self.field_exactness_for_decode(ctx, id, field, Exactness::Derived)
     }
 
-    fn derived_owned(&mut self, id: String, field: String) -> Result<&mut Self, &'static str> {
-        self.field_exactness_owned(id, field, Exactness::Derived)
+    /// Set field exactness through the default decode policy.
+    pub fn field_exactness(&mut self, id: impl Display, field: impl Into<String>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
+        self.field_exactness_for_decode(&ctx, id, field.into(), exactness)
     }
 
-    /// Set a serialized field's exactness.
-    ///
-    /// A byte-exact override is retained for an inexact entity. For a
-    /// byte-exact entity, the override is omitted and an empty note is removed.
-    pub fn field_exactness(
-        &mut self,
-        id: impl Display,
-        field: impl Into<String>,
-        exactness: Exactness,
-    ) -> Result<&mut Self, &'static str> {
-        self.field_exactness_owned(id.to_string(), field.into(), exactness)
+    /// Set field exactness after admitting retained keys and records.
+    pub fn field_exactness_for_decode<'f>(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: impl Into<std::borrow::Cow<'f, str>>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        let mut scratch = ctx.reserve_scoped(0, "source exactness lookup")?;
+        let id = ctx.format_scoped_text(&mut scratch, format_args!("{id}"), "source exactness lookup")?;
+        self.insert_field_exactness(ctx, id, true, field.into(), exactness)
     }
 
-    /// Set field exactness with already admitted identity and field strings.
-    pub fn field_exactness_owned(
-        &mut self,
-        id: String,
-        field: String,
-        exactness: Exactness,
-    ) -> Result<&mut Self, &'static str> {
-        let field =
-            FieldName::try_from(field).map_err(|_| "an exactness field name cannot be empty")?;
-        if exactness == Exactness::ByteExact {
-            let Some(note) = self.annotations.exactness.remove(&id) else {
-                return Ok(self);
-            };
-            match note {
-                ExactnessNote::Entity { entity, mut fields } => {
-                    fields.insert(field, Exactness::ByteExact);
-                    self.annotations
-                        .exactness
-                        .insert(id, ExactnessNote::Entity { entity, fields });
-                }
-                ExactnessNote::Fields {
-                    fields: NonEmptyMap(mut fields),
-                } => {
-                    fields.remove(&field);
-                    if let Ok(fields) = NonEmptyMap::try_from(fields) {
-                        self.annotations
-                            .exactness
-                            .insert(id, ExactnessNote::Fields { fields });
-                    }
-                }
-            }
-            return Ok(self);
-        }
-        match self.annotations.exactness.entry(id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(ExactnessNote::Fields {
-                    fields: NonEmptyMap(BTreeMap::from([(field, exactness)])),
-                });
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().fields_mut().insert(field, exactness);
-            }
-        }
+    /// Set field exactness with owned input strings under the default policy.
+    pub fn field_exactness_owned(&mut self, id: String, field: String, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
+        self.field_exactness_owned_for_decode(&ctx, id, field, exactness)
+    }
+
+    /// Admit map records for already owned identity and field strings.
+    pub fn field_exactness_owned_for_decode(&mut self, ctx: &DecodeContext<'_>, id: String, field: String, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        self.insert_field_exactness(ctx, id, false, std::borrow::Cow::Owned(field), exactness)
+    }
+
+    fn insert_field_exactness(&mut self, ctx: &DecodeContext<'_>, id: String, scoped_id: bool, field: std::borrow::Cow<'_, str>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        if field.is_empty() { return Err(AnnotationFieldError::Invalid("an exactness field name cannot be empty")); }
+        admit_identity_work(ctx, self.annotations.exactness.len(), id.len(), "collect source exactness entities")?;
+        let existing = self.annotations.exactness.get(&id);
+        let keep_field = exactness != Exactness::ByteExact || matches!(existing, Some(ExactnessNote::Entity { .. }));
+        let new_entity = existing.is_none() && keep_field;
+        let new_field = keep_field && existing.is_none_or(|note| !note.fields().contains_key(field.as_ref()));
+        if new_entity { admit_annotation_record::<String, ExactnessNote>(ctx, "collect source exactness entities")?; }
+        if new_field { admit_annotation_record::<FieldName, Exactness>(ctx, "collect source exactness fields")?; }
+        let fields = existing.map_or(0, |note| note.fields().len());
+        admit_identity_work(ctx, fields, field.len(), "collect source exactness fields")?;
+        let id = if new_entity && scoped_id { ctx.copy_retained_text(&id, "retain source exactness identity")? } else { id };
+        let mut scratch = ctx.reserve_scoped(0, "source exactness field lookup")?;
+        let field = match field {
+            std::borrow::Cow::Owned(field) => field,
+            std::borrow::Cow::Borrowed(field) if new_field => ctx.copy_retained_text(field, "retain source exactness field")?,
+            std::borrow::Cow::Borrowed(field) => scratch.with_storage(|| ctx.copy_retained_text(field, "source exactness field lookup"))?,
+        };
+        self.set_field_exactness(id, FieldName(field), exactness);
         Ok(self)
+    }
+
+    fn set_field_exactness(&mut self, id: String, field: FieldName, exactness: Exactness) {
+        if exactness == Exactness::ByteExact {
+            if let Some(note) = self.annotations.exactness.get_mut(&id) {
+                match note {
+                    ExactnessNote::Entity { fields, .. } => { fields.insert(field, exactness); }
+                    ExactnessNote::Fields { fields } => { fields.0.remove(&field); }
+                }
+                if matches!(note, ExactnessNote::Fields { fields } if fields.0.is_empty()) { self.annotations.exactness.remove(&id); }
+            }
+        } else {
+            match self.annotations.exactness.entry(id) {
+                std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(ExactnessNote::Fields { fields: NonEmptyMap(BTreeMap::from([(field, exactness)])) }); }
+                std::collections::btree_map::Entry::Occupied(mut entry) => { entry.get_mut().fields_mut().insert(field, exactness); }
+            }
+        }
     }
 
     /// Report which exactness map entries a derived field would add.
@@ -627,19 +570,9 @@ impl AnnotationBuilder {
     }
 }
 
-/// Copy an identity into temporary storage counted by `scratch`.
-fn scoped_identity_copy(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    scratch.grow(cadmpeg_core::decode::u64_from_index(text.len()))?;
-    let mut copy = String::new();
-    copy.try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    copy.push_str(text);
-    Ok(copy)
+fn admit_annotation_record<K, V>(ctx: &DecodeContext<'_>, operation: &'static str) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(u64_from_index(std::mem::size_of::<(K, V)>()), operation)
 }
 
 fn admit_identity_work(
@@ -660,61 +593,77 @@ fn admit_identity_work(
 }
 
 impl Annotations {
+    /// Copy a speculative annotation set under the active decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut annotations = Annotations::default();
+        for (id, source) in &self.provenance {
+            admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?;
+            let id = ctx.copy_retained_text(id, operation)?;
+            annotations
+                .provenance
+                .insert(id, source.try_clone_for_decode(ctx, operation)?);
+        }
+        for (id, note) in &self.exactness {
+            admit_annotation_record::<String, ExactnessNote>(ctx, operation)?;
+            let id = ctx.copy_retained_text(id, operation)?;
+            let mut fields = BTreeMap::new();
+            for (field, exactness) in note.fields() {
+                admit_annotation_record::<FieldName, Exactness>(ctx, operation)?;
+                let field = FieldName(ctx.copy_retained_text(field.as_str(), operation)?);
+                fields.insert(field, *exactness);
+            }
+            let note = match note {
+                ExactnessNote::Entity { entity, .. } => ExactnessNote::Entity {
+                    entity: *entity,
+                    fields,
+                },
+                ExactnessNote::Fields { .. } => ExactnessNote::Fields {
+                    fields: NonEmptyMap(fields),
+                },
+            };
+            annotations.exactness.insert(id, note);
+        }
+        Ok(annotations)
+    }
+
     /// Remap both tables together. A collision leaves both tables unchanged.
     /// The callback runs once for each distinct source identity.
-    pub fn map_ids(
-        &mut self,
-        mut map: impl FnMut(&str) -> String,
-    ) -> Result<(), AnnotationIdentityCollision> {
-        let ids = self
-            .provenance
-            .keys()
-            .chain(self.exactness.keys())
-            .collect::<std::collections::BTreeSet<_>>();
-        let mut targets = std::collections::BTreeSet::new();
-        let mut remapping = Vec::new();
-        for id in ids {
-            let target = map(id);
-            if !targets.insert(target.clone()) {
-                return Err(AnnotationIdentityCollision { id: target });
-            }
-            remapping.push((id.clone(), target));
+    pub fn map_ids(&mut self, mut map: impl FnMut(&str) -> String) -> Result<(), AnnotationIdentityError> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
+        match self.map_ids_for_decode(&ctx, |id| Ok(map(id)), "remap annotation identities") {
+            Ok(result) => result.map_err(AnnotationIdentityError::Collision),
+            Err(CodecError::ResourceLimit(limit)) => Err(limit.into()),
+            Err(error) => Err(AnnotationIdentityError::Callback(error.to_string())),
         }
-        let mut remapped = Self::default();
-        for (id, target) in remapping {
-            if let Some(provenance) = self.provenance.remove(&id) {
-                remapped.provenance.insert(target.clone(), provenance);
-            }
-            if let Some(exactness) = self.exactness.remove(&id) {
-                remapped.exactness.insert(target, exactness);
-            }
-        }
-        *self = remapped;
-        Ok(())
     }
 
     /// Remap both tables while charging temporary indices and retained keys.
     /// The callback returns each target identity with its retained bytes
     /// already charged; a target stored in both tables is copied and charged
     /// once more. A collision leaves both tables unchanged.
-    pub fn map_ids_charged(
+    pub fn map_ids_for_decode(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
         operation: &'static str,
     ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
+        let mut scratch = ctx.reserve_scoped(0, operation)?;
         let mut ids = std::collections::BTreeSet::new();
         for id in self.provenance.keys().chain(self.exactness.keys()) {
             admit_identity_work(ctx, ids.len(), id.len(), operation)?;
             if !ids.contains(id) {
-                ctx.charge_collection_items(1, operation)?;
-                ids.insert(id);
+                ctx.insert_scoped_btree_value(&mut scratch, &mut ids, id, operation)?;
             }
         }
         let mut targets = std::collections::BTreeSet::new();
         let mut remapping = Vec::new();
-        ctx.reserve_vec(&mut remapping, ids.len(), operation)?;
-        let mut scratch = ctx.reserve_scoped(0, operation)?;
+        ctx.reserve_scoped_vec(&mut scratch, &mut remapping, ids.len(), operation)?;
         for id in ids {
             ctx.charge_work(1, operation)?;
             let target = map(id)?;
@@ -722,11 +671,10 @@ impl Annotations {
             if targets.contains(&target) {
                 return Ok(Err(AnnotationIdentityCollision { id: target }));
             }
-            let target_check = scoped_identity_copy(ctx, &mut scratch, &target, operation)?;
-            ctx.charge_collection_items(1, operation)?;
-            targets.insert(target_check);
+            let target_check = scratch.with_storage(|| ctx.copy_retained_text(&target, operation))?;
+            ctx.insert_scoped_btree_value(&mut scratch, &mut targets, target_check, operation)?;
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), operation)?;
-            let source = scoped_identity_copy(ctx, &mut scratch, id, operation)?;
+            let source = scratch.with_storage(|| ctx.copy_retained_text(id, operation))?;
             remapping.push((source, target));
         }
         let mut remapped = Self::default();
@@ -739,20 +687,18 @@ impl Annotations {
             let exactness = self.exactness.remove(&id);
             match (provenance, exactness) {
                 (Some(provenance), Some(exactness)) => {
-                    let mut provenance_key = String::new();
-                    ctx.try_reserve_retained_text(&mut provenance_key, target.len(), operation)?;
-                    provenance_key.push_str(&target);
-                    ctx.charge_collection_items(1, operation)?;
+                    let provenance_key = ctx.copy_retained_text(&target, operation)?;
+                    admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?;
                     remapped.provenance.insert(provenance_key, provenance);
-                    ctx.charge_collection_items(1, operation)?;
+                    admit_annotation_record::<String, ExactnessNote>(ctx, operation)?;
                     remapped.exactness.insert(target, exactness);
                 }
                 (Some(provenance), None) => {
-                    ctx.charge_collection_items(1, operation)?;
+                    admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?;
                     remapped.provenance.insert(target, provenance);
                 }
                 (None, Some(exactness)) => {
-                    ctx.charge_collection_items(1, operation)?;
+                    admit_annotation_record::<String, ExactnessNote>(ctx, operation)?;
                     remapped.exactness.insert(target, exactness);
                 }
                 (None, None) => {}
@@ -779,38 +725,39 @@ impl Annotations {
 
     /// Append annotations with disjoint identities without a decode context.
     /// A collision leaves this annotation set unchanged.
-    pub fn append(&mut self, mut other: Self) -> Result<(), AnnotationIdentityCollision> {
-        for id in other.provenance.keys().chain(other.exactness.keys()) {
-            if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
-                return Err(AnnotationIdentityCollision { id: id.clone() });
-            }
+    pub fn append(&mut self, other: Self) -> Result<(), AnnotationIdentityError> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
+        match self.append_for_decode(&ctx, other, "append annotation identities") {
+            Ok(result) => result.map_err(AnnotationIdentityError::Collision),
+            Err(CodecError::ResourceLimit(limit)) => Err(limit.into()),
+            Err(error) => Err(AnnotationIdentityError::Callback(error.to_string())),
         }
-        self.provenance.append(&mut other.provenance);
-        self.exactness.append(&mut other.exactness);
-        Ok(())
     }
 
     /// Append disjoint tables after charging their destination nodes.
-    pub fn append_charged(
+    pub fn append_for_decode(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut other: Self,
         operation: &'static str,
     ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
+            admit_identity_work(ctx, self.provenance.len(), id.len(), operation)?;
+            admit_identity_work(ctx, self.exactness.len(), id.len(), operation)?;
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
                 return Ok(Err(AnnotationIdentityCollision {
                     id: ctx.copy_retained_text(id, operation)?,
                 }));
             }
         }
-        let count = other
-            .provenance
-            .len()
-            .checked_add(other.exactness.len())
-            .map(cadmpeg_core::decode::u64_from_index)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_collection_items(count, operation)?;
+        if !self.provenance.is_empty() && !other.provenance.is_empty() {
+            for _entry in self.provenance.iter().chain(other.provenance.iter()) { admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?; }
+        }
+        if !self.exactness.is_empty() && !other.exactness.is_empty() {
+            for _entry in self.exactness.iter().chain(other.exactness.iter()) { admit_annotation_record::<String, ExactnessNote>(ctx, operation)?; }
+        }
         self.provenance.append(&mut other.provenance);
         self.exactness.append(&mut other.exactness);
         Ok(Ok(()))
@@ -841,19 +788,22 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         let mut total = 0u64;
-        for (value, operation) in [
-            (id, "annotation identity"),
-            (stream, "annotation stream name"),
-            (tag, "annotation tag"),
-            (id, "annotation exactness identity"),
+        for (bytes, operation) in [
+            (stream.len(), "annotation stream name"),
+            (std::mem::size_of::<super::StreamName>() + 2 * std::mem::size_of::<usize>(), "annotation stream handles"),
+            (std::mem::size_of::<(String, super::AnnotationProvenance)>(), "collect source provenance"),
+            (id.len(), "retain source provenance identity"),
+            (tag.len(), "retain source provenance tag"),
+            (std::mem::size_of::<(String, super::ExactnessNote)>(), "collect source exactness entities"),
+            (id.len(), "retain source exactness identity"),
         ] {
-            total += cadmpeg_core::decode::u64_from_index(value.len());
+            total += cadmpeg_core::decode::u64_from_index(bytes);
             policy.limits.max_retained_bytes = total - 1;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut builder = super::AnnotationBuilder::new();
             let error = builder
-                .annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+                .annotate(&ctx, id, stream, 42, tag, super::Exactness::Derived)
                 .expect_err("retained value exceeds cap");
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -865,15 +815,15 @@ mod tests {
         policy.limits.max_retained_bytes = total;
         for (limit, operation) in [
             (0, "annotation stream handles"),
-            (1, "annotation provenance nodes"),
-            (2, "annotation exactness nodes"),
+            (1, "collect source provenance"),
+            (2, "collect source exactness entities"),
         ] {
             policy.limits.max_collection_items = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut builder = super::AnnotationBuilder::new();
             let error = builder
-                .annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+                .annotate(&ctx, id, stream, 42, tag, super::Exactness::Derived)
                 .expect_err("collection node exceeds cap");
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -886,7 +836,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let mut admitted = super::AnnotationBuilder::new();
         admitted
-            .annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+            .annotate(&ctx, id, stream, 42, tag, super::Exactness::Derived)
             .expect("exact caps admit annotation");
         let mut original = super::AnnotationBuilder::new();
         let handle = super::StreamHandle::new(
@@ -912,7 +862,7 @@ mod tests {
             policy.limits.max_retained_bytes = retained_limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let outcome = annotations.map_ids_charged(
+            let outcome = annotations.map_ids_for_decode(
                 &ctx,
                 |_| ctx.copy_retained_text(MAPPED, "test_annotation_target"),
                 "test_annotation_remap",
@@ -946,16 +896,49 @@ mod tests {
             policy.limits.max_collection_items = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let result = target.append_charged(&ctx, builder.build(), "test_annotation_append");
+            let result = target.append_for_decode(&ctx, builder.build(), "test_annotation_append");
             (result, target)
         };
-        assert!(
-            matches!(run(0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_annotation_append")
-        );
+        let (result, target) = run(0);
+        assert!(matches!(result, Ok(Ok(()))));
+        assert!(target.provenance.contains_key("test:point#0"));
         let (result, target) = run(u64::MAX);
         assert!(matches!(result, Ok(Ok(()))));
         assert!(target.provenance.contains_key("test:point#0"));
+    }
+
+    #[test]
+    fn annotation_append_rebuilds_only_nonempty_destination_maps() {
+        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        let mut target = super::AnnotationBuilder::new();
+        target.note("test:point#0", &stream, 0);
+        let mut source = super::AnnotationBuilder::new();
+        source.note("test:point#1", &stream, 1);
+        let mut target = target.build();
+        let before = target.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = target.append_for_decode(&ctx, source.build(), "append nonempty annotation maps").unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+        assert_eq!(target, before);
+    }
+
+    #[test]
+    fn exactness_update_and_removal_allocate_no_retained_records() {
+        let mut builder = super::AnnotationBuilder::new();
+        builder.exactness("test:point#0", super::Exactness::Derived);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        builder.exactness_for_decode(&ctx, "test:point#0", super::Exactness::Inferred).unwrap();
+        assert_eq!(builder.annotations.exactness["test:point#0"].entity(), super::Exactness::Inferred);
+        builder.exactness_for_decode(&ctx, "test:point#0", super::Exactness::ByteExact).unwrap();
+        builder.exactness_for_decode(&ctx, "test:point#missing", super::Exactness::ByteExact).unwrap();
+        assert!(builder.annotations.exactness.is_empty());
     }
 
     #[test]
@@ -975,7 +958,7 @@ mod tests {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root");
-            builder.copy_charged(&ctx, "test_annotation_copy")
+            builder.try_clone_for_decode(&ctx, "test_annotation_copy")
         };
         assert!(
             matches!(run(0, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1324,7 +1307,7 @@ mod tests {
             let error = builder
                 .field_exactness(id, "", exactness)
                 .expect_err("empty path");
-            assert!(error.contains("field name cannot be empty"), "{error}");
+            assert!(error.to_string().contains("field name cannot be empty"), "{error}");
             assert_eq!(
                 serde_json::to_value(&builder.annotations).expect("serialize annotations"),
                 before

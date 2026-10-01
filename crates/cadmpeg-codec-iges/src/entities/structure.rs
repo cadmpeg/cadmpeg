@@ -1813,7 +1813,7 @@ fn plane_face_draft(
         let mut ring_coedges = ctx.collection_vec(1, "iges legacy plane ring coedges")?;
         ring_coedges.push(coedge_id);
         let ring =
-            match cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, ring_coedges, Vec::new())
+            match cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring_coedges, Vec::new()).map_err(cadmpeg_core::CodecError::from)
             {
                 Ok(Ok(ring)) => ring,
                 Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),

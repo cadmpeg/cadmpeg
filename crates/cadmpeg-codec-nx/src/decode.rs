@@ -24,7 +24,6 @@ use crate::loss::NxLossCode;
 use crate::native::TypedNative;
 use crate::parasolid::{self, Stream, StreamKind};
 
-mod annotations;
 mod blend;
 mod build;
 pub(crate) mod emit;
@@ -288,24 +287,12 @@ fn build_metadata_ir(
     let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
-    let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let source_stream = StreamHandle::new_for_decode(ctx, cadmpeg_ir::stream_name!("nx:container"), "allocate annotation stream handle")?;
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
-            annotations::note(
-                ctx,
-                &mut annotations,
-                unknown.id().as_str(),
-                &source_stream,
-                cadmpeg_core::decode::u64_from_index(stream.file_offset),
-                stream.kind().label(),
-            )?;
-            annotations::exactness(
-                ctx,
-                &mut annotations,
-                unknown.id().as_str(),
-                Exactness::Derived,
-            )?;
+            annotations.note_for_decode(ctx, unknown.id().as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(stream.file_offset), Some(stream.kind().label()))?;
+            annotations.exactness_for_decode(ctx, unknown.id().as_str(), Exactness::Derived)?;
             unknowns.push(unknown);
         }
     }

@@ -296,7 +296,7 @@ fn annotation_provenance_refuses_collection_limit() {
     let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .note_charged(&ctx, "f3d:test:entity#one", &stream, 0, "entity")
+        .note_for_decode(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -313,11 +313,11 @@ fn annotation_provenance_refuses_retained_limit() {
     let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .note_charged(&ctx, "f3d:test:entity#one", &stream, 0, "entity")
+        .note_for_decode(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain source provenance identity")
+        if limit.operation == "collect source provenance")
     );
 }
 
@@ -327,10 +327,10 @@ fn annotation_exactness_refuses_collection_limit() {
     let ctx = context(&arena, 0);
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .derived_charged(&ctx, "f3d:test:entity#one", "definition")
+        .derived_for_decode(&ctx, "f3d:test:entity#one", "definition")
         .unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        matches!(error, cadmpeg_ir::annotations::AnnotationFieldError::Resource(limit)
         if limit.operation == "collect source exactness entities")
     );
 }
@@ -342,7 +342,7 @@ fn annotation_stream_refuses_collection_limit() {
     let error = super::super::annotation_stream(&ctx, "Design/BulkStream.dat").unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D annotation streams")
+        if limit.operation == "allocate annotation stream handle")
     );
 }
 

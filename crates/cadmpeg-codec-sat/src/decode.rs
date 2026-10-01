@@ -310,14 +310,12 @@ fn build_result(
     let mut annotations = AnnotationBuilder::new();
     for record in annotation_records {
         let stream =
-            StreamHandle::new(cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream));
+            StreamHandle::new_for_decode(ctx, cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream), "allocate annotation stream handle")?;
         annotations
-            .note(&record.id, &stream, record.offset)
-            .tag(record.tag.as_str());
+            .note_for_decode(ctx, &record.id, &stream, record.offset, Some(record.tag.as_str()))?;
         for field in record.derived_fields {
             annotations
-                .derived(&record.id, field)
-                .map_err(CodecError::malformed)?;
+                .derived_for_decode(ctx, &record.id, field).map_err(cadmpeg_core::CodecError::from)?;
         }
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());

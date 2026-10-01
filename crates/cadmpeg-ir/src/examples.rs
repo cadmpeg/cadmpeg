@@ -34,7 +34,7 @@ pub enum ExampleError {
     Geometry(&'static str),
     /// A loop ring violated its structural contract.
     #[error(transparent)]
-    LoopRing(#[from] crate::topology::LoopRingError),
+    LoopRing(#[from] crate::topology::LoopRingAdmissionError),
     /// A shell had no admitted members.
     #[error(transparent)]
     Shell(#[from] crate::features::BodySelectionError),

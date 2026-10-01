@@ -1540,8 +1540,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 ctx.charge_work(work, OPERATION)?;
             }
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                ctx.charge_collection_items(1, OPERATION)?;
-                feature.dependencies.insert(dependency);
+                feature.dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
             }
         }
     }
@@ -1752,7 +1751,7 @@ pub(crate) fn project_compact_combine_paths(
             ctx.reserve_vec(&mut bodies, 1, OPERATION)?;
             bodies.push(body);
             let native = copy_termination_text(ctx, native, OPERATION)?;
-            let Ok(selection) = BodySelection::generated(bodies, native) else {
+            let Ok(selection) = BodySelection::generated_for_decode(bodies, native, ctx)? else {
                 return Ok(None);
             };
             Ok(Some((selection, components, owner)))
@@ -1875,8 +1874,7 @@ pub(crate) fn project_compact_combine_paths(
                 ctx.charge_work(work, OPERATION)?;
             }
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                ctx.charge_collection_items(1, OPERATION)?;
-                feature.dependencies.insert(dependency);
+                feature.dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
             }
         }
         for selection in [&projection.target, &projection.tools] {

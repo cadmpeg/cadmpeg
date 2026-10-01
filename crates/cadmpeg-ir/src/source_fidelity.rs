@@ -382,7 +382,7 @@ impl SourceFidelity {
         let record_count = cadmpeg_core::decode::u64_from_index(other.retained_records.len());
         ctx.charge_collection_items(record_count, "append source records")?;
         self.annotations
-            .append_charged(ctx, other.annotations, "append source provenance")?
+            .append_for_decode(ctx, other.annotations, "append source provenance")?
             .map_err(cadmpeg_core::CodecError::from)?;
         self.retained_records.append(&mut other.retained_records);
         Ok(())

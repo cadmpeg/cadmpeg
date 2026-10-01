@@ -941,10 +941,7 @@ pub(super) fn transfer_curve_expression_features(
                     )?,
                     display: None,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(
-                        dependencies,
-                    )
-                    .map_err(CodecError::malformed)?,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(dependencies, ctx).map_err(cadmpeg_core::CodecError::from)?,
                     properties: BTreeMap::new(),
                     pmi: None,
                     native_ref: Some(curve_expression_record_id(ctx, record)?),
@@ -1094,9 +1091,7 @@ pub(super) fn transfer_curve_expression_features(
                 source_properties: BTreeMap::new(),
                 source_tag: Some(source_tag),
                 source_text: Some(curve_expression_source_text(ctx, &record.lines)?),
-                source_content: source_content.try_into().map_err(|message: &'static str| {
-                    cadmpeg_core::CodecError::Malformed(message.into())
-                })?,
+                source_content: cadmpeg_ir::features::FeatureContent::try_from_for_decode(source_content, ctx, "validate Creo feature source content").map_err(cadmpeg_core::CodecError::from)?,
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
                 native_ref: Some(curve_expression_record_id(ctx, record)?),

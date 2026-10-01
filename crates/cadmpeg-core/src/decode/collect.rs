@@ -56,28 +56,50 @@ impl<T> ExactVec<T> {
     }
 }
 
+enum VecGrowth {
+    Exact,
+    Amortized,
+}
+
 impl DecodeContext<'_> {
-    /// Reserves vector slots and retains their element storage.
-    pub fn reserve_retained_vec<T>(
-        &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
+    /// Admit additional items and reserve retained backing storage.
+    pub fn reserve_retained_vec<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Result<(), CodecError> {
         self.reserve_retained_vec_limit(values, count, operation).map_err(Into::into)
     }
 
-    pub(crate) fn reserve_retained_vec_limit<T>(
-        &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), ResourceLimit> {
-        let bytes = count.checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+    /// Admit items with a resource-only refusal channel.
+    pub fn reserve_retained_vec_limit<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Result<(), ResourceLimit> {
+        self.reserve_retained_vec_storage(values, count, VecGrowth::Amortized, Some(count), operation)
+    }
+
+    /// Reserve backing storage without admitting values not yet inserted.
+    pub fn reserve_retained_capacity_limit<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Result<(), ResourceLimit> {
+        self.reserve_retained_vec_storage(values, count, VecGrowth::Amortized, None, operation)
+    }
+
+    fn reserve_retained_vec_storage<T>(&self, values: &mut Vec<T>, count: usize, growth: VecGrowth, items: Option<usize>, operation: &'static str) -> Result<(), ResourceLimit> {
+        let required = values.len().checked_add(count).ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        let capacity = if std::mem::size_of::<T>() == 0 || required <= values.capacity() {
+            values.capacity()
+        } else if matches!(growth, VecGrowth::Exact) {
+            required
+        } else if values.capacity() == 0 {
+            if required < 4 { 4 } else { required }
+        } else {
+            match values.capacity().checked_mul(2) {
+                Some(grown) if grown > required => grown,
+                _ => required,
+            }
+        };
+        let added = capacity - values.capacity();
+        let bytes = added.checked_mul(std::mem::size_of::<T>()).ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
-        self.charge_collection_items_limit(u64_from_index(count), operation)?;
-        values.try_reserve(count).map_err(|_| self.collection_allocation_failed_limit(count, operation))
+        if let Some(items) = items { self.charge_collection_items_limit(u64_from_index(items), operation)?; }
+        if added != 0 {
+            values.try_reserve_exact(capacity - values.len())
+                .map_err(|_| self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation))?;
+        }
+        Ok(())
     }
 
     /// Appends a value after admitting its slot and retained element storage.
@@ -99,7 +121,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         let mut values = Vec::new();
-        self.reserve_retained_vec(&mut values, count, operation)?;
+        self.reserve_retained_vec_storage(&mut values, count, VecGrowth::Exact, Some(count), operation)?;
         Ok(values)
     }
 
@@ -110,11 +132,7 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let bytes = count
-            .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        self.charge_retained(u64_from_index(bytes), operation)?;
-        Self::reserve_admitted_vec(values, count, operation)
+        self.reserve_retained_vec_storage(values, count, VecGrowth::Amortized, None, operation).map_err(Into::into)
     }
 
     /// Creates retained storage whose collection slots are admitted separately.
@@ -124,7 +142,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         let mut values = Vec::new();
-        self.reserve_retained_admitted_vec(&mut values, count, operation)?;
+        self.reserve_retained_vec_storage(&mut values, count, VecGrowth::Exact, None, operation)?;
         Ok(values)
     }
 
@@ -147,11 +165,8 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(Vec<T>, ScopedReservation<'_>), CodecError> {
-        let bytes = count
-            .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
-        let values = Self::admitted_vec(count, operation)?;
+        let mut reservation = self.reserve_scoped(0, operation)?;
+        let values = reservation.with_storage(|| self.retained_admitted_vec(count, operation))?;
         Ok((values, reservation))
     }
 
@@ -174,11 +189,7 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        let bytes = count
-            .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_local_limit(operation, u64::MAX, u64::MAX))?;
-        reservation.grow_limit(u64_from_index(bytes))?;
-        self.reserve_vec_limit(values, count, operation)
+        reservation.with_storage_limit(|| self.reserve_retained_vec_limit(values, count, operation))
     }
 
     /// Appends one item with scoped storage and a charged collection slot.
@@ -258,16 +269,7 @@ impl DecodeContext<'_> {
         values: impl IntoIterator<Item = &'text str>,
         operation: &'static str,
     ) -> Result<Vec<String>, CodecError> {
-        let mut copies = Vec::new();
-        for value in values {
-            let bytes = std::mem::size_of::<String>()
-                .checked_add(value.len())
-                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            self.charge_retained(u64_from_index(bytes), operation)?;
-            self.reserve_vec(&mut copies, 1, operation)?;
-            copies.push(Self::copy_admitted_text(value, operation)?);
-        }
-        Ok(copies)
+        self.try_collect_retained_with(values, operation, |value| self.copy_retained_text(value, operation))
     }
 
     /// Copies scoped text values and returns the reservation for their storage.
@@ -276,16 +278,8 @@ impl DecodeContext<'_> {
         values: impl IntoIterator<Item = &'text str>,
         operation: &'static str,
     ) -> Result<(Vec<String>, ScopedReservation<'_>), CodecError> {
-        let mut copies = Vec::new();
         let mut reservation = self.reserve_scoped(0, operation)?;
-        for value in values {
-            let bytes = std::mem::size_of::<String>()
-                .checked_add(value.len())
-                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            reservation.grow(u64_from_index(bytes))?;
-            self.reserve_vec(&mut copies, 1, operation)?;
-            copies.push(Self::copy_admitted_text(value, operation)?);
-        }
+        let copies = reservation.with_storage(|| self.collect_retained_texts(values, operation))?;
         Ok((copies, reservation))
     }
 
@@ -326,12 +320,7 @@ impl DecodeContext<'_> {
         values: impl IntoIterator<Item = T>,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
-        let mut collected = Vec::new();
-        for value in values {
-            self.reserve_retained_vec(&mut collected, 1, operation)?;
-            collected.push(value);
-        }
-        Ok(collected)
+        self.try_collect_retained_with(values, operation, Ok::<T, CodecError>)
     }
 
     /// Reserves text bytes charged by aggregate admission.
@@ -943,7 +932,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         let mut copy = Vec::new();
-        Self::reserve_admitted_vec(&mut copy, values.len(), operation)?;
+        copy.try_reserve_exact(values.len()).map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::CollectionItems, u64::MAX, u64_from_index(values.len()), operation)))?;
         copy.extend_from_slice(values);
         Ok(copy)
     }
@@ -955,7 +944,8 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<Vec<T>>, CodecError> {
         let mut rows = Vec::new();
-        Self::reserve_admitted_vec(&mut rows, values.len().div_ceil(row_len), operation)?;
+        let row_count = values.len().div_ceil(row_len);
+        rows.try_reserve_exact(row_count).map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::CollectionItems, u64::MAX, u64_from_index(row_count), operation)))?;
         for row in values.chunks(row_len) {
             rows.push(Self::copy_admitted_slice(row, operation)?);
         }
@@ -969,10 +959,16 @@ impl DecodeContext<'_> {
         operation: &'static str,
         mut map: impl FnMut(I) -> Result<T, E>,
     ) -> Result<Vec<T>, E> {
+        let values = values.into_iter();
+        let (minimum, maximum) = values.size_hint();
         let mut collected = Vec::new();
-        for value in values {
+        for (index, value) in values.enumerate() {
             self.charge_work(1, operation)?;
-            self.reserve_retained_vec(&mut collected, 1, operation)?;
+            if index == 0 && maximum == Some(minimum) {
+                self.reserve_retained_vec_storage(&mut collected, minimum.max(1), VecGrowth::Exact, Some(1), operation).map_err(CodecError::from)?;
+            } else {
+                self.reserve_retained_vec_storage(&mut collected, 1, VecGrowth::Amortized, Some(1), operation).map_err(CodecError::from)?;
+            }
             collected.push(map(value)?);
         }
         Ok(collected)
@@ -1236,32 +1232,24 @@ impl DecodeContext<'_> {
         Ok((values, reservation))
     }
 
-    fn temporary_hash_bytes<T>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<u64, CodecError> {
-        std::mem::size_of::<T>()
-            .max(1)
-            .checked_add(32)
-            .and_then(|size| size.checked_mul(count))
-            .map(u64_from_index)
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    fn temporary_hash_bytes<T>(&self, count: usize, operation: &'static str) -> Result<u64, ResourceLimit> {
+        std::mem::size_of::<T>().max(1).checked_add(32)
+            .and_then(|size| size.checked_mul(count)).map(u64_from_index)
+            .ok_or_else(|| self.budget.scoped_size_overflow_limit(operation))
     }
 
     /// Reserves a scoped hash set and returns its live reservation.
-    pub fn temporary_set<T: Eq + Hash>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(HashSet<T>, ScopedReservation<'_>), CodecError> {
-        let reservation =
-            self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
-        self.charge_collection_items(u64_from_index(count), operation)?;
+    pub fn temporary_set<T: Eq + Hash>(&self, count: usize, operation: &'static str) -> Result<(HashSet<T>, ScopedReservation<'_>), CodecError> {
+        self.temporary_set_limit(count, operation).map_err(Into::into)
+    }
+
+    /// Reserves a scoped hash set with a typed resource error.
+    pub fn temporary_set_limit<T: Eq + Hash>(&self, count: usize, operation: &'static str) -> Result<(HashSet<T>, ScopedReservation<'_>), ResourceLimit> {
+        let bytes = self.temporary_hash_bytes::<T>(count, operation)?;
+        let reservation = self.reserve_scoped_limit(bytes, operation)?;
+        self.charge_collection_items_limit(u64_from_index(count), operation)?;
         let mut values = HashSet::new();
-        values.try_reserve(count).map_err(|_| {
-            self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation)
-        })?;
+        values.try_reserve(count).map_err(|_| self.budget.scoped_allocation_failed_limit(bytes, operation))?;
         Ok((values, reservation))
     }
 
@@ -1548,6 +1536,23 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_capacity_reservation_and_push_charge_storage_and_item_once() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4 * u64::try_from(std::mem::size_of::<u64>()).unwrap();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut values = Vec::new();
+        ctx.reserve_retained_capacity_limit(&mut values, 1, "reserve retained capacity").unwrap();
+        assert_eq!(values.capacity(), 4);
+        ctx.push_retained_vec(&mut values, 7u64, "admit retained item").unwrap();
+        assert_eq!(values, [7]);
+        let error = ctx.push_retained_vec(&mut values, 8u64, "refuse second item").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1 && limit.additional == 1));
+        assert_eq!(values, [7]);
+    }
+
     #[test]
     fn flat_copies_do_not_charge_storage_for_empty_or_zero_sized_values() {
         let arena = DecodeArena::new();
@@ -3373,7 +3378,7 @@ mod tests {
             .resize_retained_bytes(&mut values, 2, 7, "test retained resize")
             .expect_err("one below required storage");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 2));
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 4));
         assert!(values.is_empty());
         assert_eq!(values.capacity(), 0);
     }

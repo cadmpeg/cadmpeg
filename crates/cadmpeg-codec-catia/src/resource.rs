@@ -195,18 +195,8 @@ pub(crate) fn derived_annotation(
     field: &str,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let id = ctx.format_retained(format_args!("{id}"), operation)?;
-    let (outer, inner) = annotations.derived_field_admission(&id, field);
-    if outer {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    if inner {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    let field = ctx.copy_retained_text(field, operation)?;
-    annotations
-        .field_exactness_owned(id, field, cadmpeg_ir::Exactness::Derived)
-        .map_err(CodecError::malformed)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(field.len()), operation)?;
+    annotations.derived_for_decode(ctx, id, field).map_err(CodecError::from)?;
     Ok(())
 }
 

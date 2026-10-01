@@ -2481,7 +2481,7 @@ fn append_legacy_brep(
                 });
                 global_trim += 1;
             }
-            let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
+            let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
                 id: loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,

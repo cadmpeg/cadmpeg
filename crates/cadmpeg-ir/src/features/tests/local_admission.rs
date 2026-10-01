@@ -12,18 +12,17 @@ use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 #[test]
 fn charged_native_selections_refuse_uniqueness_index_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = crate::features::NativeSelections::try_from_charged(
+    let result = crate::features::NativeSelections::try_from_for_decode(
         vec!["first".into(), "second".into()],
         &ctx,
         "test native selection uniqueness",
     );
-    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+    assert!(matches!(result, Err(failure)
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "test native selection uniqueness"));
 }
@@ -82,7 +81,7 @@ fn tree_children_charged_insert_refuses_collection_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(b"children", &arena, &policy).unwrap();
     let mut children = TreeChildren::default();
     let error = children
-        .try_insert_charged(feature_id("child"), &ctx, "collect tree children")
+        .insert_for_decode(&ctx, feature_id("child"), "collect tree children")
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     assert!(children.is_empty());
@@ -91,17 +90,16 @@ fn tree_children_charged_insert_refuses_collection_limit() {
 #[test]
 fn charged_selection_members_refuse_uniqueness_index_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        SelectionMembers::try_from_charged(
+        SelectionMembers::try_from_for_decode(
             vec!["first", "second"], &ctx, "selection uniqueness",
         ),
-        Err(CodecError::ResourceLimit(failure))
+        Err(failure)
             if failure.operation == "selection uniqueness"
                 && failure.dimension == ResourceDimension::CollectionItems
     ));

@@ -1281,7 +1281,11 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     )
                     .unwrap()],
                 );
-                set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
+                {
+                    let arena = cadmpeg_core::decode::DecodeArena::new();
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+                    set_exactness(&ctx, annotations, "rhino:test:asset#rejected", Exactness::Derived).unwrap();
+                }
                 if admission_failure {
                     return Err::<(), String>("source admission refusal".into());
                 }

@@ -29,7 +29,7 @@ const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     container_only: bool,
-    budget: DecodeBudget,
+    pub(super) budget: DecodeBudget,
     derived_spaces: Cell<usize>,
 }
 
