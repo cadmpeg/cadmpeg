@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
+use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
-use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::text::lp_utf16_bounded_charged;
+
 use crate::ids;
 use crate::records::{
     canvas::{
@@ -208,7 +209,7 @@ fn parse_canvas_image(
         let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
 
         let (label, after_label) =
-            match lp_utf16_bounded_charged(ctx, bytes, geometry_at + 213, 1..=256) {
+            match lp_utf16_bounded_charged(ctx, bytes, geometry_at + 213, 1..=256, "f3d Design UTF-16 text") {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
@@ -225,7 +226,7 @@ fn parse_canvas_image(
             return None;
         }
         let (asset_name, after_asset_name) =
-            match lp_utf16_bounded_charged(ctx, bytes, asset_record_at + 21, 1..=1024) {
+            match lp_utf16_bounded_charged(ctx, bytes, asset_record_at + 21, 1..=1024, "f3d Design UTF-16 text") {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),

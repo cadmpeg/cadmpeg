@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
+use crate::bytes::{lp_utf16_bounded_charged};
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -9,11 +10,11 @@ use crate::records::sketch_placement::{
 
 use cadmpeg_core::container::ContainerRole;
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{f64s_at, take_reference, Reference};
 use crate::container::ContainerScan;
-use crate::design::decode::text::lp_utf16_bounded_charged;
-use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::text::{design_record_id_charged};
+use crate::design::decode::text::design_record_id_charged;
+
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
@@ -1100,7 +1101,7 @@ pub(super) fn parse_settled_entity_header(
         Some(1) if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
         _ => return Ok(None),
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256)?
+    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
@@ -1157,7 +1158,7 @@ pub(super) fn parse_genesis_entity_header(
     let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
         return Ok(None);
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, after_type + 8, 1..=256)?
+    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, after_type + 8, 1..=256, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
@@ -2206,7 +2207,7 @@ fn sketch_utf16_text(
     count_at: usize,
     count: usize,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    lp_utf16_bounded_charged(ctx, payload, count_at, count..=count)
+    lp_utf16_bounded_charged(ctx, payload, count_at, count..=count, "f3d Design UTF-16 text")
 }
 
 /// Decode sketch-text records carrying persistent identities, font metrics,

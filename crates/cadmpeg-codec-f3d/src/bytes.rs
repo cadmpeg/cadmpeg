@@ -14,7 +14,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -138,31 +138,73 @@ pub(crate) fn lp_ascii_filtered_view(
 /// Read the byte span of a bounded counted UTF-16 field.
 fn lp_utf16_raw(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<(&[u8], usize)> {
     let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-    if !bounds.contains(&count) { return None; }
+    if !bounds.contains(&count) {
+        return None;
+    }
     let start = at.checked_add(4)?;
     let end = start.checked_add(count.checked_mul(2)?)?;
     Some((bytes.get(start..end)?, end))
 }
 
 /// Read validated UTF-16 text without allocating a decoded copy.
-pub(crate) fn lp_utf16_bounded_view(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<(Utf16View<'_>, usize)> {
+pub(crate) fn lp_utf16_bounded_view(
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Option<(Utf16View<'_>, usize)> {
     let (raw, end) = lp_utf16_raw(bytes, at, bounds)?;
     Some((Utf16View::new(raw)?, end))
 }
 
+/// Validate a counted UTF-16 field after admitting its scan.
+fn lp_utf16_bounded_view_charged<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(Utf16View<'a>, usize)>, CodecError> {
+    let Some((raw, end)) = lp_utf16_raw(bytes, at, bounds) else {
+        return Ok(None);
+    };
+    ctx.charge_work(u64_from_index(raw.len()), "decode F3D UTF-16 string")?;
+    let Some(text) = Utf16View::new(raw) else {
+        return Ok(None);
+    };
+    Ok(Some((text, end)))
+}
+
 /// Decode a counted UTF-16 field into admitted retained storage.
 pub(crate) fn lp_utf16_bounded_charged(
-    ctx: &DecodeContext<'_>, bytes: &[u8], at: usize, bounds: RangeInclusive<usize>,
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+    operation: &'static str,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    let Some((raw, end)) = lp_utf16_raw(bytes, at, bounds) else { return Ok(None); };
-    ctx.charge_work(u64_from_index(raw.len()), "decode F3D UTF-16 string")?;
-    let Some(text) = Utf16View::new(raw) else { return Ok(None); };
-    Ok(Some((text.to_retained(ctx, "retain F3D UTF-16 string")?, end)))
+    let Some((text, end)) = lp_utf16_bounded_view_charged(ctx, bytes, at, bounds)? else {
+        return Ok(None);
+    };
+    Ok(Some((text.to_retained(ctx, operation)?, end)))
+}
+
+/// Decode a counted UTF-16 field into storage held by a scoped reservation.
+pub(crate) fn lp_utf16_bounded_scoped<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+    operation: &'static str,
+) -> Result<Option<(String, usize, ScopedReservation<'ctx>)>, CodecError> {
+    let Some((text, end)) = lp_utf16_bounded_view_charged(ctx, bytes, at, bounds)? else {
+        return Ok(None);
+    };
+    let (text, reservation) = text.to_scoped(ctx, operation)?;
+    Ok(Some((text, end, reservation)))
 }
 
 #[cfg(test)]
 mod charged_string_tests {
-    use super::{lp_ascii_strict_charged, lp_utf16_bounded_charged};
+    use super::{lp_ascii_strict_charged, lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     #[test]
@@ -172,7 +214,7 @@ mod charged_string_tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = lp_utf16_bounded_charged(&ctx, &bytes, 0, 0..=1024).unwrap_err();
+        let error = lp_utf16_bounded_charged(&ctx, &bytes, 0, 0..=1024, "retain F3D UTF-16 string").unwrap_err();
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -193,6 +235,49 @@ mod charged_string_tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "retain F3D ASCII string"
         ));
+    }
+
+    #[test]
+    fn bounded_utf16_scoped_preserves_work_and_storage_refusals() {
+        let bytes = [2, 0, 0, 0, b'A', 0, b'B', 0];
+        for (work, materialized, operation) in [
+            (0, 1024, "decode F3D UTF-16 string"),
+            (4, 1024, "f3d Design temporary UTF-16 text"),
+            (1024, 0, "f3d Design temporary UTF-16 text"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            policy.limits.max_materialized_bytes = materialized;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                let error = lp_utf16_bounded_scoped(
+                    ctx,
+                    &bytes,
+                    0,
+                    0..=1024,
+                    "f3d Design temporary UTF-16 text",
+                )
+                .unwrap_err();
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("UTF-16 admission must refuse");
+                };
+                assert_eq!(limit.operation, operation);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            });
+        }
+        crate::test_support::with_decode_context(|ctx| {
+            let (text, end, reservation) = lp_utf16_bounded_scoped(
+                ctx,
+                &bytes,
+                0,
+                0..=1024,
+                "f3d Design temporary UTF-16 text",
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(text, "AB");
+            assert_eq!(end, bytes.len());
+            drop(reservation);
+        });
     }
 }
 
@@ -273,7 +358,7 @@ impl<G: AsRef<str>, L> Reference<G, L> {
         }
     }
 
-    /// The owned target and inline type of a local reference.
+    /// Consume a local reference and return its target and inline type.
     pub(crate) fn into_local(self) -> Option<(u64, Option<G>)> {
         match self {
             Self::Local {
@@ -293,7 +378,6 @@ impl<G: AsRef<str>, L> Reference<G, L> {
             | Self::CrossDocument { target, .. } => Some(*target),
         }
     }
-
 }
 
 impl Reference<String, String> {
@@ -313,27 +397,59 @@ impl Reference<String, String> {
 /// reference fifteen, and a cross-document reference carries an asset GUID, a
 /// type GUID, a link name, and an optional version tail. Any arithmetic that
 /// assumes one width desynchronizes on the first nonstandard reference.
-pub(crate) fn take_reference<'a>(bytes: &'a [u8], at: &mut usize) -> Option<Reference<&'a str, Utf16View<'a>>> {
+pub(crate) fn take_reference<'a>(
+    bytes: &'a [u8],
+    at: &mut usize,
+) -> Option<Reference<&'a str, Utf16View<'a>>> {
     // A borrowed probe performs no resource requests.
     parse_reference(None, bytes, at).ok().flatten()
 }
 
 /// Parse one reference under caller work admission and retain only its kept text.
 pub(crate) fn take_reference_charged(
-    ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize,
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
 ) -> Result<Option<Reference<String, String>>, CodecError> {
-    let Some(reference) = parse_reference(Some(ctx), bytes, at)? else { return Ok(None); };
+    let Some(reference) = parse_reference(Some(ctx), bytes, at)? else {
+        return Ok(None);
+    };
     let copy_guid = |guid: Option<&str>| -> Result<Option<String>, CodecError> {
         guid.map(|guid| {
             ctx.charge_work(u64_from_index(guid.len()), "retain F3D reference type GUID")?;
             ctx.copy_retained_text(guid, "retain F3D ASCII string")
-        }).transpose()
+        })
+        .transpose()
     };
     Ok(Some(match reference {
         Reference::Null => Reference::Null,
-        Reference::Local { target, inline_type_guid } => Reference::Local { target, inline_type_guid: copy_guid(inline_type_guid)? },
-        Reference::CrossSegment { target, inline_type_guid, segment } => Reference::CrossSegment { target, inline_type_guid: copy_guid(inline_type_guid)?, segment },
-        Reference::CrossDocument { target, inline_type_guid, segment, link_name } => Reference::CrossDocument { target, inline_type_guid: copy_guid(inline_type_guid)?, segment, link_name: link_name.to_retained(ctx, "retain F3D UTF-16 string")? },
+        Reference::Local {
+            target,
+            inline_type_guid,
+        } => Reference::Local {
+            target,
+            inline_type_guid: copy_guid(inline_type_guid)?,
+        },
+        Reference::CrossSegment {
+            target,
+            inline_type_guid,
+            segment,
+        } => Reference::CrossSegment {
+            target,
+            inline_type_guid: copy_guid(inline_type_guid)?,
+            segment,
+        },
+        Reference::CrossDocument {
+            target,
+            inline_type_guid,
+            segment,
+            link_name,
+        } => Reference::CrossDocument {
+            target,
+            inline_type_guid: copy_guid(inline_type_guid)?,
+            segment,
+            link_name: link_name.to_retained(ctx, "retain F3D UTF-16 string")?,
+        },
     }))
 }
 
@@ -351,16 +467,27 @@ fn parse_reference<'a>(
         };
     }
     let utf16 = |at, bounds| -> Result<Option<(Utf16View<'a>, usize)>, CodecError> {
-        let Some((raw, end)) = lp_utf16_raw(bytes, at, bounds) else { return Ok(None); };
-        if let Some(ctx) = ctx { ctx.charge_work(u64_from_index(raw.len()), "decode F3D reference UTF-16")?; }
+        let Some((raw, end)) = lp_utf16_raw(bytes, at, bounds) else {
+            return Ok(None);
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_work(u64_from_index(raw.len()), "decode F3D reference UTF-16")?;
+        }
         Ok(Utf16View::new(raw).map(|text| (text, end)))
     };
-    let ascii = |at, bounds: RangeInclusive<usize>| -> Result<Option<(&'a str, usize)>, CodecError> {
-        let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else { return Ok(None); };
-        if !RangeInclusive::contains(&bounds, &raw.len()) { return Ok(None); }
-        if let Some(ctx) = ctx { ctx.charge_work(u64_from_index(raw.len()), "decode F3D reference ASCII")?; }
-        Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
-    };
+    let ascii =
+        |at, bounds: RangeInclusive<usize>| -> Result<Option<(&'a str, usize)>, CodecError> {
+            let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else {
+                return Ok(None);
+            };
+            if !RangeInclusive::contains(&bounds, &raw.len()) {
+                return Ok(None);
+            }
+            if let Some(ctx) = ctx {
+                ctx.charge_work(u64_from_index(raw.len()), "decode F3D reference ASCII")?;
+            }
+            Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
+        };
     let mut cursor = *at;
     let present = some!(bytes.get(cursor)).to_owned();
     cursor += 1;
@@ -427,16 +554,13 @@ fn parse_reference<'a>(
                     if !is_guid_hyphenated(&guid) {
                         return Ok(None);
                     }
-                    let (link_name, end) =
-                        some!(utf16(end, 0..=256)?);
+                    let (link_name, end) = some!(utf16(end, 0..=256)?);
                     cursor = end;
                     match *some!(bytes.get(cursor)) {
                         0 => cursor += 1,
                         1 => {
-                            let (_, end) =
-                                some!(utf16(cursor + 1, 36..=36)?);
-                            let (_, end) =
-                                some!(utf16(end, 0..=256)?);
+                            let (_, end) = some!(utf16(cursor + 1, 36..=36)?);
+                            let (_, end) = some!(utf16(end, 0..=256)?);
                             cursor = end;
                         }
                         _ => return Ok(None),
@@ -456,7 +580,6 @@ fn parse_reference<'a>(
     *at = cursor;
     Ok(Some(reference))
 }
-
 
 /// Whether `value` is a 36-character hyphenated hexadecimal GUID.
 pub(crate) fn is_guid_hyphenated(value: &str) -> bool {
@@ -521,7 +644,12 @@ mod tests {
             assert_eq!(super::f64s_at::<3>(&bytes, 0), Some(values));
             assert_eq!(super::f64s_at::<3>(&bytes[..23], 0), None);
             assert_eq!(super::f64s_at::<3>(&bytes, usize::MAX), None);
-            assert_eq!(super::finite_reals_at::<3>(&bytes, 0).unwrap().map(cadmpeg_ir::scalar::FiniteReal::get), values);
+            assert_eq!(
+                super::finite_reals_at::<3>(&bytes, 0)
+                    .unwrap()
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
+                values
+            );
             assert_eq!(ctx.resource_refusal(), None);
         });
         let bytes = f64::NAN.to_le_bytes();
@@ -556,14 +684,16 @@ mod tests {
             assert_eq!(text.as_ptr(), ascii[4..].as_ptr());
         }
         assert!(super::lp_ascii_strict(&ascii[..6], 0, 3..=3).is_none());
-        assert!(super::lp_ascii_filtered_view(&ascii, usize::MAX, 3..=3, u8::is_ascii_digit).is_none());
+        assert!(
+            super::lp_ascii_filtered_view(&ascii, usize::MAX, 3..=3, u8::is_ascii_digit).is_none()
+        );
         let mut bytes = Vec::new();
         crate::test_support::lp_utf16(&mut bytes, " A😀 ");
         let (text, end) = super::lp_utf16_bounded_view(&bytes, 0, 0..=20).unwrap();
         assert!(text.eq_str(" A😀 "));
         assert_eq!(text.len(), " A😀 ".len());
         assert_eq!(end, bytes.len());
-        assert!(super::lp_utf16_bounded_view(&bytes[..bytes.len()-1], 0, 0..=20).is_none());
+        assert!(super::lp_utf16_bounded_view(&bytes[..bytes.len() - 1], 0, 0..=20).is_none());
         assert!(super::lp_utf16_bounded_view(&bytes, usize::MAX, 0..=20).is_none());
         assert!(super::lp_utf16_bounded_view(&[1, 0, 0, 0, 0, 216], 0, 0..=20).is_none());
     }
@@ -578,7 +708,9 @@ mod tests {
         policy.limits.max_retained_bytes = "link".len().try_into().unwrap();
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let mut at = 0;
-            let reference = super::take_reference_charged(ctx, &bytes, &mut at).unwrap().unwrap();
+            let reference = super::take_reference_charged(ctx, &bytes, &mut at)
+                .unwrap()
+                .unwrap();
             assert_eq!(reference.link_name(), Some("link"));
             assert_eq!(reference.target(), Some(7));
             assert_eq!(at, bytes.len());
@@ -592,15 +724,26 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let mut at = 0;
-            let reference = super::take_reference_charged(ctx, &cross_segment, &mut at).unwrap().unwrap();
-            assert!(matches!(reference, super::Reference::CrossSegment { target: 7, segment: 0, inline_type_guid: None }));
+            let reference = super::take_reference_charged(ctx, &cross_segment, &mut at)
+                .unwrap()
+                .unwrap();
+            assert!(matches!(
+                reference,
+                super::Reference::CrossSegment {
+                    target: 7,
+                    segment: 0,
+                    inline_type_guid: None
+                }
+            ));
             assert_eq!(at, cross_segment.len());
         });
         policy.limits.max_work_units = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let error = super::take_reference_charged(ctx, &bytes, &mut 0).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.operation == "decode F3D reference UTF-16"));
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.operation == "decode F3D reference UTF-16")
+            );
         });
     }
 
@@ -618,5 +761,4 @@ mod tests {
         assert_eq!(guid.unwrap().as_ptr(), bytes[13..].as_ptr());
         assert_eq!(at, bytes.len());
     }
-
 }

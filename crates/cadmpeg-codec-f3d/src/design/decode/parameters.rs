@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design parameter, owner, and companion frames.
 
+use crate::bytes::{lp_utf16_bounded_charged};
 use cadmpeg_core::container::ContainerRole;
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{
     native_scope_charged, next_indexed_record_offset, IndexedRecordOffsets,
 };
-use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
+use crate::design::decode::text::{design_record_id_charged};
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
@@ -34,7 +35,7 @@ use std::collections::{HashMap, HashSet};
 
 macro_rules! parameter_text {
     ($ctx:expr, $payload:expr, $at:expr, $bounds:expr) => {
-        match lp_utf16_bounded_charged($ctx, $payload, $at, $bounds) {
+        match lp_utf16_bounded_charged($ctx, $payload, $at, $bounds, "f3d Design UTF-16 text") {
             Ok(Some(value)) => value,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -286,7 +287,7 @@ pub(in crate::design) fn parse_design_parameter(
             && owner_record_index.is_some()
             && payload.get(expression_end..expression_end + 10) == Some(&[0; 10])
         {
-            match lp_utf16_bounded_charged(ctx, payload, expression_end + 10, 1..=256) {
+            match lp_utf16_bounded_charged(ctx, payload, expression_end + 10, 1..=256, "f3d Design UTF-16 text") {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             }
@@ -312,7 +313,7 @@ pub(in crate::design) fn parse_design_parameter(
             (None, name, name_at, name_end)
         } else {
             let (first, first_end) = parameter_text!(ctx, payload, first_at, 1..=256);
-            let second_field = match lp_utf16_bounded_charged(ctx, payload, first_end, 1..=256) {
+            let second_field = match lp_utf16_bounded_charged(ctx, payload, first_end, 1..=256, "f3d Design UTF-16 text") {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             };

@@ -356,7 +356,7 @@ fn decode_table(
         let record_index =
             View::u32_le_at(bytes, index_offset).ok_or_else(|| malformed("entry index"))?;
         let (entity_id, end) =
-            lp_utf16_bounded_charged(ctx, bytes, entity_length_offset, 1..=1024)?
+            lp_utf16_bounded_charged(ctx, bytes, entity_length_offset, 1..=1024, "retain F3D UTF-16 string")?
                 .filter(|(_, end)| *end <= frame.end)
                 .filter(|(entity_id, _)| is_entity_key(entity_id))
                 .ok_or_else(|| malformed("entity key"))?;
@@ -374,7 +374,7 @@ fn decode_table(
     }
 
     let mut guids = Vec::new();
-    while let Some((guid, end)) = lp_utf16_bounded_charged(ctx, bytes, cursor, 36..=36)?
+    while let Some((guid, end)) = lp_utf16_bounded_charged(ctx, bytes, cursor, 36..=36, "retain F3D UTF-16 string")?
         .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
     {
         let byte_offset = cursor;
@@ -460,7 +460,7 @@ fn decode_table(
             ctx.copy_retained_text(&name, "index F3D ACT registry name")?,
             "index F3D ACT registry names",
         )?;
-        let (guid, end) = lp_utf16_bounded_charged(ctx, bytes, after_name, 36..=36)?
+        let (guid, end) = lp_utf16_bounded_charged(ctx, bytes, after_name, 36..=36, "retain F3D UTF-16 string")?
             .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
             .ok_or_else(|| malformed("channel-registry GUID"))?;
         ctx.push_vec(
@@ -611,7 +611,7 @@ fn decode_channel_group(
         else {
             return Ok(None);
         };
-        let Some((guid, after_guid)) = lp_utf16_bounded_charged(ctx, bytes, after_name, 36..=36)?
+        let Some((guid, after_guid)) = lp_utf16_bounded_charged(ctx, bytes, after_name, 36..=36, "retain F3D UTF-16 string")?
             .filter(|(guid, after)| *after <= frame.end && is_guid_hyphenated(guid))
         else {
             return Ok(None);
@@ -636,7 +636,7 @@ fn decode_channel_group(
         cursor = after_guid;
     }
     let (entity_id, end) = if let Some((entity_id, end)) =
-        lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=1024)?
+        lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=1024, "retain F3D UTF-16 string")?
             .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
     {
         (
@@ -696,7 +696,7 @@ fn decode_component_link(
     }
     let (instance_root_record, next) = some!(marker_ref(bytes, cursor, 6, frame.end));
     cursor = next;
-    let (entity_id, next) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=1024)?);
+    let (entity_id, next) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=1024, "retain F3D UTF-16 string")?);
     if next > frame.end || !is_entity_key(&entity_id) {
         return Ok(None);
     }
@@ -705,7 +705,7 @@ fn decode_component_link(
     cursor = next;
     let (registry_flag, next) = some!(marker_ref(bytes, cursor, 0, frame.end));
     cursor = next;
-    let (display_name, next) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor, 0..=1024)?);
+    let (display_name, next) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor, 0..=1024, "retain F3D UTF-16 string")?);
     if next > frame.end {
         return Ok(None);
     }

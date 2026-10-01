@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse body members, bounds, bindings, and visibility.
 
+use crate::bytes::{lp_utf16_bounded_charged};
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::take_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::native_scope_charged;
 use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
+use crate::design::decode::text::{design_record_id_charged};
 use crate::design::RECIPES;
 use crate::ids::native_stream;
 use crate::layout::indexed_design_record_header;
@@ -511,7 +512,11 @@ fn local_reference_candidates(
                 candidates.push(LocalReferenceCandidate {
                     target,
                     end: end + 1,
-                    inline_type_guid: inline_type_guid.map(|guid| ctx.copy_retained_text(guid, "retain F3D local reference type GUID")).transpose()?,
+                    inline_type_guid: inline_type_guid
+                        .map(|guid| {
+                            ctx.copy_retained_text(guid, "retain F3D local reference type GUID")
+                        })
+                        .transpose()?,
                     padding: ReferencePadding::TwoZeros,
                 });
             }
@@ -731,7 +736,7 @@ fn parse_snapshot_body_map_frame(
                 continue;
             };
             let Some((blob_name, name_end)) =
-                lp_utf16_bounded_charged(ctx, bytes, name_at, 0..=max_chars)?
+                lp_utf16_bounded_charged(ctx, bytes, name_at, 0..=max_chars, "f3d Design UTF-16 text")?
             else {
                 continue;
             };
@@ -1076,7 +1081,7 @@ fn parse_body_map_frame(
             return Ok(None);
         };
         let Some((blob_name, name_end)) =
-            lp_utf16_bounded_charged(ctx, bytes, name_at, 0..=max_name_chars)?
+            lp_utf16_bounded_charged(ctx, bytes, name_at, 0..=max_name_chars, "f3d Design UTF-16 text")?
         else {
             return Ok(None);
         };

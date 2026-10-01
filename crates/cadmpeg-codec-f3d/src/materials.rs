@@ -1289,7 +1289,7 @@ fn legacy_face_appearance_assignments(
             cursor += 4;
         } else {
             let Some((display_name, display_name_end)) =
-                lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=256)?
+                lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=256, "retain F3D UTF-16 string")?
             else {
                 continue;
             };
@@ -1852,7 +1852,7 @@ fn decode_act_channels(
                     break;
                 };
                 let Some((guid, after_guid)) =
-                    lp_utf16_bounded_charged(ctx, bytes, after_name, 1..=64)?
+                    lp_utf16_bounded_charged(ctx, bytes, after_name, 1..=64, "retain F3D UTF-16 string")?
                 else {
                     valid = false;
                     break;
@@ -1865,7 +1865,7 @@ fn decode_act_channels(
                 cursor = after_guid;
             }
             if valid {
-                if let Some((entity, end)) = lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=64)? {
+                if let Some((entity, end)) = lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=64, "retain F3D UTF-16 string")? {
                     if let Some(suffix) = entity_suffix(&entity) {
                         if !out.contains_key(&suffix) {
                             ctx.reserve_map(&mut out, 1, "index F3D ACT entities")?;
@@ -1962,7 +1962,7 @@ fn lp_utf16_string_at(
     bytes: &[u8],
     offset: usize,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    let Some((value, end)) = lp_utf16_bounded_charged(ctx, bytes, offset, 2..=256)? else {
+    let Some((value, end)) = lp_utf16_bounded_charged(ctx, bytes, offset, 2..=256, "retain F3D UTF-16 string")? else {
         return Ok(None);
     };
     if value.chars().any(char::is_control) {
@@ -2245,7 +2245,7 @@ fn decode_fixed_record(
         fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
     let properties = cadmpeg_core::text::named_entries_checked(
-                ctx,
+        ctx,
         format_args!("f3d:design:appearance#{guid}"),
         properties,
     )?;
