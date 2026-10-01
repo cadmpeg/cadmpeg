@@ -260,7 +260,10 @@ impl Harness {
     }
 
     fn finish_check(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch], from_files: bool) {
-        assert!(!branches.is_empty(), "no golden branches; the harness would pass vacuously");
+        assert!(
+            !branches.is_empty(),
+            "no golden branches; the harness would pass vacuously"
+        );
         let update = std::env::var_os("UPDATE_GOLDEN").is_some();
         let names: Vec<String> = inputs.iter().map(|(name, _)| name.clone()).collect();
         let mut failures: Vec<String> = Vec::new();
@@ -277,7 +280,10 @@ impl Harness {
     }
 
     fn finish_determinism(inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
-        assert!(!branches.is_empty(), "no golden branches; the harness would pass vacuously");
+        assert!(
+            !branches.is_empty(),
+            "no golden branches; the harness would pass vacuously"
+        );
         for (name, bytes) in inputs {
             for branch in branches {
                 let first = (branch.snapshot)(bytes);

@@ -477,7 +477,15 @@ pub fn frame(
     ref_width: RefWidth,
     declared_entities: Option<u64>,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(ctx, bytes, start, limit, ref_width, declared_entities, false)
+    frame_impl(
+        ctx,
+        bytes,
+        start,
+        limit,
+        ref_width,
+        declared_entities,
+        false,
+    )
 }
 
 /// Frame a history-section slice whose final record ends at the enclosing
@@ -682,12 +690,16 @@ fn frame_impl(
             cadmpeg_core::decode::u64_from_index(token_bytes),
             "retain SAB tokens",
         )?;
-        let population = index.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("SAB record population", u64::MAX, u64::MAX)
-        })?;
+        let population = index
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("SAB record population", u64::MAX, u64::MAX))?;
         let population = cadmpeg_core::decode::u64_from_index(population);
         if population > admitted_entities {
-            ctx.admit_entities(population, &mut admitted_entities, "admit SAB native record")?;
+            ctx.admit_entities(
+                population,
+                &mut admitted_entities,
+                "admit SAB native record",
+            )?;
         }
         ctx.reserve_vec(&mut records, 1, "frame SAB record")?;
         records.push(Record {

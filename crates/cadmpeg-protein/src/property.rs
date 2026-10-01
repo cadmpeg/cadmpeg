@@ -128,7 +128,10 @@ impl TryFrom<Vec<PropertyValue>> for RepeatedValues {
     fn try_from(values: Vec<PropertyValue>) -> Result<Self, Self::Error> {
         let carrier = values.first().map(std::mem::discriminant);
         for value in &values {
-            if matches!(value, PropertyValue::Multiple(_) | PropertyValue::TextureUri(_)) {
+            if matches!(
+                value,
+                PropertyValue::Multiple(_) | PropertyValue::TextureUri(_)
+            ) {
                 return Err(RepeatedValueError::NonScalar);
             }
             if Some(std::mem::discriminant(value)) != carrier {
@@ -253,7 +256,10 @@ impl From<PropertyValue> for PropertyValueWire {
             PropertyValue::String(value) => Self::String(value),
             PropertyValue::Color(value) => Self::Color(value.map(FiniteReal::get)),
             PropertyValue::TextureUri(value) => Self::TextureUri(value),
-            PropertyValue::Distance { unit, value } => Self::Distance { unit, value: value.get() },
+            PropertyValue::Distance { unit, value } => Self::Distance {
+                unit,
+                value: value.get(),
+            },
             PropertyValue::Multiple(values) => {
                 Self::Multiple(values.into_values().into_iter().map(Into::into).collect())
             }
@@ -268,19 +274,31 @@ impl TryFrom<PropertyValueWire> for PropertyValue {
         Ok(match value {
             PropertyValueWire::Boolean(value) => Self::Boolean(value),
             PropertyValueWire::Integer(value) => Self::Integer(value),
-            PropertyValueWire::Float(value) => Self::Float(FiniteReal::new(value).ok_or("float must be finite")?),
+            PropertyValueWire::Float(value) => {
+                Self::Float(FiniteReal::new(value).ok_or("float must be finite")?)
+            }
             PropertyValueWire::String(value) => Self::String(value),
             PropertyValueWire::Color(value) => {
                 let [r, g, b, a] = value.map(FiniteReal::new);
-                Self::Color([r.ok_or("color must be finite")?, g.ok_or("color must be finite")?, b.ok_or("color must be finite")?, a.ok_or("color must be finite")?])
-            },
+                Self::Color([
+                    r.ok_or("color must be finite")?,
+                    g.ok_or("color must be finite")?,
+                    b.ok_or("color must be finite")?,
+                    a.ok_or("color must be finite")?,
+                ])
+            }
             PropertyValueWire::TextureUri(value) => Self::TextureUri(value),
-            PropertyValueWire::Distance { unit, value } => Self::Distance { unit, value: FiniteReal::new(value).ok_or("distance must be finite")? },
+            PropertyValueWire::Distance { unit, value } => Self::Distance {
+                unit,
+                value: FiniteReal::new(value).ok_or("distance must be finite")?,
+            },
             PropertyValueWire::Multiple(values) => Self::Multiple(
                 values
                     .into_iter()
                     .map(TryInto::try_into)
-                    .collect::<Result<Vec<_>, _>>()?.try_into().map_err(|error: RepeatedValueError| error.to_string())?,
+                    .collect::<Result<Vec<_>, _>>()?
+                    .try_into()
+                    .map_err(|error: RepeatedValueError| error.to_string())?,
             ),
             PropertyValueWire::Reference => {
                 return Err(
@@ -312,7 +330,10 @@ mod tests {
                 .expect("deserialize empty reference carrier"),
             property
         );
-        assert_eq!(property.value(), Some(&PropertyValue::Multiple(super::RepeatedValues::default())));
+        assert_eq!(
+            property.value(),
+            Some(&PropertyValue::Multiple(super::RepeatedValues::default()))
+        );
         assert_eq!(
             serde_json::to_string(&property).expect("serialize empty references"),
             r#"{"value_offset":4,"value":{"kind":"multiple","value":[]},"connections":["target"]}"#
@@ -342,12 +363,13 @@ mod tests {
             ),
             (
                 PropertyContent::Value {
-                    value: PropertyValue::Float(cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite")),
+                    value: PropertyValue::Float(
+                        cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite"),
+                    ),
                     connections: Vec::new(),
                 },
                 r#"{"value_offset":4,"value":{"kind":"float","value":1.5},"connections":[]}"#,
             ),
-
         ];
         for (content, expected) in cases {
             let property = DecodedProperty {
@@ -372,11 +394,22 @@ mod tests {
     #[test]
     fn property_wire_rejects_nonfinite_scalars_and_colors() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            for wire in [super::PropertyValueWire::Float(value), super::PropertyValueWire::Distance {unit: 0x200e, value}, super::PropertyValueWire::Color([value, 0.25, 1.0, 1.0])] {
+            for wire in [
+                super::PropertyValueWire::Float(value),
+                super::PropertyValueWire::Distance {
+                    unit: 0x200e,
+                    value,
+                },
+                super::PropertyValueWire::Color([value, 0.25, 1.0, 1.0]),
+            ] {
                 assert!(PropertyValue::try_from(wire).is_err());
             }
         }
-        for wire in [r#"{"kind":"float","value":1e400}"#, r#"{"kind":"distance","value":{"unit":8206,"value":1e400}}"#, r#"{"kind":"color","value":[1e400,0.25,1.0,1.0]}"#] {
+        for wire in [
+            r#"{"kind":"float","value":1e400}"#,
+            r#"{"kind":"distance","value":{"unit":8206,"value":1e400}}"#,
+            r#"{"kind":"color","value":[1e400,0.25,1.0,1.0]}"#,
+        ] {
             assert!(serde_json::from_str::<PropertyValue>(wire).is_err());
         }
     }
@@ -384,19 +417,41 @@ mod tests {
     #[test]
     fn repeated_carriers_reject_mixed_nested_and_texture_members() {
         use super::{RepeatedValueError, RepeatedValues};
-        assert_eq!(RepeatedValues::try_from(vec![PropertyValue::Float(cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite")), PropertyValue::Boolean(true)]), Err(RepeatedValueError::Heterogeneous));
-        assert_eq!(RepeatedValues::try_from(vec![PropertyValue::Multiple(RepeatedValues::default())]), Err(RepeatedValueError::NonScalar));
-        assert_eq!(RepeatedValues::try_from(vec![PropertyValue::TextureUri(Vec::new())]), Err(RepeatedValueError::NonScalar));
-        for value in [r#"{"kind":"multiple","value":[{"kind":"float","value":1.5},{"kind":"boolean","value":true}]}"#, r#"{"kind":"multiple","value":[{"kind":"multiple","value":[]}]}"#, r#"{"kind":"multiple","value":[{"kind":"texture_uri","value":[]}]}"#] {
+        assert_eq!(
+            RepeatedValues::try_from(vec![
+                PropertyValue::Float(cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite")),
+                PropertyValue::Boolean(true)
+            ]),
+            Err(RepeatedValueError::Heterogeneous)
+        );
+        assert_eq!(
+            RepeatedValues::try_from(vec![PropertyValue::Multiple(RepeatedValues::default())]),
+            Err(RepeatedValueError::NonScalar)
+        );
+        assert_eq!(
+            RepeatedValues::try_from(vec![PropertyValue::TextureUri(Vec::new())]),
+            Err(RepeatedValueError::NonScalar)
+        );
+        for value in [
+            r#"{"kind":"multiple","value":[{"kind":"float","value":1.5},{"kind":"boolean","value":true}]}"#,
+            r#"{"kind":"multiple","value":[{"kind":"multiple","value":[]}]}"#,
+            r#"{"kind":"multiple","value":[{"kind":"texture_uri","value":[]}]}"#,
+        ] {
             assert!(serde_json::from_str::<PropertyValue>(value).is_err());
-            let property = format!("{{\"value_offset\":4,\"value\":{value},\"connections\":[\"target\"]}}");
+            let property =
+                format!("{{\"value_offset\":4,\"value\":{value},\"connections\":[\"target\"]}}");
             assert!(serde_json::from_str::<DecodedProperty>(&property).is_err());
         }
-        let values = RepeatedValues::try_from(vec![PropertyValue::Integer(1), PropertyValue::Integer(2)]).expect("same carrier");
+        let values =
+            RepeatedValues::try_from(vec![PropertyValue::Integer(1), PropertyValue::Integer(2)])
+                .expect("same carrier");
         let value = PropertyValue::Multiple(values);
         let wire = r#"{"kind":"multiple","value":[{"kind":"integer","value":1},{"kind":"integer","value":2}]}"#;
         assert_eq!(serde_json::to_string(&value).expect("serialize"), wire);
-        assert_eq!(serde_json::from_str::<PropertyValue>(wire).expect("homogeneous wire"), value);
+        assert_eq!(
+            serde_json::from_str::<PropertyValue>(wire).expect("homogeneous wire"),
+            value
+        );
     }
 
     #[test]

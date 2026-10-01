@@ -154,7 +154,8 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
         cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
-    ).expect("kernel classification fits policy");
+    )
+    .expect("kernel classification fits policy");
     let layers = DialectLayers::of(host)
         .with(kernel.into_matched())
         .expect("distinct dialect layer keys");

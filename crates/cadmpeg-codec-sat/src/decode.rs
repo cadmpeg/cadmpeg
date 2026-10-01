@@ -52,8 +52,22 @@ fn decode_asm_binary(
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
     let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
-        Some(limit) => sab::frame(ctx, bytes, start, limit, width, header.metadata.entity_count),
-        None => sab::frame_history(ctx, bytes, start, bytes.len(), width, header.metadata.entity_count),
+        Some(limit) => sab::frame(
+            ctx,
+            bytes,
+            start,
+            limit,
+            width,
+            header.metadata.entity_count,
+        ),
+        None => sab::frame_history(
+            ctx,
+            bytes,
+            start,
+            bytes.len(),
+            width,
+            header.metadata.entity_count,
+        ),
     };
     let records = framed.map_err(|failure| {
         failure.into_codec_error(ctx, |error| {
@@ -172,7 +186,10 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let mut attributes = BTreeMap::new();
     header_attributes(ctx, &header, stream.terminator.into(), &mut attributes)?;
     let key = ctx.copy_retained_text("scale", "retain SAT scale attribute key")?;
-    let value = ctx.format_retained_with_work(format_args!("{}", stream.header.scale().get()), "retain SAT scale attribute")?;
+    let value = ctx.format_retained_with_work(
+        format_args!("{}", stream.header.scale().get()),
+        "retain SAT scale attribute",
+    )?;
     ctx.insert_btree_map(&mut attributes, key, value, "collect SAT scale attribute")?;
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
@@ -301,12 +318,21 @@ fn build_result(
     ctx.charge_work(annotation_count, "scan SAT annotation records")?;
     for record in annotation_records {
         let id_bytes = cadmpeg_core::decode::u64_from_index(record.id.len());
-        let comparisons = annotation_count.checked_mul(2).and_then(|count| count.checked_add(1))
+        let comparisons = annotation_count
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
             .and_then(|count| count.checked_mul(id_bytes))
-            .and_then(|count| count.checked_add(cadmpeg_core::decode::u64_from_index(record.tag.as_str().len())))
+            .and_then(|count| {
+                count.checked_add(cadmpeg_core::decode::u64_from_index(
+                    record.tag.as_str().len(),
+                ))
+            })
             .ok_or_else(|| ctx.refuse_codec_limit("SAT annotation work", u64::MAX, u64::MAX))?;
         ctx.charge_work(comparisons, "copy and compare SAT provenance")?;
-        let name = ctx.format_retained_with_work(format_args!("sat:{}", record.stream), "retain SAT annotation stream")?;
+        let name = ctx.format_retained_with_work(
+            format_args!("sat:{}", record.stream),
+            "retain SAT annotation stream",
+        )?;
         let name = cadmpeg_ir::StreamName::try_from(name)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
         ctx.charge_collection_items(1, "collect SAT annotation stream handles")?;
@@ -316,10 +342,17 @@ fn build_result(
         ctx.charge_work(field_count, "scan SAT derived fields")?;
         for field in record.derived_fields {
             let field_bytes = cadmpeg_core::decode::u64_from_index(field.len());
-            let work = annotation_count.checked_mul(2).and_then(|count| count.checked_add(1))
+            let work = annotation_count
+                .checked_mul(2)
+                .and_then(|count| count.checked_add(1))
                 .and_then(|count| count.checked_mul(id_bytes))
-                .and_then(|count| field_count.checked_mul(2).and_then(|fields| fields.checked_add(1))
-                    .and_then(|fields| fields.checked_mul(field_bytes)).and_then(|fields| count.checked_add(fields)))
+                .and_then(|count| {
+                    field_count
+                        .checked_mul(2)
+                        .and_then(|fields| fields.checked_add(1))
+                        .and_then(|fields| fields.checked_mul(field_bytes))
+                        .and_then(|fields| count.checked_add(fields))
+                })
                 .ok_or_else(|| ctx.refuse_codec_limit("SAT exactness work", u64::MAX, u64::MAX))?;
             ctx.charge_work(work, "copy and compare SAT exactness")?;
             annotations.derived_charged(ctx, &record.id, field)?;

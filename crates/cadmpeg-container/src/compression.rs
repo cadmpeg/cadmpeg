@@ -43,7 +43,10 @@ fn inflate_zlib_writer<'ctx, 'a>(
     spec: ExpandSpec,
 ) -> Result<(ExpandWriter<'ctx, 'a>, usize), CodecError> {
     let input = source.window();
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(input.len()), "zlib compressed input")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(input.len()),
+        "zlib compressed input",
+    )?;
     let mut decoder = Decompress::new(true);
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
@@ -51,7 +54,10 @@ fn inflate_zlib_writer<'ctx, 'a>(
     loop {
         let before_in = decoder.total_in();
         let before_out = decoder.total_out();
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "zlib expansion step")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(chunk.len()),
+            "zlib expansion step",
+        )?;
         let status = decoder
             .decompress(&input[source_offset..], &mut chunk, FlushDecompress::None)
             .map_err(|error| CodecError::malformed(format_args!("invalid zlib member: {error}")))?;
@@ -62,7 +68,10 @@ fn inflate_zlib_writer<'ctx, 'a>(
             .ok_or_else(|| CodecError::Malformed("zlib input overflow".into()))?;
         let produced = usize::try_from(decoder.total_out() - before_out)
             .map_err(|_| CodecError::Malformed("zlib output overflow".into()))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(produced), "zlib expansion copy")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(produced),
+            "zlib expansion copy",
+        )?;
         writer.write(&chunk[..produced])?;
         if status == Status::StreamEnd {
             break;
@@ -113,19 +122,28 @@ fn inflate_deflate_writer<'ctx, 'a>(
     source: View<'_>,
     spec: ExpandSpec,
 ) -> Result<ExpandWriter<'ctx, 'a>, CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(source.window().len()), "DEFLATE compressed input")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(source.window().len()),
+        "DEFLATE compressed input",
+    )?;
     let mut decoder = DeflateDecoder::new(source.window());
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
     loop {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "DEFLATE expansion step")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(chunk.len()),
+            "DEFLATE expansion step",
+        )?;
         let read = decoder.read(&mut chunk).map_err(|error| {
             CodecError::malformed(format_args!("invalid raw-DEFLATE member: {error}"))
         })?;
         if read == 0 {
             break;
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(read), "DEFLATE expansion copy")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(read),
+            "DEFLATE expansion copy",
+        )?;
         writer.write(&chunk[..read])?;
     }
     if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len()) {
@@ -211,9 +229,16 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = 0;
-            let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
-            let error = if zlib { inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("zlib work")} else { inflate_deflate_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("DEFLATE work") };
-            assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits));
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
+            let error = if zlib {
+                inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("zlib work")
+            } else {
+                inflate_deflate_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("DEFLATE work")
+            };
+            assert!(
+                matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+            );
         }
     }
 
