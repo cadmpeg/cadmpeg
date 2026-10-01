@@ -213,7 +213,7 @@ impl DecodeContext<'_> {
         self.charge_collection_items(u64_from_index(count), operation)?;
         let bytes = count
             .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            .ok_or_else(|| self.budget.scoped_size_overflow_limit(operation))?;
         self.reserve_scoped(u64_from_index(bytes), operation)
     }
 
@@ -392,15 +392,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         self.charge_work(u64_from_index(values.len()), work_operation)?;
-        if values.contains(&value) {
-            return Ok(false);
-        }
-        let bytes = std::mem::size_of::<T>()
-            .checked_mul(4)
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        self.charge_collection_items(1, operation)?;
-        reservation.grow(u64_from_index(bytes))?;
-        Ok(values.insert(value))
+        reservation.with_storage(|| self.insert_btree_set(values, value, operation))
     }
 
     /// Inserts a vacant scoped tree entry after charging lookup work and node storage.
@@ -414,18 +406,13 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         self.charge_work(u64_from_index(values.len()), work_operation)?;
-        match values.entry(key) {
-            std::collections::btree_map::Entry::Occupied(_) => Ok(false),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                let bytes = std::mem::size_of::<(K, V)>()
-                    .checked_mul(4)
-                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-                self.charge_collection_items(1, operation)?;
-                reservation.grow(u64_from_index(bytes))?;
-                entry.insert(value);
-                Ok(true)
+        reservation.with_storage(|| {
+            if values.contains_key(&key) {
+                return Ok(false);
             }
-        }
+            self.insert_btree_map(values, key, value, operation)?;
+            Ok(true)
+        })
     }
 
     /// Appends a lazily built value to a scoped group after aggregate admission.
@@ -438,23 +425,21 @@ impl DecodeContext<'_> {
         owned_bytes: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.charge_work(1, operation)?;
-        let vacant = !groups.contains_key(&key);
-        let key_bytes = if vacant {
-            std::mem::size_of::<(K, Vec<V>)>()
-        } else {
-            0
-        };
-        let bytes = key_bytes
-            .checked_add(std::mem::size_of::<V>())
-            .and_then(|bytes| bytes.checked_add(owned_bytes))
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        self.charge_collection_items(1 + u64::from(vacant), operation)?;
-        reservation.grow(u64_from_index(bytes))?;
-        let values = groups.entry(key).or_default();
-        Self::reserve_admitted_vec(values, 1, operation)?;
-        values.push(value());
-        Ok(())
+        self.charge_work(u64_from_index(groups.len()) + 1, operation)?;
+        reservation.with_storage(|| {
+            if let Some(values) = groups.get_mut(&key) {
+                self.reserve_vec(values, 1, operation)?;
+                self.charge_retained(u64_from_index(owned_bytes), operation)?;
+                values.push(value());
+                return Ok(());
+            }
+            self.admit_btree_entry(groups, &key, operation)?;
+            let mut values = self.collection_vec(1, operation)?;
+            self.charge_retained(u64_from_index(owned_bytes), operation)?;
+            values.push(value());
+            groups.insert(key, values);
+            Ok(())
+        })
     }
 
     /// Admits retained tree-record storage, owned bytes, one slot and one work unit.
@@ -500,14 +485,13 @@ impl DecodeContext<'_> {
     ) -> Result<(BTreeMap<K, V>, ScopedReservation<'ctx>), CodecError> {
         let mut entries = BTreeMap::new();
         let mut reservation = self.reserve_scoped(0, operation)?;
-        for (key, value) in values {
-            self.charge_work(1, operation)?;
-            if !entries.contains_key(&key) {
-                self.charge_collection_items(1, operation)?;
-                reservation.grow(u64_from_index(std::mem::size_of::<(K, V)>()))?;
+        reservation.with_storage(|| {
+            for (key, value) in values {
+                self.charge_work(u64_from_index(entries.len()) + 1, operation)?;
+                self.insert_btree_map(&mut entries, key, value, operation)?;
             }
-            entries.insert(key, value);
-        }
+            Ok::<(), CodecError>(())
+        })?;
         Ok((entries, reservation))
     }
 
@@ -695,12 +679,7 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        if values.contains(&value) {
-            return Ok(false);
-        }
-        self.charge_collection_items(1, operation)?;
-        reservation.grow(u64_from_index(std::mem::size_of::<T>()))?;
-        Ok(values.insert(value))
+        reservation.with_storage(|| self.insert_btree_set(values, value, operation))
     }
 
     /// Inserts a new set item after charging its slot.
@@ -780,17 +759,19 @@ impl DecodeContext<'_> {
         index_operation: &'static str,
         value_operation: &'static str,
     ) -> Result<(), CodecError> {
-        let new_key = !values.contains_key(&key);
-        if new_key {
-            self.charge_collection_items(1, index_operation)?;
+        if let Some(group) = values.get_mut(&key) {
+            return self.push_vec(group, value, value_operation);
         }
+        self.charge_collection_items(1, index_operation)?;
         self.charge_collection_items(1, value_operation)?;
-        if new_key {
-            Self::reserve_admitted_map(values, 1, index_operation)?;
-        }
-        let group = values.entry(key).or_default();
-        Self::reserve_admitted_vec(group, 1, value_operation)?;
+        let mut group = self.retained_admitted_vec(1, value_operation)?;
+        let bytes = self.charge_hash_growth::<(K, Vec<V>)>(
+            values.len(), values.capacity(), 1, index_operation)?;
+        values.try_reserve(1).map_err(|_| {
+            self.budget.retained_allocation_failed(u64_from_index(bytes), index_operation)
+        })?;
         group.push(value);
+        values.insert(key, group);
         Ok(())
     }
 
@@ -826,18 +807,7 @@ impl DecodeContext<'_> {
         reservation: &mut ScopedReservation<'_>,
         operation: &'static str,
     ) -> Result<String, CodecError> {
-        reservation.grow(u64_from_index(text.len()))?;
-        let mut copy = String::new();
-        copy.try_reserve_exact(text.len()).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::MaterializedBytes,
-                self.policy().limits.max_materialized_bytes,
-                u64_from_index(text.len()),
-                operation,
-            ))
-        })?;
-        copy.push_str(text);
-        Ok(copy)
+        reservation.with_storage(|| self.copy_retained_text(text, operation))
     }
 
     fn linear_growth<T>(&self, len: usize, capacity: usize, count: usize, operation: &'static str) -> Result<(usize, usize), CodecError> {
@@ -1154,7 +1124,7 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
-    fn charge_hash_growth<T>(&self, len: usize, capacity: usize, count: usize, operation: &'static str) -> Result<usize, CodecError> {
+    fn charge_hash_growth<T>(&self, len: usize, capacity: usize, count: usize, operation: &'static str) -> Result<usize, ResourceLimit> {
         let required = len.checked_add(count).ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required <= capacity {
             return Ok(0);
@@ -1166,7 +1136,7 @@ impl DecodeContext<'_> {
         };
         let bytes = self.hash_storage_bytes::<T>(required.max(minimum), operation)?
             - self.hash_storage_bytes::<T>(capacity, operation)?;
-        self.charge_retained(u64_from_index(bytes), operation)?;
+        self.charge_retained_limit(u64_from_index(bytes), operation)?;
         Ok(bytes)
     }
 
@@ -1357,19 +1327,6 @@ impl DecodeContext<'_> {
         Ok((values, reservation))
     }
 
-    fn temporary_hash_bytes<T>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<u64, ResourceLimit> {
-        std::mem::size_of::<T>()
-            .max(1)
-            .checked_add(32)
-            .and_then(|size| size.checked_mul(count))
-            .map(u64_from_index)
-            .ok_or_else(|| self.budget.scoped_size_overflow_limit(operation))
-    }
-
     /// Reserves a scoped hash set and returns its live reservation.
     pub fn temporary_set<T: Eq + Hash>(
         &self,
@@ -1386,13 +1343,15 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(HashSet<T>, ScopedReservation<'_>), ResourceLimit> {
-        let bytes = self.temporary_hash_bytes::<T>(count, operation)?;
-        let reservation = self.reserve_scoped_limit(bytes, operation)?;
-        self.charge_collection_items_limit(u64_from_index(count), operation)?;
+        let mut reservation = self.reserve_scoped_limit(0, operation)?;
         let mut values = HashSet::new();
-        values
-            .try_reserve(count)
-            .map_err(|_| self.budget.scoped_allocation_failed_limit(bytes, operation))?;
+        reservation.with_storage_limit(|| {
+            let bytes = self.charge_hash_growth::<T>(0, 0, count, operation)?;
+            self.charge_collection_items_limit(u64_from_index(count), operation)?;
+            values.try_reserve(count).map_err(|_| {
+                self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation)
+            })
+        })?;
         Ok((values, reservation))
     }
 
@@ -1403,17 +1362,24 @@ impl DecodeContext<'_> {
         values: impl IntoIterator<Item = &'text str>,
         operation: &'static str,
     ) -> Result<(HashSet<&'text str>, ScopedReservation<'_>), CodecError> {
-        let (mut output, reservation) = self.temporary_set(count, operation)?;
-        for value in values {
-            self.charge_work(
-                u64_from_index(value.len())
-                    .checked_mul(2)
+        let (mut output, mut reservation) = self.temporary_set(count, operation)?;
+        let mut remaining = count;
+        reservation.with_storage(|| {
+            for value in values {
+                self.charge_work(u64_from_index(value.len()).checked_mul(2)
                     .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-                operation,
-            )?;
-            output.insert(value);
-        }
+                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?, operation)?;
+                if !output.contains(value) {
+                    if remaining == 0 {
+                        self.reserve_set(&mut output, 1, operation)?;
+                    } else {
+                        remaining -= 1;
+                    }
+                    output.insert(value);
+                }
+            }
+            Ok::<(), CodecError>(())
+        })?;
         Ok((output, reservation))
     }
 
@@ -1424,23 +1390,26 @@ impl DecodeContext<'_> {
         values: impl IntoIterator<Item = (&'text str, V)>,
         operation: &'static str,
     ) -> Result<(HashMap<&'text str, V>, ScopedReservation<'_>), CodecError> {
-        let reservation = self.reserve_scoped(
-            self.temporary_hash_bytes::<(&str, V)>(count, operation)?,
-            operation,
-        )?;
-        self.charge_collection_items(u64_from_index(count), operation)?;
+        let mut reservation = self.reserve_scoped(0, operation)?;
         let mut output = HashMap::new();
-        Self::reserve_admitted_map(&mut output, count, operation)?;
-        for (key, value) in values {
-            self.charge_work(
-                u64_from_index(key.len())
-                    .checked_mul(2)
+        reservation.with_storage(|| {
+            self.reserve_map(&mut output, count, operation)?;
+            let mut remaining = count;
+            for (key, value) in values {
+                self.charge_work(u64_from_index(key.len()).checked_mul(2)
                     .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-                operation,
-            )?;
-            output.insert(key, value);
-        }
+                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?, operation)?;
+                if !output.contains_key(key) {
+                    if remaining == 0 {
+                        self.reserve_map(&mut output, 1, operation)?;
+                    } else {
+                        remaining -= 1;
+                    }
+                }
+                output.insert(key, value);
+            }
+            Ok::<(), CodecError>(())
+        })?;
         Ok((output, reservation))
     }
 
@@ -1450,12 +1419,15 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(VecDeque<T>, ScopedReservation<'_>), CodecError> {
-        let reservation =
-            self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
-        self.charge_collection_items(u64_from_index(count), operation)?;
+        let mut reservation = self.reserve_scoped(0, operation)?;
         let mut values = VecDeque::new();
-        values.try_reserve(count).map_err(|_| {
-            self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation)
+        reservation.with_storage(|| {
+            let bytes = count.checked_mul(std::mem::size_of::<T>())
+                .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+            self.charge_retained(u64_from_index(bytes), operation)?;
+            self.charge_collection_items(u64_from_index(count), operation)?;
+            values.try_reserve_exact(count)
+                .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))
         })?;
         Ok((values, reservation))
     }
@@ -2434,7 +2406,7 @@ mod tests {
     );
     materialized_case!(
         temporary_queue_reserves_scoped_storage,
-        33,
+        1,
         |ctx: &DecodeContext<'_>| ctx
             .temporary_queue::<u8>(1, "test temporary queue")
             .map(|_| ())
