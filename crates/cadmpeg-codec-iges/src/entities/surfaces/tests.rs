@@ -64,8 +64,26 @@ fn surface_grid_error_fields_refuse_retained_limit_before_copy() {
     let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
     let cases = [
         (vec![Vec::new()], Vec::<Vec<f64>>::new(), 8_u64),
-        (vec![Vec::new()], vec![vec![1.0]], 12_u64),
-        (vec![vec![point]], vec![vec![0.0]], 12_u64),
+        (
+            vec![Vec::new()],
+            vec![vec![1.0]],
+            12_u64
+                + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>,
+                >()),
+        ),
+        (
+            vec![vec![point]],
+            vec![vec![0.0]],
+            12_u64
+                + cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<
+                        Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>,
+                    >() + std::mem::size_of::<
+                        cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>,
+                    >(),
+                ),
+        ),
     ];
     for (rows, weights, cap) in cases {
         let arena = DecodeArena::new();

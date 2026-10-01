@@ -479,7 +479,9 @@ pub(crate) fn layout_global_cards(
         delimiter
     };
 
-    let mut fields = ctx.collection_vec(1, "iges global layout fields")?;
+    let mut field_storage = ctx.reserve_scoped(0, "IGES global layout field spans")?;
+    let mut fields =
+        field_storage.with_storage(|| ctx.collection_vec(1, "iges global layout fields"))?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -498,7 +500,8 @@ pub(crate) fn layout_global_cards(
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
-        ctx.reserve_vec(&mut fields, 1, "iges global layout fields")?;
+        field_storage
+            .with_storage(|| ctx.reserve_vec(&mut fields, 1, "iges global layout fields"))?;
         fields.push(start..end);
         cursor = end;
         if is_record {

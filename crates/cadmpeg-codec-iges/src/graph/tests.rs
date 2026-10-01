@@ -441,14 +441,17 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = (0)
+        + cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+        );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::losses(&graph, &scan, &[], &ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>())
                 && limit.additional == 2
                 && limit.operation == "iges graph loss tag"
     ));
@@ -521,13 +524,6 @@ fn directory_reference_edge_refuses_collection_limit_before_storage() {
 
 #[test]
 fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let chain_length = 100_000_u32;
     let edges = (1..=chain_length)
         .map(|source| {
@@ -546,6 +542,21 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
             )
         })
         .collect::<BTreeMap<_, _>>();
+
+    // The unchanged graph supplies the input-dependent envelope. Three ordered
+    // indices can each charge one split path for every graph node.
+    let input = serde_json::to_vec(&edges).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let node_bytes = 11 * (std::mem::size_of::<u32>() + std::mem::size_of::<usize>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<usize>();
+    let path_nodes = usize::try_from(chain_length.ilog2()).unwrap() + 2;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+        3 * edges.len() * path_nodes * node_bytes + 2 * edges.len() * std::mem::size_of::<u32>(),
+    );
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&input, &arena, &policy).unwrap();
 
     assert!(cyclic_transform_nodes(&edges, &ctx).unwrap().is_empty());
 }

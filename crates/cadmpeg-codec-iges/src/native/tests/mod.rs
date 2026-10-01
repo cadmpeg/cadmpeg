@@ -41,7 +41,8 @@ fn native_token_copy_refuses_outer_and_nested_allocations() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap;
+        policy.limits.max_retained_bytes = retained_cap
+            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::parameter::Token>());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             super::copy_native_tokens(&ctx, &tokens),
@@ -76,7 +77,8 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap;
+        policy.limits.max_retained_bytes =
+            retained_cap + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             super::native_entity_ids(&ctx, [3], "iges native test links"),
@@ -137,7 +139,15 @@ fn native_parameter_record_refuses_bytes_tokens_and_comment() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap;
+        policy.limits.max_retained_bytes = retained_cap
+            + if operation == "iges native token bytes"
+                || operation == "iges native parameter comment"
+                || dimension == ResourceDimension::CollectionItems
+            {
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::parameter::Token>())
+            } else {
+                0
+            };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             super::copy_native_parameter_record(&ctx, &record),

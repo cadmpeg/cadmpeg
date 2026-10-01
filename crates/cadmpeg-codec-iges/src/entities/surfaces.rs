@@ -686,7 +686,12 @@ fn normalized_span_boundaries(
             boundaries.push(normalized);
         }
     }
-    ctx.stable_sort_by(&mut boundaries, f64::total_cmp, |_| 0, "iges span boundary sort")?;
+    ctx.stable_sort_by(
+        &mut boundaries,
+        f64::total_cmp,
+        |_| 0,
+        "iges span boundary sort",
+    )?;
     boundaries.dedup();
     Ok((boundaries.first() == Some(&0.0) && boundaries.last() == Some(&1.0)).then_some(boundaries))
 }
@@ -776,7 +781,12 @@ fn aligned_homogeneous_spans(
         "iges span combined boundaries",
     )?;
     boundaries.extend(second_boundaries);
-    ctx.stable_sort_by(&mut boundaries, f64::total_cmp, |_| 0, "iges span boundary sort")?;
+    ctx.stable_sort_by(
+        &mut boundaries,
+        f64::total_cmp,
+        |_| 0,
+        "iges span boundary sort",
+    )?;
     boundaries.dedup();
     let Some(first_spans) =
         partition_homogeneous_spans(&first_spans, first_domain, &boundaries, ctx)?
@@ -1385,7 +1395,8 @@ pub(super) fn project(
             "iges surfaces directory index",
         )?;
     }
-    let composite_index = CompositeIndex::from_ir(ir, ctx)?;
+    let mut index_storage = ctx.reserve_scoped(0, "IGES surface composite index")?;
+    let composite_index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 

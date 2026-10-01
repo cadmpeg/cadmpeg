@@ -1372,7 +1372,12 @@ fn homogeneous_pcurve_spans(
             .copied()
             .filter(|knot| domain[0] < *knot && *knot < domain[1]),
     );
-    ctx.stable_sort_by(&mut internal, f64::total_cmp, |_| 0, "iges pcurve internal knots sort")?;
+    ctx.stable_sort_by(
+        &mut internal,
+        f64::total_cmp,
+        |_| 0,
+        "iges pcurve internal knots sort",
+    )?;
     internal.dedup();
     for knot in internal {
         while copied_knots
@@ -1964,6 +1969,7 @@ pub(super) fn project(
     let mut boundaries = BTreeMap::new();
 
     let carrier_index = ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let mut composite_storage = ctx.reserve_scoped(0, "IGES trimming composite index")?;
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
@@ -2538,7 +2544,9 @@ pub(super) fn project(
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
                     if composite_index.is_none() {
-                        composite_index = Some(CompositeIndex::from_ir(ir, ctx)?);
+                        composite_index = Some(
+                            composite_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?,
+                        );
                     }
                     let index = composite_index.as_ref().ok_or_else(|| {
                         CodecError::Malformed("IGES trimming composite index is absent".into())

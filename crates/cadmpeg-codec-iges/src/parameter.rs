@@ -2866,6 +2866,7 @@ pub(crate) fn layout_parameter_cards(
     bytes: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
+    let mut field_storage = ctx.reserve_scoped(0, "IGES parameter layout field spans")?;
     let mut fields = Vec::new();
     let mut cursor = 0_usize;
     loop {
@@ -2881,7 +2882,8 @@ pub(crate) fn layout_parameter_cards(
             CodecError::Malformed("IGES Parameter Data delimiter is missing".into())
         })?;
         end += 1;
-        ctx.reserve_vec(&mut fields, 1, "iges parameter layout fields")?;
+        field_storage
+            .with_storage(|| ctx.reserve_vec(&mut fields, 1, "iges parameter layout fields"))?;
         fields.push(start..end);
         cursor = end;
         if *delimiter == b';' {
@@ -3657,7 +3659,12 @@ fn overlapping_ranges(
             .iter()
             .map(|(sequence, range)| (range.start, range.end, *sequence)),
     );
-    ctx.sort_unstable_by(&mut ordered, Ord::cmp, |_| 0, "iges declared parameter range sort")?;
+    ctx.sort_unstable_by(
+        &mut ordered,
+        Ord::cmp,
+        |_| 0,
+        "iges declared parameter range sort",
+    )?;
     let mut overlapping = BTreeSet::new();
     let mut highest_end = 0_u32;
     let mut highest_owner = None;
@@ -3750,8 +3757,7 @@ fn quarantine(
                 .checked_add(1)
                 .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
             let mut range = first..range_end;
-            let mut bytes =
-                ctx.vector_storage(byte_count, "iges quarantined parameter bytes")?;
+            let mut bytes = ctx.vector_storage(byte_count, "iges quarantined parameter bytes")?;
 
             bytes.extend_from_slice(&line.payload);
             for (sequence, line) in retained {

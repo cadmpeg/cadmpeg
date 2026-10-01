@@ -529,15 +529,10 @@ fn euclidean_control_points(
             "iges composite Euclidean weights",
         )?;
     }
-    let mut control_points = ctx.vector_storage(
-        homogeneous.len(),
-        "iges composite Euclidean control points",
-    )?;
+    let mut control_points =
+        ctx.vector_storage(homogeneous.len(), "iges composite Euclidean control points")?;
     let mut weights = if rational {
-        Some(ctx.vector_storage(
-            homogeneous.len(),
-            "iges composite Euclidean weights",
-        )?)
+        Some(ctx.vector_storage(homogeneous.len(), "iges composite Euclidean weights")?)
     } else {
         None
     };
@@ -582,10 +577,8 @@ fn elevate_bezier_homogeneous(
         cadmpeg_core::decode::u64_from_index(control_points.len()),
         "iges composite Bezier source copy",
     )?;
-    let mut elevated = ctx.vector_storage(
-        control_points.len(),
-        "iges composite Bezier source copy",
-    )?;
+    let mut elevated =
+        ctx.vector_storage(control_points.len(), "iges composite Bezier source copy")?;
     elevated.extend_from_slice(control_points);
     let mut degree = source_degree;
     while degree < target_degree {
@@ -599,10 +592,7 @@ fn elevate_bezier_homogeneous(
             cadmpeg_core::decode::u64_from_index(next_count),
             "iges composite Bezier elevated net",
         )?;
-        let mut next = ctx.vector_storage(
-            next_count,
-            "iges composite Bezier elevated net",
-        )?;
+        let mut next = ctx.vector_storage(next_count, "iges composite Bezier elevated net")?;
         next.push(elevated[0]);
         for index in 1..=degree {
             let Some(index_real) = cadmpeg_core::convert::f64_from_index(index) else {
@@ -1766,10 +1756,7 @@ fn bounded_nurbs_for_id(
             u64_from_index(segments.len()),
             "iges composite nested children",
         )?;
-        let mut children = ctx.vector_storage(
-            segments.len(),
-            "iges composite nested children",
-        )?;
+        let mut children = ctx.vector_storage(segments.len(), "iges composite nested children")?;
         for segment in segments {
             let Some(child) =
                 bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance, ctx, index)?
@@ -2359,7 +2346,8 @@ fn project_with_type_130_policy(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
-    let mut index = CompositeIndex::from_ir(ir, ctx)?;
+    let mut index_storage = ctx.reserve_scoped(0, "IGES composite carrier index")?;
+    let mut index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
     let join_tolerance = global.minimum_resolution_mm();
 
     for entry in directory
@@ -2587,10 +2575,8 @@ fn project_with_type_130_policy(
             u64_from_index(curve_ids.len()),
             "iges composite projected children",
         )?;
-        let mut children = ctx.vector_storage(
-            curve_ids.len(),
-            "iges composite projected children",
-        )?;
+        let mut children =
+            ctx.vector_storage(curve_ids.len(), "iges composite projected children")?;
         let mut child_refusal = None;
         for curve_id in &curve_ids {
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {

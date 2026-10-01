@@ -31,14 +31,15 @@ fn global_summary_refuses_note_slot_and_text_limits() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(b"parameter_delimiter=,".len()) - 1;
+        (cadmpeg_core::decode::u64_from_index(b"parameter_delimiter=,".len()) - 1)
+            + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = global.summary_notes(&ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>())
                 && limit.additional == cadmpeg_core::decode::u64_from_index(b"parameter_delimiter=,".len())
                 && limit.operation == "iges global summary text"
     ));
