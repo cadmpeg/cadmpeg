@@ -13,13 +13,13 @@ fn adding_accounting_preserves_entities_and_commits_exactness() {
     let mut draft = point_draft(identity).with_accounting();
     assert_eq!(draft.model().points, vec![point(identity)]);
     assert_eq!(
-        draft.insert(point(identity)),
+        draft.insert(point(identity), &cadmpeg_test_support::service_decode_context()),
         Err(DraftError::IdentityCollision(identity.into()))
     );
-    draft.exactness(identity, Exactness::Derived);
+    draft.exactness(&cadmpeg_test_support::service_decode_context(), identity, Exactness::Derived).unwrap();
     let mut base = CadIr::empty();
     let mut annotations = Annotations::default();
-    draft.commit(&mut base, &mut annotations).unwrap();
+    draft.commit(&mut base, &mut annotations, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
 
     assert_eq!(base.model.points, vec![point(identity)]);
     assert_eq!(
@@ -39,9 +39,9 @@ fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
     let before = (base.clone(), annotations.clone());
 
     let mut draft = point_draft(existing).with_accounting();
-    draft.exactness(existing, Exactness::Derived);
+    draft.exactness(&cadmpeg_test_support::service_decode_context(), existing, Exactness::Derived).unwrap();
     assert_eq!(
-        draft.commit(&mut base, &mut annotations),
+        draft.commit(&mut base, &mut annotations, &cadmpeg_test_support::service_decode_context()).unwrap(),
         Err(DraftError::IdentityCollision(existing.into()))
     );
     assert_eq!((base, annotations), before);
@@ -58,12 +58,12 @@ fn rejected_accounted_draft_does_not_retain_the_annotation_copy() {
     let mut annotations = builder.build();
     let before = (base.clone(), annotations.clone());
     let mut draft = point_draft(identity).with_accounting();
-    draft.exactness(identity, Exactness::Derived);
+    draft.exactness(&cadmpeg_test_support::service_decode_context(), identity, Exactness::Derived).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(identity.len()).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(draft.commit_for_decode(&mut base, &mut annotations, &ctx).unwrap(),
+    assert_eq!(draft.commit(&mut base, &mut annotations, &ctx).unwrap(),
         Err(DraftError::IdentityCollision(identity.into())));
     assert_eq!((base, annotations), before);
     ctx.finish_session().unwrap();
@@ -75,7 +75,7 @@ fn accounted_draft_retained_transfer_refusal_leaves_model_and_annotations_unchan
     use cadmpeg_core::CodecError;
     let identity = "test:model:point#new";
     let mut draft = point_draft(identity).with_accounting();
-    draft.exactness(identity, Exactness::Derived);
+    draft.exactness(&cadmpeg_test_support::service_decode_context(), identity, Exactness::Derived).unwrap();
     let mut base = CadIr::empty();
     let mut annotations = Annotations::default();
     let before = (base.clone(), annotations.clone());
@@ -84,7 +84,7 @@ fn accounted_draft_retained_transfer_refusal_leaves_model_and_annotations_unchan
     // The destination point arena can be admitted; the annotation transfer cannot.
     policy.limits.max_retained_bytes = u64::try_from(4 * std::mem::size_of::<crate::topology::Point>()).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = draft.commit_for_decode(&mut base, &mut annotations, &ctx).unwrap_err();
+    let error = draft.commit(&mut base, &mut annotations, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
         && limit.operation == "draft annotation transaction"));

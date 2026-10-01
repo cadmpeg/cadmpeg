@@ -38,7 +38,7 @@ fn surface_draft(id: &str) -> ModelDraft {
                 .unwrap(),
             )),
             source_object: None,
-        })
+        }, &cadmpeg_test_support::service_decode_context())
         .expect("insert surface into draft");
     draft
 }
@@ -69,7 +69,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
                 .try_into()
                 .expect("valid identity"),
             tolerance: None,
-        })
+        }, &ctx)
         .expect("insert invalid root reference");
     assert!(session
         .commit_model(rejected_root)

@@ -28,7 +28,7 @@ pub(super) fn parent_draft() -> ModelDraft {
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
-            })
+            }, &cadmpeg_test_support::service_decode_context())
             .unwrap();
     }
     draft
@@ -48,7 +48,7 @@ fn commit(model: Model, base: &mut CadIr, use_session: bool) -> Result<(), Draft
         CommitSession::new(base, &cadmpeg_test_support::service_decode_context())?
             .commit_model(draft)?
     } else {
-        draft.commit_model(base)
+        draft.commit_model(base, &cadmpeg_test_support::service_decode_context())?
     }
 }
 
