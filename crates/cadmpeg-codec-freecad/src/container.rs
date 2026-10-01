@@ -278,7 +278,8 @@ pub(crate) fn summary_notes(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<Vec<String>, CodecError> {
-    let mut notes = vec![
+    let mut notes = ctx.retained_vec(6 + usize::from(scan.document.program_version.is_some()), "FCStd summary notes")?;
+    notes.extend([
         ctx.retained_suffix("SchemaVersion=", &scan.schema_version, "FCStd schema note")?,
         ctx.retained_suffix(
             "FileVersion=",
@@ -295,9 +296,9 @@ pub(crate) fn summary_notes(
             scan.document.document_kind().as_str(),
             "FCStd document kind note",
         )?,
-        format!("object count={}", scan.document.object_count),
-        format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
-    ];
+        ctx.format_retained(format_args!("object count={}", scan.document.object_count), "FCStd object count note")?,
+        ctx.format_retained(format_args!("physical ledger spans={} coverage=exact", scan.ledger.len()), "FCStd physical ledger note")?,
+    ]);
     if let Some(version) = &scan.document.program_version {
         notes.push(ctx.retained_suffix(
             "ProgramVersion=",

@@ -430,15 +430,7 @@ fn summary_schema_note_refuses_on_retained_limit() {
     let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &scan_arena, &scan_policy)
         .expect("archive fits input policy");
     let scan = super::scan(&scan_ctx, root).expect("valid archive scan");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within input limits");
-    assert!(
-        matches!(super::summary_notes(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd schema note")
-    );
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd schema note", |ctx| super::summary_notes(ctx, &scan));
 }
 
 #[test]
@@ -793,4 +785,14 @@ fn detects_marker_but_not_arbitrary_zip() {
     assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
     assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
     assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
+}
+
+#[test]
+fn summary_notes_admit_slots_and_retained_storage_before_text() {
+    with_scanned_document(|scan| {
+        crate::test_support::assert_collection_refusal_at(&[], "FCStd summary notes", |ctx| super::summary_notes(ctx, scan));
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd summary notes", |ctx| super::summary_notes(ctx, scan));
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd object count note", |ctx| super::summary_notes(ctx, scan));
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd physical ledger note", |ctx| super::summary_notes(ctx, scan));
+    });
 }

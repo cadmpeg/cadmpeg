@@ -350,6 +350,10 @@ impl<'a> Cursor<'a> {
         Self { source }
     }
 
+    pub(crate) fn into_view(self) -> View<'a> {
+        self.source
+    }
+
     pub(crate) fn remaining(&self) -> usize {
         self.source.remaining()
     }
@@ -473,7 +477,7 @@ pub(crate) fn reference_list(
 ) -> Result<PmDcReferenceList, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
-    let mut references = DecodeContext::admitted_vec(count, "admit Inventor PmDc references")?;
+    let mut references = ctx.retained_admitted_vec(count, "admit Inventor PmDc references")?;
     for _ in 0..count {
         references.push(cursor.reference("reference-list entry")?);
     }
@@ -497,7 +501,6 @@ fn list_preamble(
     }
     let count = usize::try_from(cursor.u32("list count")?)
         .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     let metadata = if count == 0 {
         None
     } else if marker == 8 {
@@ -511,6 +514,9 @@ fn list_preamble(
             cursor.u32("list metadata 1")?,
         ]))
     };
+    cursor.source.counted(cadmpeg_core::decode::u64_from_index(count), 4)
+        .ok_or_else(|| CodecError::malformed("Inventor PmDc list count exceeds remaining payload"))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     Ok((count, metadata))
 }
 
@@ -522,7 +528,7 @@ pub(crate) fn u32_list(
 ) -> Result<PmDcU32List, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
-    let mut values = DecodeContext::admitted_vec(count, "admit Inventor PmDc integers")?;
+    let mut values = ctx.retained_admitted_vec(count, "admit Inventor PmDc integers")?;
     for _ in 0..count {
         values.push(cursor.u32("integer-list value")?);
     }
@@ -664,6 +670,39 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+
+    #[test]
+    fn pmdc_counted_lists_prove_extent_before_admission() {
+        for marker in [2_u16, 8] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&marker.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
+            bytes.extend_from_slice(if marker == 8 { &[0; 4] } else { &[0; 8] });
+            crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
+                assert!(matches!(reference_list(ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
+                assert!(matches!(super::u32_list(ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
+            });
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+            assert!(matches!(reference_list(&ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
+            assert!(matches!(super::u32_list(&ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
+        }
+    }
+
+    #[test]
+    fn pmdc_counted_lists_admit_retained_storage() {
+        let bytes = [2_u8, 0, 0, 0x30, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(reference_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+    }
 
     #[test]
     fn unique_by_refuses_collection_limit_before_second_map() {

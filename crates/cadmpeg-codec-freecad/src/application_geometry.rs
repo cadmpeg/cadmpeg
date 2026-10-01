@@ -159,7 +159,14 @@ fn parse_mesh(
     reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;
     let point_count = reader.count(byte_order, "mesh point count")?;
     let facet_count = reader.count(byte_order, "mesh facet count")?;
-    let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
+    let vertex_bytes = point_count.checked_mul(12)
+        .and_then(|len| facet_count.checked_mul(mesh_facet::LEN).and_then(|facets| len.checked_add(facets)))
+        .and_then(|len| len.checked_add(24))
+        .ok_or_else(|| CodecError::malformed("mesh population extent overflows"))?;
+    if reader.remaining() < vertex_bytes {
+        return Err(CodecError::malformed("mesh population exceeds remaining payload"));
+    }
+    let mut vertices = ctx.retained_vec(point_count, "FreeCAD mesh vertices")?;
     for _ in 0..point_count {
         vertices.push(reader.point3(byte_order, "mesh point")?);
     }
@@ -560,6 +567,39 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn truncated_mesh_is_malformed_before_vertex_admission() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0x0001_0000_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
+        bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        crate::test_support::with_service_context(&bytes, |ctx| {
+            assert!(matches!(parse_mesh(ctx, &resource_test_property(), &bytes),
+                Err(CodecError::Malformed(message)) if message == "mesh population exceeds remaining payload"));
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(parse_mesh(&ctx, &resource_test_property(), &bytes), Err(CodecError::Malformed(_))));
+    }
+
+    #[test]
+    fn mesh_vertices_refuse_retained_storage_before_reading() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0x0001_0000_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 36]);
+        crate::test_support::assert_retained_refusal_at(&bytes, "FreeCAD mesh vertices", |ctx| {
+            parse_mesh(ctx, &resource_test_property(), &bytes)
+        });
+    }
+
+    #[test]
     fn mesh_vertex_collection_limit_refuses_before_allocation() {
         let mut mesh = Vec::new();
         mesh.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
@@ -567,6 +607,7 @@ pub(crate) mod tests {
         mesh.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
         mesh.extend_from_slice(&1_u32.to_le_bytes());
         mesh.extend_from_slice(&0_u32.to_le_bytes());
+        mesh.extend_from_slice(&[0; 36]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
@@ -659,6 +700,7 @@ pub(crate) mod tests {
         mesh.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
         mesh.extend_from_slice(&0_u32.to_le_bytes());
         mesh.extend_from_slice(&1_u32.to_le_bytes());
+        mesh.extend_from_slice(&[0; 24]);
         mesh.extend_from_slice(&[0; 24]);
         let property = PropertyRecord {
             id: "fcstd:native:property#Mesh".to_owned(),
