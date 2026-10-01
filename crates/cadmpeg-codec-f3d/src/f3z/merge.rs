@@ -232,7 +232,7 @@ impl MergeSession<'_, '_> {
             };
             parent_ir
                 .model
-                .extend_rewritten(component_ir.model, &mut scope)?;
+                .extend_rewritten_charged(self.ctx, component_ir.model, &mut scope, "append F3Z model entities")?;
             reparent_component_roots(
                 self.ctx,
                 &mut parent_ir.model.occurrences[occurrence_start..],
