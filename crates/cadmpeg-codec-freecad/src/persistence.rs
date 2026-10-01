@@ -109,7 +109,11 @@ fn parse_document(
             "FCStd persistence diagnostic",
         ));
     }
-    let object_limit = ctx.policy().limits.max_entities.min(cadmpeg_core::decode::u64_from_index(MAX_OBJECTS));
+    let object_limit = ctx
+        .policy()
+        .limits
+        .max_entities
+        .min(cadmpeg_core::decode::u64_from_index(MAX_OBJECTS));
     let requested_objects = cadmpeg_core::decode::u64_from_index(declared_count);
     if requested_objects > object_limit {
         return Err(ctx.refuse_codec_limit("FCStd object count", object_limit, requested_objects));
@@ -268,8 +272,14 @@ fn parse_document(
     {
         let name = retained_attr(ctx, node, "name", "FCStd object name")?;
         for prior in &objects {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(prior.name().len()), "FCStd duplicate object names")?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "FCStd duplicate object names")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(prior.name().len()),
+                "FCStd duplicate object names",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(name.len()),
+                "FCStd duplicate object names",
+            )?;
             ctx.charge_work(1, "FCStd duplicate object names")?;
             if prior.name().as_str() == name {
                 return Err(crate::resource::malformed_charged(
@@ -355,10 +365,7 @@ fn parse_document(
             if !data_by_name.contains_key(dependency) {
                 return Err(crate::resource::malformed_charged(
                     ctx,
-                    format_args!(
-                        "object {} depends on missing object {dependency}",
-                        object_name
-                    ),
+                    format_args!("object {object_name} depends on missing object {dependency}"),
                     "FCStd persistence diagnostic",
                 ));
             }
@@ -655,12 +662,20 @@ fn parse_properties(
             let lookup_work = cadmpeg_core::decode::u64_from_index(prior.attributes().len())
                 .checked_mul(5)
                 .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit("FCStd duplicate property names", u64::MAX, u64::MAX))?;
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("FCStd duplicate property names", u64::MAX, u64::MAX)
+                })?;
             ctx.charge_work(lookup_work, "FCStd duplicate property names")?;
             let prior_name = prior.attribute("name");
             if let Some(prior_name) = prior_name {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(prior_name.len()), "FCStd duplicate property names")?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "FCStd duplicate property names")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(prior_name.len()),
+                    "FCStd duplicate property names",
+                )?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(name.len()),
+                    "FCStd duplicate property names",
+                )?;
             }
             if prior_name == Some(name) {
                 return Err(crate::resource::malformed_charged(
@@ -753,7 +768,11 @@ fn parse_properties(
         {
             let len = value.range().len();
             let total = retained_value_bytes.checked_add(len).ok_or_else(|| {
-                ctx.refuse_codec_limit("FCStd property retained value XML", cadmpeg_core::decode::u64_from_index(MAX_PROPERTY_VALUE_XML_BYTES), u64::MAX)
+                ctx.refuse_codec_limit(
+                    "FCStd property retained value XML",
+                    cadmpeg_core::decode::u64_from_index(MAX_PROPERTY_VALUE_XML_BYTES),
+                    u64::MAX,
+                )
             })?;
             if total > MAX_PROPERTY_VALUE_XML_BYTES {
                 return Err(ctx.refuse_codec_limit(
@@ -1103,9 +1122,7 @@ fn counted_children<'a, 'input>(
     if actual_count != count || !valid_tags {
         return Err(crate::resource::malformed_charged(
             ctx,
-            format_args!(
-                "{type_name} count={count} but {actual_count} {tag} values were found"
-            ),
+            format_args!("{type_name} count={count} but {actual_count} {tag} values were found"),
             "FCStd persistence diagnostic",
         ));
     }
@@ -1117,7 +1134,10 @@ fn counted_children<'a, 'input>(
         cadmpeg_core::decode::u64_from_index(count),
         "FCStd link target or subelement records",
     )?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "FCStd link node copy")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "FCStd link node copy",
+    )?;
     let children = parent.children().filter(roxmltree::Node::is_element);
     let mut child_nodes =
         cadmpeg_core::decode::DecodeContext::admitted_vec(count, "FCStd link nodes")?;

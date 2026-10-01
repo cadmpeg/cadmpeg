@@ -39,7 +39,8 @@ impl Identifier16 {
         if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err("identifier must contain 32 hexadecimal digits".to_owned());
         }
-        NonBlankString::new(value).map(Self)
+        NonBlankString::new(value)
+            .map(Self)
             .ok_or_else(|| "identifier must contain 32 hexadecimal digits".to_owned())
     }
 
@@ -632,9 +633,12 @@ pub(crate) struct ExternalReferenceRecordWire {
 impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
     type Error = String;
     fn try_from(wire: ExternalReferenceRecordWire) -> Result<Self, Self::Error> {
-        let suffix = wire.id.strip_prefix("inventor:ufrx:external-reference#")
+        let suffix = wire
+            .id
+            .strip_prefix("inventor:ufrx:external-reference#")
             .ok_or_else(|| "external reference id has an invalid namespace".to_owned())?;
-        if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit())
+        if suffix.is_empty()
+            || !suffix.bytes().all(|byte| byte.is_ascii_digit())
             || (suffix.len() > 1 && suffix.starts_with('0'))
             || suffix.parse::<u32>().ok() != Some(wire.ordinal)
         {
@@ -642,7 +646,8 @@ impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
         }
         let database_id = Identifier16::try_new(wire.database_id)
             .map_err(|error| format!("database_id: {error}"))?;
-        let document_id = wire.document_id
+        let document_id = wire
+            .document_id
             .map(Identifier16::try_new)
             .transpose()
             .map_err(|error| format!("document_id: {error}"))?
@@ -707,7 +712,7 @@ impl ExternalReferenceRecord {
                 ExternalDocument::Path { path: path.clone() }
             }
             ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
-                document_id: document_id.0.0.clone(),
+                document_id: document_id.0 .0.clone(),
             },
         }
     }
@@ -1093,14 +1098,20 @@ mod tests {
             "state_groups": [], "state": [0, 0], "database_id": "0".repeat(32),
             "reference_id": 1, "occurrence_count": 0, "version": 0, "flags": 0
         });
-        let record: ExternalReferenceRecord = serde_json::from_value(valid.clone()).expect("zero database ID is valid");
+        let record: ExternalReferenceRecord =
+            serde_json::from_value(valid.clone()).expect("zero database ID is valid");
         assert_eq!(serde_json::to_value(record).expect("record"), valid);
         for database_id in ["", "not-hex", "0001", "g0000000000000000000000000000000"] {
             let mut wire = valid.clone();
             wire["database_id"] = serde_json::json!(database_id);
             assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());
         }
-        for id in ["", "inventor:ufrx:external-reference#7", "inventor:ufrx:external-reference#00", "inventor:ufrx:external-reference#+0"] {
+        for id in [
+            "",
+            "inventor:ufrx:external-reference#7",
+            "inventor:ufrx:external-reference#00",
+            "inventor:ufrx:external-reference#+0",
+        ] {
             let mut wire = valid.clone();
             wire["id"] = serde_json::json!(id);
             assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());

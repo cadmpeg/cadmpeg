@@ -25,7 +25,7 @@ use crate::sketch::{
 };
 
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
-use crate::native::ufrx::UfrxRecord;
+use crate::native::ufrx::{ExternalReferenceRecord, UfrxRecord};
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
     DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
@@ -1929,7 +1929,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         data.ufrx
             .external_references()
             .iter()
-            .map(|record| record.ordinal()),
+            .map(ExternalReferenceRecord::ordinal),
         "external reference ordinal",
     );
     unique(

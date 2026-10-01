@@ -62,20 +62,23 @@ impl AdmittedSchemaIdentifier {
             }
             SchemaIdentifierForm::Invalid => return None,
         };
-        Some(Self { state: match out_of_range {
-            None => AdmittedSchemaState::Valid { text: identifier },
-            Some((name, component)) => AdmittedSchemaState::ObjectIdentifierOutOfRange {
-                text: identifier,
-                name,
-                component,
+        Some(Self {
+            state: match out_of_range {
+                None => AdmittedSchemaState::Valid { text: identifier },
+                Some((name, component)) => AdmittedSchemaState::ObjectIdentifierOutOfRange {
+                    text: identifier,
+                    name,
+                    component,
+                },
             },
-        } })
+        })
     }
 
     /// The decoded identifier text, as the source states it.
     pub(super) fn text(&self) -> &str {
         match &self.state {
-            AdmittedSchemaState::Valid { text } | AdmittedSchemaState::ObjectIdentifierOutOfRange { text, .. } => text,
+            AdmittedSchemaState::Valid { text }
+            | AdmittedSchemaState::ObjectIdentifierOutOfRange { text, .. } => text,
         }
     }
 
@@ -83,7 +86,9 @@ impl AdmittedSchemaIdentifier {
     pub(super) fn out_of_range(&self) -> Option<(&str, &str)> {
         match &self.state {
             AdmittedSchemaState::Valid { .. } => None,
-            AdmittedSchemaState::ObjectIdentifierOutOfRange { name, component, .. } => Some((name, component)),
+            AdmittedSchemaState::ObjectIdentifierOutOfRange {
+                name, component, ..
+            } => Some((name, component)),
         }
     }
 

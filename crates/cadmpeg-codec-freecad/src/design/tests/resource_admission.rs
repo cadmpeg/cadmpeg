@@ -7,7 +7,11 @@ use std::collections::BTreeMap;
 #[test]
 fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
     let source = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Source".into(), "Source".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Source".into(),
+            "Source".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -18,7 +22,11 @@ fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
         data: None,
     };
     let dependent = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Dependent".into(), "Dependent".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Dependent".into(),
+            "Dependent".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -48,7 +56,11 @@ fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
 #[test]
 fn design_distinct_feature_outputs_refuse_at_collection_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Shape".into(), "Shape".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Shape".into(),
+            "Shape".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -111,7 +123,11 @@ fn design_distinct_feature_outputs_refuse_at_collection_limit() {
 #[test]
 fn design_census_missing_projection_diagnostic_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Shape".into(), "Shape".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Shape".into(),
+            "Shape".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -167,7 +183,11 @@ fn design_spreadsheet_value_diagnostic_refuses_at_retained_limit() {
 #[test]
 fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sheet".into(), "Sheet".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Sheet".into(),
+            "Sheet".into(),
+        )
+        .expect("object identity"),
         type_name: "Spreadsheet::Sheet".into(),
         persistent_id: None,
         view_type: None,
@@ -204,7 +224,11 @@ fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
 #[test]
 fn design_spreadsheet_dimensions_refuse_at_distinct_collection_limits() {
     let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sheet".into(), "Sheet".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Sheet".into(),
+            "Sheet".into(),
+        )
+        .expect("object identity"),
         type_name: "Spreadsheet::Sheet".into(),
         persistent_id: None,
         view_type: None,

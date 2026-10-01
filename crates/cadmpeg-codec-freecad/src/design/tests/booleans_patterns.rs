@@ -99,7 +99,11 @@ fn pattern_seed_vectors_and_identities_refuse_at_matching_limits() {
 #[test]
 fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
     let consumer = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#consumer".into(), "consumer".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#consumer".into(),
+            "consumer".into(),
+        )
+        .expect("object identity"),
         type_name: "PartDesign::MultiTransform".into(),
         persistent_id: None,
         view_type: None,
@@ -109,11 +113,18 @@ fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
         order: 0,
         data: None,
     };
-    let transformations =
-        super::linked_property_count_to("fcstd:native:object#consumer", "Transformations", "stages", 1, "stage");
-    let originals = super::linked_property("fcstd:native:object#consumer", "Originals", "originals");
+    let transformations = super::linked_property_count_to(
+        "fcstd:native:object#consumer",
+        "Transformations",
+        "stages",
+        1,
+        "stage",
+    );
+    let originals =
+        super::linked_property("fcstd:native:object#consumer", "Originals", "originals");
     let properties = [&transformations, &originals];
-    let properties_by_owner = std::collections::HashMap::from([("fcstd:native:object#consumer", properties.to_vec())]);
+    let properties_by_owner =
+        std::collections::HashMap::from([("fcstd:native:object#consumer", properties.to_vec())]);
     let mut features = std::collections::HashMap::new();
     features.insert(
         "base",
@@ -151,7 +162,11 @@ fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
 #[test]
 fn implicit_pattern_seed_refuses_at_matching_limits() {
     let body = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#body".into(), "body".into()).expect("object identity"),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#body".into(),
+            "body".into(),
+        )
+        .expect("object identity"),
         type_name: "PartDesign::Body".into(),
         persistent_id: None,
         view_type: None,
@@ -161,7 +176,13 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
         order: 0,
         data: None,
     };
-    let mut group = super::linked_property_count_to("fcstd:native:object#body", "Group", "body-members", 2, "base");
+    let mut group = super::linked_property_count_to(
+        "fcstd:native:object#body",
+        "Group",
+        "body-members",
+        2,
+        "base",
+    );
     group.type_name = "App::PropertyLinkList".into();
     if let PropertyBody::Persisted { links, .. } = &mut group.body {
         links[1] = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
@@ -172,7 +193,8 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
         })
         .expect("valid link");
     }
-    let properties_by_owner = std::collections::HashMap::from([("fcstd:native:object#body", vec![&group])]);
+    let properties_by_owner =
+        std::collections::HashMap::from([("fcstd:native:object#body", vec![&group])]);
     let mut features = std::collections::HashMap::new();
     features.insert(
         "base",

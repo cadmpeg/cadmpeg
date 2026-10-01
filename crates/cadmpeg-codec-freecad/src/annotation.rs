@@ -865,7 +865,11 @@ pub(crate) mod tests {
     #[test]
     fn annotation_record_collection_refuses_at_caller_limit() {
         let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Note".into(), "Note".into()).expect("object identity"),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#Note".into(),
+                "Note".into(),
+            )
+            .expect("object identity"),
             type_name: "App::Annotation".into(),
             persistent_id: None,
             view_type: None,
@@ -888,7 +892,11 @@ pub(crate) mod tests {
     #[test]
     fn annotation_identity_refuses_at_retained_limit() {
         let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Note".into(), "Note".into()).expect("object identity"),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#Note".into(),
+                "Note".into(),
+            )
+            .expect("object identity"),
             type_name: "App::Annotation".into(),
             persistent_id: None,
             view_type: None,

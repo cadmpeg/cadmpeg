@@ -222,8 +222,15 @@ impl JointRecord {
         body: JointBody,
         parameters: BTreeMap<String, String>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), "FCStd joint identity admission")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(object.len()), "FCStd joint identity admission")?;
+        // Identity admission scans separators, key bytes, whitespace and namespace.
+        for value in [&id, &object] {
+            let work = cadmpeg_core::decode::u64_from_index(value.len())
+                .checked_mul(4)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("FCStd joint identity admission", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(work, "FCStd joint identity admission")?;
+        }
         let (id, object) = admit_joint_identities(id, object).map_err(CodecError::Malformed)?;
         let parameters = JointParameters::from_raw_charged(ctx, parameters, id.as_str())?;
         Ok(Self {
@@ -471,11 +478,51 @@ mod tests {
             ("fcstd:native:joint#Joint", "fcstd:native:object#has space"),
         ] {
             crate::test_support::with_service_context(&[], |ctx| {
-                assert!(matches!(JointRecord::try_new(ctx, id.to_owned(), object.to_owned(), JointBody::Grounded { reference: None, placement: super::FiniteFrame::default() }, BTreeMap::new()), Err(cadmpeg_core::CodecError::Malformed(_))));
+                assert!(matches!(
+                    JointRecord::try_new(
+                        ctx,
+                        id.to_owned(),
+                        object.to_owned(),
+                        JointBody::Grounded {
+                            reference: None,
+                            placement: super::FiniteFrame::default()
+                        },
+                        BTreeMap::new()
+                    ),
+                    Err(cadmpeg_core::CodecError::Malformed(_))
+                ));
             });
             let wire = serde_json::json!({"id": id, "object": object, "kind": "grounded", "references": [], "placements": [super::FiniteFrame::default().rows()], "offsets": [], "parameters": {}});
             assert!(serde_json::from_value::<JointRecord>(wire).is_err());
         }
+    }
+
+    #[test]
+    fn joint_identity_grammar_scans_refuse_at_small_work_allowance() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            ctx.charge_work(
+                ctx.policy().limits.max_work_units - 60,
+                "reserve joint identity work",
+            )
+            .expect("leave a small allowance");
+            let error = JointRecord::try_new(
+                ctx,
+                "fcstd:native:joint#Joint".to_owned(),
+                "fcstd:native:object#Joint".to_owned(),
+                JointBody::Grounded {
+                    reference: None,
+                    placement: super::FiniteFrame::default(),
+                },
+                BTreeMap::new(),
+            )
+            .expect_err("grammar scans exceed allowance");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "FCStd joint identity admission"
+                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && Some(limit) == ctx.resource_refusal())
+            );
+        });
     }
 
     #[test]

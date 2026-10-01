@@ -17,7 +17,8 @@ impl ObjectIdentity {
     }
 
     pub(crate) fn try_new(id: String, name: String) -> Result<Self, String> {
-        if !id.strip_prefix("fcstd:native:object#")
+        if !id
+            .strip_prefix("fcstd:native:object#")
             .is_some_and(|key| key.bytes().eq(super::encoded_segment_bytes(&name)))
         {
             return Err("object id disagrees with persisted name".to_owned());
@@ -42,11 +43,15 @@ mod tests {
     fn object_identity_admission_checks_name_derivation_and_source_spellings() {
         for name in ["A", "", "A B#C", "A%20B", "A:B", "é"] {
             let id = crate::native::native_id("object", name);
-            let identity = ObjectIdentity::try_new(id.clone(), name.to_owned()).expect("encoded name");
+            let identity =
+                ObjectIdentity::try_new(id.clone(), name.to_owned()).expect("encoded name");
             assert_eq!(identity.id(), &id);
             assert_eq!(identity.name(), name);
             crate::test_support::with_service_context(&[], |ctx| {
-                assert_eq!(ObjectIdentity::from_name(ctx, name.to_owned()).expect("derived identity"), identity);
+                assert_eq!(
+                    ObjectIdentity::from_name(ctx, name.to_owned()).expect("derived identity"),
+                    identity
+                );
             });
         }
         for id in ["", "fcstd:native:object#B", "fcstd:native:joint#A"] {
