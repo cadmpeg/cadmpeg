@@ -482,10 +482,8 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), CodecError> {
         self.charge_collection_items(u64_from_index(additional), operation)?;
         values.try_reserve(additional).map_err(|_| {
-            self.budget.collection_allocation_failed(
-                u64_from_index(additional),
-                operation,
-            )
+            self.budget
+                .collection_allocation_failed(u64_from_index(additional), operation)
         })
     }
 
@@ -497,8 +495,11 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         values.try_reserve(additional).map_err(|_| {
-            self.budget
-                .collection_allocation_failed_requested(0, u64_from_index(additional), operation)
+            self.budget.collection_allocation_failed_requested(
+                0,
+                u64_from_index(additional),
+                operation,
+            )
         })
     }
 

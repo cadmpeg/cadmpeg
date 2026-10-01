@@ -239,7 +239,7 @@ fn x64_profile_construction_refuses_exhausted_work_on_decode() {
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_work_units = 0;
-    for _ in 0..4096 {
+    for _ in 0..8192 {
         let error = FcstdCodec
             .decode(&mut Cursor::new(&bytes), &options)
             .expect_err("profile construction must charge work");

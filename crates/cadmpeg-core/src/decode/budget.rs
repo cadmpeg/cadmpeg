@@ -584,8 +584,7 @@ impl<'a> WorkBudget<'a> {
             false
         } else {
             if let Some(session) = session {
-                let Some(scaled) =
-                    u64_from_index(work).checked_mul(self.session_work_scale.get())
+                let Some(scaled) = u64_from_index(work).checked_mul(self.session_work_scale.get())
                 else {
                     // The sticky session keeps the refusal for finish_session.
                     let _failure = session.refuse(

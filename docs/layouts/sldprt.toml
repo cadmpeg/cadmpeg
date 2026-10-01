@@ -8580,7 +8580,7 @@ anchor = "+108 stores two zero bytes"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
-contains = "compact_wide_component_path(ctx, payload, marker + 18, count, \"decode SLDPRT component path layout\")?,"
+contains = "compact_wide_component_path( ctx, payload, marker + 18, count, \"decode SLDPRT component path layout\", )?,"
 note = "The owning component-path parser starts counted entries 18 bytes after the compact marker."
 
 [[record]]

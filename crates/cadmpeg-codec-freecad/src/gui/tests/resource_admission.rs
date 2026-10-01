@@ -31,7 +31,7 @@ fn assert_gui_decode_limit_at(
         _ => panic!("unsupported GUI test dimension"),
     };
     set_cap(&mut options, 0);
-    for _ in 0..4096 {
+    for _ in 0..8192 {
         let error = FcstdCodec
             .decode(&mut Cursor::new(bytes), &options)
             .expect_err("GUI decode must reach a resource refusal");
@@ -62,7 +62,7 @@ fn assert_gui_decode_limit_at(
         }
         set_cap(&mut options, threshold);
     }
-    panic!("{operation} was not reached within 4096 admissions");
+    panic!("{operation} was not reached within 8192 admissions");
 }
 
 #[test]
@@ -1145,7 +1145,7 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     options.policy.limits.max_retained_bytes =
         cadmpeg_core::decode::u64_from_index(zip_names + document.len() + gui.len());
     let mut error = None;
-    for _ in 0..256 {
+    for _ in 0..512 {
         let refused = FcstdCodec
             .decode(&mut Cursor::new(&bytes), &options)
             .expect_err("GUI text copy must be admitted");

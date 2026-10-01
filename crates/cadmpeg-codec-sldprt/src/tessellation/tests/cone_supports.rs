@@ -108,8 +108,10 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     );
     model.tessellations.push(
         Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#cone-cache-mesh")
-                .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#cone-cache-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 vertices,
                 vec![[0, 1, 2]],
