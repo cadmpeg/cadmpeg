@@ -2047,8 +2047,12 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
 /// circle is the diameter, so a tolerance at or beyond it admits the whole
 /// circle in one segment, and the sine of the quarter span stays at one.
 ///
-/// `None` when the segment count has no exact floating-point value.
+/// `None` when the span is not finite or the segment count has no exact
+/// floating-point value.
 fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> Option<(usize, f64)> {
+    if !span.is_finite() {
+        return None;
+    }
     let half_chord = (0.5 * (tolerance / radius)).min(1.0).sqrt();
     let maximum_span = 4.0 * half_chord.asin();
     let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
