@@ -1042,18 +1042,16 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let trim_count = u64_from_index(trims.len());
-    ctx.charge_collection_items(trim_count, "catia repeated edge face handles")?;
-    for trim in &trims {
-        let handle_count = u64_from_index(trim.packet.handles().len());
-        ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
-    }
     let mut face_handles = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut face_handles,
         trims.len(),
         "catia repeated edge face handles",
     )?;
+    for trim in &trims {
+        let handle_count = u64_from_index(trim.packet.handles().len());
+        ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
+    }
     for trim in trims {
         let mut handles = HashSet::new();
         cadmpeg_core::decode::DecodeContext::reserve_admitted_set(
@@ -1159,17 +1157,13 @@ pub(crate) fn repeated_face_endpoint_closures(
             return Ok(None);
         }
         let start_previous = degrees.get(&pair[0]).copied();
-        if start_previous.is_none() {
-            ctx.charge_collection_items(u64_from_index(1), "catia missing-edge point degrees")?;
-        }
+        ctx.admit_btree_entry(degrees, &pair[0], "catia missing-edge point degrees")?;
         *degrees.entry(pair[0]).or_default() += start_add;
         let end_previous = if pair[0] == pair[1] {
             None
         } else {
             let previous = degrees.get(&pair[1]).copied();
-            if previous.is_none() {
-                ctx.charge_collection_items(u64_from_index(1), "catia missing-edge point degrees")?;
-            }
+            ctx.admit_btree_entry(degrees, &pair[1], "catia missing-edge point degrees")?;
             *degrees.entry(pair[1]).or_default() += 1;
             Some((pair[1], previous))
         };

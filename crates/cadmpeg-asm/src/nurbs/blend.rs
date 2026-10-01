@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::items_after_test_module)]
 //! Blend spline-surface decoders (cylindrical, rolling-ball, variable, vertex, and rb blends).
 
 use crate::kernel_header::RefWidth;
@@ -852,412 +851,6 @@ fn variable_blend_value(
     }))
 }
 
-#[cfg(test)]
-mod variable_blend_value_tests {
-    use super::{rolling_ball_third_side, variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
-    use crate::kernel_header::RefWidth;
-    use crate::nurbs::toks::Cur;
-    use crate::sab::Token;
-    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-    use cadmpeg_ir::geometry::VariableBlendValuePayload;
-
-    #[test]
-    fn rolling_ball_third_side_label_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let tokens = [Token::Str("label".into())];
-        let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = rolling_ball_third_side(&ctx, &mut cur)
-        else {
-            panic!("label copy must refuse retained limit");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "ASM rolling ball third-side label");
-    }
-
-    #[test]
-    fn variable_blend_terminal_text_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let tokens = [
-            Token::Str("functional".into()),
-            Token::Enum(0),
-            Token::True,
-            Token::Double(0.0),
-            Token::Double(1.0),
-            Token::Ident("nubs".into()),
-            Token::Long(1),
-            Token::Enum(0),
-            Token::Long(2),
-            Token::Double(0.0),
-            Token::Long(1),
-            Token::Double(1.0),
-            Token::Long(1),
-            Token::Double(0.0),
-            Token::Double(0.0),
-            Token::Double(1.0),
-            Token::Double(0.0),
-            Token::Str("terminal".into()),
-        ];
-        let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
-        else {
-            panic!("terminal text copy must refuse retained limit");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "ASM variable blend terminal text");
-    }
-
-    #[test]
-    fn variable_blend_value_refuses_recursion_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let tokens = [
-            Token::Str("fixed_width".into()),
-            Token::Enum(0),
-            Token::True,
-            Token::Double(0.0),
-            Token::Double(1.0),
-            Token::Double(2.0),
-        ];
-        let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
-        else {
-            panic!("variable blend depth must refuse");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(refusal.operation, "decode ASM variable blend value");
-    }
-
-    fn text(bytes: &mut Vec<u8>, value: &str) {
-        bytes.push(0x07);
-        bytes.push(u8::try_from(value.len()).expect("generated text length"));
-        bytes.extend_from_slice(value.as_bytes());
-    }
-
-    fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64) {
-        bytes.push(tag);
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-
-    fn double(bytes: &mut Vec<u8>, value: f64) {
-        bytes.push(0x06);
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-
-    fn two_ends(bytes: &mut Vec<u8>) {
-        text(bytes, "two_ends");
-        integer(bytes, 0x04, 7);
-        integer(bytes, 0x15, 3);
-        bytes.push(0x0a);
-        for value in [0.25, 0.75, 1.5, 2.5] {
-            double(bytes, value);
-        }
-    }
-
-    #[test]
-    fn decodes_generated_two_ends_and_recursive_const_values() {
-        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &asm_decode_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
-        let mut direct = Vec::new();
-        two_ends(&mut direct);
-        let toks = crate::nurbs::toks::lex_test_span(&direct, RefWidth::Eight)
-            .expect("valid single-record byte fixture");
-        let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
-            .expect("generated two-ends value")
-            .expect("resource allocation did not fail");
-        assert_eq!(cur.pos(), toks.len());
-        assert!(decoded.modern_flag);
-        assert_eq!(decoded.payload.discriminator(), 7);
-        let VariableBlendValuePayload::TwoEnds {
-            parameters, radii, ..
-        } = decoded.payload
-        else {
-            panic!("expected two-ends payload")
-        };
-        assert_eq!(parameters, [0.25, 0.75]);
-        assert_eq!(radii, [15.0, 25.0]);
-
-        let mut recursive = Vec::new();
-        text(&mut recursive, "const");
-        integer(&mut recursive, 0x15, 4);
-        recursive.push(0x0b);
-        for value in [0.1, 0.9, 3.0] {
-            double(&mut recursive, value);
-        }
-        integer(&mut recursive, 0x15, 3);
-        integer(&mut recursive, 0x15, 2);
-        two_ends(&mut recursive);
-        let toks = crate::nurbs::toks::lex_test_span(&recursive, RefWidth::Eight)
-            .expect("valid single-record byte fixture");
-        let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
-            .expect("generated recursive const value")
-            .expect("resource allocation did not fail");
-        assert_eq!(cur.pos(), toks.len());
-        let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
-            panic!("expected constant payload")
-        };
-        assert_eq!(radius, 30.0);
-        assert!(matches!(
-            nested.payload,
-            VariableBlendValuePayload::TwoEnds { .. }
-        ));
-    }
-
-    #[test]
-    fn decodes_generated_fixed_width_value() {
-        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &asm_decode_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
-        let mut bytes = Vec::new();
-        text(&mut bytes, "fixed_width");
-        integer(&mut bytes, 0x15, 0);
-        bytes.push(0x0a);
-        // Distinct parameter-range bounds and a distinct chamfer width.
-        for value in [0.5, 3.5, 0.1905] {
-            double(&mut bytes, value);
-        }
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
-            .expect("valid single-record byte fixture");
-        let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
-            .expect("generated fixed-width value")
-            .expect("resource allocation did not fail");
-        assert_eq!(cur.pos(), toks.len());
-        let VariableBlendValuePayload::FixedWidth {
-            parameters, width, ..
-        } = decoded.payload
-        else {
-            panic!("expected fixed-width payload")
-        };
-        assert_eq!(parameters, [0.5, 3.5]);
-        assert_eq!(width, 0.1905);
-    }
-
-    #[test]
-    fn decodes_generated_enum_tagged_interp_counts() {
-        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &asm_decode_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
-        let mut bytes = Vec::new();
-        text(&mut bytes, "interp");
-        integer(&mut bytes, 0x15, 0);
-        bytes.push(0x0a);
-        double(&mut bytes, 0.0);
-        double(&mut bytes, 1.0);
-        // Minimal degree-1 BS2 function block.
-        bytes.push(0x0d);
-        bytes.push(4);
-        bytes.extend_from_slice(b"nubs");
-        integer(&mut bytes, 0x04, 1);
-        integer(&mut bytes, 0x15, 0);
-        integer(&mut bytes, 0x04, 2);
-        double(&mut bytes, 0.0);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 1.0);
-        integer(&mut bytes, 0x04, 1);
-        for value in [0.0, 0.0, 1.0, 1.0] {
-            double(&mut bytes, value);
-        }
-        // Enum-tagged extension enum, then the radius-point count.
-        integer(&mut bytes, 0x15, 2);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 0.5);
-        double(&mut bytes, 1.5);
-        double(&mut bytes, 0.0);
-        double(&mut bytes, 1.0);
-        bytes.push(0x13);
-        for value in [1.0f64, 2.0, 3.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.push(0x14);
-        for value in [0.0f64, 0.0, 1.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        // The value ends at the last radius point. A following enum belongs to
-        // the enclosing record's cross-section clause, so it must be left
-        // unconsumed.
-        integer(&mut bytes, 0x15, 0);
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
-            .expect("valid single-record byte fixture");
-        let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
-            .expect("generated enum-tagged interp value")
-            .expect("resource allocation did not fail");
-        assert_eq!(cur.pos(), toks.len() - 1);
-        let VariableBlendValuePayload::Interpolated {
-            enum_count,
-            enum_tagged,
-            function,
-            points,
-            ..
-        } = decoded.payload
-        else {
-            panic!("expected interpolated payload")
-        };
-        assert_eq!(enum_count, 2);
-        assert!(enum_tagged);
-        assert_eq!(points.len(), 1);
-        let PcurveGeometry::Nurbs { nurbs } = function else {
-            panic!("expected NURBS radius function")
-        };
-        assert_eq!(
-            nurbs.control_points()[0],
-            cadmpeg_ir::math::Point2::new(0.0, 0.0)
-        );
-        assert_eq!(
-            nurbs.control_points()[1],
-            cadmpeg_ir::math::Point2::new(10.0, 1.0)
-        );
-    }
-
-    #[test]
-    fn variable_blend_interpolation_points_refuse_collection_limit() {
-        let mut bytes = Vec::new();
-        text(&mut bytes, "interp");
-        integer(&mut bytes, 0x15, 0);
-        bytes.push(0x0a);
-        double(&mut bytes, 0.0);
-        double(&mut bytes, 1.0);
-        bytes.push(0x0d);
-        bytes.push(4);
-        bytes.extend_from_slice(b"nubs");
-        integer(&mut bytes, 0x04, 1);
-        integer(&mut bytes, 0x15, 0);
-        integer(&mut bytes, 0x04, 2);
-        double(&mut bytes, 0.0);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 1.0);
-        integer(&mut bytes, 0x04, 1);
-        for value in [0.0, 0.0, 1.0, 1.0] {
-            double(&mut bytes, value);
-        }
-        integer(&mut bytes, 0x15, 2);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 0.5);
-        double(&mut bytes, 1.5);
-        double(&mut bytes, 0.0);
-        double(&mut bytes, 1.0);
-        bytes.push(0x13);
-        for value in [1.0_f64, 2.0, 3.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.push(0x14);
-        for value in [0.0_f64, 0.0, 1.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        let tokens = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
-            .expect("valid interpolation value");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("input is within the root byte limit");
-        let mut cur = Cur::at(&tokens, 0);
-        let result = variable_blend_value(&ctx, &mut cur, 0)
-            .expect("interpolation grammar reaches its point collection");
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-        ));
-    }
-
-    #[test]
-    fn decodes_interp_point_with_unset_derivatives() {
-        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &asm_decode_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
-        let mut bytes = Vec::new();
-        text(&mut bytes, "interp");
-        integer(&mut bytes, 0x15, 0);
-        bytes.push(0x0a);
-        double(&mut bytes, 0.0);
-        double(&mut bytes, 1.0);
-        // Minimal degree-1 BS2 function block.
-        bytes.push(0x0d);
-        bytes.push(4);
-        bytes.extend_from_slice(b"nubs");
-        integer(&mut bytes, 0x04, 1);
-        integer(&mut bytes, 0x15, 0);
-        integer(&mut bytes, 0x04, 2);
-        double(&mut bytes, 0.0);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 1.0);
-        integer(&mut bytes, 0x04, 1);
-        for value in [0.0, 0.0, 1.0, 1.0] {
-            double(&mut bytes, value);
-        }
-        // One interpolation control whose two derivatives are unset.
-        integer(&mut bytes, 0x15, 1);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 0.5);
-        double(&mut bytes, 1.5);
-        double(&mut bytes, UNSET_VARIABLE_BLEND_TANGENT);
-        double(&mut bytes, UNSET_VARIABLE_BLEND_TANGENT);
-        bytes.push(0x13);
-        for value in [1.0f64, 2.0, 3.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.push(0x14);
-        for value in [0.0f64, 0.0, 1.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        // The enclosing record's cross-section enum, left unconsumed.
-        integer(&mut bytes, 0x15, 0);
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
-            .expect("valid single-record byte fixture");
-        let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
-            .expect("generated interp value with unset derivatives")
-            .expect("resource allocation did not fail");
-        assert_eq!(cur.pos(), toks.len() - 1);
-        let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
-            panic!("expected interpolated payload")
-        };
-        assert_eq!(points.len(), 1);
-        assert_eq!(points[0].tangents, [None, None]);
-    }
-}
-
 pub(super) fn var_blend_spl_sur(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
@@ -1903,4 +1496,410 @@ pub(super) fn compact_rb_blend_spl_sur(
         },
         cache_fit_tolerance,
     )))
+}
+
+#[cfg(test)]
+mod variable_blend_value_tests {
+    use super::{rolling_ball_third_side, variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
+    use crate::kernel_header::RefWidth;
+    use crate::nurbs::toks::Cur;
+    use crate::sab::Token;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::VariableBlendValuePayload;
+
+    #[test]
+    fn rolling_ball_third_side_label_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [Token::Str("label".into())];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = rolling_ball_third_side(&ctx, &mut cur)
+        else {
+            panic!("label copy must refuse retained limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM rolling ball third-side label");
+    }
+
+    #[test]
+    fn variable_blend_terminal_text_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [
+            Token::Str("functional".into()),
+            Token::Enum(0),
+            Token::True,
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Double(0.0),
+            Token::Long(1),
+            Token::Double(1.0),
+            Token::Long(1),
+            Token::Double(0.0),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::Str("terminal".into()),
+        ];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
+        else {
+            panic!("terminal text copy must refuse retained limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM variable blend terminal text");
+    }
+
+    #[test]
+    fn variable_blend_value_refuses_recursion_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [
+            Token::Str("fixed_width".into()),
+            Token::Enum(0),
+            Token::True,
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(2.0),
+        ];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
+        else {
+            panic!("variable blend depth must refuse");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(refusal.operation, "decode ASM variable blend value");
+    }
+
+    fn text(bytes: &mut Vec<u8>, value: &str) {
+        bytes.push(0x07);
+        bytes.push(u8::try_from(value.len()).expect("generated text length"));
+        bytes.extend_from_slice(value.as_bytes());
+    }
+
+    fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64) {
+        bytes.push(tag);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn double(bytes: &mut Vec<u8>, value: f64) {
+        bytes.push(0x06);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn two_ends(bytes: &mut Vec<u8>) {
+        text(bytes, "two_ends");
+        integer(bytes, 0x04, 7);
+        integer(bytes, 0x15, 3);
+        bytes.push(0x0a);
+        for value in [0.25, 0.75, 1.5, 2.5] {
+            double(bytes, value);
+        }
+    }
+
+    #[test]
+    fn decodes_generated_two_ends_and_recursive_const_values() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
+        let mut direct = Vec::new();
+        two_ends(&mut direct);
+        let toks = crate::nurbs::toks::lex_test_span(&direct, RefWidth::Eight)
+            .expect("valid single-record byte fixture");
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated two-ends value")
+            .expect("resource allocation did not fail");
+        assert_eq!(cur.pos(), toks.len());
+        assert!(decoded.modern_flag);
+        assert_eq!(decoded.payload.discriminator(), 7);
+        let VariableBlendValuePayload::TwoEnds {
+            parameters, radii, ..
+        } = decoded.payload
+        else {
+            panic!("expected two-ends payload")
+        };
+        assert_eq!(parameters, [0.25, 0.75]);
+        assert_eq!(radii, [15.0, 25.0]);
+
+        let mut recursive = Vec::new();
+        text(&mut recursive, "const");
+        integer(&mut recursive, 0x15, 4);
+        recursive.push(0x0b);
+        for value in [0.1, 0.9, 3.0] {
+            double(&mut recursive, value);
+        }
+        integer(&mut recursive, 0x15, 3);
+        integer(&mut recursive, 0x15, 2);
+        two_ends(&mut recursive);
+        let toks = crate::nurbs::toks::lex_test_span(&recursive, RefWidth::Eight)
+            .expect("valid single-record byte fixture");
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated recursive const value")
+            .expect("resource allocation did not fail");
+        assert_eq!(cur.pos(), toks.len());
+        let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
+            panic!("expected constant payload")
+        };
+        assert_eq!(radius, 30.0);
+        assert!(matches!(
+            nested.payload,
+            VariableBlendValuePayload::TwoEnds { .. }
+        ));
+    }
+
+    #[test]
+    fn decodes_generated_fixed_width_value() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
+        let mut bytes = Vec::new();
+        text(&mut bytes, "fixed_width");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        // Distinct parameter-range bounds and a distinct chamfer width.
+        for value in [0.5, 3.5, 0.1905] {
+            double(&mut bytes, value);
+        }
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
+            .expect("valid single-record byte fixture");
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated fixed-width value")
+            .expect("resource allocation did not fail");
+        assert_eq!(cur.pos(), toks.len());
+        let VariableBlendValuePayload::FixedWidth {
+            parameters, width, ..
+        } = decoded.payload
+        else {
+            panic!("expected fixed-width payload")
+        };
+        assert_eq!(parameters, [0.5, 3.5]);
+        assert_eq!(width, 0.1905);
+    }
+
+    #[test]
+    fn decodes_generated_enum_tagged_interp_counts() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
+        let mut bytes = Vec::new();
+        text(&mut bytes, "interp");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        // Minimal degree-1 BS2 function block.
+        bytes.push(0x0d);
+        bytes.push(4);
+        bytes.extend_from_slice(b"nubs");
+        integer(&mut bytes, 0x04, 1);
+        integer(&mut bytes, 0x15, 0);
+        integer(&mut bytes, 0x04, 2);
+        double(&mut bytes, 0.0);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 1.0);
+        integer(&mut bytes, 0x04, 1);
+        for value in [0.0, 0.0, 1.0, 1.0] {
+            double(&mut bytes, value);
+        }
+        // Enum-tagged extension enum, then the radius-point count.
+        integer(&mut bytes, 0x15, 2);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 0.5);
+        double(&mut bytes, 1.5);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [0.0f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        // The value ends at the last radius point. A following enum belongs to
+        // the enclosing record's cross-section clause, so it must be left
+        // unconsumed.
+        integer(&mut bytes, 0x15, 0);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
+            .expect("valid single-record byte fixture");
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated enum-tagged interp value")
+            .expect("resource allocation did not fail");
+        assert_eq!(cur.pos(), toks.len() - 1);
+        let VariableBlendValuePayload::Interpolated {
+            enum_count,
+            enum_tagged,
+            function,
+            points,
+            ..
+        } = decoded.payload
+        else {
+            panic!("expected interpolated payload")
+        };
+        assert_eq!(enum_count, 2);
+        assert!(enum_tagged);
+        assert_eq!(points.len(), 1);
+        let PcurveGeometry::Nurbs { nurbs } = function else {
+            panic!("expected NURBS radius function")
+        };
+        assert_eq!(
+            nurbs.control_points()[0],
+            cadmpeg_ir::math::Point2::new(0.0, 0.0)
+        );
+        assert_eq!(
+            nurbs.control_points()[1],
+            cadmpeg_ir::math::Point2::new(10.0, 1.0)
+        );
+    }
+
+    #[test]
+    fn variable_blend_interpolation_points_refuse_collection_limit() {
+        let mut bytes = Vec::new();
+        text(&mut bytes, "interp");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x0d);
+        bytes.push(4);
+        bytes.extend_from_slice(b"nubs");
+        integer(&mut bytes, 0x04, 1);
+        integer(&mut bytes, 0x15, 0);
+        integer(&mut bytes, 0x04, 2);
+        double(&mut bytes, 0.0);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 1.0);
+        integer(&mut bytes, 0x04, 1);
+        for value in [0.0, 0.0, 1.0, 1.0] {
+            double(&mut bytes, value);
+        }
+        integer(&mut bytes, 0x15, 2);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 0.5);
+        double(&mut bytes, 1.5);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x13);
+        for value in [1.0_f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [0.0_f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let tokens = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
+            .expect("valid interpolation value");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("input is within the root byte limit");
+        let mut cur = Cur::at(&tokens, 0);
+        let result = variable_blend_value(&ctx, &mut cur, 0)
+            .expect("interpolation grammar reaches its point collection");
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
+    fn decodes_interp_point_with_unset_derivatives() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
+        let mut bytes = Vec::new();
+        text(&mut bytes, "interp");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        // Minimal degree-1 BS2 function block.
+        bytes.push(0x0d);
+        bytes.push(4);
+        bytes.extend_from_slice(b"nubs");
+        integer(&mut bytes, 0x04, 1);
+        integer(&mut bytes, 0x15, 0);
+        integer(&mut bytes, 0x04, 2);
+        double(&mut bytes, 0.0);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 1.0);
+        integer(&mut bytes, 0x04, 1);
+        for value in [0.0, 0.0, 1.0, 1.0] {
+            double(&mut bytes, value);
+        }
+        // One interpolation control whose two derivatives are unset.
+        integer(&mut bytes, 0x15, 1);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 0.5);
+        double(&mut bytes, 1.5);
+        double(&mut bytes, UNSET_VARIABLE_BLEND_TANGENT);
+        double(&mut bytes, UNSET_VARIABLE_BLEND_TANGENT);
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [0.0f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        // The enclosing record's cross-section enum, left unconsumed.
+        integer(&mut bytes, 0x15, 0);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
+            .expect("valid single-record byte fixture");
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated interp value with unset derivatives")
+            .expect("resource allocation did not fail");
+        assert_eq!(cur.pos(), toks.len() - 1);
+        let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
+            panic!("expected interpolated payload")
+        };
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].tangents, [None, None]);
+    }
 }

@@ -202,7 +202,7 @@ fn generate_sldprt_submodule_seeds() -> Result<(), SeedError> {
 
 fn sldprt_pmi_seed(items: &[(&str, f64)], reorder: bool, truncate: bool) -> Vec<u8> {
     fn fixstr(bytes: &mut Vec<u8>, value: &str) {
-        bytes.push(0xa0 | value.len() as u8);
+        bytes.push(0xa0 | u8::try_from(value.len()).expect("fixstr length fits u8"));
         bytes.extend_from_slice(value.as_bytes());
     }
     let mut payload = b"unqlite".to_vec();
@@ -229,10 +229,11 @@ fn sldprt_pmi_seed(items: &[(&str, f64)], reorder: bool, truncate: bool) -> Vec<
         return payload;
     }
     if items.len() < 16 {
-        payload.push(0x90 | items.len() as u8);
+        payload.push(0x90 | u8::try_from(items.len()).expect("fixarray length fits u8"));
     } else {
         payload.push(0xdc);
-        payload.extend_from_slice(&(items.len() as u16).to_be_bytes());
+        let count = u16::try_from(items.len()).expect("array16 length fits u16");
+        payload.extend_from_slice(&count.to_be_bytes());
     }
     for (subtype, value) in items {
         payload.push(0x87);
@@ -346,10 +347,10 @@ fn generate_catia_submodule_seeds() -> Result<(), SeedError> {
 
     let record_body = [0x04, 0x01, 0x82];
     let mut object_record = vec![0x7c, 0x09];
-    object_record.extend_from_slice(&(6_u32 + record_body.len() as u32).to_le_bytes());
+    object_record.extend_from_slice(&(6_u32 + u32::try_from(record_body.len())?).to_le_bytes());
     object_record.extend_from_slice(&record_body);
     let mut object_graph = vec![0x7c, 0x08];
-    object_graph.extend_from_slice(&(6_u32 + object_record.len() as u32).to_le_bytes());
+    object_graph.extend_from_slice(&(6_u32 + u32::try_from(object_record.len())?).to_le_bytes());
     object_graph.extend_from_slice(&object_record);
     write_seed("seeds/catia_object_graph", "minimal", &object_graph)?;
 
@@ -726,7 +727,10 @@ fn synthetic_meta_table_body() -> Vec<u8> {
     push_u32(&mut body, counts[0]);
     pad_zeros(&mut body, payloads[0]);
     for index in 1..payloads.len() {
-        push_u32(&mut body, (payloads[index - 1] + 4) as u32);
+        push_u32(
+            &mut body,
+            u32::try_from(payloads[index - 1] + 4).expect("payload offset fits u32"),
+        );
         push_u32(&mut body, counts[index]);
         pad_zeros(&mut body, payloads[index]);
     }
@@ -749,12 +753,18 @@ fn synthetic_property_set_seed() -> Vec<u8> {
 }
 
 fn push_counted(bytes: &mut Vec<u8>, values: &[u32], item_size: usize) {
-    push_u32(bytes, values.len() as u32);
+    push_u32(
+        bytes,
+        u32::try_from(values.len()).expect("counted length fits u32"),
+    );
     for value in values {
         push_u32(bytes, *value);
     }
     pad_zeros(bytes, values.len() * (item_size - SLOT_BYTES));
-    push_u32(bytes, (4 + values.len() * item_size) as u32);
+    push_u32(
+        bytes,
+        u32::try_from(4 + values.len() * item_size).expect("counted size fits u32"),
+    );
 }
 
 fn push_u16(bytes: &mut Vec<u8>, value: u16) {
@@ -774,13 +784,19 @@ fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
 }
 
 fn push_utf8(bytes: &mut Vec<u8>, value: &str) {
-    push_u32(bytes, value.len() as u32);
+    push_u32(
+        bytes,
+        u32::try_from(value.len()).expect("UTF-8 length fits u32"),
+    );
     bytes.extend_from_slice(value.as_bytes());
 }
 
 fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
     let units = value.encode_utf16().collect::<Vec<_>>();
-    push_u32(bytes, units.len() as u32);
+    push_u32(
+        bytes,
+        u32::try_from(units.len()).expect("UTF-16 length fits u32"),
+    );
     for unit in units {
         push_u16(bytes, unit);
     }
@@ -827,7 +843,11 @@ fn directory_entry(directory: &mut [u8], index: usize, fields: DirectoryEntry<'_
     entry[name_offset..name_offset + 2].copy_from_slice(&0_u16.to_le_bytes());
     // A directory entry is 128 bytes, and the name is written into it above,
     // so its length is a `u16` by the time it is stored.
-    entry[64..66].copy_from_slice(&((name_offset + 2) as u16).to_le_bytes());
+    entry[64..66].copy_from_slice(
+        &u16::try_from(name_offset + 2)
+            .expect("directory entry name length fits u16")
+            .to_le_bytes(),
+    );
     entry[66] = object_type;
     entry[67] = 1;
     entry[68..72].copy_from_slice(&left.to_le_bytes());

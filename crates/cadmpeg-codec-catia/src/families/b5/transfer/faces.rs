@@ -23,15 +23,6 @@ use super::pcurves::PcurveUses;
 use super::{annotate, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
 use crate::solve::union_find::UnionFind;
 
-fn charge_collection(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count, operation)
-}
-
 pub(super) fn ownership_plan(
     ctx: &DecodeContext<'_>,
     graph: &B5Graph,
@@ -149,17 +140,15 @@ pub(super) fn orient_loop_members(
     graph: &B5Graph,
     mut reversed: BTreeMap<u32, Vec<bool>>,
 ) -> Result<Option<BTreeMap<u32, OrientedLoop>>, CodecError> {
-    charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop ids")?;
-    charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop index")?;
     let mut loop_ids = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut loop_ids,
         graph.loops.len(),
         "catia b5 orientation loop ids",
     )?;
     loop_ids.extend(graph.loops.keys().copied());
     let mut node_by_loop = HashMap::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_map(
+    ctx.reserve_map(
         &mut node_by_loop,
         loop_ids.len(),
         "catia b5 orientation loop index",
@@ -277,8 +266,12 @@ pub(super) fn orient_loop_members(
                 }),
             "catia b5 oriented loop members",
         )?;
-        charge_collection(ctx, 1, "catia b5 oriented loops")?;
-        oriented.insert(loop_id, OrientedLoop { flipped, members });
+        ctx.insert_btree_map(
+            &mut oriented,
+            loop_id,
+            OrientedLoop { flipped, members },
+            "catia b5 oriented loops",
+        )?;
     }
     Ok(Some(oriented))
 }

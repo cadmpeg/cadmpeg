@@ -94,9 +94,7 @@ impl Stats {
             (&mut self.other_record_kinds, other.other_record_kinds),
         ] {
             for (kind, count) in source {
-                if !target.contains_key(&kind) {
-                    ctx.charge_collection_items(1, "ASM merge loss kinds")?;
-                }
+                ctx.admit_btree_entry(target, &kind, "ASM merge loss kinds")?;
                 *target.entry(kind).or_default() += count;
             }
         }

@@ -27,7 +27,11 @@ fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
     b.extend_from_slice(&(logical_len * 2).to_le_bytes());
     b.extend_from_slice(&(logical_len / 2).to_le_bytes());
     b.extend_from_slice(&logical_len.to_le_bytes());
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes());
+    b.extend_from_slice(
+        &u32::try_from(swapped.len())
+            .expect("swapped name length fits u32")
+            .to_le_bytes(),
+    );
     b.extend_from_slice(&swapped);
     b
 }
@@ -40,7 +44,11 @@ fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
     b.extend_from_slice(&0u32.to_le_bytes());
     b.extend_from_slice(&size.to_le_bytes());
     b.extend_from_slice(&0u32.to_le_bytes());
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes());
+    b.extend_from_slice(
+        &u32::try_from(swapped.len())
+            .expect("swapped name length fits u32")
+            .to_le_bytes(),
+    );
     b.extend_from_slice(&[0u8; 14]);
     b.extend_from_slice(&swapped);
     b.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0x00, 0x00]);
@@ -50,10 +58,14 @@ fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
 fn parasolid_payload(description: &str, schema: &str) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(&[b'P', b'S', 0x00, 0x00]);
-    b.extend_from_slice(&(description.len() as u16).to_be_bytes());
+    b.extend_from_slice(
+        &u16::try_from(description.len())
+            .expect("description length fits u16")
+            .to_be_bytes(),
+    );
     b.extend_from_slice(description.as_bytes());
     b.extend_from_slice(&[0x00, 0x00]);
-    b.push(schema.len() as u8);
+    b.push(u8::try_from(schema.len()).expect("schema length fits u8"));
     b.extend_from_slice(schema.as_bytes());
     b
 }
@@ -264,9 +276,21 @@ pub fn make_block(type_id: u32, section: &str, payload: &[u8]) -> std::io::Resul
     b.extend_from_slice(&MARKER);
     b.extend_from_slice(&type_id.to_le_bytes());
     b.extend_from_slice(&crc32(payload).to_le_bytes());
-    b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
+    b.extend_from_slice(
+        &u32::try_from(comp.len())
+            .map_err(std::io::Error::other)?
+            .to_le_bytes(),
+    );
+    b.extend_from_slice(
+        &u32::try_from(payload.len())
+            .map_err(std::io::Error::other)?
+            .to_le_bytes(),
+    );
+    b.extend_from_slice(
+        &u32::try_from(preamble.len())
+            .map_err(std::io::Error::other)?
+            .to_le_bytes(),
+    );
     b.extend_from_slice(&preamble);
     b.extend_from_slice(&comp);
     Ok(b)

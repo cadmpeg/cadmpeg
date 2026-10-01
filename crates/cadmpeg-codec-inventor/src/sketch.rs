@@ -1238,8 +1238,11 @@ pub(crate) fn project(
                     .get(&(sketch.identity.segment_token.as_str(), ordinal))
                     .copied()
             }) {
-                ctx.charge_collection_items(1, "collect Inventor raw sketch reference")?;
-                raw_referenced_entities.push(raw);
+                ctx.push_vec(
+                    &mut raw_referenced_entities,
+                    raw,
+                    "collect Inventor raw sketch reference",
+                )?;
             }
         }
         let mut referenced_entities = Vec::new();
@@ -1261,8 +1264,11 @@ pub(crate) fn project(
             )?;
             let native = raw.id();
             if let Some(projected) = projected_by_native.get(native.as_str()).copied() {
-                ctx.charge_collection_items(1, "collect Inventor projected sketch reference")?;
-                referenced_entities.push(projected);
+                ctx.push_vec(
+                    &mut referenced_entities,
+                    projected,
+                    "collect Inventor projected sketch reference",
+                )?;
             }
         }
         if referenced_entities.len() != raw_referenced_entities.len() {
@@ -2292,11 +2298,13 @@ fn build_profiles(
     let mut adjacency = HashMap::<&str, Vec<usize>>::new();
     for (index, line) in lines.iter().enumerate() {
         for endpoint in &line.endpoint_refs {
-            if !adjacency.contains_key(endpoint.as_str()) {
-                ctx.charge_collection_items(1, "index Inventor profile endpoint")?;
-            }
-            ctx.charge_collection_items(1, "link Inventor profile line endpoint")?;
-            adjacency.entry(endpoint.as_str()).or_default().push(index);
+            ctx.push_hash_group(
+                &mut adjacency,
+                endpoint.as_str(),
+                index,
+                "index Inventor profile endpoint",
+                "link Inventor profile line endpoint",
+            )?;
         }
     }
     let mut visited = HashSet::new();
@@ -2313,10 +2321,7 @@ fn build_profiles(
                 .any(|point| adjacency.get(point.as_str()).map_or(0, Vec::len) != 2)
         }) {
             for index in component {
-                if !visited.contains(&index) {
-                    ctx.charge_collection_items(1, "visit Inventor profile line")?;
-                    visited.insert(index);
-                }
+                ctx.insert_hash_set(&mut visited, index, "visit Inventor profile line")?;
             }
             continue;
         }
@@ -2333,8 +2338,7 @@ fn build_profiles(
             entity: first.id().clone(),
             reversed: false,
         }];
-        ctx.charge_collection_items(1, "visit Inventor profile line")?;
-        visited.insert(current);
+        ctx.insert_hash_set(&mut visited, current, "visit Inventor profile line")?;
         while point != start_point {
             ctx.charge_work(1, "traverse Inventor profile loop")?;
             let Some(next) = adjacency
@@ -2356,10 +2360,7 @@ fn build_profiles(
                 line.endpoint_refs[1].as_str()
             };
             current = next;
-            if !visited.contains(&next) {
-                ctx.charge_collection_items(1, "visit Inventor profile line")?;
-                visited.insert(next);
-            }
+            ctx.insert_hash_set(&mut visited, next, "visit Inventor profile line")?;
             ctx.charge_collection_items(1, "collect Inventor profile use")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(line.id().as_str().len()),
@@ -2371,10 +2372,7 @@ fn build_profiles(
             });
         }
         for index in component {
-            if !visited.contains(&index) {
-                ctx.charge_collection_items(1, "visit Inventor profile line")?;
-                visited.insert(index);
-            }
+            ctx.insert_hash_set(&mut visited, index, "visit Inventor profile line")?;
         }
         if loop_uses.len() >= 3 && point == start_point {
             ctx.charge_collection_items(1, "project Inventor line profile")?;
@@ -2405,10 +2403,7 @@ fn line_component(
     let mut pending = vec![start];
     while let Some(index) = pending.pop() {
         ctx.charge_work(1, "scan Inventor profile component")?;
-        if !component.contains(&index) {
-            ctx.charge_collection_items(1, "collect Inventor profile component")?;
-        }
-        if !component.insert(index) {
+        if !ctx.insert_hash_set(&mut component, index, "collect Inventor profile component")? {
             continue;
         }
         for point in &lines[index].endpoint_refs {

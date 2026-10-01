@@ -437,8 +437,11 @@ impl<'a> RseInventory<'a> {
             };
             let path = stream.path();
             if let Some(band) = database_band(path) {
-                ctx.charge_collection_items(1, "index RSe database stream")?;
-                databases.push((band, stream.id()));
+                ctx.push_vec(
+                    &mut databases,
+                    (band, stream.id()),
+                    "index RSe database stream",
+                )?;
                 continue;
             }
             let Some(name) = direct_rse_child(path) else {
@@ -449,16 +452,15 @@ impl<'a> RseInventory<'a> {
             };
             match prefix {
                 SegmentPrefix::Metadata => {
-                    if !metadata.contains_key(&token) {
-                        ctx.charge_collection_items(1, "index RSe metadata stream")?;
-                    }
-                    metadata.insert(token, stream.id());
+                    ctx.insert_btree_map(
+                        &mut metadata,
+                        token,
+                        stream.id(),
+                        "index RSe metadata stream",
+                    )?;
                 }
                 SegmentPrefix::Bulk => {
-                    if !bulk.contains_key(&token) {
-                        ctx.charge_collection_items(1, "index RSe bulk stream")?;
-                    }
-                    bulk.insert(token, stream.id());
+                    ctx.insert_btree_map(&mut bulk, token, stream.id(), "index RSe bulk stream")?;
                 }
             }
         }
@@ -670,10 +672,12 @@ fn push_identity_issue(
     issues: &mut Vec<String>,
     detail: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "admit RSe segment identity issue")?;
-    ctx.charge_formatted_retained(detail, "retain RSe segment identity issue")?;
-    issues.push(format!("{detail}"));
-    Ok(())
+    ctx.push_formatted_retained(
+        issues,
+        detail,
+        "admit RSe segment identity issue",
+        "retain RSe segment identity issue",
+    )
 }
 
 fn join_registry<B>(

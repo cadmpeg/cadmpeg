@@ -30,9 +30,9 @@ fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
         return mutated;
     }
 
-    let num_mutations = (seed % 10) as usize + 1;
+    let num_mutations = usize::from(seed % 10) + 1;
     for i in 0..num_mutations {
-        let pos = ((seed as usize).wrapping_mul(i + 1)) % mutated.len();
+        let pos = (usize::from(seed).wrapping_mul(i + 1)) % mutated.len();
         match seed % 5 {
             0 => mutated[pos] = mutated[pos].wrapping_add(1),
             1 => mutated[pos] = mutated[pos].wrapping_sub(1),
@@ -44,7 +44,7 @@ fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
     }
 
     if seed.is_multiple_of(3) && mutated.len() > 10 {
-        let truncate_at = (seed as usize % (mutated.len() - 10)) + 10;
+        let truncate_at = (usize::from(seed) % (mutated.len() - 10)) + 10;
         mutated.truncate(truncate_at);
     }
 

@@ -351,7 +351,10 @@ mod sldprt {
 
     fn f64_array(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
         let mut b = vec![0x00, tag, 0x2b];
-        be32(&mut b, values.len() as u32);
+        be32(
+            &mut b,
+            u32::try_from(values.len()).expect("array length fits u32"),
+        );
         be16(&mut b, attr);
         for value in values {
             bef64(&mut b, *value);
@@ -361,7 +364,10 @@ mod sldprt {
 
     fn u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
         let mut b = vec![0x00, 0x7f, 0x2b];
-        be32(&mut b, values.len() as u32);
+        be32(
+            &mut b,
+            u32::try_from(values.len()).expect("array length fits u32"),
+        );
         be16(&mut b, attr);
         for value in values {
             be16(&mut b, *value);
@@ -508,8 +514,11 @@ mod sldprt {
                 .expect("base SLDPRT seed")
                 .len();
             assert_eq!(&file[at..at + marker.len()], marker);
-            let name_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 20)
-                .expect("material block name length") as usize;
+            let name_len = usize::try_from(
+                cadmpeg_core::decode::View::u32_le_at(&file, at + 20)
+                    .expect("material block name length"),
+            )
+            .expect("host name length");
             let payload_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 16)
                 .expect("material block payload length");
             let payload_len = usize::try_from(payload_len).expect("host payload length");
@@ -603,9 +612,12 @@ mod catia {
         write_token(&mut f, 71, 3);
         for i in 0..9 {
             let at = 79 + i * 24;
-            write_f64(&mut f, at, i as f64);
-            write_f64(&mut f, at + 8, (i / 3) as f64);
-            write_f64(&mut f, at + 16, (i % 3) as f64);
+            let exact = |value: usize| {
+                cadmpeg_core::convert::f64_from_index(value).expect("small index is exact")
+            };
+            write_f64(&mut f, at, exact(i));
+            write_f64(&mut f, at + 8, exact(i / 3));
+            write_f64(&mut f, at + 16, exact(i % 3));
         }
         f
     }
@@ -635,23 +647,27 @@ mod catia {
         let main = e5_circle_stream();
         let surf = vec![0u8];
         let main_off = 16u32;
-        let surf_off = main_off + main.len() as u32;
-        let dir_rel = surf_off + surf.len() as u32;
+        let main_len = u32::try_from(main.len()).map_err(std::io::Error::other)?;
+        let surf_len = u32::try_from(surf.len()).map_err(std::io::Error::other)?;
+        let surf_off = main_off + main_len;
+        let dir_rel = surf_off + surf_len;
         let mut dir = Vec::new();
         dir.extend_from_slice(DIR_MAGIC);
-        dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32)?);
-        dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32)?);
+        dir.extend_from_slice(&descriptor("MainDataStream", main_off, main_len)?);
+        dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf_len)?);
         dir.extend_from_slice(b"CB__END");
         let mut inner = Vec::new();
         inner.extend_from_slice(OUTER_MAGIC);
         inner.extend_from_slice(&be32(dir_rel));
-        inner.extend_from_slice(&be32(dir.len() as u32));
+        let dir_len = u32::try_from(dir.len()).map_err(std::io::Error::other)?;
+        inner.extend_from_slice(&be32(dir_len));
         inner.extend_from_slice(&main);
         inner.extend_from_slice(&surf);
         inner.extend_from_slice(&dir);
         let mut file = Vec::new();
         file.extend_from_slice(OUTER_MAGIC);
-        file.extend_from_slice(&be32(16 + inner.len() as u32));
+        let inner_len = u32::try_from(inner.len()).map_err(std::io::Error::other)?;
+        file.extend_from_slice(&be32(16 + inner_len));
         file.extend_from_slice(&be32(0));
         file.extend_from_slice(&inner);
         Ok(file)
@@ -880,7 +896,9 @@ mod nx {
 
         for (tag, reference, values) in [(127, 30, vec![2u16, 2]), (127, 31, vec![2, 2])] {
             let mut array = record(tag, 8 + values.len() * 2)?;
-            array[4..6].copy_from_slice(&(values.len() as u16).to_be_bytes());
+            let count = u16::try_from(values.len())
+                .map_err(|error| CodecError::InvalidInput(error.to_string()))?;
+            array[4..6].copy_from_slice(&count.to_be_bytes());
             put_ref(&mut array, 6, reference);
             for (index, value) in values.into_iter().enumerate() {
                 put_ref(&mut array, 8 + index * 2, value);

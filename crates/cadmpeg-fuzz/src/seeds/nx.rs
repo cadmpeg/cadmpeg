@@ -217,7 +217,7 @@ mod tests {
                 state ^= state << 13;
                 state ^= state >> 17;
                 state ^= state << 5;
-                (state >> 16) as u8
+                u8::try_from((state >> 16) & 0xff).expect("masked to one byte")
             })
             .collect::<Vec<_>>();
         let file = single_part_prt_with_partition(&stream).expect("seed partition");

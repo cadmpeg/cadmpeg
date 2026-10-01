@@ -1101,10 +1101,7 @@ pub(crate) fn project(
                 .map(|feature| feature.identity.segment_token.as_str()),
         )
     {
-        if !feature_tokens.contains(token) {
-            ctx.charge_collection_items(1, "index Inventor feature token")?;
-            feature_tokens.insert(token);
-        }
+        ctx.insert_hash_set(&mut feature_tokens, token, "index Inventor feature token")?;
     }
     if feature_tokens.len() > 1 {
         return Ok(FeatureProjection {
@@ -1211,10 +1208,7 @@ pub(crate) fn project(
                     record.identity.segment_token.as_str(),
                     record.identity.record_ordinal,
                 );
-                if !links.contains(&key) {
-                    ctx.charge_collection_items(1, "index Inventor entity style link")?;
-                    links.insert(key);
-                }
+                ctx.insert_hash_set(&mut links, key, "index Inventor entity style link")?;
             }
             links
         },

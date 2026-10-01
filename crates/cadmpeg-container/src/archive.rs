@@ -1011,14 +1011,8 @@ fn partition(
                 "invalid physical ledger region".into(),
             ));
         }
-        if !boundaries.contains(&region.start) {
-            ctx.charge_collection_items(1, "ZIP ledger boundaries")?;
-            boundaries.insert(region.start);
-        }
-        if !boundaries.contains(&region.end) {
-            ctx.charge_collection_items(1, "ZIP ledger boundaries")?;
-            boundaries.insert(region.end);
-        }
+        ctx.insert_btree_set(&mut boundaries, region.start, "ZIP ledger boundaries")?;
+        ctx.insert_btree_set(&mut boundaries, region.end, "ZIP ledger boundaries")?;
     }
     let mut points = ctx.collection_vec(boundaries.len(), "ZIP ledger boundary points")?;
     points.extend(boundaries);

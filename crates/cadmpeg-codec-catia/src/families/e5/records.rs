@@ -436,12 +436,6 @@ fn parse_e5_rolling_ball_jet(
     // Knots, multiplicities, three channel lanes, sites, and stations each
     // contain one item per declared station.
     let station_count_u64 = u64_from_index(station_count);
-    ctx.charge_collection_items(
-        station_count_u64.checked_mul(7).ok_or_else(|| {
-            ctx.refuse_codec_limit("decode CATIA E5 rolling-ball stations", u64::MAX, u64::MAX)
-        })?,
-        "decode CATIA E5 rolling-ball stations",
-    )?;
     let mut knots = Vec::new();
     let mut multiplicities = Vec::new();
     let mut positions = Vec::new();
@@ -449,37 +443,37 @@ fn parse_e5_rolling_ball_jet(
     let mut second_derivatives = Vec::new();
     let mut sites = Vec::new();
     let mut stations = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut knots,
         station_count,
         "decode CATIA E5 rolling-ball stations",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut multiplicities,
         station_count,
         "decode CATIA E5 rolling-ball stations",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut positions,
         station_count,
         "decode CATIA E5 rolling-ball stations",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut first_derivatives,
         station_count,
         "decode CATIA E5 rolling-ball stations",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut second_derivatives,
         station_count,
         "decode CATIA E5 rolling-ball stations",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut sites,
         station_count,
         "decode CATIA E5 rolling-ball stations",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut stations,
         station_count,
         "decode CATIA E5 rolling-ball stations",
