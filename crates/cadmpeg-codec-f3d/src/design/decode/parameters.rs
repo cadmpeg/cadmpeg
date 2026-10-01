@@ -204,12 +204,10 @@ fn locate_design_parameter(
     at: usize,
 ) -> Result<DesignParameter, CodecError> {
     let frame_start = u64::try_from(at).map_err(|_| {
-        crate::error::malformed(
-            "Fusion Design parameter frame offset exceeds the addressable stream",
-        )
+        CodecError::malformed("Fusion Design parameter frame offset exceeds the addressable stream")
     })?;
     parsed.into_record(stream, frame_start).ok_or_else(|| {
-        crate::error::malformed("Fusion Design parameter frame has invalid fields or offsets")
+        CodecError::malformed("Fusion Design parameter frame has invalid fields or offsets")
     })
 }
 

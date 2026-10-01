@@ -135,14 +135,13 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
 #[test]
 fn sketch_text_output_refuses_collection_limit() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
-    use crate::records::entity_header::{BaseTypeGuid, SegmentType};
+    use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
     use crate::records::identity::{Located, ReferenceRun};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let bytes = indexed_sketch_text_record(1);
     let types = (0..32)
-        .map(|ordinal| SegmentType {
-            id: String::new(),
+        .map(|ordinal| SegmentTypeData {
             byte_offset: 0,
             type_guid: (if ordinal == 31 {
                 "E0618268-3A06-450E-9E94-7CF4C2E66802"
@@ -313,7 +312,7 @@ fn indexed_sketch_fixture() -> (
     usize,
 ) {
     use crate::metastream::{MetaStream, RecordIndexEntry};
-    use crate::records::entity_header::SegmentType;
+    use crate::records::entity_header::SegmentTypeData;
 
     const PARENT: u64 = 900;
     const POINT: u64 = 50;
@@ -412,8 +411,7 @@ fn indexed_sketch_fixture() -> (
         bytes
     };
     let design_type =
-        |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentType {
-            id: String::new(),
+        |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentTypeData {
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,

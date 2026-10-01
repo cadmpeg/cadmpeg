@@ -162,7 +162,7 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
 
 #[test]
 fn segment_base_guid_preserves_source_and_authored_wire() {
-    let prefix = r#"{"id":"type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4"#;
+    let prefix = r#"{"id":"f3d:native/MetaStream.dat:design-type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4"#;
     let suffix = r#","version":1,"version_offset":80,"module":"Fusion","entity_ids":[1],"entity_id_offsets":[]}"#;
     for value in ["\"\"", "\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\""] {
         for offset in [0, 44] {
@@ -345,7 +345,7 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
         ("[10,11]", "[80,88]"),
     ] {
         let wire = format!(
-            r#"{{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"version":1,"version_offset":44,"module":"Fusion","entity_ids":{ids},"entity_id_offsets":{offsets}}}"#
+            r#"{{"id":"f3d:native/MetaStream.dat:design-type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"version":1,"version_offset":44,"module":"Fusion","entity_ids":{ids},"entity_id_offsets":{offsets}}}"#
         );
         let entry: crate::records::entity_header::SegmentType =
             serde_json::from_str(&wire).expect("type entity run");
@@ -353,7 +353,7 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
     }
     for (ids, offsets) in [("[]", "[80]"), ("[10,11]", "[80]"), ("[10]", "[80,88]")] {
         let wire = format!(
-            r#"{{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"version":1,"version_offset":44,"module":"Fusion","entity_ids":{ids},"entity_id_offsets":{offsets}}}"#
+            r#"{{"id":"f3d:native/MetaStream.dat:design-type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"version":1,"version_offset":44,"module":"Fusion","entity_ids":{ids},"entity_id_offsets":{offsets}}}"#
         );
         let error = serde_json::from_str::<crate::records::entity_header::SegmentType>(&wire)
             .expect_err("partial entity locations")
@@ -1712,7 +1712,7 @@ fn null_locus_arena_preserves_base_wire_fields_and_order() {
 fn segment_type_guid_preserves_relaxed_text_and_rejects_invalid_text() {
     for guid in ["g".repeat(36), "_".repeat(38), "bad".into()] {
         let wire = format!(
-            r#"{{"id":"type","byte_offset":0,"type_guid":"{guid}","type_guid_offset":4,"version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}}"#
+            r#"{{"id":"f3d:native/MetaStream.dat:design-type#0","byte_offset":0,"type_guid":"{guid}","type_guid_offset":4,"version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}}"#
         );
         let decoded = serde_json::from_str::<crate::records::entity_header::SegmentType>(&wire);
         if guid == "bad" {
@@ -1725,7 +1725,7 @@ fn segment_type_guid_preserves_relaxed_text_and_rejects_invalid_text() {
 
 #[test]
 fn segment_base_guid_rejects_invalid_text() {
-    let wire = r#"{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"base_type_guid":"invalid","version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}"#;
+    let wire = r#"{"id":"f3d:native/MetaStream.dat:design-type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"base_type_guid":"invalid","version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}"#;
     let error =
         serde_json::from_str::<crate::records::entity_header::SegmentType>(wire).unwrap_err();
     assert!(error.to_string().contains("base_type_guid"));
@@ -1925,7 +1925,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
 
 #[test]
 fn body_bounds_admit_only_ordered_finite_cache_frames() {
-    let wire = serde_json::json!({"id": "bounds", "entity_suffix": 10, "entity_byte_offset": 0,
+    let wire = serde_json::json!({"id": "f3d:Design/BulkStream.dat:design-body-bounds#0", "entity_suffix": 10, "entity_byte_offset": 0,
         "record_indices": [11, 12, 13], "record_byte_offsets": [20, 40, 60],
         "value_byte_offsets": [21, 41, 61], "maximum": {"x": 1.0, "y": 0.0, "z": 0.0},
         "minimum": {"x": 0.0, "y": 0.0, "z": 0.0}});
@@ -1959,7 +1959,7 @@ fn body_bounds_admit_only_ordered_finite_cache_frames() {
 
 #[test]
 fn body_binding_wire_rejects_invalid_pair_frames() {
-    let wire = serde_json::json!({"id": "binding", "stream": "Design/BulkStream.dat",
+    let wire = serde_json::json!({"id": "f3d:Design/BulkStream.dat:design-body-binding#10", "stream": "Design/BulkStream.dat",
         "pair_count": 1, "pair_ordinal": 0, "asm_body_key": 0, "asm_body_key_offset": 10,
         "entity_suffix": 0, "entity_suffix_offset": 18, "blob_name": "BREP.", "blob_name_offset": 19});
     let record: super::bodies::DesignBodyBinding = serde_json::from_value(wire.clone()).unwrap();

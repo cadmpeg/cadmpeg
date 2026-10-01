@@ -14,6 +14,7 @@ use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-5;
+const EPS_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-12;
 const HEADER_NORMAL_TOLERANCE_RADIANS: f64 = 1.0e-10;
 const ABOVE_FLOOR_RESABS_CM: f64 = 2.0e-8;
 const BELOW_FLOOR_RESABS_CM: f64 = 5.0e-9;
@@ -877,4 +878,67 @@ fn sab_framer_indexes_records_from_asmheader() {
     // The face's surface reference (chunk[7]) resolves to the plane at index 6.
     assert_eq!(records[4].ref_at(7), Some(6));
     assert!(records.iter().all(|r| r.head() != "delta_state"));
+}
+
+#[test]
+fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
+    for skipped in [vec![0], synthetic_smbh()] {
+        let contributing_name = "FusionAssetName[Active]/Breps.BlobParts/BREP.second.smbh";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.first.smbh",
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&skipped).unwrap();
+        zip.start_file(contributing_name, stored).unwrap();
+        zip.write_all(&synthetic_geometry_smbh()).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let expected_digest = with_scan(&bytes, |scan| {
+            scan.breps
+                .iter()
+                .find(|facts| facts.name == contributing_name)
+                .unwrap()
+                .sha256
+                .to_string()
+        });
+        let result = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(!result.ir().model.faces.is_empty());
+        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        assert_eq!(
+            attributes.get("active_brep").map(String::as_str),
+            Some(contributing_name)
+        );
+        assert_eq!(attributes.get("active_brep_sha256"), Some(&expected_digest));
+        assert!(
+            (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
+                <= EPS_HEADER_LINEAR_TOLERANCE
+        );
+    }
+}
+
+#[test]
+fn kernel_tolerance_below_precision_floor_is_unsupported() {
+    let error = super::super::admit_kernel_tolerances(
+        BELOW_FLOOR_RESABS_CM,
+        HEADER_NORMAL_TOLERANCE_RADIANS,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("tolerance floor"))
+    );
+}
+
+#[test]
+fn kernel_tolerance_invalid_values_remain_malformed() {
+    for value in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+        assert!(matches!(
+            super::super::admit_kernel_tolerances(value, HEADER_NORMAL_TOLERANCE_RADIANS),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }

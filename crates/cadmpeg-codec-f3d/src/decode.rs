@@ -3419,7 +3419,8 @@ fn decode_scanned_document<'a>(
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
     // arbitrary `.smbh` entry.
-    if let Some(primary_model_brep) = model_breps.first().copied() {
+    if !model_breps.is_empty() {
+        let mut primary_model_brep = None;
         let qualify_ids = model_breps.len() > 1;
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
@@ -3444,6 +3445,13 @@ fn decode_scanned_document<'a>(
             if let Some(keys) = selected_body_keys.get(blob_name) {
                 part.retain_body_keys(ctx, keys)?;
             }
+            if part.asm.surfaces.is_empty()
+                && part.asm.points.is_empty()
+                && part.asm.faces.is_empty()
+            {
+                continue;
+            }
+            primary_model_brep.get_or_insert(candidate);
             let mut body_selectors = match selected_body_keys.get(blob_name) {
                 Some(keys) => part.body_selectors_for(ctx, keys)?,
                 None => part.body_selectors(ctx)?,
@@ -3483,26 +3491,43 @@ fn decode_scanned_document<'a>(
                     .transpose()?
                     .flatten()
                 {
-                    let visibility = crate::records::bodies::BodyVisibility {
-                        id: crate::ids::native_scoped_id_charged(
-                            ctx,
-                            &candidate.name,
-                            "body-visibility",
-                            body_selector,
-                        )?,
-                        body: body
-                            .id
-                            .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
-                        stream: ctx.copy_retained_text(
-                            &visibility.stream,
-                            "retain F3D body visibility stream",
-                        )?,
-                        byte_offset: visibility.byte_offset,
-                        asm_body_key_offset: visibility.asm_body_key_offset,
-                        asm_body_key: body_selector,
-                        entity_suffix: visibility.entity_suffix,
-                        visible: visibility.visible,
-                    };
+                    let id = crate::ids::native_scoped_id_charged(
+                        ctx,
+                        &candidate.name,
+                        "body-visibility",
+                        body_selector,
+                    )?;
+                    let identity_work = cadmpeg_core::decode::u64_from_index(id.len())
+                        .checked_add(cadmpeg_core::decode::u64_from_index(
+                            visibility.stream.len(),
+                        ))
+                        .and_then(|length| length.checked_mul(8))
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "admit F3D body visibility identity",
+                                0,
+                                u64::MAX,
+                            )
+                        })?;
+                    ctx.charge_work(identity_work, "admit F3D body visibility identity")?;
+                    let visibility = crate::records::bodies::BodyVisibility::try_from(
+                        crate::records::bodies::BodyVisibilityWire {
+                            id,
+                            body: body
+                                .id
+                                .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
+                            stream: ctx.copy_retained_text(
+                                &visibility.stream,
+                                "retain F3D body visibility stream",
+                            )?,
+                            byte_offset: visibility.byte_offset,
+                            asm_body_key_offset: visibility.asm_body_key_offset,
+                            asm_body_key: body_selector,
+                            entity_suffix: visibility.entity_suffix,
+                            visible: visibility.visible,
+                        },
+                    )
+                    .map_err(CodecError::Malformed)?;
                     ctx.push_vec(
                         &mut body_visibilities,
                         visibility,
@@ -3513,7 +3538,7 @@ fn decode_scanned_document<'a>(
             brep.append(ctx, part)?;
             decoded_brep_count += 1;
         }
-        if decoded_brep_count != 0 {
+        if let Some(primary_model_brep) = primary_model_brep {
             return finish_model_decode(
                 ctx,
                 scan,
@@ -4612,7 +4637,7 @@ fn populate_annotations(
             note!(&entity.id, "EDGE_REFERENCE_LOST");
         }
         for entity in &native.design_types {
-            note!(&entity.id, "design_type");
+            note!(entity.id(), "design_type");
         }
         for entity in &native.design_parameters {
             note!(&entity.id, "design_parameter");
@@ -4693,7 +4718,7 @@ fn populate_annotations(
             note!(&entity.id, "design_record_header");
         }
         for entity in &native.design_body_members {
-            note!(&entity.id, "BodiesRoot");
+            note!(entity.id(), "BodiesRoot");
         }
         for entity in &native.design_material_assignments {
             note!(&entity.id, "material_assignment");
@@ -5589,13 +5614,14 @@ const MIN_ANALYTIC_LINEAR_TOLERANCE_MM: f64 = 1.0e-7;
 /// refused here and never floored at a comparison site.
 fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, CodecError> {
     let linear_mm = resabs * 10.0;
+    let tolerances = Tolerances::new(linear_mm, resnor).map_err(CodecError::Malformed)?;
     if linear_mm < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
-        return Err(CodecError::malformed(format!(
+        return Err(CodecError::NotImplemented(format!(
             "kernel header resabs {linear_mm} mm is below the analytic linear \
              tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm"
         )));
     }
-    Tolerances::new(linear_mm, resnor).map_err(CodecError::Malformed)
+    Ok(tolerances)
 }
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.

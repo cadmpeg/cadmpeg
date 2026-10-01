@@ -55,6 +55,7 @@ fn entity_identity_retains_suffix_without_changing_source_spelling() {
         let identity = crate::records::identity::DesignEntityId::try_from(text.to_owned()).unwrap();
         assert_eq!(identity.as_str(), text);
         assert_eq!(identity.suffix(), suffix);
+        assert_eq!(identity.into_string(), text);
     }
     for text in ["part", "part_", "part_-1", "part_18446744073709551616"] {
         assert!(crate::records::identity::DesignEntityId::try_from(text.to_owned()).is_err());

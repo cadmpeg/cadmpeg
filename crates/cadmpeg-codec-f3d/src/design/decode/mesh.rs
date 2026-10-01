@@ -438,7 +438,7 @@ fn record_identity(
 }
 
 fn validate_design_type(
-    design_type: &crate::records::entity_header::SegmentType,
+    design_type: &crate::records::entity_header::SegmentTypeData,
     expected_type_guid: &str,
     expected_base_type_guid: &str,
     expected_version: u32,
