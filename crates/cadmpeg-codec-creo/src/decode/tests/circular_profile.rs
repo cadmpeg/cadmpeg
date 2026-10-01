@@ -243,10 +243,17 @@ fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let id = SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let mut profiles = cadmpeg_ir::sketches::SketchProfiles::default();
-    profiles.push_single(SketchEntityUse {
-        entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:1").expect("entity ID"),
-        reversed: false,
-    });
+    crate::decode::with_test_decode_ctx(|ctx| {
+        profiles.push_single(
+            ctx,
+            SketchEntityUse {
+                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:1")
+                    .expect("entity ID"),
+                reversed: false,
+            },
+        )
+    })
+    .expect("profile use admitted");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: id.clone(),

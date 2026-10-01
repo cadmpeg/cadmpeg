@@ -3,6 +3,7 @@
 
 use crate::geometry::nurbs::scratch;
 use crate::math::Point3;
+use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::ResourceLimit;
 
 pub(super) struct HomogeneousBezierSplit {
@@ -109,10 +110,10 @@ pub(super) fn restrict_homogeneous_bezier(
     Ok(split_homogeneous_bezier(&left, relative_start)?.map(|split| split.into_polygons().1))
 }
 
-pub(super) fn binomial_coefficient(degree: usize, index: usize) -> f64 {
+pub(super) fn binomial_coefficient(degree: usize, index: usize) -> Option<f64> {
     let index = index.min(degree - index);
-    (1..=index).fold(1.0, |value, factor| {
-        value * (degree - index + factor) as f64 / factor as f64
+    (1..=index).try_fold(1.0, |value, factor| {
+        Some(value * f64_from_index(degree - index + factor)? / f64_from_index(factor)?)
     })
 }
 
@@ -135,7 +136,7 @@ pub(super) fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 
     for index in 0..=elevated_degree {
         let previous = index.checked_sub(1).and_then(|index| controls.get(index));
         let current = controls.get(index);
-        let previous_factor = index as f64 / elevated_degree as f64;
+        let previous_factor = f64_from_index(index)? / f64_from_index(elevated_degree)?;
         let current_factor = 1.0 - previous_factor;
         let weight = previous_factor * previous.map_or(0.0, |control| control[3])
             + current_factor * current.map_or(0.0, |control| control[3]);

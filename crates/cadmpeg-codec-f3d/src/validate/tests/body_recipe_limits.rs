@@ -133,7 +133,8 @@ fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
         .get("design_body_recipe_operands")
         .unwrap()[0];
     let fields = record.fields();
-    1 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
+    // The record and its identity field count one item each.
+    2 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
 }
 
 fn body_recipe_error(

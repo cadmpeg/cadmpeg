@@ -305,7 +305,7 @@ pub fn nurbs_surface_patch_workspace(surface: &NurbsSurface) -> Result<(u64, u64
         Some((bytes, work))
     };
     bound().ok_or_else(|| {
-        scratch::allocation_failed(surface.u_count(), "IR surface patch workspace bound")
+        scratch::allocation_refusal(surface.u_count(), "IR surface patch workspace bound")
     })
 }
 
@@ -426,7 +426,7 @@ fn rational_surface_patches_with_budget<'session>(
             let control_bytes = patch_control_count
                 .checked_mul(std::mem::size_of::<[f64; 4]>())
                 .ok_or_else(|| {
-                    scratch::allocation_failed(
+                    scratch::allocation_refusal(
                         patch_control_count,
                         "IR surface patch control bytes",
                     )
@@ -780,7 +780,7 @@ fn split_rational_surface_patch<'session>(
     }
     let assemble = |lines: Vec<Vec<[f64; 4]>>| -> Result<(Vec<[f64; 4]>, WorkScratch<'session>), ResourceLimit> {
         let bytes = patch.controls.len().checked_mul(std::mem::size_of::<[f64; 4]>())
-            .ok_or_else(|| scratch::allocation_failed(patch.controls.len(), "IR assembled patch bytes"))?;
+            .ok_or_else(|| scratch::allocation_refusal(patch.controls.len(), "IR assembled patch bytes"))?;
         let reservation = budget.reserve_scratch(u64_from_index(bytes), "IR assembled surface patch controls")?;
         let mut controls = Vec::new();
         scratch::reserve_exact(
@@ -1071,6 +1071,7 @@ fn complete_nurbs_surface_starts<'session>(
             queue_scratch.grow(u64_from_index(std::mem::size_of::<
                 SurfacePatchQueueEntry<'_>,
             >()))?;
+        }
         queue.try_reserve_exact(1).map_err(|_| {
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::Codec("IR surface patch queue"),
@@ -1203,6 +1204,7 @@ fn complete_nurbs_surface_starts<'session>(
                 queue_scratch.grow(u64_from_index(std::mem::size_of::<
                     SurfacePatchQueueEntry<'_>,
                 >()))?;
+            }
             queue.try_reserve_exact(1).map_err(|_| {
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec("IR surface patch queue"),
@@ -1226,7 +1228,7 @@ fn complete_nurbs_surface_starts<'session>(
     };
     let start_bytes = start_count
         .checked_mul(std::mem::size_of::<FinitePoint2>())
-        .ok_or_else(|| scratch::allocation_failed(start_count, "IR surface start bytes"))?;
+        .ok_or_else(|| scratch::allocation_refusal(start_count, "IR surface start bytes"))?;
     let start_scratch =
         budget.reserve_scratch(u64_from_index(start_bytes), "IR surface parameter starts")?;
     let mut starts = Vec::new();
@@ -2920,7 +2922,7 @@ pub fn nurbs_surface_isocurve_scratch_bytes(
                 )?;
             bytes.checked_add(count.checked_mul(per_pole)?)
         });
-    bytes.ok_or_else(|| scratch::allocation_failed(count, "IR isocurve workspace bound"))
+    bytes.ok_or_else(|| scratch::allocation_refusal(count, "IR isocurve workspace bound"))
 }
 
 /// Extract the exact rational NURBS curve obtained by fixing one parameter of
