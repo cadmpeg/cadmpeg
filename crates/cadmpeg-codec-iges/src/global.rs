@@ -2,7 +2,6 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
-use crate::decode_resource::lossy_retained;
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::decode::DecodeContext;
@@ -960,7 +959,7 @@ impl Resolution<'_, '_> {
         match self.value(index) {
             Value::Omitted => Ok(String::new()),
             Value::String(bytes) | Value::Malformed(bytes) | Value::Atom(bytes) => {
-                lossy_retained(self.ctx, bytes, "iges global declaration text")
+                self.ctx.copy_retained_lossy_utf8(bytes, "iges global declaration text")
             }
             Value::ForbiddenString => {
                 self.ctx.format_retained(format_args!("a string payload contains a byte forbidden by the effective specification family"), "iges global declaration text")
