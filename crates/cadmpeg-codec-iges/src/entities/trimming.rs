@@ -1952,11 +1952,7 @@ pub(super) fn project(
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            ctx.admit_btree_entry(
-                &edges_by_curve,
-                &curve,
-                "iges boundary carrier index nodes",
-            )?;
+            ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")?;
             let group = edges_by_curve.entry(curve).or_default();
             ctx.reserve_vec(group, 1, "iges boundary carrier edge references")?;
             group.push(edge);

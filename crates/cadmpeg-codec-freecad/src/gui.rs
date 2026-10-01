@@ -833,12 +833,7 @@ fn gui_named_entries<'a>(
                 });
             }
             Some(key) => {
-                ctx.insert_btree_map(
-                    &mut kept,
-                    key,
-                    value,
-                    "FCStd GUI presentation property map",
-                )?;
+                ctx.insert_btree_map(&mut kept, key, value, "FCStd GUI presentation property map")?;
             }
             None => {
                 ctx.reserve_vec(&mut refused, 1, "FCStd GUI refused property keys")?;

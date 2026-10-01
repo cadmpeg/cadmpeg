@@ -1350,9 +1350,7 @@ pub(crate) fn replay_affected_ids(
             "creo replay extent states",
         )?;
         let state = match extents.entry((row.stream_offset, schema_class)) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert([None; 2])
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 2]),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         let (pair, source_offset) = if let Some(anchor) = anchor {
@@ -1513,11 +1511,13 @@ pub(crate) fn surface_merge_replay_affected_ids(
         if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
-        ctx.admit_btree_entry(&extents, &row.stream_offset, "creo surface merge extent states")?;
+        ctx.admit_btree_entry(
+            &extents,
+            &row.stream_offset,
+            "creo surface merge extent states",
+        )?;
         let state = match extents.entry(row.stream_offset) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert([None; 3])
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 3]),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         let named_arrays = [

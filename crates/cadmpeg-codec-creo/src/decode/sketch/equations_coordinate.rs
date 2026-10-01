@@ -816,7 +816,12 @@ fn admitted_coordinate_variables(
     variables.extend(unique);
     let mut indices = BTreeMap::new();
     for (index, variable) in variables.iter().enumerate() {
-        ctx.insert_btree_map(&mut indices, *variable, index, "creo section variable indices")?;
+        ctx.insert_btree_map(
+            &mut indices,
+            *variable,
+            index,
+            "creo section variable indices",
+        )?;
     }
     Ok((variables, indices))
 }
@@ -1398,9 +1403,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     for ((point, coordinate), value) in solved {
         ctx.admit_btree_entry(&points, &point, "creo section solved points")?;
         let values = match points.entry(point) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert([None; 2])
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 2]),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         values[coordinate.index()] = Some(value);
@@ -1477,9 +1480,7 @@ fn uniquely_solved_linear_variables(
                     "creo section elimination coefficients",
                 )?;
                 let value = match target.coefficients.entry(index) {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(0.0)
-                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0.0),
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 };
                 *value -= factor * pivot_value;
@@ -1489,7 +1490,12 @@ fn uniquely_solved_linear_variables(
             }
             target.rhs -= factor * pivot_rhs;
         }
-        ctx.insert_btree_map(&mut pivot_rows, column, pivot_row, "creo section pivot rows")?;
+        ctx.insert_btree_map(
+            &mut pivot_rows,
+            column,
+            pivot_row,
+            "creo section pivot rows",
+        )?;
         pivot_row += 1;
     }
     if matrix

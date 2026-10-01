@@ -28,7 +28,6 @@ fn charged_map_entry<'a, K: Ord, V: Default>(
     }
 }
 
-
 pub(super) fn source_section(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -530,7 +529,11 @@ pub(super) fn surface_transfer_coverage(
         })
         .map(|procedural| &procedural.id)
     {
-        ctx.insert_btree_set(&mut extrusion_constructions, id, "creo extrusion construction nodes")?;
+        ctx.insert_btree_set(
+            &mut extrusion_constructions,
+            id,
+            "creo extrusion construction nodes",
+        )?;
     }
     let mut extrusion_surfaces = BTreeSet::new();
     for id in surfaces

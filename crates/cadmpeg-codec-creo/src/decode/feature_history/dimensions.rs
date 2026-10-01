@@ -232,7 +232,11 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
             let Ok(parameter) = ParameterId::try_from(text) else {
                 continue;
             };
-            ctx.insert_btree_set(&mut ids, parameter, "creo planned dimension parameter ID nodes")?;
+            ctx.insert_btree_set(
+                &mut ids,
+                parameter,
+                "creo planned dimension parameter ID nodes",
+            )?;
         }
     }
     Ok(ids)
@@ -306,7 +310,11 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut layout = Vec::new();
     ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
     for (sketch, external_id) in keys {
-        ctx.admit_btree_entry(&next_ordinals, &sketch, "creo dimension layout ordinal nodes")?;
+        ctx.admit_btree_entry(
+            &next_ordinals,
+            &sketch,
+            "creo dimension layout ordinal nodes",
+        )?;
         let ordinal = next_ordinals.entry(sketch).or_default();
         let assigned = *ordinal;
         let Some(next) = ordinal.checked_add(1) else {

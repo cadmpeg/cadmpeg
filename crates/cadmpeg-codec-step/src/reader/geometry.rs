@@ -311,12 +311,7 @@ fn resolve_source_curve_parameter_scales(
         if let Some(scale) =
             source_curve_parameter_scale(id, exchange, unit_scales, &mut BTreeSet::new(), ctx)?
         {
-            ctx.insert_btree_map(
-                &mut scales,
-                id,
-                scale,
-                "step_source_curve_parameter_scales",
-            )?;
+            ctx.insert_btree_map(&mut scales, id, scale, "step_source_curve_parameter_scales")?;
         }
     }
     Ok(scales)

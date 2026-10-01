@@ -4005,11 +4005,19 @@ fn order_table(
         if external_ids.contains(&external_id) {
             break;
         }
-        ctx.insert_btree_set(&mut external_ids, external_id, "creo order external ID nodes")?;
+        ctx.insert_btree_set(
+            &mut external_ids,
+            external_id,
+            "creo order external ID nodes",
+        )?;
         if internal_ids.contains(&internal_id) {
             break;
         }
-        ctx.insert_btree_set(&mut internal_ids, internal_id, "creo order internal ID nodes")?;
+        ctx.insert_btree_set(
+            &mut internal_ids,
+            internal_id,
+            "creo order internal ID nodes",
+        )?;
         ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
         rows.push(FeatureOrderRow {
             external_id,
@@ -4097,11 +4105,19 @@ fn positional_order_table(
         if external_ids.contains(&external_id) {
             break;
         }
-        ctx.insert_btree_set(&mut external_ids, external_id, "creo order external ID nodes")?;
+        ctx.insert_btree_set(
+            &mut external_ids,
+            external_id,
+            "creo order external ID nodes",
+        )?;
         if internal_ids.contains(&internal_id) {
             break;
         }
-        ctx.insert_btree_set(&mut internal_ids, internal_id, "creo order internal ID nodes")?;
+        ctx.insert_btree_set(
+            &mut internal_ids,
+            internal_id,
+            "creo order internal ID nodes",
+        )?;
         let row = FeatureOrderRow {
             external_id,
             internal_id,
@@ -7571,7 +7587,11 @@ pub(crate) fn positional_replay_definitions(
     let mut pending_offsets = BTreeSet::new();
     for offset in replay_markers {
         if !claimed_markers.contains(&offset) {
-            ctx.insert_btree_set(&mut pending_offsets, offset, "creo pending S2D marker nodes")?;
+            ctx.insert_btree_set(
+                &mut pending_offsets,
+                offset,
+                "creo pending S2D marker nodes",
+            )?;
             let id = inherited_definition_id(&starts, offset);
             ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
             starts.push(DefinitionStart {
@@ -7693,7 +7713,11 @@ pub(crate) fn bind_trimmed_definition_owners(
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
     {
-        ctx.insert_btree_set(&mut claimed_owner_ids, owner, "creo trimmed claimed owner nodes")?;
+        ctx.insert_btree_set(
+            &mut claimed_owner_ids,
+            owner,
+            "creo trimmed claimed owner nodes",
+        )?;
     }
     let mut candidates = Vec::new();
     for definition in &definitions {
@@ -7718,7 +7742,11 @@ pub(crate) fn bind_trimmed_definition_owners(
     }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        ctx.admit_btree_entry(&owner_candidate_counts, owner, "creo trimmed owner count nodes")?;
+        ctx.admit_btree_entry(
+            &owner_candidate_counts,
+            owner,
+            "creo trimmed owner count nodes",
+        )?;
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
     for (definition, owners) in definitions.iter_mut().zip(candidates) {
@@ -7787,9 +7815,7 @@ pub(crate) fn bind_replay_definition_owners(
                             continue;
                         }
                         let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
-                        if !source_ids.is_empty()
-                            && source_ids.is_subset(&order_external_ids)
-                        {
+                        if !source_ids.is_empty() && source_ids.is_subset(&order_external_ids) {
                             ctx.insert_btree_set(
                                 &mut owners,
                                 owner,
@@ -7805,7 +7831,11 @@ pub(crate) fn bind_replay_definition_owners(
     }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        ctx.admit_btree_entry(&owner_candidate_counts, owner, "creo replay owner count nodes")?;
+        ctx.admit_btree_entry(
+            &owner_candidate_counts,
+            owner,
+            "creo replay owner count nodes",
+        )?;
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
     for (definition, owners) in definitions.iter_mut().zip(candidates) {
@@ -7854,14 +7884,22 @@ pub(crate) fn bind_section_owners(
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
     {
-        ctx.insert_btree_set(&mut claimed_owner_ids, owner, "creo section claimed owner nodes")?;
+        ctx.insert_btree_set(
+            &mut claimed_owner_ids,
+            owner,
+            "creo section claimed owner nodes",
+        )?;
     }
     let mut definitions_per_plane = BTreeMap::new();
     for plane_id in definitions.iter().filter_map(|definition| {
         (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
-        ctx.admit_btree_entry(&definitions_per_plane, &plane_id, "creo section plane count nodes")?;
+        ctx.admit_btree_entry(
+            &definitions_per_plane,
+            &plane_id,
+            "creo section plane count nodes",
+        )?;
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
     let mut ordered_operations =

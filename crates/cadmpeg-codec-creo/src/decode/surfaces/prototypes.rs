@@ -369,9 +369,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             "creo surface prototype row counts",
         )?;
         let count = match association_counts.entry(row.offset) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(0)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         *count += 1;

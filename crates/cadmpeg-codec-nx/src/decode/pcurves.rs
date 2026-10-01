@@ -1386,7 +1386,11 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             continue;
         };
         let curve_key = curve.try_clone_for_decode(ctx, "nx opposite chart curve identity")?;
-        ctx.admit_btree_entry(&edge_tolerances, &curve_key, "nx opposite chart edge tolerances")?;
+        ctx.admit_btree_entry(
+            &edge_tolerances,
+            &curve_key,
+            "nx opposite chart edge tolerances",
+        )?;
         edge_tolerances
             .entry(curve_key)
             .and_modify(|current| *current = current.min(tolerance))

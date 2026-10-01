@@ -854,7 +854,9 @@ fn admitted_named_properties(
             None => warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::ObjectAttributesDegraded,
-                format_args!("{record} states a property with a blank key; the property is not transferred"),
+                format_args!(
+                    "{record} states a property with a blank key; the property is not transferred"
+                ),
             )?,
         }
     }

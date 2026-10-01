@@ -1080,7 +1080,11 @@ fn definition_representations(
         else {
             continue;
         };
-        ctx.admit_btree_entry(&result, &definition, "step_definition_representation_groups")?;
+        ctx.admit_btree_entry(
+            &result,
+            &definition,
+            "step_definition_representation_groups",
+        )?;
         let representations = result.entry(definition).or_default();
         ctx.insert_btree_set(
             representations,

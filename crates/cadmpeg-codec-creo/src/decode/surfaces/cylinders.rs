@@ -522,9 +522,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             )?;
             let cylinder_ids = match cylinders_by_plane.entry(plane_and_feature) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(BTreeSet::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
             };
             ctx.insert_btree_set(cylinder_ids, cylinder, "creo split cylinder ID nodes")?;
         }

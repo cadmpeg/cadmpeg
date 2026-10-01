@@ -1663,7 +1663,7 @@ geometry_budget,
                                 .try_clone_for_decode(ctx, "nx support UV witness surface")?,
                         );
                         ctx.admit_btree_entry(
-                            &endpoint_witnesses,
+                            endpoint_witnesses,
                             &key,
                             "nx support UV witness index",
                         )?;
@@ -2090,7 +2090,7 @@ fn complete_coupled_support_uv(
                             .try_clone_for_decode(ctx, "nx coupled support UV witness surface")?,
                     );
                     ctx.admit_btree_entry(
-                        &endpoint_witnesses,
+                        endpoint_witnesses,
                         &key,
                         "nx coupled support UV witness index",
                     )?;

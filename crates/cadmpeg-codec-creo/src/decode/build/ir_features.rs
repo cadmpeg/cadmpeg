@@ -118,7 +118,6 @@ fn refresh_feature_outputs(
     Ok(())
 }
 
-
 fn ordered_row_feature_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &[crate::feature::rows::FeatureRow],
@@ -171,7 +170,11 @@ pub(super) fn emit_model_features(
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        ctx.insert_btree_set(&mut operation_feature_ids, operation.feature_id, "creo operation feature identity nodes")?;
+        ctx.insert_btree_set(
+            &mut operation_feature_ids,
+            operation.feature_id,
+            "creo operation feature identity nodes",
+        )?;
     }
     for datum in &scan.planes.datums {
         if operation_feature_ids.contains(&datum.feature_id) {

@@ -80,7 +80,11 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
             if seen.contains(&entry.entity_id) {
                 return Ok(None);
             }
-            ctx.insert_btree_set(&mut seen, entry.entity_id, "creo knit consumer identity nodes")?;
+            ctx.insert_btree_set(
+                &mut seen,
+                entry.entity_id,
+                "creo knit consumer identity nodes",
+            )?;
             let consumer_position = (table.offset, entry.offset, table_index, entry_index);
             let mut producer = None;
             for (source_index, source_table) in tables.iter().enumerate() {
@@ -396,7 +400,11 @@ pub(in super::super) fn feature_surface_transitions(
         {
             return Ok(None);
         }
-        ctx.insert_btree_set(&mut source_ids, source_id, "creo transition source identity nodes")?;
+        ctx.insert_btree_set(
+            &mut source_ids,
+            source_id,
+            "creo transition source identity nodes",
+        )?;
         ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")?;
         transitions.push((source_id, output.entity_id));
     }

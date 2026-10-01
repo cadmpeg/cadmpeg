@@ -250,7 +250,9 @@ pub(crate) fn edge_start_vertex_pairs(
         )?;
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([SingleSide::Empty, SingleSide::Empty]),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert([SingleSide::Empty, SingleSide::Empty])
+            }
         };
         sides[binding.half_edge.side.index()].push(binding.start_vertex_id);
     }
@@ -351,7 +353,9 @@ pub(crate) fn edge_vertex_pairs(
         )?;
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([SingleSide::Empty, SingleSide::Empty]),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert([SingleSide::Empty, SingleSide::Empty])
+            }
         };
         sides[binding.half_edge.side.index()].push(binding);
     }

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    admit_constraint_row, available_parameter_ids, emitted_entity_views,
-};
+use super::{admit_constraint_row, available_parameter_ids, emitted_entity_views};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;

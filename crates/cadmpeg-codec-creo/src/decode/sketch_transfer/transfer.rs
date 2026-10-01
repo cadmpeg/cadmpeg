@@ -197,7 +197,12 @@ pub(in super::super) fn transfer_sketches(
         let mut points = BTreeMap::new();
         for (point, [u, v]) in &variable_points {
             if let (Some(u), Some(v)) = (u, v) {
-                ctx.insert_btree_map(&mut points, *point, [*u, *v], "creo resolved sketch point nodes")?;
+                ctx.insert_btree_map(
+                    &mut points,
+                    *point,
+                    [*u, *v],
+                    "creo resolved sketch point nodes",
+                )?;
             }
         }
         let radii = resolved_section_radii(ctx, definition)?;
@@ -215,12 +220,17 @@ pub(in super::super) fn transfer_sketches(
             resolved_trim_vertex_coordinates(ctx, definition, &points, &radii)?;
         let mut resolved_segment_geometries = BTreeMap::new();
         for segment in &segments {
-            ctx.insert_btree_map(&mut resolved_segment_geometries, segment.offset, resolved_section_segment_geometry_with_missing_line(
+            ctx.insert_btree_map(
+                &mut resolved_segment_geometries,
+                segment.offset,
+                resolved_section_segment_geometry_with_missing_line(
                     definition,
                     &points,
                     segment,
                     missing_line_geometry.as_ref(),
-                ), "creo resolved section geometry nodes")?;
+                ),
+                "creo resolved section geometry nodes",
+            )?;
         }
         let mut segment_geometries = BTreeMap::new();
         for segment in &segments {
@@ -254,7 +264,12 @@ pub(in super::super) fn transfer_sketches(
                     segment,
                 )?,
             };
-            ctx.insert_btree_map(&mut segment_geometries, segment.offset, geometry, "creo section geometry nodes")?;
+            ctx.insert_btree_map(
+                &mut segment_geometries,
+                segment.offset,
+                geometry,
+                "creo section geometry nodes",
+            )?;
         }
         let mut circle_geometries = BTreeMap::new();
         let mut point_geometries = BTreeMap::new();
@@ -263,17 +278,32 @@ pub(in super::super) fn transfer_sketches(
         if let Some(table) = &definition.segments {
             for segment in table.rows.circles() {
                 if let Some(geometry) = section_circle_geometry(&points, &radii, segment) {
-                    ctx.insert_btree_map(&mut circle_geometries, segment.offset, geometry, "creo section circle geometry nodes")?;
+                    ctx.insert_btree_map(
+                        &mut circle_geometries,
+                        segment.offset,
+                        geometry,
+                        "creo section circle geometry nodes",
+                    )?;
                 }
             }
             for segment in table.rows.points() {
                 if let Some(geometry) = section_point_row_geometry(&points, segment) {
-                    ctx.insert_btree_map(&mut point_geometries, segment.offset, geometry, "creo section point geometry nodes")?;
+                    ctx.insert_btree_map(
+                        &mut point_geometries,
+                        segment.offset,
+                        geometry,
+                        "creo section point geometry nodes",
+                    )?;
                 }
             }
             for segment in table.rows.centered_lines() {
                 if let Some(geometry) = section_centered_line_geometry(&points, segment) {
-                    ctx.insert_btree_map(&mut centered_line_geometries, segment.offset, geometry, "creo section centered-line geometry nodes")?;
+                    ctx.insert_btree_map(
+                        &mut centered_line_geometries,
+                        segment.offset,
+                        geometry,
+                        "creo section centered-line geometry nodes",
+                    )?;
                 }
             }
             for segment in table.rows.reference_lines() {
@@ -284,7 +314,12 @@ pub(in super::super) fn transfer_sketches(
                     &points,
                     segment,
                 )? {
-                    ctx.insert_btree_map(&mut reference_line_geometries, segment.offset, geometry, "creo section reference-line geometry nodes")?;
+                    ctx.insert_btree_map(
+                        &mut reference_line_geometries,
+                        segment.offset,
+                        geometry,
+                        "creo section reference-line geometry nodes",
+                    )?;
                 }
             }
         }
@@ -903,7 +938,11 @@ pub(in super::super) fn transfer_sketches(
                 })
                 .unwrap_or(false);
             if !entity_reconciled || !parameter_reconciled {
-                ctx.insert_btree_set(&mut rejected_equation_offsets, offset, "creo rejected equation offset nodes")?;
+                ctx.insert_btree_set(
+                    &mut rejected_equation_offsets,
+                    offset,
+                    "creo rejected equation offset nodes",
+                )?;
                 continue;
             }
             ctx.reserve_vec(
@@ -1167,7 +1206,6 @@ fn available_parameter_ids<'a>(
     Ok(ids)
 }
 
-
 fn collect_numeric_set<T: Ord>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: impl IntoIterator<Item = T>,
@@ -1179,7 +1217,6 @@ fn collect_numeric_set<T: Ord>(
     }
     Ok(result)
 }
-
 
 #[cfg(test)]
 mod tests;

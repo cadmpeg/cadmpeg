@@ -6181,7 +6181,12 @@ fn display_jt_node_paths(
             std::mem::size_of::<(u32, String)>() * 4,
         ))?;
         let id = ctx.join_retained(&[&node.id], "", "nx JT instance identity")?;
-        ctx.insert_btree_map(&mut instance_ids, node.object_id, id, "nx JT instance index")?;
+        ctx.insert_btree_map(
+            &mut instance_ids,
+            node.object_id,
+            id,
+            "nx JT instance index",
+        )?;
     }
     for (object_id, base) in &by_object {
         let mut group_children = inputs

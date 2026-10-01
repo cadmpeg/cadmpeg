@@ -1353,7 +1353,12 @@ fn select_stored_frame_branches(
             "creo copied plane domain candidates",
         )?;
         copied.extend_from_slice(options);
-        ctx.insert_btree_map(&mut domains, *surface_id, copied, "creo copied plane domain nodes")?;
+        ctx.insert_btree_map(
+            &mut domains,
+            *surface_id,
+            copied,
+            "creo copied plane domain nodes",
+        )?;
     }
     select_stored_frame_carrier_pcurve_branches(ctx, scan, &variable_domains, &mut domains)?;
     for (surface_id, options) in &variable_domains {
@@ -1623,7 +1628,11 @@ fn plane_candidates(
         .filter(|frame| crate::surface::uses_matrix_column_frame(frame))
         .map(|frame| frame.surface_id)
     {
-        ctx.insert_btree_set(&mut matrix_frame_ids, id, "creo matrix plane frame ID nodes")?;
+        ctx.insert_btree_set(
+            &mut matrix_frame_ids,
+            id,
+            "creo matrix plane frame ID nodes",
+        )?;
     }
     let mut held_plane_groups = BTreeMap::<u32, Vec<PlaneEquation>>::new();
     for (surface_id, plane) in scan
@@ -1632,7 +1641,11 @@ fn plane_candidates(
         .iter()
         .filter_map(|envelope| Some((envelope.surface_id, held_coordinate_plane(envelope)?)))
     {
-        ctx.admit_btree_entry(&held_plane_groups, &surface_id, "creo held plane group nodes")?;
+        ctx.admit_btree_entry(
+            &held_plane_groups,
+            &surface_id,
+            "creo held plane group nodes",
+        )?;
         let planes = match held_plane_groups.entry(surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
@@ -1739,7 +1752,11 @@ fn plane_candidates(
             }),
             offset: outline.offset,
         };
-        ctx.admit_btree_entry(&candidates, &outline.surface_id, "creo plane candidate nodes")?;
+        ctx.admit_btree_entry(
+            &candidates,
+            &outline.surface_id,
+            "creo plane candidate nodes",
+        )?;
         let options = match candidates.entry(outline.surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
@@ -1759,7 +1776,11 @@ fn plane_candidates(
             chart: None,
             offset: envelope.offset,
         };
-        ctx.admit_btree_entry(&candidates, &envelope.surface_id, "creo plane candidate nodes")?;
+        ctx.admit_btree_entry(
+            &candidates,
+            &envelope.surface_id,
+            "creo plane candidate nodes",
+        )?;
         let options = match candidates.entry(envelope.surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),

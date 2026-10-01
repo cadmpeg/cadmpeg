@@ -241,17 +241,17 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         .filter(|table| table.has_complete_bucket_frame())
         .flat_map(|table| &table.rows)
     {
-        if !seen_vertex_ids.contains(&vertex.vertex_id) {
-            ctx.insert_btree_set(
-                &mut seen_vertex_ids,
-                vertex.vertex_id,
-                "creo sketch seen trim vertex nodes",
-            )?;
-        } else {
+        if seen_vertex_ids.contains(&vertex.vertex_id) {
             ctx.insert_btree_set(
                 &mut duplicate_vertex_ids,
                 vertex.vertex_id,
                 "creo sketch duplicate trim vertex nodes",
+            )?;
+        } else {
+            ctx.insert_btree_set(
+                &mut seen_vertex_ids,
+                vertex.vertex_id,
+                "creo sketch seen trim vertex nodes",
             )?;
         }
         if let Some(point) = vertex

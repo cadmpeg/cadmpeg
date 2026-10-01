@@ -393,7 +393,12 @@ pub(in crate::decode) fn placed_carriers(
 ) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
     let mut carriers = BTreeMap::new();
     for (id, plane) in placed_planes(ctx, scan)? {
-        ctx.insert_btree_map(&mut carriers, id, CarrierEquation::Plane(plane), "creo placed carrier nodes")?;
+        ctx.insert_btree_map(
+            &mut carriers,
+            id,
+            CarrierEquation::Plane(plane),
+            "creo placed carrier nodes",
+        )?;
     }
     let rows = scan
         .surfaces
@@ -457,7 +462,12 @@ pub(in crate::decode) fn placed_carriers(
                     None => Some(plane),
                 };
                 if let Some(plane) = agreed {
-                    ctx.insert_btree_map(&mut carriers, row.id, CarrierEquation::Plane(plane), "creo placed carrier nodes")?;
+                    ctx.insert_btree_map(
+                        &mut carriers,
+                        row.id,
+                        CarrierEquation::Plane(plane),
+                        "creo placed carrier nodes",
+                    )?;
                 } else {
                     carriers.remove(&row.id);
                 }
@@ -478,7 +488,12 @@ pub(in crate::decode) fn placed_carriers(
             continue;
         };
         if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
-            ctx.insert_btree_map(&mut carriers, datum.id, carrier, "creo placed carrier nodes")?;
+            ctx.insert_btree_map(
+                &mut carriers,
+                datum.id,
+                carrier,
+                "creo placed carrier nodes",
+            )?;
         } else {
             carriers.remove(&datum.id);
         }
@@ -516,7 +531,6 @@ pub(in crate::decode) fn placed_carriers(
     }
     Ok(carriers)
 }
-
 
 fn positional_cylinder_carrier(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -992,7 +1006,11 @@ pub(in crate::decode) fn native_face_orientations(
             .strip_prefix("creo:visibgeom:surface#")
             .and_then(|suffix| suffix.parse::<u32>().ok())
         {
-            ctx.insert_btree_set(&mut available_surfaces, id, "creo available surface ID nodes")?;
+            ctx.insert_btree_set(
+                &mut available_surfaces,
+                id,
+                "creo available surface ID nodes",
+            )?;
         }
     }
     for (id, reversed) in rowless_round_face_orientations(

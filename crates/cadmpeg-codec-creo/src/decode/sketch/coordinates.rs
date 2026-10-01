@@ -600,7 +600,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
         } else {
             ((second, first, coordinate), -delta)
         };
-        ctx.admit_btree_entry(&signed_dimensions, &key, "creo section signed dimension nodes")?;
+        ctx.admit_btree_entry(
+            &signed_dimensions,
+            &key,
+            "creo section signed dimension nodes",
+        )?;
         signed_dimensions
             .entry(key)
             .and_modify(|stored| {

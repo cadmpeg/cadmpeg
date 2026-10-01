@@ -508,15 +508,27 @@ pub(in super::super) fn geometry_generator_features(
 ) -> Result<Vec<GeometryGeneratorFeature>, CodecError> {
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        ctx.insert_btree_set(&mut operation_feature_ids, operation.feature_id, "creo generator operation feature nodes")?;
+        ctx.insert_btree_set(
+            &mut operation_feature_ids,
+            operation.feature_id,
+            "creo generator operation feature nodes",
+        )?;
     }
     let mut row_feature_ids = BTreeSet::new();
     for row in &scan.features.rows {
-        ctx.insert_btree_set(&mut row_feature_ids, row.feature_id, "creo generator row feature nodes")?;
+        ctx.insert_btree_set(
+            &mut row_feature_ids,
+            row.feature_id,
+            "creo generator row feature nodes",
+        )?;
     }
     let mut datum_feature_ids = BTreeSet::new();
     for datum in &scan.planes.datums {
-        ctx.insert_btree_set(&mut datum_feature_ids, datum.feature_id, "creo generator datum feature nodes")?;
+        ctx.insert_btree_set(
+            &mut datum_feature_ids,
+            datum.feature_id,
+            "creo generator datum feature nodes",
+        )?;
     }
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
     for row in &scan.surfaces.rows {
@@ -587,7 +599,6 @@ pub(in super::super) fn geometry_generator_features(
     Ok(output)
 }
 
-
 /// Return the feature identities that the model-transfer pass will emit.
 ///
 /// Feature definitions are built while the transfer pass is still walking
@@ -635,10 +646,7 @@ pub(in super::super) fn model_feature_ids(
 
 #[cfg(test)]
 mod allocation_tests {
-    use super::{
-        geometry_generator_features, model_feature_ids,
-        unresolved_feature_profile_ref,
-    };
+    use super::{geometry_generator_features, model_feature_ids, unresolved_feature_profile_ref};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
 
@@ -695,7 +703,8 @@ mod allocation_tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut ids = BTreeSet::new();
-        let error = ctx.insert_btree_set(&mut ids, 50, operation)
+        let error = ctx
+            .insert_btree_set(&mut ids, 50, operation)
             .expect_err("one source feature exceeds the collection limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)

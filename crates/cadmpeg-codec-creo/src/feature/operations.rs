@@ -550,7 +550,11 @@ fn conflicting_recipe_features(
     let mut conflicting = BTreeSet::new();
     for (feature_id, bindings) in by_feature {
         if agreeing_recipe_binding(&bindings).is_none() {
-            ctx.insert_btree_set(&mut conflicting, feature_id, "creo conflicting recipe features")?;
+            ctx.insert_btree_set(
+                &mut conflicting,
+                feature_id,
+                "creo conflicting recipe features",
+            )?;
         }
     }
     Ok(conflicting)
@@ -577,7 +581,11 @@ pub(crate) fn operation_states(
     let conflicting_features = conflicting_recipe_features(ctx, &bound_recipes)?;
     let mut recipe_binding_counts = BTreeMap::<u32, usize>::new();
     for (feature_id, _) in &bound_recipes {
-        ctx.admit_btree_entry(&recipe_binding_counts, feature_id, "creo recipe binding counts")?;
+        ctx.admit_btree_entry(
+            &recipe_binding_counts,
+            feature_id,
+            "creo recipe binding counts",
+        )?;
         match recipe_binding_counts.entry(*feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
