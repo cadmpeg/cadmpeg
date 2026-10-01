@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity-aware serialization for graph composition.
 
+pub mod typed;
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
