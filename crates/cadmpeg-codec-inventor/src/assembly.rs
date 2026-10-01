@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed assembly occurrence and placement records.
 
-
 use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 
@@ -137,15 +136,36 @@ pub(crate) fn project_occurrences(
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
 ) -> Result<AssemblyProjection, CodecError> {
-    let (references, _references_storage) = ctx.unique_index(external_references.iter().map(|record| (record.reference_id, record)), |_| Ok(4), "index Inventor external references")?;
-    let (occurrence_records, _occurrence_records_storage) = ctx.unique_index(assembly_occurrences.iter().map(|record| (record.occurrence_id, record)), |_| Ok(4), "index Inventor assembly occurrences")?;
-    let (placements, _placements_storage) = ctx.unique_index(assembly_placements.iter().map(|record| (record.occurrence_id, record)), |_| Ok(4), "index Inventor assembly placements")?;
+    let (references, _references_storage) = ctx.unique_index(
+        external_references
+            .iter()
+            .map(|record| (record.reference_id, record)),
+        |_| Ok(4),
+        "index Inventor external references",
+    )?;
+    let (occurrence_records, _occurrence_records_storage) = ctx.unique_index(
+        assembly_occurrences
+            .iter()
+            .map(|record| (record.occurrence_id, record)),
+        |_| Ok(4),
+        "index Inventor assembly occurrences",
+    )?;
+    let (placements, _placements_storage) = ctx.unique_index(
+        assembly_placements
+            .iter()
+            .map(|record| (record.occurrence_id, record)),
+        |_| Ok(4),
+        "index Inventor assembly placements",
+    )?;
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
 
     for source in ufrx_occurrences {
-        let Some(reference) = references.get(&source.file_reference_id).and_then(Option::as_ref) else {
+        let Some(reference) = references
+            .get(&source.file_reference_id)
+            .and_then(Option::as_ref)
+        else {
             count_unresolved(
                 ctx,
                 &mut unresolved_placements,
@@ -176,7 +196,10 @@ pub(crate) fn project_occurrences(
         )?;
 
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
-        let (transform, visible) = match placements.get(&source.occurrence_id).and_then(Option::as_ref) {
+        let (transform, visible) = match placements
+            .get(&source.occurrence_id)
+            .and_then(Option::as_ref)
+        {
             Some(placement) => {
                 let source = placement.transform.checked_rows();
                 let mut rows = [source[0], source[1], source[2]];
@@ -640,14 +663,16 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 7;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         let projected = super::project_occurrences(
             &ctx,
             &[ufrx_occurrence(4, 7, 0)],
             &[external_reference(4, "part.ipt", [0, 0])],
             &[assembly_occurrence(7)],
             &[assembly_placement(7)],
-        ).expect("one table for each of three indexes fits seven slots");
+        )
+        .expect("one table for each of three indexes fits seven slots");
         assert_eq!(projected.occurrences.len(), 1);
 
         // Three unique indexes and the emitted-id set use four slots.

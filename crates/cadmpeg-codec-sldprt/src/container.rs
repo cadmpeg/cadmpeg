@@ -327,21 +327,44 @@ pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> b
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
-pub(crate) fn looks_like_sldprt(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
+pub(crate) fn looks_like_sldprt(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
-        let (probe, _storage) = CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        let (probe, _storage) =
+            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
         if let Some(paths) = probe.paths() {
             for path in paths {
-                ctx.charge_work(u64_from_index(path.len()), "compare SolidWorks directory evidence")?;
-                ctx.charge_work(u64_from_index(path.len()), "scan SolidWorks directory basename")?;
-                if path.rsplit('/').next().is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation")) { return Ok(true); }
+                ctx.charge_work(
+                    u64_from_index(path.len()),
+                    "compare SolidWorks directory evidence",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(path.len()),
+                    "scan SolidWorks directory basename",
+                )?;
+                if path
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
+                {
+                    return Ok(true);
+                }
             }
         }
         return Ok(false);
     }
-    if prefix.len() < outer_hdr::LEN + MARKER.len() { return Ok(false); }
-    ctx.charge_work(u64_from_index(prefix.len() - outer_hdr::LEN), "scan SolidWorks detection marker")?;
-    Ok(prefix[outer_hdr::LEN..].windows(MARKER.len()).any(|w| w == MARKER))
+    if prefix.len() < outer_hdr::LEN + MARKER.len() {
+        return Ok(false);
+    }
+    ctx.charge_work(
+        u64_from_index(prefix.len() - outer_hdr::LEN),
+        "scan SolidWorks detection marker",
+    )?;
+    Ok(prefix[outer_hdr::LEN..]
+        .windows(MARKER.len())
+        .any(|w| w == MARKER))
 }
 
 fn completed_scan_charged<'a>(

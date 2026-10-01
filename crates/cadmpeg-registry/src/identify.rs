@@ -73,7 +73,10 @@ pub fn resolve_and_inspect_with(
     options: &InspectOptions,
 ) -> Result<Inspected, InspectError> {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy { limits: options.limits, ..DecodePolicy::default() };
+    let policy = DecodePolicy {
+        limits: options.limits,
+        ..DecodePolicy::default()
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let prefix = read_prefix(&ctx, source)?;
     let resolved = catalog.resolve_source(&ctx, View::over_retained(&prefix), forced);
@@ -113,8 +116,7 @@ fn inspect_codec(
 /// caller that capped the input has capped what detection may look at too.
 fn read_prefix(ctx: &DecodeContext<'_>, source: &mut dyn ReadSeek) -> Result<Vec<u8>, CodecError> {
     source.seek(SeekFrom::Start(0))?;
-    let prefix =
-        read_detection_prefix(ctx, source, DETECTION_PREFIX_LEN)?;
+    let prefix = read_detection_prefix(ctx, source, DETECTION_PREFIX_LEN)?;
     source.seek(SeekFrom::Start(0))?;
     Ok(prefix)
 }
@@ -349,7 +351,12 @@ mod tests {
                 assert_eq!(format.as_str(), case.format, "{found:?}");
                 let catalog = InputCatalog::with_builtins();
                 let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(case.bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default()).expect("root");
+                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    case.bytes,
+                    &arena,
+                    &cadmpeg_core::decode::DecodePolicy::default(),
+                )
+                .expect("root");
                 let resolved = catalog
                     .resolve_source(&ctx, root, None)
                     .unwrap_or_else(|error| panic!("{}: {error}", case.format));

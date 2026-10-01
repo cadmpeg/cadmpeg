@@ -5,8 +5,8 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{anyhow, Context};
-use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
+use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::CadIr;
 
 use cadmpeg_registry::{
@@ -42,18 +42,23 @@ pub(crate) fn load_artifact(
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &options.policy, options.container_only);
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let mut prefix = cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;
-    let resolved = catalog.resolve_source(&ctx, View::over_retained(&prefix), forced).map_err(|error| match error {
-        ResolveSourceError::Codec(error) => ApplicationError::from(error),
-        error => ApplicationError::from(detection_failure(&error)),
-    })?;
+    let mut prefix =
+        cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;
+    let resolved = catalog
+        .resolve_source(&ctx, View::over_retained(&prefix), forced)
+        .map_err(|error| match error {
+            ResolveSourceError::Codec(error) => ApplicationError::from(error),
+            error => ApplicationError::from(detection_failure(&error)),
+        })?;
     match resolved {
         ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
             ctx.complete_input(&mut file, &mut prefix)?;
             let result = codec.decode_with_context(&ctx, View::over_retained(&prefix), &options);
             ctx.finish_session()?;
-            let result = result.map_err(|failure| ApplicationError::from_decode_failure(path, format_id, failure))?;
+            let result = result.map_err(|failure| {
+                ApplicationError::from_decode_failure(path, format_id, failure)
+            })?;
             return Ok(LoadedDocument::decoded(result, selection));
         }
         ResolvedSource::Cadir => {}
@@ -68,8 +73,12 @@ pub(crate) fn load_artifact(
 
     let max_bytes = options.policy.limits.max_input_bytes;
     ctx.complete_input(&mut file, &mut prefix)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "validate CADIR input UTF-8")?;
-    let text = String::from_utf8(prefix).map_err(|error| anyhow!("invalid CADIR UTF-8: {error}"))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(prefix.len()),
+        "validate CADIR input UTF-8",
+    )?;
+    let text =
+        String::from_utf8(prefix).map_err(|error| anyhow!("invalid CADIR UTF-8: {error}"))?;
     ctx.finish_session()?;
     let ir = CadIr::from_json(&text).map_err(|e| {
         anyhow!(
@@ -105,8 +114,16 @@ mod tests {
         std::fs::write(&path, b"12345").expect("input");
         let mut options = DecodeOptions::default();
         options.policy.limits.max_input_bytes = 4;
-        let error = load_artifact(&InputCatalog::with_builtins(), &path, options, Some(ForcedInput::Cadir)).expect_err("input limit");
-        assert!(matches!(error, crate::application::refusal::ApplicationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4));
+        let error = load_artifact(
+            &InputCatalog::with_builtins(),
+            &path,
+            options,
+            Some(ForcedInput::Cadir),
+        )
+        .expect_err("input limit");
+        assert!(
+            matches!(error, crate::application::refusal::ApplicationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
+        );
     }
 
     #[test]

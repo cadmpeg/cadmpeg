@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` parameters, expression nodes, and unit records.
 
-
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write;
 
@@ -472,24 +471,63 @@ pub(crate) fn project_parameters(
     inventory: &DesignInventory,
     admitted_entities: &mut u64,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
-    let (expressions, _expressions_storage) = ctx.unique_index(inventory.expressions.iter().map(|record| ({
+    let (expressions, _expressions_storage) = ctx.unique_index(
+        inventory.expressions.iter().map(|record| {
             (
-                record.identity.segment_token.as_str(),
-                record.identity.record_ordinal,
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
             )
-        }, record)), |key| cadmpeg_core::decode::u64_from_index(key.0.len()).checked_add(5).ok_or_else(|| ctx.refuse_codec_limit("index Inventor expressions", 0, u64::MAX)), "index Inventor expressions")?;
-    let (units, _units_storage) = ctx.unique_index(inventory.units.iter().map(|record| ({
-        (
-            record.identity.segment_token.as_str(),
-            record.identity.record_ordinal,
-        )
-    }, record)), |key| cadmpeg_core::decode::u64_from_index(key.0.len()).checked_add(5).ok_or_else(|| ctx.refuse_codec_limit("index Inventor units", 0, u64::MAX)), "index Inventor units")?;
-    let (parameters, _parameters_storage) = ctx.unique_index(inventory.parameters.iter().map(|record| ({
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor expressions", 0, u64::MAX))
+        },
+        "index Inventor expressions",
+    )?;
+    let (units, _units_storage) = ctx.unique_index(
+        inventory.units.iter().map(|record| {
             (
-                record.identity.segment_token.as_str(),
-                record.identity.record_ordinal,
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
             )
-        }, record)), |key| cadmpeg_core::decode::u64_from_index(key.0.len()).checked_add(5).ok_or_else(|| ctx.refuse_codec_limit("index Inventor parameters", 0, u64::MAX)), "index Inventor parameters")?;
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor units", 0, u64::MAX))
+        },
+        "index Inventor units",
+    )?;
+    let (parameters, _parameters_storage) = ctx.unique_index(
+        inventory.parameters.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor parameters", 0, u64::MAX))
+        },
+        "index Inventor parameters",
+    )?;
     let mut projected = Vec::new();
     let mut unresolved = 0usize;
     for parameter in &inventory.parameters {
@@ -801,7 +839,12 @@ fn render_expression<'a>(
             length,
             "Inventor expression string allocation",
         )?;
-        let expression = expressions.get(&(token, ordinal)).and_then(Option::as_ref).ok_or_else(|| CodecError::Malformed("Inventor unique index reference is absent".into()))?;
+        let expression = expressions
+            .get(&(token, ordinal))
+            .and_then(Option::as_ref)
+            .ok_or_else(|| {
+                CodecError::Malformed("Inventor unique index reference is absent".into())
+            })?;
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {
                 let unit =
@@ -826,7 +869,12 @@ fn render_expression<'a>(
                 }
             }
             PmDcExpressionKind::ParameterReference { operand } => {
-                let target = parameters.get(&(token, operand.index() - 1)).and_then(Option::as_ref).ok_or_else(|| CodecError::Malformed("Inventor unique index reference is absent".into()))?;
+                let target = parameters
+                    .get(&(token, operand.index() - 1))
+                    .and_then(Option::as_ref)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("Inventor unique index reference is absent".into())
+                    })?;
                 text.push_str(&target.name);
             }
             PmDcExpressionKind::Unary { operand, .. } => {
@@ -865,7 +913,12 @@ fn render_expression<'a>(
     drop(reserved);
     for ordinal in plan.dependency_ordinals {
         ctx.charge_collection_items(1, "collect Inventor expression dependency ids")?;
-        let target = parameters.get(&(token, ordinal)).and_then(Option::as_ref).ok_or_else(|| CodecError::Malformed("Inventor unique index reference is absent".into()))?;
+        let target = parameters
+            .get(&(token, ordinal))
+            .and_then(Option::as_ref)
+            .ok_or_else(|| {
+                CodecError::Malformed("Inventor unique index reference is absent".into())
+            })?;
         dependencies.push(parameter_id(ctx, target)?);
     }
     Ok(Some(result))
@@ -907,7 +960,11 @@ impl ExpressionRenderPlan<'_, '_> {
             admit_cached_expression_depth(self.ctx, measured.height - 1)?;
             return Ok(Some((measured.length, measured.height)));
         }
-        let Some(expression) = self.expressions.get(&(self.token, ordinal)).and_then(Option::as_ref) else {
+        let Some(expression) = self
+            .expressions
+            .get(&(self.token, ordinal))
+            .and_then(Option::as_ref)
+        else {
             return Ok(None);
         };
         self.ctx.insert_hash_set(
@@ -944,7 +1001,11 @@ impl ExpressionRenderPlan<'_, '_> {
                 let Some(target_ordinal) = operand.index().checked_sub(1) else {
                     return Ok(None);
                 };
-                let Some(target) = self.parameters.get(&(self.token, target_ordinal)).and_then(Option::as_ref) else {
+                let Some(target) = self
+                    .parameters
+                    .get(&(self.token, target_ordinal))
+                    .and_then(Option::as_ref)
+                else {
                     return Ok(None);
                 };
                 if !self.seen_dependencies.contains(&target_ordinal) {
@@ -2064,7 +2125,11 @@ mod tests {
             issues: Vec::new(),
         };
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items = 25;
+        // Three two-record indexes use six slots and no second table.
+        limited_policy.limits.max_collection_items = 25
+            - cadmpeg_core::decode::u64_from_index(
+                inventory.expressions.len() + inventory.units.len() + inventory.parameters.len(),
+            );
         let limited_arena = DecodeArena::new();
         let (limited_ctx, _) = DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
             .expect("empty fixture view");

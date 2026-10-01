@@ -672,9 +672,8 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         let bytes = point_file();
         let mut options = DecodeOptions::default();
         edit(&mut options.policy.limits);
-        let error = IgesCodec
-            .decode(&mut Cursor::new(bytes), &options)
-            .unwrap_err();
+        let error =
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy).unwrap_err();
         assert!(
             matches!(
                 error,
@@ -735,9 +734,15 @@ fn decode_enforces_each_iges_session_resource_dimension() {
 fn inspect_enforces_iges_parser_resource_limits() {
     let mut options = cadmpeg_core::decode::InspectOptions::default();
     options.limits.max_collection_items = 0;
-    let error = IgesCodec
-        .inspect(&mut Cursor::new(point_file()), &options)
-        .unwrap_err();
+    let bytes = point_file();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: options.limits,
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("borrowed input");
+    let error = cadmpeg_ir::codec::CodecBackend::inspect_impl(&IgesCodec, &ctx, root).unwrap_err();
 
     assert!(matches!(
         error,

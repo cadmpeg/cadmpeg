@@ -266,16 +266,33 @@ fn insert_attribute(
     Ok(())
 }
 
-pub(crate) fn has_inventor_evidence(ctx: &DecodeContext<'_>, paths: &[String]) -> Result<bool, CodecError> {
+pub(crate) fn has_inventor_evidence(
+    ctx: &DecodeContext<'_>,
+    paths: &[String],
+) -> Result<bool, CodecError> {
     let mut has_storage = false;
     for path in paths {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(path.len()), "Inventor directory storage evidence")?;
-        if path.eq_ignore_ascii_case("RSeStorage") { has_storage = true; break; }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(path.len()),
+            "Inventor directory storage evidence",
+        )?;
+        if path.eq_ignore_ascii_case("RSeStorage") {
+            has_storage = true;
+            break;
+        }
     }
     for path in paths {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(path.len()), "Inventor directory corroboration")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(path.len()), "Inventor database evidence")?;
-        if path.eq_ignore_ascii_case("RSeStorage/RSeSegInfo") || database_band(path).is_some() { return Ok(has_storage); }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(path.len()),
+            "Inventor directory corroboration",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(path.len()),
+            "Inventor database evidence",
+        )?;
+        if path.eq_ignore_ascii_case("RSeStorage/RSeSegInfo") || database_band(path).is_some() {
+            return Ok(has_storage);
+        }
     }
     Ok(false)
 }

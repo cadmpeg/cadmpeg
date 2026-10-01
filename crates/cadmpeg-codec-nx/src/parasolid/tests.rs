@@ -483,7 +483,8 @@ fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
     crate::test_support::with_decode_context_over(
         &file,
         |policy| {
-            policy.limits.max_retained_bytes = 1;
+            policy.limits.max_retained_bytes =
+                1 + cadmpeg_test_support::decode::arena_registry_bytes();
         },
         |ctx| {
             let root = cadmpeg_core::decode::View::over_retained(&file);

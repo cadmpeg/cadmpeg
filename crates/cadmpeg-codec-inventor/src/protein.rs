@@ -557,7 +557,13 @@ mod tests {
         ));
         // Each inventory scans the ZIP, one end candidate, and three headers.
         // The stored payloads need CRC work; each instance scans its pages and copies its record.
-        let inventory_work = cadmpeg_core::decode::u64_from_index(zip.len()) + 4;
+        let inventory_work = cadmpeg_core::decode::u64_from_index(zip.len())
+            + 4
+            + cadmpeg_core::decode::u64_from_index(
+                "Schemas/SimpleSchema.xml".len()
+                    + "First/InstanceProperties.bin".len()
+                    + "Second/InstanceProperties.bin".len(),
+            );
         let instance_work = cadmpeg_core::decode::u64_from_index(
             instance.len() + instance.len() - STREAM_HEADER_LEN
                 + RECORD_MARKER.len()

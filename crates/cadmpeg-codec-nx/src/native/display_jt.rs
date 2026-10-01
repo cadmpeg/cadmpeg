@@ -2616,10 +2616,15 @@ fn read_jt_object_ids(
     encoded: &[u8],
     operation: &'static str,
 ) -> Result<Vec<u32>, CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(encoded.len()), operation)?;
-    ctx.try_collect_retained_with(encoded.chunks_exact(4), operation, |bytes| -> Result<u32, CodecError> {
-        Ok(View::over_retained(bytes).req_u32_le()?)
-    })
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(encoded.len()),
+        operation,
+    )?;
+    ctx.try_collect_retained_with(
+        encoded.chunks_exact(4),
+        operation,
+        |bytes| -> Result<u32, CodecError> { Ok(View::over_retained(bytes).req_u32_le()?) },
+    )
 }
 
 fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, &[u8], &[u8])> {
@@ -2643,10 +2648,11 @@ fn parse_jt9_partition_node_body(
     let parsed = (|| {
         let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
         let (group_version, child_bytes, family) = parse_jt9_group_data(family)?;
-        let child_object_ids = match read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children") {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
+        let child_object_ids =
+            match read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
         let mut view = View::over_retained(family);
         let partition_flags = view.u32_le()?;
         if partition_flags & !1 != 0 {
@@ -2739,15 +2745,17 @@ struct ParsedJtRangeLodNode {
     center: [FiniteBinary32; 3],
 }
 
-fn parse_jt_f32_vector<'a>(
+fn parse_jt_f32_vector(
     ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Option<(Vec<FiniteBinary32>, &'a [u8])>, CodecError> {
+    view: &mut View<'_>,
+) -> Result<Option<Vec<FiniteBinary32>>, CodecError> {
     (|| {
-        let mut view = View::over_retained(bytes);
         let count = view.u32_le()?;
         let count = view.counted(u64::from(count), 4)?.get();
-        if let Err(error) = ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "decode DisplayJT range values") {
+        if let Err(error) = ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "decode DisplayJT range values",
+        ) {
             return Some(Err(error));
         }
         let mut values = match ctx.retained_vec(count, "decode DisplayJT range values") {
@@ -2757,51 +2765,56 @@ fn parse_jt_f32_vector<'a>(
         for _ in 0..count {
             values.push(FiniteBinary32::new(view.f32_le()?)?);
         }
-        Some(Ok((values, bytes.get(view.position()..)?)))
-    })().transpose()
+        Some(Ok(values))
+    })()
+    .transpose()
 }
 
-fn parse_jt9_range_lod_node_body(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<Option<ParsedJtRangeLodNode>, CodecError> {
+fn parse_jt9_range_lod_node_body(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+) -> Result<Option<ParsedJtRangeLodNode>, CodecError> {
     (|| {
-    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    let (group_version, child_bytes, mut family) = parse_jt9_group_data(family)?;
-    let child_object_ids = match read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children") {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
-    };
-    let lod_version = View::u16_le_at(family, 0)?;
-    family = &family[2..];
-    let (reserved_values, remaining) = match parse_jt_f32_vector(ctx, family) {
-        Ok(value) => value?,
-        Err(error) => return Some(Err(error)),
-    };
-    family = remaining;
-    let reserved_value = View::i32_le_at(family, 0)?;
-    let range_version = View::u16_le_at(family, 4)?;
-    let (range_limits, remaining) = match parse_jt_f32_vector(ctx, &family[6..]) {
-        Ok(value) => value?,
-        Err(error) => return Some(Err(error)),
-    };
-    let range_limits = JtRangeLimits::from_finite(range_limits).ok()?;
-    let center = [
-        FiniteBinary32::new(View::f32_le_at(remaining, 0)?)?,
-        FiniteBinary32::new(View::f32_le_at(remaining, 4)?)?,
-        FiniteBinary32::new(View::f32_le_at(remaining, 8)?)?,
-    ];
-    if remaining.len() != 12 {
-        return None;
-    }
-    Some(Ok(ParsedJtRangeLodNode {
-        group_version,
-        child_object_ids,
-        lod_version,
-        reserved_values,
-        reserved_value,
-        range_version,
-        range_limits,
-        center,
-    }))
-    })().transpose()
+        let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+        let (group_version, child_bytes, family) = parse_jt9_group_data(family)?;
+        let child_object_ids =
+            match read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+        let mut view = View::over_retained(family);
+        let lod_version = view.u16_le()?;
+        let reserved_values = match parse_jt_f32_vector(ctx, &mut view) {
+            Ok(value) => value?,
+            Err(error) => return Some(Err(error)),
+        };
+        let reserved_value = view.i32_le()?;
+        let range_version = view.u16_le()?;
+        let range_limits = match parse_jt_f32_vector(ctx, &mut view) {
+            Ok(value) => value?,
+            Err(error) => return Some(Err(error)),
+        };
+        let range_limits = JtRangeLimits::from_finite(range_limits).ok()?;
+        let center = [
+            FiniteBinary32::new(view.f32_le()?)?,
+            FiniteBinary32::new(view.f32_le()?)?,
+            FiniteBinary32::new(view.f32_le()?)?,
+        ];
+        if !view.is_empty() {
+            return None;
+        }
+        Some(Ok(ParsedJtRangeLodNode {
+            group_version,
+            child_object_ids,
+            lod_version,
+            reserved_values,
+            reserved_value,
+            range_version,
+            range_limits,
+            center,
+        }))
+    })()
+    .transpose()
 }
 
 fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, JtTransformMatrix)> {
@@ -4976,7 +4989,11 @@ pub(super) fn display_jt_base_node_data(
             else {
                 return Ok(Vec::new());
             };
-            let attribute_object_ids = read_jt_object_ids(budget.0, attribute_object_ids, "decode DisplayJT base node attributes")?;
+            let attribute_object_ids = read_jt_object_ids(
+                budget.0,
+                attribute_object_ids,
+                "decode DisplayJT base node attributes",
+            )?;
             budget.0.reserve_record_vec(
                 &mut nodes,
                 1,
@@ -5075,7 +5092,11 @@ pub(super) fn display_jt_group_node_data(
             else {
                 return Ok(Vec::new());
             };
-            let child_object_ids = read_jt_object_ids(budget.0, child_object_ids, "decode DisplayJT group children")?;
+            let child_object_ids = read_jt_object_ids(
+                budget.0,
+                child_object_ids,
+                "decode DisplayJT group children",
+            )?;
             if version != 1 {
                 return Ok(Vec::new());
             }

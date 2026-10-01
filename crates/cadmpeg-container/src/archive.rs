@@ -219,28 +219,46 @@ impl<'a> ArchiveSnapshot<'a> {
 
     /// Tests an indexed name without opening payloads or applying compression
     /// and encryption admission. Temporary index storage remains scoped.
-    pub fn contains_name(ctx: &DecodeContext<'_>, root: View<'_>, name: &str) -> Result<bool, CodecError> {
-        let (found, _storage) = ctx.with_scoped_storage("ZIP name probe", || -> Result<bool, CodecError> {
-            preflight_central_directory(ctx, root.window())?;
-            // zip 8.6 stores each fixed metadata record in the builder and
-            // final index. Each record is below 1 KiB and each central entry
-            // occupies at least 46 encoded bytes. Raw names, comments,
-            // extras, parsed extra-field vectors and table rounding fit the
-            // remaining factor in this 64-byte-per-input-byte peak bound.
-            for _ in 0..64 {
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(root.window().len()), "ZIP name probe workspace")?;
-            }
-            for _ in 0..16 {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(root.window().len()), "ZIP name probe indexing")?;
-            }
-            let archive = zip::ZipArchive::new(Cursor::new(root.window()))
-                .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
-            for candidate in archive.file_names() {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidate.len()), "ZIP name probe comparison")?;
-                if candidate == name { return Ok(true); }
-            }
-            Ok(false)
-        })?;
+    pub fn contains_name(
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+        name: &str,
+    ) -> Result<bool, CodecError> {
+        let (found, _storage) =
+            ctx.with_scoped_storage("ZIP name probe", || -> Result<bool, CodecError> {
+                preflight_central_directory(ctx, root.window())?;
+                // zip 8.6 stores each fixed metadata record in the builder and
+                // final index. Each record is below 1 KiB and each central entry
+                // occupies at least 46 encoded bytes. Raw names, comments,
+                // extras, parsed extra-field vectors and table rounding fit the
+                // remaining factor in this 64-byte-per-input-byte peak bound.
+                for _ in 0..64 {
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(root.window().len()),
+                        "ZIP name probe workspace",
+                    )?;
+                }
+                for _ in 0..16 {
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(root.window().len()),
+                        "ZIP name probe indexing",
+                    )?;
+                }
+                let archive =
+                    zip::ZipArchive::new(Cursor::new(root.window())).map_err(|error| {
+                        CodecError::malformed(format_args!("not a readable ZIP: {error}"))
+                    })?;
+                for candidate in archive.file_names() {
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(candidate.len()),
+                        "ZIP name probe comparison",
+                    )?;
+                    if candidate == name {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            })?;
         Ok(found)
     }
 
@@ -281,9 +299,20 @@ impl<'a> ArchiveSnapshot<'a> {
                 )?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
                 let view = Self::open_expanded(ctx, entry, |chunk| {
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "ZIP expansion step")?;
-                    let read = decoder.read(chunk).map_err(|error| CodecError::malformed(format_args!("cannot inflate {}: {error}", entry.name)))?;
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(read), "ZIP expansion copy")?;
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(chunk.len()),
+                        "ZIP expansion step",
+                    )?;
+                    let read = decoder.read(chunk).map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "cannot inflate {}: {error}",
+                            entry.name
+                        ))
+                    })?;
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(read),
+                        "ZIP expansion copy",
+                    )?;
                     Ok(read)
                 })?;
                 if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len())
@@ -1308,12 +1337,18 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fresh root");
         let mut reader = Cursor::new(b"part");
         let error = ArchiveSnapshot::open_expanded(&ctx, entry, |chunk| {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "ZIP expansion step")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(chunk.len()),
+                "ZIP expansion step",
+            )?;
             let read = std::io::Read::read(&mut reader, chunk).map_err(CodecError::Io)?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(read), "ZIP expansion copy")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(read),
+                "ZIP expansion copy",
+            )?;
             Ok(read)
         })
-            .expect_err("expanded CRC needs its own work");
+        .expect_err("expanded CRC needs its own work");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "ZIP payload CRC"));
     }
@@ -1745,7 +1780,10 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "ZIP end record search"
         ));
-        policy.limits.max_work_units += cadmpeg_core::decode::u64_from_index(bytes.len());
+        // The first two names are scanned before the third header's admission.
+        policy.limits.max_work_units += cadmpeg_core::decode::u64_from_index(
+            bytes.len() + "stored.bin".len() + "deflated.bin".len(),
+        );
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("archive fits input limit");
         assert!(matches!(

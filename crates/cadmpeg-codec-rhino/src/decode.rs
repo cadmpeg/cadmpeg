@@ -7411,8 +7411,11 @@ pub(crate) fn seal_for_test(
     impl CodecBackend for TestBackend {
         const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
-        fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
-        let _ctx = ctx;
+        fn detect_impl(
+            &self,
+            _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            _prefix: cadmpeg_core::decode::View<'_>,
+        ) -> Result<Confidence, cadmpeg_core::CodecError> {
             Ok(Confidence::High)
         }
 

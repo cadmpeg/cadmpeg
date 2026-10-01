@@ -24,7 +24,10 @@ use crate::native::{
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
 /// Inspect the first local entry deeply enough to confirm `FCStd` document markers.
-pub(crate) fn has_document_markers(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
+pub(crate) fn has_document_markers(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if prefix.len() < 30 || &prefix[..4] != b"PK\x03\x04" {
         return Ok(false);
     }
@@ -54,13 +57,19 @@ pub(crate) fn has_document_markers(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Re
     let document = match method {
         0 => compressed,
         8 => {
-            inflated = ctx.inflate_probe(View::over_retained(compressed), DETECTION_XML_BYTES, false)?;
-            let Some((ref output, _)) = inflated else { return Ok(false); };
+            inflated =
+                ctx.inflate_probe(View::over_retained(compressed), DETECTION_XML_BYTES, false)?;
+            let Some((ref output, _)) = inflated else {
+                return Ok(false);
+            };
             output.as_slice()
         }
         _ => return Ok(false),
     };
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(document.len()) * 2, "scan FreeCAD probe XML")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(document.len()) * 2,
+        "scan FreeCAD probe XML",
+    )?;
     Ok(contains(document, b"<Document") && contains(document, b"SchemaVersion"))
 }
 

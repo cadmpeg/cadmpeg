@@ -76,7 +76,11 @@ fuzz_target!(|data: &[u8]| {
 
     for codec in codecs {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        if let Ok((ctx, root)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&mutated, &arena, &cadmpeg_core::decode::DecodePolicy::service()) {
+        if let Ok((ctx, root)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &mutated,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        ) {
             let _ = codec.detect(&ctx, root);
             let _ = ctx.finish_session();
         }

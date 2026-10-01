@@ -32,13 +32,22 @@ impl Seek for ShortReader {
 fn fixed_ascii_detection_requires_two_consistent_cards() {
     let mut valid = card(b"generated fixture", b'S', 1);
     valid.extend(card(b"", b'G', 1));
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &valid), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &valid),
+        Confidence::High
+    );
 
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &valid[..81]), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &valid[..81]),
+        Confidence::No
+    );
 
     let mut arbitrary = vec![b'x'; 72];
     arbitrary.extend_from_slice(b"S      1\nsecond line\n");
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &arbitrary), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &arbitrary),
+        Confidence::No
+    );
 }
 
 #[test]
@@ -46,7 +55,10 @@ fn fixed_ascii_detection_allows_eight_bit_data_fields() {
     let mut valid = card(b"generated fixture", b'S', 1);
     valid.extend(card(&[0x80, 0xff], b'G', 1));
 
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &valid), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &valid),
+        Confidence::High
+    );
 }
 
 #[test]
@@ -68,7 +80,10 @@ fn representation_classification_fills_its_prefix_across_short_reads() {
 fn compressed_and_binary_representations_are_detected_and_binary_is_validated() {
     let mut compressed = vec![b' '; 80];
     compressed[72] = b'C';
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &compressed), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &compressed),
+        Confidence::High
+    );
     let inspect_error = IgesCodec
         .inspect(
             &mut Cursor::new(compressed.clone()),
@@ -103,7 +118,10 @@ fn compressed_and_binary_representations_are_detected_and_binary_is_validated() 
     binary[72] = b'B';
     binary[73..79].fill(b'0');
     binary[79] = b'1';
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &binary), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &binary),
+        Confidence::High
+    );
     let inspect_error = IgesCodec
         .inspect(
             &mut Cursor::new(binary.clone()),
@@ -126,7 +144,10 @@ fn representation_detection_rejects_malformed_flag_constants() {
     let mut compressed = vec![b' '; 80];
     compressed[72] = b'C';
     compressed[4] = b'\n';
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &compressed), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &compressed),
+        Confidence::No
+    );
 
     let mut binary = vec![0_u8; 80];
     binary[0] = b'B';
@@ -157,11 +178,17 @@ fn representation_detection_rejects_malformed_flag_constants() {
 
     let mut little_endian_count = binary.clone();
     little_endian_count[1..5].copy_from_slice(&75_u32.to_le_bytes());
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &little_endian_count), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &little_endian_count),
+        Confidence::No
+    );
 
     let mut malformed_tail = binary;
     malformed_tail[75] = b'X';
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &malformed_tail), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &malformed_tail),
+        Confidence::No
+    );
 }
 
 #[test]
@@ -171,7 +198,10 @@ fn detection_reads_the_second_card_image_from_a_fused_first_line() {
     fused.extend_from_slice(&base[CARD_LINE_BYTES..CARD_LINE_BYTES + CARD_COLUMNS]);
     fused.extend_from_slice(&base[CARD_LINE_BYTES + CARD_COLUMNS..]);
 
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &fused), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &fused),
+        Confidence::High
+    );
 
     let result = IgesCodec
         .decode(&mut Cursor::new(fused), &DecodeOptions::default())
@@ -195,7 +225,10 @@ fn detection_refuses_a_start_card_with_no_readable_sequence() {
     let mut bytes = point_file();
     bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].fill(b' ');
 
-    assert_eq!(cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::No
+    );
     assert_eq!(
         IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

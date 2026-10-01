@@ -42,8 +42,11 @@ fn reject_floor_kind() -> LossKind {
 impl CodecBackend for RejectFloorCodec {
     const FORMAT: FormatId = FormatId::new("test");
 
-    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
-        let _ctx = ctx;
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
         Ok(Confidence::No)
     }
 
@@ -76,8 +79,11 @@ struct CyclicModelCodec;
 impl CodecBackend for CyclicModelCodec {
     const FORMAT: FormatId = FormatId::new("test");
 
-    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
-        let _ctx = ctx;
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
         Ok(Confidence::No)
     }
 
@@ -103,8 +109,11 @@ impl CodecBackend for CyclicModelCodec {
 impl CodecBackend for ForeignIdentityCodec {
     const FORMAT: FormatId = FormatId::new("selected");
 
-    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
-        let _ctx = ctx;
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
         Ok(Confidence::No)
     }
 
@@ -142,8 +151,13 @@ impl CodecBackend for ForeignIdentityCodec {
 fn the_sealed_wrapper_reports_the_backend_format() {
     assert_eq!(Codec::id(&ForeignIdentityCodec), FormatId::new("selected"));
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).expect("root");
-    assert_eq!(ForeignIdentityCodec.detect(&ctx, root).expect("detect"), Confidence::No);
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
+            .expect("root");
+    assert_eq!(
+        ForeignIdentityCodec.detect(&ctx, root).expect("detect"),
+        Confidence::No
+    );
 }
 
 #[test]
@@ -362,7 +376,11 @@ impl CodecBackend for SharedBudgetCodec {
         ctx.charge_work(1, "test detection")?;
         Ok(Confidence::High)
     }
-    fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<ContainerSummary, CodecError> {
+    fn inspect_impl(
+        &self,
+        _: &DecodeContext<'_>,
+        _: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
         panic!("shared decode test does not inspect")
     }
     fn decode_impl(&self, ctx: &DecodeContext<'_>, _: View<'_>) -> Result<Decoded, CodecError> {
@@ -377,11 +395,23 @@ fn detection_and_decode_draw_from_one_work_budget() {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_work_units = 1;
     let (ctx, root) = DecodeContext::from_root_bytes(&[], &arena, &options.policy).expect("root");
-    assert_eq!(SharedBudgetCodec.detect(&ctx, root).expect("detect"), Confidence::High);
-    let error = SharedBudgetCodec.decode_with_context(&ctx, root, &options).expect_err("decode must keep detection charge");
-    let DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else { panic!("typed work refusal"); };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        SharedBudgetCodec.detect(&ctx, root).expect("detect"),
+        Confidence::High
+    );
+    let error = SharedBudgetCodec
+        .decode_with_context(&ctx, root, &options)
+        .expect_err("decode must keep detection charge");
+    let DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
+        panic!("typed work refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.used, 1);
     assert_eq!(limit.additional, 1);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(fused)) if fused == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(fused)) if fused == limit)
+    );
 }

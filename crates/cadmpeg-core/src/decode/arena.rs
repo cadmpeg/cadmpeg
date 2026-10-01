@@ -4,8 +4,8 @@
 use std::cell::RefCell;
 use std::ptr::NonNull;
 
-use crate::CodecError;
 use super::context::DecodeContext;
+use crate::CodecError;
 
 /// Owns stable byte buffers allocated during a decode.
 #[derive(Debug, Default)]
@@ -74,9 +74,14 @@ mod tests {
     #[test]
     fn empty_buffer_borrows_survive_later_allocations() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("empty root");
-        let empty = arena.alloc(&ctx, Vec::new().into_boxed_slice()).expect("admitted registry");
-        let present = arena.alloc(&ctx, vec![7].into_boxed_slice()).expect("admitted registry");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("empty root");
+        let empty = arena
+            .alloc(&ctx, Vec::new().into_boxed_slice())
+            .expect("admitted registry");
+        let present = arena
+            .alloc(&ctx, vec![7].into_boxed_slice())
+            .expect("admitted registry");
         assert!(empty.is_empty());
         assert_eq!(present, &[7]);
     }
@@ -84,19 +89,37 @@ mod tests {
     #[test]
     fn an_owned_arena_can_move_between_threads() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("empty root");
-        arena.alloc(&ctx, vec![7].into_boxed_slice()).expect("admitted registry");
-        drop(ctx);
+        {
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+                .expect("empty root");
+            arena
+                .alloc(&ctx, vec![7].into_boxed_slice())
+                .expect("admitted registry");
+        }
         let arena = std::thread::spawn(move || {
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("empty root");
-            assert_eq!(arena.alloc(&ctx, vec![9].into_boxed_slice()).expect("admitted registry"), &[9]);
-            drop(ctx);
+            {
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+                        .expect("empty root");
+                assert_eq!(
+                    arena
+                        .alloc(&ctx, vec![9].into_boxed_slice())
+                        .expect("admitted registry"),
+                    &[9]
+                );
+            }
             arena
         })
         .join()
         .expect("the receiving thread retains and reads the arena");
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("empty root");
-        assert_eq!(arena.alloc(&ctx, vec![11].into_boxed_slice()).expect("admitted registry"), &[11]);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("empty root");
+        assert_eq!(
+            arena
+                .alloc(&ctx, vec![11].into_boxed_slice())
+                .expect("admitted registry"),
+            &[11]
+        );
     }
 
     /// Alloc while earlier borrows stay live: each iteration allocates, then
@@ -104,7 +127,8 @@ mod tests {
     #[test]
     fn interleaved_alloc_and_read_across_many_buffers() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("empty root");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("empty root");
         let mut borrows: Vec<&[u8]> = Vec::new();
         for index in 0..256usize {
             borrows.push(arena.alloc(&ctx, buffer(index)).expect("admitted registry"));

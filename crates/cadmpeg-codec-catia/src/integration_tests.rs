@@ -45,7 +45,10 @@ fn assert_valid(result: &EditableDecodeResult) {
 #[test]
 fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
     let bytes = standard_catpart();
-    assert_eq!(cadmpeg_test_support::detection::confidence(&CatiaCodec, &bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, &bytes),
+        Confidence::High
+    );
 
     let summary = CatiaCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
