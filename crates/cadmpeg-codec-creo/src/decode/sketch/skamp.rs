@@ -101,17 +101,17 @@ fn section_line_entity_fixed_coordinate_with_mode(
                 Some(stored) if *stored != neighbor_parity => return Ok(None),
                 Some(_) => {}
                 None => {
+                    ctx.admit_btree_entry(
+                        &parities,
+                        &neighbor,
+                        "creo fixed-coordinate parity nodes",
+                    )?;
                     ctx.push_back(
                         &mut pending,
                         neighbor,
                         "creo fixed-coordinate pending nodes",
                     )?;
-                    ctx.insert_btree_map(
-                        &mut parities,
-                        neighbor,
-                        neighbor_parity,
-                        "creo fixed-coordinate parity nodes",
-                    )?;
+                    parities.insert(neighbor, neighbor_parity);
                 }
             }
         }

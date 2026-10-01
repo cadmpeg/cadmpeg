@@ -2466,23 +2466,22 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 self.charge_nodes(nodes)?;
                 self.budget
+                    .admit_btree_entry(&self.memo, &name, "step_anchor_memo_entry")
+                    .map_err(ResolveError::Resource)?;
+                self.budget
                     .charge_retained(
                         btree_node_storage::<&str, (Value, usize)>()?,
                         "step_anchor_memo_storage",
                     )
                     .map_err(ResolveError::Resource)?;
-                self.budget
-                    .insert_btree_map(
-                        &mut self.memo,
-                        name,
-                        (
-                            try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")
-                                .map_err(ResolveError::Resource)?,
-                            nodes,
-                        ),
-                        "step_anchor_memo_entry",
-                    )
-                    .map_err(ResolveError::Resource)?;
+                self.memo.insert(
+                    name,
+                    (
+                        try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")
+                            .map_err(ResolveError::Resource)?,
+                        nodes,
+                    ),
+                );
                 return Ok((value, nodes, nodes));
             }
         }
