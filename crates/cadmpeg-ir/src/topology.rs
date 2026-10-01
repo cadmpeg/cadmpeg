@@ -760,7 +760,18 @@ impl TryFrom<LoopRingWire> for LoopRing {
     type Error = LoopRingAdmissionError;
 
     fn try_from(wire: LoopRingWire) -> Result<Self, Self::Error> {
-        Self::new(wire.coedges, wire.vertex_uses)
+        if wire.coedges.is_empty() { return Err(LoopRingError("loop ring must contain a coedge").into()); }
+        let mut members = std::collections::HashSet::new();
+        members.try_reserve(wire.coedges.len()).map_err(|_| LoopRingError("loop ring member allocation failed"))?;
+        for coedge in &wire.coedges {
+            if !members.insert(coedge) { return Err(LoopRingError("loop ring coedges must be distinct").into()); }
+        }
+        for vertex_use in &wire.vertex_uses {
+            if !members.contains(&vertex_use.after) {
+                return Err(LoopRingError("loop ring vertex-use after must name a coedge in the ring").into());
+            }
+        }
+        Ok(Self { coedges: wire.coedges, vertex_uses: wire.vertex_uses })
     }
 }
 

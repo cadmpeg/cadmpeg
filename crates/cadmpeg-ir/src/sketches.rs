@@ -1428,7 +1428,21 @@ impl TryFrom<SpatialSketchProfileWire> for SpatialSketchProfile {
     type Error = SketchCollectionError;
 
     fn try_from(wire: SpatialSketchProfileWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.origin, wire.normal, wire.u_axis, wire.boundary)
+        let origin = FinitePoint3::new(wire.origin).ok_or(SketchCollectionError::Invalid("spatial profile origin must be finite"))?;
+        let normal = UnitVector3::new(wire.normal).ok_or(SketchCollectionError::Invalid(SPATIAL_PROFILE_AXES_ERROR))?;
+        let u_axis = UnitVector3::new(wire.u_axis).ok_or(SketchCollectionError::Invalid(SPATIAL_PROFILE_AXES_ERROR))?;
+        let [n, u] = [normal.as_raw(), u_axis.as_raw()];
+        if (n.x * u.x + n.y * u.y + n.z * u.z).abs() > EPS_SPATIAL_PROFILE_FRAME {
+            return Err(SketchCollectionError::Invalid(SPATIAL_PROFILE_AXES_ERROR));
+        }
+        let invalid = "spatial profile boundary must be nonempty and contain distinct entities";
+        if wire.boundary.is_empty() { return Err(SketchCollectionError::Invalid(invalid)); }
+        let mut members = std::collections::HashSet::new();
+        members.try_reserve(wire.boundary.len()).map_err(|error| SketchCollectionError::Admission(error.to_string()))?;
+        for use_ in &wire.boundary {
+            if !members.insert(&use_.entity) { return Err(SketchCollectionError::Invalid(invalid)); }
+        }
+        Ok(Self { origin, normal, u_axis, boundary: wire.boundary })
     }
 }
 
@@ -3218,7 +3232,14 @@ impl TryFrom<SketchPolygonWire> for SketchPolygon {
     type Error = SketchCollectionError;
 
     fn try_from(wire: SketchPolygonWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.entities)
+        let invalid = "entities requires at least three distinct polygon members";
+        if wire.entities.len() < 3 { return Err(SketchCollectionError::Invalid(invalid)); }
+        let mut members = std::collections::HashSet::new();
+        members.try_reserve(wire.entities.len()).map_err(|error| SketchCollectionError::Admission(error.to_string()))?;
+        for entity in &wire.entities {
+            if !members.insert(entity) { return Err(SketchCollectionError::Invalid(invalid)); }
+        }
+        Ok(Self { entities: wire.entities })
     }
 }
 

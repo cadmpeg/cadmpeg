@@ -206,14 +206,17 @@ pub trait PoleValue<T>: Copy {
 
     /// Admit a curve pole lane, retaining its storage when the poles are admitted.
     fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, NurbsError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(NurbsError::from)?;
-        Self::admit_curve_poles_for_decode(&ctx, poles)
+        Ok(match poles {
+            NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
+                points: reconstruct_poles(points.into_iter(), |point| point.admit().ok_or_else(non_finite_control_point))?,
+            },
+            NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
+                points: reconstruct_poles(points.into_iter(), |pole| Ok(WeightedPole3 {
+                    point: pole.point.admit().ok_or_else(non_finite_control_point)?,
+                    weight: pole.weight,
+                }))?,
+            },
+        })
     }
     /// Admit pole storage with the caller's resource context.
     fn admit_curve_poles_for_decode(
@@ -225,14 +228,21 @@ pub trait PoleValue<T>: Copy {
 
     /// Admit a surface pole grid, retaining its rows when the poles are admitted.
     fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<T>, NurbsError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(NurbsError::from)?;
-        Self::admit_surface_poles_for_decode(&ctx, grid)
+        Ok(match grid {
+            NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
+                rows: reconstruct_poles(rows.into_iter(), |row| {
+                    reconstruct_poles(row.into_iter(), |point| point.admit().ok_or_else(non_finite_control_point))
+                })?,
+            },
+            NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
+                rows: reconstruct_poles(rows.into_iter(), |row| {
+                    reconstruct_poles(row.into_iter(), |pole| Ok(WeightedPole3 {
+                        point: pole.point.admit().ok_or_else(non_finite_control_point)?,
+                        weight: pole.weight,
+                    }))
+                })?,
+            },
+        })
     }
     /// Admit pole storage with the caller's resource context.
     fn admit_surface_poles_for_decode(
@@ -255,6 +265,14 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
         Some(self)
     }
 
+    fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+        Ok(poles)
+    }
+
+    fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+        Ok(grid)
+    }
+
     fn admit_curve_poles_for_decode(
         _ctx: &DecodeContext<'_>,
         poles: NurbsPoles3<Self>,
@@ -268,6 +286,19 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
     ) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
         Ok(grid)
     }
+}
+
+/// Reconstruct a pole lane without starting a decode session.
+fn reconstruct_poles<T, U>(
+    values: impl ExactSizeIterator<Item = T>,
+    mut admit: impl FnMut(T) -> Result<U, NurbsError>,
+) -> Result<Vec<U>, NurbsError> {
+    let mut output = Vec::new();
+    scratch::reserve_exact(&mut output, values.len(), "reconstruct NURBS poles")?;
+    for value in values {
+        output.push(admit(value)?);
+    }
+    Ok(output)
 }
 
 /// Pair each pole of a lane with its weight, after the weight lane has been
