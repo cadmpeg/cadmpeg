@@ -4,8 +4,6 @@
 use std::fs;
 use std::io::Write as _;
 
-use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_core::CodecError;
 use cadmpeg_fuzz::seed_paths::seed_dir;
 
 const EPS_SEED_GEOMETRY_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -489,7 +487,7 @@ fn generate_nx_submodule_seeds() -> Result<(), SeedError> {
 // ============================================================================
 
 fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
-    let cfb = synthetic_cfb_seed()?;
+    let cfb = synthetic_cfb_seed();
     write_seed("seeds/inventor_codec", "minimal", &cfb)?;
     write_seed("seeds/compound_snapshot", "minimal", &cfb)?;
     write_seed(
@@ -599,12 +597,12 @@ fn rhino_crc_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, SeedError> {
     Ok(bytes)
 }
 
-fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
+fn synthetic_cfb_seed() -> Vec<u8> {
     const SECTOR: usize = 512;
     const FREE: u32 = 0xffff_ffff;
     const END: u32 = 0xffff_fffe;
     const FAT: u32 = 0xffff_fffd;
-    let mut file = alloc_filled(SECTOR * 13, 0_u8, "Inventor synthetic CFB seed")?;
+    let mut file = vec![0_u8; 6656];
     file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
     put_u16(&mut file, 24, 0x003e);
     put_u16(&mut file, 26, 3);
@@ -680,7 +678,7 @@ fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
     put_u32(fat, slot_offset(1), END);
     put_u32(fat, slot_offset(10), END);
     put_u32(fat, slot_offset(11), FAT);
-    Ok(file)
+    file
 }
 
 fn synthetic_registry_seed() -> Vec<u8> {
