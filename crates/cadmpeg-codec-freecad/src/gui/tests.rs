@@ -267,9 +267,9 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
         .expect("entries");
     let section = entries
         .iter()
-        .find(|entry| entry.name == "section.bin")
+        .find(|entry| entry.name() == "section.bin")
         .expect("section asset");
-    assert_eq!(section.referenced_by, [documents[0].states[1].id.clone()]);
+    assert_eq!(section.referenced_by(), [documents[0].states[1].id.clone()]);
     assert_eq!(result.ir().model.presentation_documents.len(), 1);
     let presentation = &result.ir().model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
@@ -1767,23 +1767,20 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .expect("entries");
     let entry = entries
         .iter()
-        .find(|entry| entry.name == "state.bin")
+        .find(|entry| entry.name() == "state.bin")
         .expect("state entry");
-    assert_eq!(
-        entry.referenced_by.as_slice(),
-        std::slice::from_ref(&property.id)
-    );
-    assert_eq!(entry.data, payload);
+    assert_eq!(entry.referenced_by(), std::slice::from_ref(&property.id));
+    assert_eq!(entry.data(), payload);
 
     let logical = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
         .expect("logical ledger");
     let span = logical
         .iter()
-        .find(|span| span.entry == entry.name)
+        .find(|span| span.entry == entry.name())
         .expect("state span");
     assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
+    assert_eq!(span.classification.owner(), Some(entry.id()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -1818,7 +1815,7 @@ fn does_not_treat_gui_external_links_as_archive_members() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries")
         .iter()
-        .all(|entry| entry.name != "External.FCStd"));
+        .all(|entry| entry.name() != "External.FCStd"));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 

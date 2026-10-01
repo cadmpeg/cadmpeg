@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// The entity or value occurrence class.
 #[derive(Debug, Clone, Copy)]
@@ -40,7 +41,7 @@ pub(crate) enum TokenKind {
     /// Signed decimal integer.
     Integer(i64),
     /// Decimal real, including an optional exponent.
-    Real(f64),
+    Real(FiniteReal),
     /// Dot-delimited enumeration or logical literal.
     Enumeration(String),
     /// Bytes between apostrophe delimiters, before escape decoding.
@@ -87,8 +88,8 @@ impl BinaryValue {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let mut data = ctx.collection_vec(self.data.len(), operation)?;
-        data.extend_from_slice(&self.data);
+        ctx.charge_work(u64_from_index(self.data.len()), operation)?;
+        let data = ctx.copy_retained_slice(&self.data, operation)?;
         Ok(Self {
             unused_bits: self.unused_bits,
             data: data.into_boxed_slice(),
@@ -578,10 +579,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 }
                 index += 1;
             }
-            let parsed = raw.parse();
-            parsed
+            let parsed = raw
+                .parse::<f64>()
+                .map_err(|_| Self::error(start, "invalid real"))?;
+            FiniteReal::new(parsed)
                 .map(TokenKind::Real)
-                .map_err(|_| Self::error(start, "invalid real"))
+                .ok_or_else(|| Self::error(start, "real exceeds finite binary64 range"))
         } else {
             raw.parse()
                 .map(TokenKind::Integer)

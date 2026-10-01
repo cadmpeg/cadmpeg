@@ -11,8 +11,6 @@ use super::offset::{
 };
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
 #[cfg(test)]
-use cadmpeg_core::decode::alloc_filled;
-#[cfg(test)]
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use cadmpeg_ir::eval::{
@@ -2944,6 +2942,7 @@ pub(super) fn closest_pcurve_parameters(
     let control_points = nurbs.pole_rows().try_raw_points()?;
     let weights = nurbs.pole_rows().try_weights()?;
     let Some(homogeneous) = homogeneous_pcurve_spans(
+        ctx,
         degree,
         nurbs.knots(),
         &control_points,
@@ -3011,6 +3010,7 @@ struct HomogeneousCurveSpans<const DIMENSION: usize> {
 
 #[cfg(test)]
 fn homogeneous_pcurve_spans(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: usize,
     knots: &[f64],
     control_points: &[Point2],
@@ -3047,7 +3047,7 @@ fn homogeneous_pcurve_spans(
         .flat_map(|control| [control.u, control.v])
         .chain([point.u, point.v])
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let mut controls = alloc_filled(count, [0.0; 3], "nx blend pcurve controls")?;
+    let mut controls = ctx.alloc_filled(count, [0.0; 3], "nx blend pcurve controls")?;
     for (index, control) in control_points.iter().enumerate() {
         let weight = weights.map_or(1.0, |weights| weights[index]);
         controls[index] = [

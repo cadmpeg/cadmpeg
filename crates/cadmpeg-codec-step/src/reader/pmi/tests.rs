@@ -15,7 +15,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::export::write_step;
 use crate::loss::StepLossCode;
-use crate::test_support::exchange::decode_inline;
+use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 mod collection_limits;
@@ -1728,8 +1728,8 @@ fn datum_target_writes_and_round_trips() {
 }
 
 #[test]
-fn nonfinite_pmi_placement_decodes_with_coordinate_warning() {
-    let result = decode_inline(
+fn nonfinite_pmi_placement_refuses_real_overflow() {
+    let result = decode_inline_result(
         "#1=CARTESIAN_POINT('',(1E400,0.,0.));
 #2=DIRECTION('',(0.,0.,1.));
 #3=DIRECTION('',(1.,0.,0.));
@@ -1737,11 +1737,8 @@ fn nonfinite_pmi_placement_decodes_with_coordinate_warning() {
 #5=TEXT_LITERAL_WITH_ASSOCIATED_CURVES('note',#4,'left',.RIGHT.,$,());
 #6=ANNOTATION_TEXT_OCCURRENCE('annotation',(),#5);",
     );
-    assert_eq!(result.ir().model.pmi.len(), 1);
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::DecodeWarning.kind()
-            && loss
-                .message
-                .contains("CARTESIAN_POINT #1 has invalid coordinates")
-    }));
+    assert!(
+        matches!(result, Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)))
+        if message.contains("finite binary64 range"))
+    );
 }
