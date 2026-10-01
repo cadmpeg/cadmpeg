@@ -1921,3 +1921,32 @@ fn decode_brackets_explicit_loop_pcurve_agreement_at_the_global_resolution() {
 }
 
 mod bounded_sheets;
+
+#[test]
+fn boundary_clustering_chain_uses_no_call_stack_depth() {
+    let m = 256_u32;
+    let points: Vec<_> = (0..=m).map(|i| f64::from(i) * 1.5)
+        .chain((0..m).rev().map(|i| f64::from(i) * 1.5 + 0.75))
+        .map(|x| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap())
+        .collect();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        assert!(matches!(cluster_boundary_positions(&points,
+            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(), ctx),
+            Err(BoundaryVertexCreationError::Cluster(BoundaryVertexClusterError::NonTransitive))));
+    });
+}
+
+#[test]
+fn boundary_clustering_root_walk_refuses_before_traversal() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        let result = super::find_cluster_root(&mut [0], 0, ctx);
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "iges boundary cluster root traversal"
+                && limit.used == 0 && limit.additional == 1));
+    });
+}
