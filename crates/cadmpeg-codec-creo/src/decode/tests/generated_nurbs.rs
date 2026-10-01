@@ -1375,6 +1375,7 @@ fn section_point_uses_its_single_solved_position() {
 
 #[test]
 fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
+    crate::decode::with_test_decode_ctx(|ctx| {
     let segment = crate::feature::definitions::FeatureSegment {
         kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 9]),
         directions: [Some(0), None, Some(0)],
@@ -1490,12 +1491,12 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         )
     );
     assert_eq!(
-        unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
+        unique_owned_feature_definition(ctx, std::slice::from_ref(&definition), 6).expect("admitted unique lookup")
             .map(|matched| matched.identity.id()),
         Some(5)
     );
     assert!(
-        unique_owned_feature_definition(&[definition.clone(), definition.clone()], 6).is_none()
+        unique_owned_feature_definition(ctx, &[definition.clone(), definition.clone()], 6).expect("admitted unique lookup").is_none()
     );
     let operation = crate::feature::operations::FeatureOperation {
         feature_id: 6,
@@ -1623,12 +1624,12 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     )
     .expect("valid section frame");
     assert_eq!(
-        unique_feature_section_transform(std::slice::from_ref(&transform), 5, 40)
+        unique_feature_section_transform(ctx, std::slice::from_ref(&transform), 5, 40).expect("admitted unique lookup")
             .map(|placed| placed.offset),
         Some(40)
     );
     assert!(
-        unique_feature_section_transform(&[transform.clone(), transform.clone()], 5, 40).is_none()
+        unique_feature_section_transform(ctx, &[transform.clone(), transform.clone()], 5, 40).expect("admitted unique lookup").is_none()
     );
     let repeated_schema = crate::placement::FeatureSectionTransform::new(
         transform.definition_id,
@@ -1640,7 +1641,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     )
     .expect("valid section frame");
     assert_eq!(
-        unique_feature_section_transform(&[transform.clone(), repeated_schema], 5, 40)
+        unique_feature_section_transform(ctx, &[transform.clone(), repeated_schema], 5, 40).expect("admitted unique lookup")
             .map(|placed| placed.offset),
         Some(40)
     );
@@ -1653,7 +1654,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         50,
     )
     .expect("valid section frame");
-    assert!(unique_feature_section_transform(&[transform, competing_definition], 5, 40).is_none());
+    assert!(unique_feature_section_transform(ctx, &[transform, competing_definition], 5, 40).expect("admitted unique lookup").is_none());
     let affected = |ids: &[u32], offset| crate::feature::rows::FeatureAffectedIds {
         feature_id: 6,
         kind: crate::feature::rows::AffectedIdKind::Edges,
@@ -1726,6 +1727,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         agreed_feature_replay_edge_ids(&[replay(&[1], &[7], 80), replay(&[1], &[], 90)], 6,),
         None
     );
+    });
 }
 
 #[test]
@@ -1823,9 +1825,9 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
         .section_transforms
         .extend([transform(10, 10, 101), transform(30, 30, 302)]);
 
-    assert!(feature_is_first_material_operation(&scan, 10));
-    assert!(!feature_is_first_material_operation(&scan, 20));
-    assert!(!feature_is_first_material_operation(&scan, 30));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_is_first_material_operation(ctx, &scan, 10)).expect("admitted material lookup"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| feature_is_first_material_operation(ctx, &scan, 20)).expect("admitted material lookup"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| feature_is_first_material_operation(ctx, &scan, 30)).expect("admitted material lookup"));
 }
 
 #[test]

@@ -777,7 +777,7 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
         Some(CurveExpressionValue::Length(expected_remainder))
     );
     let excessive_power_depth = format!("{}2", "2^".repeat(129));
-    assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
+    assert!(crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<f64>(ctx, &excessive_power_depth, &values, Default::default())).is_err());
     let long_unary_chain = format!("{}1", "-".repeat(1024));
     assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
 }

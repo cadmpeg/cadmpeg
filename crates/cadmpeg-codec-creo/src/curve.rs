@@ -2266,7 +2266,7 @@ fn evaluate_expression_program_details(
                         &values,
                         context,
                     )?
-                    .and_then(|value| apply_declared_relation_unit(value, declared_unit))
+                    .map(|value| apply_declared_relation_unit(ctx, value, declared_unit)).transpose()?.flatten()
                 } else {
                     None
                 };
@@ -2433,24 +2433,37 @@ impl RelationUnit {
     }
 }
 
-fn relation_unit(source: &str) -> Option<RelationUnit> {
+fn relation_unit(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source: &str) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(source.len()), "creo relation unit source scan")?;
     let mut parser = RelationUnitParser {
         source: source.as_bytes(),
         cursor: 0,
         nesting: 0,
+        ctx,
+        resource_error: None,
     };
-    let unit = parser.expression()?;
+    let unit = parser.expression();
+    if let Some(error) = parser.resource_error { return Err(error); }
     parser.whitespace();
-    (parser.cursor == parser.source.len()).then_some(unit)
+    Ok(unit.filter(|_| parser.cursor == parser.source.len()))
 }
 
 struct RelationUnitParser<'a> {
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
+    resource_error: Option<cadmpeg_core::CodecError>,
     source: &'a [u8],
     cursor: usize,
     nesting: usize,
 }
 
 impl RelationUnitParser<'_> {
+    fn admit<T>(&mut self, result: Result<T, cadmpeg_core::CodecError>) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(error) => { self.resource_error = Some(error); None },
+        }
+    }
+
     fn expression(&mut self) -> Option<RelationUnit> {
         let mut unit = self.power()?;
         loop {
@@ -2461,6 +2474,7 @@ impl RelationUnitParser<'_> {
                 _ => return Some(unit),
             };
             self.cursor += 1;
+            self.admit(self.ctx.charge_work(1, "creo relation unit multiplication"))?;
             unit = unit.combine(self.power()?, divide)?;
         }
     }
@@ -2486,13 +2500,18 @@ impl RelationUnitParser<'_> {
             .parse::<i16>()
             .ok()?;
         let exponent = if negative { -magnitude } else { magnitude };
+        self.admit(self.ctx.charge_work(1, "creo relation unit power"))?;
         unit.power(i8::try_from(exponent).ok()?)
     }
 
     fn primary(&mut self) -> Option<RelationUnit> {
         self.whitespace();
         if self.source.get(self.cursor) == Some(&b'(') {
-            (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+            if self.nesting >= MAX_EXPRESSION_NESTING {
+                let error = self.ctx.refuse_codec_limit("creo relation unit depth", cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING), cadmpeg_core::decode::u64_from_index(self.nesting) + 1);
+                self.admit::<()>(Err(error))?;
+            }
+            let _depth = self.admit(self.ctx.enter_nested("creo relation unit depth"))?;
             self.cursor += 1;
             self.nesting += 1;
             let unit = self.expression()?;
@@ -2727,7 +2746,7 @@ trait ExpressionValue: Sized {
         context: RelationEvaluationContext<'_>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
-    fn negate(self) -> Option<Self>;
+    fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError>;
     fn finite(&self) -> bool;
 }
 
@@ -2807,8 +2826,9 @@ scope.is_none().then_some(())?;
         Ok(arithmetic())
     }
 
-    fn negate(self) -> Option<Self> {
-        Some(-self)
+    fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        Ok(Some(-self))
     }
 
     fn finite(&self) -> bool {
@@ -2939,11 +2959,12 @@ scope.is_none().then_some(())?;
         Ok(arithmetic())
     }
 
-    fn negate(self) -> Option<Self> {
-        Some(Self {
+    fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        Ok(Some(Self {
             constant: -self.constant,
             linear: -self.linear,
-        })
+        }))
     }
 
     fn finite(&self) -> bool {
@@ -3380,8 +3401,9 @@ let value = self.as_curve_value()?;
 
 
 
-    fn negate(self) -> Option<Self> {
-        Some(self.scale(-1.0))
+    fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.coefficients.len()), "creo relation negation work")?;
+        Ok(Some(self.scale(-1.0)))
     }
 
     fn finite(&self) -> bool {
@@ -4918,7 +4940,9 @@ impl ExpressionValue for DimensionProbeValue {
         }
     }
 
-    fn negate(self) -> Option<Self> {
+    fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        let arithmetic = || {
         let kind = match self.kind {
             DimensionProbeKind::Numeric(value) => DimensionProbeKind::Numeric(value.map(|v| -v)),
             DimensionProbeKind::Text(_) => return None,
@@ -4927,7 +4951,8 @@ impl ExpressionValue for DimensionProbeValue {
             dimension: self.dimension,
             kind,
             constraints: self.constraints,
-        })
+        })        };
+        Ok(arithmetic())
     }
 
     fn finite(&self) -> bool {
@@ -5286,8 +5311,9 @@ let Self::Number(value) = self else {
         }
     }
 
-    fn negate(self) -> Option<Self> {
-        match self {
+    fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "creo relation negation work")?;
+        Ok(match self {
             Self::Number(value) => Some(Self::Number(-value)),
             Self::Length(value) => Some(Self::Length(-value)),
             Self::Angle(value) => Some(Self::Angle(-value)),
@@ -5296,7 +5322,7 @@ let Self::Number(value) = self else {
                 Some(Self::Quantity(value))
             }
             Self::String(_) => None,
-        }
+        })
     }
 
     fn finite(&self) -> bool {
@@ -5430,6 +5456,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             }
             self.cursor += 1;
             let right = self.logical_and()?;
+            self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
             let result = value.logical_or_checked(right, self.ctx);
             value = Self::finite_value(self.admit(result)??)?;
         }
@@ -5444,6 +5471,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             }
             self.cursor += 1;
             let right = self.comparison()?;
+            self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
             let result = value.logical_and_checked(right, self.ctx);
             value = Self::finite_value(self.admit(result)??)?;
         }
@@ -5463,6 +5491,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         };
         self.cursor += width;
         let right = self.expression()?;
+        self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
         let result = value.compare_checked(right, operator, self.ctx);
         Self::finite_value(self.admit(result)??)
     }
@@ -5475,12 +5504,14 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 Some(b'+') => {
                     self.cursor += 1;
                     let right = self.term()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
                     let result = value.add_checked(right, self.ctx);
                     value = Self::finite_value(self.admit(result)??)?;
                 }
                 Some(b'-') => {
                     self.cursor += 1;
                     let right = self.term()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
                     let result = value.subtract_checked(right, self.ctx);
                     value = Self::finite_value(self.admit(result)??)?;
                 }
@@ -5497,12 +5528,14 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 Some(b'*') => {
                     self.cursor += 1;
                     let right = self.unary()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
                     let result = value.multiply_checked(right, self.ctx);
                     value = Self::finite_value(self.admit(result)??)?;
                 }
                 Some(b'/') => {
                     self.cursor += 1;
                     let right = self.unary()?;
+                    self.admit(self.ctx.charge_work(1, "creo relation operator work"))?;
                     let result = value.divide_checked(right, self.ctx);
                     value = Self::finite_value(self.admit(result)??)?;
                 }
@@ -5527,7 +5560,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         for index in (start..end).rev() {
             let operator = self.source[index];
             value = match operator {
-                b'-' => Self::finite_value(value.negate()?)?,
+                b'-' => {
+                    let result = value.negate_checked(self.ctx);
+                    Self::finite_value(self.admit(result)??)?
+                },
                 b'!' | b'~' => {
                     let result = value.logical_not_checked(self.ctx);
                     Self::finite_value(self.admit(result)??)?
@@ -5544,7 +5580,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         if self.source.get(self.cursor) != Some(&b'^') {
             return Some(value);
         }
-        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+        if self.nesting >= MAX_EXPRESSION_NESTING {
+            let error = self.ctx.refuse_codec_limit("creo relation nesting ceiling", cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING), cadmpeg_core::decode::u64_from_index(self.nesting) + 1);
+            self.admit::<()>(Err(error))?;
+        }
         let _depth = self.admit(self.ctx.enter_nested("creo relation exponent depth"))?;
         self.admit(self.ctx.charge_work(1, "creo relation exponent work"))?;
         self.cursor += 1;
@@ -5559,7 +5598,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.whitespace();
         let mut value = match self.source.get(self.cursor)? {
             b'(' => {
-                (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+                if self.nesting >= MAX_EXPRESSION_NESTING {
+            let error = self.ctx.refuse_codec_limit("creo relation nesting ceiling", cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING), cadmpeg_core::decode::u64_from_index(self.nesting) + 1);
+            self.admit::<()>(Err(error))?;
+        }
                 let _depth = self.admit(self.ctx.enter_nested("creo relation group depth"))?;
                 self.admit(self.ctx.charge_work(1, "creo relation group work"))?;
                 self.cursor += 1;
@@ -5585,7 +5627,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 .position(|byte| *byte == b']')?;
             let unit_end = unit_start + unit_length;
             let unit = std::str::from_utf8(&self.source[unit_start..unit_end]).ok()?;
-            let result = value.with_unit_checked(relation_unit(unit)?, self.ctx);
+            let unit = self.admit(relation_unit(self.ctx, unit))??;
+            let result = value.with_unit_checked(unit, self.ctx);
             value = Self::finite_value(self.admit(result)??)?;
             self.cursor = unit_end + 1;
         }
@@ -5663,7 +5706,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             let copied = self.values.get(&key)?.clone_admitted(self.ctx);
             return self.admit(copied);
         }
-        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+        if self.nesting >= MAX_EXPRESSION_NESTING {
+            let error = self.ctx.refuse_codec_limit("creo relation nesting ceiling", cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING), cadmpeg_core::decode::u64_from_index(self.nesting) + 1);
+            self.admit::<()>(Err(error))?;
+        }
         let (function, scope) = creo_relation_function(name)?;
         let _depth = self.admit(self.ctx.enter_nested("creo relation function depth"))?;
         self.admit(self.ctx.charge_work(1, "creo relation function work"))?;
@@ -6207,6 +6253,7 @@ fn parse_relation_expression<V: ExpressionValue>(
     values: &BTreeMap<String, V>,
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(expression.len()), "creo relation source scan")?;
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
@@ -6225,14 +6272,15 @@ fn parse_relation_expression<V: ExpressionValue>(
 }
 
 fn apply_declared_relation_unit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: CurveExpressionValue,
     declared_unit: Option<&str>,
-) -> Option<CurveExpressionValue> {
+) -> Result<Option<CurveExpressionValue>, cadmpeg_core::CodecError> {
     let Some(declared_unit) = declared_unit else {
-        return Some(value);
+        return Ok(Some(value));
     };
-    let unit = relation_unit(declared_unit)?;
-    match (value, unit.dimension) {
+    let Some(unit) = relation_unit(ctx, declared_unit)? else { return Ok(None); };
+    Ok(match (value, unit.dimension) {
         (CurveExpressionValue::Number(value), _) => {
             Some(quantity_value(value * unit.scale + unit.offset, unit.dimension))
         }
@@ -6242,7 +6290,7 @@ fn apply_declared_relation_unit(
             Some(CurveExpressionValue::Quantity(value))
         }
         _ => None,
-    }
+    })
 }
 
 fn infer_solve_variable_dimensions(
@@ -6473,6 +6521,7 @@ fn solve_dimension_axis(
     let mut pivot_rows = Vec::new();
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     for column in 0..variable_count {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows.len()), "creo matrix pivot scan")?;
         let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
             rows[first].coefficients[column]
                 .abs()
@@ -6485,15 +6534,17 @@ fn solve_dimension_axis(
             continue;
         }
         rows.swap(pivot_row, selected);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows[pivot_row].coefficients.len()), "creo matrix pivot normalization")?;
         for coefficient in &mut rows[pivot_row].coefficients {
             *coefficient /= divisor;
         }
         rows[pivot_row].rhs /= divisor;
-        eliminate_pivot_column(rows, pivot_row, column, coefficient_tolerance);
+        eliminate_pivot_column(ctx, rows, pivot_row, column, coefficient_tolerance)?;
         ctx.reserve_vec(&mut pivot_rows, 1, "creo solve dimension pivot rows")?;
         pivot_rows.push((column, pivot_row));
         pivot_row += 1;
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows.len()).checked_mul(cadmpeg_core::decode::u64_from_index(variable_count).checked_add(2).ok_or_else(|| ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX))?, "creo matrix residual scan")?;
     let residual_tolerance =
         EPS_LINEAR_SYSTEM_RESIDUAL * rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
     if !rows.iter().all(|row| {
@@ -6817,6 +6868,7 @@ fn refine_nonlinear_solution(
         return Ok(None);
     };
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
+        ctx.charge_work(1, "creo nonlinear iteration work")?;
         if nonlinear_residuals_converged(&residuals) {
             let Some(mut rank_rows) = nonlinear_jacobian_rows(
                 ctx,
@@ -6860,8 +6912,10 @@ fn refine_nonlinear_solution(
         }
         let base_norm = nonlinear_residual_norm(&residuals);
         let mut accepted = None;
+        let mut valid_candidate = false;
         let mut scale = 1.0;
         for _ in 0..MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS {
+            ctx.charge_work(1, "creo nonlinear line-search work")?;
             let mut candidate =
                 ctx.alloc_filled(point.len(), 0.0, "creo nonlinear line-search point")?;
             for ((slot, value), change) in candidate.iter_mut().zip(&point).zip(&delta) {
@@ -6876,6 +6930,7 @@ fn refine_nonlinear_solution(
                     &candidate,
                     context,
                 )? {
+                    valid_candidate = true;
                     let candidate_norm = nonlinear_residual_norm(&candidate_residuals);
                     if nonlinear_residuals_converged(&candidate_residuals)
                         || candidate_norm < base_norm
@@ -6888,7 +6943,8 @@ fn refine_nonlinear_solution(
             scale *= 0.5;
         }
         let Some((candidate, candidate_residuals)) = accepted else {
-            return Ok(None);
+            if !valid_candidate { return Ok(None); }
+            return Err(ctx.refuse_codec_limit("creo nonlinear line-search ceiling", cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS), cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS) + 1));
         };
         point = candidate;
         residuals = candidate_residuals;
@@ -6899,7 +6955,7 @@ fn refine_nonlinear_solution(
         }
     }
     if !nonlinear_residuals_converged(&residuals) {
-        return Ok(None);
+        return Err(ctx.refuse_codec_limit("creo nonlinear iteration ceiling", cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS), cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS) + 1));
     }
     let Some(mut rank_rows) = nonlinear_jacobian_rows(
         ctx,
@@ -7101,16 +7157,18 @@ struct AffineEquationRow {
 }
 
 fn eliminate_pivot_column(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &mut [AffineEquationRow],
     pivot_row: usize,
     column: usize,
     coefficient_tolerance: f64,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
     let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
-        return;
+        return Ok(());
     };
     for row in before.iter_mut().chain(after.iter_mut()) {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(row.coefficients.len()).checked_mul(3).and_then(|work| work.checked_add(3)).ok_or_else(|| ctx.refuse_codec_limit("creo matrix elimination", u64::MAX, u64::MAX))?, "creo matrix elimination")?;
         let factor = row.coefficients[column];
         if factor.abs() <= coefficient_tolerance {
             continue;
@@ -7124,6 +7182,7 @@ fn eliminate_pivot_column(
         }
         row.rhs -= factor * pivot.rhs;
     }
+    Ok(())
 }
 
 fn solve_unique_affine_system(
@@ -7135,6 +7194,7 @@ fn solve_unique_affine_system(
         return Ok(None);
     }
     for row in rows.iter_mut() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(row.coefficients.len()).checked_mul(2).and_then(|work| work.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit("creo matrix row normalization", u64::MAX, u64::MAX))?, "creo matrix row normalization")?;
         let scale = row
             .coefficients
             .iter()
@@ -7147,10 +7207,12 @@ fn solve_unique_affine_system(
             row.rhs /= scale;
         }
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows.len()).checked_mul(cadmpeg_core::decode::u64_from_index(variable_count).checked_add(2).ok_or_else(|| ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX))?, "creo matrix residual scan")?;
     let rhs_scale = rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * rhs_scale;
     for (pivot_row, column) in (0..variable_count).enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows.len()), "creo matrix pivot scan")?;
         let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
             rows[first].coefficients[column]
                 .abs()
@@ -7163,11 +7225,12 @@ fn solve_unique_affine_system(
             return Ok(None);
         }
         rows.swap(pivot_row, selected);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows[pivot_row].coefficients.len()), "creo matrix pivot normalization")?;
         for coefficient in &mut rows[pivot_row].coefficients {
             *coefficient /= divisor;
         }
         rows[pivot_row].rhs /= divisor;
-        eliminate_pivot_column(rows, pivot_row, column, coefficient_tolerance);
+        eliminate_pivot_column(ctx, rows, pivot_row, column, coefficient_tolerance)?;
     }
     if !rows.iter().skip(variable_count).all(|row| {
         row.coefficients
@@ -7226,7 +7289,7 @@ fn evaluate_affine_program(
                     )?
                     .map(|value| {
                         match declared_unit {
-                            Some(unit) => match relation_unit(unit) {
+                            Some(unit) => match relation_unit(ctx, unit)? {
                                 Some(unit) => value.with_unit_checked(unit, ctx),
                                 None => Ok(None),
                             },

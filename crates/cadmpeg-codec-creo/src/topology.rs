@@ -591,6 +591,7 @@ pub(crate) fn build(
         ctx.reserve_vec(&mut edges, 2, "creo topology half-edges")?;
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(face_sides.get(&face_id).map_or(0, Vec::len)), "creo topology successor scan")?;
             let mut candidates = face_sides
                 .get(&face_id)
                 .into_iter()
@@ -624,15 +625,22 @@ pub(crate) fn build(
             .map(|index| &edges[index])
     };
     let mut consumed = BTreeSet::new();
+    let mut open = BTreeSet::new();
     let mut loops = Vec::new();
     for edge in &edges {
-        if consumed.contains(&edge.id) {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(consumed.len()), "creo topology consumed lookup")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(open.len()), "creo topology open lookup")?;
+        if consumed.contains(&edge.id) || open.contains(&edge.id) {
             continue;
         }
         let mut ring = Vec::new();
         let mut seen = BTreeSet::new();
         let mut current = edge.id;
+        let mut open_ended = false;
         loop {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(seen.len()), "creo topology ring visited lookup")?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(open.len()), "creo topology open tail lookup")?;
+            if open.contains(&current) { open_ended = true; break; }
             if seen.contains(&current) {
                 if current == edge.id {
                     for id in ring.iter().copied() {
@@ -644,7 +652,7 @@ pub(crate) fn build(
                     ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
                     loops.push(Loop {
                         face_id: edge.face_id,
-                        half_edges: ring,
+                        half_edges: std::mem::take(&mut ring),
                     });
                 }
                 break;
@@ -653,13 +661,21 @@ pub(crate) fn build(
             seen.insert(current);
             ctx.reserve_vec(&mut ring, 1, "creo topology ring half-edges")?;
             ring.push(current);
+            ctx.charge_work(2 * u64::from(usize::BITS - edges.len().leading_zeros()), "creo topology ring successor lookup")?;
             let Some(next) = by_id(current).and_then(|entry| entry.next) else {
+                open_ended = true;
                 break;
             };
             if by_id(next).is_none_or(|entry| entry.face_id != edge.face_id) {
                 break;
             }
             current = next;
+        }
+        if open_ended {
+            for id in ring {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(open.len()), "creo topology open membership")?;
+                ctx.insert_btree_set(&mut open, id, "creo topology open half-edges")?;
+            }
         }
     }
     Ok((edges, loops))

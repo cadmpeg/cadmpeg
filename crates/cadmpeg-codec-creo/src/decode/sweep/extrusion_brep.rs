@@ -239,11 +239,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
-        if unique_feature_section_transform(
+        if unique_feature_section_transform(ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
@@ -252,12 +252,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         if !feature_allows_additive_linear_extrusion(scan, feature_id)
-            || !feature_is_first_material_operation(scan, feature_id)
+            || !feature_is_first_material_operation(ctx, scan, feature_id)?
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };

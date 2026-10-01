@@ -189,16 +189,19 @@ pub(crate) fn triangle_strips(
     const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
     let mut strips = Vec::new();
     let mut conflicting_representation_count = 0usize;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "creo primitive strip discovery")?;
     for (offset, _) in data
         .windows(RECORD.len())
         .enumerate()
         .filter(|(_, window)| *window == RECORD)
     {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - offset - RECORD.len()), "creo primitive strip boundary scan")?;
         let end = data[offset + RECORD.len()..]
             .windows(b"\xe0\x00value(".len())
             .position(|window| window == b"\xe0\x00value(")
             .map_or(data.len(), |relative| offset + RECORD.len() + relative);
         let record = &data[offset..end];
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.len()), "creo primitive cumulative label scan")?;
         let Some(accum) = record
             .windows(ACCUM.len())
             .position(|window| window == ACCUM)
@@ -210,6 +213,8 @@ pub(crate) fn triangle_strips(
             continue;
         }
         let (count, mut cursor) = psb::compact_int(record, accum + 1);
+        if cadmpeg_core::decode::bounded_len(u64::from(count), 1, record.len() - cursor).is_none() { continue; }
+        ctx.charge_work(u64::from(count), "creo primitive cumulative parsing")?;
         let mut cumulative = Vec::new();
         ctx.reserve_vec(
             &mut cumulative,
@@ -235,6 +240,7 @@ pub(crate) fn triangle_strips(
             cumulative.len(),
             "creo triangle strip lengths",
         )?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(cumulative.len()), "creo primitive strip length construction")?;
         for current in cumulative {
             let Some(length) = current.checked_sub(previous).filter(|length| *length >= 3) else {
                 strip_lengths.clear();
@@ -292,6 +298,7 @@ pub(crate) fn scalar_arrays(
     for field in FIELDS {
         let name = field.as_str().as_bytes();
         let marker_len = name.len() + 3;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "creo primitive scalar discovery")?;
         for (offset, _) in data.windows(marker_len).enumerate().filter(|(_, window)| {
             window[0] == psb::token::NAMED_RECORD
                 && window[1] == 0x06
@@ -306,9 +313,10 @@ pub(crate) fn scalar_arrays(
             if start == opener + 1 {
                 continue;
             }
-            let Ok(capacity) = usize::try_from(count) else {
+            let Some(capacity) = cadmpeg_core::decode::bounded_len(u64::from(count), 1, data.len() - start) else {
                 continue;
             };
+            ctx.charge_work(u64::from(count), "creo primitive scalar parsing")?;
             let mut values = Vec::new();
             ctx.reserve_vec(&mut values, capacity, "creo primitive scalar values")?;
             let mut cursor = psb::Cursor::at(data, start);
@@ -764,4 +772,12 @@ mod tests {
         assert!(scan.strips.is_empty());
         assert_eq!(scan.conflicting_representation_count, 1);
     }
+    #[test]
+    fn primitive_impossible_counts_do_not_allocate() {
+        let scalar = b"\xe0\x06p1\0\xf8\xbf\xff";
+        assert!(with_collection_limit(scalar, 0, |ctx| scalar_arrays(ctx, scalar)).expect("truncated candidate").is_empty());
+        let strip = b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\xbf\xff";
+        assert!(with_collection_limit(strip, 0, |ctx| triangle_strips(ctx, strip)).expect("truncated strip").strips.is_empty());
+    }
+
 }
