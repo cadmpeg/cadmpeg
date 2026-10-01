@@ -1135,7 +1135,7 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         }
-        let Some(sketch_ordinal) = entity.sketch.index.checked_sub(1) else {
+        let Some(sketch_ordinal) = entity.sketch.index().checked_sub(1) else {
             unresolved_entities += 1;
             continue;
         };
@@ -1150,7 +1150,7 @@ pub(crate) fn project(
                 .identity
                 .record_ordinal
                 .checked_add(1)
-                .is_some_and(|next| reference.index == next)
+                .is_some_and(|next| reference.index() == next)
         }) {
             unresolved_entities += 1;
             continue;
@@ -1233,7 +1233,7 @@ pub(crate) fn project(
         }
         let mut raw_referenced_entities = Vec::new();
         for reference in sketch.entities.references() {
-            if let Some(raw) = reference.index.checked_sub(1).and_then(|ordinal| {
+            if let Some(raw) = reference.index().checked_sub(1).and_then(|ordinal| {
                 raw_entities
                     .get(&(sketch.identity.segment_token.as_str(), ordinal))
                     .copied()
@@ -1451,12 +1451,12 @@ pub(crate) fn project(
         let mut seen_count = 0_u64;
         for (index, reference) in references.iter().enumerate() {
             ctx.charge_work(1, "check Inventor sketch member closure")?;
-            let Some(ordinal) = reference.index.checked_sub(1) else {
+            let Some(ordinal) = reference.index().checked_sub(1) else {
                 break;
             };
             if references[..index]
                 .iter()
-                .any(|prior| prior.index == reference.index)
+                .any(|prior| prior.index() == reference.index())
             {
                 break;
             }
@@ -1478,7 +1478,7 @@ pub(crate) fn project(
         };
         let mut seen = HashSet::new();
         raw.entities.references().iter().all(|reference| {
-            let Some(ordinal) = reference.index.checked_sub(1) else {
+            let Some(ordinal) = reference.index().checked_sub(1) else {
                 return false;
             };
             if !seen.insert(ordinal) {
@@ -1576,7 +1576,7 @@ pub(crate) fn project(
                         .identity
                         .record_ordinal
                         .checked_add(1)
-                        .is_some_and(|next| reference.index == next)
+                        .is_some_and(|next| reference.index() == next)
                 })
             })
     });
@@ -1639,7 +1639,7 @@ fn project_constraint(
         entities
             .get(&(
                 constraint.identity.segment_token.as_str(),
-                reference.index.checked_sub(1)?,
+                reference.index().checked_sub(1)?,
             ))
             .copied()
     };
@@ -1904,7 +1904,7 @@ fn resolve_parameter(
     reference: PmDcReference,
     parameters: &HashMap<String, ParameterId>,
 ) -> Option<Result<ParameterId, CodecError>> {
-    let ordinal = reference.index.checked_sub(1)?;
+    let ordinal = reference.index().checked_sub(1)?;
     let reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(record_id_len(
             constraint.identity.segment_token.as_str(),
@@ -1937,7 +1937,7 @@ fn native_operand(
     field: cadmpeg_core::text::NonBlankString,
     reference: PmDcReference,
 ) -> Result<SketchNativeOperand, CodecError> {
-    if let Some(ordinal) = reference.index.checked_sub(1) {
+    if let Some(ordinal) = reference.index().checked_sub(1) {
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
                 record_id_len(
@@ -1958,8 +1958,8 @@ fn native_operand(
             name: field,
             role: None,
         }),
-        object_index: Some(reference.index),
-        native_ref: reference.index.checked_sub(1).map(|ordinal| {
+        object_index: Some(reference.index()),
+        native_ref: reference.index().checked_sub(1).map(|ordinal| {
             format!(
                 "inventor:pmdc:sketch-entity#{}-{ordinal}",
                 constraint.identity.segment_token
@@ -1990,10 +1990,10 @@ fn project_geometry(
             };
             let start = resolve_point(
                 entity.identity.segment_token.as_str(),
-                start.index,
+                start.index(),
                 entities,
             )?;
-            let end = resolve_point(entity.identity.segment_token.as_str(), end.index, entities)?;
+            let end = resolve_point(entity.identity.segment_token.as_str(), end.index(), entities)?;
             if !line_carrier_matches(
                 origin.map(FiniteReal::get),
                 direction.map(FiniteReal::get),
@@ -2013,7 +2013,7 @@ fn project_geometry(
         PmDcSketchEntityKind::Circle { center, radius, .. } => {
             let center = resolve_point(
                 entity.identity.segment_token.as_str(),
-                center.index,
+                center.index(),
                 entities,
             )?;
             Some(
@@ -2033,7 +2033,7 @@ fn project_geometry(
         } => {
             let center = resolve_point(
                 entity.identity.segment_token.as_str(),
-                center.index,
+                center.index(),
                 entities,
             )?;
             let norm = major_direction[0].get().hypot(major_direction[1].get());
@@ -2157,7 +2157,7 @@ fn entity_endpoint_refs(
     let mut endpoint_refs = Vec::new();
     for reference in points.references() {
         if let Some(value) = reference
-            .index
+            .index()
             .checked_sub(1)
             .and_then(|ordinal| entities.get(&(entity.identity.segment_token.as_str(), ordinal)))
         {
@@ -2190,11 +2190,11 @@ fn project_placement(
 ) -> Option<SketchPlacement> {
     let transform = transforms.get(&(
         sketch.identity.segment_token.as_str(),
-        sketch.transform.index.checked_sub(1)?,
+        sketch.transform.index().checked_sub(1)?,
     ))?;
     let direction = directions.get(&(
         sketch.identity.segment_token.as_str(),
-        sketch.direction.index.checked_sub(1)?,
+        sketch.direction.index().checked_sub(1)?,
     ))?;
     let matrix = transform.matrix.rows();
     if matrix[3]
@@ -3195,7 +3195,7 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcSketchEntityKind::Line { ref points, .. }
-                if points.references().iter().map(|value| value.index).collect::<Vec<_>>() == [4, 5]
+                if points.references().iter().map(|value| value.index()).collect::<Vec<_>>() == [4, 5]
         ));
 
         let mut circle = entity_prefix(3, 3, 0);
@@ -3304,7 +3304,7 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcSketchConstraintKind::Coincident { first, second }
-                if first.index == 4 && second.index == 5
+                if first.index() == 4 && second.index() == 5
         ));
     }
 
@@ -3501,10 +3501,7 @@ mod tests {
         ));
         let mut sketch = sketch;
         let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
-        references.push(PmDcReference {
-            index: 12,
-            qualified: false,
-        });
+        references.push(PmDcReference::new(12, false).expect("test reference index fits 31 bits"));
         sketch.entities =
             PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
         inventory.sketches[0] = Located::new(

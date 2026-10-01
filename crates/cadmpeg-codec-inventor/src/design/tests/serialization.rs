@@ -14,10 +14,7 @@ struct Record<'a> {
 
 #[test]
 fn unit_definition_borrowed_wire_refuses_retained_limit_before_clone() {
-    let reference = PmDcReference {
-        index: 7,
-        qualified: false,
-    };
+    let reference = PmDcReference::new(7, false).expect("test reference index fits 31 bits");
     let unit = PmDcUnitKind::Definition {
         numerators: PmDcPairedReferenceList::new(Some([1, 2]), vec![reference])
             .expect("paired numerator"),

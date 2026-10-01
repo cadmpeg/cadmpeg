@@ -735,7 +735,7 @@ impl Serialize for ReferenceIndexes<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut items = serializer.serialize_seq(Some(self.0.len()))?;
         for reference in self.0 {
-            items.serialize_element(&reference.index)?;
+            items.serialize_element(&reference.index())?;
         }
         items.end()
     }
@@ -747,7 +747,7 @@ impl Serialize for ReferenceQualifiers<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut items = serializer.serialize_seq(Some(self.0.len()))?;
         for reference in self.0 {
-            items.serialize_element(&reference.qualified)?;
+            items.serialize_element(&reference.qualified())?;
         }
         items.end()
     }
@@ -764,12 +764,12 @@ impl Serialize for PmGraphicsFaceRecord {
         fields.serialize_field("header_value", &self.header_value)?;
         fields.serialize_field("header_id", &self.header_id)?;
         fields.serialize_field("flags", &self.flags)?;
-        fields.serialize_field("styles_reference", &self.styles.index)?;
-        fields.serialize_field("styles_reference_qualified", &self.styles.qualified)?;
-        fields.serialize_field("surface_reference", &self.surface.index)?;
-        fields.serialize_field("surface_reference_qualified", &self.surface.qualified)?;
-        fields.serialize_field("parent_reference", &self.parent.index)?;
-        fields.serialize_field("parent_reference_qualified", &self.parent.qualified)?;
+        fields.serialize_field("styles_reference", &self.styles.index())?;
+        fields.serialize_field("styles_reference_qualified", &self.styles.qualified())?;
+        fields.serialize_field("surface_reference", &self.surface.index())?;
+        fields.serialize_field("surface_reference_qualified", &self.surface.qualified())?;
+        fields.serialize_field("parent_reference", &self.parent.index())?;
+        fields.serialize_field("parent_reference_qualified", &self.parent.qualified())?;
         fields.serialize_field("state", &self.state)?;
         fields.serialize_field("edge_references", &ReferenceIndexes(references))?;
         fields.serialize_field(
@@ -825,18 +825,9 @@ impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
             header_value: wire.header_value,
             header_id: wire.header_id,
             flags: wire.flags,
-            styles: PmDcReference {
-                index: wire.styles_reference,
-                qualified: wire.styles_reference_qualified,
-            },
-            surface: PmDcReference {
-                index: wire.surface_reference,
-                qualified: wire.surface_reference_qualified,
-            },
-            parent: PmDcReference {
-                index: wire.parent_reference,
-                qualified: wire.parent_reference_qualified,
-            },
+            styles: PmDcReference::new(wire.styles_reference, wire.styles_reference_qualified).ok_or("reference index exceeds 31 bits")?,
+            surface: PmDcReference::new(wire.surface_reference, wire.surface_reference_qualified).ok_or("reference index exceeds 31 bits")?,
+            parent: PmDcReference::new(wire.parent_reference, wire.parent_reference_qualified).ok_or("reference index exceeds 31 bits")?,
             state: wire.state,
             edge_references: PmDcPairedReferenceList::new(
                 wire.edge_list_metadata,

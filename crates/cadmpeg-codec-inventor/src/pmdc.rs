@@ -50,11 +50,47 @@ pub(crate) fn type_id_string(value: [u8; 16]) -> String {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcReference {
-    pub(crate) index: u32,
-    pub(crate) qualified: bool,
+    index: ReferenceIndex,
+    qualified: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+struct ReferenceIndex(u32);
+
+impl From<ReferenceIndex> for u32 {
+    fn from(value: ReferenceIndex) -> Self { value.0 }
+}
+
+impl TryFrom<u32> for ReferenceIndex {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value <= 0x7fff_ffff {
+            Ok(Self(value))
+        } else {
+            Err("reference index exceeds 31 bits")
+        }
+    }
 }
 
 impl PmDcReference {
+    pub(crate) fn new(index: u32, qualified: bool) -> Option<Self> {
+        Some(Self { index: ReferenceIndex::try_from(index).ok()?, qualified })
+    }
+
+    pub(crate) const fn from_packed(value: u32) -> Self {
+        Self { index: ReferenceIndex(value & 0x7fff_ffff), qualified: value & 0x8000_0000 != 0 }
+    }
+
+    pub(crate) const fn index(self) -> u32 {
+        self.index.0
+    }
+
+    pub(crate) const fn qualified(self) -> bool {
+        self.qualified
+    }
+
     pub(crate) fn zip(indices: Vec<u32>, qualifiers: Vec<bool>) -> Result<Vec<Self>, String> {
         if indices.len() != qualifiers.len() {
             return Err(format!(
@@ -63,11 +99,11 @@ impl PmDcReference {
                 qualifiers.len()
             ));
         }
-        Ok(indices
+        indices
             .into_iter()
             .zip(qualifiers)
-            .map(|(index, qualified)| Self { index, qualified })
-            .collect())
+            .map(|(index, qualified)| Self::new(index, qualified).ok_or_else(|| "reference index exceeds 31 bits".to_owned()))
+            .collect()
     }
 
     /// The zero-based record ordinal this reference names.
@@ -75,7 +111,7 @@ impl PmDcReference {
     /// A `PmDc` reference is one-based. Index 0 is the null reference: it names
     /// no record, and it is not the record at ordinal 0.
     pub(crate) fn record_ordinal(self) -> Option<u32> {
-        self.index.checked_sub(1)
+        self.index().checked_sub(1)
     }
 }
 
@@ -671,6 +707,18 @@ mod tests {
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
 
+
+    #[test]
+    fn references_reject_high_indices_on_every_construction_path() {
+        assert!(super::PmDcReference::new(0x8000_0000, false).is_none());
+        assert!(super::PmDcReference::zip(vec![0x8000_0000], vec![false]).is_err());
+        assert!(serde_json::from_value::<super::PmDcReference>(serde_json::json!({"index": 2147483648_u32, "qualified": false})).is_err());
+        for (packed, index, qualified) in [(0, 0, false), (0x8000_0000, 0, true), (u32::MAX, 0x7fff_ffff, true)] {
+            let reference = super::PmDcReference::from_packed(packed);
+            assert_eq!((reference.index(), reference.qualified()), (index, qualified));
+            assert_eq!(serde_json::to_value(reference).expect("reference wire"), serde_json::json!({"index": index, "qualified": qualified}));
+        }
+    }
 
     #[test]
     fn pmdc_counted_lists_prove_extent_before_admission() {

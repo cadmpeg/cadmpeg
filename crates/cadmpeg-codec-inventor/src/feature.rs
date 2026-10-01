@@ -1319,7 +1319,7 @@ fn project_extrusion(
         }
         if boundary.references()[..position]
             .iter()
-            .any(|prior| prior.index == selection.index)
+            .any(|prior| prior.index() == selection.index())
         {
             return None;
         }
@@ -1328,13 +1328,13 @@ fn project_extrusion(
     for reference in boundary.references() {
         let property = resolve_property(
             source.identity.segment_token.as_str(),
-            reference.index,
+            reference.index(),
             index,
         )?;
         let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind else {
             return None;
         };
-        let ordinal = entity_link.index.checked_sub(1)?;
+        let ordinal = entity_link.index().checked_sub(1)?;
         if !index
             .entity_style_links
             .contains(&(source.identity.segment_token.as_str(), ordinal))
@@ -1358,7 +1358,7 @@ fn project_extrusion(
     let sketch_reference = label.participants.references().first()?;
     let sketch = index.sketches.get(&(
         source.identity.segment_token.as_str(),
-        sketch_reference.index.checked_sub(1)?,
+        sketch_reference.index().checked_sub(1)?,
     ))?;
     let sketch_native_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(sketch.id_len()?),
@@ -1492,8 +1492,8 @@ fn project_fillet(
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     if enum16(source, 11, PmDcFeatureEnumFamily::Fillet, index)? != 0
-        || source.properties.references().get(1)?.index != 0
-        || source.properties.references().get(10)?.index != 0
+        || source.properties.references().get(1)?.index() != 0
+        || source.properties.references().get(10)?.index() != 0
     {
         return None;
     }
@@ -1502,7 +1502,7 @@ fn project_fillet(
     for reference in sets.references() {
         let set = resolve_property(
             source.identity.segment_token.as_str(),
-            reference.index,
+            reference.index(),
             index,
         )?;
         let PmDcFeaturePropertyKind::FilletEdgeSet {
@@ -1516,7 +1516,7 @@ fn project_fillet(
         };
         let selection = resolve_property(
             source.identity.segment_token.as_str(),
-            selection.index,
+            selection.index(),
             index,
         )?;
         if !matches!(
@@ -1528,7 +1528,7 @@ fn project_fillet(
         ) || !matches!(
             resolve_property(
                 source.identity.segment_token.as_str(),
-                continuity.index,
+                continuity.index(),
                 index
             )?
             .kind,
@@ -1537,7 +1537,7 @@ fn project_fillet(
             return None;
         }
         let edge_collection =
-            resolve_property(source.identity.segment_token.as_str(), edges.index, index)?;
+            resolve_property(source.identity.segment_token.as_str(), edges.index(), index)?;
         let PmDcFeaturePropertyKind::References {
             family: PmDcFeatureReferenceFamily::EdgeCollection,
             items,
@@ -1549,7 +1549,7 @@ fn project_fillet(
             return None;
         }
         let radius = cadmpeg_ir::scalar::PositiveLength::new(
-            length_reference(source.identity.segment_token.as_str(), radius.index, index)?.get(),
+            length_reference(source.identity.segment_token.as_str(), radius.index(), index)?.get(),
         )?;
         if let Err(error) = ctx.charge_collection_items(1, "collect Inventor fillet group") {
             return Some(Err(error));
@@ -1722,7 +1722,7 @@ fn project_hole(
     let transform_reference = source.properties.references().get(8)?;
     let transform = index.transforms.get(&(
         source.identity.segment_token.as_str(),
-        transform_reference.index.checked_sub(1)?,
+        transform_reference.index().checked_sub(1)?,
     ))?;
     if transform.matrix.rows()[3]
         .iter()
@@ -1746,9 +1746,9 @@ fn project_hole(
     else {
         return None;
     };
-    if placement_transform.index != transform_reference.index
-        || point.index == 0
-        || value.index == 0
+    if placement_transform.index() != transform_reference.index()
+        || point.index() == 0
+        || value.index() == 0
     {
         return None;
     }
@@ -1830,7 +1830,7 @@ fn feature_result(
     for reference in items.references() {
         let body = resolve_property(
             source.identity.segment_token.as_str(),
-            reference.index,
+            reference.index(),
             index,
         )?;
         if !matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
@@ -1939,7 +1939,7 @@ fn feature_result(
 fn closed_edge_items(token: &str, items: &PmDcReferenceList, index: &ProjectionIndex<'_>) -> bool {
     !items.references().is_empty()
         && items.references().iter().all(|reference| {
-            resolve_property(token, reference.index, index).is_some_and(|property| {
+            resolve_property(token, reference.index(), index).is_some_and(|property| {
                 matches!(
                     &property.kind,
                     PmDcFeaturePropertyKind::EdgeItem {
@@ -1958,7 +1958,7 @@ fn slot_property<'a>(
 ) -> Option<&'a PmDcFeatureProperty> {
     resolve_property(
         source.identity.segment_token.as_str(),
-        source.properties.references().get(slot)?.index,
+        source.properties.references().get(slot)?.index(),
         index,
     )
 }
@@ -2029,7 +2029,7 @@ fn resolve_direction<'a>(
         .directions
         .get(&(
             source.identity.segment_token.as_str(),
-            reference.index.checked_sub(1)?,
+            reference.index().checked_sub(1)?,
         ))
         .copied()
 }
@@ -2041,7 +2041,7 @@ fn length_parameter(
 ) -> Option<Length> {
     length_reference(
         source.identity.segment_token.as_str(),
-        source.properties.references().get(slot)?.index,
+        source.properties.references().get(slot)?.index(),
         index,
     )
 }
@@ -2062,7 +2062,7 @@ fn angle_parameter(
     let reference = source.properties.references().get(slot)?;
     let parameter = index.parameters.get(&(
         source.identity.segment_token.as_str(),
-        reference.index.checked_sub(1)?,
+        reference.index().checked_sub(1)?,
     ))?;
     match index.parameter_values.get(parameter.id().as_str())? {
         ParameterValue::Angle(value) => Some(*value),
@@ -2522,10 +2522,7 @@ mod tests {
     }
 
     fn reference(index: u32) -> crate::pmdc::PmDcReference {
-        crate::pmdc::PmDcReference {
-            index,
-            qualified: index != 0,
-        }
+        crate::pmdc::PmDcReference::new(index, index != 0).expect("test reference index fits 31 bits")
     }
 
     fn reference_list(values: &[u32]) -> PmDcReferenceList {
@@ -2816,7 +2813,7 @@ mod tests {
         assert_eq!(parsed.state, -1);
         assert_eq!(parsed.outline_value, 42);
         assert_eq!(parsed.properties.references().len(), 2);
-        assert!(parsed.properties.references()[0].qualified);
+        assert!(parsed.properties.references()[0].qualified());
         assert_eq!(parsed.value, 9);
 
         let mut terminator = content(8);
@@ -3721,8 +3718,8 @@ mod tests {
         let parsed = parse(&entity_link, |_, source| {
             parse_entity_style_link(source, 16).expect("entity-style link")
         });
-        assert_eq!(parsed.header.owner.index, 8);
-        assert_eq!(parsed.header.next.index, 9);
+        assert_eq!(parsed.header.owner.index(), 8);
+        assert_eq!(parsed.header.next.index(), 9);
         assert_eq!(parsed.associative_id, 2);
 
         let mut placement = content(17);
@@ -3743,7 +3740,7 @@ mod tests {
         });
         assert!(matches!(
             parsed.kind,
-            PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } if radius.index == 17
+            PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } if radius.index() == 17
         ));
 
         let mut edge_item = content(18);
@@ -3826,10 +3823,7 @@ mod tests {
             id: &'static str,
             value: &'a PmDcFeatureLabelPayload,
         }
-        let reference = crate::pmdc::PmDcReference {
-            index: 1,
-            qualified: false,
-        };
+        let reference = crate::pmdc::PmDcReference::new(1, false).expect("test reference index fits 31 bits");
         let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
             save_version_major: 16,
             header: PmDcLinkedHeader {
