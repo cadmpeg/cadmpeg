@@ -130,7 +130,7 @@ fn target_refusal(limit: u64) -> CodecError {
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
-    super::super::targets([1, 2], &ctx).expect_err("two target IDs exceed the limit")
+    super::super::targets([Ok(1), Ok(2)], &ctx).expect_err("two target IDs exceed the limit")
 }
 
 #[test]
@@ -661,4 +661,18 @@ fn pmi_invalid_tolerance_text_refuses_retained_limit() {
         "#1=(CUSTOM_TOLERANCE_NAME_WITH_LONG_SOURCE_TEXT() FLATNESS_TOLERANCE('tol','',$,$));",
         "step_pmi_invalid_tolerance_text",
     );
+}
+
+#[test]
+fn pmi_target_reference_filter_propagates_depth_refusal() {
+    let value = crate::parse::Value::List(vec![crate::parse::Value::Reference(1)]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let ids = crate::reader::reference::references(&value, ctx)
+            .filter(|id| match id { Ok(id) => *id == 1, Err(_) => true });
+        assert!(matches!(super::super::targets(ids, ctx), Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_reference_value_walk"));
+    });
 }

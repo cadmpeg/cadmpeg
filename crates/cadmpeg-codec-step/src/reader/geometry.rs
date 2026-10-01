@@ -640,10 +640,11 @@ pub(super) fn decode(
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
             {
-                for id in
-                    super::reference::references(parameter).filter(|id| points.contains_key(id))
-                {
-                    ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
+                for id in super::reference::references(parameter, ctx) {
+                    let id = id?;
+                    if points.contains_key(&id) {
+                        ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
+                    }
                 }
             }
         }
@@ -3063,7 +3064,8 @@ pub(super) fn associate_free_presentation_carriers(
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            for target in super::reference::references(parameter) {
+            for target in super::reference::references(parameter, ctx) {
+                let target = target?;
                 if index.surfaces.contains_key(&target) {
                     associate_presentation_carrier(
                         exchange,
@@ -3733,7 +3735,8 @@ fn retained_surface_curve_ids(
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            for target in super::reference::references(parameter) {
+            for target in super::reference::references(parameter, ctx) {
+                let target = target?;
                 if decoded_surface_curve(target, exchange, index) {
                     ctx.insert_btree_set(&mut retained, target, "step_retained_surface_curve_ids")?;
                 }
@@ -4022,7 +4025,8 @@ fn collect_unit_scope_members(
                                 .iter()
                                 .flat_map(|partial| &partial.parameters)
                             {
-                                for reference in super::reference::references(parameter) {
+                                for reference in super::reference::references(parameter, ctx) {
+                                    let reference = reference?;
                                     let Some(referenced) = exchange.records().get(&reference)
                                     else {
                                         continue;
