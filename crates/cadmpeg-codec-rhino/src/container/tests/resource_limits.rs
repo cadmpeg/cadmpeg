@@ -107,3 +107,53 @@ fn user_table_checksum_child_refuses_collection_limit() {
         "Rhino user table checksum children",
     );
 }
+
+fn assert_scan_descriptor_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0;
+    for _ in 0..256 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("fixture");
+        match crate::container::scan(&ctx, bytes) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    assert_eq!(ctx.finish_session().unwrap_err().to_string(), cadmpeg_core::CodecError::ResourceLimit(limit).to_string());
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).expect("small fixture");
+            }
+            other => panic!("descriptor refusal was not reached: {other:?}"),
+        }
+    }
+    panic!("descriptor refusal was not reached");
+}
+
+#[test]
+fn scan_object_descriptors_refuse_collection_growth() {
+    let bytes = crate::test_support::test_archive::archive(&[
+        crate::test_support::test_archive::object_record(1, crate::test_support::test_dump::POINT_CLASS,
+            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0])),
+    ]);
+    assert_scan_descriptor_refusal(&bytes, "Rhino scanned object descriptors");
+}
+
+#[test]
+fn scan_table_descriptors_refuse_collection_growth() {
+    let bytes = crate::test_support::test_archive::archive(&[]);
+    assert_scan_descriptor_refusal(&bytes, "Rhino scanned tables");
+}
+
+#[test]
+fn scan_retained_records_refuse_collection_growth() {
+    use crate::test_support::test_dump::{minimal_document, table, long_chunk};
+    let archive = ArchiveVersion::V5;
+    let bytes = minimal_document("50", &[
+        table(archive, 0x1000_0014, &[long_chunk(archive, 0x7000_0001, &[])]),
+        table(archive, 0x1000_0015, &[]),
+        table(archive, 0x1000_0013, &[]),
+    ]);
+    assert_scan_descriptor_refusal(&bytes, "Rhino scanned opaque records");
+    assert_scan_descriptor_refusal(&bytes, "Rhino scanned table records");
+}
