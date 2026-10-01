@@ -51,7 +51,7 @@ fn decode_asm_binary(
     let start = stream.offset();
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
-    let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
+    let framed = match asm_header::solved_record_limit_with_header(ctx, bytes, header)? {
         Some(limit) => sab::frame(
             ctx,
             bytes,
@@ -119,7 +119,7 @@ fn decode_acis_binary(
         ));
     };
     let start = stream.offset();
-    let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
+    let framed = match acis_header::solved_record_limit_with_header(ctx, bytes, header)? {
         Some(limit) => sab::frame(
             ctx,
             bytes,

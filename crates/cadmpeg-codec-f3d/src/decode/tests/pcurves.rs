@@ -10,6 +10,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -1080,7 +1081,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
 fn generated_pcurve_reports_dangling_carrier_reference() {
     let mut smbh = synthetic_geometry_with_pcurve_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::solved_record_limit(&smbh).unwrap();
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh).expect("history scan").unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &smbh,
         start,

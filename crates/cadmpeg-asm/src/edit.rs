@@ -160,7 +160,7 @@ impl AsmEditSet {
         let start = asm_header::record_stream_start_with_header(bytes, &header)
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let limit =
-            asm_header::solved_record_limit_with_header(bytes, &header).unwrap_or(bytes.len());
+            asm_header::solved_record_limit_with_header(&ctx, bytes, &header)?.unwrap_or(bytes.len());
         let ref_width = header.width;
         let records =
             sab::frame(&ctx, bytes, start, limit, ref_width, None).map_err(|failure| {

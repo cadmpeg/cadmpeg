@@ -10,6 +10,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-5;
@@ -314,7 +315,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
 #[test]
 fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let bytes = synthetic_smbh();
-    let off = asm_header::solved_record_limit(&bytes).expect("has a delta_state");
+    let off = asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan").expect("has a delta_state");
     assert_eq!(&bytes[off..off + 2], &[0x0d, 0x0b]);
     assert_eq!(&bytes[off + 2..off + 13], b"delta_state");
 
@@ -323,20 +324,20 @@ fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let mut smb = bytes;
     smb[39..47].copy_from_slice(&2u64.to_le_bytes());
     smb.truncate(off);
-    assert!(asm_header::solved_record_limit(&smb).is_none());
+    assert!(asm_header::solved_record_limit(&service_decode_context(), &smb).expect("history scan").is_none());
 }
 
 #[test]
 fn history_preamble_record_is_the_modern_partition_boundary() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct).expect("history scan").unwrap();
     let mut bytes = direct[..delta].to_vec();
     let expected = bytes.len();
     t_ident(&mut bytes, "Begin-of-ASM-History-Data");
     t_end(&mut bytes);
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    assert_eq!(asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let solved = cadmpeg_asm::test_support::sab::frame(
         &bytes,
@@ -354,7 +355,7 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 #[test]
 fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct).expect("history scan").unwrap();
     let start = asm_header::record_stream_start(&direct).unwrap();
     let mut bytes = direct[..start].to_vec();
     t_ident(&mut bytes, "metadata");
@@ -363,7 +364,7 @@ fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let expected = bytes.len();
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    assert_eq!(asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"), Some(expected));
 }
 
 #[test]
@@ -839,7 +840,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-    let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan").unwrap_or(bytes.len());
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
