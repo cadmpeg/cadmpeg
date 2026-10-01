@@ -11,22 +11,7 @@ use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal
 /// At least two chart points, each with one native parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ChartSamples {
-    samples: crate::om::nonempty::NonEmpty<(FinitePoint3, ChartParameter)>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ChartParameter {
-    Source(FiniteReal),
-    Derived(f64),
-}
-
-impl ChartParameter {
-    fn get(self) -> f64 {
-        match self {
-            Self::Source(value) => value.get(),
-            Self::Derived(value) => value,
-        }
-    }
+    samples: crate::om::nonempty::NonEmpty<(FinitePoint3, FiniteReal)>,
 }
 
 impl ChartSamples {
@@ -49,11 +34,11 @@ impl ChartSamples {
         if points.len() != parameters.len() || points.len() < 2 {
             return Ok(None);
         }
+        ctx.charge_work(u64_from_index(points.len()), "form NX chart sample pairs")?;
         let mut samples = ctx.retained_vec(points.len(), "NX chart sample pairs")?;
         for (point, parameter) in points.into_iter().zip(parameters) {
-            samples.push((point, ChartParameter::Source(parameter)));
+            samples.push((point, parameter));
         }
-        ctx.charge_work(u64_from_index(samples.len()), "form NX chart sample pairs")?;
         Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
     }
 
@@ -65,6 +50,7 @@ impl ChartSamples {
         if points.len() < 2 {
             return Ok(None);
         }
+        ctx.charge_work(u64_from_index(points.len()), "form NX derived chart sample pairs")?;
         let mut samples = ctx.retained_vec(points.len(), "NX derived chart sample pairs")?;
         let mut parameter = preamble.base_parameter();
         let mut previous = None::<FinitePoint3>;
@@ -73,18 +59,17 @@ impl ChartSamples {
                 let chord_m = before.get().distance(point.get()) / 1000.0;
                 parameter += chord_m * preamble.base_scale();
             }
-            samples.push((point, ChartParameter::Derived(parameter)));
+            samples.push((point, match FiniteReal::new(parameter) {
+                Some(value) => value,
+                None => return Ok(None),
+            }));
             previous = Some(point);
         }
-        ctx.charge_work(
-            u64_from_index(samples.len()),
-            "form NX derived chart sample pairs",
-        )?;
         Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
     }
     fn new(
         points: Vec<FinitePoint3>,
-        parameters: Vec<ChartParameter>,
+        parameters: Vec<FiniteReal>,
     ) -> Result<Self, &'static str> {
         if points.len() != parameters.len() {
             return Err("native_parameters: one value per point required");
@@ -108,8 +93,8 @@ impl ChartSamples {
             points,
             parameters
                 .into_iter()
-                .map(ChartParameter::Derived)
-                .collect(),
+                .map(|value| FiniteReal::new(value).ok_or("native_parameters: must be finite"))
+                .collect::<Result<Vec<_>, _>>()?,
         )
     }
 
@@ -161,15 +146,12 @@ impl ChartSamples {
         if self.samples.len() != other.samples.len() || self.samples.len() < 2 {
             return Ok(false);
         }
+        ctx.charge_work(u64_from_index(self.samples.len()), "replace NX chart sample pairs")?;
         let mut replacement =
             ctx.retained_vec(self.samples.len(), "NX chart parameter replacement")?;
         for (old, new) in self.samples.iter().zip(other.samples.iter()) {
             replacement.push((old.0, new.1));
         }
-        ctx.charge_work(
-            u64_from_index(replacement.len()),
-            "replace NX chart sample pairs",
-        )?;
         let Some(samples) = crate::om::nonempty::NonEmpty::from_vec(replacement) else {
             return Ok(false);
         };
@@ -407,7 +389,7 @@ impl SourceChartData {
         let (points, count) = Self::checked_points(points)?;
         let samples = ChartSamples::new(
             points,
-            parameters.into_iter().map(ChartParameter::Source).collect(),
+            parameters.into_iter().collect(),
         )?;
         Ok(Self {
             count,
@@ -487,8 +469,8 @@ impl SourceChartData {
                         parameter += chord_m * preamble.base_scale();
                         parameter
                     }))
-                    .map(ChartParameter::Derived)
-                    .collect();
+                    .map(FiniteReal::new)
+                    .collect::<Option<Vec<_>>>()?;
                 Some((ChartSamples::new(points, parameters).ok()?, [None, None]))
             }
             SourceEncoding::Ext11 {
@@ -675,5 +657,44 @@ mod tests {
         assert_eq!(samples.points(), points);
         assert_eq!(samples.parameters(), [2.0, 3.0]);
         assert_eq!(uv, [None, None]);
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::{ChartPreamble, ChartSamples};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    fn points() -> Vec<FinitePoint3> {
+        [0.0, 1000.0, 2000.0].into_iter().map(|x| FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap()).collect()
+    }
+
+    #[test]
+    fn xyz_chart_rejects_overflowed_derived_parameters() {
+        crate::test_support::with_decode_context(|ctx| {
+            let preamble = ChartPreamble::new(0.0, f64::MAX, 0.25, 0.0).unwrap();
+            assert!(ChartSamples::from_xyz3_charged(ctx, points(), preamble).unwrap().is_none());
+            let preamble = ChartPreamble::new(0.0, 2.0, 0.25, 0.0).unwrap();
+            assert_eq!(ChartSamples::from_xyz3_charged(ctx, points(), preamble).unwrap().unwrap().parameters(), [0.0, 2.0, 4.0]);
+        });
+    }
+
+    #[test]
+    fn chart_pairing_refuses_work_before_source_pairing() {
+        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 0, |ctx| {
+            let error = ChartSamples::from_source_charged(ctx, points(), vec![FiniteReal::ZERO; 3]).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "form NX chart sample pairs"));
+        });
+    }
+
+    #[test]
+    fn chart_pairing_refuses_work_before_parameter_derivation() {
+        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 0, |ctx| {
+            let preamble = ChartPreamble::new(0.0, f64::MAX, 0.25, 0.0).unwrap();
+            let error = ChartSamples::from_xyz3_charged(ctx, points(), preamble).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "form NX derived chart sample pairs"));
+        });
     }
 }
