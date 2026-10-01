@@ -778,7 +778,9 @@ mod tests {
         let directory = [directory_target(1, 134)];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = 0 + 4 * cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<super::NativeFemEntity>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
         let result = build(&directory, &BTreeMap::new(), &resolver, &ctx);
@@ -786,7 +788,7 @@ mod tests {
             result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0
+                    && limit.used == 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::NativeFemEntity>())
                     && limit.additional == cadmpeg_core::decode::u64_from_index(b"iges:fem:node#D1".len())
                     && limit.operation == "iges FEM entity id"
         ));
@@ -827,7 +829,9 @@ mod tests {
         let records = BTreeMap::from([(1, &element)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
+        policy.limits.max_retained_bytes = 3 + 4 * cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<super::NativeFemEntity>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
         let result = build(&directory, &records, &resolver, &ctx);
@@ -835,7 +839,7 @@ mod tests {
             result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0
+                    && limit.used == 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::NativeFemEntity>())
                     && limit.additional == 4
                     && limit.operation == "iges FEM parameter string"
         ));

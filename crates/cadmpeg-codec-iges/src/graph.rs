@@ -227,6 +227,7 @@ pub(crate) struct ParameterResolver<'a, 'ctx> {
     ctx: &'a DecodeContext<'ctx>,
     directory: BTreeMap<u32, &'a DirectoryEntry>,
     edges: RefCell<BTreeMap<u32, Vec<ReferenceEdge>>>,
+    _directory_storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
 impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
@@ -234,19 +235,23 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         directory: &'a [DirectoryEntry],
         ctx: &'a DecodeContext<'ctx>,
     ) -> Result<Self, CodecError> {
+        let mut directory_storage = ctx.reserve_scoped(0, "IGES resolver directory storage")?;
         let mut index = BTreeMap::new();
         for entry in directory {
-            ctx.insert_btree_map(
-                &mut index,
-                entry.sequence,
-                entry,
-                "iges parameter resolver directory index",
-            )?;
+            directory_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut index,
+                    entry.sequence,
+                    entry,
+                    "iges parameter resolver directory index",
+                )
+            })?;
         }
         Ok(Self {
             ctx,
             directory: index,
             edges: RefCell::new(BTreeMap::new()),
+            _directory_storage: directory_storage,
         })
     }
 
@@ -583,18 +588,21 @@ fn cyclic_transform_nodes(
     edges: &BTreeMap<u32, Vec<ReferenceEdge>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u32>, CodecError> {
+    let mut index_storage = ctx.reserve_scoped(0, "IGES transform cycle indices")?;
     let mut next = BTreeMap::new();
     for (source, values) in edges {
         if let Some(target) = values
             .iter()
             .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Transform))
         {
-            ctx.insert_btree_map(
-                &mut next,
-                *source,
-                target,
-                "iges transform reference successors",
-            )?;
+            index_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut next,
+                    *source,
+                    target,
+                    "iges transform reference successors",
+                )
+            })?;
         }
     }
     let mut cyclic = BTreeSet::new();
@@ -614,13 +622,16 @@ fn cyclic_transform_nodes(
                 }
                 break;
             }
-            ctx.insert_btree_map(
-                &mut active,
-                current,
-                path.len(),
-                "iges active transform reference walk",
-            )?;
-            ctx.reserve_vec(&mut path, 1, "iges transform reference path")?;
+            index_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut active,
+                    current,
+                    path.len(),
+                    "iges active transform reference walk",
+                )
+            })?;
+            index_storage
+                .with_storage(|| ctx.reserve_vec(&mut path, 1, "iges transform reference path"))?;
             path.push(current);
             let Some(target) = next.get(&current).copied() else {
                 break;
@@ -629,7 +640,9 @@ fn cyclic_transform_nodes(
         }
         for node in path {
             active.remove(&node);
-            ctx.insert_btree_set(&mut completed, node, "iges completed transform references")?;
+            index_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut completed, node, "iges completed transform references")
+            })?;
         }
     }
     Ok(cyclic)
@@ -748,23 +761,28 @@ pub(crate) fn losses(
         .checked_mul(2)
         .ok_or_else(|| refuse_local_limit("iges graph loss offset scans", u64::MAX, 1))?;
     ctx.charge_work(scan_work, "iges graph loss offset scans")?;
+    let mut index_storage = ctx.reserve_scoped(0, "IGES graph loss indices")?;
     let mut directory_offsets = BTreeMap::new();
     for (sequence, line) in scan.section(Section::Directory) {
-        ctx.insert_btree_map(
-            &mut directory_offsets,
-            sequence,
-            line.offset,
-            "iges graph loss directory offsets",
-        )?;
+        index_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut directory_offsets,
+                sequence,
+                line.offset,
+                "iges graph loss directory offsets",
+            )
+        })?;
     }
     let mut parameter_lines = BTreeMap::new();
     for (sequence, line) in scan.section(Section::Parameter) {
-        ctx.insert_btree_map(
-            &mut parameter_lines,
-            sequence,
-            line.offset,
-            "iges graph loss parameter offsets",
-        )?;
+        index_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut parameter_lines,
+                sequence,
+                line.offset,
+                "iges graph loss parameter offsets",
+            )
+        })?;
     }
     let mut records = BTreeMap::new();
     ctx.charge_work(
@@ -772,12 +790,14 @@ pub(crate) fn losses(
         "iges graph loss record index",
     )?;
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges graph loss parameter records",
-        )?;
+        index_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut records,
+                record.directory_sequence,
+                record,
+                "iges graph loss parameter records",
+            )
+        })?;
     }
     let mut losses = Vec::new();
     for (source, edges) in graph {

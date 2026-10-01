@@ -139,28 +139,30 @@ fn assert_trimming_retained_refusal(bytes: &[u8], operation: &str) {
 }
 
 fn assert_trimming_materialized_refusal(bytes: &[u8], operation: &str) {
+    // Parser scratch can exceed this index's live storage. Test its refusal
+    // with the same decoded model and an independent index reservation.
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
     let mut cap = 0_u64;
     for _ in 0..4096 {
+        let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) => {
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        match cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(decoded.ir(), &ctx) {
+            Err(limit) => {
                 assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
                 if limit.operation == operation {
                     return;
                 }
-                cap = limit.used.checked_add(limit.additional).unwrap();
+                let required = limit.used.checked_add(limit.additional).unwrap();
+                assert!(required > cap);
+                cap = required;
             }
-            other => panic!("expected trimming materialized refusal at {operation}: {other:?}"),
-        }
+            Ok(_) => panic!("expected trimming materialized refusal at {operation}"),
+        };
     }
     panic!("trimming materialized refusal was not reached: {operation}");
 }

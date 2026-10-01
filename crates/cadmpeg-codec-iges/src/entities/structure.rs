@@ -204,6 +204,7 @@ fn single_target_cycle(
         return Ok(false);
     }
 
+    let mut search_storage = ctx.reserve_scoped(0, "IGES single target cycle search")?;
     let mut path = Vec::new();
     let mut visiting = BTreeSet::new();
     let mut current = sequence;
@@ -215,10 +216,13 @@ fn single_target_cycle(
             }
             return Ok(false);
         }
-        if !ctx.insert_btree_set(&mut visiting, current, "iges structure active cycle nodes")? {
+        if !search_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut visiting, current, "iges structure active cycle nodes")
+        })? {
             return Ok(true);
         }
-        ctx.reserve_vec(&mut path, 1, "iges structure cycle path")?;
+        search_storage
+            .with_storage(|| ctx.reserve_vec(&mut path, 1, "iges structure cycle path"))?;
         path.push(current);
         let Some(target) = targets
             .get(&current)

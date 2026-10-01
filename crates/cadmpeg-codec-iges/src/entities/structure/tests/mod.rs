@@ -213,8 +213,11 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         .map(|sequence| (sequence, sequence + 1))
         .collect::<BTreeMap<_, _>>();
     let mut visited = std::collections::BTreeSet::new();
+    // The target table supplies the byte envelope for the traversal node storage.
+    let input = serde_json::to_vec(&targets).unwrap();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&input, &arena, &DecodePolicy::service()).unwrap();
 
     assert!(
         !crate::entities::structure::single_target_cycle(1, &targets, &mut visited, &ctx,).unwrap()

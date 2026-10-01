@@ -69,9 +69,10 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     if visited.contains(&sequence) {
         return Ok(false);
     }
+    let mut search_storage = ctx.reserve_scoped(0, "IGES directed cycle search")?;
     let mut active = BTreeSet::new();
     let mut stack = Vec::new();
-    ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
+    search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
     stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
         ctx.charge_work(1, "iges cycle work")?;
@@ -83,10 +84,12 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         if visited.contains(&current) {
             continue;
         }
-        if !ctx.insert_btree_set(&mut active, current, "iges cycle active")? {
+        if !search_storage
+            .with_storage(|| ctx.insert_btree_set(&mut active, current, "iges cycle active"))?
+        {
             return Ok(true);
         }
-        ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
+        search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
         stack.push((current, true));
         for target in successors(current).rev() {
             ctx.charge_work(1, "iges cycle work")?;
@@ -94,7 +97,8 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
                 return Ok(true);
             }
             if !visited.contains(&target) {
-                ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
+                search_storage
+                    .with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
                 stack.push((target, false));
             }
         }

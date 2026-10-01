@@ -908,8 +908,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
             )
         })?;
     charge_normalization(ctx, output_estimate)?;
-    let mut output =
-        ctx.vector_storage(output_estimate, "iges_compressed_normalized_output")?;
+    let mut output = ctx.vector_storage(output_estimate, "iges_compressed_normalized_output")?;
 
     for line in &lines[start_begin..global_begin] {
         append_source_card(&mut output, line, b'S')?;
