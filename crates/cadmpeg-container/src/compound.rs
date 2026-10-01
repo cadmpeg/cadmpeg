@@ -681,7 +681,6 @@ impl CompoundState {
         if !fat_sector_set.is_disjoint(&seen_difat) {
             return malformed("CFB sector has both FAT and DIFAT roles");
         }
-        drop(allocation_id_scratch);
         let fat_word_count = fat_count
             .checked_mul(sector_size / 4)
             .ok_or_else(|| CodecError::Malformed("CFB FAT word count overflow".into()))?;
@@ -730,6 +729,8 @@ impl CompoundState {
         {
             return malformed("CFB allocation table sector has the wrong role marker");
         }
+        drop(fat_sectors);
+        drop(allocation_id_scratch);
         let range_lock_sector =
             range_lock_sector(version, cadmpeg_core::decode::u64_from_index(bytes.len()));
         if range_lock_sector.is_some_and(|id| {
@@ -767,6 +768,7 @@ impl CompoundState {
             directory_chain.iter().flat_map(SectorChain::iter),
         )?;
         let directory = parse_directory(ctx, &directory_bytes, version)?;
+        drop(directory_bytes);
         drop(directory_scratch);
         validate_root(&directory)?;
         let mini_fat_chain = chain(
@@ -810,6 +812,7 @@ impl CompoundState {
             .copied()
             .map(le_u32_array)
             .collect::<Vec<_>>();
+        drop(mini_fat_bytes);
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
         let root_sectors = usize::try_from(root.size)
