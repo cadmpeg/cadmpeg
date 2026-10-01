@@ -1055,6 +1055,8 @@ macro_rules! local_id_type {
         #[serde(transparent)]
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
 
+        rewrite_record!($name, []; (text));
+
         #[cfg(feature = "schema")]
         impl schemars::JsonSchema for $name {
             fn schema_name() -> std::borrow::Cow<'static, str> {

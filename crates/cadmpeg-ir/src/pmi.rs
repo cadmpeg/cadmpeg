@@ -1169,3 +1169,5 @@ cadmpeg_core::named_optional_field!(deserialize_text, String, "text");
 cadmpeg_core::named_optional_field!(deserialize_placement, Transform, "placement");
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+
+mod identity_rewrite;

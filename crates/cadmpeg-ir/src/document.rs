@@ -10,7 +10,6 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{
-    de::DeserializeOwned,
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -504,35 +503,22 @@ macro_rules! declare_model {
             /// editing any call site. One entity is handed to `rewrite` at a
             /// time, which bounds a rewriting caller's transient storage by the
             /// largest single entity rather than by the whole model.
-            pub fn extend_rewritten<R: EntityRewrite>(
-                &mut self, other: Self, rewrite: &mut R,
-            ) -> Result<(), ModelRewriteError<R::Error>> {
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let policy = cadmpeg_core::decode::DecodePolicy::default();
-                let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy).map_err(ModelRewriteError::Resource)?;
-                self.extend_rewritten_for_decode(&ctx, other, rewrite, "append rewritten model")
-            }
-
             /// Append rewritten arenas after charging every destination entry.
-            pub fn extend_rewritten_for_decode<R: EntityRewrite>(
+            pub fn extend_rewritten<R: EntityRewrite>(
                 &mut self, ctx: &DecodeContext<'_>, other: Self, rewrite: &mut R, operation: &'static str,
             ) -> Result<(), ModelRewriteError<R::Error>> {
                 $(
-                    ctx.reserve_retained_capacity_limit(&mut self.$field, other.$field.len(), operation).map_err(ModelRewriteError::Resource)?;
+                    ctx.reserve_retained_capacity_limit(&mut self.$field, other.$field.len(), operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
                     for entity in other.$field {
-                        ctx.charge_work_limit(1, operation).map_err(ModelRewriteError::Resource)?;
-                        ctx.charge_collection_items_limit(1, operation).map_err(ModelRewriteError::Resource)?;
+                        ctx.charge_work_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
+                        ctx.charge_collection_items_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
                         self.$field.push(rewrite.rewrite(entity).map_err(ModelRewriteError::Rewrite)?);
                     }
                 )*
                 for (child, parent) in other.feature_regeneration_parents.0 {
-                    ctx.charge_work_limit(1, operation).map_err(ModelRewriteError::Resource)?;
+                    ctx.charge_work_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
                     let edge = rewrite.rewrite(FeatureRegenerationEdge { child, parent }).map_err(ModelRewriteError::Rewrite)?;
-                    if !self.feature_regeneration_parents.0.contains_key(&edge.child) {
-                        ctx.charge_collection_items_limit(1, operation).map_err(ModelRewriteError::Resource)?;
-                        ctx.charge_retained_limit(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureRegenerationEdge>()), operation).map_err(ModelRewriteError::Resource)?;
-                    }
-                    self.feature_regeneration_parents.0.insert(edge.child, edge.parent);
+                    ctx.insert_btree_map(&mut self.feature_regeneration_parents.0, edge.child, edge.parent, operation).map_err(ModelRewriteError::Resource)?;
                 }
                 Ok(())
             }
@@ -557,14 +543,14 @@ pub enum ModelRewriteError<E> {
     Rewrite(E),
     /// The destination storage exceeded its resource limit.
     #[error("resource refusal: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
+    Resource(CodecError),
 }
 
 impl From<ModelRewriteError<CodecError>> for CodecError {
     fn from(error: ModelRewriteError<CodecError>) -> Self {
         match error {
             ModelRewriteError::Rewrite(error) => error,
-            ModelRewriteError::Resource(error) => error.into(),
+            ModelRewriteError::Resource(error) => error,
         }
     }
 }
@@ -575,7 +561,7 @@ pub trait EntityRewrite {
     type Error;
 
     /// Rewrite one arena entity.
-    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error>;
+    fn rewrite<T: crate::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, Self::Error>;
 }
 
 macro_rules! declare_model_view {
@@ -2043,3 +2029,5 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "ir_version");
 cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
+
+mod identity_rewrite;

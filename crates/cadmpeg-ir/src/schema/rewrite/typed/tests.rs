@@ -9,7 +9,7 @@ fn typed_rewrite_maps_repeated_identities_once() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let calls = std::cell::Cell::new(0);
-    let mut map = IdentityMap::new(&ctx, |source: &str| {
+    let mut map = IdentityMap::new(&ctx, "test identity rewrite", |source: &str| {
         calls.set(calls.get() + 1);
         ctx.format_retained(format_args!("test:occurrence:{}", source.strip_prefix("test:model:").unwrap()), "test identity target")
     }).unwrap();
@@ -26,7 +26,7 @@ fn typed_rewrite_preserves_refusal_before_cache_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut map = IdentityMap::new(&ctx, |source: &str| ctx.copy_retained_text(source, "test target")).unwrap();
+    let mut map = IdentityMap::new(&ctx, "test identity rewrite", |source: &str| ctx.copy_retained_text(source, "test target")).unwrap();
     let error = PointId::mint("test:model:point#one").unwrap().rewrite_identities(&ctx, &mut map).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else { panic!("cache storage must refuse"); };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
@@ -40,7 +40,7 @@ fn typed_rewrite_preserves_refusal_before_sequence_recursion() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut map = IdentityMap::new(&ctx, |source: &str| ctx.copy_retained_text(source, "test target")).unwrap();
+    let mut map = IdentityMap::new(&ctx, "test identity rewrite", |source: &str| ctx.copy_retained_text(source, "test target")).unwrap();
     let error = vec![PointId::mint("test:model:point#one").unwrap()].rewrite_identities(&ctx, &mut map).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else { panic!("depth must refuse"); };
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);

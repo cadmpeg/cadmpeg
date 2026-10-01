@@ -8641,3 +8641,5 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_blend_surface, SurfaceId, "blend_surface");
 cadmpeg_core::named_optional_field!(deserialize_native_kind, String, "native_kind");
 cadmpeg_core::named_optional_field!(deserialize_record_bounds, RecordBounds, "record_bounds");
+
+mod identity_rewrite;

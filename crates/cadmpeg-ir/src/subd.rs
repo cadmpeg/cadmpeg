@@ -1085,3 +1085,5 @@ cadmpeg_core::named_optional_field!(
     "secondary_grips"
 );
 cadmpeg_core::named_optional_field!(deserialize_knot_interval, f64, "knot_interval");
+
+mod identity_rewrite;

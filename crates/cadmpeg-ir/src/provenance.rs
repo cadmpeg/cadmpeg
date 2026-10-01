@@ -818,3 +818,5 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_layer, String, "layer");
 cadmpeg_core::named_optional_field!(deserialize_tag, String, "tag");
 cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");
+
+mod identity_rewrite;

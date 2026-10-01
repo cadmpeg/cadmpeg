@@ -552,3 +552,5 @@ mod tests {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+
+mod identity_rewrite;

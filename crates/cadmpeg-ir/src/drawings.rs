@@ -211,3 +211,5 @@ mod tests {
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_template, DrawingId, "template");
+
+mod identity_rewrite;

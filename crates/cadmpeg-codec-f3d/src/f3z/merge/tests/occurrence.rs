@@ -230,7 +230,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
             occurrence: &occurrence,
         };
         merged
-            .extend_rewritten_for_decode(
+            .extend_rewritten(
                 &ctx,
                 component.clone(),
                 &mut scope,
@@ -669,7 +669,7 @@ fn occurrence_merge_refuses_destination_growth_before_rewriting() {
             occurrence: "child",
         };
         let error = parent
-            .extend_rewritten_for_decode(ctx, component, &mut scope, "append F3Z model entities")
+            .extend_rewritten(ctx, component, &mut scope, "append F3Z model entities")
             .unwrap_err();
         let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
         else {

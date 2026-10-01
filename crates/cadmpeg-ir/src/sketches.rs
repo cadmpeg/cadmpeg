@@ -4198,3 +4198,5 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_font, String, "font");
 cadmpeg_core::named_optional_field!(deserialize_native_flags, u64, "native_flags");
+
+mod identity_rewrite;

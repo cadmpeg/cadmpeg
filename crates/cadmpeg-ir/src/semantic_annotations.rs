@@ -92,3 +92,5 @@ cadmpeg_core::named_optional_field!(
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_format, String, "format");
+
+mod identity_rewrite;

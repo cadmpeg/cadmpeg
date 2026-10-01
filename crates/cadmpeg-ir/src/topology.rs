@@ -2581,3 +2581,5 @@ cadmpeg_core::named_optional_field!(
     crate::provenance::SourceObjectAssociation,
     "source_object"
 );
+
+mod identity_rewrite;

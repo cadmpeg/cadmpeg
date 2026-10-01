@@ -261,3 +261,5 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_asset_wire_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_asset_wire_media_type, String, "media_type");
+
+mod identity_rewrite;

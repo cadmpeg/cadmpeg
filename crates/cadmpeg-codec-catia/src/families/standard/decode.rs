@@ -50,8 +50,6 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
-use serde::{de::DeserializeOwned, Serialize};
-use serde_value::ValueDeserializer;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -2080,53 +2078,9 @@ struct StandardPopulationScope<'a, 'b> {
 impl EntityRewrite for StandardPopulationScope<'_, '_> {
     type Error = CodecError;
 
-    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
-        struct CountBytes(usize);
-        impl std::io::Write for CountBytes {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-                self.0 = self
-                    .0
-                    .checked_add(bytes.len())
-                    .ok_or(std::io::ErrorKind::OutOfMemory)?;
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-        let mut size = CountBytes(0);
-        serde_json::to_writer(&mut size, &entity).map_err(CodecError::malformed)?;
-        let bytes = u64_from_index(size.0);
-        self.ctx
-            .charge_collection_items(bytes, "catia_standard_population_rewrite")?;
-        let retained = bytes.checked_mul(4).ok_or_else(|| {
-            self.ctx
-                .refuse_codec_limit("catia_standard_population_rewrite", u64::MAX, u64::MAX)
-        })?;
-        self.ctx
-            .charge_retained(retained, "catia_standard_population_rewrite")?;
-        let refusal = std::cell::RefCell::new(None);
-        let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
-            if refusal.borrow().is_some() {
-                return String::new();
-            }
-            match rescope_standard_id(self.ctx, id, self.scope) {
-                Ok(value) => value,
-                Err(error) => {
-                    *refusal.borrow_mut() = Some(error);
-                    String::new()
-                }
-            }
-        });
-        let value = serde_value::to_value(rewritten);
-        if let Some(error) = refusal.into_inner() {
-            return Err(error);
-        }
-        let value = value.map_err(CodecError::malformed)?;
-        T::deserialize(ValueDeserializer::<serde_value::DeserializerError>::new(
-            value,
-        ))
-        .map_err(CodecError::malformed)
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, Self::Error> {
+        let mut map = cadmpeg_ir::schema::rewrite::typed::IdentityMap::new(self.ctx, "catia_standard_population_rewrite", |id: &str| rescope_standard_id(self.ctx, id, self.scope))?;
+        entity.rewrite_identities(self.ctx, &mut map)
     }
 }
 
@@ -2266,7 +2220,7 @@ fn try_decode_standard_populations(
         match merged
             .ir
             .model
-            .extend_rewritten_for_decode(
+            .extend_rewritten(
                 ctx,
                 model,
                 &mut rewriter,

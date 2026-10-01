@@ -9,7 +9,6 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::archive::{ArchiveSession, ClassifiedMember};
@@ -247,7 +246,7 @@ impl MergeSession<'_, '_> {
                 ctx: self.ctx,
                 occurrence: &occurrence,
             };
-            parent_ir.model.extend_rewritten_for_decode(
+            parent_ir.model.extend_rewritten(
                 self.ctx,
                 component_ir.model,
                 &mut scope,
@@ -539,21 +538,14 @@ struct OccurrenceScope<'r, 'a> {
 impl EntityRewrite for OccurrenceScope<'_, '_> {
     type Error = CodecError;
 
-    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, CodecError> {
-        let refusal = std::cell::RefCell::new(None);
-        let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
-            rewrite_identity(self.ctx, id, self.occurrence, &refusal)
-        });
-        let value = serde_value::to_value(rewritten);
-        if let Some(error) = refusal.into_inner() {
-            return Err(error);
-        }
-        let value = value.map_err(|error| {
-            CodecError::malformed(format_args!("model serialization failed: {error}"))
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, CodecError> {
+        let mut map = cadmpeg_ir::schema::rewrite::typed::IdentityMap::new(self.ctx, "rewrite F3Z model identity", |id: &str| {
+            match rescope_charged(self.ctx, id, self.occurrence)? {
+                Some(rewritten) => Ok(rewritten),
+                None => self.ctx.copy_retained_text(id, "copy F3Z unchanged identity"),
+            }
         })?;
-        crate::value_tree::from_value(value).map_err(|error| {
-            CodecError::malformed(format_args!("merged model round-trip failed: {error}"))
-        })
+        entity.rewrite_identities(self.ctx, &mut map)
     }
 }
 

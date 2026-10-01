@@ -760,3 +760,5 @@ impl PatternKind {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

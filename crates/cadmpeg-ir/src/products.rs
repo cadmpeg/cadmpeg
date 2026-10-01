@@ -1642,3 +1642,5 @@ cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "an
 cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
+
+mod identity_rewrite;
