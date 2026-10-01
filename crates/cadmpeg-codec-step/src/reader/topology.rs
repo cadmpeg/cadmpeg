@@ -96,7 +96,6 @@ fn topology_commit_error(
 DraftError::Admission(message) => ctx.copy_retained_text(message, "step_topology_commit_error_text"),
 DraftError::IdentityCollision(identity) => ctx.format_retained(format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"), "step_topology_commit_error_text"),
         DraftError::UnresolvedReference { .. }
-        | DraftError::ReferenceWalk { .. }
         | DraftError::FeatureParents { .. } => {
             ctx.format_retained(format_args!("{context} conflicts with decoded topology: {error}"), "step_topology_commit_error_text")
         }

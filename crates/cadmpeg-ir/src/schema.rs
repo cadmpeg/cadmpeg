@@ -242,12 +242,26 @@ pub trait EntitySchema: Serialize {
         visitor: &mut dyn FnMut(Reference),
     ) -> Result<(), ReferenceWalkError>;
 
-    /// Visits typed reference IDs without copying their text.
-    fn visit_reference_ids(&self, visitor: &mut dyn FnMut(&str)) -> Result<(), ReferenceWalkError>
+    /// Visit typed reference IDs through their fields under the caller's context.
+    fn visit_reference_ids(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError>
     where
-        Self: Sized,
+        Self: Sized + rewrite::typed::RewriteIdentities,
     {
-        visit_typed_reference_ids(self, visitor)
+        rewrite::typed::RewriteIdentities::visit_identity_references(self, ctx, &mut |target| {
+            let identity = self.identity();
+            ctx.charge_work(1, "typed reference owner comparison")?;
+            if identity.len() == target.len() {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity.len()), "typed reference owner comparison")?;
+                if identity == target {
+                    return Ok(());
+                }
+            }
+            visitor(target)
+        })
     }
 }
 
