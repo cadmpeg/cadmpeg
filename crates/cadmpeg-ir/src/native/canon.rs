@@ -42,7 +42,7 @@ pub(super) enum Node {
 
 impl Node {
     /// This value.
-    fn into_value(self) -> Value {
+    pub(super) fn into_value(self) -> Value {
         match self {
             Node::Value(value) => value,
             Node::Object(entries) => Value::Object(entries),
@@ -61,6 +61,7 @@ impl Node {
 fn tagged(ctx: &DecodeContext<'_>, variant: &str, payload: Value) -> Result<Node, CanonError> {
     let key = copy_text(ctx, variant)?;
     ctx.charge_collection_items(1, WORK)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()), STORAGE)?;
     let mut entries = Map::new();
     entries.insert(key, payload);
     Ok(Node::Value(Value::Object(entries)))
@@ -252,7 +253,7 @@ impl CanonError {
             return self;
         };
         let admitted = (|| {
-            ctx.reserve_vec(&mut steps, 1, WORK)?;
+            ctx.reserve_retained_vec(&mut steps, 1, STORAGE)?;
             step()
         })();
         match admitted {
@@ -742,7 +743,7 @@ impl ser::SerializeSeq for CanonSeq<'_> {
             .serialize(CanonValue::within(self.ctx, self.depth, self.sink))
             .map_err(|error| error.within(self.ctx, || Ok(Step::Index(index))))?
             .into_value();
-        self.ctx.reserve_vec(&mut self.out, 1, WORK)?;
+        self.ctx.reserve_retained_vec(&mut self.out, 1, STORAGE)?;
         self.out.push(element);
         Ok(())
     }
@@ -843,6 +844,7 @@ impl CanonMap<'_> {
                     })?
                     .into_value();
                 self.ctx.charge_collection_items(1, WORK)?;
+                self.ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()), STORAGE)?;
                 entry.insert(value);
                 self.max_key_bytes = self.max_key_bytes.max(key_bytes);
                 Ok(())
@@ -948,9 +950,10 @@ impl ser::SerializeStruct for CanonStruct<'_> {
                         "raw JSON requires exactly one payload field",
                     ));
                 }
-                let Node::Value(Value::String(json)) =
-                    value.serialize(CanonValue::raw_text(ctx, *depth, *sink))?
-                else {
+                let (text, _text_storage) = ctx.with_scoped_storage(STORAGE, || {
+                    value.serialize(CanonValue::raw_text(ctx, *depth, *sink))
+                })?;
+                let Node::Value(Value::String(json)) = text else {
                     return Err(ser::Error::custom("raw JSON payload must be a string"));
                 };
                 // Replay through the same canonical constructor, so raw objects

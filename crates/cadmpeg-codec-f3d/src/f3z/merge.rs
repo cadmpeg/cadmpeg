@@ -93,7 +93,7 @@ fn xref_table_from_ir(
         namespace: &cadmpeg_ir::NativeNamespace,
         name: &str,
     ) -> Result<Vec<T>, CodecError> {
-        match namespace.arena_as_charged(ctx, name) {
+        match namespace.arena_as_for_decode(ctx, name) {
             Ok(records) => Ok(records),
             Err(error) => match CodecError::from(error) {
                 error @ CodecError::ResourceLimit(_) => Err(error),
@@ -620,7 +620,7 @@ fn typed_fields(
     };
     macro_rules! typed {
         ($type:path) => {{
-            let mut value = Value::Object(record.fields_charged(ctx)?);
+            let mut value = Value::Object(record.fields_for_decode(ctx)?);
             let Value::Object(fields) = &mut value else {
                 return Err(CodecError::malformed(
                     "F3Z native record fields are not an object",
@@ -675,7 +675,7 @@ fn typed_fields(
         "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),
         "persistent_subentity_tags" => typed!(crate::records::sketch_links::PersistentSubentityTag),
         "sketch_curve_links" => typed!(crate::records::sketch_links::SketchCurveLink),
-        _ => record.fields_charged(ctx)?,
+        _ => record.fields_for_decode(ctx)?,
     })
 }
 

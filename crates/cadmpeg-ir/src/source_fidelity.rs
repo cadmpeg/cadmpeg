@@ -441,7 +441,7 @@ impl SourceFidelity {
             return Ok(());
         }
         let mut products: Vec<crate::NativeUnknownRecord> = match ir.native.namespace(format) {
-            Some(namespace) => namespace.arena_as_charged(ctx, "unknowns")?,
+            Some(namespace) => namespace.arena_as_for_decode(ctx, "unknowns")?,
             None => Vec::new(),
         };
         let mut existing_ids = BTreeSet::new();

@@ -2,12 +2,11 @@
 //! Admission of the JT document, segment, and element graph.
 
 use std::collections::BTreeMap;
-use std::io::Write;
 
 use cadmpeg_core::decode::DecodeContext;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::{
     DisplayJtCompressedElement, DisplayJtCompressedElementSequence, DisplayJtDocument,
@@ -128,42 +127,18 @@ impl DisplayJtGraph {
         Self::from_wire_with_context(
             ctx,
             DisplayJtGraphWire {
-                documents: arena_as_charged(ctx, namespace, "display_jt_documents")?,
-                segments: arena_as_charged(ctx, namespace, "display_jt_segments")?,
-                shape_lod_elements: arena_as_charged(
-                    ctx,
-                    namespace,
-                    "display_jt_shape_lod_elements",
-                )?,
-                compressed_elements: arena_as_charged(
-                    ctx,
-                    namespace,
-                    "display_jt_compressed_elements",
-                )?,
-                compressed_element_sequences: arena_as_charged(
-                    ctx,
-                    namespace,
-                    "display_jt_compressed_element_sequences",
-                )?,
+                documents: namespace.arena_as_for_decode(ctx, "display_jt_documents")?,
+                segments: namespace.arena_as_for_decode(ctx, "display_jt_segments")?,
+                shape_lod_elements: namespace.arena_as_for_decode(ctx, "display_jt_shape_lod_elements")?,
+                compressed_elements: namespace.arena_as_for_decode(ctx, "display_jt_compressed_elements")?,
+                compressed_element_sequences: namespace.arena_as_for_decode(ctx, "display_jt_compressed_element_sequences")?,
             },
         )
     }
 
     #[cfg(test)]
     fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        crate::test_support::with_decode_context(|ctx| {
-            Self::from_wire_with_context(
-                ctx,
-                DisplayJtGraphWire {
-                    documents: namespace.arena_as("display_jt_documents")?,
-                    segments: namespace.arena_as("display_jt_segments")?,
-                    shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
-                    compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
-                    compressed_element_sequences: namespace
-                        .arena_as("display_jt_compressed_element_sequences")?,
-                },
-            )
-        })
+        crate::test_support::with_decode_context(|ctx| Self::from_namespace_with_context(ctx, namespace))
     }
 
     fn from_wire(
@@ -373,42 +348,6 @@ fn admit_compressed_owner(
         return Err(invalid(ctx, id, "source_offset disagrees with segment"));
     }
     Ok(())
-}
-
-#[derive(Default)]
-struct JsonByteCount(u64);
-
-impl Write for JsonByteCount {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let size = u64::try_from(bytes.len()).map_err(std::io::Error::other)?;
-        self.0 = self
-            .0
-            .checked_add(size)
-            .ok_or_else(|| std::io::Error::other("DisplayJT JSON byte count exceeds u64"))?;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-fn arena_as_charged<T: DeserializeOwned>(
-    ctx: &DecodeContext<'_>,
-    namespace: &NativeNamespace,
-    name: &'static str,
-) -> Result<Vec<T>, NativeConvertError> {
-    let records = namespace.arenas().get(name);
-    let mut json_size = JsonByteCount::default();
-    if let Some(records) = records {
-        for record in records {
-            serde_json::to_writer(&mut json_size, record)?;
-        }
-    }
-    ctx.charge_work(json_size.0, "decode DisplayJT native records")?;
-    let _materialization =
-        ctx.reserve_scoped(json_size.0, "materialize DisplayJT native records")?;
-    namespace.arena_as_charged(ctx, name)
 }
 
 fn by_id<'a, T>(

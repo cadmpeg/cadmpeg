@@ -41,7 +41,7 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
         Ok(())
     };
     let ctx = crate::native::test_ctx();
-    let record = super::super::NativeRecord::from_typed_with_sink(
+    let record = super::super::NativeRecord::from_typed_for_decode(
         &ctx,
         &Record {
             id: "test:native:record#display",
@@ -96,7 +96,7 @@ fn display_map_key_charges_escaped_chunks_and_formats_once() {
     };
     let ctx = crate::native::test_ctx();
     let record =
-        super::super::NativeRecord::from_typed_with_sink(&ctx, &Record(&calls), Some(&sink))
+        super::super::NativeRecord::from_typed_for_decode(&ctx, &Record(&calls), Some(&sink))
             .expect("valid key record");
     assert_eq!(calls.get(), 1);
     assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
@@ -222,7 +222,7 @@ fn raw_value_streams_unescaped_json_before_materialization() {
         Ok(())
     };
     let ctx = crate::native::test_ctx();
-    let stored = super::super::NativeRecord::from_typed_with_sink(&ctx, &typed, Some(&sink))
+    let stored = super::super::NativeRecord::from_typed_for_decode(&ctx, &typed, Some(&sink))
         .expect("valid raw record");
     assert_eq!(
         *captured.borrow(),
@@ -499,7 +499,7 @@ fn raw_native_resource_refusals_keep_the_caller_dimension() {
     let arena = DecodeArena::new();
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-    let stored = super::super::NativeRecord::from_typed_with_sink(&service, &record, None).unwrap();
+    let stored = super::super::NativeRecord::from_typed_for_decode(&service, &record, None).unwrap();
     assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
     for dimension in [
         ResourceDimension::CollectionItems,
@@ -518,7 +518,7 @@ fn raw_native_resource_refusals_keep_the_caller_dimension() {
         }
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error =
-            super::super::NativeRecord::from_typed_with_sink(&limited, &record, None).unwrap_err();
+            super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
         assert!(matches!(cadmpeg_core::CodecError::from(error),
             cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
     }
@@ -573,4 +573,26 @@ fn native_float_keys_keep_the_scalar_json_spelling() {
             serde_json::to_value(&record).unwrap()
         );
     }
+}
+
+#[test]
+fn raw_native_replay_text_uses_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use serde_json::value::RawValue;
+    #[derive(Serialize)]
+    struct Record { id: &'static str, raw: Box<RawValue> }
+    let json = r#"[["retained"]]"#;
+    let record = Record { id: "test:native:record#raw-storage", raw: RawValue::from_string(json.into()).unwrap() };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(json.len()) - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
+    assert!(matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "serialize native record"));
+    policy.limits.max_materialized_bytes += 1;
+    let (exact, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let stored = super::super::NativeRecord::from_typed_for_decode(&exact, &record, None).unwrap();
+    assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
+    let _released = exact.reserve_scoped(policy.limits.max_materialized_bytes, "released raw replay text").unwrap();
 }

@@ -333,7 +333,7 @@ impl SldprtNative {
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         macro_rules! read_arena {
             ($name:literal) => {
-                namespace.arena_as_charged(ctx, $name)?
+                namespace.arena_as_for_decode(ctx, $name)?
             };
         }
         let mut native = Self {
