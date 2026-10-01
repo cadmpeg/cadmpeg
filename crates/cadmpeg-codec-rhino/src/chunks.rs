@@ -667,7 +667,7 @@ pub(crate) fn warn_checksum(
     warnings: &mut crate::loss::Diagnostics,
 ) -> Result<(), FramingError> {
     if matches!(
-        verify_checksum(data, chunk)?,
+        verify_checksum(ctx, data, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -680,9 +680,9 @@ pub(crate) fn warn_checksum(
 }
 
 /// Verifies a parsed chunk's checksum without changing its recoverable boundary.
-pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumStatus, FramingError> {
+pub(crate) fn verify_checksum(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], chunk: &Chunk) -> Result<ChecksumStatus, FramingError> {
     let body = chunk.body();
-    verify_checksum_ranges(bytes, chunk, std::slice::from_ref(&body))
+    verify_checksum_ranges(ctx, bytes, chunk, std::slice::from_ref(&body))
 }
 
 /// Verifies a chunk checksum over its direct byte ranges.
@@ -690,6 +690,7 @@ pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumSta
 /// Container checksums exclude complete nested chunks. Callers pass the
 /// ordered ranges written directly at the container's nesting level.
 pub(crate) fn verify_checksum_ranges<I>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     chunk: &Chunk,
     ranges: I,
@@ -705,16 +706,17 @@ where
     else {
         return Ok(ChecksumStatus::NotPresent);
     };
-    let checksum = body.end..body.end + kind.width();
-    let stored = &bytes[checksum.clone()];
-    if ranges.clone().into_iter().any(|range| {
+    let checksum_end = body.end.checked_add(kind.width()).ok_or(FramingError::Overflow { offset: body.end })?;
+    let checksum = body.end..checksum_end;
+    let stored = bytes.get(checksum.clone()).ok_or(FramingError::Truncated {
+        offset: body.end, needed: kind.width(),
+    })?;
+    for range in ranges.clone() {
+        ctx.charge_work(1, "Rhino checksum range validation")?;
         let range = range.borrow();
-        range.start < body.start || range.end > body.end
-    }) {
-        return Err(FramingError::Structural {
-            offset: body.start,
-            message: "checksum range escapes chunk body".to_string(),
-        });
+        if range.start < body.start || range.end > body.end || range.start > range.end {
+            return Err(FramingError::structural(body.start, "checksum range escapes chunk body"));
+        }
     }
     match kind {
         ChecksumKind::Crc16 => {
@@ -722,11 +724,14 @@ where
                 offset: checksum.start,
                 needed: 2,
             })?);
-            let expected = u32::from(
-                ranges
-                    .into_iter()
-                    .fold(1, |crc, range| crc16(crc, &bytes[range.borrow().clone()])),
-            );
+            let mut crc = 1;
+            for range in ranges {
+                let range = range.borrow();
+                let data = bytes.get(range.clone()).ok_or_else(|| FramingError::structural(range.start, "checksum range escapes input"))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "Rhino chunk checksum bytes")?;
+                crc = crc16(crc, data);
+            }
+            let expected = u32::from(crc);
             Ok(if expected == actual {
                 ChecksumStatus::Valid
             } else {
@@ -740,7 +745,10 @@ where
             })?;
             let mut hasher = crc32fast::Hasher::new();
             for range in ranges {
-                hasher.update(&bytes[range.borrow().clone()]);
+                let range = range.borrow();
+                let data = bytes.get(range.clone()).ok_or_else(|| FramingError::structural(range.start, "checksum range escapes input"))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "Rhino chunk checksum bytes")?;
+                hasher.update(data);
             }
             let expected = hasher.finalize();
             Ok(if expected == actual {

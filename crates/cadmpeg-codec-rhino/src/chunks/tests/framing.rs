@@ -185,10 +185,10 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
     bytes.extend(crc32fast::hash(body).to_le_bytes());
     let chunk =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V2, false).expect("required invariant");
-    assert_eq!(verify_checksum(&bytes, &chunk), Ok(ChecksumStatus::Valid));
+    assert_eq!(verify_checksum(&cadmpeg_test_support::service_decode_context(), &bytes, &chunk), Ok(ChecksumStatus::Valid));
     *bytes.last_mut().expect("required invariant") ^= 1;
     assert!(matches!(
-        verify_checksum(&bytes, &chunk),
+        verify_checksum(&cadmpeg_test_support::service_decode_context(), &bytes, &chunk),
         Ok(ChecksumStatus::Mismatch { .. })
     ));
 
@@ -358,4 +358,17 @@ fn top_level_framing_preserves_truncation_classification() {
             operation
         }) if location.offset == 31 && operation == "rhino chunk framing"
     ));
+}
+
+#[test]
+fn checksum_direct_bytes_refuse_before_hashing() {
+    let bytes = crate::test_support::test_dump::crc_chunk(ArchiveVersion::V5, 0x4000_8000, &[1,2,3,4]);
+    let chunk = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 4;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = verify_checksum(&ctx, &bytes, &chunk);
+    assert!(matches!(result, Err(FramingError::Resource(limit))
+        if limit.operation == "Rhino chunk checksum bytes" && limit.used == 1 && limit.additional == 4));
 }

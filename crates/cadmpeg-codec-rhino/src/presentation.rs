@@ -2040,7 +2040,7 @@ fn parse_light_record_attributes(
             .and_then(|value| value.rendering_range.clone());
         let direct = direct_checksum_ranges(&item.body(), child.as_slice())?;
         if let ChecksumStatus::Mismatch { expected, actual } =
-            verify_checksum_ranges(data, item, &direct)?
+            verify_checksum_ranges(ctx, data, item, &direct)?
         {
             warnings.push_coded_admitted(
                 ctx,

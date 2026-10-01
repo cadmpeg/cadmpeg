@@ -2488,7 +2488,7 @@ fn read_regions(
         Ok((sides, regions, nested, inline_region_loaded)) => {
             let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested.as_slice())?;
             if matches!(
-                verify_checksum_ranges(bytes, &chunk, &direct)?,
+                verify_checksum_ranges(ctx, bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
                 warnings.push_coded_admitted(
@@ -3095,7 +3095,7 @@ fn finish_anonymous(
         )?;
     }
     if matches!(
-        verify_checksum(bytes, chunk)?,
+        verify_checksum(ctx, bytes, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -3147,7 +3147,7 @@ where
         )?;
     }
     if matches!(
-        verify_checksum_ranges(bytes, chunk, direct_ranges)?,
+        verify_checksum_ranges(ctx, bytes, chunk, direct_ranges)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(

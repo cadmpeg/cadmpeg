@@ -455,3 +455,26 @@ fn negative_bounded_plane_without_an_owner_is_not_invented_as_a_face() {
     assert!(result.ir().model.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
+
+#[test]
+fn bounded_plane_linear_nurbs_proofs_propagate_work_refusals() {
+    let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 126,
+        "126,4,1,1,1,1,0,0,0,1,2,3,4,4,1,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,0,0,0,0,0,4,0,0,1;");
+    for operation in ["iges closed polyline duplicate comparisons", "iges planar self-intersection comparisons"] {
+        let mut cap = 0;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            match cadmpeg_test_support::decode::full(&crate::IgesCodec, &bytes, &policy) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    if limit.operation == operation { reached = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                other => panic!("proof refusal was not reached: {other:?}"),
+            }
+        }
+        assert!(reached, "{operation}");
+    }
+}

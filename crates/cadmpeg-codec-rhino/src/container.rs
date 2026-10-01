@@ -325,7 +325,7 @@ fn checksum_warning(
                 | TCODE_TEXTURE_MAPPING_RECORD
                 | TCODE_HISTORY_RECORD
         ) {
-        crate::chunks::verify_checksum_ranges(data, &chunk, &[])
+        crate::chunks::verify_checksum_ranges(ctx, data, &chunk, &[])
     } else if matches!(
         typecode,
         TCODE_NAMED_PLANES | TCODE_NAMED_VIEWS | TCODE_VIEWS
@@ -339,7 +339,7 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if matches!(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
@@ -352,7 +352,7 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
         let children = match render_settings_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -362,7 +362,7 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
         let children = match settings_attributes_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -372,7 +372,7 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
         let children = match plugin_list_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -382,7 +382,7 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let children = match checksum_children_through_class_end(
             ctx,
@@ -398,7 +398,7 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
         let children = match compressed_preview_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -408,7 +408,7 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
         let children = match user_table_uuid_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -418,9 +418,9 @@ fn checksum_warning(
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else {
-        verify_checksum(data, &chunk)
+        verify_checksum(ctx, data, &chunk)
     }
     .map_err(framing_error)?;
     match status {
@@ -805,10 +805,6 @@ fn list_checksum_children(
         });
     }
     let first_child_offset = offset;
-    for _ in 0..child_count {
-        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
-        offset = child.next_offset();
-    }
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(child_count),
         "Rhino view checksum child ranges",
@@ -817,23 +813,13 @@ fn list_checksum_children(
         CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
         other => FramingError::structural(first_child_offset, other.to_string()),
     })?;
-    let range_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<std::ops::Range<usize>>());
-    let total_bytes = cadmpeg_core::decode::u64_from_index(child_count)
-        .checked_mul(range_bytes)
-        .ok_or(FramingError::Overflow {
-            offset: first_child_offset,
-        })?;
-    reservation.grow(total_bytes).map_err(|error| match error {
-        CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
-        other => FramingError::structural(first_child_offset, other.to_string()),
-    })?;
+    for _ in 0..child_count {
+        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
+        offset = child.next_offset();
+    }
     let mut children = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut children,
-        child_count,
-        "Rhino view checksum ranges",
-    )?;
+    ctx.reserve_scoped_vec(reservation, &mut children, child_count, "Rhino view checksum ranges")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(child_count), "Rhino view checksum second walk")?;
     offset = first_child_offset;
     for _ in 0..child_count {
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;

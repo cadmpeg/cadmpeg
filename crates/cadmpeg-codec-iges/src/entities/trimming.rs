@@ -1133,31 +1133,29 @@ struct SimpleRing(Vec<[f64; 2]>);
 struct NonSimpleRing;
 
 impl SimpleRing {
-    fn new(points: Vec<[f64; 2]>) -> Result<Self, NonSimpleRing> {
-        if points.len() < 4
-            || points.first() != points.last()
-            || points
-                .iter()
-                .flatten()
-                .any(|coordinate| !coordinate.is_finite())
-        {
-            return Err(NonSimpleRing);
+    fn new(points: Vec<[f64; 2]>, ctx: &DecodeContext<'_>) -> Result<Result<Self, NonSimpleRing>, CodecError> {
+        if points.len() < 4 || points.first() != points.last() {
+            return Ok(Err(NonSimpleRing));
         }
-        if points.windows(2).any(|segment| segment[0] == segment[1]) {
-            return Err(NonSimpleRing);
-        }
-        let last = points.len() - 1;
-        for first in 0..last {
-            for second in first + 1..last {
-                if points[first] == points[second] {
-                    return Err(NonSimpleRing);
-                }
+        for point in &points {
+            ctx.charge_work(2, "iges simple ring coordinate admission")?;
+            if point.iter().any(|coordinate| !coordinate.is_finite()) {
+                return Ok(Err(NonSimpleRing));
             }
         }
-        if planar_polyline_has_self_intersection(&points) {
-            return Err(NonSimpleRing);
+        for segment in points.windows(2) {
+            ctx.charge_work(1, "iges simple ring adjacent vertex comparisons")?;
+            if segment[0] == segment[1] {
+                return Ok(Err(NonSimpleRing));
+            }
         }
-        Ok(Self(points))
+        if super::geometry::closed_polyline_has_duplicate(&points, |left, right| left == right, ctx)? {
+            return Ok(Err(NonSimpleRing));
+        }
+        if planar_polyline_has_self_intersection(&points, ctx)? {
+            return Ok(Err(NonSimpleRing));
+        }
+        Ok(Ok(Self(points)))
     }
 
     fn first(&self) -> [f64; 2] {
@@ -1173,24 +1171,27 @@ impl SimpleRing {
     }
 }
 
-fn planar_point_is_strictly_inside(point: [f64; 2], ring: &SimpleRing) -> bool {
-    if ring.points().windows(2).any(|segment| {
-        super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]])
-    }) {
-        return false;
+fn planar_point_is_strictly_inside(
+    point: [f64; 2], ring: &SimpleRing, ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    for segment in ring.points().windows(2) {
+        ctx.charge_work(1, "iges planar point boundary comparisons")?;
+        if super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]]) {
+            return Ok(false);
+        }
     }
     let mut inside = false;
     for segment in ring.points().windows(2) {
+        ctx.charge_work(1, "iges planar point containment comparisons")?;
         let [left, right] = [segment[0], segment[1]];
         if (left[1] > point[1]) != (right[1] > point[1]) {
-            let crossing =
-                left[0] + (right[0] - left[0]) * (point[1] - left[1]) / (right[1] - left[1]);
+            let crossing = left[0] + (right[0] - left[0]) * (point[1] - left[1]) / (right[1] - left[1]);
             if point[0] < crossing {
                 inside = !inside;
             }
         }
     }
-    inside
+    Ok(inside)
 }
 
 fn linear_boundary_rings(
@@ -1210,8 +1211,9 @@ fn linear_boundary_rings(
             return Ok(None);
         };
         let mut copied = ctx.collection_vec(points.len(), "iges linear boundary ring points")?;
+        ctx.charge_work(u64_from_index(points.len()), "iges linear boundary ring copy")?;
         copied.extend_from_slice(points);
-        match SimpleRing::new(copied) {
+        match SimpleRing::new(copied, ctx)? {
             Ok(ring) => rings.push(ring),
             Err(error) => return Ok(Some(Err(error))),
         }
@@ -1219,24 +1221,34 @@ fn linear_boundary_rings(
     Ok(Some(Ok(rings)))
 }
 
-fn inner_boundaries_are_disjoint_and_inside(outer: &SimpleRing, inners: &[SimpleRing]) -> bool {
-    for inner in inners {
-        if planar_polylines_intersect(outer.points(), inner.points())
-            || inner
-                .interior()
-                .iter()
-                .any(|point| !planar_point_is_strictly_inside(*point, outer))
-        {
-            return false;
+fn rings_are_disjoint(rings: &[SimpleRing], ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+    for (left_index, left) in rings.iter().enumerate() {
+        for right in rings.iter().skip(left_index + 1) {
+            ctx.charge_work(1, "iges inner ring pair comparisons")?;
+            if planar_polylines_intersect(left.points(), right.points(), ctx)?
+                || planar_point_is_strictly_inside(left.first(), right, ctx)?
+                || planar_point_is_strictly_inside(right.first(), left, ctx)? {
+                return Ok(false);
+            }
         }
     }
-    inners.iter().enumerate().all(|(left_index, left)| {
-        inners.iter().skip(left_index + 1).all(|right| {
-            !planar_polylines_intersect(left.points(), right.points())
-                && !planar_point_is_strictly_inside(left.first(), right)
-                && !planar_point_is_strictly_inside(right.first(), left)
-        })
-    })
+    Ok(true)
+}
+
+fn inner_boundaries_are_disjoint_and_inside(
+    outer: &SimpleRing, inners: &[SimpleRing], ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    for inner in inners {
+        if planar_polylines_intersect(outer.points(), inner.points(), ctx)? {
+            return Ok(false);
+        }
+        for point in inner.interior() {
+            if !planar_point_is_strictly_inside(*point, outer, ctx)? {
+                return Ok(false);
+            }
+        }
+    }
+    rings_are_disjoint(inners, ctx)
 }
 
 fn linear_boundary_relationship_is_valid(
@@ -1246,58 +1258,44 @@ fn linear_boundary_relationship_is_valid(
     support: &SurfaceGeometry,
     support_bounds: Option<[Option<f64>; 4]>,
     periodic_parameters: [bool; 2],
-) -> Option<bool> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<bool>, CodecError> {
     let rings = match rings {
         Ok(rings) => rings,
-        Err(NonSimpleRing) => return Some(false),
+        Err(NonSimpleRing) => return Ok(Some(false)),
     };
     if surface_kind == BoundarySurfaceKind::Bounded {
-        return Some(true);
+        return Ok(Some(true));
     }
     if has_explicit_outer {
-        let (outer, inners) = rings.split_first()?;
-        return Some(inner_boundaries_are_disjoint_and_inside(outer, inners));
+        let Some((outer, inners)) = rings.split_first() else { return Ok(None); };
+        return Ok(Some(inner_boundaries_are_disjoint_and_inside(outer, inners, ctx)?));
     }
     if periodic_parameters.iter().any(|periodic| *periodic) {
-        return None;
+        return Ok(None);
     }
     match support_bounds {
         Some([Some(u_lower), Some(u_upper), Some(v_lower), Some(v_upper)])
-            if u_lower.is_finite()
-                && u_upper.is_finite()
-                && v_lower.is_finite()
-                && v_upper.is_finite()
-                && u_lower < u_upper
-                && v_lower < v_upper =>
-        {
-            if rings.iter().any(|ring| {
-                ring.interior().iter().any(|point| {
-                    point[0] <= u_lower
-                        || point[0] >= u_upper
-                        || point[1] <= v_lower
-                        || point[1] >= v_upper
-                })
-            }) {
-                return Some(false);
+            if u_lower.is_finite() && u_upper.is_finite()
+                && v_lower.is_finite() && v_upper.is_finite()
+                && u_lower < u_upper && v_lower < v_upper => {
+            for ring in rings {
+                for point in ring.interior() {
+                    ctx.charge_work(1, "iges ring support bound comparisons")?;
+                    if point[0] <= u_lower || point[0] >= u_upper
+                        || point[1] <= v_lower || point[1] >= v_upper {
+                        return Ok(Some(false));
+                    }
+                }
             }
         }
-        Some(_) => return None,
-        None if !matches!(
-            support,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-        ) =>
-        {
-            return None
+        Some(_) => return Ok(None),
+        None if !matches!(support, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))) => {
+            return Ok(None);
         }
         None => {}
     }
-    Some(rings.iter().enumerate().all(|(left_index, left)| {
-        rings.iter().skip(left_index + 1).all(|right| {
-            !planar_polylines_intersect(left.points(), right.points())
-                && !planar_point_is_strictly_inside(left.first(), right)
-                && !planar_point_is_strictly_inside(right.first(), left)
-        })
-    }))
+    Ok(Some(rings_are_disjoint(rings, ctx)?))
 }
 
 #[derive(Clone)]
@@ -3008,16 +3006,18 @@ pub(super) fn project(
             Some(rings) => Some(rings),
             None => linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model, ctx)?,
         };
-        let linear_relationship = linear_rings.and_then(|rings| {
-            linear_boundary_relationship_is_valid(
+        let linear_relationship = match linear_rings {
+            Some(rings) => linear_boundary_relationship_is_valid(
                 rings.as_deref(),
                 surface_kind,
                 has_explicit_outer,
                 &support_geometry,
                 support_parameter_bounds,
                 periodic_parameters,
-            )
-        });
+                ctx,
+            )?,
+            None => None,
+        };
         if linear_relationship == Some(false) {
             super::push_entity_loss(
                 ctx,
