@@ -1998,7 +1998,13 @@ mod tests {
                 67,
                 "retain SAT record name",
             ),
-            (ResourceDimension::MaterializedBytes, 4, "frame SAT record"),
+            (
+                ResourceDimension::MaterializedBytes,
+                2 + 3
+                    + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::Prim>())
+                    + 1,
+                "frame SAT record",
+            ),
         ];
         for (dimension, limit, operation) in cases {
             let arena = DecodeArena::new();
@@ -2023,14 +2029,15 @@ mod tests {
 
     #[test]
     fn sat_typed_string_copies_refuse_retained_limit() {
-        for (body, limit) in [
-            ("mystery @3 abc #\n", 73),
-            ("asmheader $-1 -1 @3 abc #\n", 75),
+        for (body, limit, token_slots) in [
+            ("mystery @3 abc #\n", 73, 0),
+            ("asmheader $-1 -1 @3 abc #\n", 75, 4),
         ] {
             let source = asm_stream(body);
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
+            policy.limits.max_retained_bytes = limit
+                + token_slots * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Token>());
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("typed string limit must refuse");

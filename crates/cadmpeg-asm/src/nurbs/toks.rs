@@ -226,11 +226,17 @@ pub(super) fn take_knot_table(
     n: usize,
     degree: i64,
 ) -> Option<Result<(Vec<f64>, usize), cadmpeg_core::CodecError>> {
-    let mut values = match ctx.collection_vec(n, "ASM unique knot values") {
+    let mut scratch = match ctx.reserve_scoped(0, "ASM knot expansion inputs") {
+        Ok(scratch) => scratch,
+        Err(error) => return Some(Err(error)),
+    };
+    let mut values = match scratch.with_storage(|| ctx.collection_vec(n, "ASM unique knot values"))
+    {
         Ok(values) => values,
         Err(error) => return Some(Err(error)),
     };
-    let mut mults = match ctx.collection_vec(n, "ASM knot multiplicities") {
+    let mut mults = match scratch.with_storage(|| ctx.collection_vec(n, "ASM knot multiplicities"))
+    {
         Ok(mults) => mults,
         Err(error) => return Some(Err(error)),
     };
@@ -362,8 +368,13 @@ pub(super) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<Result<(usize, &'n str), cadmpeg_core::CodecError>> {
-    let owned = match owned_subtype_defs(ctx, toks)? {
-        Ok(value) => value,
+    let mut owned_storage = match ctx.reserve_scoped(0, "ASM owned construction index") {
+        Ok(storage) => storage,
+        Err(error) => return Some(Err(error)),
+    };
+    let owned = match owned_storage.with_storage(|| owned_subtype_defs(ctx, toks).transpose()) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     names.iter().copied().find_map(|name| {
@@ -380,8 +391,13 @@ pub fn owned_construction_subtype(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<String, cadmpeg_core::CodecError>> {
-    let owned = match owned_subtype_defs(ctx, toks)? {
-        Ok(value) => value,
+    let mut owned_storage = match ctx.reserve_scoped(0, "ASM owned construction index") {
+        Ok(storage) => storage,
+        Err(error) => return Some(Err(error)),
+    };
+    let owned = match owned_storage.with_storage(|| owned_subtype_defs(ctx, toks).transpose()) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     owned
@@ -446,8 +462,13 @@ pub(super) fn cache_scope<'a>(
 ) -> Option<Result<&'a [Token], cadmpeg_core::CodecError>> {
     let mut constructions = 0usize;
     let mut cache_bearing = Vec::new();
-    let owned = match owned_subtype_defs(ctx, toks)? {
-        Ok(value) => value,
+    let mut owned_storage = match ctx.reserve_scoped(0, "ASM owned construction index") {
+        Ok(storage) => storage,
+        Err(error) => return Some(Err(error)),
+    };
+    let owned = match owned_storage.with_storage(|| owned_subtype_defs(ctx, toks).transpose()) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     for (start, _) in owned.into_iter().filter(|(_, name)| *name != "ref") {

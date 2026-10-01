@@ -1555,7 +1555,9 @@ mod variable_blend_value_tests {
         let mut cur = Cur::at(&tokens, 0);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7;
+        policy.limits.max_retained_bytes = 7 + cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<f64>() + 2 * std::mem::size_of::<cadmpeg_ir::math::Point2>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
         let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
