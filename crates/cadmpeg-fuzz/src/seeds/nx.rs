@@ -209,9 +209,9 @@ fn prt_with_file_entry(name: &[u8], payload: &[u8]) -> Result<Vec<u8>, CodecErro
 #[cfg(test)]
 mod tests {
     use super::{record, single_part_prt_with_partition};
+    use cadmpeg_container::compression::inflate_zlib_probe;
     use cadmpeg_core::decode::DecodePolicy;
     use cadmpeg_core::CodecError;
-    use cadmpeg_container::compression::inflate_zlib_probe;
 
     #[test]
     fn long_partition_has_exact_directory_offset_and_size() {

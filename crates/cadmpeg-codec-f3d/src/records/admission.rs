@@ -95,9 +95,11 @@ impl RecordAdmission<'_, '_> {
             Self::Charged(ctx) => ctx.alloc_filled(count, value, operation),
             Self::Admitted => {
                 let mut values = DecodeContext::admitted_vec(count, operation)?;
-                values.resize(count, value);
+                for _ in 0..count {
+                    values.push(value.clone());
+                }
                 Ok(values)
-            },
+            }
         }
     }
 
