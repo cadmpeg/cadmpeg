@@ -194,7 +194,7 @@ fn transfer_reference_lines(
 ) -> Result<(), CodecError> {
     let mut line3d_id_counts = BTreeMap::<u32, usize>::new();
     for line in &scan.references.lines {
-        if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = &line.kind {
+        if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = line.kind() {
             ctx.admit_btree_entry(
                 &line3d_id_counts,
                 entity_id,
@@ -204,13 +204,13 @@ fn transfer_reference_lines(
         }
     }
     for line in &scan.references.lines {
-        let start: [f64; 3] = line.start.get().into();
-        let end: [f64; 3] = line.end.get().into();
+        let start: [f64; 3] = line.start().get().into();
+        let end: [f64; 3] = line.end().get().into();
         let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
         let Some((direction, _)) = crate::vecmath::normalize_with_length(direction) else {
             continue;
         };
-        let (id, object_id) = match &line.kind {
+        let (id, object_id) = match line.kind() {
             crate::reference::ReferenceLineKind::Line => (
                 crate::identity::compose_checked::<CurveId>(
                     ctx,
@@ -272,7 +272,7 @@ fn transfer_reference_lines(
             Curve {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::new(line.start, direction),
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(line.start(), direction),
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
@@ -306,8 +306,8 @@ fn transfer_reference_circles(
         *circle_id_counts.entry(circle.entity_id).or_default() += 1;
     }
     for circle in &scan.references.circles {
-        let start: [f64; 3] = circle.start.get().into();
-        let center: [f64; 3] = circle.center.get().into();
+        let start: [f64; 3] = circle.start().get().into();
+        let center: [f64; 3] = circle.center().get().into();
         let radial = std::array::from_fn(|axis| start[axis] - center[axis]);
         let Some((reference, _)) = crate::vecmath::normalize_with_length(radial) else {
             continue;
@@ -351,7 +351,7 @@ fn transfer_reference_circles(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(circle.axis, reference)
+        let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(circle.axis(), reference)
             .ok_or_else(|| {
                 CodecError::malformed(
                     "CircleCurve.axis/ref_direction must form an orthonormal frame",
@@ -364,9 +364,9 @@ fn transfer_reference_circles(
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                        circle.center,
+                        circle.center(),
                         frame,
-                        circle.radius,
+                        circle.radius(),
                     ),
                 )),
                 source_object: Some(SourceObjectAssociation {
@@ -452,18 +452,18 @@ fn transfer_reference_ellipses(
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                     cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
-                        ellipse.center,
+                        ellipse.center(),
                         cadmpeg_ir::units::OrthonormalFrame3::from_units(
-                            ellipse.axis,
-                            ellipse.major_direction,
+                            ellipse.axis(),
+                            ellipse.major_direction(),
                         )
                         .ok_or_else(|| {
                             CodecError::malformed(
                                 "EllipseCurve.axis/ref_direction must form an orthonormal frame",
                             )
                         })?,
-                        ellipse.major_radius,
-                        ellipse.minor_radius,
+                        ellipse.major_radius(),
+                        ellipse.minor_radius(),
                     )
                     .map_err(CodecError::malformed)?,
                 )),

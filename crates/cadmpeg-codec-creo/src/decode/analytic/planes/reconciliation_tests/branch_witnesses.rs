@@ -54,19 +54,10 @@ fn fc05_witness_scan() -> crate::container::ContainerScan<'static> {
     });
     scan.references
         .circles
-        .push(crate::reference::ReferenceCircle {
-            entity_id: 7,
-            center: cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.5].into())
-                .expect("finite center"),
-            center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
-            axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
-            start: cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, 0.5].into())
-                .expect("finite start"),
-            end: cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 1.5].into())
-                .expect("finite end"),
-            offset: 8,
-        });
+        .push(crate::reference::ReferenceCircle::try_new(7, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.5].into())
+                .expect("finite center")), cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"), cadmpeg_ir::units::UnitVector3::Y_AXIS, [cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, 0.5].into())
+                .expect("finite start"), cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 1.5].into())
+                .expect("finite end")], 8).expect("checked reference geometry"));
     scan.curves
         .topology_rows
         .push(crate::curve::CurveTopologyRow {

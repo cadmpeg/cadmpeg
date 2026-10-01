@@ -83,7 +83,7 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
     ];
     scan.topology.vertices = vec![
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(
+            crate::topology::TopologicalVertex::new_for_test(
                 ctx,
                 1,
                 vec![
@@ -109,7 +109,7 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
         .expect("vertex admission")
         .expect("valid vertex fixture"),
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(
+            crate::topology::TopologicalVertex::new_for_test(
                 ctx,
                 2,
                 vec![
