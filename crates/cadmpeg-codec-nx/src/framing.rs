@@ -125,8 +125,12 @@ pub(crate) fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {
     Some(value)
 }
 
-pub(crate) fn read_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
-    (0..count).map(|_| read_and_advance(stream, at)).collect()
+pub(crate) fn read_sequence_at<const N: usize>(stream: &[u8], at: &mut usize) -> Option<[u32; N]> {
+    let mut references = [0; N];
+    for reference in &mut references {
+        *reference = read_and_advance(stream, at)?;
+    }
+    Some(references)
 }
 
 /// Advance across encoded XMT references without retaining them.
@@ -322,8 +326,8 @@ mod tests {
 
         let mut read_at = 0;
         assert_eq!(
-            read_sequence_at(&bytes, &mut read_at, 2),
-            Some(vec![65_536, 3])
+            read_sequence_at::<2>(&bytes, &mut read_at),
+            Some([65_536, 3])
         );
         assert_eq!(read_at, skipped_at);
     }

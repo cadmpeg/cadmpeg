@@ -24,7 +24,7 @@ use super::{
     UnionFind, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 
-impl MeshSelectionSearch<'_, '_> {
+impl<'storage> MeshSelectionSearch<'storage, '_> {
     pub(super) fn should_stop(&self) -> bool {
         self.outcome.is_closed()
     }
@@ -59,12 +59,12 @@ impl MeshSelectionSearch<'_, '_> {
     #[cfg(test)]
     pub(super) fn remaining_equation_merge_capacity(
         &self,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
     ) -> Result<Option<usize>, CodecError> {
         fn choice_component_reductions(
             choice: &[[usize; 2]],
-            quotient: &mut MeshQuotient,
-            possible: &mut UnionFind,
+            quotient: &mut MeshQuotient<'_>,
+            possible: &mut UnionFind<'_>,
         ) -> HashMap<usize, usize> {
             let mut equations = HashMap::<usize, Vec<[usize; 2]>>::new();
             for [left, right] in choice {
@@ -270,7 +270,7 @@ impl MeshSelectionSearch<'_, '_> {
     pub(super) fn face_projection_signature(
         &self,
         face: usize,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
     ) -> Result<MeshQuotientSignature, CodecError> {
         let mut root_set = HashSet::new();
         for use_ in self.assignments[face]
@@ -322,7 +322,7 @@ impl MeshSelectionSearch<'_, '_> {
     #[cfg(test)]
     pub(super) fn propagate_forced_face_equations(
         &self,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
     ) -> Result<bool, CodecError> {
         let budget = WorkBudget::new(usize::MAX);
         self.propagate_forced_face_equations_from(quotient, None, &budget)
@@ -330,7 +330,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn propagate_forced_face_equations_from(
         &self,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
         changed_edges: Option<&HashSet<usize>>,
         budget: &WorkBudget<'_>,
     ) -> Result<bool, CodecError> {
@@ -670,10 +670,10 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn prepare_selected_branch(
         &self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         changed_edges: &HashSet<usize>,
         propagation_budget: &WorkBudget<'_>,
-    ) -> Result<Option<MeshQuotient>, CodecError> {
+    ) -> Result<Option<MeshQuotient<'storage>>, CodecError> {
         let mut measured = quotient.clone_charged(self.ctx)?;
         if !self.has_exact_singleton_endpoint_domains()
             && !self.propagate_forced_face_equations_from(
@@ -711,13 +711,13 @@ impl MeshSelectionSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn search(&mut self, quotient: &MeshQuotient) -> Result<(), CodecError> {
+    pub(crate) fn search(&mut self, quotient: &MeshQuotient<'storage>) -> Result<(), CodecError> {
         self.search_with_limit(quotient, MAX_MESH_CONSTRAINT_OPERATIONS)
     }
 
     pub(super) fn search_with_budget(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
@@ -726,10 +726,10 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn fixed_direction_options(
         &self,
-        measured: &MeshQuotient,
+        measured: &MeshQuotient<'storage>,
         face: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Result<Vec<MeshFixedDirectionOption>, CodecError> {
+    ) -> Result<Vec<MeshFixedDirectionOption<'storage>>, CodecError> {
         let Some(direction_options) = self
             .fixed_face_directions
             .get(face)
@@ -802,7 +802,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn search_fixed_direction_with_budget(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
         if self.should_stop() {
@@ -997,7 +997,7 @@ impl MeshSelectionSearch<'_, '_> {
     #[cfg(test)]
     pub(super) fn search_with_limit(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         limit: usize,
     ) -> Result<(), CodecError> {
         let budget = WorkBudget::new(limit);
@@ -1007,7 +1007,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn selection_state_signature(
         &self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         prepared: bool,
     ) -> Result<MeshSelectionStateSignature, CodecError> {
         let mut quotient = quotient.clone_charged(self.ctx)?;
@@ -1036,7 +1036,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn search_from_state(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         prepared: bool,
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
@@ -1063,7 +1063,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn search_state(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         prepared: bool,
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
@@ -1468,7 +1468,7 @@ impl MeshSelectionSearch<'_, '_> {
         options.sort_unstable_by(
             |(left_assignment, left_directions, left_quotient),
              (right_assignment, right_directions, right_quotient)| {
-                let measure = |quotient: &MeshQuotient| {
+                let measure = |quotient: &MeshQuotient<'storage>| {
                     (0..quotient.union.len())
                         .filter(|&node| quotient.union.root(node) == node)
                         .fold((0usize, 0u128), |(count, freedom), node| {
@@ -1527,7 +1527,7 @@ pub(super) fn direction_work_estimate(
 
 pub(super) fn mesh_assignment_can_merge(
     assignment: &MeshFaceBoundaryAssignment,
-    quotient: &mut MeshQuotient,
+    quotient: &mut MeshQuotient<'_>,
 ) -> bool {
     pub(super) fn possible_ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
         let port = |reversed: bool| {
@@ -1868,10 +1868,10 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     Ok(Some(topology))
 }
 
-pub(super) fn resolve_mesh_selection_from_quotient(
-    ctx: &DecodeContext<'_>,
+pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     topology: StandardTopology,
-    mut quotient: MeshQuotient,
+    mut quotient: MeshQuotient<'storage>,
     vertex_points: &[[f64; 3]],
     edge_candidates: &[Vec<[usize; 2]>],
     port_identities: &[[u32; 2]],
@@ -1950,19 +1950,53 @@ pub(super) fn resolve_mesh_selection_from_quotient(
     Ok(Some(MeshSolve::Solved((topology, completed))))
 }
 
-pub(super) fn reduced_distinct_matching(
+/// A complete assignment of distinct, in-range point indices.
+struct DistinctAssignment {
+    points: Vec<usize>,
+}
+
+impl DistinctAssignment {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        points: Vec<usize>,
+        point_count: usize,
+    ) -> Result<Option<Self>, CodecError> {
+        let (mut seen, _storage) = ctx.temporary_vec(point_count, "catia_distinct_assignment")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(point_count),
+            "catia_distinct_assignment",
+        )?;
+        seen.resize(point_count, false);
+        for &point in &points {
+            ctx.charge_work(1, "catia_distinct_assignment")?;
+            let Some(used) = seen.get_mut(point) else {
+                return Ok(None);
+            };
+            if *used {
+                return Ok(None);
+            }
+            *used = true;
+        }
+        Ok(Some(Self { points }))
+    }
+}
+
+fn reduced_distinct_matching(
     ctx: &DecodeContext<'_>,
     domains: &[Vec<usize>],
     point_count: usize,
     budget: &WorkBudget<'_>,
     excluded: Option<(usize, usize)>,
-) -> Result<Option<Vec<usize>>, CodecError> {
+) -> Result<Option<DistinctAssignment>, CodecError> {
     let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_reduced_matching")?;
     let mut used = ctx.alloc_filled(point_count, false, "catia_reduced_matching_used")?;
     let mut remaining = Vec::new();
     for (root, domain) in domains.iter().enumerate() {
         if domain.len() == 1 {
             let point = domain[0];
+            if point >= point_count {
+                return Ok(None);
+            }
             if excluded.is_some_and(|(excluded_root, excluded_point)| {
                 excluded_root == root && excluded_point == point
             }) || used[point]
@@ -1971,7 +2005,14 @@ pub(super) fn reduced_distinct_matching(
             }
             used[point] = true;
             assignment[root] = Some(point);
+        }
+    }
+    for (root, domain) in domains.iter().enumerate() {
+        if domain.len() == 1 {
             continue;
+        }
+        if domain.iter().any(|point| *point >= point_count) {
+            return Ok(None);
         }
         let mut values = Vec::new();
         ctx.reserve_vec(
@@ -2026,7 +2067,7 @@ pub(super) fn reduced_distinct_matching(
         };
         completed.push(point);
     }
-    Ok(Some(completed))
+    DistinctAssignment::new(ctx, completed, point_count)
 }
 
 // The selection owns the complete quotient inputs and the optional gauge. The
@@ -2256,7 +2297,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             }
             Ok(Some((topology.clone_charged(ctx)?, points)))
         };
-    let Some(first) = materialize(&first_assignment)? else {
+    let Some(first) = materialize(&first_assignment.points)? else {
         return Ok(None);
     };
     let mut ambiguous_roots = Vec::new();
@@ -2275,7 +2316,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             &domain_values,
             vertex_points.len(),
             budget,
-            Some((root, first_assignment[root])),
+            Some((root, first_assignment.points[root])),
         )?
         else {
             if budget.exhausted() {
@@ -2283,7 +2324,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             }
             continue;
         };
-        let Some(alternate) = materialize(&alternate)? else {
+        let Some(alternate) = materialize(&alternate.points)? else {
             continue;
         };
         if !mesh_candidates_equivalent_with_context(ctx, &first, &alternate, candidate_gauge)? {
@@ -2291,4 +2332,56 @@ pub(super) fn resolve_singleton_mesh_selection(
         }
     }
     Ok(Some(MeshSolve::Solved((first.0, first.1))))
+}
+
+#[cfg(test)]
+mod reduced_matching_tests {
+    use super::{reduced_distinct_matching, DistinctAssignment};
+
+    #[test]
+    fn distinct_assignment_initialization_refuses_work() {
+        crate::test_support::with_work_limit(0, |ctx| {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                super::DistinctAssignment::new(ctx, vec![], 64)
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_distinct_assignment");
+            assert_eq!(limit.additional, 64);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
+    fn reduced_matching_reserves_later_singletons_before_domains() {
+        crate::test_support::with_service_context(|ctx| {
+            let budget = ctx.work_budget(100);
+            let domains = [vec![0, 1], vec![0]];
+            let assignment = reduced_distinct_matching(ctx, &domains, 2, &budget, None)
+                .expect("admitted matching")
+                .expect("distinct solution");
+            assert_eq!(assignment.points, [1, 0]);
+            assert!(
+                reduced_distinct_matching(ctx, &domains, 2, &budget, Some((0, 1)))
+                    .expect("admitted exclusion")
+                    .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn reduced_matching_rejects_duplicate_and_out_of_range_assignments() {
+        crate::test_support::with_service_context(|ctx| {
+            assert!(DistinctAssignment::new(ctx, vec![0, 0], 2)
+                .expect("admitted")
+                .is_none());
+            assert!(DistinctAssignment::new(ctx, vec![2], 2)
+                .expect("admitted")
+                .is_none());
+            let budget = ctx.work_budget(100);
+            assert!(reduced_distinct_matching(ctx, &[vec![2]], 2, &budget, None)
+                .expect("admitted")
+                .is_none());
+        });
+    }
 }

@@ -7,7 +7,6 @@ use std::io::Cursor;
 use cadmpeg_core::convert::{f32_from_f64, f64_from_index, truncate_f64_to_u8};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::layout::visual_states_feature_appearance_prefix as feature_visual;
 use crate::test_support::appearance::material_payload;
 use crate::test_support::appearance::sldprt_with_body_and_material;
@@ -31,7 +30,7 @@ fn appearance_from_nameless_block_keeps_source_owner() {
     let payload = material_payload("Steel", [32, 64, 128]);
     let mut source = outer_header();
     source.extend(make_block(0x43, "", &payload));
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -235,7 +234,8 @@ fn visual_states_feature_assignment_decodes_identity_and_color() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let assignments = super::feature_assignments(&ctx, &container::scan_bytes(&source)).unwrap();
+    let assignments =
+        super::feature_assignments(&ctx, &crate::test_support::container::scan(&source)).unwrap();
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].feature_source_id.value(), 36);
     assert_eq!(assignments[0].feature_timestamp, 0x6a81_f0f4);
@@ -580,4 +580,61 @@ fn decode_binds_adjacent_entity53_color_to_disc14_face() {
         .base_color
         .unwrap();
     assert_eq!([color.r(), color.g(), color.b()], [1.0, 0.125, 0.0]);
+}
+
+#[test]
+fn appearance_searches_refuse_marker_free_ranges() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "ThirdPtyStore/VisualStates", &[0; 64]));
+    let scan = crate::test_support::container::scan(&source);
+    let section = scan.sections().next().unwrap();
+    for (work, operation, route) in [
+        (0, "scan SLDPRT appearance definitions", 0),
+        (0, "scan inline SLDPRT appearances", 1),
+        (64, "scan SLDPRT feature appearance markers", 2),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = match route {
+            0 => super::definitions(&ctx, &scan).unwrap_err(),
+            1 => super::inline_definitions(&ctx, section, 0, 64).unwrap_err(),
+            _ => super::feature_assignments(&ctx, &scan).unwrap_err(),
+        };
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
+}
+
+#[test]
+fn appearance_face_class_search_refuses_without_assignments() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let payload = [&[0xff, 0xff, 1, 0, 1, 0][..], b"x", &[0; 64]].concat();
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "DisplayLists", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    let mut display_source = outer_header();
+    display_source.extend(make_block(
+        0x43,
+        "DisplayLists",
+        &crate::test_support::tessellation::display_list_payload(),
+    ));
+    let display_scan = crate::test_support::container::scan(&display_source);
+    let faces = crate::tessellation::section_display_faces(
+        &cadmpeg_test_support::service_decode_context(),
+        display_scan.sections().next().unwrap(),
+    )
+    .unwrap();
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(payload.len() + 64).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        super::display_assignments(&ctx, scan.sections().next().unwrap(), &faces).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "match SLDPRT face appearance classes")
+    );
 }

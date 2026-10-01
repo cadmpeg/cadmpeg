@@ -423,10 +423,11 @@ pub(super) fn feature_revolution_axis_for_transfer(
     extent: Option<&RevolveExtent>,
 ) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
     let definition = unique_feature_profile_definition(
+        ctx,
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
-    );
+    )?;
     let mut transforms = scan
         .features
         .section_transforms
@@ -584,10 +585,10 @@ pub(in super::super) fn geometry_generator_features(
         ctx.reserve_vec(&mut output, 1, "creo geometry generator features")?;
         output.push(generator);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         output.as_mut_slice(),
-        |generator| generator.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo geometry generator features output ordering",
     )?;
     Ok(output)

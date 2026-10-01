@@ -995,17 +995,17 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("entries");
     let payload_entry = entries
         .iter()
-        .find(|entry| entry.name == "Payload.bin")
+        .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
-    assert_eq!(payload_entry.referenced_by, vec![payload.id.clone()]);
-    assert_eq!(payload_entry.data, b"payload");
+    assert_eq!(payload_entry.referenced_by(), vec![payload.id.clone()]);
+    assert_eq!(payload_entry.data(), b"payload");
     let ledger = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
         .expect("logical ledger");
     for entry in &entries {
         let mut spans = ledger
             .iter()
-            .filter(|span| span.entry == entry.name)
+            .filter(|span| span.entry == entry.name())
             .collect::<Vec<_>>();
         spans.sort_by_key(|span| span.span.start());
         assert_eq!(spans.first().map(|span| span.span.start()), Some(0));

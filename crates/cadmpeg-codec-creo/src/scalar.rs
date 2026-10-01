@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 
-use crate::decode::axis::Axis;
+use crate::axis::Axis;
 use crate::psb::{compact_int, short_form_float};
 
 const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
@@ -155,7 +155,14 @@ pub(crate) fn double_xar_tables(
     const LABEL: &[u8] = b"double_xar\0";
     let mut tables = Vec::new();
     let mut search = 0;
-    while let Some(offset) = find_from(data, LABEL, search) {
+    loop {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - search),
+            "creo double_xar discovery",
+        )?;
+        let Some(offset) = find_from(data, LABEL, search) else {
+            break;
+        };
         let count_offset = offset + LABEL.len();
         if data.get(count_offset) != Some(&0xf8) {
             search = count_offset;
@@ -166,6 +173,7 @@ pub(crate) fn double_xar_tables(
             search = count_offset + 1;
             continue;
         }
+        ctx.charge_work(u64::from(count), "creo double_xar slot parsing")?;
         let mut entries = Vec::new();
         for _ in 0..count {
             let Some(head) = data.get(cursor).copied() else {
@@ -276,6 +284,10 @@ impl ScalarCache {
         let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
         let mut paired_byte_1_by_tail = BTreeMap::new();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(section.len()),
+            "creo scalar cache discovery",
+        )?;
         for offset in 0..section.len() {
             if section[offset] != 0x46 {
                 continue;
@@ -288,10 +300,21 @@ impl ScalarCache {
             let raw = [
                 byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
             ];
-            if seen.contains(&raw) {
+            let rehash_items = if seen.len() == seen.capacity() {
+                seen.len()
+            } else {
+                0
+            };
+            let hash_work = cadmpeg_core::decode::u64_from_index(rehash_items)
+                .checked_mul(8)
+                .and_then(|work| work.checked_add(16))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo scalar cache image hashing", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(hash_work, "creo scalar cache image hashing")?;
+            if !ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")? {
                 continue;
             }
-            ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")?;
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
@@ -2372,6 +2395,58 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("recursive fixture fits the input limit");
         f(&ctx)
+    }
+
+    #[test]
+    fn scalar_cache_discovery_and_duplicate_hashing_refuse_work() {
+        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
+        let cache = crate::test_support::assert_work_boundaries(
+            &[
+                "creo scalar cache discovery",
+                "creo scalar cache image hashing",
+            ],
+            |ctx| ScalarCache::from_section_checked(ctx, &images),
+        );
+        assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
+        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| {
+            ScalarCache::from_section_checked(ctx, &[0; 16])
+        })
+        .expect_err("miss scan refuses");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo scalar cache discovery")
+        );
+    }
+
+    #[test]
+    fn duplicate_scalar_image_hashing_refuses_after_the_first_image() {
+        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
+        let error = with_recursive_limits(&images, 128, 47, |ctx| {
+            ScalarCache::from_section_checked(ctx, &images)
+        })
+        .expect_err("duplicate hashing still consumes work");
+        let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
+            panic!("hash work refusal");
+        };
+        assert_eq!(resource.operation, "creo scalar cache image hashing");
+        assert_eq!(
+            (resource.used, resource.additional, resource.limit),
+            (32, 16, 47)
+        );
+    }
+
+    #[test]
+    fn double_xar_discovery_and_slot_parsing_refuse_work() {
+        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+        let tables = crate::test_support::assert_work_boundaries(
+            &["creo double_xar discovery", "creo double_xar slot parsing"],
+            |ctx| double_xar_tables(ctx, bytes),
+        );
+        assert_eq!(tables.len(), 1);
+        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| double_xar_tables(ctx, &[0; 16]))
+            .expect_err("miss scan refuses");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo double_xar discovery")
+        );
     }
 
     #[test]

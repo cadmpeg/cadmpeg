@@ -93,7 +93,13 @@ impl RecordAdmission<'_, '_> {
     ) -> Result<Vec<T>, CodecError> {
         match self {
             Self::Charged(ctx) => ctx.alloc_filled(count, value, operation),
-            Self::Admitted => cadmpeg_core::decode::alloc_filled(count, value, operation),
+            Self::Admitted => {
+                let mut values = DecodeContext::admitted_vec(count, operation)?;
+                for _ in 0..count {
+                    values.push(value.clone());
+                }
+                Ok(values)
+            }
         }
     }
 

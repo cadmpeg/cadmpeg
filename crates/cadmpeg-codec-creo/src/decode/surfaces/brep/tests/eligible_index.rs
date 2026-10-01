@@ -8,13 +8,13 @@ use cadmpeg_core::CodecError;
 use super::super::BrepEligibleFaceIndexes;
 
 fn source_loop() -> crate::topology::Loop {
-    crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: vec![crate::topology::HalfEdgeId {
+    crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        vec![crate::topology::HalfEdgeId {
             curve_id: 10,
             side: crate::topology::Side::Zero,
         }],
-    }
+    )
 }
 
 fn source_row() -> crate::curve::CurveTopologyRow {
@@ -99,7 +99,7 @@ fn brep_eligible_face_indexes_preserve_service_order() {
     .expect("service eligible-face indexes admitted");
     assert_eq!(
         indexes.emitted_half_edges,
-        BTreeSet::from([lp.half_edges[0]])
+        BTreeSet::from([lp.half_edges()[0]])
     );
     assert_eq!(indexes.face_curves, BTreeSet::from([10]));
     assert_eq!(indexes.closed_single_edge_curves, BTreeSet::from([10]));

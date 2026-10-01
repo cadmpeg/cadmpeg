@@ -55,7 +55,7 @@ pub(crate) struct CatiaConsolidatedClass5b5cRecord {
 
 impl CatiaConsolidatedClass5b5cRecord {
     fn byte_len(&self) -> u64 {
-        4 + u64::from(u8::from(self.frame.width)) + u64_from_index(self.frame.payload.len())
+        4 + u64::from(u8::from(self.frame.width())) + u64_from_index(self.frame.payload.len())
     }
 }
 
@@ -100,10 +100,10 @@ impl Serialize for CatiaConsolidatedClass5b5cRecord {
             source_index: self.source_index,
             source_offset: self.source_offset,
             byte_len: self.byte_len(),
-            width: self.frame.width,
+            width: self.frame.width(),
             flag: self.frame.flag,
             class: self.class,
-            header_token: self.frame.header_token,
+            header_token: self.frame.header_token(),
             payload: &self.frame.payload,
         }
         .serialize(serializer)
@@ -119,10 +119,10 @@ impl From<CatiaConsolidatedClass5b5cRecord> for Class5b5cWire {
             byte_offset: record.frame.pos,
             source_index: record.source_index,
             source_offset: record.source_offset,
-            width: record.frame.width,
+            width: record.frame.width(),
             flag: record.frame.flag,
             class: record.class,
-            header_token: record.frame.header_token,
+            header_token: record.frame.header_token(),
             payload: record.frame.payload,
         }
     }
@@ -133,13 +133,13 @@ impl TryFrom<Class5b5cWire> for CatiaConsolidatedClass5b5cRecord {
     fn try_from(wire: Class5b5cWire) -> Result<Self, Self::Error> {
         let record = Self {
             id: wire.id,
-            frame: ConsolidatedRawFrame {
-                pos: wire.byte_offset,
-                width: wire.width,
-                flag: wire.flag,
-                header_token: wire.header_token,
-                payload: wire.payload,
-            },
+            frame: ConsolidatedRawFrame::new(
+                wire.byte_offset,
+                wire.width,
+                wire.flag,
+                wire.header_token,
+                wire.payload,
+            )?,
             source_index: wire.source_index,
             source_offset: wire.source_offset,
             class: wire.class,
@@ -202,13 +202,14 @@ mod tests {
     fn frame_wire_preserves_byte_payload_and_checks_derived_length() {
         let record = CatiaConsolidatedClass5b5cRecord {
             id: "catia:consolidated:class5b5c-record#0".to_owned(),
-            frame: ConsolidatedRawFrame {
-                pos: 42,
-                width: ConsolidatedFrameWidth::Two,
-                flag: ConsolidatedFrameFlag::Flag03,
-                header_token: 5,
-                payload: vec![0, 0, 0],
-            },
+            frame: ConsolidatedRawFrame::new(
+                42,
+                ConsolidatedFrameWidth::Two,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                vec![0, 0, 0],
+            )
+            .expect("checked fixture frame"),
             source_index: 0,
             source_offset: 42,
             class: CatiaClass5b5c::Class5b,

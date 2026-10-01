@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
-use crate::decode::axis::{Axis, Sign};
+use crate::axis::{Axis, Sign};
 use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
@@ -1972,8 +1972,7 @@ pub(super) fn topology_bound_plane(
         ctx.reserve_vec(&mut points, 1, "creo topology plane candidate points")?;
         points.push(point);
     }
-    crate::sort::stable_sort_by(
-        ctx,
+    ctx.stable_sort_by(
         points.as_mut_slice(),
         |left, right| {
             left.iter()
@@ -1984,6 +1983,7 @@ pub(super) fn topology_bound_plane(
                 })
                 .unwrap_or(std::cmp::Ordering::Equal)
         },
+        |_| 0,
         "creo topology bound plane points ordering",
     )?;
     // A point outside the finite range agrees with no point.

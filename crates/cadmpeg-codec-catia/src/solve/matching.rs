@@ -442,16 +442,19 @@ pub(crate) fn unique_coordinate_bijection(
                     forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
                 {
                     for &slot in &slots_by_class[class] {
+                        ctx.charge_work(1, "catia_bijection_slot_projection")?;
                         ctx.push_vec(&mut slots, slot, "catia_bijection_visit_slots")?;
                     }
                 } else {
                     for &class in &domains[vertex] {
                         for &slot in &slots_by_class[class] {
+                            ctx.charge_work(1, "catia_bijection_slot_projection")?;
                             ctx.push_vec(&mut slots, slot, "catia_bijection_visit_slots")?;
                         }
                     }
                 }
                 for slot in slots {
+                    ctx.charge_work(1, "catia_bijection_match_visit")?;
                     if seen_slots[slot] == generation {
                         continue;
                     }
@@ -475,6 +478,7 @@ pub(crate) fn unique_coordinate_bijection(
                 return Ok(None);
             };
             loop {
+                ctx.charge_work(1, "catia_bijection_augmentation")?;
                 let Some(vertex) = via_vertex[slot] else {
                     return Ok(None);
                 };
@@ -486,6 +490,10 @@ pub(crate) fn unique_coordinate_bijection(
             }
         }
         let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_bijection_assignment")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(owner.len()),
+            "catia_bijection_match_assignment",
+        )?;
         for (slot, vertex) in owner.into_iter().enumerate() {
             let Some(vertex) = vertex else {
                 return Ok(None);
@@ -502,6 +510,16 @@ pub(crate) fn unique_coordinate_bijection(
         Ok(Some(completed))
     }
 
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(domains.len()),
+        "catia_bijection_domain_validation",
+    )?;
+    for domain in domains {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(domain.len()),
+            "catia_bijection_domain_validation",
+        )?;
+    }
     if domains.len() != points.len()
         || domains
             .iter()
@@ -512,6 +530,10 @@ pub(crate) fn unique_coordinate_bijection(
     let mut representatives = Vec::<usize>::new();
     let mut point_classes = Vec::new();
     for (point, position) in points.iter().enumerate() {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(representatives.len()),
+            "catia_bijection_coordinate_comparison",
+        )?;
         let class = if let Some(class) = representatives
             .iter()
             .position(|representative| points[*representative] == *position)
@@ -531,6 +553,10 @@ pub(crate) fn unique_coordinate_bijection(
     let mut class_domains = Vec::new();
     for domain in domains {
         let mut classes = Vec::new();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(domain.len()),
+            "catia_bijection_class_projection",
+        )?;
         for &point in domain {
             ctx.push_vec(
                 &mut classes,
@@ -539,6 +565,10 @@ pub(crate) fn unique_coordinate_bijection(
             )?;
         }
         classes.sort_unstable();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(classes.len()),
+            "catia_bijection_class_deduplication",
+        )?;
         classes.dedup();
         ctx.push_vec(&mut class_domains, classes, "catia_bijection_class_domains")?;
     }
@@ -566,6 +596,7 @@ pub(crate) fn unique_coordinate_bijection(
     };
     for (vertex, domain) in class_domains.iter().enumerate() {
         for &class in domain {
+            ctx.charge_work(1, "catia_bijection_alternate_class")?;
             if class != classes[vertex]
                 && matching(
                     ctx,
@@ -605,6 +636,21 @@ pub(crate) fn unique_coordinate_bijection(
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeSet, HashSet};
+
+    #[test]
+    fn coordinate_bijection_refuses_unadmitted_matching_visits() {
+        let domains = [HashSet::from([0_usize])];
+        crate::test_support::with_work_limit(4, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
+                    .expect_err("matching visit must be admitted")
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_bijection_slot_projection");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

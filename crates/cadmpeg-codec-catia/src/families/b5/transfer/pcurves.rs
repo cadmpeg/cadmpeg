@@ -623,7 +623,10 @@ pub(super) fn nurbs_isocurve(
         .ok()
         .and_then(|degree| degree.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_basis", u64::MAX, u64::MAX))?;
-    let rational_count = if surface.weights().is_some() {
+    let rational_count = if matches!(
+        surface.pole_grid(),
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
+    ) {
         count
     } else {
         0
@@ -789,11 +792,14 @@ pub(super) fn cylinder_helix(
     else {
         return Ok(None);
     };
-    let cache_points = cache.curve.control_points();
-    let Some(cache_start) = cache_points.first() else {
+    let poles = cache.curve.pole_rows();
+    let Some(cache_start) = poles.point_at(0) else {
         return Ok(None);
     };
-    let Some(cache_end) = cache_points.last() else {
+    let Some(last) = poles.count().checked_sub(1) else {
+        return Ok(None);
+    };
+    let Some(cache_end) = poles.point_at(last) else {
         return Ok(None);
     };
     if distance([cache_start.x, cache_start.y, cache_start.z], edge_start) > POINT_TOLERANCE

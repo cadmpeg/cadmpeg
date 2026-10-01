@@ -625,7 +625,7 @@ fn part21_point_coordinates(exchange: &crate::parse::Exchange, id: u64) -> Optio
         .iter()
         .map(|value| match value {
             crate::parse::Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
-            crate::parse::Value::Real(value) => Some(*value),
+            crate::parse::Value::Real(value) => Some(value.get()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

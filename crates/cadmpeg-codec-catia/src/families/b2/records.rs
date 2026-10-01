@@ -1687,7 +1687,7 @@ pub(crate) fn b2_class5b5c_records_from_records(
         ctx.push_vec(
             &mut output,
             B2Class5b5cRecord {
-                frame: ConsolidatedRawFrame::from_record(record, payload),
+                frame: ConsolidatedRawFrame::from_record(record, payload)?,
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
                 class,

@@ -21,6 +21,9 @@ use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;
 
+const MAX_RECOVERY_UNIQUE_KNOTS: u64 = 1_000;
+const MAX_RECOVERY_SURFACE_POLES: u64 = 200_000;
+
 macro_rules! propagate_resource {
     ($result:expr) => {
         match $result {
@@ -87,8 +90,18 @@ pub(super) fn surface_block(
     }
     let n_uniq_u = cur.take_long()?;
     let n_uniq_v = cur.take_long()?;
-    if !(1..=1000).contains(&n_uniq_u) || !(1..=1000).contains(&n_uniq_v) {
+    if n_uniq_u < 1 || n_uniq_v < 1 {
         return None;
+    }
+    for count in [n_uniq_u, n_uniq_v] {
+        let count = u64::try_from(count).ok()?;
+        if count > MAX_RECOVERY_UNIQUE_KNOTS {
+            return Some(Err(ctx.refuse_codec_limit(
+                "ASM unique knot recovery",
+                MAX_RECOVERY_UNIQUE_KNOTS,
+                count,
+            )));
+        }
     }
 
     let (u_knots, n_poles_u) = propagate_resource!(knots(
@@ -103,18 +116,25 @@ pub(super) fn surface_block(
         usize::try_from(n_uniq_v).ok()?,
         degree_v
     )?);
-    if n_poles_u.checked_mul(n_poles_v).is_none_or(|n| n > 200_000) {
-        return None;
+    let Some(pole_count) = n_poles_u.checked_mul(n_poles_v) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "ASM surface pole recovery",
+            MAX_RECOVERY_SURFACE_POLES,
+            u64::MAX,
+        )));
+    };
+    let pole_population = cadmpeg_core::decode::u64_from_index(pole_count);
+    if pole_population > MAX_RECOVERY_SURFACE_POLES {
+        return Some(Err(ctx.refuse_codec_limit(
+            "ASM surface pole recovery",
+            MAX_RECOVERY_SURFACE_POLES,
+            pole_population,
+        )));
     }
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let poles = propagate_resource!(control_points(
-        ctx,
-        &mut cur,
-        n_poles_u * n_poles_v,
-        marker
-    )?);
+    let poles = propagate_resource!(control_points(ctx, &mut cur, pole_count, marker)?);
     let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
     let surface = NurbsSurface::new(
         NurbsSurfaceAxis::new(
@@ -151,8 +171,16 @@ pub(super) fn curve_block(
     }
     let closure = cur.take_enum()?;
     let n_uniq = cur.take_long()?;
-    if !(1..=1000).contains(&n_uniq) {
+    if n_uniq < 1 {
         return None;
+    }
+    let knot_count = u64::try_from(n_uniq).ok()?;
+    if knot_count > MAX_RECOVERY_UNIQUE_KNOTS {
+        return Some(Err(ctx.refuse_codec_limit(
+            "ASM unique knot recovery",
+            MAX_RECOVERY_UNIQUE_KNOTS,
+            knot_count,
+        )));
     }
     let (knot_vector, n_poles) =
         propagate_resource!(knots(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)?);
@@ -631,6 +659,82 @@ mod tests {
     use crate::nurbs::toks::SubtypeTable;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn cached_nurbs_recovery_caps_preserve_resource_refusals() {
+        use crate::sab::Token;
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let mut curve = vec![
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(1_001),
+        ];
+        for index in 0_u32..1_001 {
+            curve.extend([Token::Double(f64::from(index)), Token::Long(1)]);
+        }
+        curve.extend(std::iter::repeat_n(Token::Double(0.0), 1_001 * 3));
+        let error = super::curve_block(&ctx, &curve, 0)
+            .expect("ceiling is a recognized cache refusal")
+            .expect_err("knot ceiling");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery")))
+        );
+        let mut surface = vec![
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(1_001),
+        ];
+        for count in [2_u32, 1_001] {
+            for index in 0..count {
+                surface.extend([Token::Double(f64::from(index)), Token::Long(1)]);
+            }
+        }
+        surface.extend(std::iter::repeat_n(Token::Double(0.0), 2 * 1_001 * 3));
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let error = super::surface_block(&ctx, &surface, 0)
+            .expect("ceiling is a recognized cache refusal")
+            .expect_err("knot ceiling");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery")))
+        );
+        let mut grid = vec![
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(449),
+            Token::Long(449),
+        ];
+        for _ in 0..2 {
+            for index in 0_u32..449 {
+                grid.extend([Token::Double(f64::from(index)), Token::Long(1)]);
+            }
+        }
+        grid.extend(std::iter::repeat_n(Token::Double(0.0), 449 * 449 * 3));
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let error = super::surface_block(&ctx, &grid, 0)
+            .expect("pole ceiling is a recognized cache refusal")
+            .expect_err("pole ceiling");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM surface pole recovery")))
+        );
+    }
 
     #[test]
     fn subtype_search_stack_refuses_collection_limit() {

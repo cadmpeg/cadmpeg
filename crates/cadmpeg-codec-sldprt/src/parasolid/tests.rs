@@ -251,7 +251,7 @@ fn legacy_zlib_candidate_refuses_expansion_limit() {
 #[test]
 fn parasolid_stream_header_is_parsed() {
     let f = synthetic_sldprt();
-    let scan = container::scan_bytes(&f);
+    let scan = crate::test_support::container::scan(&f);
     let site = container::select_active_parasolid_site(&scan).expect("active parasolid");
     assert_eq!(site.header.schema.value(), "SCH_SW_33103_11000");
     assert!(site.header.description.contains("partition"));

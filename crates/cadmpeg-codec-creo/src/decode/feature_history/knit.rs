@@ -34,10 +34,11 @@ pub(in super::super) fn filled_surface_feature_definition(
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, CodecError> {
     let sketch = match unique_feature_profile_definition(
+        ctx,
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
-    ) {
+    )? {
         Some(definition) => model_sketch_id(ctx, scan, definition)?,
         None => None,
     };

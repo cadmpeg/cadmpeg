@@ -643,7 +643,7 @@ fn bind_complete_record_tables(
         return Ok(false);
     };
     let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width) {
+    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
         Ok(records) => records,
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
         Err(_) => return Ok(false),
@@ -682,7 +682,7 @@ fn bind_complete_record_tables(
         if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
             return Ok(false);
         }
-        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width) {
+        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
             Ok(records) => records,
             Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
             Err(_) => return Ok(false),
@@ -9140,7 +9140,7 @@ fn decode_history_records(
     if start >= limit {
         return Ok(Vec::new());
     }
-    match cadmpeg_asm::sab::frame_history(ctx, bytes, start, limit, width) {
+    match cadmpeg_asm::sab::frame_history(ctx, bytes, start, limit, width, None) {
         Ok(records) => {
             let mut decoded = Vec::new();
             for record in records {

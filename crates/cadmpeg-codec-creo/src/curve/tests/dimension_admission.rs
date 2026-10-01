@@ -96,9 +96,18 @@ fn dimension_exists_refuses_scoped_lookup_key() {
 
 #[test]
 fn dimension_search_refuses_scan_work() {
-    let error = refuse("search('abc','b')", &BTreeMap::new(), |policy| {
-        policy.limits.max_work_units = 1;
-    });
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo dimension text search work",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "search('abc','b')",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo dimension text search work"));
@@ -116,9 +125,18 @@ fn dimension_extract_refuses_control_constraint_growth() {
 
 #[test]
 fn dimension_extract_refuses_scan_work() {
-    let error = refuse("extract('abc',2,1)", &BTreeMap::new(), |policy| {
-        policy.limits.max_work_units = 1;
-    });
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo dimension text extract work",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "extract('abc',2,1)",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo dimension text extract work"));
@@ -136,9 +154,18 @@ fn dimension_extract_refuses_retained_text() {
 
 #[test]
 fn dimension_length_refuses_scan_work() {
-    let error = refuse("string_length('abc')", &BTreeMap::new(), |policy| {
-        policy.limits.max_work_units = 1;
-    });
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo dimension text length work",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "string_length('abc')",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo dimension text length work"));
@@ -368,7 +395,12 @@ fn dimension_conversion_result(
         offset: 0,
         for_offset: 1,
     };
-    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(1.0))]);
+    let values = BTreeMap::from([(
+        "length".to_owned(),
+        CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
+        ),
+    )]);
     crate::decode::with_test_decode_ctx(|ctx| {
         crate::curve::infer_solve_variable_dimensions(
             ctx,

@@ -846,7 +846,7 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
     assert_eq!(
         records
             .iter()
-            .map(|record| u8::from(record.frame.width))
+            .map(|record| u8::from(record.frame.width()))
             .collect::<Vec<_>>(),
         [1, 2, 3]
     );

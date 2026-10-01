@@ -205,7 +205,7 @@ pub(crate) fn validate_native(
         }
     }
     let expected_lanes = crate::native::lanes::expected_lanes_charged(ctx, &native)?;
-    for (lane, expected_lane) in expected_lanes {
+    for (lane, expected_lane) in expected_lanes.iter() {
         for (entity, expected_entity) in lane
             .sketch_entities
             .iter()

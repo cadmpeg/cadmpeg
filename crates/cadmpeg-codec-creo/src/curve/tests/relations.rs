@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+const EPS_RELATION_VALUE: f64 = 1.0e-12;
 
 use crate::curve::curve_equation_prohibited_constructs;
 use crate::curve::evaluate_creo_math_function;
-use crate::curve::evaluate_creo_relation_function;
+use crate::curve::evaluate_creo_numeric_relation_function;
 use crate::curve::expression_records;
 use crate::curve::reevaluate_expression_records;
 use crate::curve::relation_round;
@@ -11,7 +12,6 @@ use crate::curve::tests::evaluate_expression_program;
 use crate::curve::CreoMathFunction;
 use crate::curve::CurveExpressionActivation;
 use crate::curve::CurveExpressionLine;
-use crate::curve::CurveExpressionQuantity;
 use crate::curve::CurveExpressionSystemSymbolFamily;
 use crate::curve::CurveExpressionTarget;
 use crate::curve::CurveExpressionValue;
@@ -27,6 +27,8 @@ use crate::curve::SymbolicRelationDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
+
+mod units;
 
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
     parse_relation_expression(expression, values, RelationEvaluationContext::default())
@@ -148,10 +150,17 @@ fn relation_model_type_refuses_retained_copy() {
 
 #[test]
 fn relation_extract_refuses_scanning_work() {
-    let error = relation_parse_limit_error(
-        "extract('abc',2,1)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_work_units = 1,
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation extract scan",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "extract('abc',2,1)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
@@ -293,9 +302,18 @@ fn relation_affine_difference_refuses_new_coefficient_node() {
 
 #[test]
 fn relation_affine_comparison_refuses_coefficient_work() {
-    let error = relation_parse_limit_error("driver==driver", &affine_probe_values(), |policy| {
-        policy.limits.max_work_units = 0;
-    });
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo affine coefficient comparison work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "driver==driver",
+                &affine_probe_values(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo affine coefficient comparison work"));
@@ -427,7 +445,12 @@ fn relation_literal_text_refuses_retained_copy() {
 
 #[test]
 fn relation_lookup_refuses_scoped_key_copy() {
-    let values = BTreeMap::from([("driver".to_owned(), CurveExpressionValue::Number(2.0))]);
+    let values = BTreeMap::from([(
+        "driver".to_owned(),
+        CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        ),
+    )]);
     let error = relation_parse_limit_error("DRIVER", &values, |policy| {
         policy.limits.max_materialized_bytes = 5;
     });
@@ -480,11 +503,16 @@ fn relation_group_refuses_recursive_step() {
 
 #[test]
 fn relation_function_refuses_work() {
-    let error = relation_parse_limit_error(
-        "sin(1)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| {
-            policy.limits.max_work_units = 0;
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation function work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "sin(1)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -508,11 +536,16 @@ fn relation_exponent_refuses_recursive_step() {
 
 #[test]
 fn relation_exponent_refuses_work() {
-    let error = relation_parse_limit_error(
-        "2^3",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| {
-            policy.limits.max_work_units = 0;
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation exponent work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "2^3",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -522,11 +555,16 @@ fn relation_exponent_refuses_work() {
 
 #[test]
 fn relation_group_refuses_work() {
-    let error = relation_parse_limit_error(
-        "(1)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| {
-            policy.limits.max_work_units = 0;
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation group work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "(1)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -538,7 +576,7 @@ fn numeric_value(value: Option<&CurveExpressionValue>) -> f64 {
     let Some(CurveExpressionValue::Number(value)) = value else {
         panic!("expected evaluated numeric value")
     };
-    *value
+    value.get()
 }
 
 fn observe_relation_symbol(
@@ -567,7 +605,13 @@ fn relation_symbol_error(
             format_args!("d{}", 42),
             "creo relation dimension symbol formatting",
         )?;
-        symbols.observe(&ctx, name, Some(CurveExpressionValue::Number(2.0)))
+        symbols.observe(
+            &ctx,
+            name,
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+            )),
+        )
     })();
     result.expect_err("one relation symbol exceeds limit")
 }
@@ -620,12 +664,14 @@ fn declares_units_only_on_new_relation_parameters() {
     );
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Length(50.8))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(50.8).expect("finite relation fixture")
+        ))
     );
     let Some(CurveExpressionValue::Length(copy)) = &assignments[1].value else {
         panic!("dimensioned copy");
     };
-    assert!((*copy - 76.2).abs() < 1.0e-12);
+    assert!((copy.get() - 76.2).abs() < EPS_RELATION_VALUE);
     assert_eq!(
         assignments[2].parameter_target(),
         Some(("span", Some("mm")))
@@ -643,20 +689,24 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     let assignments = &records[0].assignments;
 
     assert!(assignments[0].dependencies.is_empty());
-    assert!((numeric_value(assignments[0].value.as_ref()) - 0.5).abs() < 1.0e-12);
+    assert!((numeric_value(assignments[0].value.as_ref()) - 0.5).abs() < EPS_RELATION_VALUE);
     assert_eq!(assignments[1].dependencies, ["a"]);
-    assert!((numeric_value(assignments[1].value.as_ref()) - 3.25).abs() < 1.0e-12);
+    assert!((numeric_value(assignments[1].value.as_ref()) - 3.25).abs() < EPS_RELATION_VALUE);
     assert!(assignments[2].dependencies.is_empty());
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(11.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(11.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[3].dependencies, ["custom", "a"]);
     assert_eq!(assignments[3].value, None);
     assert!(assignments[4].dependencies.is_empty());
     assert_eq!(
         assignments[4].value,
-        Some(CurveExpressionValue::Number(1000.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1000.0).expect("finite relation fixture")
+        ))
     );
 
     let values = BTreeMap::new();
@@ -704,7 +754,10 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     ];
     for (expression, expected) in cases {
         let actual = evaluate_expression(expression, &values).expect(expression);
-        assert!((actual - expected).abs() < 1.0e-12, "{expression}");
+        assert!(
+            (actual - expected).abs() < EPS_RELATION_VALUE,
+            "{expression}"
+        );
     }
     assert_eq!(evaluate_expression("sqrt(-1)", &values), None);
     assert_eq!(evaluate_expression("tan(90)", &values), None);
@@ -743,7 +796,7 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     else {
         panic!("dimensioned minimum tie")
     };
-    assert!(minimum.is_sign_negative());
+    assert!(minimum.get().is_sign_negative());
     let maximum = parse_relation_expression::<crate::curve::AffineValue>(
         "max(-0,0)",
         &BTreeMap::new(),
@@ -767,18 +820,33 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
         Some(-expected_remainder)
     );
     assert_eq!(
-        evaluate_creo_relation_function(
+        evaluate_creo_numeric_relation_function(
             CreoMathFunction::Mod,
             &[
-                CurveExpressionValue::Length(f64::MAX),
-                CurveExpressionValue::Length(tiny_divisor),
+                CurveExpressionValue::Length(
+                    cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite relation fixture")
+                ),
+                CurveExpressionValue::Length(
+                    cadmpeg_ir::scalar::FiniteReal::new(tiny_divisor)
+                        .expect("finite relation fixture")
+                ),
             ],
-            RelationEvaluationContext::default(),
         ),
-        Some(CurveExpressionValue::Length(expected_remainder))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(expected_remainder)
+                .expect("finite relation fixture")
+        ))
     );
     let excessive_power_depth = format!("{}2", "2^".repeat(129));
-    assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<f64>(
+            ctx,
+            &excessive_power_depth,
+            &values,
+            RelationEvaluationContext::default()
+        ))
+        .is_err()
+    );
     let long_unary_chain = format!("{}1", "-".repeat(1024));
     assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
 }
@@ -936,7 +1004,9 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     observe_relation_symbol(
         &mut external_symbols,
         "driver",
-        Some(CurveExpressionValue::Number(2.0)),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        )),
     );
 
     let assignments = evaluate_expression_program(&lines, None, &external_symbols);
@@ -951,7 +1021,9 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     assert_eq!(assignments[0].dependencies, ["driver"]);
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(3.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].target,
@@ -962,11 +1034,15 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     assert_eq!(assignments[2].dependencies, ["d7:0"]);
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(6.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert!(assignments[..2]
         .iter()
@@ -1022,7 +1098,9 @@ fn classifies_and_evaluates_unscoped_system_symbol_targets() {
         assignments
             .last()
             .and_then(|assignment| assignment.value.clone()),
-        Some(CurveExpressionValue::Number(55.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(55.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -1188,7 +1266,9 @@ fn evaluates_string_relations_and_ignores_literal_contents_in_dependencies() {
     );
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(3.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[3].value,
@@ -1196,31 +1276,45 @@ fn evaluates_string_relations_and_ignores_literal_contents_in_dependencies() {
     );
     assert_eq!(
         assignments[4].value,
-        Some(CurveExpressionValue::Number(3.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[5].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[6].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[7].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[8].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[9].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[10].value,
-        Some(CurveExpressionValue::Number(0.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[11].value,
@@ -1245,280 +1339,6 @@ fn evaluates_string_relations_and_ignores_literal_contents_in_dependencies() {
         ),
         Some(CurveExpressionValue::String("bc".into()))
     );
-}
-
-#[test]
-fn bracketed_relation_units_are_not_dependencies() {
-    let lines = [
-        CurveExpressionLine {
-            text: "length=5[mm]+offset[inch]".to_owned(),
-            offset: 0,
-        },
-        CurveExpressionLine {
-            text: "compound=pressure[N/mm^2]".to_owned(),
-            offset: 1,
-        },
-        CurveExpressionLine {
-            text: "fall=G*2[s]^2".to_owned(),
-            offset: 2,
-        },
-    ];
-    let assignments =
-        evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
-
-    assert_eq!(assignments[0].dependencies, ["offset"]);
-    assert_eq!(assignments[0].value, None);
-    assert_eq!(assignments[1].dependencies, ["pressure"]);
-    assert_eq!(assignments[1].value, None);
-    assert!(assignments[2].dependencies.is_empty());
-    assert_eq!(
-        assignments[2].value,
-        Some(CurveExpressionValue::Length(39_200.0))
-    );
-
-    let values = BTreeMap::new();
-    let cases = [
-        ("5[mm]+.2[cm]", CurveExpressionValue::Length(7.0)),
-        ("1[inch]", CurveExpressionValue::Length(25.4)),
-        ("PI[rad]", CurveExpressionValue::Angle(180.0)),
-        ("sin(PI[rad]/2)", CurveExpressionValue::Number(1.0)),
-        ("1[mm]*2", CurveExpressionValue::Length(2.0)),
-        ("1[mm]/.1[cm]", CurveExpressionValue::Number(1.0)),
-    ];
-    for (expression, expected) in cases {
-        let actual = parse_relation_expression::<CurveExpressionValue>(
-            expression,
-            &values,
-            RelationEvaluationContext::default(),
-        )
-        .expect(expression);
-        match (actual, expected) {
-            (CurveExpressionValue::Number(actual), CurveExpressionValue::Number(expected))
-            | (CurveExpressionValue::Length(actual), CurveExpressionValue::Length(expected))
-            | (CurveExpressionValue::Angle(actual), CurveExpressionValue::Angle(expected)) => {
-                assert!((actual - expected).abs() < 1.0e-12, "{expression}");
-            }
-            _ => panic!("unexpected value kind for {expression}"),
-        }
-    }
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "1[mm]+1[deg]",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        None
-    );
-
-    let pressure = parse_relation_expression::<CurveExpressionValue>(
-        "1[N/mm^2]",
-        &values,
-        RelationEvaluationContext::default(),
-    );
-    assert_eq!(
-        pressure,
-        Some(CurveExpressionValue::Quantity(CurveExpressionQuantity {
-            value: 1_000.0,
-            length_power: -1,
-            mass_power: 1,
-            time_power: -2,
-            angle_power: 0,
-            temperature_power: 0,
-        }))
-    );
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "1[(N/mm^2)]",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        pressure
-    );
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "1[N/mm^2]/1[N/mm^2]",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        Some(CurveExpressionValue::Number(1.0))
-    );
-    for expression in [
-        "1[sq_in]/1[in]^2",
-        "1[cu_ft]/1[ft]^3",
-        "1[joule]/(1[N]*1[m])",
-        "1[kW]/(1000[joule]/1[s])",
-        "1[MPa]/1[N/mm^2]",
-        "1[ton]/(1000[kg]*9.80665[m/s^2])",
-    ] {
-        let Some(CurveExpressionValue::Number(value)) =
-            parse_relation_expression::<CurveExpressionValue>(
-                expression,
-                &values,
-                RelationEvaluationContext::default(),
-            )
-        else {
-            panic!("unexpected value kind for {expression}");
-        };
-        assert!((value - 1.0).abs() < 1.0e-12, "{expression}");
-    }
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "1[psi]/1[Pa]",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        Some(CurveExpressionValue::Number(6_894.757_293_168_361))
-    );
-    for (expression, expected_kelvin) in [
-        ("0[C]", 273.15),
-        ("32[F]", 273.15),
-        ("273.15[K]", 273.15),
-        ("491.67[R]", 273.15),
-    ] {
-        let Some(CurveExpressionValue::Quantity(value)) =
-            parse_relation_expression::<CurveExpressionValue>(
-                expression,
-                &values,
-                RelationEvaluationContext::default(),
-            )
-        else {
-            panic!("unexpected value kind for {expression}");
-        };
-        assert!(
-            (value.value - expected_kelvin).abs() < 1.0e-12,
-            "{expression}"
-        );
-        assert_eq!(value.temperature_power, 1, "{expression}");
-        assert_eq!(
-            [
-                value.length_power,
-                value.mass_power,
-                value.time_power,
-                value.angle_power,
-            ],
-            [0; 4],
-            "{expression}"
-        );
-    }
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "1[C/s]",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        None
-    );
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "2[mm]^2",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        Some(CurveExpressionValue::Quantity(CurveExpressionQuantity {
-            value: 4.0,
-            length_power: 2,
-            mass_power: 0,
-            time_power: 0,
-            angle_power: 0,
-            temperature_power: 0,
-        }))
-    );
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "sqrt(4[mm^2])",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        Some(CurveExpressionValue::Length(2.0))
-    );
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "min(abs(-2[cm]),30[mm])",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        Some(CurveExpressionValue::Length(20.0))
-    );
-    assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>(
-            "near(1[inch],25[mm],1[mm])",
-            &values,
-            RelationEvaluationContext::default(),
-        ),
-        Some(CurveExpressionValue::Number(1.0))
-    );
-    let dimensioned_cases = [
-        ("if(1,2[cm],1[inch])", CurveExpressionValue::Length(20.0)),
-        (
-            "bound(30[mm],1[cm],2[cm])",
-            CurveExpressionValue::Length(20.0),
-        ),
-        (
-            "dead(25[mm],1[cm],2[cm])",
-            CurveExpressionValue::Length(5.0),
-        ),
-        ("mod(25[mm],1[cm])", CurveExpressionValue::Length(5.0)),
-        ("sign(2[cm],-1[s])", CurveExpressionValue::Length(-20.0)),
-        ("ceil(2.1[mm])", CurveExpressionValue::Length(3.0)),
-        ("ceil(12.5[mm],-1)", CurveExpressionValue::Length(20.0)),
-        ("floor(2.19[cm],1)", CurveExpressionValue::Length(21.9)),
-        ("atan(1)", CurveExpressionValue::Angle(45.0)),
-    ];
-    for (expression, expected) in dimensioned_cases {
-        assert_eq!(
-            parse_relation_expression::<CurveExpressionValue>(
-                expression,
-                &values,
-                RelationEvaluationContext::default(),
-            ),
-            Some(expected),
-            "{expression}"
-        );
-    }
-    let Some(CurveExpressionValue::Angle(angle)) = parse_relation_expression::<CurveExpressionValue>(
-        "atan2(1[cm],5[mm])",
-        &values,
-        RelationEvaluationContext::default(),
-    ) else {
-        panic!("dimensioned atan2 angle");
-    };
-    assert!((angle - 2.0f64.atan().to_degrees()).abs() < 1.0e-12);
-    for incompatible in [
-        "if(1,1[mm],1[s])",
-        "bound(1[mm],0[s],2[mm])",
-        "mod(1[mm],1[s])",
-        "atan2(1[mm],1[s])",
-    ] {
-        assert_eq!(
-            parse_relation_expression::<CurveExpressionValue>(
-                incompatible,
-                &values,
-                RelationEvaluationContext::default(),
-            ),
-            None,
-            "{incompatible}"
-        );
-    }
-    let force_ratio = parse_relation_expression::<CurveExpressionValue>(
-        "1[lbf]/1[N]",
-        &values,
-        RelationEvaluationContext::default(),
-    );
-    let Some(CurveExpressionValue::Number(force_ratio)) = force_ratio else {
-        panic!("force ratio");
-    };
-    assert!((force_ratio - 4.448_221_615_260_5).abs() < 1.0e-12);
-    for malformed in ["1[N/mm^]", "1[N//mm]", "1[N^128]"] {
-        assert_eq!(
-            parse_relation_expression::<CurveExpressionValue>(
-                malformed,
-                &values,
-                RelationEvaluationContext::default(),
-            ),
-            None,
-            "{malformed}"
-        );
-    }
 }
 
 #[test]
@@ -1647,7 +1467,9 @@ fn proves_exists_for_local_and_external_relation_symbols() {
     assert_eq!(assignments[0].activation, CurveExpressionActivation::Active);
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].activation,
@@ -1656,12 +1478,16 @@ fn proves_exists_for_local_and_external_relation_symbols() {
     assert_eq!(assignments[1].value, None);
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(5.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[3].activation, CurveExpressionActivation::Active);
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(3.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[4].activation,
@@ -1703,22 +1529,30 @@ fn external_symbol_values_require_agreeing_observations() {
     observe_relation_symbol(
         &mut external_symbols,
         "D42",
-        Some(CurveExpressionValue::Number(2.0)),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        )),
     );
     observe_relation_symbol(
         &mut external_symbols,
         "d42",
-        Some(CurveExpressionValue::Number(2.0)),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        )),
     );
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
-        Some(CurveExpressionValue::Number(3.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
 
     observe_relation_symbol(
         &mut external_symbols,
         "d42",
-        Some(CurveExpressionValue::Number(4.0)),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture"),
+        )),
     );
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
@@ -1736,13 +1570,18 @@ fn binds_relation_symbols_case_insensitively_and_preserves_scoped_dependencies()
     assert_eq!(assignments[1].dependencies, ["radius"]);
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(5.0 + std::f64::consts::PI))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0 + std::f64::consts::PI)
+                .expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[2].dependencies, ["d1:2", "PARAM:FID_20"]);
     assert_eq!(assignments[2].value, None);
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(7.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         evaluate_expression("pi", &BTreeMap::new()),
@@ -1787,11 +1626,15 @@ fn evaluates_nested_relation_conditionals_in_source_order() {
     assert_eq!(assignments.len(), 8);
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(0.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(5.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[2].activation,
@@ -1800,7 +1643,9 @@ fn evaluates_nested_relation_conditionals_in_source_order() {
     assert_eq!(assignments[2].value, None);
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(6.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[4].activation,
@@ -1808,16 +1653,22 @@ fn evaluates_nested_relation_conditionals_in_source_order() {
     );
     assert_eq!(
         assignments[5].value,
-        Some(CurveExpressionValue::Number(5.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[6].value,
-        Some(CurveExpressionValue::Number(5.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[7].parameter_target(), Some(("iffy", None)));
     assert_eq!(
         assignments[7].value,
-        Some(CurveExpressionValue::Number(9.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(9.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -1837,7 +1688,9 @@ fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
     observe_relation_symbol(
         &mut symbols,
         "external",
-        Some(CurveExpressionValue::Number(5.0)),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture"),
+        )),
     );
     crate::decode::with_test_decode_ctx(|ctx| {
         reevaluate_expression_records(ctx, &mut records, None, &symbols)
@@ -1947,11 +1800,15 @@ fn unresolved_reassignment_invalidates_the_previous_scalar_value() {
 
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(5.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(6.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[2].value, None);
     assert_eq!(assignments[3].value, None);

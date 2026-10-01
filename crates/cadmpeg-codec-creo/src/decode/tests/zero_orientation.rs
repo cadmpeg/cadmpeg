@@ -97,13 +97,10 @@ fn ordered_face_loops_refuse_boundary_point_vector() {
         curve_id: 1,
         side: crate::topology::Side::Zero,
     };
-    let lp = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(9),
-        half_edges: vec![half_edge],
-    };
+    let lp = crate::test_support::closed_loop(std::num::NonZeroU32::new(9), vec![half_edge]);
     let binding = crate::topology::HalfEdgeVertexIncidence {
         half_edge,
-        start_vertex_id: 1,
+        start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
         end_vertex_id: None,
     };
     let incidence = BTreeMap::from([(half_edge, &binding)]);
@@ -129,10 +126,13 @@ fn ordered_face_loops_refuse_boundary_point_vector() {
 
 #[test]
 fn ordered_face_loops_refuse_input_references() {
-    let lp = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(9),
-        half_edges: Vec::new(),
-    };
+    let lp = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(9),
+        vec![crate::topology::HalfEdgeId {
+            curve_id: 10,
+            side: crate::topology::Side::Zero,
+        }],
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;

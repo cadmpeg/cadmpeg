@@ -838,7 +838,7 @@ pub(super) fn decode(
     }
     // Every admitted relation shares one class of unproved invariant, so the
     // document reports the class once with its count and named examples.
-    if let Some(note) = pcurve_admission_note(&admissions) {
+    if let Some(note) = pcurve_admission_note(&admissions, ctx)? {
         ctx.push_vec(&mut result.losses, note, "step_topology_losses")?;
     }
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {

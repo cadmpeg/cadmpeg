@@ -696,9 +696,11 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
             cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
                 content: cadmpeg_protein::property::PropertyContent::Value {
-                    value: cadmpeg_protein::property::PropertyValue::Color([
-                        0.125, 0.25, 0.375, 1.0,
-                    ]),
+                    value: cadmpeg_protein::property::PropertyValue::Color(
+                        [0.125, 0.25, 0.375, 1.0].map(|value| {
+                            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                        }),
+                    ),
                     connections: Vec::new(),
                 },
             },
@@ -745,7 +747,9 @@ fn color_property(
         cadmpeg_protein::property::DecodedProperty {
             value_offset: 0,
             content: cadmpeg_protein::property::PropertyContent::Value {
-                value: cadmpeg_protein::property::PropertyValue::Color(color),
+                value: cadmpeg_protein::property::PropertyValue::Color(
+                    color.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+                ),
                 connections: Vec::new(),
             },
         },
@@ -798,7 +802,11 @@ fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord
             cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
                 content: cadmpeg_protein::property::PropertyContent::Value {
-                    value: cadmpeg_protein::property::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
+                    value: cadmpeg_protein::property::PropertyValue::Color(
+                        [0.25, 0.5, 0.75, 1.0].map(|value| {
+                            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                        }),
+                    ),
                     connections: vec![texture_guid.to_owned()],
                 },
             },
@@ -848,7 +856,7 @@ fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
             content: cadmpeg_protein::property::PropertyContent::Value {
                 value: cadmpeg_protein::property::PropertyValue::Distance {
                     unit: 0x0002_1008,
-                    value: 3.0,
+                    value: cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite"),
                 },
                 connections: Vec::new(),
             },

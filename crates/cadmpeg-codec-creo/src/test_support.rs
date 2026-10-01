@@ -355,3 +355,130 @@ pub(crate) fn assert_retained_boundaries<T>(
     }
     panic!("retained route did not finish within boundary bound");
 }
+
+/// Build a closed graph for the ring used by a synthetic geometry fixture.
+pub(crate) fn closed_loop(
+    face_id: Option<std::num::NonZeroU32>,
+    half_edges: Vec<crate::topology::HalfEdgeId>,
+) -> crate::topology::Loop {
+    let graph = half_edges
+        .iter()
+        .zip(half_edges.iter().cycle().skip(1))
+        .map(|(id, next)| crate::topology::HalfEdge {
+            id: *id,
+            face_id,
+            next: Some(*next),
+        })
+        .collect::<Vec<_>>();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::topology::Loop::new(ctx, face_id, half_edges, &graph)
+    })
+    .expect("ring admission")
+    .expect("valid closed ring fixture")
+}
+
+/// Check work refusal propagation at each named boundary of an owner route.
+pub(crate) fn assert_work_boundaries<T>(
+    operations: &[&str],
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut cap = 0;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("work need fits");
+                assert!(need > cap);
+                if operations.contains(&resource.operation) {
+                    policy.limits.max_work_units = need - 1;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    assert!(
+                        matches!(run(&ctx), Err(CodecError::ResourceLimit(ref below))
+                        if below.dimension == ResourceDimension::WorkUnits
+                            && below.operation == resource.operation)
+                    );
+                    seen.insert(resource.operation);
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(_) => {
+                assert!(
+                    operations.iter().all(|operation| seen.contains(operation)),
+                    "missing work boundary: {operations:?} vs {seen:?}"
+                );
+                return crate::decode::with_test_decode_ctx(|ctx| run(ctx)).expect("service route");
+            }
+        }
+    }
+    panic!("work route did not finish within boundary bound");
+}
+
+/// Find the last named refusal after admitting each preceding resource boundary.
+pub(crate) fn last_refusal_at<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut cap = 0;
+    let mut last = None;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            _ => panic!("unsupported test boundary dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, dimension);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("resource need");
+                assert!(need > cap);
+                if resource.operation == operation {
+                    match dimension {
+                        ResourceDimension::WorkUnits => policy.limits.max_work_units = need - 1,
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = need - 1;
+                        }
+                        _ => panic!("unsupported test boundary dimension"),
+                    }
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    match run(&ctx) {
+                        Err(CodecError::ResourceLimit(below)) => {
+                            assert_eq!(below.dimension, dimension);
+                            assert_eq!(below.operation, operation);
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(&below));
+                            last = Some(CodecError::ResourceLimit(below));
+                        }
+                        _ => panic!("named boundary must refuse one unit below its need"),
+                    }
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(_) => return last.expect("route reaches the named resource boundary"),
+        }
+    }
+    panic!("route did not finish within boundary bound");
+}

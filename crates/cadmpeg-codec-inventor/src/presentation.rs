@@ -12,7 +12,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 
 use crate::assembly::count_unresolved;
-use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
+use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::Located;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -402,7 +402,7 @@ fn project_face_bindings(
             continue;
         }
         if matching_faces.len() != 1 {
-            if matching_faces.iter().any(|face| face.styles.index != 0) {
+            if matching_faces.iter().any(|face| face.styles.index() != 0) {
                 count_unresolved(
                     ctx,
                     &mut projection.unresolved_face_overrides,
@@ -412,7 +412,7 @@ fn project_face_bindings(
             continue;
         }
         let graphics_face = matching_faces[0];
-        let Some(collection_ordinal) = graphics_face.styles.index.checked_sub(1) else {
+        let Some(collection_ordinal) = graphics_face.styles.index().checked_sub(1) else {
             continue;
         };
         if key_counts.get(key) != Some(&1) {
@@ -450,7 +450,7 @@ fn project_face_bindings(
             .style_references
             .references()
             .iter()
-            .filter_map(|reference| reference.index.checked_sub(1))
+            .filter_map(|reference| reference.index().checked_sub(1))
         {
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(inventory.graphics_primary_color_styles.len()),
@@ -698,7 +698,7 @@ pub(crate) fn inventory<'a>(
                 )?;
                 issues.push(RecordIssue {
                     family: RecordIssueFamily::Presentation,
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
                 });
@@ -730,7 +730,12 @@ fn push_presentation_record<T>(
         cadmpeg_core::decode::u64_from_index(token.as_str().len()),
         "retain Inventor presentation record segment token",
     )?;
-    records.push(Located::new(value, type_id_string(type_id), token, ordinal));
+    records.push(Located::new(
+        value,
+        crate::record_identity::RecordTypeId::from_bytes(type_id),
+        token,
+        ordinal,
+    ));
     Ok(())
 }
 
@@ -1128,38 +1133,21 @@ impl<'a> Cursor<'a> {
         ctx: &DecodeContext<'_>,
         field: &'static str,
     ) -> Result<PmDcPairedReferenceList<[u32; 2]>, CodecError> {
-        let marker = [
-            self.u16("graphics reference-list marker 0")?,
-            self.u16("graphics reference-list marker 1")?,
-        ];
-        if marker != [2, 0x3000] {
-            return Err(CodecError::malformed(format_args!(
-                "PmGraphics {field} has marker {marker:?}, expected [2, 12288]"
-            )));
-        }
-        let count = usize::try_from(self.u32("graphics reference-list count")?).map_err(|_| {
-            CodecError::Malformed("Inventor numeric value exceeds target range".into())
-        })?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "admit Inventor PmGraphics references",
-        )?;
-        if count == 0 {
-            return Ok(PmDcPairedReferenceList::default());
-        }
-        let metadata = [
-            self.u32("graphics reference-list metadata 0")?,
-            self.u32("graphics reference-list metadata 1")?,
-        ];
-        let mut references =
-            DecodeContext::admitted_vec(count, "admit Inventor PmGraphics references")?;
-        for _ in 0..count {
-            references.push(self.node_reference("graphics reference-list entry")?);
-        }
-        PmDcPairedReferenceList::new(Some(metadata), references).ok_or_else(|| {
-            CodecError::Malformed(
-                "Inventor graphics reference list metadata disagrees with length".into(),
-            )
+        let mut cursor = crate::pmdc::Cursor::new(self.source);
+        let list = crate::pmdc::reference_list(ctx, &mut cursor, 2, field)?;
+        self.source = cursor.into_view();
+        let (_, metadata, references) = list.into_parts();
+        let metadata = match metadata {
+            None => None,
+            Some(crate::pmdc::PmDcListMetadata::U32(values)) => Some(values),
+            Some(crate::pmdc::PmDcListMetadata::U16(_)) => {
+                return Err(CodecError::malformed(
+                    "graphics reference metadata must be u32",
+                ));
+            }
+        };
+        PmDcPairedReferenceList::new(metadata, references).ok_or_else(|| {
+            CodecError::malformed("graphics reference metadata disagrees with length")
         })
     }
 
@@ -1255,7 +1243,7 @@ mod tests {
         GRAPHICS_PRIMARY_COLOR_STYLE_TYPE, GRAPHICS_STYLE_COLLECTION_TYPE, RENDERING_STYLE_TYPE,
     };
     use crate::container::InventorContainer;
-    use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
+    use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
     use crate::test_support::test_fixtures::primary_envelope_fixture;
@@ -1264,6 +1252,37 @@ mod tests {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+    #[test]
+    fn graphics_reference_lists_use_bounded_retained_grammar() {
+        let mut bytes = vec![2_u8, 0, 0, 0x30];
+        bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
+            assert!(matches!(
+                super::Cursor::new(root).reference_list(ctx, "test"),
+                Err(CodecError::Malformed(_))
+            ));
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(
+            super::Cursor::new(root).reference_list(&ctx, "test"),
+            Err(CodecError::Malformed(_))
+        ));
+        bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(
+            matches!(super::Cursor::new(root).reference_list(&ctx, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+    }
 
     #[test]
     fn presentation_projection_refuses_collection_limit_before_face_key_index() {
@@ -1376,13 +1395,13 @@ mod tests {
         let inventory = PresentationInventory {
             default_styles: vec![Located::new(
                 default,
-                type_id_string(DEFAULT_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(DEFAULT_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             rendering_styles: vec![Located::new(
                 style,
-                type_id_string(RENDERING_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(RENDERING_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 8,
             )],
@@ -1596,7 +1615,7 @@ mod tests {
         )
         .expect("truncated style becomes an issue");
         let detail_len = admitted.1[0].detail.len();
-        let token_len = admitted.1[0].segment_token.len();
+        let token_len = admitted.1[0].segment_token.as_str().len();
         for (limit_bytes, operation, used) in [
             (
                 detail_len - 1,
@@ -1690,13 +1709,13 @@ mod tests {
         let inventory = PresentationInventory {
             default_styles: vec![Located::new(
                 default,
-                type_id_string(DEFAULT_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(DEFAULT_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             rendering_styles: vec![Located::new(
                 style,
-                type_id_string(RENDERING_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(RENDERING_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 8,
             )],
@@ -1793,23 +1812,17 @@ mod tests {
 
         let face = parse_graphics_face(&ctx, root, 26).expect("graphics face parses");
 
-        assert_eq!(face.styles.index, 7);
-        assert!(face.styles.qualified);
-        assert_eq!(face.surface.index, 8);
-        assert!(face.surface.qualified);
-        assert_eq!(face.parent.index, 9);
-        assert!(face.parent.qualified);
+        assert_eq!(face.styles.index(), 7);
+        assert!(face.styles.qualified());
+        assert_eq!(face.surface.index(), 8);
+        assert!(face.surface.qualified());
+        assert_eq!(face.parent.index(), 9);
+        assert!(face.parent.qualified());
         assert_eq!(
             face.edge_references.references(),
             [
-                PmDcReference {
-                    index: 13,
-                    qualified: true
-                },
-                PmDcReference {
-                    index: 14,
-                    qualified: true
-                }
+                PmDcReference::new(13, true).expect("test reference index fits 31 bits"),
+                PmDcReference::new(14, true).expect("test reference index fits 31 bits")
             ]
         );
         assert_eq!(face.edge_references.metadata().copied(), Some([11, 12]));
@@ -1855,14 +1868,8 @@ mod tests {
         assert_eq!(
             styles.style_references.references(),
             [
-                PmDcReference {
-                    index: 23,
-                    qualified: true
-                },
-                PmDcReference {
-                    index: 24,
-                    qualified: false
-                }
+                PmDcReference::new(23, true).expect("test reference index fits 31 bits"),
+                PmDcReference::new(24, false).expect("test reference index fits 31 bits")
             ]
         );
         assert_eq!(styles.style_references.metadata().copied(), Some([21, 22]));
@@ -1911,18 +1918,9 @@ mod tests {
                 header_value: 0,
                 header_id: 0,
                 flags: 0,
-                styles: PmDcReference {
-                    index: 5,
-                    qualified: true,
-                },
-                surface: PmDcReference {
-                    index: 0,
-                    qualified: false,
-                },
-                parent: PmDcReference {
-                    index: 0,
-                    qualified: false,
-                },
+                styles: PmDcReference::new(5, true).expect("test reference index fits 31 bits"),
+                surface: PmDcReference::new(0, false).expect("test reference index fits 31 bits"),
+                parent: PmDcReference::new(0, false).expect("test reference index fits 31 bits"),
                 state: 0,
                 edge_references: PmDcPairedReferenceList::default(),
                 visibility_state: 0,
@@ -1930,7 +1928,7 @@ mod tests {
                 key: 42,
                 values: [0; 2],
             },
-            type_id_string(GRAPHICS_FACE_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(GRAPHICS_FACE_TYPE),
             &cadmpeg_ir::identity_key!("graphics"),
             2,
         );
@@ -1939,14 +1937,11 @@ mod tests {
                 segment_version_major: 26,
                 style_references: PmDcPairedReferenceList::new(
                     Some([1, 2]),
-                    vec![PmDcReference {
-                        index: 7,
-                        qualified: true,
-                    }],
+                    vec![PmDcReference::new(7, true).expect("test reference index fits 31 bits")],
                 )
                 .expect("valid reference list"),
             },
-            type_id_string(GRAPHICS_STYLE_COLLECTION_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(GRAPHICS_STYLE_COLLECTION_TYPE),
             &cadmpeg_ir::identity_key!("graphics"),
             4,
         );
@@ -1966,7 +1961,7 @@ mod tests {
                 values: [0; 2],
                 terminal_state: 0,
             },
-            type_id_string(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
             &cadmpeg_ir::identity_key!("graphics"),
             6,
         );

@@ -337,8 +337,8 @@ impl PcurvePathActivity {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut active_paths = BTreeSet::new();
         for loop_ in &scan.topology.loops {
-            for half_edge in &loop_.half_edges {
-                let key = (loop_.face_id, half_edge.curve_id);
+            for half_edge in loop_.half_edges() {
+                let key = (loop_.face_id(), half_edge.curve_id);
                 if !active_paths.contains(&key) {
                     ctx.charge_collection_items(1, "creo active pcurve path nodes")?;
                     active_paths.insert(key);
@@ -3136,13 +3136,13 @@ mod tests {
             face_1_endpoints: [[1.0, 2.0], [3.0, 4.0]],
             offset: 0,
         });
-        scan.topology.loops.push(crate::topology::Loop {
-            face_id: std::num::NonZeroU32::new(10),
-            half_edges: vec![crate::topology::HalfEdgeId {
+        scan.topology.loops.push(crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(10),
+            vec![crate::topology::HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
             }],
-        });
+        ));
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
@@ -3657,13 +3657,13 @@ mod tests {
             face_1_endpoints: [[f64::MAX, 2.0], [-f64::MAX, 4.0]],
             offset: 0,
         });
-        scan.topology.loops.push(crate::topology::Loop {
-            face_id: std::num::NonZeroU32::new(10),
-            half_edges: vec![crate::topology::HalfEdgeId {
+        scan.topology.loops.push(crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(10),
+            vec![crate::topology::HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
             }],
-        });
+        ));
         let mut ir = CadIr::empty();
         ir.model
             .surfaces
@@ -3874,13 +3874,13 @@ mod tests {
             face_1_endpoints: [[f64::MAX, 2.0], [-f64::MAX, 4.0]],
             offset: 0,
         });
-        scan.topology.loops.push(crate::topology::Loop {
-            face_id: std::num::NonZeroU32::new(10),
-            half_edges: vec![crate::topology::HalfEdgeId {
+        scan.topology.loops.push(crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(10),
+            vec![crate::topology::HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
             }],
-        });
+        ));
         let mut ir = CadIr::empty();
         ir.model
             .surfaces

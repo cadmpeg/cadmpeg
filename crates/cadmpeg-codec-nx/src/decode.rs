@@ -90,10 +90,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let (dialects, dialect_losses) = classification.into_report_parts();
 
     let mut admitted_entities = 0_u64;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(scan.streams.len()),
-        "admit NX streams",
-    )?;
     if ctx.container_only() {
         let (ir, annotations, unknowns, native_losses) =
             build_metadata_ir(ctx, root, &scan, &dialects)?;

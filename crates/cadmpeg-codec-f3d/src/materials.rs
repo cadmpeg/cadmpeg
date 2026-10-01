@@ -645,8 +645,11 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let catalog = definition_catalog(ctx, protein)?;
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
         let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
-            let outcome =
-                cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
+            let outcome = cadmpeg_protein::decode_frames_admitted(
+                ctx,
+                &mut schema_catalog,
+                record_frames.frames(),
+            )?;
             for rejected in &outcome.rejected {
                 let note = ctx.format_retained(
                     format_args!(
@@ -668,12 +671,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 decoded.iter().map(|appearance| appearance.id.as_str()),
                 "index F3D schema appearance IDs",
             )?;
-            let mut fixed = decode_fixed_logical_records(ctx, &record_frames)?;
+            let mut fixed = decode_fixed_logical_records(ctx, record_frames.frames())?;
             fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
             ctx.append_vec(&mut decoded, &mut { fixed }, "merge F3D fixed appearances")?;
             decoded
         } else {
-            decode_fixed_logical_records(ctx, &record_frames)?
+            decode_fixed_logical_records(ctx, record_frames.frames())?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -882,7 +885,7 @@ fn appearances_from_schema_records(
                         neutral_property_name(id),
                         "copy F3D appearance property name",
                     )?,
-                    cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
+                    *value,
                     "collect F3D appearance properties",
                 )?;
             }
@@ -972,7 +975,7 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     else {
         return None;
     };
-    decoded_color([*r, *g, *b, *a])
+    decoded_color([r.get(), g.get(), b.get(), a.get()])
 }
 
 fn decoded_color(values: [f64; 4]) -> Option<Color> {
@@ -2024,7 +2027,7 @@ fn definition_catalog<'a>(
     };
     let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, entry.window())?;
     let mut definitions = std::collections::HashMap::new();
-    for frame in frames {
+    for frame in frames.frames() {
         let definition = decode_definition_catalog_record(ctx, frame.bytes())?;
         merge_definition_catalog_record(ctx, &mut definitions, definition)?;
     }

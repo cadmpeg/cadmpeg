@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Expanded-section arenas, feature surface replay associations, and FC05 native records.
 
+use crate::decode::native::CreoArena;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -34,7 +35,7 @@ pub(super) fn attach_expanded_sections(
         ir,
         annotations,
         &UniformArena {
-            key: "expanded_sections",
+            key: CreoArena::ExpandedSections,
             records: &records,
             id: |record| &record.id,
             stream: |record| &record.name,
@@ -49,7 +50,7 @@ pub(super) fn attach_expanded_sections(
         ir,
         annotations,
         &UniformArena {
-            key: "double_xar_tables",
+            key: CreoArena::DoubleXarTables,
             records: &tables,
             id: |table| &table.id,
             stream: |table| &table.table.section_name,
@@ -59,7 +60,7 @@ pub(super) fn attach_expanded_sections(
         },
     )?;
     let primitive_arrays = primitive_scalar_array_records(ctx, scan)?;
-    store_arena(ctx, ir, "primitive_scalar_arrays", &primitive_arrays)?;
+    store_arena(ctx, ir, CreoArena::PrimitiveScalarArrays, &primitive_arrays)?;
     Ok(())
 }
 
@@ -167,6 +168,10 @@ fn visit_feature_surface_replays(
 ) -> Result<(), CodecError> {
     for table in &scan.features.entity_tables {
         let owner_feature_id = table.feature_id;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(table.entries.len()),
+            "creo surface replay entry scan",
+        )?;
         let visible_count = table
             .entries
             .iter()
@@ -176,6 +181,14 @@ fn visit_feature_surface_replays(
             continue;
         }
         let visible_entries = &table.entries[..visible_count];
+        let validation_work = cadmpeg_core::decode::u64_from_index(visible_count)
+            .checked_mul(cadmpeg_core::decode::u64_from_index(
+                scan.surfaces.rows.len(),
+            ))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo surface replay validation", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(validation_work, "creo surface replay validation")?;
         if visible_entries.iter().any(|entry| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id).is_none()
         }) {
@@ -188,7 +201,18 @@ fn visit_feature_surface_replays(
             .checked_add(visible_count)
             .filter(|end| *end <= replay_entries.len())
         {
-            ctx.charge_work(1, "creo surface replay candidate work")?;
+            let query_work = cadmpeg_core::decode::u64_from_index(scan.surfaces.rows.len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(
+                    scan.surfaces.nonvisible_rows.len(),
+                ))
+                .and_then(|rows| rows.checked_add(1))
+                .and_then(|rows| {
+                    rows.checked_mul(cadmpeg_core::decode::u64_from_index(visible_count))
+                })
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo surface replay candidate work", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(query_work, "creo surface replay candidate work")?;
             let candidate_entries = &replay_entries[cursor..end];
             if candidate_entries
                 .iter()
@@ -216,6 +240,7 @@ fn visit_feature_surface_replays(
                     })
                 })
             {
+                ctx.charge_work(query_work, "creo surface replay emission lookups")?;
                 for (visible_entry, replay_entry) in visible_entries.iter().zip(candidate_entries) {
                     let visible = crate::surface::unique_surface_row(
                         &scan.surfaces.rows,
@@ -474,7 +499,7 @@ mod tests {
 
     #[test]
     fn native_surface_replay_candidate_refuses_work_limit() {
-        let error = with_replay_limits(u64::MAX, 1, 0, |ctx, scan| {
+        let error = with_replay_limits(u64::MAX, 1, 3, |ctx, scan| {
             let count = feature_surface_replay_association_count(ctx, scan)?;
             Ok(serde_json::json!(count))
         })
@@ -490,7 +515,7 @@ mod tests {
     fn native_surface_replay_id_refuses_retained_limit() {
         let limit =
             cadmpeg_core::decode::u64_from_index("creo:allfeatur:surface_replay#4:0:0:7".len()) - 1;
-        let error = with_replay_limits(limit, 1, 1, |ctx, scan| {
+        let error = with_replay_limits(limit, 1, u64::MAX, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
         })
@@ -504,7 +529,7 @@ mod tests {
 
     #[test]
     fn native_surface_replay_row_refuses_collection_limit() {
-        let error = with_replay_limits(u64::MAX, 0, 1, |ctx, scan| {
+        let error = with_replay_limits(u64::MAX, 0, u64::MAX, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
         })
@@ -514,7 +539,7 @@ mod tests {
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native surface replay records")
         );
-        let record = with_replay_limits(u64::MAX, 1, 1, |ctx, scan| {
+        let record = with_replay_limits(u64::MAX, 1, u64::MAX, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
@@ -524,7 +549,7 @@ mod tests {
         assert_eq!(record["replay_surface_id"], 9);
         assert_eq!(record["surface_family"], "plane");
         assert_eq!(
-            with_replay_limits(u64::MAX, 0, 1, |ctx, scan| {
+            with_replay_limits(u64::MAX, 0, u64::MAX, |ctx, scan| {
                 let count = feature_surface_replay_association_count(ctx, scan)?;
                 Ok(serde_json::json!(count))
             })

@@ -693,7 +693,7 @@ pub(in super::super) fn feature_parameters(
         .filter(|transform| transform.feature_id == Some(feature_id))
     {
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };
