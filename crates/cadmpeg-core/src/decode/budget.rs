@@ -528,20 +528,21 @@ impl ScopedReservation<'_> {
         failure: impl FnOnce(ResourceLimit) -> E,
     ) -> Result<T, E> {
         let scope = self.budget.storage_scope(self.operation);
-        let value = build()?;
+        let value = build();
         let mut storage = scope.finish();
-        self.bytes = self.bytes.checked_add(storage.bytes).ok_or_else(|| {
-            failure(self.budget.refuse_limit(
+        let Some(bytes) = self.bytes.checked_add(storage.bytes) else {
+            return value.and_then(|_| Err(failure(self.budget.refuse_limit(
                 ResourceDimension::MaterializedBytes,
                 ResourceFailure::BudgetExceeded,
                 self.budget.materialized_allowance(),
                 self.bytes,
                 storage.bytes,
                 self.operation,
-            ))
-        })?;
+            ))));
+        };
+        self.bytes = bytes;
         storage.bytes = 0;
-        Ok(value)
+        value
     }
 
     /// Increases live temporary storage and returns the resource refusal.
