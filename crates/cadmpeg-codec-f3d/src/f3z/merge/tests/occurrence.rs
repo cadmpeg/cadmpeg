@@ -224,7 +224,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
             occurrence: &occurrence,
         };
         merged
-            .extend_rewritten(component.clone(), &mut scope)
+            .extend_rewritten_charged(&ctx, component.clone(), &mut scope, "append F3Z model entities")
             .expect("merge component arenas");
     }
 
@@ -644,4 +644,25 @@ fn occurrence_key_refuses_retained_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3Z occurrence key")
     );
+}
+
+#[test]
+fn occurrence_merge_refuses_destination_growth_before_rewriting() {
+    let mut component = Model::default();
+    component.features.push(feature("f3d:test:feature#child", 0));
+    let mut parent = Model::default();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let mut scope = OccurrenceScope { ctx, occurrence: "child" };
+        let error = parent.extend_rewritten_charged(
+            ctx, component, &mut scope, "append F3Z model entities",
+        ).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("destination growth must refuse through the caller context");
+        };
+        assert_eq!(limit.operation, "append F3Z model entities");
+        assert_eq!(Some(limit), ctx.resource_refusal());
+        assert!(parent.features.is_empty());
+    });
 }
