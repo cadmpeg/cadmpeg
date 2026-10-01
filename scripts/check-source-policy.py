@@ -1358,6 +1358,31 @@ def evaluation_tokens(code: str):
     return tokens, pairs, parents
 
 
+def evaluation_call_open(words: list[str], index: int) -> int | None:
+    opening = index + 1
+    if words[opening:opening + 2] == ["::", "<"]:
+        opening += 2
+        depth = 1
+        while opening < len(words) and depth:
+            depth += (words[opening] == "<") - (words[opening] == ">")
+            opening += 1
+    return opening if words[opening:opening + 1] == ["("] else None
+
+
+def evaluation_expression_start(words, pairs, index):
+    start = index
+    while start >= 2 and words[start - 1] in {"::", "."}:
+        start -= 2
+        if words[start] in {")", "]"} and start in pairs:
+            closing = words[start]
+            start = pairs[start]
+            if closing == ")" and start and re.fullmatch(r"[A-Za-z_]\w*", words[start - 1]):
+                start -= 1
+            elif closing == "]" and start:
+                start -= 1
+    return start
+
+
 def evaluation_signatures(tokens, pairs, parents):
     """Yield declarations with return types and their enclosing impl type."""
     for index, token in enumerate(tokens):
@@ -1458,17 +1483,36 @@ def evaluation_imports(tokens, pairs):
 
 def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
     parsed = {}
+    production = {}
     functions = {}
     methods = {}
     returns = {}
+    retained = {}
     for path, source in sources.items():
         if not is_production_rs(path):
             continue
         code, _ = production_source(source)
         tokens, pairs, parents = evaluation_tokens(code)
         signatures = list(evaluation_signatures(tokens, pairs, parents))
-        parsed[path] = code, tokens, pairs, parents, signatures
+        production[path] = code
+        # Keep token trees only for evaluator owners. Consumer files are
+        # scanned one at a time, so workspace size does not retain every token.
+        if "EvaluationFailure" in code:
+            parsed[path] = tokens, pairs, parents, signatures
+        words = [t[0] for t in tokens]
         for index, name, output, owner in signatures:
+            opening = evaluation_call_open(words, index + 1)
+            if opening in pairs:
+                parameters = words[opening + 1:pairs[opening]]
+                body = pairs[opening] + 1 + len(output)
+                if body in pairs and words[body] == "{":
+                    contents = words[body + 1:pairs[body]]
+                    for parameter in range(len(parameters) - 2):
+                        if parameters[parameter + 1:parameter + 3] == [":", "ResourceLimit"]:
+                            limit = parameters[parameter]
+                            if any(contents[offset:offset + 6] == ["resource", ":", "Some", "(", limit, ")"]
+                                   for offset in range(len(contents) - 5)):
+                                retained.setdefault(path, set()).add((owner, name))
             result_type = next((word for word in output if re.fullmatch(r"[A-Za-z_]\w*", word)
                                 and word not in {"Result", "Option", "Self"}), None)
             if result_type:
@@ -1484,7 +1528,15 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
     names = {key[-1] for key, levels in functions.items() if levels}
     method_names = {name for (_, name), levels in methods.items() if any(levels)}
     findings = []
-    for path, (code, tokens, pairs, parents, signatures) in parsed.items():
+    call_names = re.compile(r"\b(?:" + "|".join(sorted(names | method_names)) + r")\b") if names or method_names else None
+    for path, code in production.items():
+        if call_names is None or not call_names.search(code):
+            continue
+        if path in parsed:
+            tokens, pairs, parents, signatures = parsed[path]
+        else:
+            tokens, pairs, parents = evaluation_tokens(code)
+            signatures = list(evaluation_signatures(tokens, pairs, parents))
         words = [t[0] for t in tokens]
         module = evaluation_module(path)
         imports = evaluation_imports(tokens, pairs)
@@ -1514,7 +1566,7 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
 
         def function_level(index):
             name = words[index]
-            if index in declarations or index + 1 >= len(words) or words[index + 1] != "(":
+            if index in declarations:
                 return 0
             if index > 0 and words[index - 1] == ".":
                 if name not in method_names:
@@ -1527,7 +1579,11 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                     enclosing = [item for item in signatures if item[0] < index]
                     if receiver == "self" and enclosing and enclosing[-1][3] == owner:
                         return max(methods[(owner, name)])
-                    if re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:mut\s*)?)?"
+                    if receiver == ")" and index - 2 in pairs:
+                        constructor = pairs[index - 2]
+                        if words[constructor - 3:constructor - 1] == [owner, "::"]:
+                            return max(methods[(owner, name)])
+                    if re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
                                  + re.escape(owner) + r"\b", code):
                         return max(methods[(owner, name)])
                     if re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
@@ -1543,7 +1599,7 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                     return max(level for (owner, method), levels in methods.items()
                                if method == name for level in levels)
                 return 0
-            if name not in names and name not in imports:
+            if name not in names and name not in method_names and name not in imports:
                 return 0
             start = index
             while start >= 2 and words[start - 1] == "::":
@@ -1551,6 +1607,8 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
             parts = words[start:index + 1:2]
             if start == index and name in local:
                 return local[name]
+            if len(parts) >= 2 and (parts[-2], name) in methods:
+                return max(methods[(parts[-2], name)])
             return functions.get(qualify(parts), 0)
 
         def report(index, form):
@@ -1559,6 +1617,28 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                 code.count("\n", 0, tokens[index].start()) + 1,
                 f"{form} drops an evaluator resource refusal; use finite_or_refusal, non_finite, or an explicit propagating ResourceLimit arm.",
             ))
+
+        def carries_refusal(body, limit_bindings):
+            for call, name in enumerate(body):
+                if body[call + 1:call + 2] != ["("]:
+                    continue
+                closing = call + 2
+                depth = 1
+                while closing < len(body) and depth:
+                    depth += (body[closing] == "(") - (body[closing] == ")")
+                    closing += 1
+                argument = body[call + 2:closing - 1]
+                if name == "Err":
+                    for limit in limit_bindings:
+                        if argument in ([limit], [limit, ".", "into", "(", ")"]):
+                            return True
+                        if len(argument) >= 4 and argument[-4:] == ["ResourceLimit", "(", limit, ")"]:
+                            return True
+                for owner, constructor in retained.get(path, set()):
+                    if name == constructor and (owner is None or body[call - 2:call] == [owner, "::"]):
+                        if any(argument in ([limit], ["*", limit]) for limit in limit_bindings):
+                            return True
+            return False
 
         def consume(start, end, level):
             # Parentheses and value-preserving adapters retain the same error.
@@ -1569,19 +1649,25 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                 elif words[end] == ")" and pairs.get(end) == start - 1:
                     start -= 1
                     end += 1
-                elif words[end] == "." and end + 2 < len(words) and words[end + 2] == "(":
+                elif words[end] == "." and end + 1 < len(words) and evaluation_call_open(words, end + 1) is not None:
                     name = words[end + 1]
-                    close = pairs.get(end + 2)
+                    opening = evaluation_call_open(words, end + 1)
+                    close = pairs.get(opening)
                     if close is None:
                         break
                     if name in EVALUATION_DROPS:
                         report(end + 1, "." + name)
                         return close + 1, 0
                     if name == "map_err":
-                        body = words[end + 3:close]
+                        body = words[opening + 1:close]
+                        while body and body[0] in {"move", "async"}:
+                            body = body[1:]
                         if body and body[0] == "|" and "|" in body[1:]:
                             delimiter = body.index("|", 1)
-                            arguments = {word for word in body[1:delimiter]
+                            pattern = body[1:delimiter]
+                            if ":" in pattern:
+                                pattern = pattern[:pattern.index(":")]
+                            arguments = {word for word in pattern
                                          if re.fullmatch(r"[A-Za-z_]\w*", word) and word not in {"mut", "ref", "_"}}
                             if not arguments.intersection(body[delimiter + 1:]):
                                 report(end + 1, ".map_err with an ignored failure")
@@ -1602,8 +1688,20 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                     parent = parents.get(parent)
                 bindings.setdefault(word, []).append((index, 0, pairs.get(parent, len(words))))
             level = function_level(index) if word in candidate_names else 0
-            if level and index + 1 in pairs:
+            opening = evaluation_call_open(words, index)
+            if level and opening in pairs:
                 refused[index] = level
+            elif level:
+                # A named evaluator callback is an implicit call for every
+                # iterator item. Result's IntoIterator discards its Err arm.
+                parent = parents.get(index)
+                if parent is not None and words[parent] == "(" and parent:
+                    adapter = words[parent - 1]
+                    close = pairs.get(parent, parent)
+                    if adapter in {"filter_map", "find_map", "flat_map"}:
+                        report(index, adapter + " evaluator callback")
+                    elif adapter == "map" and words[close + 1:close + 4] == [".", "flatten", "("]:
+                        report(index, "map(evaluator).flatten() iterator")
             # Bound results retain the evaluator type; do not confuse a
             # later lexical scope's binding.
             if word in bindings:
@@ -1615,10 +1713,8 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                         refused[index] = bound_level
             if index not in refused:
                 continue
-            start = index
-            while start >= 2 and words[start - 1] == "::":
-                start -= 2
-            end = pairs[index + 1] + 1 if index + 1 in pairs and words[index + 1] == "(" else index + 1
+            start = evaluation_expression_start(words, pairs, index)
+            end = pairs[opening] + 1 if opening in pairs else index + 1
             end, level = consume(start, end, refused[index])
             if not level:
                 continue
@@ -1655,21 +1751,34 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                                 body_end = pairs[body_end] + 1 if body_end in pairs and words[body_end] in {"(", "[", "{"} else body_end + 1
                         pattern = words[arm:arrow]
                         body = words[arrow + 1:body_end]
+                        if level > 1 and len(pattern) == 4 and pattern[:2] == ["Ok", "("] and pattern[-1] == ")":
+                            bindings.setdefault(pattern[2], []).append((arrow, level - 1, body_end))
                         if "ResourceLimit" in pattern and "if" not in pattern:
                             # An explicit refusal arm must return its limit;
                             # naming the variant alone does not propagate it.
                             limit_bindings = {word for word in pattern
                                               if re.fullmatch(r"[A-Za-z_]\w*", word)
                                               and word not in {"Err", "EvaluationFailure", "ResourceLimit", "_"}}
-                            explicit = "Err" in body and bool(limit_bindings.intersection(body))
+                            explicit = carries_refusal(body, limit_bindings)
                             if not explicit:
                                 report(index, "non-propagating ResourceLimit arm")
                                 break
-                        elif not explicit and (pattern == ["_"] or pattern[:2] == ["Err", "("]
-                                               and pattern[2:3] in [["_"], [".."]]):
+                        elif not explicit and (pattern[:1] == ["_"] or any(pattern[offset:offset + 3] in
+                                               (["Err", "(", "_"], ["Err", "(", ".."]) for offset in range(len(pattern) - 2))):
                             report(index, "wildcard error arm")
                             break
                         arm = body_end + (words[body_end:body_end + 1] == [","])
+                elif "let" in prefix and "Err" in prefix and "ResourceLimit" in prefix and words[end] == "{" and end in pairs:
+                    resource = prefix.index("ResourceLimit")
+                    limit_bindings = set(prefix[resource + 2:]) - {"(", ")", "=", "&"}
+                    body = words[end + 1:pairs[end]]
+                    if "return" in body and carries_refusal(body, limit_bindings):
+                        # The returning guard removes the resource variant
+                        # from the result read after it, including borrowed guards.
+                        parent = parents.get(start)
+                        while parent is not None and words[parent] != "{":
+                            parent = parents.get(parent)
+                        bindings.setdefault(word, []).append((index, 0, pairs.get(parent, len(words))))
                 elif "let" in prefix and "Err" in prefix and "ResourceLimit" not in prefix and ("_" in prefix or ".." in prefix):
                     report(index, "wildcard error pattern")
             parent = parents.get(start)
