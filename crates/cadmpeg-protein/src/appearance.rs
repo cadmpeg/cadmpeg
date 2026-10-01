@@ -162,16 +162,15 @@ pub fn texture_asset(
     } else {
         None
     };
-    let real = |suffix: &str, default| finite_float_property(record, suffix, default);
     let mapping = TextureMap2d {
         map_channel: integer_property(record, "MapChannel").unwrap_or(1),
         uvw_source: integer_property(record, "MapChannel_UVWSource_Advanced").unwrap_or(0),
-        u_offset: real("UOffset", FiniteReal::ZERO)?,
-        v_offset: real("VOffset", FiniteReal::ZERO)?,
-        u_scale: real("UScale", FiniteReal::ONE)?,
-        v_scale: real("VScale", FiniteReal::ONE)?,
+        u_offset: finite_float_property(record, "UOffset", FiniteReal::ZERO),
+        v_offset: finite_float_property(record, "VOffset", FiniteReal::ZERO),
+        u_scale: finite_float_property(record, "UScale", FiniteReal::ONE),
+        v_scale: finite_float_property(record, "VScale", FiniteReal::ONE),
         // A finite angle in degrees is finite in radians: the factor is below one.
-        rotation: Angle::new(real("WAngle", FiniteReal::ZERO)?.get().to_radians()).ok_or_else(
+        rotation: Angle::new(finite_float_property(record, "WAngle", FiniteReal::ZERO).get().to_radians()).ok_or_else(
             || {
                 CodecError::malformed(format_args!(
                     "Protein asset {} property WAngle is non-finite in radians",
@@ -190,7 +189,7 @@ pub fn texture_asset(
         Some(BumpMap {
             normal_map: integer_property(record, "bumpmap_Type") == Some(1),
             depth: distances[4],
-            normal_scale: real("bumpmap_NormalScale", FiniteReal::ONE)?,
+            normal_scale: finite_float_property(record, "bumpmap_NormalScale", FiniteReal::ONE),
         })
     } else {
         None
@@ -253,26 +252,11 @@ fn finite_float_property(
     record: &crate::DecodedRecord,
     suffix: &str,
     default: FiniteReal,
-) -> Result<FiniteReal, CodecError> {
-    let Some(crate::property::PropertyValue::Float(value)) = property_with_suffix(record, suffix)
-    else {
-        return Ok(default);
-    };
-    finite_scalar(record, suffix, *value)
-}
-
-/// A float the record states under `property`, admitted finite.
-pub fn finite_scalar(
-    record: &crate::DecodedRecord,
-    property: &str,
-    value: f64,
-) -> Result<FiniteReal, CodecError> {
-    FiniteReal::new(value).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "Protein asset {} property {property} is non-finite",
-            record.guid
-        ))
-    })
+) -> FiniteReal {
+    match property_with_suffix(record, suffix) {
+        Some(crate::property::PropertyValue::Float(value)) => *value,
+        _ => default,
+    }
 }
 
 fn boolean_property(record: &crate::DecodedRecord, suffix: &str) -> Option<bool> {
@@ -303,7 +287,7 @@ fn distance_property(
         0x200d => 10.0,
         unit => return Err(DistanceError::UnknownUnit(unit)),
     };
-    Length::new(value * factor)
+    Length::new(value.get() * factor)
         .map(Some)
         .ok_or(DistanceError::NonFinite)
 }

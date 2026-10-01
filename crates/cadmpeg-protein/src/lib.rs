@@ -17,7 +17,8 @@ pub mod framing;
 
 /// Decoded property carriers and their serialized representation.
 pub mod property;
-use property::{DecodedProperty, PropertyContent, PropertyValue};
+use property::{DecodedProperty, PropertyContent, PropertyValue, RepeatedValues};
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// Byte-offset constants generated from `docs/layouts/protein.toml`.
 mod layout;
@@ -630,7 +631,7 @@ fn decode_record(
                     Some(count) => match std::num::NonZeroUsize::new(count) {
                         Some(count) => PropertyContent::MultipleReferences { count, targets },
                         None => PropertyContent::Value {
-                            value: PropertyValue::Multiple(Vec::new()),
+                            value: PropertyValue::Multiple(RepeatedValues::default()),
                             connections: targets,
                         },
                     },
@@ -715,7 +716,8 @@ fn read_property(
             for _ in 0..count {
                 values.push(read_value(ctx, bytes, at, carrier, id)?);
             }
-            Ok(PropertyValue::Multiple(values))
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), "Protein repeated carrier validation")?;
+            Ok(PropertyValue::Multiple(values.try_into().map_err(CodecError::malformed)?))
         }
     }
 }
@@ -809,7 +811,7 @@ fn read_value(
             take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?,
         ),
         ValueCarrier::Color => {
-            let mut rgba = [0.0; 4];
+            let mut rgba = [FiniteReal::ZERO; 4];
             for value in &mut rgba {
                 *value = finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?;
             }
@@ -818,10 +820,8 @@ fn read_value(
     })
 }
 
-fn finite_value(value: f64, id: &str) -> Result<f64, CodecError> {
-    value
-        .is_finite()
-        .then_some(value)
+fn finite_value(value: f64, id: &str) -> Result<FiniteReal, CodecError> {
+    FiniteReal::new(value)
         .ok_or_else(|| CodecError::malformed(format_args!("Protein property {id} is not finite")))
 }
 
@@ -885,7 +885,7 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     use super::{
-        framing, instance_property_serializes, read_connections, read_texture_uri, read_value,
+        framing, instance_property_serializes, read_connections, read_texture_uri, read_value, RepeatedValues, FiniteReal,
         ValueCarrier, CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN,
         TERMINAL_MARKER,
     };
@@ -1512,7 +1512,7 @@ mod tests {
             with_service_context(&bare, |ctx| {
                 assert_eq!(
                     read_value(ctx, &bare, &mut at, ValueCarrier::Color, id).unwrap(),
-                    PropertyValue::Color(rgba)
+                    PropertyValue::Color(rgba.map(|value| FiniteReal::new(value).expect("finite")))
                 );
             });
             assert_eq!(at, bare.len());
@@ -1593,7 +1593,7 @@ mod tests {
                         targets: vec!["target".into()],
                     },
                     None => PropertyContent::Value {
-                        value: PropertyValue::Multiple(Vec::new()),
+                        value: PropertyValue::Multiple(RepeatedValues::default()),
                         connections: vec!["target".into()],
                     },
                 }
@@ -1668,7 +1668,7 @@ mod tests {
         let properties = &records[0].properties;
         assert_eq!(
             properties["a_color"].value().unwrap().clone(),
-            PropertyValue::Color([0.1, 0.2, 0.3, 1.0])
+            PropertyValue::Color([0.1, 0.2, 0.3, 1.0].map(|value| FiniteReal::new(value).expect("finite")))
         );
         assert_eq!(
             properties["a_color"].connections(),
@@ -1679,7 +1679,7 @@ mod tests {
             properties["b_distance"].value().unwrap().clone(),
             PropertyValue::Distance {
                 unit: 0x2016,
-                value: 2.5,
+                value: FiniteReal::new(2.5).expect("finite"),
             }
         );
         assert_eq!(
@@ -1691,7 +1691,7 @@ mod tests {
         );
         assert_eq!(
             properties["d_unit_float"].value().unwrap().clone(),
-            PropertyValue::Float(4.5)
+            PropertyValue::Float(FiniteReal::new(4.5).expect("finite"))
         );
         assert_eq!(
             properties["e_reference"].connections(),
@@ -1699,7 +1699,7 @@ mod tests {
         );
         assert_eq!(
             properties["f_profile"].value().unwrap().clone(),
-            PropertyValue::Multiple(vec![PropertyValue::Float(0.25), PropertyValue::Float(0.75)])
+            PropertyValue::Multiple(vec![PropertyValue::Float(FiniteReal::new(0.25).expect("finite")), PropertyValue::Float(FiniteReal::new(0.75).expect("finite"))].try_into().expect("same carrier"))
         );
         assert_eq!(
             properties["metadata_still_serializes"]
