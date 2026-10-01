@@ -19,7 +19,8 @@ pub(crate) mod membership;
 use entry_ref::EntryRef;
 use membership::ObjectIdMembers;
 
-use std::borrow::Cow;
+pub(crate) mod source_image;
+use source_image::SourceImage;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
@@ -380,13 +381,14 @@ impl<'a> Container<'a> {
     ) -> Result<Vec<(EntryRef<'_>, crate::om::Section<'_>)>, CodecError> {
         if self.om_section_cache.get().is_none() {
             let cache = match &self.data {
-                Cow::Borrowed(bytes) => {
+                SourceImage::Borrowed(view) => {
+                    let bytes = view.window();
                     let bytes: &'a [u8] = bytes;
                     let (sections, _) =
                         parse_framed_section_cache(ctx, bytes, &self.entries, false)?;
                     FramedSectionCache::Borrowed { sections }
                 }
-                Cow::Owned(bytes) => {
+                SourceImage::Owned(bytes) => {
                     let (sections, layouts) =
                         parse_framed_section_cache(ctx, bytes, &self.entries, true)?;
                     drop(sections);
@@ -432,7 +434,8 @@ impl<'a> Container<'a> {
     ) -> Result<Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)>, CodecError> {
         if self.indexed_section_layouts.get().is_none() {
             let cache = match &self.data {
-                Cow::Borrowed(bytes) => {
+                SourceImage::Borrowed(view) => {
+                    let bytes = view.window();
                     let bytes: &'a [u8] = bytes;
                     let (sections, _) =
                         parse_indexed_section_cache(ctx, bytes, &self.entries, false)?;
@@ -485,7 +488,7 @@ impl<'a> Container<'a> {
                     }
                     IndexedSectionCache::Borrowed { sections, blocks }
                 }
-                Cow::Owned(bytes) => {
+                SourceImage::Owned(bytes) => {
                     let (_, layouts) =
                         parse_indexed_section_cache(ctx, bytes, &self.entries, true)?;
                     IndexedSectionCache::Owned { layouts }
@@ -1094,7 +1097,7 @@ pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
 #[derive(Debug, Clone)]
 pub(crate) struct Container<'a> {
     /// The source image, or the materialized logical stream image for legacy CFB.
-    pub(crate) data: Cow<'a, [u8]>,
+    pub(crate) data: SourceImage<'a>,
     /// Physical source-image length before legacy CFB stream materialization.
     pub(crate) physical_size: u64,
     /// Facts owned by the container grammar that parsed the source.
@@ -1331,7 +1334,7 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
 /// Parse an SPLMSSTR file image.
 pub(crate) fn scan_bytes<'a>(
     ctx: &DecodeContext<'_>,
-    data: impl Into<Cow<'a, [u8]>>,
+    data: impl Into<SourceImage<'a>>,
 ) -> Result<Container<'a>, CodecError> {
     let data = data.into();
     if !data.starts_with(MAGIC) {
@@ -1548,7 +1551,7 @@ pub(crate) fn scan_legacy<'a>(
     }
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
     let mut container = Container {
-        data: Cow::Borrowed(logical_data.window()),
+        data: SourceImage::Borrowed(logical_data),
         physical_size: cadmpeg_core::decode::u64_from_index(root.window().len()),
         layout: ContainerLayout::LegacyCfb { version },
         entries,

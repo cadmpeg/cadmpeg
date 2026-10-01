@@ -33,7 +33,7 @@ use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::loss::NxLossCode;
 use crate::topology::{Graph, Node};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -127,7 +127,6 @@ type GeometryDecode = (
 
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
-    root: View<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
     dialect_losses: &[LossNote],
@@ -1522,7 +1521,6 @@ pub(super) fn try_decode_geometry(
     // Extract once: body selection and annotation attachment both read it.
     let model = crate::native::model::NativeModel::extract(
         ctx,
-        root,
         &scan.container,
         &scan.streams,
         &mut parsed,

@@ -123,7 +123,7 @@ fn assert_compressed_jt_limit(
     let (data, segment) = compressed_jt_fixture();
 
     let container = Container {
-        data: std::borrow::Cow::Borrowed(&data),
+        data: data.as_slice().into(),
         physical_size: cadmpeg_core::decode::u64_from_index(data.len()),
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
@@ -150,10 +150,10 @@ fn assert_compressed_jt_limit(
             }
         },
         |ctx| {
-            let root = cadmpeg_core::decode::View::over_retained(&data);
+
 
             let error = super::super::display_jt_compressed_element_sequences(
-                (ctx, root),
+                ctx,
                 &container,
                 std::slice::from_ref(&segment),
             )
@@ -168,11 +168,11 @@ fn assert_compressed_jt_limit(
                 &data,
                 |_| {},
                 |service| {
-                    let root = cadmpeg_core::decode::View::over_retained(&data);
+
 
                     let (elements, sequences) =
                         super::super::display_jt_compressed_element_sequences(
-                            (service, root),
+                            service,
                             &container,
                             &[segment],
                         )

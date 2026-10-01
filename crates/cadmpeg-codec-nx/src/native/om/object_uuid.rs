@@ -193,7 +193,6 @@ mod tests {
     use crate::om::{FixedEntityRecord, IndexedSection, IndexedStore};
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::sync::{Arc, OnceLock};
 
@@ -222,7 +221,7 @@ mod tests {
             })
             .expect("test cache is empty");
         Container {
-            data: Cow::Borrowed(UUID_FRAME),
+            data: UUID_FRAME.into(),
             physical_size: cadmpeg_core::decode::u64_from_index(UUID_FRAME.len()),
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
