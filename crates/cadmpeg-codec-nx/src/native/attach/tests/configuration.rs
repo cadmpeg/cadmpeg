@@ -620,7 +620,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         expression: id.into(),
         display: None,
         value,
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -761,7 +761,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         expression: id.into(),
         display: None,
         value,
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -845,7 +845,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             ordinal: 0,
             name: None,
             suppressed,
-            dependencies: (dependencies).try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -856,7 +856,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 }),
-                (outputs).try_into().unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs, &cadmpeg_test_support::service_decode_context()).unwrap(),
             ),
             native_ref: None,
         };
@@ -889,7 +889,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
         feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
     }
-    ir.model.configurations = vec![configuration(true, Some((vec![body]).try_into().unwrap()))];
+    ir.model.configurations = vec![configuration(true, Some(cadmpeg_ir::features::DistinctMembers::try_from(vec![body], &cadmpeg_test_support::service_decode_context()).unwrap()))];
     let mut annotations = AnnotationBuilder::new();
 
     crate::test_support::with_decode_context(|ctx| {
@@ -930,7 +930,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -941,7 +941,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            (outputs).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(outputs, &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1005,10 +1005,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: (vec![
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
             FeatureId::mint(format!("synthetic:test:id#{dependency}")).expect("identity grammar")
-        ])
-        .try_into()
+        ], &cadmpeg_test_support::service_decode_context())
         .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1020,8 +1019,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
-                .try_into()
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#body").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                 .unwrap(),
         ),
         native_ref: None,
@@ -1046,8 +1044,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         "synthetic:test:id#active",
         true,
         Some(
-            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
-                .try_into()
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#body").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                 .unwrap(),
         ),
     )];
@@ -1083,8 +1080,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         "synthetic:test:id#active",
         true,
         Some(
-            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
-                .try_into()
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#body").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                 .unwrap(),
         ),
     )];
@@ -1105,8 +1101,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             "synthetic:test:id#first",
             true,
             Some(
-                (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#body").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .unwrap(),
             ),
         ),
@@ -1114,8 +1109,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             "synthetic:test:id#second",
             true,
             Some(
-                (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#body").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .unwrap(),
             ),
         ),
@@ -1637,7 +1631,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             BodySelection::Resolved {
-                bodies: vec![body.clone()].try_into().expect("distinct bodies"),
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"),
                 native: "target".into(),
             },
             BodySelection::Unresolved,

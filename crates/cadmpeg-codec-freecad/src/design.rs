@@ -501,10 +501,6 @@ pub(crate) fn transfer(
             dependencies,
             "fcstd distinct feature dependencies",
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(outputs.len()),
-            "fcstd distinct feature outputs",
-        )?;
         ctx.reserve_vec(&mut ir.model.features, 1, "fcstd neutral features")?;
         ir.model.features.push(Feature {
             id,
@@ -520,9 +516,8 @@ pub(crate) fn transfer(
             source_content: FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                outputs
-                    .try_into()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                    .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref: Some(ctx.copy_retained_text(&object.id, "fcstd feature native reference")?),
         });
@@ -3139,7 +3134,7 @@ fn bind_parameter_dependencies(
             let mut members =
                 ctx.collection_vec(dependencies.len(), "fcstd parameter dependency members")?;
             members.extend(dependencies);
-            DistinctMembers::try_from_for_decode(members, ctx).map_err(CodecError::from)?
+            DistinctMembers::try_from(members, ctx).map_err(CodecError::from)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();

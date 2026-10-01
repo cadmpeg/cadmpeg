@@ -2282,7 +2282,7 @@ impl<'a> DecodeContext<'a> {
                 }
                 let findings = match validation {
                     Ok(Ok(report)) => validation_findings(&report),
-                    Ok(Err(limit)) => return Err(cadmpeg_core::CodecError::ResourceLimit(limit)),
+                    Ok(Err(error)) => return Err(error),
                     Err(error) => error.to_string(),
                 };
                 format!("instance expansion rejected atomically by IR admission: {findings}")

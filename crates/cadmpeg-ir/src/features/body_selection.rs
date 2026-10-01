@@ -39,21 +39,9 @@ impl BodySelection {
         }))
     }
 
-    /// Checked historical body operands with their native reference.
-    pub fn historical(
-        state: FeatureInputTopologyId,
-        bodies: Vec<HistoricalBodyId>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_for_decode(state, bodies, native, &ctx)?
-    }
 
     /// Admit selection members with the decode context.
-    pub fn historical_for_decode(
+    pub fn historical(
         state: FeatureInputTopologyId,
         bodies: Vec<HistoricalBodyId>,
         native: String,

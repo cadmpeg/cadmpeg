@@ -220,7 +220,7 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: dependencies.try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -236,7 +236,7 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             evaluation: ConfigurationEvaluation::Active {
                 outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
-            dependencies: vec![plane].try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![plane], &cadmpeg_test_support::service_decode_context()).unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: None,
                 distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
@@ -265,11 +265,10 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = vec![
+    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
         FeatureId::mint("synthetic:test:id#plane").unwrap(),
         FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-    ]
-    .try_into()
+    ], &cadmpeg_test_support::service_decode_context())
     .unwrap();
     super::inherit_configuration_reference_plane_states(&ctx, &mut ir)?;
     assert_eq!(ir, expected);
@@ -386,11 +385,10 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = vec![
+    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
         FeatureId::mint("synthetic:test:id#plane").unwrap(),
         FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-    ]
-    .try_into()
+    ], &cadmpeg_test_support::service_decode_context())
     .unwrap();
     let losses = project_configuration_sketch_states(
         &ctx,
@@ -986,8 +984,7 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             dependencies: if index == 0 {
                 cadmpeg_ir::features::DistinctMembers::default()
             } else {
-                vec![ParameterId::mint("synthetic:test:id#parameter-0").unwrap()]
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![ParameterId::mint("synthetic:test:id#parameter-0").unwrap()], &cadmpeg_test_support::service_decode_context())
                     .unwrap()
             },
             properties: std::collections::BTreeMap::from([(

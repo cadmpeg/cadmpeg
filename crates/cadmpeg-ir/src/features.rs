@@ -104,6 +104,7 @@ macro_rules! clone_enum_for_decode {
 
 mod body_selection;
 mod decode_clone;
+mod member_work;
 
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
@@ -1350,11 +1351,12 @@ impl<'de> Deserialize<'de> for ConfigurationEvaluation {
                 outputs: Vec<BodyId>,
             },
         }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(serde::de::Error::custom)?;
         Ok(match Wire::deserialize(deserializer)? {
             Wire::Suppressed {} => Self::Suppressed {},
             Wire::Active { outputs } => Self::Active {
-                outputs: outputs
-                    .try_into()
+                outputs: DistinctMembers::try_from(outputs, &ctx)
                     .map_err(|error| serde::de::Error::custom(format!("outputs: {error}")))?,
             },
         })
@@ -2795,7 +2797,7 @@ impl TreeChildren {
             }
         }
         Ok(Self {
-            children: DistinctMembers::try_from_for_decode(children, ctx)?,
+            children: DistinctMembers::try_from(children, ctx)?,
             active_child,
         })
     }
@@ -6484,21 +6486,9 @@ impl VertexSelection {
 }
 
 impl EdgeSelection {
-    /// Admits historical members and their native reference.
-    pub fn historical(
-        state: FeatureInputTopologyId,
-        edges: Vec<HistoricalEdgeId>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_for_decode(state, edges, native, &ctx)?
-    }
 
     /// Admit selection members with the decode context.
-    pub fn historical_for_decode(
+    pub fn historical(
         state: FeatureInputTopologyId,
         edges: Vec<HistoricalEdgeId>,
         native: String,
@@ -6528,29 +6518,16 @@ impl EdgeSelection {
         }))
     }
 
-    /// Admits partial historical members and unresolved native operands.
-    pub fn historical_partial(
-        state: FeatureInputTopologyId,
-        edges: Vec<HistoricalEdgeId>,
-        unresolved: Vec<String>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_partial_for_decode(state, edges, unresolved, native, &ctx)?
-    }
 
     /// Admit selection members with the decode context.
-    pub fn historical_partial_for_decode(
+    pub fn historical_partial(
         state: FeatureInputTopologyId,
         edges: Vec<HistoricalEdgeId>,
         unresolved: Vec<String>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let edges = match DistinctMembers::try_from_for_decode(edges, ctx) {
+        let edges = match DistinctMembers::try_from(edges, ctx) {
             Ok(members) => members,
             Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
             Err(FeatureCollectionError::Invalid(_)) => {
@@ -6595,21 +6572,9 @@ impl EdgeSelection {
 }
 
 impl FaceSelection {
-    /// Admits historical members and their native reference.
-    pub fn historical(
-        state: FeatureInputTopologyId,
-        faces: Vec<HistoricalFaceId>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_for_decode(state, faces, native, &ctx)?
-    }
 
     /// Admit selection members with the decode context.
-    pub fn historical_for_decode(
+    pub fn historical(
         state: FeatureInputTopologyId,
         faces: Vec<HistoricalFaceId>,
         native: String,
@@ -6639,29 +6604,16 @@ impl FaceSelection {
         }))
     }
 
-    /// Admits partial historical members and unresolved native operands.
-    pub fn historical_partial(
-        state: FeatureInputTopologyId,
-        faces: Vec<HistoricalFaceId>,
-        unresolved: Vec<String>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_partial_for_decode(state, faces, unresolved, native, &ctx)?
-    }
 
     /// Admit selection members with the decode context.
-    pub fn historical_partial_for_decode(
+    pub fn historical_partial(
         state: FeatureInputTopologyId,
         faces: Vec<HistoricalFaceId>,
         unresolved: Vec<String>,
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let faces = match DistinctMembers::try_from_for_decode(faces, ctx) {
+        let faces = match DistinctMembers::try_from(faces, ctx) {
             Ok(members) => members,
             Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
             Err(FeatureCollectionError::Invalid(_)) => {
@@ -6821,27 +6773,17 @@ impl<T> Default for DistinctMembers<T> {
     }
 }
 
-impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for DistinctMembers<T> {
-    type Error = FeatureCollectionError;
-    fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::try_from_for_decode(value, &ctx)
-    }
-}
-
 impl<T: Eq + std::hash::Hash> DistinctMembers<T> {
     /// Check uniqueness using a scoped index and the caller's work budget.
-    pub fn try_from_for_decode(
+    pub fn try_from(
         value: Vec<T>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, FeatureCollectionError> {
         const OPERATION: &str = "validate distinct decoded members";
         let (mut seen, _storage) = ctx.temporary_set_limit(value.len(), OPERATION)?;
+        let mut longest = 0;
         for member in &value {
-            ctx.charge_work_limit(1, OPERATION)?;
+            member_work::admit_member_work(ctx, member, seen.len(), &mut longest, OPERATION)?;
             if !seen.insert(member) {
                 return Err(FeatureCollectionError::Invalid("members must be distinct"));
             }
@@ -6972,7 +6914,12 @@ impl<'a, T> IntoIterator for &'a DistinctMembers<T> {
 
 impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for DistinctMembers<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        {
+            let values = Vec::<T>::deserialize(deserializer)?;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(serde::de::Error::custom)?;
+            Self::try_from(values, &ctx)
+        }.map_err(serde::de::Error::custom)
     }
 }
 
@@ -7004,8 +6951,9 @@ impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
             return Ok(Err(BodySelectionError::Empty));
         }
         let (mut unique, _storage) = ctx.temporary_set_limit(value.len(), operation)?;
+        let mut longest = 0;
         for member in &value {
-            ctx.charge_work_limit(1, operation)?;
+            member_work::admit_member_work(ctx, member, unique.len(), &mut longest, operation)?;
             if !unique.insert(member) {
                 return Ok(Err(BodySelectionError::RepeatedBody));
             }
@@ -7084,9 +7032,9 @@ impl NativeSelections {
             }
         }
         let (mut unique, _storage) = ctx.temporary_set_limit(value.len(), operation)?;
+        let mut longest = 0;
         for name in &value {
-            ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(name.len()), operation)?;
-            ctx.charge_work_limit(1, operation)?;
+            member_work::admit_member_work(ctx, name, unique.len(), &mut longest, operation)?;
             if !unique.insert(name) {
                 return Ok(Err(BodySelectionError::RepeatedNativeMember));
             }
@@ -7230,24 +7178,22 @@ pub struct BodyMembers<B>(Vec<BodyMember<B>>);
 
 impl<B> BodyMembers<B> {
     /// Construct checked rows from body/native pairs.
-    pub fn try_from_rows(rows: Vec<BodyMember<B>>) -> Result<Self, BodySelectionError>
-    where
-        B: Eq + std::hash::Hash,
+    pub fn try_from_rows(rows: Vec<BodyMember<B>>, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit>
+    where B: Eq + std::hash::Hash,
     {
-        if rows.is_empty() {
-            return Err(BodySelectionError::Empty);
-        }
-        let mut bodies = HashSet::with_capacity(rows.len());
-        let mut native = HashSet::with_capacity(rows.len());
+        if rows.is_empty() { return Ok(Err(BodySelectionError::Empty)); }
+        const OPERATION: &str = "validate body selection members";
+        let (mut bodies, _body_storage) = ctx.temporary_set_limit(rows.len(), OPERATION)?;
+        let (mut native, _native_storage) = ctx.temporary_set_limit(rows.len(), OPERATION)?;
+        let mut longest_body = 0;
+        let mut longest_native = 0;
         for row in &rows {
-            if !bodies.insert(&row.body) {
-                return Err(BodySelectionError::RepeatedBody);
-            }
-            if !native.insert(&row.native) {
-                return Err(BodySelectionError::RepeatedNativeMember);
-            }
+            member_work::admit_member_work(ctx, &row.body, bodies.len(), &mut longest_body, OPERATION)?;
+            if !bodies.insert(&row.body) { return Ok(Err(BodySelectionError::RepeatedBody)); }
+            member_work::admit_member_work(ctx, &row.native, native.len(), &mut longest_native, OPERATION)?;
+            if !native.insert(&row.native) { return Ok(Err(BodySelectionError::RepeatedNativeMember)); }
         }
-        Ok(Self(rows))
+        Ok(Ok(Self(rows)))
     }
 
     /// Count paired selection rows.
@@ -7285,7 +7231,9 @@ where
         D: serde::Deserializer<'de>,
     {
         let rows = Vec::<BodyMember<B>>::deserialize(deserializer)?;
-        Self::try_from_rows(rows).map_err(serde::de::Error::custom)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(serde::de::Error::custom)?;
+        Self::try_from_rows(rows, &ctx).map_err(cadmpeg_core::CodecError::from).map_err(serde::de::Error::custom)?.map_err(serde::de::Error::custom)
     }
 }
 
@@ -8523,7 +8471,7 @@ impl SketchProfileLoops {
         holes: Vec<u32>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
-        let holes = match DistinctMembers::try_from_for_decode(holes, ctx) {
+        let holes = match DistinctMembers::try_from(holes, ctx) {
             Ok(holes) => holes,
             Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
             Err(FeatureCollectionError::Invalid(_)) => return Ok(Err("holes must be distinct")),
@@ -9325,21 +9273,9 @@ impl PlanarProfileRef {
         };
         Ok(Ok(Self::SketchSelection { sketch, selections }))
     }
-    /// Admits historical profile faces and native selection groups.
-    pub fn historical_faces(
-        state: FeatureInputTopologyId,
-        faces: Vec<HistoricalFaceId>,
-        native: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_faces_for_decode(state, faces, native, &ctx)?
-    }
 
     /// Admit members with a scoped uniqueness index.
-    pub fn historical_faces_for_decode(
+    pub fn historical_faces(
         state: FeatureInputTopologyId,
         faces: Vec<HistoricalFaceId>,
         native: Vec<String>,
@@ -9497,21 +9433,9 @@ impl PathRef {
         Ok(Ok(Self::SpatialSketchCurves { sketch, curves }))
     }
 
-    /// Admits historical path edges and their native reference.
-    pub fn historical_edges(
-        state: FeatureInputTopologyId,
-        edges: Vec<HistoricalEdgeId>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::historical_edges_for_decode(state, edges, native, &ctx)?
-    }
 
     /// Admit members with a scoped uniqueness index.
-    pub fn historical_edges_for_decode(
+    pub fn historical_edges(
         state: FeatureInputTopologyId,
         edges: Vec<HistoricalEdgeId>,
         native: String,

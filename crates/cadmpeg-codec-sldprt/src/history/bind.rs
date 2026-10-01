@@ -660,7 +660,7 @@ pub(crate) fn derive_feature_outputs(
                 }
                 outputs.push(body);
                 feature.evaluation.set_outputs(
-                    cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
+                    cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)?,
                 );
             }
         }
@@ -709,7 +709,7 @@ pub(crate) fn derive_feature_outputs(
                 outputs.push(copy_output_body_id(ctx, body.as_str())?);
             }
             feature.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)?,
             );
         }
     }

@@ -69,7 +69,7 @@ fn complete_sphere_rederives_a_new_body() {
                 radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                 op: BooleanOp::NewBody,
             }),
-            (vec![body.clone()]).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: None,
     });
@@ -647,7 +647,7 @@ fn base_feature_introduces_its_complete_selected_outputs() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    vec![body.clone()].try_into().expect("distinct bodies"),
+                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"),
                 ),
             },
         ));
@@ -678,9 +678,9 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::ExtractBody {
-                source: BodySelection::Bodies(vec![source].try_into().expect("distinct bodies")),
+                source: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![source], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
             }),
-            (vec![extracted.clone()]).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![extracted.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: None,
     });
@@ -746,7 +746,7 @@ fn delete_body_removes_an_existing_selected_body() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
+                bodies: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
                 mode: BodyRetentionMode::DeleteSelected,
             }),
         ),
@@ -812,7 +812,7 @@ fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
+                bodies: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
                 mode: BodyRetentionMode::DeleteSelected,
             }),
         ),
@@ -847,8 +847,7 @@ fn keep_selected_removes_every_unselected_body() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    vec![retained.clone(), removed.clone()]
-                        .try_into()
+                    cadmpeg_ir::features::DistinctMembers::try_from(vec![retained.clone(), removed.clone()], &cadmpeg_test_support::service_decode_context())
                         .expect("distinct bodies"),
                 ),
             },
@@ -858,7 +857,7 @@ fn keep_selected_removes_every_unselected_body() {
         1,
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Bodies(
-                vec![retained.clone()].try_into().expect("distinct bodies"),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![retained.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"),
             ),
             mode: BodyRetentionMode::KeepSelected,
         }),

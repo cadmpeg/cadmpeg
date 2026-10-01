@@ -369,7 +369,7 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: (dependencies).try_into().unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,

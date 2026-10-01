@@ -30,10 +30,10 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             id: state_id.clone(),
             input_of: feature_id.clone(),
-            bodies: (Vec::new()).try_into().unwrap(),
-            faces: (Vec::new()).try_into().unwrap(),
-            edges: (Vec::new()).try_into().unwrap(),
-            vertices: (vec![historical_vertex.clone()]).try_into().unwrap(),
+            bodies: crate::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
+            faces: crate::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
+            edges: crate::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
+            vertices: crate::features::DistinctMembers::try_from(vec![historical_vertex.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
             native_ref: None,
         });
     ir.model.features.push(Feature {
@@ -207,7 +207,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: (vec![feature_id.clone()]).try_into().unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(vec![feature_id.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -247,8 +247,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             }),
-            (vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")])
-                .try_into()
+            crate::features::DistinctMembers::try_from(vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")], &cadmpeg_test_support::service_decode_context())
                 .unwrap(),
         ),
         native_ref: None,
@@ -396,7 +395,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: (dependencies).try_into().unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -464,7 +463,7 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "Width / 2".into(),
         display: None,
         value: None,
-        dependencies: (vec![document]).try_into().unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(vec![document], &cadmpeg_test_support::service_decode_context()).unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -993,7 +992,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: (vec![producer.clone()]).try_into().unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(vec![producer.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,

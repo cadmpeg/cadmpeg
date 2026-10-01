@@ -253,8 +253,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
 
     let complete = FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Bodies(
-            vec![BodyId::mint("test:model:body#1").expect("identity grammar")]
-                .try_into()
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:body#1").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                 .expect("distinct bodies"),
         ),
         mode: BodyRetentionMode::DeleteSelected,
@@ -270,8 +269,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Bodies(
-                vec![BodyId::mint("test:model:body#1").expect("identity grammar")]
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:body#1").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies")
             ),
             mode: BodyRetentionMode::Unresolved,
@@ -314,8 +312,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         .try_into()
         .expect("valid identity")]);
     let bodies = BodySelection::Bodies(
-        vec![BodyId::mint("test:model:body#1").expect("identity grammar")]
-            .try_into()
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:body#1").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
             .expect("distinct bodies"),
     );
 
@@ -413,8 +410,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(
-                vec![BodyId::mint("test:model:body#scale").expect("identity grammar")]
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:body#scale").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies")
             ),
             center: Some(ScaleCenter::ModelOrigin),
@@ -426,8 +422,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(
-                vec![BodyId::mint("test:model:body#scale").expect("identity grammar")]
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:body#scale").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies")
             ),
             center: Some(ScaleCenter::Native("native:center".into())),

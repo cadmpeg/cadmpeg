@@ -446,7 +446,7 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+        let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
             super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
             ctx,
         )
@@ -531,7 +531,7 @@ pub(in super::super) fn reconcile_feature_links(
             )?;
             generated_ids.push(id);
         }
-        feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+        feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
             reconciled_dependencies(
                 ctx,
                 &feature.id,

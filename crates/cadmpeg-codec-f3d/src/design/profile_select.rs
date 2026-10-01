@@ -973,7 +973,7 @@ fn historical_face_profile_selection(
         let id = ctx.copy_retained_text(&group.id, "f3d historical profile group id")?;
         ctx.push_vec(&mut group_ids, id, "f3d historical profile group id entry")?;
     }
-    Ok(PlanarProfileRef::historical_faces_for_decode(
+    Ok(PlanarProfileRef::historical_faces(
         crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?,
         face_ids,
         group_ids,

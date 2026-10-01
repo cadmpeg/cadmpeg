@@ -671,13 +671,13 @@ fn semantic_writer_round_trips_typed_sweep() {
             .retain(|dependency| dependency != &profile_a);
         let mut dependencies = ir_edit.model.features[3].dependencies.to_vec();
         dependencies.insert(0, profile_b);
-        ir_edit.model.features[3].dependencies = dependencies.try_into().unwrap();
+        ir_edit.model.features[3].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap();
     }
 
     let mut inconsistent = decoded.ir().clone();
     let mut dependencies = inconsistent.model.features[3].dependencies.to_vec();
     dependencies.remove(0);
-    inconsistent.model.features[3].dependencies = dependencies.try_into().unwrap();
+    inconsistent.model.features[3].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap();
     let error = crate::test_support::plan_inherited_write(
         &inconsistent,
         decoded.source_fidelity(),
@@ -900,13 +900,12 @@ fn semantic_writer_round_trips_typed_loft() {
         *op = BooleanOp::Join;
         *closed = true;
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
-        ir_edit.model.features[5].dependencies = (vec![
+        ir_edit.model.features[5].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
             feature_refs[2].clone(),
             feature_refs[1].clone(),
             feature_refs[0].clone(),
             feature_refs[4].clone(),
-        ])
-        .try_into()
+        ], &cadmpeg_test_support::service_decode_context())
         .unwrap();
     }
 
@@ -1039,7 +1038,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
         let mut dependencies = ir_edit.model.features[2].dependencies.to_vec();
         dependencies.reverse();
-        ir_edit.model.features[2].dependencies = dependencies.try_into().unwrap();
+        ir_edit.model.features[2].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap();
     }
 
     let mut encoded = Vec::new();

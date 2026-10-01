@@ -187,24 +187,22 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                 feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: ((ordinal == 0)
+                        outputs: cadmpeg_ir::features::DistinctMembers::try_from((ordinal == 0)
                             .then(|| {
                                 BodyId::mint("test:model:entity#missing-output")
                                     .expect("identity grammar")
                             })
                             .into_iter()
-                            .collect::<Vec<_>>())
-                        .try_into()
+                            .collect::<Vec<_>>(), &cadmpeg_test_support::service_decode_context())
                         .unwrap(),
                     },
-                    dependencies: ((ordinal == 0)
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from((ordinal == 0)
                         .then(|| {
                             FeatureId::mint("synthetic:test:id#missing-dependency")
                                 .expect("identity grammar")
                         })
                         .into_iter()
-                        .collect::<Vec<_>>())
-                    .try_into()
+                        .collect::<Vec<_>>(), &cadmpeg_test_support::service_decode_context())
                     .unwrap(),
                     definition,
                 },
@@ -823,10 +821,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ordinal: 0,
         name: None,
         suppressed: Some(true),
-        dependencies: (vec![
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
             FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
-        ])
-        .try_into()
+        ], &cadmpeg_test_support::service_decode_context())
         .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -838,8 +835,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
-                .try_into()
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#body").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                 .unwrap(),
         ),
         native_ref: None,
@@ -891,10 +887,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ir.model.configurations[0].feature_states[&feature_id],
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-            dependencies: (vec![
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
                 FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
-            ])
-            .try_into()
+            ], &cadmpeg_test_support::service_decode_context())
             .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -939,7 +934,7 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         name: "D1".into(),
         expression: "12mm".into(),
         value: Some(value),
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,

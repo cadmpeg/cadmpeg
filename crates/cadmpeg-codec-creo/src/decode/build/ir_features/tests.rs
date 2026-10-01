@@ -257,7 +257,7 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
     let second = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
         .expect("second dependency identity");
     let mut target = crate::decode::with_test_decode_ctx(|ctx| {
-        cadmpeg_ir::features::DistinctMembers::try_from_for_decode(vec![first.clone()], ctx)
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone()], ctx)
             .map_err(cadmpeg_core::CodecError::from)
     })
     .expect("one member is distinct");

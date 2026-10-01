@@ -26,8 +26,8 @@ fn parameter_real_admission_preserves_finite_signed_wire_values() {
 fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
     let first = ParameterId::mint("test:test:parameter#first").unwrap();
     let second = ParameterId::mint("test:test:parameter#second").unwrap();
-    assert!(DistinctMembers::try_from(vec![first.clone(), first.clone()]).is_err());
-    let mut dependencies = DistinctMembers::try_from(vec![second.clone(), first.clone()]).unwrap();
+    assert!(DistinctMembers::try_from(vec![first.clone(), first.clone()], &cadmpeg_test_support::service_decode_context()).is_err());
+    let mut dependencies = DistinctMembers::try_from(vec![second.clone(), first.clone()], &cadmpeg_test_support::service_decode_context()).unwrap();
     assert!(!dependencies.insert(first.clone()));
     assert_eq!(dependencies.as_slice(), &[second.clone(), first.clone()]);
     dependencies.retain(|id| id == &first);
@@ -55,14 +55,27 @@ fn reserved_parameter_dependencies_preserve_order_and_reject_repeats() {
     let first = ParameterId::mint("test:test:parameter#first").unwrap();
     let second = ParameterId::mint("test:test:parameter#second").unwrap();
     let ordered = crate::test_support::with_service_decode_context(|ctx| {
-        DistinctMembers::try_from_for_decode(vec![second.clone(), first.clone()], ctx)
+        DistinctMembers::try_from(vec![second.clone(), first.clone()], ctx)
             .map_err(cadmpeg_core::CodecError::from)
     })
     .expect("source-ordered members are distinct");
     assert_eq!(ordered.as_slice(), &[second.clone(), first.clone()]);
     assert!(crate::test_support::with_service_decode_context(|ctx| {
-        DistinctMembers::try_from_for_decode(vec![first.clone(), second, first], ctx)
+        DistinctMembers::try_from(vec![first.clone(), second, first], ctx)
             .map_err(cadmpeg_core::CodecError::from)
     })
     .is_err());
+}
+
+#[test]
+fn distinct_constructor_preserves_collection_refusal_in_the_caller_session() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let member = ParameterId::mint("test:model:parameter#member").unwrap();
+    let Err(crate::features::FeatureCollectionError::Resource(limit)) = DistinctMembers::try_from(vec![member], &ctx) else { panic!("member slot must be refused"); };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
 }

@@ -560,8 +560,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 .expect("identity grammar"),
                 vec![cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge")
                     .expect("identity grammar")],
-                "native:partial-edges".into(),
-            )
+                "native:partial-edges".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
             .unwrap();
     });
     assert_eq!(

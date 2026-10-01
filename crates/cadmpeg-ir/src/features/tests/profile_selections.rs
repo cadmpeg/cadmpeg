@@ -42,8 +42,7 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
                 PlanarProfileRef::historical_faces(
                     state.clone(),
                     vec![face.clone()],
-                    vec!["group".into()],
-                )
+                    vec!["group".into()], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
                 .unwrap(),
             ),
             "faces",
@@ -84,17 +83,16 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
         assert!(PlanarProfileRef::sketch_selection(sketch.clone(), names.clone()).is_err());
         assert!(ProfileRef::spatial_sketch_selection(spatial.clone(), names.clone()).is_err());
         assert!(
-            PlanarProfileRef::historical_faces(state.clone(), vec![face.clone()], names).is_err()
+            PlanarProfileRef::historical_faces(state.clone(), vec![face.clone()], names, &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err()
         );
     }
     assert!(
-        PlanarProfileRef::historical_faces(state.clone(), vec![], vec!["group".into()]).is_err()
+        PlanarProfileRef::historical_faces(state.clone(), vec![], vec!["group".into()], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err()
     );
     assert!(PlanarProfileRef::historical_faces(
         state,
         vec![face.clone(), face],
-        vec!["group".into()]
-    )
+        vec!["group".into()], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
     .is_err());
 }
 
@@ -127,7 +125,7 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
             "selections",
         ),
         (
-            PathRef::historical_edges(state.clone(), vec![edge.clone()], "group".into()).unwrap(),
+            PathRef::historical_edges(state.clone(), vec![edge.clone()], "group".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").unwrap(),
             "edges",
         ),
     ];
@@ -168,16 +166,15 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
             )
             .is_err());
     }
-    assert!(PathRef::historical_edges(state.clone(), vec![], "group".into()).is_err());
+    assert!(PathRef::historical_edges(state.clone(), vec![], "group".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
     assert!(PathRef::historical_edges(
         state.clone(),
         vec![edge.clone(), edge.clone()],
-        "group".into()
-    )
+        "group".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
     .is_err());
-    assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], String::new()).is_err());
-    assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], " ".into()).is_err());
-    assert!(PathRef::historical_edges(state, vec![edge], " g ".into()).is_ok());
+    assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], String::new(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
+    assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], " ".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
+    assert!(PathRef::historical_edges(state, vec![edge], " g ".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_ok());
 }
 
 #[test]

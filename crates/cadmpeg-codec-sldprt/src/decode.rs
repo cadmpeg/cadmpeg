@@ -5199,7 +5199,7 @@ fn assign_configuration_bodies(
         };
         if source_counts.get(&source_index) == Some(&1) {
             configuration.bodies =
-                Some(cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                Some(cadmpeg_ir::features::DistinctMembers::try_from(
                     partition_map.remove(&source_index).unwrap_or_default(),
                     ctx,
                 )?);
@@ -5208,7 +5208,7 @@ fn assign_configuration_bodies(
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
         if let Some(bodies) = partition_map.remove(&active_index) {
             ir.model.configurations[position].bodies = Some(
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx)?,
+                cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx)?,
             );
         }
     }
@@ -5257,7 +5257,7 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from(
                     bodies, ctx,
                 )?),
                 parameter_values: std::collections::BTreeMap::new(),

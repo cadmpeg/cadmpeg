@@ -107,7 +107,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
                 ordinal,
                 name: None,
                 suppressed: Some(false),
-                dependencies: (dependencies).try_into().unwrap(),
+                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
@@ -115,7 +115,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     definition,
-                    (outputs).try_into().unwrap(),
+                    cadmpeg_ir::features::DistinctMembers::try_from(outputs, &cadmpeg_test_support::service_decode_context()).unwrap(),
                 ),
                 native_ref: None,
             });
@@ -126,7 +126,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: BodySelection::Bodies(vec![body.clone()].try_into().expect("distinct bodies")),
+            bodies: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
         }),
     );
     push(
@@ -149,7 +149,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::MirrorShape {
-            source: BodySelection::Bodies(vec![body.clone()].try_into().expect("distinct bodies")),
+            source: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
             plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
             plane_normal: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
@@ -163,8 +163,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Bodies(
-                vec![body.clone(), other_body.clone()]
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone(), other_body.clone()], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies"),
             ))
             .try_into()
@@ -179,10 +178,9 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![body.clone()].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
                 BodySelection::Bodies(
-                    vec![other_body.clone()]
-                        .try_into()
+                    cadmpeg_ir::features::DistinctMembers::try_from(vec![other_body.clone()], &cadmpeg_test_support::service_decode_context())
                         .expect("distinct bodies"),
                 ),
             )
@@ -208,8 +206,8 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
-                BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
-                BodySelection::Bodies(vec![other_body].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![other_body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -315,7 +313,7 @@ fn design_completeness_audits_typed_construction_families() {
             },
         }),
         FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
-            tools: BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
+            tools: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
             cells: cadmpeg_ir::features::NonEmptyMembers::one(BodySelection::Unresolved),
         }),
     ];
@@ -360,7 +358,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -1133,7 +1131,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
         )),
-        dependencies: (vec![future.clone()]).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![future.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1237,7 +1235,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -1418,7 +1416,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     ir.model.parameters.clear();
     let body = ir.model.bodies[0].id.clone();
     let repeated = vec![body.clone(), body.clone()];
-    assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated).is_err());
+    assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated, &cadmpeg_test_support::service_decode_context()).is_err());
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
@@ -1435,7 +1433,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            outputs.try_into().expect("distinct output fixture"),
+            cadmpeg_ir::features::DistinctMembers::try_from(outputs, &cadmpeg_test_support::service_decode_context()).expect("distinct output fixture"),
         ),
         native_ref: None,
     };

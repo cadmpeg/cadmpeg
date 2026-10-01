@@ -1094,8 +1094,7 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: vec![ir.model.bodies[0].id.clone()]
-                        .try_into()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()], &cadmpeg_test_support::service_decode_context())
                         .expect("distinct bodies"),
                     native: "body-a".into(),
                 },
@@ -1215,7 +1214,7 @@ fn encoder_writes_source_less_native_features() {
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
-            dependencies: (vec![seed_id.clone()]).try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![seed_id.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,

@@ -798,16 +798,14 @@ fn edge_selections_round_trip_through_json() {
             FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
             vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0").expect("valid identity")],
-            "edge:9".into(),
-        )
+            "edge:9".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
         .unwrap(),
         EdgeSelection::historical_partial(
             FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
             vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0").expect("valid identity")],
             vec!["native:edge-operand#1".into()],
-            "edge:9".into(),
-        )
+            "edge:9".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
         .unwrap(),
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];
@@ -829,8 +827,7 @@ fn historical_edge_paths_round_trip_through_json() {
             HistoricalEdgeId::mint("synthetic:history-input:edge#0").expect("valid identity"),
             HistoricalEdgeId::mint("synthetic:history-input:edge#1").expect("valid identity"),
         ],
-        "native:path#0".into(),
-    )
+        "native:path#0".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
     .unwrap();
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
@@ -854,16 +851,14 @@ fn face_selections_round_trip_through_json() {
             FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
             vec![HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")],
-            "face:13".into(),
-        )
+            "face:13".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
         .unwrap(),
         FaceSelection::historical_partial(
             FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
             vec![HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")],
             vec!["native:face-operand#1".into()],
-            "face:12".into(),
-        )
+            "face:12".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
         .unwrap(),
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];
@@ -881,8 +876,7 @@ fn historical_face_profiles_round_trip_through_json() {
     let profile = PlanarProfileRef::historical_faces(
         FeatureInputTopologyId::mint("synthetic:history-input:state#0").expect("valid identity"),
         vec![HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")],
-        vec!["native:profile-group#0".into()],
-    )
+        vec!["native:profile-group#0".into()], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
     .unwrap();
     let json = serde_json::to_string(&profile).unwrap();
     assert_eq!(
@@ -899,13 +893,11 @@ fn body_selections_round_trip_through_json() {
     let selections = vec![
         BodySelection::Unresolved,
         BodySelection::Bodies(
-            vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")]
-                .try_into()
+            crate::features::DistinctMembers::try_from(vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")], &cadmpeg_test_support::service_decode_context())
                 .expect("distinct bodies"),
         ),
         BodySelection::Resolved {
-            bodies: vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")]
-                .try_into()
+            bodies: crate::features::DistinctMembers::try_from(vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")], &cadmpeg_test_support::service_decode_context())
                 .expect("distinct bodies"),
             native: "body:17".into(),
         },
@@ -921,15 +913,14 @@ fn body_selections_round_trip_through_json() {
                     cadmpeg_core::text::NonBlankString::new("body:18")
                         .expect("valid body selection row"),
                 ),
-            ])
+            ], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
             .expect("valid body selection rows"),
         },
         BodySelection::historical(
             FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
             vec![HistoricalBodyId::mint("synthetic:history-input:body#0").expect("valid identity")],
-            "body:16".into(),
-        )
+            "body:16".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
         .unwrap(),
         BodySelection::HistoricalSet {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
@@ -947,7 +938,7 @@ fn body_selections_round_trip_through_json() {
                     cadmpeg_core::text::NonBlankString::new("body:17")
                         .expect("valid historical body selection row"),
                 ),
-            ])
+            ], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
             .expect("valid historical body selection rows"),
         },
         BodySelection::Native("body:17,body:18".into()),
