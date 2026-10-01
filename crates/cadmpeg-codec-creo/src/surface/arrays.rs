@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeContext, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -8,15 +8,23 @@ use cadmpeg_ir::scalar::FiniteReal;
 struct FiniteScalarSlots(Vec<Option<f64>>);
 impl FiniteScalarSlots {
     fn new(values: Vec<Option<f64>>) -> Option<Self> {
-        values.iter().all(|value| value.is_none_or(|value| FiniteReal::new(value).is_some())).then_some(Self(values))
+        values
+            .iter()
+            .all(|value| value.is_none_or(|value| FiniteReal::new(value).is_some()))
+            .then_some(Self(values))
     }
 }
 
 /// A checked scalar extent, before any slot storage is constructed.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct ScalarExtent<Shape> { shape: Shape, len: usize }
+pub(super) struct ScalarExtent<Shape> {
+    shape: Shape,
+    len: usize,
+}
 impl<Shape> ScalarExtent<Shape> {
-    pub(super) fn len(&self) -> usize { self.len }
+    pub(super) fn len(&self) -> usize {
+        self.len
+    }
 }
 
 /// Scalar slots and optional source tokens with a checked count or shape.
@@ -33,61 +41,128 @@ pub(crate) type CountedScalars = Scalars<u32>;
 
 impl DimensionedScalars {
     pub(super) fn extent(dimensions: u32, count: u32) -> Option<ScalarExtent<[u32; 2]>> {
-        let len = usize::try_from(dimensions).ok()?.checked_mul(usize::try_from(count).ok()?)?;
-        Some(ScalarExtent { shape: [dimensions, count], len })
+        let len = usize::try_from(dimensions)
+            .ok()?
+            .checked_mul(usize::try_from(count).ok()?)?;
+        Some(ScalarExtent {
+            shape: [dimensions, count],
+            len,
+        })
     }
     #[cfg(test)]
     pub(crate) fn empty(dimensions: u32, count: u32) -> Result<Self, CodecError> {
-        let extent = Self::extent(dimensions, count).ok_or_else(|| CodecError::malformed("test scalar grid extent"))?;
+        let extent = Self::extent(dimensions, count)
+            .ok_or_else(|| CodecError::malformed("test scalar grid extent"))?;
         let values = cadmpeg_core::decode::alloc_filled(extent.len, None, "creo scalar slots")?;
-        Ok(Self { shape: extent.shape, values: FiniteScalarSlots(values), tokens: None })
+        Ok(Self {
+            shape: extent.shape,
+            values: FiniteScalarSlots(values),
+            tokens: None,
+        })
     }
-    pub(crate) fn dimensions(&self) -> u32 { self.shape[0] }
-    pub(crate) fn count(&self) -> u32 { self.shape[1] }
+    pub(crate) fn dimensions(&self) -> u32 {
+        self.shape[0]
+    }
+    pub(crate) fn count(&self) -> u32 {
+        self.shape[1]
+    }
 }
 impl CountedScalars {
     pub(super) fn extent(count: u32) -> Option<ScalarExtent<u32>> {
-        Some(ScalarExtent { shape: count, len: usize::try_from(count).ok()? })
+        Some(ScalarExtent {
+            shape: count,
+            len: usize::try_from(count).ok()?,
+        })
     }
     #[cfg(test)]
     pub(crate) fn empty(count: u32) -> Result<Self, CodecError> {
-        let extent = Self::extent(count).ok_or_else(|| CodecError::malformed("test scalar array count"))?;
+        let extent =
+            Self::extent(count).ok_or_else(|| CodecError::malformed("test scalar array count"))?;
         let values = cadmpeg_core::decode::alloc_filled(extent.len, None, "creo scalar slots")?;
-        Ok(Self { shape: extent.shape, values: FiniteScalarSlots(values), tokens: None })
+        Ok(Self {
+            shape: extent.shape,
+            values: FiniteScalarSlots(values),
+            tokens: None,
+        })
     }
-    pub(crate) fn count(&self) -> u32 { self.shape }
+    pub(crate) fn count(&self) -> u32 {
+        self.shape
+    }
 }
 impl<Shape> Scalars<Shape> {
-    pub(super) fn from_values(ctx: &DecodeContext<'_>, extent: ScalarExtent<Shape>, values: Vec<Option<f64>>) -> Result<Option<Self>, CodecError> {
-        if values.len() != extent.len { return Ok(None); }
+    pub(super) fn from_values(
+        ctx: &DecodeContext<'_>,
+        extent: ScalarExtent<Shape>,
+        values: Vec<Option<f64>>,
+    ) -> Result<Option<Self>, CodecError> {
+        if values.len() != extent.len {
+            return Ok(None);
+        }
         ctx.charge_work(u64_from_index(values.len()), "creo scalar array validation")?;
-        Ok(FiniteScalarSlots::new(values).map(|values| Self { shape: extent.shape, values, tokens: None }))
+        Ok(FiniteScalarSlots::new(values).map(|values| Self {
+            shape: extent.shape,
+            values,
+            tokens: None,
+        }))
     }
-    pub(super) fn from_tokens(ctx: &DecodeContext<'_>, extent: ScalarExtent<Shape>, slots: Vec<(Option<f64>, Vec<u8>)>) -> Result<Option<Self>, CodecError> {
-        if slots.len() != extent.len { return Ok(None); }
+    pub(super) fn from_tokens(
+        ctx: &DecodeContext<'_>,
+        extent: ScalarExtent<Shape>,
+        slots: Vec<(Option<f64>, Vec<u8>)>,
+    ) -> Result<Option<Self>, CodecError> {
+        if slots.len() != extent.len {
+            return Ok(None);
+        }
         ctx.charge_work(u64_from_index(slots.len()), "creo scalar array validation")?;
-        if slots.iter().any(|(value, _)| value.is_some_and(|value| FiniteReal::new(value).is_none())) { return Ok(None); }
+        if slots
+            .iter()
+            .any(|(value, _)| value.is_some_and(|value| FiniteReal::new(value).is_none()))
+        {
+            return Ok(None);
+        }
         let mut values = ctx.retained_vec(slots.len(), "creo scalar array values")?;
         let mut tokens = ctx.retained_vec(slots.len(), "creo scalar array tokens")?;
         ctx.charge_work(u64_from_index(slots.len()), "creo scalar array filling")?;
-        for (value, token) in slots { values.push(value); tokens.push(token); }
-        Ok(Some(Self { shape: extent.shape, values: FiniteScalarSlots(values), tokens: Some(tokens) }))
+        for (value, token) in slots {
+            values.push(value);
+            tokens.push(token);
+        }
+        Ok(Some(Self {
+            shape: extent.shape,
+            values: FiniteScalarSlots(values),
+            tokens: Some(tokens),
+        }))
     }
     #[cfg(test)]
     pub(crate) fn fill_values(&mut self, values: Vec<Option<f64>>) -> Option<()> {
-        if values.len() != self.values.0.len() { return None; }
+        if values.len() != self.values.0.len() {
+            return None;
+        }
         self.values = FiniteScalarSlots::new(values)?;
         self.tokens = None;
         Some(())
     }
-    pub(crate) fn values(&self) -> &[Option<f64>] { &self.values.0 }
-    pub(crate) fn tokens(&self) -> Option<&[Vec<u8>]> { self.tokens.as_deref() }
+    pub(crate) fn values(&self) -> &[Option<f64>] {
+        &self.values.0
+    }
+    pub(crate) fn tokens(&self) -> Option<&[Vec<u8>]> {
+        self.tokens.as_deref()
+    }
 }
 #[cfg(test)]
 impl<Shape: Copy> Scalars<Shape> {
-    pub(super) fn fill_tokens(&mut self, ctx: &DecodeContext<'_>, slots: Vec<(Option<f64>, Vec<u8>)>) -> Result<Option<()>, CodecError> {
-        let extent = ScalarExtent { shape: self.shape, len: self.values.0.len() };
-        let Some(array) = Self::from_tokens(ctx, extent, slots)? else { return Ok(None); };
+    pub(super) fn fill_tokens(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        slots: Vec<(Option<f64>, Vec<u8>)>,
+    ) -> Result<Option<()>, CodecError> {
+        let extent = ScalarExtent {
+            shape: self.shape,
+            len: self.values.0.len(),
+        };
+        let Some(array) = Self::from_tokens(ctx, extent, slots)? else {
+            return Ok(None);
+        };
         *self = array;
         Ok(Some(()))
     }
@@ -111,10 +186,13 @@ mod tests {
                     Ok(None) => panic!("matching extent"),
                     Err(error) => {
                         assert_eq!(array, original);
-                        assert_eq!(ctx.resource_refusal(), match &error {
-                            CodecError::ResourceLimit(limit) => Some(limit.clone()),
-                            _ => None,
-                        });
+                        assert_eq!(
+                            ctx.resource_refusal(),
+                            match &error {
+                                CodecError::ResourceLimit(limit) => Some(*limit),
+                                _ => None,
+                            }
+                        );
                         Err(error)
                     }
                 }
@@ -131,21 +209,34 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0;4], &arena, &policy).expect("root");
-        let error = DimensionedScalars::from_tokens(&ctx, extent, vec![(None, Vec::new());4]).expect_err("final buffer needs four slots");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo scalar array values"));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &policy).expect("root");
+        let error = DimensionedScalars::from_tokens(&ctx, extent, vec![(None, Vec::new()); 4])
+            .expect_err("final buffer needs four slots");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo scalar array values")
+        );
     }
 
     #[test]
     fn dimensioned_fills_reject_mismatched_extents_without_mutation() {
         let mut array = DimensionedScalars::empty(2, 2).expect("valid extent");
         let slots = vec![(Some(2.0), vec![0xe4]); 4];
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, slots)).expect("admitted scalar fill"), Some(()));
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, slots))
+                .expect("admitted scalar fill"),
+            Some(())
+        );
         let original = array.clone();
         for len in [0, 3, 5] {
             assert_eq!(array.fill_values(vec![Some(3.0); len]), None);
             assert_eq!(array, original);
-            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(None, vec![0x0f]); len])).expect("admitted scalar fill"), None);
+            assert_eq!(
+                crate::decode::with_test_decode_ctx(
+                    |ctx| array.fill_tokens(ctx, vec![(None, vec![0x0f]); len])
+                )
+                .expect("admitted scalar fill"),
+                None
+            );
             assert_eq!(array, original);
         }
         assert_eq!(array.fill_values(vec![None; 4]), Some(()));
@@ -159,15 +250,30 @@ mod tests {
         assert_eq!(array.tokens(), None);
         assert_eq!(array.values(), &[None; 2]);
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(Some(2.0), vec![0xe4]); 2])).expect("admitted scalar fill"),
+            crate::decode::with_test_decode_ctx(
+                |ctx| array.fill_tokens(ctx, vec![(Some(2.0), vec![0xe4]); 2])
+            )
+            .expect("admitted scalar fill"),
             Some(())
         );
         let original = array.clone();
         for len in [0, 1, 3] {
-            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(None, vec![0x0f]); len])).expect("admitted scalar fill"), None);
+            assert_eq!(
+                crate::decode::with_test_decode_ctx(
+                    |ctx| array.fill_tokens(ctx, vec![(None, vec![0x0f]); len])
+                )
+                .expect("admitted scalar fill"),
+                None
+            );
             assert_eq!(array, original);
         }
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(None, vec![0x0f]); 2])).expect("admitted scalar fill"), Some(()));
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(
+                |ctx| array.fill_tokens(ctx, vec![(None, vec![0x0f]); 2])
+            )
+            .expect("admitted scalar fill"),
+            Some(())
+        );
         assert_eq!(array.values(), &[None; 2]);
         assert_eq!(array.tokens(), Some([vec![0x0f], vec![0x0f]].as_slice()));
     }
@@ -176,12 +282,32 @@ mod tests {
     fn empty_arrays_accept_only_empty_fills() {
         let mut dimensioned = DimensionedScalars::empty(0, 2).expect("valid extent");
         assert_eq!(dimensioned.fill_values(Vec::new()), Some(()));
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| dimensioned.fill_tokens(ctx, Vec::new())).expect("admitted scalar fill"), Some(()));
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| dimensioned.fill_tokens(ctx, Vec::new()))
+                .expect("admitted scalar fill"),
+            Some(())
+        );
         assert_eq!(dimensioned.fill_values(vec![None]), None);
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| dimensioned.fill_tokens(ctx, vec![(None, Vec::new())])).expect("admitted scalar fill"), None);
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(
+                |ctx| dimensioned.fill_tokens(ctx, vec![(None, Vec::new())])
+            )
+            .expect("admitted scalar fill"),
+            None
+        );
         let mut counted = CountedScalars::empty(0).expect("valid extent");
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| counted.fill_tokens(ctx, Vec::new())).expect("admitted scalar fill"), Some(()));
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| counted.fill_tokens(ctx, vec![(None, Vec::new())])).expect("admitted scalar fill"), None);
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| counted.fill_tokens(ctx, Vec::new()))
+                .expect("admitted scalar fill"),
+            Some(())
+        );
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(
+                |ctx| counted.fill_tokens(ctx, vec![(None, Vec::new())])
+            )
+            .expect("admitted scalar fill"),
+            None
+        );
     }
     #[test]
     fn scalar_arrays_reject_nonfinite_slots_without_mutation() {
@@ -190,17 +316,26 @@ mod tests {
             let before = array.clone();
             assert_eq!(array.fill_values(vec![Some(value)]), None);
             assert_eq!(array, before);
-            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(Some(value), vec![0xe4])])).expect("service"), None);
-            assert_eq!(array,before);
+            assert_eq!(
+                crate::decode::with_test_decode_ctx(
+                    |ctx| array.fill_tokens(ctx, vec![(Some(value), vec![0xe4])])
+                )
+                .expect("service"),
+                None
+            );
+            assert_eq!(array, before);
         }
     }
     #[test]
     fn value_only_fill_clears_source_tokens() {
         let mut array = CountedScalars::empty(1).expect("extent");
-        crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(Some(1.0),vec![0xe4])])).expect("service").expect("extent");
-        assert_eq!(array.fill_values(vec![Some(2.0)]),Some(()));
+        crate::decode::with_test_decode_ctx(|ctx| {
+            array.fill_tokens(ctx, vec![(Some(1.0), vec![0xe4])])
+        })
+        .expect("service")
+        .expect("extent");
+        assert_eq!(array.fill_values(vec![Some(2.0)]), Some(()));
         assert_eq!(array.values(), &[Some(2.0)]);
         assert_eq!(array.tokens(), None);
     }
-
 }

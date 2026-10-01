@@ -97,7 +97,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
-        if unique_feature_section_transform(ctx,
+        if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,

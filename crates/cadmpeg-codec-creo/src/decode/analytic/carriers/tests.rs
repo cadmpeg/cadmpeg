@@ -174,10 +174,13 @@ fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, Ca
             next_edges: [11, 0],
             offset: 20,
         });
-    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId {
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        vec![crate::topology::HalfEdgeId {
             curve_id: 11,
             side: crate::topology::Side::Zero,
-        }]));
+        }],
+    ));
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("creo:visibgeom:curve#11").expect("identity grammar"),
@@ -271,7 +274,10 @@ fn topology_bound_plane_refuses_curve_plane_vector() {
 #[test]
 fn topology_bound_plane_refuses_face_point_vector() {
     let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
-    let vertex_faces = BTreeMap::from([(std::num::NonZeroU32::new(1).expect("one-based vertex fixture"), BTreeSet::from([5]))]);
+    let vertex_faces = BTreeMap::from([(
+        std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+        BTreeSet::from([5]),
+    )]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -593,18 +599,24 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
 
 #[test]
 fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
-    let outer = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..8)
+    let outer = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        (0..8)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect());
-    let inner = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..3)
+            .collect(),
+    );
+    let inner = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        (0..3)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect());
+            .collect(),
+    );
     let vertices = [
         (1, [0.0, 0.0, 0.0]),
         (2, [6.0, 0.0, 0.0]),
@@ -618,13 +630,19 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         (10, [5.0, 0.5, 0.0]),
         (11, [5.0, 5.5, 0.0]),
     ];
-    let bindings = outer.half_edges()
+    let bindings = outer
+        .half_edges()
         .iter()
         .copied()
         .zip(1..=8)
         .chain(inner.half_edges().iter().copied().zip(9..=11))
         .map(
-            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence { half_edge: half_edge, start_vertex_id: std::num::NonZeroU32::new(start_vertex_id).expect("one-based vertex fixture"), end_vertex_id: None },
+            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id: std::num::NonZeroU32::new(start_vertex_id)
+                    .expect("one-based vertex fixture"),
+                end_vertex_id: None,
+            },
         )
         .collect::<Vec<_>>();
     let incidence = bindings
@@ -650,21 +668,32 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
 }
 
 fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
-    let make_loop = |base: u32| crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..3)
-            .map(|index| crate::topology::HalfEdgeId {
-                curve_id: base + index,
-                side: crate::topology::Side::Zero,
-            })
-            .collect());
+    let make_loop = |base: u32| {
+        crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(5),
+            (0..3)
+                .map(|index| crate::topology::HalfEdgeId {
+                    curve_id: base + index,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
     let outer = make_loop(10);
     let inner = make_loop(20);
-    let bindings = outer.half_edges()
+    let bindings = outer
+        .half_edges()
         .iter()
         .copied()
         .zip(1..=3)
         .chain(inner.half_edges().iter().copied().zip(4..=6))
         .map(
-            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence { half_edge: half_edge, start_vertex_id: std::num::NonZeroU32::new(start_vertex_id).expect("one-based vertex fixture"), end_vertex_id: None },
+            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id: std::num::NonZeroU32::new(start_vertex_id)
+                    .expect("one-based vertex fixture"),
+                end_vertex_id: None,
+            },
         )
         .collect::<Vec<_>>();
     let incidence = bindings
@@ -720,18 +749,24 @@ fn ordered_planar_face_loops_refuses_polygon_collection() {
 
 #[test]
 fn parameter_loop_classifier_orders_unique_outer() {
-    let outer = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..4)
+    let outer = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect());
-    let inner = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..4)
+            .collect(),
+    );
+    let inner = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect());
+            .collect(),
+    );
     let outer_polygon = vec![[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
     let inner_polygon = vec![[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
 
@@ -778,10 +813,13 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             next_edges: [11, 0],
             offset: 20,
         });
-    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId {
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        vec![crate::topology::HalfEdgeId {
             curve_id: 11,
             side: crate::topology::Side::Zero,
-        }]));
+        }],
+    ));
 
     let curve = Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),

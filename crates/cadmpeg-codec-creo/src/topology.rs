@@ -91,24 +91,55 @@ pub(crate) struct Loop {
 }
 
 impl Loop {
-    pub(crate) fn new(ctx: &DecodeContext<'_>, face_id: Option<NonZeroU32>, half_edges: Vec<HalfEdgeId>, graph: &[HalfEdge]) -> Result<Option<Self>, CodecError> {
-        if half_edges.is_empty() { return Ok(None); }
-        let count = cadmpeg_core::decode::u64_from_index(half_edges.len());
-        let work = count.checked_mul(cadmpeg_core::decode::u64_from_index(graph.len()))
-            .and_then(|work| count.checked_mul(count).and_then(|unique| work.checked_add(unique)))
-            .ok_or_else(|| ctx.refuse_codec_limit("creo closed ring validation work", u64::MAX, u64::MAX))?;
-        ctx.charge_work(work, "creo closed ring validation work")?;
-        for (index, (id, next)) in half_edges.iter().zip(half_edges.iter().cycle().skip(1)).enumerate() {
-            if half_edges.iter().take(index).any(|previous| previous == id) { return Ok(None); }
-            let mut candidates = graph.iter().filter(|edge| edge.id == *id);
-            let Some(edge) = candidates.next() else { return Ok(None); };
-            if candidates.next().is_some() || edge.face_id != face_id || edge.next != Some(*next) { return Ok(None); }
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        face_id: Option<NonZeroU32>,
+        half_edges: Vec<HalfEdgeId>,
+        graph: &[HalfEdge],
+    ) -> Result<Option<Self>, CodecError> {
+        if half_edges.is_empty() {
+            return Ok(None);
         }
-        Ok(Some(Self { face_id, half_edges }))
+        let count = cadmpeg_core::decode::u64_from_index(half_edges.len());
+        let work = count
+            .checked_mul(cadmpeg_core::decode::u64_from_index(graph.len()))
+            .and_then(|work| {
+                count
+                    .checked_mul(count)
+                    .and_then(|unique| work.checked_add(unique))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo closed ring validation work", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(work, "creo closed ring validation work")?;
+        for (index, (id, next)) in half_edges
+            .iter()
+            .zip(half_edges.iter().cycle().skip(1))
+            .enumerate()
+        {
+            if half_edges.iter().take(index).any(|previous| previous == id) {
+                return Ok(None);
+            }
+            let mut candidates = graph.iter().filter(|edge| edge.id == *id);
+            let Some(edge) = candidates.next() else {
+                return Ok(None);
+            };
+            if candidates.next().is_some() || edge.face_id != face_id || edge.next != Some(*next) {
+                return Ok(None);
+            }
+        }
+        Ok(Some(Self {
+            face_id,
+            half_edges,
+        }))
     }
 
-    pub(crate) fn face_id(&self) -> Option<NonZeroU32> { self.face_id }
-    pub(crate) fn half_edges(&self) -> &[HalfEdgeId] { &self.half_edges }
+    pub(crate) fn face_id(&self) -> Option<NonZeroU32> {
+        self.face_id
+    }
+    pub(crate) fn half_edges(&self) -> &[HalfEdgeId] {
+        &self.half_edges
+    }
 }
 
 /// One connected component of non-null `srf_array` face references.
@@ -124,16 +155,38 @@ pub(crate) struct FaceComponent {
 }
 
 impl FaceComponent {
-    pub(crate) fn new(ctx: &DecodeContext<'_>, face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Result<Option<Self>, CodecError> {
-        let work = cadmpeg_core::decode::u64_from_index(face_ids.len()).checked_mul(2)
-            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(curve_ids.len())))
-            .ok_or_else(|| ctx.refuse_codec_limit("creo face component validation work", u64::MAX, u64::MAX))?;
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        face_ids: Vec<u32>,
+        curve_ids: Vec<u32>,
+    ) -> Result<Option<Self>, CodecError> {
+        let work = cadmpeg_core::decode::u64_from_index(face_ids.len())
+            .checked_mul(2)
+            .and_then(|work| {
+                work.checked_add(cadmpeg_core::decode::u64_from_index(curve_ids.len()))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo face component validation work", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(work, "creo face component validation work")?;
-        if face_ids.is_empty() || face_ids.contains(&0) || face_ids.windows(2).any(|pair| pair[0] >= pair[1]) || curve_ids.windows(2).any(|pair| pair[0] >= pair[1]) { return Ok(None); }
-        Ok(Some(Self { face_ids, curve_ids }))
+        if face_ids.is_empty()
+            || face_ids.contains(&0)
+            || face_ids.windows(2).any(|pair| pair[0] >= pair[1])
+            || curve_ids.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            face_ids,
+            curve_ids,
+        }))
     }
-    pub(crate) fn face_ids(&self) -> &[u32] { &self.face_ids }
-    pub(crate) fn curve_ids(&self) -> &[u32] { &self.curve_ids }
+    pub(crate) fn face_ids(&self) -> &[u32] {
+        &self.face_ids
+    }
+    pub(crate) fn curve_ids(&self) -> &[u32] {
+        &self.curve_ids
+    }
 }
 
 /// One topological vertex represented by its incident half-edge orbit.
@@ -146,13 +199,26 @@ pub(crate) struct TopologicalVertex {
 }
 
 impl TopologicalVertex {
-    pub(crate) fn new(ctx: &DecodeContext<'_>, id: u32, half_edges: Vec<HalfEdgeId>) -> Result<Option<Self>, CodecError> {
-        let Some(id) = NonZeroU32::new(id) else { return Ok(None); };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(half_edges.len()), "creo vertex orbit validation work")?;
-        if half_edges.is_empty() || half_edges.windows(2).any(|pair| pair[0] >= pair[1]) { return Ok(None); }
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        id: u32,
+        half_edges: Vec<HalfEdgeId>,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(id) = NonZeroU32::new(id) else {
+            return Ok(None);
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(half_edges.len()),
+            "creo vertex orbit validation work",
+        )?;
+        if half_edges.is_empty() || half_edges.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Ok(None);
+        }
         Ok(Some(Self { id, half_edges }))
     }
-    pub(crate) fn half_edges(&self) -> &[HalfEdgeId] { &self.half_edges }
+    pub(crate) fn half_edges(&self) -> &[HalfEdgeId] {
+        &self.half_edges
+    }
 }
 
 /// Start/end vertex binding for one oriented half-edge.
@@ -434,7 +500,8 @@ pub(crate) fn vertex_orbits(
         ctx.reserve_vec(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
         half_edges.extend(orbit);
         ctx.reserve_vec(&mut vertices, 1, "creo topological vertices")?;
-        let vertex = TopologicalVertex::new(ctx, id, half_edges)?.ok_or_else(|| CodecError::malformed("invalid derived Creo vertex orbit"))?;
+        let vertex = TopologicalVertex::new(ctx, id, half_edges)?
+            .ok_or_else(|| CodecError::malformed("invalid derived Creo vertex orbit"))?;
         vertices.push(vertex);
     }
     let mut start_vertex = BTreeMap::new();
@@ -563,7 +630,8 @@ pub(crate) fn face_components(
         ctx.reserve_vec(&mut curve_ids, curves.len(), "creo component curve IDs")?;
         curve_ids.extend(curves);
         ctx.reserve_vec(&mut components, 1, "creo face components")?;
-        let component = FaceComponent::new(ctx, face_ids, curve_ids)?.ok_or_else(|| CodecError::malformed("invalid derived Creo face component"))?;
+        let component = FaceComponent::new(ctx, face_ids, curve_ids)?
+            .ok_or_else(|| CodecError::malformed("invalid derived Creo face component"))?;
         components.push(component);
     }
     Ok(components)
@@ -634,7 +702,10 @@ pub(crate) fn build(
         ctx.reserve_vec(&mut edges, 2, "creo topology half-edges")?;
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(face_sides.get(&face_id).map_or(0, Vec::len)), "creo topology successor scan")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(face_sides.get(&face_id).map_or(0, Vec::len)),
+                "creo topology successor scan",
+            )?;
             let mut candidates = face_sides
                 .get(&face_id)
                 .into_iter()
@@ -671,8 +742,14 @@ pub(crate) fn build(
     let mut open = BTreeSet::new();
     let mut loops = Vec::new();
     for edge in &edges {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(consumed.len()), "creo topology consumed lookup")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(open.len()), "creo topology open lookup")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(consumed.len()),
+            "creo topology consumed lookup",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(open.len()),
+            "creo topology open lookup",
+        )?;
         if consumed.contains(&edge.id) || open.contains(&edge.id) {
             continue;
         }
@@ -681,20 +758,35 @@ pub(crate) fn build(
         let mut current = edge.id;
         let mut open_ended = false;
         loop {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(seen.len()), "creo topology ring visited lookup")?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(open.len()), "creo topology open tail lookup")?;
-            if open.contains(&current) { open_ended = true; break; }
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(seen.len()),
+                "creo topology ring visited lookup",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(open.len()),
+                "creo topology open tail lookup",
+            )?;
+            if open.contains(&current) {
+                open_ended = true;
+                break;
+            }
             if seen.contains(&current) {
                 if current == edge.id {
                     for id in ring.iter().copied() {
-                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(consumed.len()), "creo topology consumed membership")?;
+                        ctx.charge_work(
+                            cadmpeg_core::decode::u64_from_index(consumed.len()),
+                            "creo topology consumed membership",
+                        )?;
                         if !consumed.contains(&id) {
                             ctx.charge_collection_items(1, "creo consumed topology half-edges")?;
                             consumed.insert(id);
                         }
                     }
                     ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
-                    let closed = Loop::new(ctx, edge.face_id, std::mem::take(&mut ring), &edges)?.ok_or_else(|| CodecError::malformed("invalid derived Creo closed ring"))?;
+                    let closed = Loop::new(ctx, edge.face_id, std::mem::take(&mut ring), &edges)?
+                        .ok_or_else(|| {
+                        CodecError::malformed("invalid derived Creo closed ring")
+                    })?;
                     loops.push(closed);
                 }
                 break;
@@ -703,7 +795,10 @@ pub(crate) fn build(
             seen.insert(current);
             ctx.reserve_vec(&mut ring, 1, "creo topology ring half-edges")?;
             ring.push(current);
-            ctx.charge_work(2 * u64::from(usize::BITS - edges.len().leading_zeros()), "creo topology ring successor lookup")?;
+            ctx.charge_work(
+                2 * u64::from(usize::BITS - edges.len().leading_zeros()),
+                "creo topology ring successor lookup",
+            )?;
             let Some(next) = by_id(current).and_then(|entry| entry.next) else {
                 open_ended = true;
                 break;
@@ -716,7 +811,10 @@ pub(crate) fn build(
         }
         if open_ended {
             for id in ring {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(open.len()), "creo topology open membership")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(open.len()),
+                    "creo topology open membership",
+                )?;
                 ctx.insert_btree_set(&mut open, id, "creo topology open half-edges")?;
             }
         }

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::curve::{CurveExpressionLine, CurveExpressionQuantity, CurveExpressionValue, ExternalRelationSymbols, RelationEvaluationContext};
-use crate::curve::tests::evaluate_expression_program;
 use super::{parse_relation_expression, EPS_RELATION_VALUE};
+use crate::curve::tests::evaluate_expression_program;
+use crate::curve::{
+    CurveExpressionLine, CurveExpressionQuantity, CurveExpressionValue, ExternalRelationSymbols,
+    RelationEvaluationContext,
+};
 use std::collections::BTreeMap;
 
 #[test]
@@ -30,17 +33,49 @@ fn bracketed_relation_units_are_not_dependencies() {
     assert!(assignments[2].dependencies.is_empty());
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(39_200.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(39_200.0).expect("finite relation fixture")
+        ))
     );
 
     let values = BTreeMap::new();
     let cases = [
-        ("5[mm]+.2[cm]", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite relation fixture"))),
-        ("1[inch]", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(25.4).expect("finite relation fixture"))),
-        ("PI[rad]", CurveExpressionValue::Angle(cadmpeg_ir::scalar::FiniteReal::new(180.0).expect("finite relation fixture"))),
-        ("sin(PI[rad]/2)", CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"))),
-        ("1[mm]*2", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
-        ("1[mm]/.1[cm]", CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"))),
+        (
+            "5[mm]+.2[cm]",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "1[inch]",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(25.4).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "PI[rad]",
+            CurveExpressionValue::Angle(
+                cadmpeg_ir::scalar::FiniteReal::new(180.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "sin(PI[rad]/2)",
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "1[mm]*2",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "1[mm]/.1[cm]",
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
+            ),
+        ),
     ];
     for (expression, expected) in cases {
         let actual = parse_relation_expression::<CurveExpressionValue>(
@@ -53,7 +88,10 @@ fn bracketed_relation_units_are_not_dependencies() {
             (CurveExpressionValue::Number(actual), CurveExpressionValue::Number(expected))
             | (CurveExpressionValue::Length(actual), CurveExpressionValue::Length(expected))
             | (CurveExpressionValue::Angle(actual), CurveExpressionValue::Angle(expected)) => {
-                assert!((actual.get() - expected.get()).abs() < EPS_RELATION_VALUE, "{expression}");
+                assert!(
+                    (actual.get() - expected.get()).abs() < EPS_RELATION_VALUE,
+                    "{expression}"
+                );
             }
             _ => panic!("unexpected value kind for {expression}"),
         }
@@ -74,7 +112,10 @@ fn bracketed_relation_units_are_not_dependencies() {
     );
     assert_eq!(
         pressure,
-        Some(CurveExpressionValue::Quantity(CurveExpressionQuantity::new(1_000.0, [-1, 1, -2, 0, 0]).expect("valid residual dimension fixture")))
+        Some(CurveExpressionValue::Quantity(
+            CurveExpressionQuantity::new(1_000.0, [-1, 1, -2, 0, 0])
+                .expect("valid residual dimension fixture")
+        ))
     );
     assert_eq!(
         parse_relation_expression::<CurveExpressionValue>(
@@ -90,7 +131,9 @@ fn bracketed_relation_units_are_not_dependencies() {
             &values,
             RelationEvaluationContext::default(),
         ),
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     for expression in [
         "1[sq_in]/1[in]^2",
@@ -109,7 +152,10 @@ fn bracketed_relation_units_are_not_dependencies() {
         else {
             panic!("unexpected value kind for {expression}");
         };
-        assert!((value.get() - 1.0).abs() < EPS_RELATION_VALUE, "{expression}");
+        assert!(
+            (value.get() - 1.0).abs() < EPS_RELATION_VALUE,
+            "{expression}"
+        );
     }
     assert_eq!(
         parse_relation_expression::<CurveExpressionValue>(
@@ -117,7 +163,10 @@ fn bracketed_relation_units_are_not_dependencies() {
             &values,
             RelationEvaluationContext::default(),
         ),
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(6_894.757_293_168_361).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(6_894.757_293_168_361)
+                .expect("finite relation fixture")
+        ))
     );
     for (expression, expected_kelvin) in [
         ("0[C]", 273.15),
@@ -164,7 +213,10 @@ fn bracketed_relation_units_are_not_dependencies() {
             &values,
             RelationEvaluationContext::default(),
         ),
-        Some(CurveExpressionValue::Quantity(CurveExpressionQuantity::new(4.0, [2, 0, 0, 0, 0]).expect("valid residual dimension fixture")))
+        Some(CurveExpressionValue::Quantity(
+            CurveExpressionQuantity::new(4.0, [2, 0, 0, 0, 0])
+                .expect("valid residual dimension fixture")
+        ))
     );
     assert_eq!(
         parse_relation_expression::<CurveExpressionValue>(
@@ -172,7 +224,9 @@ fn bracketed_relation_units_are_not_dependencies() {
             &values,
             RelationEvaluationContext::default(),
         ),
-        Some(CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         parse_relation_expression::<CurveExpressionValue>(
@@ -180,7 +234,9 @@ fn bracketed_relation_units_are_not_dependencies() {
             &values,
             RelationEvaluationContext::default(),
         ),
-        Some(CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         parse_relation_expression::<CurveExpressionValue>(
@@ -188,24 +244,65 @@ fn bracketed_relation_units_are_not_dependencies() {
             &values,
             RelationEvaluationContext::default(),
         ),
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     let dimensioned_cases = [
-        ("if(1,2[cm],1[inch])", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture"))),
+        (
+            "if(1,2[cm],1[inch])",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture"),
+            ),
+        ),
         (
             "bound(30[mm],1[cm],2[cm])",
-            CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture")),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture"),
+            ),
         ),
         (
             "dead(25[mm],1[cm],2[cm])",
-            CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture"),
+            ),
         ),
-        ("mod(25[mm],1[cm])", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture"))),
-        ("sign(2[cm],-1[s])", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(-20.0).expect("finite relation fixture"))),
-        ("ceil(2.1[mm])", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture"))),
-        ("ceil(12.5[mm],-1)", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture"))),
-        ("floor(2.19[cm],1)", CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(21.9).expect("finite relation fixture"))),
-        ("atan(1)", CurveExpressionValue::Angle(cadmpeg_ir::scalar::FiniteReal::new(45.0).expect("finite relation fixture"))),
+        (
+            "mod(25[mm],1[cm])",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "sign(2[cm],-1[s])",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(-20.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "ceil(2.1[mm])",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "ceil(12.5[mm],-1)",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(20.0).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "floor(2.19[cm],1)",
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(21.9).expect("finite relation fixture"),
+            ),
+        ),
+        (
+            "atan(1)",
+            CurveExpressionValue::Angle(
+                cadmpeg_ir::scalar::FiniteReal::new(45.0).expect("finite relation fixture"),
+            ),
+        ),
     ];
     for (expression, expected) in dimensioned_cases {
         assert_eq!(
@@ -263,4 +360,3 @@ fn bracketed_relation_units_are_not_dependencies() {
         );
     }
 }
-

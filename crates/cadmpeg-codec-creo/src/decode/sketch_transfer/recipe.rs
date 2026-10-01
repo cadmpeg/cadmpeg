@@ -122,7 +122,10 @@ pub(in super::super) fn feature_is_first_material_operation(
                 }));
         }
     }
-    Ok(target_offset.is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target)))
+    Ok(
+        target_offset
+            .is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target)),
+    )
 }
 
 pub(in super::super) fn current_feature_recipe(

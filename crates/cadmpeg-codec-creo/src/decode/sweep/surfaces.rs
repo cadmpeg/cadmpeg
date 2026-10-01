@@ -269,7 +269,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
-        if unique_feature_section_transform(ctx,
+        if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
@@ -585,7 +586,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
-        if unique_feature_section_transform(ctx,
+        if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,

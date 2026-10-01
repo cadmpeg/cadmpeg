@@ -903,15 +903,17 @@ pub(super) fn transfer_curve_expression_features(
                     )?))
                 }
                 other => other.and_then(|value| match value {
-                    crate::curve::CurveExpressionValue::Number(value) => Some(
-                        ParameterValue::Real(*value),
-                    ),
+                    crate::curve::CurveExpressionValue::Number(value) => {
+                        Some(ParameterValue::Real(*value))
+                    }
                     crate::curve::CurveExpressionValue::Length(value) => Some(
                         ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value.get())?),
                     ),
-                    crate::curve::CurveExpressionValue::Angle(value) => Some(
-                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.get().to_radians())?),
-                    ),
+                    crate::curve::CurveExpressionValue::Angle(value) => {
+                        Some(ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(
+                            value.get().to_radians(),
+                        )?))
+                    }
                     crate::curve::CurveExpressionValue::Quantity(_)
                     | crate::curve::CurveExpressionValue::String(_) => None,
                 }),

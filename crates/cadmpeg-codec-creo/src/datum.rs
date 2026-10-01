@@ -27,8 +27,15 @@ pub(crate) struct DatumPlane {
 }
 
 impl DatumPlane {
-    pub(crate) fn new(axis: Axis, offset: f64) -> Option<Self> { Some(Self { axis, offset: FiniteReal::new(offset)? }) }
-    pub(crate) fn offset(self) -> f64 { self.offset.get() }
+    pub(crate) fn new(axis: Axis, offset: f64) -> Option<Self> {
+        Some(Self {
+            axis,
+            offset: FiniteReal::new(offset)?,
+        })
+    }
+    pub(crate) fn offset(self) -> f64 {
+        self.offset.get()
+    }
     /// The positive unit basis vector normal to the plane.
     pub(crate) fn normal(self) -> [f64; 3] {
         match self.axis {
@@ -57,17 +64,44 @@ pub(crate) struct DatumPlaneRecord {
 }
 
 impl DatumPlaneRecord {
-    pub(crate) fn new(id: u32, feature_id: u32, plane: DatumPlane, opposite_offset: f64, corners: [[Option<f64>; 2]; 2], offset_in_payload: usize) -> Option<Self> {
+    pub(crate) fn new(
+        id: u32,
+        feature_id: u32,
+        plane: DatumPlane,
+        opposite_offset: f64,
+        corners: [[Option<f64>; 2]; 2],
+        offset_in_payload: usize,
+    ) -> Option<Self> {
         let opposite_offset = FiniteReal::new(opposite_offset)?;
-        let scale = plane.offset().abs().max(opposite_offset.get().abs()).max(1.0);
-        if (plane.offset() - opposite_offset.get()).abs() > EPS_DATUM_COORDINATE_AGREEMENT * scale { return None; }
+        let scale = plane
+            .offset()
+            .abs()
+            .max(opposite_offset.get().abs())
+            .max(1.0);
+        if (plane.offset() - opposite_offset.get()).abs() > EPS_DATUM_COORDINATE_AGREEMENT * scale {
+            return None;
+        }
         let mut in_plane_corners = [[None; 2]; 2];
         for (i, row) in corners.into_iter().enumerate() {
-            for (j, value) in row.into_iter().enumerate() { in_plane_corners[i][j] = match value { Some(value) => Some(FiniteReal::new(value)?), None => None }; }
+            for (j, value) in row.into_iter().enumerate() {
+                in_plane_corners[i][j] = match value {
+                    Some(value) => Some(FiniteReal::new(value)?),
+                    None => None,
+                };
+            }
         }
-        Some(Self { id, feature_id, plane, opposite_offset, in_plane_corners, offset_in_payload })
+        Some(Self {
+            id,
+            feature_id,
+            plane,
+            opposite_offset,
+            in_plane_corners,
+            offset_in_payload,
+        })
     }
-    pub(crate) fn plane(&self) -> DatumPlane { self.plane }
+    pub(crate) fn plane(&self) -> DatumPlane {
+        self.plane
+    }
     /// The two outline corners in model-space XYZ.
     pub(crate) fn corners(&self) -> [[Option<f64>; 3]; 2] {
         let [u, v] = self.plane.axis.complement().map(Axis::index);
@@ -325,10 +359,17 @@ fn positional_plane(
     let candidate = (|| {
         let plane_offset = outline[axis.index()].value?;
         let [u, v] = axis.complement().map(Axis::index);
-        Some(DatumPlaneRecord::new(row.id, row.feature_id, DatumPlane::new(axis, plane_offset)?, outline[axis.index() + 3].value?, [
+        DatumPlaneRecord::new(
+            row.id,
+            row.feature_id,
+            DatumPlane::new(axis, plane_offset)?,
+            outline[axis.index() + 3].value?,
+            [
                 [outline[u].value, outline[v].value],
                 [outline[u + 3].value, outline[v + 3].value],
-            ], id_start)?)
+            ],
+            id_start,
+        )
     })();
     Ok(candidate)
 }
@@ -392,10 +433,17 @@ pub(crate) fn named_plane(
     let candidate = (|| {
         let offset = slots[axis.index()].value?;
         let [u, v] = axis.complement().map(Axis::index);
-        Some(DatumPlaneRecord::new(id, feature_id, DatumPlane::new(axis, offset)?, slots[axis.index() + 3].value?, [
+        DatumPlaneRecord::new(
+            id,
+            feature_id,
+            DatumPlane::new(axis, offset)?,
+            slots[axis.index() + 3].value?,
+            [
                 [slots[u].value, slots[v].value],
                 [slots[u + 3].value, slots[v + 3].value],
-            ], outline)?)
+            ],
+            outline,
+        )
     })();
     Ok(candidate)
 }

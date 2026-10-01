@@ -222,5 +222,7 @@ fn competing_recipe_bindings_retain_service_result() {
 
 #[test]
 fn operation_family_text_refuses_copy_work() {
-    crate::test_support::assert_work_boundaries(&["creo operation family text work"], |ctx| super::super::operation_states(ctx, DISPLAY));
+    crate::test_support::assert_work_boundaries(&["creo operation family text work"], |ctx| {
+        super::super::operation_states(ctx, DISPLAY)
+    });
 }

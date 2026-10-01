@@ -994,9 +994,16 @@ fn append_nurbs_profile_point(
     point: [f64; 2],
 ) -> Result<(), cadmpeg_core::CodecError> {
     if points.len() >= MAX_NURBS_PROFILE_POINTS {
-        let requested = cadmpeg_core::decode::u64_from_index(points.len()).checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("creo NURBS profile point ceiling", u64::MAX, u64::MAX))?;
-        return Err(ctx.refuse_codec_limit("creo NURBS profile point ceiling", cadmpeg_core::decode::u64_from_index(MAX_NURBS_PROFILE_POINTS), requested));
+        let requested = cadmpeg_core::decode::u64_from_index(points.len())
+            .checked_add(1)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo NURBS profile point ceiling", u64::MAX, u64::MAX)
+            })?;
+        return Err(ctx.refuse_codec_limit(
+            "creo NURBS profile point ceiling",
+            cadmpeg_core::decode::u64_from_index(MAX_NURBS_PROFILE_POINTS),
+            requested,
+        ));
     }
     ctx.reserve_scoped_vec(storage, points, 1, "creo NURBS profile polyline points")?;
     points.push(point);
@@ -1043,7 +1050,19 @@ fn append_nurbs_profile_span(
         return Ok(Some(()));
     }
     if span.depth >= MAX_DEPTH {
-        return Err(ctx.refuse_codec_limit("creo NURBS profile sampling ceiling", cadmpeg_core::decode::u64_from_index(MAX_DEPTH), cadmpeg_core::decode::u64_from_index(span.depth).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo NURBS profile sampling ceiling", u64::MAX, u64::MAX))?));
+        return Err(ctx.refuse_codec_limit(
+            "creo NURBS profile sampling ceiling",
+            cadmpeg_core::decode::u64_from_index(MAX_DEPTH),
+            cadmpeg_core::decode::u64_from_index(span.depth)
+                .checked_add(1)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo NURBS profile sampling ceiling",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?,
+        ));
     }
     if append_nurbs_profile_span(
         ctx,
@@ -1137,7 +1156,10 @@ fn nurbs_profile_polyline<'ctx>(
             return Ok(None);
         }
     }
-    Ok((points.len() >= 2).then_some(ProfilePolyline { points, _storage: storage }))
+    Ok((points.len() >= 2).then_some(ProfilePolyline {
+        points,
+        _storage: storage,
+    }))
 }
 
 fn profile_nurbs_polyline<'ctx>(
@@ -1289,8 +1311,12 @@ pub(in super::super) fn profile_segments_intersect(
         }
         return polylines_intersect(
             ctx,
-            first_polyline.as_ref().map(|line| line.points.as_slice()).unwrap_or(&first_line),
-            second_polyline.as_ref().map(|line| line.points.as_slice()).unwrap_or(&second_line),
+            first_polyline
+                .as_ref()
+                .map_or(first_line.as_slice(), |line| line.points.as_slice()),
+            second_polyline
+                .as_ref()
+                .map_or(second_line.as_slice(), |line| line.points.as_slice()),
             tolerance,
         );
     }

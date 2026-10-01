@@ -1342,17 +1342,24 @@ mod tests {
     #[test]
     fn generator_separation_angle_work_refuses_before_evaluation() {
         let run = |limit| shared_generator_with_limits(u64::MAX, limit);
-        let limit = (0..128)
-            .find(|limit| {
-                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "creo generator separation angle evaluations")
-            })
-            .expect("the shared generator reaches angle evaluation work");
+        let (first, second) = shared_generator_surfaces();
+        let error = crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo generator separation angle evaluations",
+            |ctx| {
+                super::shared_extrusion_generator_curve(
+                    ctx,
+                    &first,
+                    7,
+                    &second,
+                    9,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            },
+        );
         assert!(
-            matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::WorkUnits
-                && refusal.operation == "creo generator separation angle evaluations")
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "creo generator separation angle evaluations")
         );
         assert!(run(u64::MAX)
             .expect("service work budget admits the shared generator")
@@ -1362,17 +1369,24 @@ mod tests {
     #[test]
     fn generator_separation_distance_work_refuses_before_evaluation() {
         let run = |limit| shared_generator_with_limits(u64::MAX, limit);
-        let limit = (0..128)
-            .find(|limit| {
-                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "creo generator separation distance tests")
-            })
-            .expect("the shared generator reaches distance work");
+        let (first, second) = shared_generator_surfaces();
+        let error = crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo generator separation distance tests",
+            |ctx| {
+                super::shared_extrusion_generator_curve(
+                    ctx,
+                    &first,
+                    7,
+                    &second,
+                    9,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            },
+        );
         assert!(
-            matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::WorkUnits
-                && refusal.operation == "creo generator separation distance tests")
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "creo generator separation distance tests")
         );
         assert!(run(u64::MAX)
             .expect("service work budget admits the shared generator")

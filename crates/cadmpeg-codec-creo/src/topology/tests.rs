@@ -68,14 +68,22 @@ fn assert_collection_error(error: &CodecError, operation: &'static str) {
 
 fn paired_incidence() -> [HalfEdgeVertexIncidence; 2] {
     [
-        HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
-            }, start_vertex_id: std::num::NonZeroU32::new(10).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(20) },
-        HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+            },
+            start_vertex_id: std::num::NonZeroU32::new(10).expect("one-based vertex fixture"),
+            end_vertex_id: std::num::NonZeroU32::new(20),
+        },
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::One,
-            }, start_vertex_id: std::num::NonZeroU32::new(20).expect("one-based vertex fixture"), end_vertex_id: None },
+            },
+            start_vertex_id: std::num::NonZeroU32::new(20).expect("one-based vertex fixture"),
+            end_vertex_id: None,
+        },
     ]
 }
 
@@ -123,7 +131,11 @@ fn edge_vertex_pairs_reject_duplicate_side_without_a_temporary_vector() {
 fn one_incident_vertex() -> (Vec<TopologicalVertex>, Vec<HalfEdge>) {
     let edge = orphan_edge();
     (
-        vec![crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 1, vec![edge.id])).expect("vertex admission").expect("valid vertex fixture")],
+        vec![crate::decode::with_test_decode_ctx(|ctx| {
+            crate::topology::TopologicalVertex::new(ctx, 1, vec![edge.id])
+        })
+        .expect("vertex admission")
+        .expect("valid vertex fixture")],
         vec![edge],
     )
 }
@@ -591,22 +603,32 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
             next: None,
         },
     ];
-    let vertex = crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 1, vec![
-            HalfEdgeId {
-                curve_id: 7,
-                side: crate::topology::Side::Zero,
-            },
-            HalfEdgeId {
-                curve_id: 8,
-                side: crate::topology::Side::Zero,
-            },
-        ])).expect("vertex admission").expect("valid vertex fixture");
+    let vertex = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::topology::TopologicalVertex::new(
+            ctx,
+            1,
+            vec![
+                HalfEdgeId {
+                    curve_id: 7,
+                    side: crate::topology::Side::Zero,
+                },
+                HalfEdgeId {
+                    curve_id: 8,
+                    side: crate::topology::Side::Zero,
+                },
+            ],
+        )
+    })
+    .expect("vertex admission")
+    .expect("valid vertex fixture");
 
     let incident_faces = with_service_context(|ctx| {
         vertex_incident_faces(ctx, &[vertex], &edges).expect("service incident faces")
     });
     assert_eq!(
-        incident_faces.get(&std::num::NonZeroU32::new(1).expect("one-based vertex fixture")).cloned(),
+        incident_faces
+            .get(&std::num::NonZeroU32::new(1).expect("one-based vertex fixture"))
+            .cloned(),
         Some(BTreeSet::from([10, 20, 30]))
     );
 }
@@ -615,14 +637,23 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
 fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
     let incidence = |reverse_end: Option<u32>| {
         vec![
-            HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+            HalfEdgeVertexIncidence {
+                half_edge: HalfEdgeId {
                     curve_id: 7,
                     side: crate::topology::Side::Zero,
-                }, start_vertex_id: std::num::NonZeroU32::new(10).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(20) },
-            HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+                },
+                start_vertex_id: std::num::NonZeroU32::new(10).expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(20),
+            },
+            HalfEdgeVertexIncidence {
+                half_edge: HalfEdgeId {
                     curve_id: 7,
                     side: crate::topology::Side::One,
-                }, start_vertex_id: std::num::NonZeroU32::new(20).expect("one-based vertex fixture"), end_vertex_id: reverse_end.map(|id| std::num::NonZeroU32::new(id).expect("one-based vertex fixture")) },
+                },
+                start_vertex_id: std::num::NonZeroU32::new(20).expect("one-based vertex fixture"),
+                end_vertex_id: reverse_end
+                    .map(|id| std::num::NonZeroU32::new(id).expect("one-based vertex fixture")),
+            },
         ]
     };
 
@@ -647,14 +678,22 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
 #[test]
 fn edge_start_vertex_pair_survives_an_unresolved_successor() {
     let incidence = vec![
-        HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
-            }, start_vertex_id: std::num::NonZeroU32::new(10).expect("one-based vertex fixture"), end_vertex_id: None },
-        HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+            },
+            start_vertex_id: std::num::NonZeroU32::new(10).expect("one-based vertex fixture"),
+            end_vertex_id: None,
+        },
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::One,
-            }, start_vertex_id: std::num::NonZeroU32::new(20).expect("one-based vertex fixture"), end_vertex_id: None },
+            },
+            start_vertex_id: std::num::NonZeroU32::new(20).expect("one-based vertex fixture"),
+            end_vertex_id: None,
+        },
     ];
 
     assert_eq!(
@@ -679,7 +718,10 @@ fn scan_groups_connected_nonzero_face_references() {
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.topology.face_components.len(), 1);
-    assert_eq!(scan.topology.face_components[0].face_ids(), vec![10, 11, 12]);
+    assert_eq!(
+        scan.topology.face_components[0].face_ids(),
+        vec![10, 11, 12]
+    );
     assert_eq!(scan.topology.face_components[0].curve_ids(), vec![7, 8]);
 }
 
@@ -730,7 +772,10 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
         })
         .expect("half-edge incidence");
     assert_eq!(incidence.start_vertex_id.get(), 1);
-    assert_eq!(incidence.end_vertex_id.map(std::num::NonZeroU32::get), Some(2));
+    assert_eq!(
+        incidence.end_vertex_id.map(std::num::NonZeroU32::get),
+        Some(2)
+    );
 }
 
 fn closed_plane_intersection_data(geomlists: Option<&[u8]>) -> Vec<u8> {
@@ -985,20 +1030,47 @@ fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
 
 #[test]
 fn closed_ring_constructor_rejects_empty_repeated_disconnected_and_mixed_faces() {
-    let a = HalfEdgeId { curve_id: 1, side: crate::topology::Side::Zero };
-    let b = HalfEdgeId { curve_id: 2, side: crate::topology::Side::Zero };
+    let a = HalfEdgeId {
+        curve_id: 1,
+        side: crate::topology::Side::Zero,
+    };
+    let b = HalfEdgeId {
+        curve_id: 2,
+        side: crate::topology::Side::Zero,
+    };
     let face = std::num::NonZeroU32::new(10);
-    let graph = [HalfEdge { id: a, face_id: face, next: Some(b) }, HalfEdge { id: b, face_id: face, next: Some(a) }];
+    let graph = [
+        HalfEdge {
+            id: a,
+            face_id: face,
+            next: Some(b),
+        },
+        HalfEdge {
+            id: b,
+            face_id: face,
+            next: Some(a),
+        },
+    ];
     with_service_context(|ctx| {
         for ring in [vec![], vec![a, a], vec![a], vec![b]] {
-            assert!(super::Loop::new(ctx, face, ring, &graph).expect("ring validation").is_none());
+            assert!(super::Loop::new(ctx, face, ring, &graph)
+                .expect("ring validation")
+                .is_none());
         }
-        let ring = super::Loop::new(ctx, face, vec![a, b], &graph).expect("ring validation").expect("closed ring");
+        let ring = super::Loop::new(ctx, face, vec![a, b], &graph)
+            .expect("ring validation")
+            .expect("closed ring");
         assert_eq!(ring.half_edges(), [a, b]);
-        let mut mixed = graph.clone(); mixed[1].face_id = std::num::NonZeroU32::new(11);
-        assert!(super::Loop::new(ctx, face, vec![a, b], &mixed).expect("ring validation").is_none());
-        let mut duplicate = graph.to_vec(); duplicate.push(graph[0].clone());
-        assert!(super::Loop::new(ctx, face, vec![a, b], &duplicate).expect("ring validation").is_none());
+        let mut mixed = graph.clone();
+        mixed[1].face_id = std::num::NonZeroU32::new(11);
+        assert!(super::Loop::new(ctx, face, vec![a, b], &mixed)
+            .expect("ring validation")
+            .is_none());
+        let mut duplicate = graph.to_vec();
+        duplicate.push(graph[0].clone());
+        assert!(super::Loop::new(ctx, face, vec![a, b], &duplicate)
+            .expect("ring validation")
+            .is_none());
     });
 }
 
@@ -1006,48 +1078,85 @@ fn closed_ring_constructor_rejects_empty_repeated_disconnected_and_mixed_faces()
 fn face_component_constructor_rejects_zero_repeated_and_unordered_identity_sets() {
     with_service_context(|ctx| {
         for faces in [vec![], vec![0], vec![2, 0, 2, 1], vec![2, 1], vec![1, 1]] {
-            assert!(super::FaceComponent::new(ctx, faces, vec![1]).expect("component validation").is_none());
+            assert!(super::FaceComponent::new(ctx, faces, vec![1])
+                .expect("component validation")
+                .is_none());
         }
         for curves in [vec![2, 1], vec![1, 1]] {
-            assert!(super::FaceComponent::new(ctx, vec![1], curves).expect("component validation").is_none());
+            assert!(super::FaceComponent::new(ctx, vec![1], curves)
+                .expect("component validation")
+                .is_none());
         }
-        let component = super::FaceComponent::new(ctx, vec![1, 2], vec![0, 1]).expect("component validation").expect("ordered component");
-        assert_eq!(component.face_ids(), [1, 2]); assert_eq!(component.curve_ids(), [0, 1]);
+        let component = super::FaceComponent::new(ctx, vec![1, 2], vec![0, 1])
+            .expect("component validation")
+            .expect("ordered component");
+        assert_eq!(component.face_ids(), [1, 2]);
+        assert_eq!(component.curve_ids(), [0, 1]);
     });
 }
 
 #[test]
 fn checked_topology_constructors_propagate_work_refusal() {
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 0;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let id = HalfEdgeId { curve_id: 1, side: crate::topology::Side::Zero };
-    let graph = [HalfEdge { id, face_id: None, next: Some(id) }];
+    let id = HalfEdgeId {
+        curve_id: 1,
+        side: crate::topology::Side::Zero,
+    };
+    let graph = [HalfEdge {
+        id,
+        face_id: None,
+        next: Some(id),
+    }];
     let error = super::Loop::new(&ctx, None, vec![id], &graph).expect_err("ring work refused");
-    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal");
+    };
     assert_eq!(ctx.resource_refusal(), Some(limit));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = super::FaceComponent::new(&ctx, vec![1], vec![]).expect_err("component work refused");
-    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    let error =
+        super::FaceComponent::new(&ctx, vec![1], vec![]).expect_err("component work refused");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal");
+    };
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
 #[test]
 fn vertex_orbit_constructor_rejects_zero_empty_repeated_and_unordered_members() {
-    let a = HalfEdgeId { curve_id: 1, side: crate::topology::Side::Zero };
-    let b = HalfEdgeId { curve_id: 2, side: crate::topology::Side::Zero };
+    let a = HalfEdgeId {
+        curve_id: 1,
+        side: crate::topology::Side::Zero,
+    };
+    let b = HalfEdgeId {
+        curve_id: 2,
+        side: crate::topology::Side::Zero,
+    };
     with_service_context(|ctx| {
-        assert!(super::TopologicalVertex::new(ctx, 0, vec![a]).expect("vertex validation").is_none());
+        assert!(super::TopologicalVertex::new(ctx, 0, vec![a])
+            .expect("vertex validation")
+            .is_none());
         for members in [vec![], vec![a, a], vec![b, a]] {
-            assert!(super::TopologicalVertex::new(ctx, 1, members).expect("vertex validation").is_none());
+            assert!(super::TopologicalVertex::new(ctx, 1, members)
+                .expect("vertex validation")
+                .is_none());
         }
-        let vertex = super::TopologicalVertex::new(ctx, 1, vec![a, b]).expect("vertex validation").expect("ordered orbit");
-        assert_eq!(vertex.id.get(), 1); assert_eq!(vertex.half_edges(), [a, b]);
+        let vertex = super::TopologicalVertex::new(ctx, 1, vec![a, b])
+            .expect("vertex validation")
+            .expect("ordered orbit");
+        assert_eq!(vertex.id.get(), 1);
+        assert_eq!(vertex.half_edges(), [a, b]);
     });
-    let arena = DecodeArena::new(); let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = super::TopologicalVertex::new(&ctx, 1, vec![a]).expect_err("orbit work refused");
-    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal");
+    };
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
@@ -1055,7 +1164,11 @@ fn vertex_orbit_constructor_rejects_zero_empty_repeated_and_unordered_members() 
 fn topology_successor_and_open_tail_walks_refuse_work() {
     let rows = [row(1, 2), row(2, 3), row(3, 99)];
     let (edges, loops) = crate::test_support::assert_work_boundaries(
-        &["creo topology successor scan", "creo topology ring successor lookup", "creo topology open tail lookup"],
+        &[
+            "creo topology successor scan",
+            "creo topology ring successor lookup",
+            "creo topology open tail lookup",
+        ],
         |ctx| build(ctx, &rows),
     );
     assert_eq!(edges.len(), 6);

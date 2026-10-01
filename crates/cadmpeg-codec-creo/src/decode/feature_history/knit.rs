@@ -33,7 +33,8 @@ pub(in super::super) fn filled_surface_feature_definition(
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, CodecError> {
-    let sketch = match unique_feature_profile_definition(ctx,
+    let sketch = match unique_feature_profile_definition(
+        ctx,
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,

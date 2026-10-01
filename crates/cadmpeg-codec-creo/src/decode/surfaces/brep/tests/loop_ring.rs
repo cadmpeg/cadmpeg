@@ -6,7 +6,9 @@ use cadmpeg_core::CodecError;
 use super::super::native_loop_ring;
 
 fn native_loop() -> crate::topology::Loop {
-    crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![
+    crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        vec![
             crate::topology::HalfEdgeId {
                 curve_id: 10,
                 side: crate::topology::Side::Zero,
@@ -15,7 +17,8 @@ fn native_loop() -> crate::topology::Loop {
                 curve_id: 11,
                 side: crate::topology::Side::One,
             },
-        ])
+        ],
+    )
 }
 
 fn ring_result(
@@ -83,6 +86,11 @@ fn brep_loop_ring_error_refuses_empty_source_ring_before_projection() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    assert!(crate::topology::Loop::new(&ctx, std::num::NonZeroU32::new(5), Vec::new(), &[]).expect("no allocation for invalid ring").is_none());
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    assert!(
+        crate::topology::Loop::new(&ctx, std::num::NonZeroU32::new(5), Vec::new(), &[])
+            .expect("no allocation for invalid ring")
+            .is_none()
+    );
 }

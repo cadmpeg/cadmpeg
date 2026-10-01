@@ -322,7 +322,12 @@ pub(super) fn emit_geometry_arenas(
     let fc05_circles = fc05_circle_records(ctx, scan)?;
     store_arena(ctx, ir, CreoArena::Fc05Circles, &fc05_circles)?;
     let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(ctx, scan)?;
-    store_arena(ctx, ir, CreoArena::Fc05CylinderCapPairs, &fc05_cylinder_cap_pairs)?;
+    store_arena(
+        ctx,
+        ir,
+        CreoArena::Fc05CylinderCapPairs,
+        &fc05_cylinder_cap_pairs,
+    )?;
     let prototype_pcurves = prototype_pcurve_records(ctx, scan)?;
     store_arena(ctx, ir, CreoArena::PrototypePcurves, &prototype_pcurves)?;
     let curve_prototype_topology = curve_prototype_topology_records(ctx, scan)?;
@@ -474,7 +479,12 @@ pub(super) fn emit_geometry_arenas(
     let native_loops = loop_records(ctx, scan)?;
     store_arena(ctx, ir, CreoArena::Loops, &native_loops)?;
     let topological_vertices = topological_vertex_records(ctx, scan)?;
-    store_arena(ctx, ir, CreoArena::TopologicalVertices, &topological_vertices)?;
+    store_arena(
+        ctx,
+        ir,
+        CreoArena::TopologicalVertices,
+        &topological_vertices,
+    )?;
     let half_edge_vertex_incidence = half_edge_vertex_incidence_records(ctx, scan)?;
     store_arena(
         ctx,
@@ -605,7 +615,12 @@ pub(super) fn emit_geometry_arenas(
         &scan.planes.positional_frames,
         "creo:surface:positional_frame_plane",
     )?;
-    store_arena(ctx, ir, CreoArena::PositionalFramePlanes, &positional_frame_planes)?;
+    store_arena(
+        ctx,
+        ir,
+        CreoArena::PositionalFramePlanes,
+        &positional_frame_planes,
+    )?;
     let cross_section_outline_planes = outline_plane_records(
         ctx,
         scan,
@@ -657,7 +672,12 @@ pub(super) fn emit_geometry_arenas(
         "creo native pcurve endpoint payload references",
     )?;
     pcurve_endpoint_payload.extend(pcurve_endpoints.iter().map(|(record, _)| record));
-    store_arena(ctx, ir, CreoArena::PcurveEndpoints, &pcurve_endpoint_payload)?;
+    store_arena(
+        ctx,
+        ir,
+        CreoArena::PcurveEndpoints,
+        &pcurve_endpoint_payload,
+    )?;
     let feature_definitions = feature_definition_records(ctx, scan)?;
     emit_uniform(
         ctx,

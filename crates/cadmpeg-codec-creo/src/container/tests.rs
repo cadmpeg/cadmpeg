@@ -1111,8 +1111,15 @@ mod framing;
 #[test]
 fn duplicate_primitive_section_namespace_is_refused() {
     crate::decode::with_test_decode_ctx(|ctx| {
-        let section = |source_offset| super::ExpandedSection { name: "SolidPrimdata".to_owned(), source_offset, compressed_length: 0, data: Vec::new() };
-        let error = super::scan_primitives(ctx, &[section(1), section(2)]).map(|scan| scan.scalar_arrays.len()).expect_err("distinct sections cannot share primitive identity");
+        let section = |source_offset| super::ExpandedSection {
+            name: "SolidPrimdata".to_owned(),
+            source_offset,
+            compressed_length: 0,
+            data: Vec::new(),
+        };
+        let error = super::scan_primitives(ctx, &[section(1), section(2)])
+            .map(|scan| scan.scalar_arrays.len())
+            .expect_err("distinct sections cannot share primitive identity");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed { .. }));
     });
 }
@@ -1120,10 +1127,20 @@ fn duplicate_primitive_section_namespace_is_refused() {
 #[test]
 fn expanded_section_local_ceiling_is_a_refusal() {
     let bytes = b"#Body\n\x1f\x9d\x10";
-    let section = super::Section::scan("Body".to_owned(), 0, bytes.len(), Some(256 * 1024 * 1024 + 1), bytes).expect("section extent");
+    let section = super::Section::scan(
+        "Body".to_owned(),
+        0,
+        bytes.len(),
+        Some(256 * 1024 * 1024 + 1),
+        bytes,
+    )
+    .expect("section extent");
     crate::decode::with_test_decode_ctx(|ctx| {
-        let error = super::expanded_sections(ctx, bytes, &[section]).expect_err("expansion ceiling");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo expanded section ceiling"));
+        let error =
+            super::expanded_sections(ctx, bytes, &[section]).expect_err("expansion ceiling");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo expanded section ceiling")
+        );
     });
 }
 
@@ -1131,7 +1148,15 @@ fn expanded_section_local_ceiling_is_a_refusal() {
 fn container_framing_misses_and_text_copies_refuse_work() {
     let bytes = build_prt("test", &[("VisibGeom", vec![0; 64])]);
     crate::test_support::assert_work_boundaries(
-        &["creo container model-name scan", "creo version line scan", "creo version text work", "creo container header scans", "creo container TOC scans", "creo TOC discovery scan", "creo section framing scan"],
+        &[
+            "creo container model-name scan",
+            "creo version line scan",
+            "creo version text work",
+            "creo container header scans",
+            "creo container TOC scans",
+            "creo TOC discovery scan",
+            "creo section framing scan",
+        ],
         |ctx| super::scan_bytes(ctx, bytes.as_slice()),
     );
 }

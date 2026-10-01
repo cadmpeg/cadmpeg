@@ -72,20 +72,21 @@ fn surface_limit_result<T>(
 
 fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
     use cadmpeg_core::decode::ResourceDimension;
-    (0..128)
-        .rfind(|limit| {
-            matches!(surface_limit_result(payload, *limit, |ctx, input| {
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::CollectionItems,
+        "creo scalar array values",
+        |ctx| {
             crate::surface::named_prototype_records(
                 ctx,
-                input,
+                payload,
                 &mut crate::lane_refusal::LaneRefusals::new(),
             )
-            .map(|records| records.len())
-        }), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "admit Creo counted scalar array")
-        })
-        .expect("the fixture reaches its counted scalar array boundary")
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("scalar array boundary must refuse");
+    };
+    refusal.limit
 }
 
 #[test]
@@ -1055,13 +1056,19 @@ fn retains_named_spline_point_and_tangent_arrays() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(2, 2)
                 .expect("valid scalar array");
-            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![
-                    (Some(1.0), vec![0xe4]),
-                    (Some(0.0), vec![0x0f]),
-                    (Some(1.0), vec![0xe4]),
-                    (Some(0.0), vec![0x0f]),
-                ])).expect("admitted scalar fill")
-                .expect("matching scalar extent");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(
+                    ctx,
+                    vec![
+                        (Some(1.0), vec![0xe4]),
+                        (Some(0.0), vec![0x0f]),
+                        (Some(1.0), vec![0xe4]),
+                        (Some(0.0), vec![0x0f]),
+                    ],
+                )
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
             array
         }))
     );
@@ -1070,8 +1077,11 @@ fn retains_named_spline_point_and_tangent_arrays() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(1, 2)
                 .expect("valid scalar array");
-            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])).expect("admitted scalar fill")
-                .expect("matching scalar extent");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
             array
         }))
     );
@@ -1080,8 +1090,11 @@ fn retains_named_spline_point_and_tangent_arrays() {
         Some(&SurfaceNamedValue::CountedScalarArray({
             let mut array =
                 crate::surface::arrays::CountedScalars::empty(2).expect("valid scalar array");
-            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])).expect("admitted scalar fill")
-                .expect("matching scalar extent");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
             array
         }))
     );
@@ -1108,7 +1121,7 @@ fn u_params_refuses_collection_limit_before_allocating_slots() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admit Creo counted scalar array"
+                && limit.operation == "creo scalar array values"
     ));
 
     let service = DecodePolicy::service();
@@ -1149,7 +1162,7 @@ fn v_params_refuses_collection_limit_before_allocating_slots() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admit Creo counted scalar array"
+                && limit.operation == "creo scalar array values"
     ));
 
     let service = DecodePolicy::service();
@@ -1190,7 +1203,7 @@ fn params_refuses_collection_limit_before_allocating_slots() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admit Creo counted scalar array"
+                && limit.operation == "creo scalar array values"
     ));
 
     let service = DecodePolicy::service();
@@ -1233,7 +1246,7 @@ fn counted_surface_arrays_share_the_collection_item_limit() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admit Creo counted scalar array"
+                && limit.operation == "creo scalar array values"
     ));
 
     let service = DecodePolicy::service();
@@ -1359,12 +1372,18 @@ fn tabulated_cylinder_parameters_end_the_tangent_field() {
         Some(&SurfaceNamedValue::CountedScalarArray({
             let mut array =
                 crate::surface::arrays::CountedScalars::empty(3).expect("valid scalar array");
-            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![
-                    (Some(0.0), vec![0x0f]),
-                    (Some(2.0), vec![0x2d, 0, 0, 0, 0, 0, 0, 0]),
-                    (Some(3.0), vec![0x2d, 8, 0, 0, 0, 0, 0, 0]),
-                ])).expect("admitted scalar fill")
-                .expect("matching scalar extent");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(
+                    ctx,
+                    vec![
+                        (Some(0.0), vec![0x0f]),
+                        (Some(2.0), vec![0x2d, 0, 0, 0, 0, 0, 0, 0]),
+                        (Some(3.0), vec![0x2d, 8, 0, 0, 0, 0, 0, 0]),
+                    ],
+                )
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
             array
         }))
     );

@@ -655,7 +655,9 @@ pub(crate) fn operation_states(
         };
         let text_work = cadmpeg_core::decode::u64_from_index(family.len())
             .checked_mul(6)
-            .ok_or_else(|| ctx.refuse_codec_limit("creo operation family text work", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo operation family text work", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(text_work, "creo operation family text work")?;
         let kind = ctx.copy_retained_lossy_utf8(family, "creo operation family name")?;
         let name_bytes = ctx.copy_retained(

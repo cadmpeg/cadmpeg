@@ -728,7 +728,8 @@ fn admitted_face_components<'a>(
         return Ok(admitted);
     }
     for component in &scan.topology.face_components {
-        if component.face_ids()
+        if component
+            .face_ids()
             .iter()
             .any(|face_id| eligible_face_ids.contains(face_id))
         {
@@ -1188,7 +1189,8 @@ fn native_parameter_loop_polygon(
     if segments.len() < 3
         && (segments.len() != 2
             || lp.half_edges()[0].curve_id == lp.half_edges()[1].curve_id
-            || lp.half_edges()
+            || lp
+                .half_edges()
                 .iter()
                 .any(|half_edge| !typed_nonlinear_curve_ids.contains(&half_edge.curve_id))
             || segments
@@ -1452,7 +1454,11 @@ impl BrepEdgeIndexes {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut edge_vertices = BTreeMap::new();
         for row in crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)? {
-            let Some(vertices) = native_edge_vertices.get(&row.id).copied().map(|pair| pair.map(std::num::NonZeroU32::get)) else {
+            let Some(vertices) = native_edge_vertices
+                .get(&row.id)
+                .copied()
+                .map(|pair| pair.map(std::num::NonZeroU32::get))
+            else {
                 continue;
             };
             if vertices
@@ -1616,7 +1622,8 @@ impl BrepBodyIndexes {
         let mut body_components = Vec::new();
         for component in admitted_components {
             let mut faces = Vec::new();
-            for face_id in component.face_ids()
+            for face_id in component
+                .face_ids()
                 .iter()
                 .copied()
                 .filter(|face_id| eligible_faces.contains_key(face_id))
@@ -1625,7 +1632,8 @@ impl BrepBodyIndexes {
                 faces.push(face_id);
             }
             let mut curves = BTreeSet::new();
-            for curve_id in component.curve_ids()
+            for curve_id in component
+                .curve_ids()
                 .iter()
                 .copied()
                 .filter(|curve_id| neutral_edge_curves.contains(curve_id))

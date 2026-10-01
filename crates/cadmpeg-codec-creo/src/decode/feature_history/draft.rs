@@ -345,7 +345,17 @@ pub(in super::super) fn schema_feature_definition(
     if schema_class == Some(SchemaClass::Section) {
         let definition = match section_definition_for_history_feature(scan, feature_id) {
             Some(definition) => match definition.section_3d.as_ref() {
-                Some(section) if unique_feature_section_transform(ctx, &scan.features.section_transforms, definition.identity.id(), section.offset)?.is_some() => Some(definition),
+                Some(section)
+                    if unique_feature_section_transform(
+                        ctx,
+                        &scan.features.section_transforms,
+                        definition.identity.id(),
+                        section.offset,
+                    )?
+                    .is_some() =>
+                {
+                    Some(definition)
+                }
                 _ => None,
             },
             None => None,
@@ -678,13 +688,12 @@ pub(in super::super) fn schema_feature_definition(
     {
         if let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? {
             let definition =
-                unique_owned_feature_definition(ctx, &scan.features.definitions, feature_id)?.filter(
-                    |definition| {
+                unique_owned_feature_definition(ctx, &scan.features.definitions, feature_id)?
+                    .filter(|definition| {
                         sweep
                             .section_definition_id
                             .is_none_or(|definition_id| definition_id == definition.identity.id())
-                    },
-                );
+                    });
             let profile = match definition {
                 Some(definition) => section_profile_ref(
                     ctx,
@@ -798,7 +807,9 @@ pub(in super::super) fn schema_feature_definition(
             Some(Some(transform)) => {
                 unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
             }
-            Some(None) => unique_owned_feature_definition(ctx, &scan.features.definitions, feature_id)?,
+            Some(None) => {
+                unique_owned_feature_definition(ctx, &scan.features.definitions, feature_id)?
+            }
             None => None,
         };
         let profile = match definition {

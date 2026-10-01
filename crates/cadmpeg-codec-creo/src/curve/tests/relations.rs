@@ -150,10 +150,17 @@ fn relation_model_type_refuses_retained_copy() {
 
 #[test]
 fn relation_extract_refuses_scanning_work() {
-    let error = relation_parse_limit_error(
-        "extract('abc',2,1)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_work_units = 1,
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation extract scan",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "extract('abc',2,1)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
@@ -295,9 +302,18 @@ fn relation_affine_difference_refuses_new_coefficient_node() {
 
 #[test]
 fn relation_affine_comparison_refuses_coefficient_work() {
-    let error = relation_parse_limit_error("driver==driver", &affine_probe_values(), |policy| {
-        policy.limits.max_work_units = 0;
-    });
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo affine coefficient comparison work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "driver==driver",
+                &affine_probe_values(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo affine coefficient comparison work"));
@@ -429,7 +445,12 @@ fn relation_literal_text_refuses_retained_copy() {
 
 #[test]
 fn relation_lookup_refuses_scoped_key_copy() {
-    let values = BTreeMap::from([("driver".to_owned(), CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")))]);
+    let values = BTreeMap::from([(
+        "driver".to_owned(),
+        CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        ),
+    )]);
     let error = relation_parse_limit_error("DRIVER", &values, |policy| {
         policy.limits.max_materialized_bytes = 5;
     });
@@ -482,11 +503,16 @@ fn relation_group_refuses_recursive_step() {
 
 #[test]
 fn relation_function_refuses_work() {
-    let error = relation_parse_limit_error(
-        "sin(1)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| {
-            policy.limits.max_work_units = 0;
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation function work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "sin(1)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -510,11 +536,16 @@ fn relation_exponent_refuses_recursive_step() {
 
 #[test]
 fn relation_exponent_refuses_work() {
-    let error = relation_parse_limit_error(
-        "2^3",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| {
-            policy.limits.max_work_units = 0;
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation exponent work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "2^3",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -524,11 +555,16 @@ fn relation_exponent_refuses_work() {
 
 #[test]
 fn relation_group_refuses_work() {
-    let error = relation_parse_limit_error(
-        "(1)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| {
-            policy.limits.max_work_units = 0;
+    let error = crate::test_support::last_refusal_at(
+        ResourceDimension::WorkUnits,
+        "creo relation group work",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "(1)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -569,7 +605,13 @@ fn relation_symbol_error(
             format_args!("d{}", 42),
             "creo relation dimension symbol formatting",
         )?;
-        symbols.observe(&ctx, name, Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))))
+        symbols.observe(
+            &ctx,
+            name,
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+            )),
+        )
     })();
     result.expect_err("one relation symbol exceeds limit")
 }
@@ -622,7 +664,9 @@ fn declares_units_only_on_new_relation_parameters() {
     );
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(50.8).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(50.8).expect("finite relation fixture")
+        ))
     );
     let Some(CurveExpressionValue::Length(copy)) = &assignments[1].value else {
         panic!("dimensioned copy");
@@ -651,14 +695,18 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     assert!(assignments[2].dependencies.is_empty());
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(11.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(11.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[3].dependencies, ["custom", "a"]);
     assert_eq!(assignments[3].value, None);
     assert!(assignments[4].dependencies.is_empty());
     assert_eq!(
         assignments[4].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1000.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1000.0).expect("finite relation fixture")
+        ))
     );
 
     let values = BTreeMap::new();
@@ -706,7 +754,10 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     ];
     for (expression, expected) in cases {
         let actual = evaluate_expression(expression, &values).expect(expression);
-        assert!((actual - expected).abs() < EPS_RELATION_VALUE, "{expression}");
+        assert!(
+            (actual - expected).abs() < EPS_RELATION_VALUE,
+            "{expression}"
+        );
     }
     assert_eq!(evaluate_expression("sqrt(-1)", &values), None);
     assert_eq!(evaluate_expression("tan(90)", &values), None);
@@ -772,14 +823,30 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
         evaluate_creo_numeric_relation_function(
             CreoMathFunction::Mod,
             &[
-                CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite relation fixture")),
-                CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(tiny_divisor).expect("finite relation fixture")),
+                CurveExpressionValue::Length(
+                    cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite relation fixture")
+                ),
+                CurveExpressionValue::Length(
+                    cadmpeg_ir::scalar::FiniteReal::new(tiny_divisor)
+                        .expect("finite relation fixture")
+                ),
             ],
         ),
-        Some(CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(expected_remainder).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(expected_remainder)
+                .expect("finite relation fixture")
+        ))
     );
     let excessive_power_depth = format!("{}2", "2^".repeat(129));
-    assert!(crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<f64>(ctx, &excessive_power_depth, &values, Default::default())).is_err());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<f64>(
+            ctx,
+            &excessive_power_depth,
+            &values,
+            RelationEvaluationContext::default()
+        ))
+        .is_err()
+    );
     let long_unary_chain = format!("{}1", "-".repeat(1024));
     assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
 }
@@ -937,7 +1004,9 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     observe_relation_symbol(
         &mut external_symbols,
         "driver",
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        )),
     );
 
     let assignments = evaluate_expression_program(&lines, None, &external_symbols);
@@ -952,7 +1021,9 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     assert_eq!(assignments[0].dependencies, ["driver"]);
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].target,
@@ -963,11 +1034,15 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     assert_eq!(assignments[2].dependencies, ["d7:0"]);
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert!(assignments[..2]
         .iter()
@@ -1023,7 +1098,9 @@ fn classifies_and_evaluates_unscoped_system_symbol_targets() {
         assignments
             .last()
             .and_then(|assignment| assignment.value.clone()),
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(55.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(55.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -1189,7 +1266,9 @@ fn evaluates_string_relations_and_ignores_literal_contents_in_dependencies() {
     );
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[3].value,
@@ -1197,31 +1276,45 @@ fn evaluates_string_relations_and_ignores_literal_contents_in_dependencies() {
     );
     assert_eq!(
         assignments[4].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[5].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[6].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[7].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[8].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[9].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[10].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[11].value,
@@ -1374,7 +1467,9 @@ fn proves_exists_for_local_and_external_relation_symbols() {
     assert_eq!(assignments[0].activation, CurveExpressionActivation::Active);
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].activation,
@@ -1383,12 +1478,16 @@ fn proves_exists_for_local_and_external_relation_symbols() {
     assert_eq!(assignments[1].value, None);
     assert_eq!(
         assignments[2].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[3].activation, CurveExpressionActivation::Active);
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[4].activation,
@@ -1430,22 +1529,30 @@ fn external_symbol_values_require_agreeing_observations() {
     observe_relation_symbol(
         &mut external_symbols,
         "D42",
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        )),
     );
     observe_relation_symbol(
         &mut external_symbols,
         "d42",
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        )),
     );
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+        ))
     );
 
     observe_relation_symbol(
         &mut external_symbols,
         "d42",
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture"))),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture"),
+        )),
     );
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
@@ -1463,13 +1570,18 @@ fn binds_relation_symbols_case_insensitively_and_preserves_scoped_dependencies()
     assert_eq!(assignments[1].dependencies, ["radius"]);
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(5.0 + std::f64::consts::PI).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0 + std::f64::consts::PI)
+                .expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[2].dependencies, ["d1:2", "PARAM:FID_20"]);
     assert_eq!(assignments[2].value, None);
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         evaluate_expression("pi", &BTreeMap::new()),
@@ -1514,11 +1626,15 @@ fn evaluates_nested_relation_conditionals_in_source_order() {
     assert_eq!(assignments.len(), 8);
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[2].activation,
@@ -1527,7 +1643,9 @@ fn evaluates_nested_relation_conditionals_in_source_order() {
     assert_eq!(assignments[2].value, None);
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[4].activation,
@@ -1535,16 +1653,22 @@ fn evaluates_nested_relation_conditionals_in_source_order() {
     );
     assert_eq!(
         assignments[5].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[6].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[7].parameter_target(), Some(("iffy", None)));
     assert_eq!(
         assignments[7].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(9.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(9.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -1564,7 +1688,9 @@ fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
     observe_relation_symbol(
         &mut symbols,
         "external",
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture"))),
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture"),
+        )),
     );
     crate::decode::with_test_decode_ctx(|ctx| {
         reevaluate_expression_records(ctx, &mut records, None, &symbols)
@@ -1674,11 +1800,15 @@ fn unresolved_reassignment_invalidates_the_previous_scalar_value() {
 
     assert_eq!(
         assignments[0].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[2].value, None);
     assert_eq!(assignments[3].value, None);
