@@ -23,8 +23,11 @@ fn drawing_diagnostic_refuses_at_matching_retained_limit() {
 #[test]
 fn drawing_record_collection_refuses_at_caller_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Page".into(),
-        name: "Page".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Page".into(),
+            "Page".into(),
+        )
+        .expect("object identity"),
         type_name: "TechDraw::DrawPage".into(),
         persistent_id: None,
         view_type: None,
@@ -63,8 +66,11 @@ fn resource_drawing_record() -> crate::native::DrawingRecord {
 #[test]
 fn drawing_native_identity_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Page".into(),
-        name: "Page".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Page".into(),
+            "Page".into(),
+        )
+        .expect("object identity"),
         type_name: "TechDraw::DrawPage".into(),
         persistent_id: None,
         view_type: None,
@@ -77,7 +83,7 @@ fn drawing_native_identity_refuses_at_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        crate::native::native_id("drawing", &object.name).len(),
+        crate::native::native_id("drawing", object.name()).len(),
     ) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");

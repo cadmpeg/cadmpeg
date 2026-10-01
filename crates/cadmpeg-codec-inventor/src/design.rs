@@ -12,9 +12,7 @@ use cadmpeg_ir::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{
-    inventor_id, type_id_string, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
-};
+use crate::pmdc::{inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -454,7 +452,7 @@ pub(crate) fn inventory(
                 )?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Design {
-                        type_id: type_id_string(record.type_id),
+                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
                     },
                     segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,

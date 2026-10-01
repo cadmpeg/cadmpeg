@@ -41,7 +41,7 @@ pub(crate) fn transfer(
         if let Some(kind) = AnnotationRuntimeType::from_label(&object.type_name) {
             let schema = annotation_schema(kind);
             let source = by_owner
-                .get(object.id.as_str())
+                .get(object.id().as_str())
                 .map_or(&[][..], Vec::as_slice);
             let mut owned =
                 ctx.collection_vec(source.len(), "fcstd annotation selected properties")?;
@@ -113,8 +113,8 @@ pub(crate) fn transfer(
                 }
             }
             records.push(SemanticAnnotationRecord {
-                id: crate::native::native_id_charged(ctx, "annotation", &object.name)?,
-                object: ctx.copy_retained_text(&object.id, "fcstd annotation object")?,
+                id: crate::native::native_id_charged(ctx, "annotation", object.name())?,
+                object: ctx.copy_retained_text(object.id(), "fcstd annotation object")?,
                 kind,
                 text,
                 references,
@@ -865,8 +865,11 @@ pub(crate) mod tests {
     #[test]
     fn annotation_record_collection_refuses_at_caller_limit() {
         let object = crate::native::ObjectRecord {
-            id: "fcstd:native:object#Note".into(),
-            name: "Note".into(),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#Note".into(),
+                "Note".into(),
+            )
+            .expect("object identity"),
             type_name: "App::Annotation".into(),
             persistent_id: None,
             view_type: None,
@@ -889,8 +892,11 @@ pub(crate) mod tests {
     #[test]
     fn annotation_identity_refuses_at_retained_limit() {
         let object = crate::native::ObjectRecord {
-            id: "fcstd:native:object#Note".into(),
-            name: "Note".into(),
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                "fcstd:native:object#Note".into(),
+                "Note".into(),
+            )
+            .expect("object identity"),
             type_name: "App::Annotation".into(),
             persistent_id: None,
             view_type: None,
@@ -903,7 +909,7 @@ pub(crate) mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::native_id("annotation", &object.name).len(),
+            crate::native::native_id("annotation", object.name()).len(),
         ) - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");

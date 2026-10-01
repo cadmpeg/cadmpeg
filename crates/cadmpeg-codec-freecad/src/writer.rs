@@ -151,10 +151,10 @@ fn validate_declarations(
         || !expected_objects.iter().all(|expected| {
             written_objects
                 .iter()
-                .find(|written| written.id == expected.id)
+                .find(|written| written.id() == expected.id())
                 .is_some_and(|written| {
-                    expected.id == written.id
-                        && expected.name == written.name
+                    expected.id() == written.id()
+                        && expected.name() == written.name()
                         && expected.type_name == written.type_name
                         && expected.persistent_id == written.persistent_id
                         && expected.view_type == written.view_type

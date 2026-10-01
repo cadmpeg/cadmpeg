@@ -368,8 +368,8 @@ fn transfer_schema_one(
     for object in objects {
         ctx.insert_hash_map(
             &mut objects_by_name,
-            object.name.as_str(),
-            object.id.as_str(),
+            object.name().as_str(),
+            object.id().as_str(),
             "FCStd GUI object names",
         )?;
     }
@@ -1036,9 +1036,9 @@ fn charge_refused_gui_keys(
     for key in refused {
         let message = match key {
             NamedEntryError::ResourceRefusal(limit) => return Err((*limit).into()),
-            NamedEntryError::FormattingRefusal => return Err(CodecError::malformed(
-                "cannot format named entry record",
-            )),
+            NamedEntryError::FormattingRefusal => {
+                return Err(CodecError::malformed("cannot format named entry record"))
+            }
             NamedEntryError::Blank { record } => ctx.join_retained(
                 &[
                     record.as_str(),
