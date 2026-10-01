@@ -65,6 +65,7 @@ fn push_feature_source_parameter(
     content: &mut cadmpeg_ir::features::FeatureContent,
     id: ParameterId,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(content.len()), "creo feature source content")?;
     if content
         .iter()
         .any(|entry| matches!(entry, FeatureSourceContent::Parameter(existing) if existing == &id))
@@ -73,10 +74,10 @@ fn push_feature_source_parameter(
             "source_content repeats a parameter or child-feature reference".into(),
         ));
     }
-    ctx.try_collection(1, "creo feature source content", || content.try_reserve(1))?;
+    content.reserve_for_decode(ctx, 1, "creo feature source content")?;
     content
-        .push(FeatureSourceContent::Parameter(id))
-        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))
+        .push(FeatureSourceContent::Parameter(id), ctx, "creo feature source content")
+        .map_err(cadmpeg_core::CodecError::from)
 }
 
 #[cfg(test)]

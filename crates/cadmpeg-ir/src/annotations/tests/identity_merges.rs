@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::annotations::{AnnotationBuilder, StreamHandle};
+use crate::annotations::{AnnotationBuilder, AnnotationIdentityError, StreamHandle};
 use crate::provenance::Exactness;
 
 #[test]
@@ -15,7 +15,7 @@ fn remapping_refuses_collisions_across_tables_without_mutation() {
     let error = annotations
         .map_ids(|_| "test:model:point#merged".into())
         .unwrap_err();
-    assert_eq!(error.id, "test:model:point#merged");
+    assert!(matches!(error, AnnotationIdentityError::Collision(error) if error.id == "test:model:point#merged"));
     assert_eq!(annotations, before);
 }
 
@@ -68,7 +68,7 @@ fn appending_refuses_shared_identities_in_either_table_without_mutation() {
         };
         let before = target.clone();
         let error = target.append(incoming).unwrap_err();
-        assert_eq!(error.id, "test:model:point#shared");
+        assert!(matches!(error, AnnotationIdentityError::Collision(error) if error.id == "test:model:point#shared"));
         assert_eq!(target, before);
     }
 }
@@ -106,7 +106,7 @@ fn charged_remapping_preserves_collision_text_and_tables() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = cadmpeg_core::CodecError::from(
         annotations
-            .map_ids_charged(&ctx, |_| Ok("merged".into()), "test_annotation_remap")
+            .map_ids_for_decode(&ctx, |_| Ok("merged".into()), "test_annotation_remap")
             .unwrap()
             .unwrap_err(),
     );

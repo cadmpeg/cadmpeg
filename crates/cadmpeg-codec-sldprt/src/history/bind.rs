@@ -243,11 +243,7 @@ pub(crate) fn bind_unique_sketch_feature(
         };
         let native_ref = copy_binding_text(ctx, native_ref)?;
         if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index].dependencies.try_insert_charged(
-                copy_binding_feature_id(ctx, &base_dependency)?,
-                ctx,
-                "bind SLDPRT sketch alias dependency",
-            )?;
+            features[*index].dependencies.insert_for_decode(ctx, copy_binding_feature_id(ctx, &base_dependency)?, "bind SLDPRT sketch alias dependency")?;
         }
         ctx.charge_work(
             u64::try_from(bindings.len()).map_err(|_| {
@@ -291,11 +287,7 @@ pub(crate) fn bind_unique_sketch_feature(
                         binding.has_profile,
                     )? && !dependencies.contains(&binding.feature_id)
                     {
-                        dependencies.try_insert_charged(
-                            copy_binding_feature_id(ctx, &binding.feature_id)?,
-                            ctx,
-                            "bind SLDPRT sketch dependency",
-                        )?;
+                        dependencies.insert_for_decode(ctx, copy_binding_feature_id(ctx, &binding.feature_id)?, "bind SLDPRT sketch dependency")?;
                     }
                 }
                 Ok::<_, cadmpeg_core::CodecError>(())
@@ -679,7 +671,7 @@ pub(crate) fn derive_feature_outputs(
                 }
                 outputs.push(body);
                 feature.evaluation.set_outputs(
-                    cadmpeg_ir::features::DistinctMembers::try_from_charged(outputs, ctx)?,
+                    cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
                 );
             }
         }
@@ -737,7 +729,7 @@ pub(crate) fn derive_feature_outputs(
                 outputs.push(copy_output_body_id(ctx, body.as_str())?);
             }
             feature.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from_charged(outputs, ctx)?,
+                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
             );
         }
     }

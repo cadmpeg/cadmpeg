@@ -1954,7 +1954,7 @@ fn native_loop_ring(
             "creo B-rep ring coedge identities",
         )?);
     }
-    match cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, coedge_ids, Vec::new())? {
+    match cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new()).map_err(cadmpeg_core::CodecError::from)? {
         Ok(ring) => Ok(ring),
         Err(error) => Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
             format_args!("VisibGeom face {face_id} loop ring: {error}"),

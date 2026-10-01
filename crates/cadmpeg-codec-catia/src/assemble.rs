@@ -9,7 +9,6 @@ use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::dialect::DialectMatch;
-use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
@@ -70,25 +69,9 @@ pub(crate) fn annotate(
     tag: impl std::fmt::Display,
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let id = ctx.format_retained(format_args!("{id}"), "catia_annotation_id")?;
-    let exactness_id = ctx.copy_retained_text(&id, "catia_annotation_exactness_id")?;
-    let stream_name = ctx.format_retained(
-        format_args!("catia:{stream_name}"),
-        "catia_annotation_stream",
-    )?;
-    let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
-        .map_err(cadmpeg_core::CodecError::malformed)?;
-    let stream_bytes = u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
-    ctx.charge_retained(stream_bytes, "catia_annotation_stream_handle")?;
-    let tag = ctx.format_retained(format_args!("{tag}"), "catia_annotation_tag")?;
-    ctx.charge_collection_items(1, "catia_annotation_provenance")?;
-    if exactness != Exactness::ByteExact {
-        ctx.charge_collection_items(1, "catia_annotation_exactness")?;
-    }
-    let stream = StreamHandle::new(stream_name);
-    annotations.note_owned(id, &stream, offset).tag(tag);
-    annotations.exactness_owned(exactness_id, exactness);
-    Ok(())
+    let mut scratch = ctx.reserve_scoped(0, "catia_annotation_format")?;
+    let tag = ctx.format_scoped_text(&mut scratch, format_args!("{tag}"), "catia_annotation_tag")?;
+    annotations.annotate(ctx, id, format_args!("catia:{stream_name}"), offset, &tag, exactness)
 }
 
 /// Judge one candidate neutral model after canonicalizing arena order.

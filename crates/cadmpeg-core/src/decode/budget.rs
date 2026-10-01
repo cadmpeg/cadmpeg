@@ -203,20 +203,18 @@ impl DecodeBudget {
     }
 
     /// Report allocator refusal after a scoped-byte reservation was recorded.
-    pub(super) fn scoped_allocation_failed(
-        &self,
-        charged: u64,
-        operation: &'static str,
-    ) -> CodecError {
-        self.refuse(
-            ResourceDimension::MaterializedBytes,
-            ResourceFailure::AllocationFailed,
-            self.materialized_allowance(),
-            // The successful charge is still live when allocation fails.
-            self.materialized.get() - charged,
-            charged,
-            operation,
-        )
+    pub(super) fn scoped_allocation_failed(&self, charged: u64, operation: &'static str) -> CodecError {
+        self.scoped_allocation_failed_limit(charged, operation).into()
+    }
+
+    pub(super) fn scoped_allocation_failed_limit(&self, charged: u64, operation: &'static str) -> ResourceLimit {
+        self.refuse_limit(ResourceDimension::MaterializedBytes, ResourceFailure::AllocationFailed,
+            self.materialized_allowance(), self.materialized.get() - charged, charged, operation)
+    }
+
+    pub(super) fn scoped_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
+        self.refuse_limit(ResourceDimension::MaterializedBytes, ResourceFailure::BudgetExceeded,
+            self.materialized_allowance(), self.materialized.get(), u64::MAX, operation)
     }
 
     pub(super) fn charge_retained(
@@ -262,13 +260,8 @@ impl DecodeBudget {
     }
 
     /// Report allocator refusal after a retained charge was already recorded.
-    pub(super) fn retained_allocation_failed(
-        &self,
-        charged: u64,
-        operation: &'static str,
-    ) -> CodecError {
-        self.retained_allocation_failed_limit(charged, operation)
-            .into()
+    pub(super) fn retained_allocation_failed(&self, charged: u64, operation: &'static str) -> CodecError {
+        self.retained_allocation_failed_limit(charged, operation).into()
     }
 
     pub(super) fn retained_allocation_failed_limit(
@@ -419,24 +412,28 @@ pub struct ScopedReservation<'a> {
 }
 
 impl ScopedReservation<'_> {
-    /// Accounts for copied storage in this live temporary reservation.
-    pub fn with_storage<T, E: From<CodecError>>(
-        &mut self,
-        build: impl FnOnce() -> Result<T, E>,
-    ) -> Result<T, E> {
+    /// Account copied storage in this live temporary reservation.
+    pub fn with_storage<T, E: From<CodecError>>(&mut self, build: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+        self.with_storage_error(build, |limit| E::from(CodecError::ResourceLimit(limit)))
+    }
+
+    /// Account temporary storage with a resource-only refusal channel.
+    pub fn with_storage_limit<T>(&mut self, build: impl FnOnce() -> Result<T, ResourceLimit>) -> Result<T, ResourceLimit> {
+        self.with_storage_error(build, |limit| limit)
+    }
+
+    fn with_storage_error<T, E>(&mut self, build: impl FnOnce() -> Result<T, E>, failure: impl FnOnce(ResourceLimit) -> E) -> Result<T, E> {
         let scope = self.budget.storage_scope(self.operation);
         let value = build()?;
         let mut storage = scope.finish();
-        self.bytes = self.bytes.checked_add(storage.bytes).ok_or_else(|| {
-            CodecError::ResourceLimit(self.budget.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                self.budget.materialized_allowance(),
-                self.bytes,
-                storage.bytes,
-                self.operation,
-            ))
-        })?;
+        self.bytes = self.bytes.checked_add(storage.bytes).ok_or_else(|| failure(self.budget.refuse_limit(
+            ResourceDimension::MaterializedBytes,
+            ResourceFailure::BudgetExceeded,
+            self.budget.materialized_allowance(),
+            self.bytes,
+            storage.bytes,
+            self.operation,
+        )))?;
         storage.bytes = 0;
         Ok(value)
     }

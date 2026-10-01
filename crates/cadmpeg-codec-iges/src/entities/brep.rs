@@ -1546,11 +1546,7 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                            ctx,
-                            coedge_ids,
-                            vertex_uses,
-                        )?
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, vertex_uses).map_err(cadmpeg_core::CodecError::from)?
                         else {
                             super::push_entity_loss(
                                 ctx,

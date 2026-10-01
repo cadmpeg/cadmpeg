@@ -38,65 +38,9 @@ pub(super) fn local_body_selection(
     bodies: Vec<String>,
     native: String,
 ) -> Result<BodySelection, CodecError> {
-    let count = bodies.len();
-    let validation_work = count.checked_mul(count).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX local body selection validation",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(validation_work),
-        "NX local body selection validation",
-    )?;
-    if native.trim().is_empty()
-        || bodies.is_empty()
-        || bodies.iter().any(|body| body.trim().is_empty())
-        || bodies
-            .iter()
-            .enumerate()
-            .any(|(index, body)| bodies[..index].contains(body))
-    {
-        return Ok(BodySelection::Native(native));
-    }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "NX local body selection validation",
-    )?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<&String>() * 4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX local body selection validation",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-    let _reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX local body selection validation",
-    )?;
-    let retained_bytes = bodies
-        .iter()
-        .try_fold(0usize, |sum, body| {
-            sum.checked_add(std::mem::size_of::<String>())?
-                .checked_add(body.len())
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX local body selection",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(retained_bytes),
-        "NX local body selection",
-    )?;
-    let native_copy =
-        ctx.format_retained(format_args!("{native}"), "NX feature projection text")?;
-    Ok(BodySelection::local(bodies, native_copy).unwrap_or(BodySelection::Native(native)))
+    let bodies = ctx.try_collect_retained_with(bodies.iter(), "NX local body selection members", |body| ctx.copy_retained_text(body, "NX local body selection identity"))?;
+    let native_copy = ctx.copy_retained_text(&native, "NX feature projection text")?;
+    Ok(BodySelection::local_for_decode(bodies, native_copy, ctx)?.unwrap_or(BodySelection::Native(native)))
 }
 
 impl FeatureBodySelection<'_> {
@@ -108,63 +52,13 @@ impl FeatureBodySelection<'_> {
             Self::Native(native) => Ok(BodySelection::Native(native)),
             Self::Local { bodies, native, .. } => local_body_selection(ctx, bodies, native),
             Self::Resolved { bodies, native, .. } => {
-                let count = bodies.len();
-                let work = count.checked_mul(count).ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX resolved body selection validation",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(count),
-                    )
-                })?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(work),
-                    "NX resolved body selection validation",
-                )?;
-                if bodies.is_empty()
-                    || bodies
-                        .iter()
-                        .enumerate()
-                        .any(|(index, body)| bodies[..index].contains(body))
-                {
-                    return Ok(BodySelection::Native(native));
-                }
-                ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(count),
-                    "NX resolved body selection validation",
-                )?;
-                let scratch = count
-                    .checked_mul(std::mem::size_of::<&BodyId>() * 4)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "NX resolved body selection validation",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(count),
-                        )
-                    })?;
-                let _reservation = ctx.reserve_scoped(
-                    cadmpeg_core::decode::u64_from_index(scratch),
-                    "NX resolved body selection validation",
-                )?;
-                let retained = bodies
-                    .iter()
-                    .try_fold(0usize, |sum, body| {
-                        sum.checked_add(std::mem::size_of::<BodyId>())?
-                            .checked_add(body.as_str().len())
-                    })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "NX resolved body selection",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(count),
-                        )
-                    })?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(retained),
-                    "NX resolved body selection",
-                )?;
-                let bodies = bodies
-                    .try_into()
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                if bodies.is_empty() { return Ok(BodySelection::Native(native)); }
+                let bodies = ctx.try_collect_retained_with(bodies.iter(), "NX resolved body selection members", |body| body.try_clone_for_decode(ctx, "NX resolved body selection identity"))?;
+                let bodies = match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
+                    Ok(bodies) => bodies,
+                    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => return Err(limit.into()),
+                    Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(BodySelection::Native(native)),
+                };
                 Ok(BodySelection::Resolved { bodies, native })
             }
         }

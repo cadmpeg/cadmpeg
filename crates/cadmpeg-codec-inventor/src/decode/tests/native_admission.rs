@@ -566,14 +566,14 @@ fn kernel_annotation_refuses_before_provenance_creation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_kernel_annotation(&ctx, &record),
+        admit_kernel_annotation(&ctx, &mut cadmpeg_ir::annotations::AnnotationBuilder::new(), &record),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor kernel provenance"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_kernel_annotation(&ctx, &record).expect("admitted annotation");
+    admit_kernel_annotation(&ctx, &mut cadmpeg_ir::annotations::AnnotationBuilder::new(), &record).expect("admitted annotation");
 }
 
 #[test]

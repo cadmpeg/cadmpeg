@@ -529,6 +529,19 @@ impl ModelDraft<DraftAccounting> {
         }
     }
 
+    /// Record staged exactness after admitting the retained key and record.
+    pub fn exactness_for_decode(&mut self, ctx: &DecodeContext<'_>, identity: impl std::fmt::Display, exactness: Exactness) -> Result<(), CodecError> {
+        let mut scratch = ctx.reserve_scoped(0, "draft exactness lookup")?;
+        let identity = ctx.format_scoped_text(&mut scratch, format_args!("{identity}"), "draft exactness lookup")?;
+        let identity = if exactness != Exactness::ByteExact && !self.accounting.exactness.contains_key(&identity) {
+            ctx.charge_collection_items(1, "draft exactness records")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Exactness)>()), "draft exactness records")?;
+            ctx.copy_retained_text(&identity, "draft exactness identity")?
+        } else { identity };
+        self.exactness(identity, exactness);
+        Ok(())
+    }
+
     /// Retains exactness notes selected by identity.
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
         self.accounting

@@ -654,7 +654,7 @@ impl<'a> DecodeContext<'a> {
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> Result<T, E>,
     ) -> Result<T, CandidateError> {
         let mut candidate = CadIr::empty();
-        let mut annotations = self.annotations.clone();
+        let mut annotations = self.annotations.try_clone_for_decode(self.expand.ctx(), "Rhino speculative annotations")?;
         let value = apply(&mut candidate, &mut annotations).map_err(Into::into)?;
         let entity_count = candidate.model.entity_count();
         let mut budget = self.expansion_budget;
@@ -1952,15 +1952,11 @@ impl<'a> DecodeContext<'a> {
                 geometry: surface_geometry,
                 source_object: Some(association),
             });
-            set_exactness(
-                candidate_annotations,
-                &surface_id,
-                if surface_derived {
+            set_exactness(ctx, candidate_annotations, &surface_id, if surface_derived {
                     Exactness::Derived
                 } else {
                     Exactness::ByteExact
-                },
-            );
+                })?;
             candidate.model.features.push(feature);
             Ok::<(), CandidateError>(())
         });
@@ -2067,7 +2063,7 @@ impl<'a> DecodeContext<'a> {
 
     fn expand_reference(&mut self, source_order: usize) -> Result<bool, cadmpeg_core::CodecError> {
         let original_model = ModelCheckpoint::capture(&self.ir.model);
-        let annotation_checkpoint = self.annotations.clone();
+        let annotation_checkpoint = self.annotations.try_clone_for_decode(self.expand.ctx(), "Rhino annotation checkpoint")?;
         let session = self.expand.ctx();
         let original_links = snapshot_instance_links(session, &self.unknowns)?;
         let (original_statuses, _status_bytes) =
@@ -2386,7 +2382,7 @@ impl<'a> DecodeContext<'a> {
             )?;
         }
         for id in derived_ids {
-            annotate_derived(&mut self.annotations, &id);
+            annotate_derived(self.expand.ctx(), &mut self.annotations, &id)?;
         }
         Ok(links)
     }
@@ -2491,15 +2487,11 @@ impl<'a> DecodeContext<'a> {
         let id = surface.id.to_string();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
-            set_exactness(
-                candidate_annotations,
-                &id,
-                if scaled {
+            set_exactness(ctx, candidate_annotations, &id, if scaled {
                     Exactness::Derived
                 } else {
                     Exactness::ByteExact
-                },
-            );
+                })?;
             ctx.copy_retained_text(&id, "Rhino SubD link identity copy")
         });
         let link = match result {
@@ -3134,9 +3126,7 @@ impl<'a> DecodeContext<'a> {
                     vec![region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
                     &association,
                 ));
-                self.annotate_point_topology(
-                    &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
-                );
+                self.annotate_point_topology(&point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled)?;
                 self.append_link(source_order, body_id.as_str())?;
             }
             crate::curves::DecodedGeometry::PointCloud(cloud) => {
@@ -3240,15 +3230,11 @@ impl<'a> DecodeContext<'a> {
                     .iter()
                     .filter(|point| point.id.as_str().starts_with(&point_prefix))
                 {
-                    set_exactness(
-                        &mut self.annotations,
-                        &point.id,
-                        if scaled {
+                    set_exactness(ctx, &mut self.annotations, &point.id, if scaled {
                             Exactness::Derived
                         } else {
                             Exactness::ByteExact
-                        },
-                    );
+                        })?;
                 }
                 self.append_link(source_order, body_id.as_str())?;
             }
@@ -3301,15 +3287,11 @@ impl<'a> DecodeContext<'a> {
                         geometry: geometry.into_geometry(),
                         source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                     });
-                    set_exactness(
-                        &mut self.annotations,
-                        &surface_id,
-                        if derived {
+                    set_exactness(ctx, &mut self.annotations, &surface_id, if derived {
                             Exactness::Derived
                         } else {
                             Exactness::ByteExact
-                        },
-                    );
+                        })?;
                     self.append_link(source_order, surface_id.as_str())?;
                 }
                 crate::surfaces::DecodedSurface::Procedural {
@@ -3398,7 +3380,7 @@ impl<'a> DecodeContext<'a> {
                 )
                 .map_err(|error| error.to_string())?;
             for id in [surface_id.to_string(), procedural_id.to_string()] {
-                set_exactness(candidate_annotations, id, Exactness::Derived);
+                set_exactness(ctx, candidate_annotations, id, Exactness::Derived)?;
             }
             Ok::<_, CandidateError>(vec![surface_id.to_string()])
         });
@@ -3515,8 +3497,8 @@ impl<'a> DecodeContext<'a> {
                         ?,
                     )
                     .map_err(|error| error.to_string())?;
-                annotate_derived(candidate_annotations, &surface_id.to_string());
-                annotate_derived(candidate_annotations, &procedure_id.to_string());
+                annotate_derived(ctx, candidate_annotations, &surface_id.to_string())?;
+                annotate_derived(ctx, candidate_annotations, &procedure_id.to_string())?;
                 links.push(surface_id.to_string());
             }
             if extrusion.caps[0] || extrusion.caps[1] {
@@ -3536,7 +3518,7 @@ impl<'a> DecodeContext<'a> {
                 ))
                 .map_err(|error| error.to_string())?;
                 mesh.tessellation.source_object = Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?);
-                annotate_derived(candidate_annotations, mesh.tessellation.id.as_str());
+                annotate_derived(ctx, candidate_annotations, mesh.tessellation.id.as_str())?;
                 links.push(mesh.tessellation.id.to_string());
                 candidate.model.tessellations.push(mesh.tessellation);
             }
@@ -3601,7 +3583,7 @@ impl<'a> DecodeContext<'a> {
                 }),
                 source_object: Some(association),
             });
-            set_exactness(candidate_annotations, &id, Exactness::Unknown);
+            set_exactness(ctx, candidate_annotations, &id, Exactness::Unknown)?;
             Ok::<_, CandidateError>(id.to_string())
         });
         match validation {
@@ -3625,21 +3607,22 @@ impl<'a> DecodeContext<'a> {
         region: &cadmpeg_ir::ids::RegionId,
         body: &cadmpeg_ir::ids::BodyId,
         scaled: bool,
-    ) {
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let point_exactness = if scaled {
             Exactness::Derived
         } else {
             Exactness::ByteExact
         };
-        set_exactness(&mut self.annotations, point, point_exactness);
+        set_exactness(self.expand.ctx(), &mut self.annotations, point, point_exactness)?;
         for id in [
             vertex.to_string(),
             shell.to_string(),
             region.to_string(),
             body.to_string(),
         ] {
-            set_exactness(&mut self.annotations, id, Exactness::Derived);
+            set_exactness(self.expand.ctx(), &mut self.annotations, id, Exactness::Derived)?;
         }
+        Ok(())
     }
 
     fn commit_mesh(
@@ -3677,15 +3660,11 @@ impl<'a> DecodeContext<'a> {
         let mut tessellation = mesh.tessellation;
         tessellation.source_object = Some(self.source_association(identity)?);
         self.ir.model.tessellations.push(tessellation);
-        set_exactness(
-            &mut self.annotations,
-            &id,
-            if mesh.scaled || mesh.quad_count != 0 {
+        set_exactness(self.expand.ctx(), &mut self.annotations, &id, if mesh.scaled || mesh.quad_count != 0 {
                 Exactness::Derived
             } else {
                 Exactness::ByteExact
-            },
-        );
+            })?;
         if mesh.ngon_count != 0 {
             push_report_loss(
                 self.expand.ctx(),
@@ -4031,18 +4010,15 @@ fn validation_findings(report: &cadmpeg_ir::report::check::ValidationReport) -> 
         .join("; ")
 }
 
-fn annotate_derived(annotations: &mut cadmpeg_ir::Annotations, id: &str) {
-    set_exactness(annotations, id, Exactness::Derived);
+fn annotate_derived(ctx: &cadmpeg_core::decode::DecodeContext<'_>, annotations: &mut cadmpeg_ir::Annotations, id: &str) -> Result<(), cadmpeg_core::CodecError> {
+    set_exactness(ctx, annotations, id, Exactness::Derived)
 }
 
-fn set_exactness(
-    annotations: &mut cadmpeg_ir::Annotations,
-    id: impl std::fmt::Display,
-    exactness: Exactness,
-) {
+fn set_exactness(ctx: &cadmpeg_core::decode::DecodeContext<'_>, annotations: &mut cadmpeg_ir::Annotations, id: impl std::fmt::Display, exactness: Exactness) -> Result<(), cadmpeg_core::CodecError> {
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    builder.exactness(id, exactness);
+    let result = builder.exactness_for_decode(ctx, id, exactness).map(|_| ());
     *annotations = builder.build();
+    result
 }
 
 struct CommittedExtrusionBoundary<'a> {
@@ -4133,7 +4109,7 @@ fn stage_extrusion_caps(
                     )),
                     source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                 });
-                annotate_derived(annotations, &id.to_string());
+                annotate_derived(ctx, annotations, &id.to_string())?;
                 id
             };
             let endpoint = if cap == 0 {
@@ -4259,10 +4235,7 @@ fn stage_extrusion_caps(
                 id: loop_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                 face: face_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(
-                        vec![coedge_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
-                        Vec::new(),
-                    )
+                    cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, vec![coedge_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?], Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                     .map_err(|error| format!("extrusion cap staging: {error}"))?,
                 ),
             });
@@ -4275,7 +4248,7 @@ fn stage_extrusion_caps(
                 coedge_id.to_string(),
                 loop_id.to_string(),
             ] {
-                annotate_derived(annotations, &id);
+                annotate_derived(ctx, annotations, &id)?;
             }
         }
         ir.model.faces.push(Face {
@@ -4292,8 +4265,8 @@ fn stage_extrusion_caps(
             color: association.color,
             tolerance: None,
         });
-        annotate_derived(annotations, &surface_id.to_string());
-        annotate_derived(annotations, &face_id.to_string());
+        annotate_derived(ctx, annotations, &surface_id.to_string())?;
+        annotate_derived(ctx, annotations, &face_id.to_string())?;
         ir.model.shells.push(Shell::with_face(
             shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -4304,8 +4277,8 @@ fn stage_extrusion_caps(
             body: body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             shells: vec![shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
         });
-        annotate_derived(annotations, &shell_id.to_string());
-        annotate_derived(annotations, &region_id.to_string());
+        annotate_derived(ctx, annotations, &shell_id.to_string())?;
+        annotate_derived(ctx, annotations, &region_id.to_string())?;
         region_ids.push(region_id);
     }
     if region_ids.is_empty() {
@@ -4324,7 +4297,7 @@ fn stage_extrusion_caps(
         color: association.color,
         visible: association.visible,
     });
-    annotate_derived(annotations, &body_id.to_string());
+    annotate_derived(ctx, annotations, &body_id.to_string())?;
     Ok(body_id.to_string())
 }
 
@@ -4529,14 +4502,11 @@ fn stage_brep_carriers(
                     staged
                         .warnings
                         .append_admitted(expand.ctx(), &mut mesh.warnings)?;
-                    staged.draft.exactness(
-                        mesh.tessellation.id.to_string(),
-                        if mesh.scaled {
+                    staged.draft.exactness_for_decode(ctx, mesh.tessellation.id.to_string(), if mesh.scaled {
                             Exactness::Derived
                         } else {
                             Exactness::ByteExact
-                        },
-                    );
+                        })?;
                     staged.links.push(mesh.tessellation.id.to_string());
                     staged
                         .draft
@@ -4652,14 +4622,11 @@ fn stage_brep_carriers(
                     geometry: geometry.into_geometry(),
                     source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                 });
-                staged.draft.exactness(
-                    id.to_string(),
-                    if derived {
+                staged.draft.exactness_for_decode(ctx, id.to_string(), if derived {
                         Exactness::Derived
                     } else {
                         Exactness::ByteExact
-                    },
-                );
+                    })?;
                 expand
                     .ctx()
                     .reserve_map(&mut surfaces, 1, "Rhino Brep surface slots")?;
@@ -5070,7 +5037,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             face: face_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()).map_err(|error| {
+                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new()).map_err(cadmpeg_core::CodecError::from)?.map_err(|error| {
                     crate::curves::GeometryError::unpositioned(error.to_string())
                 })?,
             ),
@@ -5280,7 +5247,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         ids
     };
     for id in derived_ids {
-        staged.draft.exactness(id, Exactness::Derived);
+        staged.draft.exactness_for_decode(ctx, id, Exactness::Derived)?;
     }
     scale_plane_pcurves(ctx, &mut staged, scale)?;
     Ok(staged)
@@ -5544,10 +5511,10 @@ fn stage_brep_procedural_surface(
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     staged
         .draft
-        .exactness(surface_id.to_string(), Exactness::Derived);
+        .exactness_for_decode(context.ctx, surface_id.to_string(), Exactness::Derived)?;
     staged
         .draft
-        .exactness(procedural_id.to_string(), Exactness::Derived);
+        .exactness_for_decode(context.ctx, procedural_id.to_string(), Exactness::Derived)?;
     staged.links.push(surface_id.to_string());
     staged.links.push(procedural_id.to_string());
     Ok(surface_id)
@@ -5628,7 +5595,7 @@ fn stage_curve_tree(
         geometry,
         source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
     });
-    staged.draft.exactness(id.to_string(), Exactness::Derived);
+    staged.draft.exactness_for_decode(ctx, id.to_string(), Exactness::Derived)?;
     staged.links.push(id.to_string());
     if let Some(definition) = definition {
         let procedure_key = if path == "root" {
@@ -5646,7 +5613,7 @@ fn stage_curve_tree(
         );
         staged
             .draft
-            .exactness(procedure_id.to_string(), Exactness::Derived);
+            .exactness_for_decode(ctx, procedure_id.to_string(), Exactness::Derived)?;
         staged.links.push(procedure_id.to_string());
         staged
             .draft
@@ -6236,7 +6203,7 @@ fn commit_curve_tree(
         geometry,
         source_object: Some(source.association.try_clone_for_decode(ctx, "Rhino source association copy")?),
     });
-    set_exactness(annotations, &id, Exactness::Derived);
+    set_exactness(ctx, annotations, &id, Exactness::Derived)?;
     if let Some(definition) = definition {
         let procedure_id = cadmpeg_ir::ids::ProceduralCurveId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "procedural-curve"),

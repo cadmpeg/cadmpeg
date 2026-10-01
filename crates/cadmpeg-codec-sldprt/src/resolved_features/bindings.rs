@@ -669,11 +669,7 @@ pub(crate) fn bind_pattern_inputs(
         };
         if !model_features[index].dependencies.contains(&seed) {
             let dependency = copy_feature_binding_id(ctx, &seed)?;
-            model_features[index].dependencies.try_insert_charged(
-                dependency,
-                ctx,
-                "collect SLDPRT pattern dependencies",
-            )?;
+            model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT pattern dependencies")?;
         }
         let mut edit_result = Ok(());
         model_features[index].evaluation.edit(|definition, _| {
@@ -711,11 +707,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(&dependency) {
-            model_features[index].dependencies.try_insert_charged(
-                dependency,
-                ctx,
-                "collect SLDPRT pattern dependencies",
-            )?;
+            model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT pattern dependencies")?;
         }
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
@@ -855,11 +847,7 @@ pub(crate) fn bind_pattern_inputs(
         for seed in &seeds {
             if !model_features[index].dependencies.contains(seed) {
                 let dependency = copy_feature_binding_id(ctx, seed)?;
-                model_features[index].dependencies.try_insert_charged(
-                    dependency,
-                    ctx,
-                    "collect SLDPRT pattern dependencies",
-                )?;
+                model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT pattern dependencies")?;
             }
         }
         let mut edit_result = Ok(());
@@ -1292,19 +1280,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 .dependencies
                 .contains(&profile_dependency)
         {
-            model_features[index].dependencies.try_insert_charged(
-                profile_dependency,
-                ctx,
-                "collect SLDPRT sweep profile dependencies",
-            )?;
+            model_features[index].dependencies.insert_for_decode(ctx, profile_dependency, "collect SLDPRT sweep profile dependencies")?;
         }
         if let Some(dependency) = path_dependency {
             if !model_features[index].dependencies.contains(&dependency) {
-                model_features[index].dependencies.try_insert_charged(
-                    dependency,
-                    ctx,
-                    "collect SLDPRT sweep profile dependencies",
-                )?;
+                model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT sweep profile dependencies")?;
             }
         }
     }

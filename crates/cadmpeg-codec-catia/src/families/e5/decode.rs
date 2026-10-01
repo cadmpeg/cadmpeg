@@ -321,7 +321,7 @@ pub(in crate::families) fn try_decode_e5(
             ));
         }
         let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
-        let mut topology_annotations = admitted!(annotations.copy_charged(ctx, "catia_e5_topology_annotations"));
+        let mut topology_annotations = admitted!(annotations.try_clone_for_decode(ctx, "catia_e5_topology_annotations"));
         let mut original_curves = Vec::new();
         let mut unused_surfaces = Vec::new();
         let topology_transferred = if let Some(topology) = topology.as_ref() {
@@ -2669,7 +2669,7 @@ fn emit_e5_faces_loops_coedges(
                     "catia_annotation_field",
                 )?;
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses) else {
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, vertex_uses).map_err(cadmpeg_core::CodecError::from)? else {
                 return Ok(false);
             };
             admission.reserve_entity(&mut ir.model.loops, "catia_e5_model_loops")?;

@@ -3664,20 +3664,8 @@ fn build_geometry_ir(
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        crate::annotations::builder_field(
-            ctx,
-            &mut annotation_builder,
-            id.as_str(),
-            "body",
-            Exactness::Derived,
-        )?;
-        crate::annotations::builder_field(
-            ctx,
-            &mut annotation_builder,
-            id.as_str(),
-            "faces",
-            Exactness::Derived,
-        )?;
+        annotation_builder.field_exactness_for_decode(ctx, id.as_str(), "body", Exactness::Derived)?;
+        annotation_builder.field_exactness_for_decode(ctx, id.as_str(), "faces", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -5234,7 +5222,7 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
-            configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from_charged(
+            configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
                 partition_map.remove(&source_index).unwrap_or_default(),
                 ctx,
             )?);
@@ -5243,7 +5231,7 @@ fn assign_configuration_bodies(
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
         if let Some(bodies) = partition_map.remove(&active_index) {
             ir.model.configurations[position].bodies = Some(
-                cadmpeg_ir::features::DistinctMembers::try_from_charged(bodies, ctx)?,
+                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx)?,
             );
         }
     }
@@ -5283,7 +5271,7 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from_charged(
+                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
                     bodies, ctx,
                 )?),
                 parameter_values: std::collections::BTreeMap::new(),

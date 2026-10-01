@@ -3322,11 +3322,7 @@ fn build_one(
                         )?;
                         ctx.insert_hash_set(&mut typed, loop_step, "step_brep_typed")?;
                     }
-                    ctx.charge_collection_items(
-                        u64_from_index(coedge_ids.len()),
-                        "step_brep_loop_ring_validation",
-                    )?;
-                    let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
+                    let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
                     else {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
                         return Err(BuildError::Absent);
@@ -3580,11 +3576,7 @@ fn build_one(
                         ctx.insert_hash_set(&mut typed, parent, "step_brep_typed")?;
                     }
                 }
-                ctx.charge_collection_items(
-                    u64_from_index(coedge_ids.len()),
-                    "step_brep_loop_ring_validation",
-                )?;
-                let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
+                let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new()).map_err(cadmpeg_core::CodecError::from)? else {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return Err(BuildError::Absent);
                 };

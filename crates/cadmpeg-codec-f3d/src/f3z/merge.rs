@@ -346,7 +346,7 @@ fn rescope_fidelity(
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
     annotations
-        .map_ids_charged(
+        .map_ids_for_decode(
             ctx,
             |id| match rescope_charged(ctx, id, occurrence)? {
                 Some(id) => Ok(id),
@@ -370,9 +370,8 @@ fn rescope_fidelity(
             "retain F3Z provenance stream",
         )?)
         .map_err(CodecError::malformed)?;
-        ctx.charge_collection_items(1, "create F3Z provenance stream handle")?;
-        let stream = StreamHandle::new(stream);
-        builder.note_charged_optional(
+        let stream = StreamHandle::new_for_decode(ctx, stream, "allocate annotation stream handle")?;
+        builder.note_for_decode(
             ctx,
             &id,
             &stream,

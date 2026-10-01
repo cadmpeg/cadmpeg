@@ -475,6 +475,7 @@ impl Provenance<AnnotationLocation> {
             .as_deref()
             .map(|tag| ctx.copy_retained_text(tag, operation))
             .transpose()?;
+        ctx.charge_work(1, operation)?;
         Ok(Self::annotation(
             Arc::clone(&self.location.stream),
             self.offset,

@@ -430,7 +430,7 @@ pub(crate) fn project_feature_model(
                 }) = definition
                 {
                     result = children
-                        .try_insert_charged(child, ctx, "collect SLDPRT tree children")
+                        .insert_for_decode(ctx, child, "collect SLDPRT tree children")
                         .map(|_| ());
                 }
             });
@@ -797,11 +797,7 @@ pub(super) fn bind_offset_plane_references(
                 feature.dependencies.as_slice().len() as u64,
                 "bind SLDPRT offset plane dependencies",
             )?;
-            feature.dependencies.try_insert_charged(
-                reference_id,
-                ctx,
-                "bind SLDPRT offset plane dependencies",
-            )?;
+            feature.dependencies.insert_for_decode(ctx, reference_id, "bind SLDPRT offset plane dependencies")?;
         }
     }
     let mut frames = HashMap::new();
@@ -996,11 +992,7 @@ pub(super) fn bind_offset_plane_references(
                 features[index].dependencies.as_slice().len() as u64,
                 "bind SLDPRT offset plane dependencies",
             )?;
-            features[index].dependencies.try_insert_charged(
-                reference,
-                ctx,
-                "bind SLDPRT offset plane dependencies",
-            )?;
+            features[index].dependencies.insert_for_decode(ctx, reference, "bind SLDPRT offset plane dependencies")?;
             changed = true;
         }
         if !changed {
@@ -1101,11 +1093,7 @@ fn bind_native_construction_features(
                         dependencies.as_slice().len() as u64,
                         "bind SLDPRT native construction references",
                     )?;
-                    dependencies.try_insert_charged(
-                        copy_projected_feature_id(ctx, target)?,
-                        ctx,
-                        "bind SLDPRT native construction dependencies",
-                    )?;
+                    dependencies.insert_for_decode(ctx, copy_projected_feature_id(ctx, target)?, "bind SLDPRT native construction dependencies")?;
                 }
                 Ok(())
             };
@@ -1437,7 +1425,7 @@ fn project_feature_content(
             }
         };
         ctx.charge_work(result.len() as u64, OPERATION)?;
-        result.try_push_charged(value, ctx, OPERATION)?;
+        result.push(value, ctx, OPERATION)?;
     }
     Ok(result)
 }
@@ -1467,11 +1455,7 @@ fn project_feature_dependencies(
             if dependency == &owner || dependencies.contains(dependency) {
                 continue;
             }
-            dependencies.try_insert_charged(
-                copy_projected_feature_id(ctx, dependency)?,
-                ctx,
-                "collect SLDPRT feature dependencies",
-            )?;
+            dependencies.insert_for_decode(ctx, copy_projected_feature_id(ctx, dependency)?, "collect SLDPRT feature dependencies")?;
         }
     }
     Ok(dependencies)

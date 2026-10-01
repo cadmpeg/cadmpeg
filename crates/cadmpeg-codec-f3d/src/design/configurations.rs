@@ -495,14 +495,7 @@ pub(crate) fn bind_configuration_suppressed_features(
                 for dependency in &feature.dependencies {
                     let copied = dependency
                         .try_clone_for_decode(ctx, "f3d configuration suppressed dependency id")?;
-                    {
-                        dependencies.reserve_for_decode(
-                            ctx,
-                            1,
-                            "f3d configuration suppressed dependency",
-                        )?;
-                    }
-                    dependencies.insert(copied);
+                    dependencies.insert_for_decode(ctx, copied, "f3d configuration suppressed dependency")?;
                 }
                 Ok((
                     id,

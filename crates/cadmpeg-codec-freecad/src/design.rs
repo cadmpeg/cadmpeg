@@ -484,7 +484,7 @@ pub(crate) fn transfer(
             dependencies.len(),
             "fcstd distinct feature dependencies",
         )?;
-        dependency_members.extend(dependencies);
+        dependency_members.extend_for_decode(ctx, dependencies, "fcstd distinct feature dependencies")?;
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(outputs.len()),
             "fcstd distinct feature outputs",
@@ -595,13 +595,12 @@ fn body_definition(
         BodyTipResolution::Valid(active_child) => active_child,
         BodyTipResolution::Invalid => return Ok(None),
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(children.len()),
-        "fcstd distinct body children",
-    )?;
     Ok(
-        cadmpeg_ir::features::TreeChildren::new(children, active_child)
-            .ok()
+        match cadmpeg_ir::features::TreeChildren::new_for_decode(children, active_child, ctx) {
+            Ok(children) => Some(children),
+            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => return Err(limit.into()),
+            Err(_) => None,
+        }
             .map(|children| {
                 FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::SolidBodies,
@@ -3012,11 +3011,7 @@ fn bind_parameter_dependencies(
             let mut members =
                 ctx.collection_vec(dependencies.len(), "fcstd parameter dependency members")?;
             members.extend(dependencies);
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(members.len()),
-                "fcstd parameter distinct check",
-            )?;
-            members.try_into().map_err(CodecError::malformed)?
+            DistinctMembers::try_from_for_decode(members, ctx).map_err(CodecError::from)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();

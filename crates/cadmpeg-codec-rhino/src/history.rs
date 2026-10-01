@@ -2431,20 +2431,7 @@ pub(crate) fn project(
         let parameters =
             admitted_named_properties(ctx, &native_ids[index], parameters, sink.warnings)
                 .map_err(ProjectionError::Codec)?;
-        let dependency_count = cadmpeg_core::decode::u64_from_index(dependencies.len());
-        let comparison_work = dependency_count
-            .checked_mul(dependency_count)
-            .ok_or_else(|| {
-                ProjectionError::Codec(ctx.refuse_codec_limit(
-                    "Rhino history dependency distinctness",
-                    u64::MAX - 1,
-                    u64::MAX,
-                ))
-            })?;
-        ctx.charge_work(comparison_work, "Rhino history dependency distinctness")
-            .map_err(ProjectionError::Codec)?;
-        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(dependencies)
-            .map_err(std::string::ToString::to_string)?;
+        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from_for_decode(dependencies, ctx).map_err(|error| ProjectionError::Codec(error.into()))?;
         ctx.reserve_vec(
             &mut ir.model.features,
             1,

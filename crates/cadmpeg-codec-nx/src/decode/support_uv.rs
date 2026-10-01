@@ -2774,49 +2774,15 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .graph
             .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos));
-        ctx.charge_collection_items(1, "nx completed pcurve provenance")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(pcurve_id.as_str().len()),
-            "nx completed pcurve provenance identity",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("INTERSECTION_PCURVE".len()),
-            "nx completed pcurve provenance tag",
-        )?;
         annotations
-            .note(&pcurve_id, &source.source_stream, source_offset)
-            .tag("INTERSECTION_PCURVE");
-        ctx.charge_collection_items(1, "nx completed pcurve exactness")?;
-        for field in ["geometry", "parameter_range"] {
-            ctx.charge_collection_items(1, "nx completed pcurve exactness fields")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(pcurve_id.as_str().len()),
-                "nx completed pcurve exactness identity",
-            )?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(field.len()),
-                "nx completed pcurve exactness field",
-            )?;
-        }
+            .note_for_decode(ctx, &pcurve_id, &source.source_stream, source_offset, Some("INTERSECTION_PCURVE"))?;
         annotations
-            .derived(&pcurve_id, "geometry")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .derived_for_decode(ctx, &pcurve_id, "geometry").map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(&pcurve_id, "parameter_range")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .derived_for_decode(ctx, &pcurve_id, "parameter_range").map_err(cadmpeg_core::CodecError::from)?;
         if metadata.fit_tolerance().is_some() {
-            ctx.charge_collection_items(1, "nx completed pcurve exactness fields")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(pcurve_id.as_str().len()),
-                "nx completed pcurve exactness identity",
-            )?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("fit_tolerance".len()),
-                "nx completed pcurve exactness field",
-            )?;
             annotations
-                .derived(&pcurve_id, "fit_tolerance")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                .derived_for_decode(ctx, &pcurve_id, "fit_tolerance").map_err(cadmpeg_core::CodecError::from)?;
         }
         ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx completed pcurve records")?;
         ir.model.pcurves.push(Pcurve {

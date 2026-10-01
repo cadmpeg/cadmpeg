@@ -41,12 +41,12 @@ fn insert_for_decode_service_profile_and_duplicate_without_charge() {
 fn reserve_for_decode_refuses_before_allocation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_retained_bytes = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut members = DistinctMembers::<u8>::default();
     assert!(
         matches!(members.reserve_for_decode(&ctx, 2, "test member reserve"),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems)
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
     );
     assert_eq!(members.0.capacity(), 0);
     assert!(members.is_empty());

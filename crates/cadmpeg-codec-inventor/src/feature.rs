@@ -1425,12 +1425,11 @@ fn project_extrusion(
     if let Err(error) = admit_projected_feature(ctx, source, label, "extrude") {
         return Some(Err(error));
     }
-    if let Err(error) = ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(selections.len()),
-        "check Inventor native profile selections",
-    ) {
-        return Some(Err(error));
-    }
+    let profile = match PlanarProfileRef::sketch_selection_for_decode(sketch_id, selections, ctx) {
+        Ok(Ok(profile)) => profile,
+        Ok(Err(_)) => return None,
+        Err(limit) => return Some(Err(limit.into())),
+    };
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
@@ -1445,7 +1444,7 @@ fn project_extrusion(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(
-                    PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?,
+                    profile,
                 ),
                 direction: ExtrudeDirection::Explicit {
                     vector: cadmpeg_ir::features::FeatureDirection3::from(direction),

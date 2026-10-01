@@ -1106,7 +1106,7 @@ pub(in crate::native) fn feature_source_content(
         )?;
         content.push(FeatureSourceContent::Text(owned));
     }
-    cadmpeg_ir::features::FeatureContent::try_from(content).map_err(CodecError::malformed)
+    cadmpeg_ir::features::FeatureContent::try_from_for_decode(content, ctx, "NX feature source content validation").map_err(CodecError::from)
 }
 
 pub(super) fn simple_hole_native_properties(
