@@ -139,8 +139,14 @@ impl<'a> DecodeContext<'a> {
                 u64_from_index(buffer.len()),
             ));
         }
-        let bytes = arena.alloc(buffer.into_boxed_slice());
-        Self::from_bytes(bytes, arena, policy, container_only)
+        let ctx = DecodeContext {
+            arena,
+            container_only,
+            budget: DecodeBudget::new(*policy, u64_from_index(buffer.len())),
+            derived_spaces: Cell::new(0),
+        };
+        let bytes = arena.alloc(&ctx, buffer.into_boxed_slice())?;
+        Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
 
     /// Builds a context over caller-owned root bytes, for fuzz targets and
@@ -766,7 +772,7 @@ impl<'a> DecodeContext<'a> {
         for view in inputs {
             buffer.extend_from_slice(view.window());
         }
-        let bytes = self.arena.alloc(buffer.into_boxed_slice());
+        let bytes = self.arena.alloc(self, buffer.into_boxed_slice())?;
         reservation.commit()?;
         let space = self.allocate_space()?;
         Ok(View::over_space(bytes, space))
@@ -837,6 +843,7 @@ impl<'a> DecodeContext<'a> {
                     parent.space().index()
                 ))
             })?;
+        self.charge_collection_items(1, "register borrowed space")?;
         let space = self.allocate_space()?;
         Ok(View::over_space(child.window(), space))
     }
@@ -942,7 +949,7 @@ impl<'a> ExpandWriter<'_, 'a> {
     /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         self.check_exact()?;
-        let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
+        let bytes = self.ctx.arena.alloc(self.ctx, self.buffer.into_boxed_slice())?;
         let space = self.ctx.allocate_space()?;
         Ok(View::over_space(bytes, space))
     }
@@ -977,6 +984,33 @@ mod tests {
     use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
     use crate::decode::{ResourceDimension, ResourceFailure};
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+    #[test]
+    fn zero_collection_limit_refuses_second_empty_finalization() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        for _ in 0..2 {
+            let result = ctx.begin_expand(super::ExpandSpec::Exact(0))
+                .and_then(|writer| writer.finalize());
+            assert!(matches!(result, Err(crate::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems));
+        }
+    }
+
+    #[test]
+    fn one_collection_slot_admits_only_one_empty_finalization() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(ctx.begin_expand(super::ExpandSpec::Exact(0)).expect("empty expansion")
+            .finalize().expect("first registry slot").window().is_empty());
+        assert!(matches!(ctx.begin_expand(super::ExpandSpec::Exact(0)).expect("empty expansion")
+            .finalize(), Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1));
+    }
 
     struct RewindFails(Cursor<Vec<u8>>);
 
