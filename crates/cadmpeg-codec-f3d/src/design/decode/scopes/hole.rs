@@ -7,7 +7,7 @@ use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::records::feature::hole;
 use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;

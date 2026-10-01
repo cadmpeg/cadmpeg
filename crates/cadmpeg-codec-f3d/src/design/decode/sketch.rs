@@ -12,7 +12,8 @@ use cadmpeg_core::container::ContainerRole;
 use crate::bytes::{f64s_at, take_reference, Reference};
 use crate::container::ContainerScan;
 use crate::design::decode::text::lp_utf16_bounded_charged;
-use crate::design::decode::text::{design_record_id_charged, lp_ascii_filtered_view};
+use crate::bytes::lp_ascii_filtered_view;
+use crate::design::decode::text::{design_record_id_charged};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
@@ -2316,11 +2317,11 @@ enum SketchTextIdentity {
 
 /// Read one parameter-reference slot in the given form, advancing `cursor` by
 /// what that form occupies. An omitted member reads as a null reference.
-fn read_text_reference(
-    payload: &[u8],
+fn read_text_reference<'a>(
+    payload: &'a [u8],
     cursor: &mut usize,
     slot: TextReferenceSlot,
-) -> Option<Reference> {
+) -> Option<Reference<&'a str, crate::bytes::utf16::Utf16View<'a>>> {
     match slot {
         TextReferenceSlot::Omitted => Some(Reference::Null),
         TextReferenceSlot::Written => take_reference(payload, cursor),
@@ -2384,7 +2385,7 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
 }
 
 /// The record index a reference names, absent when the reference is null.
-fn reference_index(reference: &Reference) -> Option<u32> {
+fn reference_index<G: AsRef<str>, L>(reference: &Reference<G, L>) -> Option<u32> {
     reference
         .target()
         .and_then(|target| u32::try_from(target).ok())
@@ -2994,10 +2995,10 @@ impl DecodedSketchPoint {
     }
 }
 
-fn take_local_sketch_reference(
-    payload: &[u8],
+fn take_local_sketch_reference<'a>(
+    payload: &'a [u8],
     cursor: &mut usize,
-) -> Option<(u32, Option<String>)> {
+) -> Option<(u32, Option<&'a str>)> {
     let reference = take_reference(payload, cursor)?;
     let (target, inline_type_guid) = reference.into_local()?;
     Some((u32::try_from(target).ok()?, inline_type_guid))

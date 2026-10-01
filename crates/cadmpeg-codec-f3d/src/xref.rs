@@ -21,9 +21,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
 
+use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
-    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_ascii_strict_charged,
-    lp_utf16_bounded, lp_utf16_bounded_charged, take_reference, take_reference_charged,
+    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict, lp_ascii_strict_charged,
+    lp_utf16_bounded_view, lp_utf16_bounded_charged, take_reference, take_reference_charged,
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
@@ -950,6 +951,7 @@ fn occurrence_placements_with_failures(
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
             failures.push(OccurrencePlacementFailure { link_names });
         } else if let Some(link_name) = legacy_occurrence_role(body) {
+            let link_name = link_name.to_retained(ctx, "retain F3D UTF-16 string")?;
             let link_names = ctx.collect_vec([link_name], "collect F3D legacy xref role")?;
 
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
@@ -966,8 +968,10 @@ fn occurrence_placement(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Result<Option<OccurrencePlacement>, CodecError> {
-    if let Some(placement) = legacy_occurrence_placement(body) {
-        return Ok(Some(placement));
+    if let Some((role, transform)) = legacy_occurrence_placement(body) {
+        let role = role.to_retained(decode, "retain F3D UTF-16 string")?;
+        let link_names = decode.collect_vec([role], "collect F3D legacy xref role")?;
+        return Ok(Some(OccurrencePlacement { link_names, transform }));
     }
     if let Some(placement) = repeated_target_occurrence_placement(decode, body)? {
         return Ok(Some(placement));
@@ -983,7 +987,7 @@ fn occurrence_placement(
         return Ok(None);
     };
     let mut link_names = decode.collection_vec(1, "collect F3D grouped placement link name")?;
-    link_names.push(link_name);
+    link_names.push(link_name.to_retained(decode, "retain F3D UTF-16 string")?);
     Ok(Some(OccurrencePlacement {
         link_names,
         transform: None,
@@ -1172,12 +1176,12 @@ pub(crate) fn repeated_target_component_insert(
 /// generation. The carrier has no matrix; its placement is the stored
 /// identity transform. The repeated GUID and role fields are part of the
 /// carrier grammar, not an occurrence-count signal.
-pub(crate) fn grouped_component_insert_identity(
-    bytes: &[u8],
+pub(crate) fn grouped_component_insert_identity<'a>(
+    bytes: &'a [u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'a>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1189,12 +1193,12 @@ pub(crate) fn grouped_component_insert_identity(
 
 /// Parse the class-380 grouped identity carrier used by the class-410/class-261
 /// `Component Insert` generation.
-pub(crate) fn grouped_component_insert_identity_class380(
-    bytes: &[u8],
+pub(crate) fn grouped_component_insert_identity_class380<'a>(
+    bytes: &'a [u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'a>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1206,12 +1210,12 @@ pub(crate) fn grouped_component_insert_identity_class380(
 
 /// Parse the class-369 grouped identity carrier used by the class-426/class-258
 /// `Component Insert` generation.
-pub(crate) fn grouped_component_insert_identity_class369(
-    bytes: &[u8],
+pub(crate) fn grouped_component_insert_identity_class369<'a>(
+    bytes: &'a [u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'a>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1223,12 +1227,12 @@ pub(crate) fn grouped_component_insert_identity_class369(
 
 /// Parse the variable-role grouped identity carrier used by the class-434/
 /// class-266 `Component Insert` generation.
-pub(crate) fn grouped_component_insert_identity_class341(
-    bytes: &[u8],
+pub(crate) fn grouped_component_insert_identity_class341<'a>(
+    bytes: &'a [u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'a>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1238,13 +1242,13 @@ pub(crate) fn grouped_component_insert_identity_class341(
     )
 }
 
-fn grouped_component_insert_identity_with_layout(
-    bytes: &[u8],
+fn grouped_component_insert_identity_with_layout<'a>(
+    bytes: &'a [u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
     expected_class_tag: &str,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'a>, usize)> {
     const MARKER_AFTER_ROLE: &[u8] = &[0, 1, 0, 0, 0, 0, 1, 0, 0, 0];
     const CLASS_369_GUID_ROLE_MARKER: &[u8] = &[0, 3, 0, 0, 0, 0, 1, 0, 0, 0];
     const CLASS_369_EXTERNAL_ROLE_MARKER: &[u8] = &[0, 4, 0, 0, 0, 0, 1, 0, 0, 0];
@@ -1253,7 +1257,7 @@ fn grouped_component_insert_identity_with_layout(
     const CLASS_341_REPEAT_MARKER: &[u8] = &[1, 0, 0, 0, 0];
     const CLOSURE: &[u8] = &[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
     let carrier_span = relation_at.checked_sub(carrier_at)?;
     if class_tag != expected_class_tag
         || after_tag != carrier_at + 7
@@ -1276,12 +1280,12 @@ fn grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at + grouped_identity_layout::OCCURRENCE_IDENTITY,
     )?;
-    let (component_guid, mut at) = lp_utf16_bounded(
+    let (component_guid, mut at) = lp_utf16_bounded_view(
         bytes,
         carrier_at + grouped_identity_layout::FIRST_COMPONENT_GUID,
         36..=36,
     )?;
-    if !is_guid_relaxed(&component_guid) {
+    if !component_guid.is_guid_relaxed() {
         return None;
     }
     if bytes.get(at) != Some(&0) {
@@ -1296,15 +1300,12 @@ fn grouped_component_insert_identity_with_layout(
     let first_role_at = at;
     let variable_role = matches!(expected_class_tag, "341" | "369");
     let role_bounds = if variable_role { 36..=256 } else { 36..=36 };
-    let (role, next) = lp_utf16_bounded(bytes, at, role_bounds.clone())?;
+    let (role, next) = lp_utf16_bounded_view(bytes, at, role_bounds.clone())?;
     let valid_role = if variable_role {
-        is_guid_relaxed(&role)
-            || (is_guid_prefix(&role)
-                && role
-                    .get(36..)
-                    .is_some_and(|suffix| suffix.starts_with("_urn:")))
+        role.is_guid_relaxed()
+            || role.is_guid_urn_role()
     } else {
-        is_guid_relaxed(&role)
+        role.is_guid_relaxed()
     };
     if !valid_role {
         return None;
@@ -1324,13 +1325,13 @@ fn grouped_component_insert_identity_with_layout(
     }
     at += marker_after_role.len();
 
-    let (metadata_guid_a, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&metadata_guid_a) {
+    let (metadata_guid_a, next) = lp_utf16_bounded_view(bytes, at, 36..=36)?;
+    if !metadata_guid_a.is_guid_relaxed() {
         return None;
     }
     at = next;
-    let (metadata_guid_b, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&metadata_guid_b) {
+    let (metadata_guid_b, next) = lp_utf16_bounded_view(bytes, at, 36..=36)?;
+    if !metadata_guid_b.is_guid_relaxed() {
         return None;
     }
     at = next;
@@ -1352,9 +1353,9 @@ fn grouped_component_insert_identity_with_layout(
         at += MARKER_AFTER_METADATA.len();
     }
 
-    let (repeated_component_guid, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&repeated_component_guid)
-        || !repeated_component_guid.eq_ignore_ascii_case(&component_guid)
+    let (repeated_component_guid, next) = lp_utf16_bounded_view(bytes, at, 36..=36)?;
+    if !repeated_component_guid.is_guid_relaxed()
+        || !repeated_component_guid.eq_ignore_ascii_case(component_guid)
     {
         return None;
     }
@@ -1369,8 +1370,8 @@ fn grouped_component_insert_identity_with_layout(
         return None;
     }
     at = next;
-    let (repeated_role, next) = lp_utf16_bounded(bytes, at, role_bounds.clone())?;
-    if !repeated_role.eq_ignore_ascii_case(&role) {
+    let (repeated_role, next) = lp_utf16_bounded_view(bytes, at, role_bounds.clone())?;
+    if !repeated_role.eq_ignore_ascii_case(role) {
         return None;
     }
     at = next;
@@ -1379,8 +1380,8 @@ fn grouped_component_insert_identity_with_layout(
     }
     at += MARKER_AFTER_PLACEMENT.len();
 
-    let (final_role, next) = lp_utf16_bounded(bytes, at, role_bounds)?;
-    if !final_role.eq_ignore_ascii_case(&role) {
+    let (final_role, next) = lp_utf16_bounded_view(bytes, at, role_bounds)?;
+    if !final_role.eq_ignore_ascii_case(role) {
         return None;
     }
     at = next;
@@ -1443,7 +1444,7 @@ fn modern_occurrence_placement(
 /// after the repeated target envelope. The dynamic class tag is deliberately
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
-fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
+fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f64; 4]; 4]>)> {
     let mut at = legacy_occurrence_prefix(body)?;
     let identity_marker = *body.get(at)?;
     at += 1;
@@ -1460,8 +1461,8 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
         return None;
     }
     at += 4;
-    let (link_name, after_role) = lp_utf16_bounded(body, at, 36..=36)?;
-    if !is_guid_relaxed(&link_name) {
+    let (link_name, after_role) = lp_utf16_bounded_view(body, at, 36..=36)?;
+    if !link_name.is_guid_relaxed() {
         return None;
     }
     at = after_role;
@@ -1469,11 +1470,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
         return None;
     }
     at += 12;
-    (at == body.len()).then_some(OccurrencePlacement {
-        link_names: vec![link_name],
-
-        transform,
-    })
+    (at == body.len()).then_some((link_name, transform))
 }
 
 /// Return the role from a structurally valid legacy placement prefix.
@@ -1481,7 +1478,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
 /// The role is recovered even when the transform or closing tail is damaged,
 /// so the caller can report an undecoded typed placement against the correct
 /// external reference instead of treating it as an unrelated record.
-fn legacy_occurrence_role(body: &[u8]) -> Option<String> {
+fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
     let mut at = legacy_occurrence_prefix(body)?;
     match *body.get(at)? {
         1 => at += 1,
@@ -1492,8 +1489,8 @@ fn legacy_occurrence_role(body: &[u8]) -> Option<String> {
         return None;
     }
     at += 4;
-    let (link_name, _) = lp_utf16_bounded(body, at, 36..=36)?;
-    is_guid_relaxed(&link_name).then_some(link_name)
+    let (link_name, _) = lp_utf16_bounded_view(body, at, 36..=36)?;
+    link_name.is_guid_relaxed().then_some(link_name)
 }
 
 /// Parse the shared prefix of the legacy identity and matrix forms.
@@ -1526,8 +1523,8 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<usize> {
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = lp_utf16_bounded(body, at, 36..=36)?;
-        if !is_guid_relaxed(&guid) {
+        let (guid, next) = lp_utf16_bounded_view(body, at, 36..=36)?;
+        if !guid.is_guid_relaxed() {
             return None;
         }
         at = next;

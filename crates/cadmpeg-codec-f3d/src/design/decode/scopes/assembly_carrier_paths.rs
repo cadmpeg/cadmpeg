@@ -407,7 +407,7 @@ mod tests {
         exact_class_264_record_frame, exact_class_307_joint_origin, exact_class_363_identity_frame,
         exact_class_363_identity_guids, CarrierFrame,
     };
-    use crate::bytes::lp_utf16_bounded;
+    use crate::bytes::lp_utf16_bounded_charged;
     use crate::layout::{
         assembly_class_307_264_joint_origin_scope as class_307_joint_origin,
         assembly_class_363_264_frame_388_identity as class_363_identity,
@@ -499,11 +499,11 @@ mod tests {
             Some((0, class_307_joint_origin::LEN))
         );
         assert_eq!(
-            lp_utf16_bounded(
+            crate::test_support::with_decode_context(|ctx| lp_utf16_bounded_charged(ctx,
                 &bytes,
                 class_307_joint_origin::KIND_CODE_UNIT_COUNT,
                 11..=11,
-            ),
+            ).unwrap()),
             Some((
                 "JointOrigin".into(),
                 class_307_joint_origin::FEATURE_ORDINAL

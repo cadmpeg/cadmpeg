@@ -9,7 +9,7 @@ use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{
     native_scope_charged, next_indexed_record_offset, IndexedRecordOffsets,
 };
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;

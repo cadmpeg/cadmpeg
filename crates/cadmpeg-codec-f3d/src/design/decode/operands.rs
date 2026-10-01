@@ -21,9 +21,8 @@ use crate::design::decode::sketch::{
     next_indexed_record_offset, next_indexed_record_offset_with_index, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
-use crate::design::decode::text::{
-    lp_ascii_filtered_view, lp_utf16_bounded_charged, relaxed_guid_end,
-};
+use crate::bytes::lp_ascii_filtered_view;
+use crate::design::decode::text::{lp_utf16_bounded_charged, relaxed_guid_end};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;

@@ -10,7 +10,7 @@ use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::operands::parse_entity_selection_prefix;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::ids::native_stream;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
 use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;

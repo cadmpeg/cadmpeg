@@ -46,7 +46,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::text::{
     design_record_id_charged, lp_utf16_bounded_charged, lp_utf16_bounded_scoped,
 };
