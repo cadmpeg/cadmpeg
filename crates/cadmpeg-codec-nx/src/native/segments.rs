@@ -412,7 +412,7 @@ fn terminal_feature_body_indices(
     }
     let aliases = body_alias_roots(ctx, bindings)?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
-    let segment_boolean_operations = segment_boolean_operation_labels(ctx, booleans, data_blocks)?;
+    let (segment_boolean_operations, _segment_boolean_storage) = ctx.with_scoped_storage("NX segment Boolean operation labels", || segment_boolean_operation_labels(ctx, booleans, data_blocks))?;
     let mut kinds_reservation = ctx.reserve_scoped(0, "NX terminal operation kinds")?;
     let mut operation_kinds = BTreeMap::new();
     for label in &chronological_labels {
@@ -699,7 +699,7 @@ fn segment_boolean_operation_labels(
     data_blocks: &[DataBlock],
 ) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
     let mut labels = BTreeSet::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX segment Boolean operation labels")?;
+
     for operation in booleans {
         if !matches!(
             boolean_offset_store_resolution(ctx, operation, data_blocks)?,
@@ -707,12 +707,9 @@ fn segment_boolean_operation_labels(
         ) {
             continue;
         }
-        let bytes = (std::mem::size_of::<String>() * 4)
-            .checked_add(operation.operation_label.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX segment Boolean operation labels", 0, 1))?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+
         let mut label = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut label,
             operation.operation_label.len(),
             "allocate NX segment Boolean operation label",
@@ -1046,16 +1043,9 @@ pub(super) fn segment_body_bindings(
             1,
             "nx segment body bindings",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "nx segment body binding identity",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(link_len),
-            "nx segment body stream link identity",
-        )?;
+
         let mut id = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut id,
             id_len,
             "nx segment body binding identity",
@@ -1068,7 +1058,7 @@ pub(super) fn segment_body_bindings(
             )
         })?;
         let mut stream_link = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut stream_link,
             link_len,
             "nx segment body stream link identity",

@@ -3261,24 +3261,18 @@ fn attach_feature_operations(
         })?;
         let mut id_text = String::new();
         ctx.charge_work(1, "NX operation feature identity index")?;
-        if !feature_ids_by_operation.contains_key(label.id.as_str()) {
-            ctx.charge_collection_items(1, "NX operation feature identity index")?;
-            feature_id_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, FeatureId)>(),
-            ))?;
-        }
-        feature_id_reservation.grow(cadmpeg_core::decode::u64_from_index(id_len))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+
+        feature_id_reservation.with_storage(|| ctx.try_reserve_retained_text(
             &mut id_text,
             id_len,
             "NX operation feature identity",
-        )?;
+        ))?;
         id_text.push_str(PREFIX);
         id_text.push_str(key);
         let Ok(id) = FeatureId::mint(id_text) else {
             continue;
         };
-        feature_ids_by_operation.insert(label.id.as_str(), id);
+        feature_id_reservation.with_storage(|| ctx.insert_btree_map(&mut feature_ids_by_operation, label.id.as_str(), id, "NX operation feature identity index"))?;
     }
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
@@ -3348,8 +3342,7 @@ fn attach_feature_operations(
     let mut parameter_owner_reservation = ctx.reserve_scoped(0, "NX parameter owner index")?;
     for parameter in &ir.model.parameters {
         ctx.charge_work(1, "NX parameter owner index")?;
-        let bytes = std::mem::size_of::<(ParameterId, Option<FeatureId>)>();
-        parameter_owner_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+
         let key = parameter_owner_reservation.with_storage(|| {
             parameter
                 .id
@@ -3362,12 +3355,12 @@ fn attach_feature_operations(
                 .map(|owner| owner.try_clone_for_decode(ctx, "NX parameter owner index"))
                 .transpose()
         })?;
-        ctx.insert_btree_map(
+        parameter_owner_reservation.with_storage(|| ctx.insert_btree_map(
             &mut parameter_owners,
             key,
             owner,
             "NX parameter owner index",
-        )?;
+        ))?;
     }
     let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
     for (annotation_ordinal, label) in labels
@@ -3397,7 +3390,7 @@ fn attach_feature_operations(
                 })?;
             ctx.reserve_vec(losses, 1, "NX TEXT annotation losses")?;
             let mut message = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            ctx.try_reserve_retained_text(
                 &mut message,
                 message_len,
                 "allocate NX TEXT annotation order loss",
@@ -5673,17 +5666,12 @@ fn attach_feature_operations(
                 )?;
                 let body_len = BODY_PREFIX.len() + 10;
                 ctx.charge_collection_items(1, "NX feature result bodies")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(
-                        body_len,
-                    ),
-                    "NX feature result body",
-                )?;
+
                 let mut body_text = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                ctx.try_reserve_retained_text(
                     &mut body_text,
                     body_len,
-                    "allocate NX feature result body identity",
+                    "NX feature result body",
                 )?;
                 std::fmt::Write::write_fmt(
                     &mut body_text,
@@ -5758,30 +5746,16 @@ fn attach_feature_operations(
                 .find(|feature| feature.id == *initial_body_id)
             {
                 const WITNESS_VALUE: &str = "primary-body-relations";
-                let witness_bytes =
-                    std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
-                        .checked_add(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len())
-                        .and_then(|bytes| bytes.checked_add(WITNESS_VALUE.len()))
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit(
-                                "NX primary body closure witness",
-                                0,
-                                cadmpeg_core::decode::u64_from_index(WITNESS_VALUE.len()),
-                            )
-                        })?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(witness_bytes),
-                    "NX primary body closure witness",
-                )?;
+
                 let mut key = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                ctx.try_reserve_retained_text(
                     &mut key,
                     NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len(),
                     "allocate NX primary body closure witness key",
                 )?;
                 key.push_str(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS);
                 let mut value = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                ctx.try_reserve_retained_text(
                     &mut value,
                     WITNESS_VALUE.len(),
                     "allocate NX primary body closure witness value",
@@ -5849,8 +5823,8 @@ fn result_topology_id(
             cadmpeg_core::decode::u64_from_index(key_len),
         )
     })?;
-    let _key_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(key_len),
+    let mut key_reservation = ctx.reserve_scoped(
+        0,
         "NX result topology key",
     )?;
     ctx.charge_work(
@@ -5862,11 +5836,11 @@ fn result_topology_id(
         "NX result topology identity",
     )?;
     let mut owned_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    key_reservation.with_storage(|| ctx.try_reserve_retained_text(
         &mut owned_key,
         key_len,
         "allocate NX result topology key",
-    )?;
+    ))?;
     owned_key.push_str(key);
     if let Some(ordinal) = ordinal {
         std::fmt::Write::write_fmt(&mut owned_key, format_args!("-{ordinal:010}"))
@@ -6058,12 +6032,7 @@ fn feature_result_group_members(
         };
         let identity_len = 5 + 10 + 1 + kind.len() + 1 + 10;
         ctx.charge_collection_items(1, "NX feature result group members")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                identity_len,
-            ),
-            "NX feature result group member identity",
-        )?;
+
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(identity_len),
             "NX feature result group member identity formatting",
@@ -6074,10 +6043,10 @@ fn feature_result_group_members(
             "allocate NX feature result group members",
         )?;
         let mut text = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut text,
             identity_len,
-            "allocate NX feature result group member identity",
+            "NX feature result group member identity",
         )?;
         std::fmt::Write::write_fmt(
             &mut text,
@@ -6115,29 +6084,17 @@ fn native_result_body_identity(
             cadmpeg_core::decode::u64_from_index(native.len()),
         )
     })?;
-    let retained_bytes = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
-        .checked_add(local_len)
-        .and_then(|bytes| bytes.checked_add(native.len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX result body identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(local_len),
-            )
-        })?;
+
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(local_len),
         "NX result body identity formatting",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(retained_bytes),
-        "NX result body identity",
-    )?;
+
     let mut local = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut local,
         local_len,
-        "allocate NX result body local identity",
+        "NX result body identity",
     )?;
     local.push_str(native);
     local.push_str(suffix);
@@ -6145,10 +6102,10 @@ fn native_result_body_identity(
         return Ok(None);
     };
     let mut native_ref = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut native_ref,
         native.len(),
-        "allocate NX result body native identity",
+        "NX result body identity",
     )?;
     native_ref.push_str(native);
     Ok(Some((local, native_ref)))
@@ -6246,7 +6203,7 @@ fn attach_sketch_graph(
         .unwrap_or(label.id.as_str());
     let sketch_id_bytes = operation_key
         .len()
-        .checked_mul(3)
+        .checked_mul(2)
         .and_then(|bytes| bytes.checked_add(40))
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -6264,7 +6221,7 @@ fn attach_sketch_graph(
         "NX sketch identity",
     )?;
     let mut owned_operation_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut owned_operation_key,
         operation_key.len(),
         "allocate NX sketch identity",
@@ -6708,7 +6665,7 @@ fn sketch_entity_identity(
         )
     })?;
     let charged_len = key_len
-        .checked_mul(3)
+        .checked_mul(2)
         .and_then(|bytes| bytes.checked_add(48))
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -6726,7 +6683,7 @@ fn sketch_entity_identity(
         "NX sketch entity identity",
     )?;
     let mut text = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut text,
         key_len,
         "allocate NX sketch entity identity",
@@ -7028,25 +6985,12 @@ fn operation_source_properties(
                 .len()
                 .checked_add(10)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX operation source property key", 0, 10))?;
-            let retained_bytes = std::mem::size_of::<(String, String)>()
-                .checked_add(key_len)
-                .and_then(|bytes| bytes.checked_add(frame.id.len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX operation source property",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(frame.id.len()),
-                    )
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(retained_bytes),
-                "NX operation source property",
-            )?;
+
             let mut key = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            ctx.try_reserve_retained_text(
                 &mut key,
                 key_len,
-                "allocate NX operation source property key",
+                "NX operation source property",
             )?;
             std::fmt::Write::write_fmt(&mut key, format_args!("{PREFIX}{}", frame.ordinal))
                 .map_err(|_| {
@@ -7055,10 +6999,10 @@ fn operation_source_properties(
                     )
                 })?;
             let mut value = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            ctx.try_reserve_retained_text(
                 &mut value,
                 frame.id.len(),
-                "allocate NX operation source property value",
+                "NX operation source property",
             )?;
             value.push_str(&frame.id);
             ctx.insert_btree_map(properties, key, value, "NX operation source properties")?;
@@ -7083,32 +7027,19 @@ fn insert_operation_source_property(
     key: &str,
     value: &str,
 ) -> Result<(), CodecError> {
-    let retained_bytes = std::mem::size_of::<(String, String)>()
-        .checked_add(key.len())
-        .and_then(|bytes| bytes.checked_add(value.len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX operation source property",
-                0,
-                cadmpeg_core::decode::u64_from_index(value.len()),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(retained_bytes),
-        "NX operation source property",
-    )?;
+
     let mut owned_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut owned_key,
         key.len(),
-        "allocate NX operation source property key",
+        "NX operation source property",
     )?;
     owned_key.push_str(key);
     let mut owned_value = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut owned_value,
         value.len(),
-        "allocate NX operation source property value",
+        "NX operation source property",
     )?;
     owned_value.push_str(value);
     ctx.insert_btree_map(
@@ -7148,15 +7079,7 @@ fn insert_source_property(
             cadmpeg_core::decode::u64_from_index(value_length.0),
         )
     })?;
-    let retained_bytes = std::mem::size_of::<(String, String)>()
-        .checked_add(text_bytes)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX source property",
-                0,
-                cadmpeg_core::decode::u64_from_index(text_bytes),
-            )
-        })?;
+
     let work = text_bytes.checked_mul(2).ok_or_else(|| {
         ctx.refuse_codec_limit(
             "NX source property formatting",
@@ -7168,24 +7091,21 @@ fn insert_source_property(
         cadmpeg_core::decode::u64_from_index(work),
         "NX source property formatting",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(retained_bytes),
-        "NX source property",
-    )?;
+
     let mut owned_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut owned_key,
         key_length.0,
-        "allocate NX source property key",
+        "NX source property",
     )?;
     std::fmt::write(&mut owned_key, key).map_err(|_| {
         CodecError::InvalidInput("NX source property key formatting failed".to_string())
     })?;
     let mut owned_value = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut owned_value,
         value_length.0,
-        "allocate NX source property value",
+        "NX source property",
     )?;
     std::fmt::write(&mut owned_value, value).map_err(|_| {
         CodecError::InvalidInput("NX source property value formatting failed".to_string())
@@ -7466,13 +7386,13 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
             }
             _ => {
                 const BOUND: usize = 64;
-                field_reservation.grow(cadmpeg_core::decode::u64_from_index(BOUND))?;
+
                 let mut name = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                field_reservation.with_storage(|| ctx.try_reserve_retained_text(
                     &mut name,
                     BOUND,
                     "allocate NX Parasolid field name component",
-                )?;
+                ))?;
                 std::fmt::Write::write_fmt(
                     &mut name,
                     format_args!(
@@ -7719,27 +7639,16 @@ fn insert_parasolid_topology_target(
         cadmpeg_core::decode::u64_from_index(targets.len()),
         "NX Parasolid topology target lookup",
     )?;
-    let text_bytes = id.len();
-    let bytes = std::mem::size_of::<(String, AttributeTarget)>()
-        .checked_mul(4)
-        .and_then(|bytes| bytes.checked_add(text_bytes))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid topology target entry",
-                0,
-                cadmpeg_core::decode::u64_from_index(text_bytes),
-            )
-        })?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+
     let mut key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    reservation.with_storage(|| ctx.try_reserve_retained_text(
         &mut key,
         id.len(),
         "allocate NX Parasolid topology target key",
-    )?;
+    ))?;
     key.push_str(id);
     let target = reservation.with_storage(target)?;
-    ctx.insert_btree_map(targets, key, target, "NX Parasolid topology targets")?;
+    reservation.with_storage(|| ctx.insert_btree_map(targets, key, target, "NX Parasolid topology targets"))?;
     Ok(())
 }
 
@@ -7812,26 +7721,17 @@ fn parasolid_topology_attribute_contexts<'a>(
             cadmpeg_core::decode::u64_from_index(entities_by_reference.len()),
             "NX Parasolid attribute entity lookup",
         )?;
-        if !entities_by_reference.contains_key(key) {
-            ctx.charge_collection_items(1, "NX Parasolid attribute entity groups")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, BTreeSet<&str>)>() * 4,
-            ))?;
-        }
-        let entities = entities_by_reference.entry(key).or_default();
+        reservation.with_storage(|| ctx.admit_btree_entry(&entities_by_reference, &key, "NX Parasolid attribute entity groups"))?;
+                let entities = entities_by_reference.entry(key).or_default();
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(entities.len()),
             "NX Parasolid attribute entity uniqueness",
         )?;
-        if ctx.insert_btree_set(
+        reservation.with_storage(|| ctx.insert_btree_set(
             entities,
             class_use.entity_51_record.as_str(),
             "NX Parasolid attribute group entity",
-        )? {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<&str>() * 4,
-            ))?;
-        }
+        ))?;
     }
     let mut references_by_target = BTreeMap::<String, Vec<_>>::new();
     for reference in topology_references {
@@ -7843,13 +7743,13 @@ fn parasolid_topology_attribute_contexts<'a>(
                 cadmpeg_core::decode::u64_from_index(kind.len()),
             )
         })?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(key_capacity))?;
+
         let mut key = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        reservation.with_storage(|| ctx.try_reserve_retained_text(
             &mut key,
             key_capacity,
             "allocate NX Parasolid topology reference key",
-        )?;
+        ))?;
         std::fmt::Write::write_fmt(
             &mut key,
             format_args!(
@@ -7864,19 +7764,8 @@ fn parasolid_topology_attribute_contexts<'a>(
             cadmpeg_core::decode::u64_from_index(references_by_target.len()),
             "NX Parasolid topology reference lookup",
         )?;
-        if !references_by_target.contains_key(&key) {
-            ctx.charge_collection_items(1, "NX Parasolid topology reference groups")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(
-                    String,
-                    Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
-                )>() * 4,
-            ))?;
-        }
+        reservation.with_storage(|| ctx.admit_btree_entry(&references_by_target, &key, "NX Parasolid topology reference groups"))?;
         ctx.charge_collection_items(1, "NX Parasolid topology reference")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &crate::native::parasolid::ParasolidTopologyAttributeListReference,
-        >()))?;
         let references = references_by_target.entry(key).or_default();
         reservation.with_storage(|| ctx.reserve_capacity(
             references,
@@ -7900,10 +7789,7 @@ fn parasolid_topology_attribute_contexts<'a>(
         };
         let mut entities = BTreeSet::new();
         if let Some(entity) = reference.attribute_list_record.as_deref() {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<&str>() * 4,
-            ))?;
-            ctx.insert_btree_set(&mut entities, entity, "NX Parasolid reference entity")?;
+            reservation.with_storage(|| ctx.insert_btree_set(&mut entities, entity, "NX Parasolid reference entity"))?;
         }
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(entities_by_reference.len()),
@@ -7915,11 +7801,7 @@ fn parasolid_topology_attribute_contexts<'a>(
                     cadmpeg_core::decode::u64_from_index(entities.len()),
                     "NX Parasolid reference entity uniqueness",
                 )?;
-                if ctx.insert_btree_set(&mut entities, entity, "NX Parasolid reference entity")? {
-                    reservation.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<&str>() * 4,
-                    ))?;
-                }
+                reservation.with_storage(|| ctx.insert_btree_set(&mut entities, entity, "NX Parasolid reference entity"))?;
             }
         }
         let multiple_entities = entities.len() > 1;
@@ -7996,17 +7878,14 @@ fn single_string_attribute_values(
     ctx: &DecodeContext<'_>,
     text: &str,
 ) -> Result<Vec<AttributeValue>, CodecError> {
-    let bytes = text.len();
+
     ctx.charge_collection_items(1, "NX Parasolid string attribute values")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX Parasolid string attribute value",
-    )?;
+
     let mut owned = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut owned,
         text.len(),
-        "allocate NX Parasolid string attribute value",
+        "NX Parasolid string attribute value",
     )?;
     owned.push_str(text);
     let mut values = Vec::new();
@@ -8506,34 +8385,14 @@ fn text_semantic_annotation(
                 cadmpeg_core::decode::u64_from_index(native_ref.len()),
             )
         })?;
-    let retained_bytes = std::mem::size_of::<SemanticAnnotation>()
-        .checked_add(std::mem::size_of::<String>())
-        .and_then(|bytes| {
-            bytes.checked_add(std::mem::size_of::<(
-                cadmpeg_core::text::NonBlankString,
-                String,
-            )>())
-        })
-        .and_then(|bytes| bytes.checked_add(id_len))
-        .and_then(|bytes| bytes.checked_add(native_ref.len().checked_mul(2)?))
-        .and_then(|bytes| bytes.checked_add(text.len()))
-        .and_then(|bytes| bytes.checked_add(font_family.len()))
-        .and_then(|bytes| bytes.checked_add(FONT_KEY.len()))
-        .and_then(|bytes| bytes.checked_add(4))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX TEXT annotation",
-                0,
-                cadmpeg_core::decode::u64_from_index(id_len),
-            )
-        })?;
+
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(native_ref.len()),
         "NX TEXT annotation identity",
     )?;
-    ctx.charge_collection_items(3, "NX TEXT annotation record, text and parameter")?;
+    ctx.charge_collection_items(2, "NX TEXT annotation record, text and parameter")?;
     ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(retained_bytes),
+        cadmpeg_core::decode::u64_from_index(id_len),
         "NX TEXT annotation",
     )?;
     let _identity_reservation = ctx.reserve_scoped(
@@ -8545,7 +8404,7 @@ fn text_semantic_annotation(
     };
     let copy = |source: &str| -> Result<String, CodecError> {
         let mut owned = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut owned,
             source.len(),
             "allocate NX TEXT annotation text",
@@ -8563,7 +8422,7 @@ fn text_semantic_annotation(
     let key = cadmpeg_core::text::NonBlankString::new(copy(FONT_KEY)?)
         .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
     let mut parameters = BTreeMap::new();
-    parameters.insert(key, copy(font_family)?);
+    ctx.insert_btree_map(&mut parameters, key, copy(font_family)?, "NX TEXT annotation record, text and parameter")?;
     Ok(Some(SemanticAnnotation {
         id,
         object: copy(native_ref)?,

@@ -359,16 +359,9 @@ fn insert_summary_attribute(
         SummaryValue::Text(text) => text.len(),
         SummaryValue::Number(number) => decimal_len(number),
     };
-    let text_len = key_len
-        .checked_add(value_len)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx summary attribute text", 0, u64::MAX))?;
-    ctx.charge_collection_items(1, "nx summary attributes")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(text_len),
-        "nx summary attribute text",
-    )?;
+
     let mut key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut key,
         key_len,
         "nx summary attribute text",
@@ -382,7 +375,7 @@ fn insert_summary_attribute(
         key.push_str(suffix);
     }
     let mut rendered = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut rendered,
         value_len,
         "nx summary attribute text",
@@ -392,6 +385,6 @@ fn insert_summary_attribute(
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")
             .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?,
     }
-    attributes.insert(key, rendered);
+    ctx.insert_btree_map(attributes, key, rendered, "nx summary attributes")?;
     Ok(())
 }

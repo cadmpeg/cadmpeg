@@ -776,8 +776,9 @@ fn render_expression<'a>(
         order: Vec::new(),
         dependency_ordinals: Vec::new(),
         seen_dependencies: HashSet::new(),
+        storage: ctx.reserve_scoped(0, "Inventor expression plan")?,
     };
-    let Some((root_length, _)) = plan.measure(reference)? else {
+    let Some((_root_length, _)) = plan.measure(reference)? else {
         return Ok(None);
     };
     let total = plan.order.iter().try_fold(0usize, |sum, ordinal| {
@@ -786,32 +787,31 @@ fn render_expression<'a>(
                 ctx.refuse_codec_limit("Inventor expression byte count", u64::MAX - 1, u64::MAX)
             })
     })?;
-    let reserved = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(total),
-        "render Inventor expression bytes",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(root_length),
-        "retain Inventor expression text",
-    )?;
+
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(total),
         "render Inventor expression bytes",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(plan.order.len()),
-        "memoize Inventor expression text",
-    )?;
+
+    let mut reserved = ctx.reserve_scoped(0, "render Inventor expression bytes")?;
     let mut rendered: HashMap<u32, String> = HashMap::new();
     for &ordinal in &plan.order {
         let length = plan.lengths[&ordinal].length;
         let mut text = String::new();
 
-        DecodeContext::reserve_admitted_string(
+        if ordinal == reference - 1 {
+            ctx.try_reserve_retained_text(
             &mut text,
             length,
-            "Inventor expression string allocation",
+            "retain Inventor expression text",
         )?;
+        } else {
+            reserved.with_storage(|| ctx.try_reserve_retained_text(
+            &mut text,
+            length,
+            "render Inventor expression bytes",
+        ))?;
+        }
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {
@@ -867,15 +867,17 @@ fn render_expression<'a>(
                 text.push(')');
             }
         }
+        reserved.with_storage(|| ctx.reserve_map(&mut rendered, 1, "memoize Inventor expression text"))?;
         rendered.insert(ordinal, text);
     }
     let root = reference - 1;
     let result = rendered.remove(&root).ok_or_else(|| {
         CodecError::Malformed("Inventor expression root missing after render".into())
     })?;
+    drop(rendered);
     drop(reserved);
     for ordinal in plan.dependency_ordinals {
-        ctx.charge_collection_items(1, "collect Inventor expression dependency ids")?;
+        ctx.reserve_vec(dependencies, 1, "collect Inventor expression dependency ids")?;
         let target = parameters[&(token, ordinal)];
         dependencies.push(parameter_id(ctx, target)?);
     }
@@ -893,6 +895,7 @@ struct ExpressionRenderPlan<'a, 'b> {
     order: Vec<u32>,
     dependency_ordinals: Vec<u32>,
     seen_dependencies: HashSet<u32>,
+    storage: cadmpeg_core::decode::ScopedReservation<'b>,
 }
 
 #[derive(Clone, Copy)]
@@ -921,11 +924,11 @@ impl ExpressionRenderPlan<'_, '_> {
         let Some(expression) = self.expressions.get(&(self.token, ordinal)) else {
             return Ok(None);
         };
-        self.ctx.insert_hash_set(
+        self.storage.with_storage(|| self.ctx.insert_hash_set(
             &mut self.visiting,
             ordinal,
             "track Inventor expression ancestors",
-        )?;
+        ))?;
         let measured = match &expression.kind {
             PmDcExpressionKind::Value { value, .. } => {
                 let Some(unit) = resolve_unit(self.token, expression.unit.index(), self.units)
@@ -959,10 +962,11 @@ impl ExpressionRenderPlan<'_, '_> {
                     return Ok(None);
                 };
                 if !self.seen_dependencies.contains(&target_ordinal) {
-                    self.ctx
-                        .charge_collection_items(2, "track Inventor expression dependencies")?;
-                    self.seen_dependencies.insert(target_ordinal);
-                    self.dependency_ordinals.push(target_ordinal);
+                    self.storage.with_storage(|| {
+                        self.ctx.reserve_set(&mut self.seen_dependencies, 1, "track Inventor expression dependencies")?;
+                        self.seen_dependencies.insert(target_ordinal);
+                        self.ctx.push_vec(&mut self.dependency_ordinals, target_ordinal, "track Inventor expression dependencies")
+                    })?;
                 }
                 MeasuredExpression {
                     length: target.name.len(),
@@ -999,10 +1003,11 @@ impl ExpressionRenderPlan<'_, '_> {
             }
         };
         self.visiting.remove(&ordinal);
-        self.ctx
-            .charge_collection_items(2, "memoize Inventor expression shape")?;
-        self.lengths.insert(ordinal, measured);
-        self.order.push(ordinal);
+        self.storage.with_storage(|| {
+            self.ctx.reserve_map(&mut self.lengths, 1, "memoize Inventor expression shape")?;
+            self.lengths.insert(ordinal, measured);
+            self.ctx.push_vec(&mut self.order, ordinal, "memoize Inventor expression shape")
+        })?;
         Ok(Some((measured.length, measured.height)))
     }
 }
@@ -2568,14 +2573,23 @@ mod tests {
             kinds.push(shared_add(ordinal));
         }
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 100;
+        // Eight active/memoized nodes require sixteen hash buckets. The one
+        // dependency uses four set buckets and four vector slots; node order
+        // uses eight vector slots. Controls and padding add buckets + 31.
+        let plan_bytes = 16 * std::mem::size_of::<u32>() + 16 + 31
+            + 4 * std::mem::size_of::<u32>() + 4 + 31
+            + 16 * std::mem::size_of::<(u32, super::MeasuredExpression)>() + 16 + 31
+            + 12 * std::mem::size_of::<u32>();
+        // The first rendered leaf is one byte, with four memo-map buckets.
+        let live = plan_bytes + 1 + 4 * std::mem::size_of::<(u32, String)>() + 4 + 31;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
         assert!(matches!(
             render_graph(&policy, kinds, 8),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::MaterializedBytes
                     && limit.operation == "render Inventor expression bytes"
-                    && limit.used == 0
-                    && limit.additional > limit.limit
+                    && limit.used == cadmpeg_core::decode::u64_from_index(live)
+                    && limit.additional == cadmpeg_core::decode::u64_from_index("(x) + (x)".len())
         ));
     }
 
@@ -2681,14 +2695,15 @@ mod tests {
         assert_eq!(admitted.1.len(), 1);
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            admitted.0.len() + admitted.1[0].as_str().len() - 1,
+            admitted.0.len() + 4 * std::mem::size_of::<ParameterId>()
+                + admitted.1[0].as_str().len() - 1,
         );
         assert!(matches!(
             render_graph(&policy, vec![reference_leaf()], 1),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain Inventor parameter id"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(admitted.0.len())
+                    && limit.used == cadmpeg_core::decode::u64_from_index(admitted.0.len() + 4 * std::mem::size_of::<ParameterId>())
         ));
     }
 

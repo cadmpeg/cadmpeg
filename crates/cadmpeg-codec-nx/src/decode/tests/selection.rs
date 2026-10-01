@@ -813,7 +813,7 @@ fn decode_assembly_reports_external_dependency() {
 
 fn directory_retained_bytes(name: &str) -> u64 {
     cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<crate::container::DirEntry>() + name.len(),
+        4 * std::mem::size_of::<crate::container::DirEntry>() + name.len(),
     )
 }
 
@@ -845,7 +845,7 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(stream.len() * 2);
+        directory_retained_bytes("/Root/UG_PART/UG_PART") + cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)
         .expect_err("directory bytes use part of the retained allowance");

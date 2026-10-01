@@ -109,7 +109,7 @@ pub(crate) fn classify_layers(
         .iter()
         .filter(|stream| stream.schema_token().is_some())
         .count();
-    let mut streams = ctx.collection_vec(schema_count, "nx schema streams")?;
+    let (mut streams, _streams_storage) = ctx.with_scoped_storage("nx schema streams", || ctx.collection_vec(schema_count, "nx schema streams"))?;
     for stream in &scan.streams {
         if let Some(schema) = stream.schema_token() {
             streams.push((stream, schema));
@@ -126,15 +126,13 @@ pub(crate) fn classify_layers(
         let label_len = 7usize.checked_add(digits).ok_or_else(|| {
             ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(digits))
         })?;
-        let text_bytes = label_len.checked_add(schema.value().len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
-        })?;
+
         ctx.charge_retained(
-            u64_from_index(text_bytes),
+            u64_from_index(schema.value().len()),
             "retain NX schema carrier labels",
         )?;
         let mut label = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut label,
             label_len,
             "nx schema carrier labels",

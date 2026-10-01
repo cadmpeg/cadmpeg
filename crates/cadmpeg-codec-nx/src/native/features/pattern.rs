@@ -1152,12 +1152,13 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         {
             continue;
         }
+        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
         let mut data_blocks = Vec::new();
         for reference in &graph {
             let Some(block) = reference.data_block.as_deref() else {
                 continue 'operations;
             };
-            ctx.reserve_vec(&mut data_blocks, 1, "NX pattern construction block IDs")?;
+            source_id_storage.with_storage(|| ctx.reserve_vec(&mut data_blocks, 1, "NX pattern construction block IDs"))?;
             data_blocks.push(ctx.copy_retained_text(block, "NX pattern construction block ID")?);
         }
         let Some(store) = data_blocks

@@ -3195,19 +3195,9 @@ pub(super) fn external_references(
     let strings = container.external_reference_strings(ctx)?;
     let count = strings.len();
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    let ordinal_bytes = strings
-        .iter()
-        .try_fold(0usize, |total, (entry, _, _)| {
-            total.checked_add(entry.name.len())
-        })
-        .and_then(|text_bytes| {
-            count
-                .checked_mul(std::mem::size_of::<(String, u32)>())
-                .and_then(|slots| slots.checked_add(text_bytes))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("nx external reference ordinals", 0, count_u64))?;
-    let _ordinal_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(ordinal_bytes),
+
+    let mut ordinal_reservation = ctx.reserve_scoped(
+        0,
         "nx external reference ordinals",
     )?;
     ctx.charge_collection_items(count_u64, "nx external references")?;
@@ -3227,13 +3217,13 @@ pub(super) fn external_references(
             current
         } else {
             let mut key = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            ordinal_reservation.with_storage(|| ctx.try_reserve_retained_text(
                 &mut key,
                 entry.name.len(),
                 "nx external reference ordinals",
-            )?;
+            ))?;
             key.push_str(&entry.name);
-            ctx.insert_btree_map(&mut ordinals, key, 1, "nx external reference ordinals")?;
+            ordinal_reservation.with_storage(|| ctx.insert_btree_map(&mut ordinals, key, 1, "nx external reference ordinals"))?;
             0
         };
         let digits = if current == 0 {
@@ -4831,10 +4821,9 @@ fn scoped_om_index_id<'a>(
         })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let reservation =
-        ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    let mut reservation = ctx.reserve_scoped(0, operation)?;
     let mut id = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, length, operation)?;
+    reservation.with_storage(|| ctx.try_reserve_retained_text(&mut id, length, operation))?;
     write!(&mut id, "{prefix}{section_ordinal}{marker}{ordinal}")
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     Ok(ScopedOmIndexId {

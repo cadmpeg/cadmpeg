@@ -2166,16 +2166,9 @@ fn insert_source_attribute(
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
     write!(&mut value_len, "{value}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
-    let text_len = key_len
-        .0
-        .checked_add(value_len.0)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(text_len),
-        "nx source attribute text",
-    )?;
+
     let mut key_text = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut key_text,
         key_len.0,
         "nx source attribute text",
@@ -2183,7 +2176,7 @@ fn insert_source_attribute(
     write!(&mut key_text, "{key}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     let mut value_text = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut value_text,
         value_len.0,
         "nx source attribute text",
