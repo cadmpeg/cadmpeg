@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Backing storage charges, scoped attribution and refusal propagation.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use crate::CodecError;
@@ -197,3 +197,46 @@ fn failed_storage_callback_keeps_mutated_collection_bytes_live() {
     drop(storage);
     ctx.reserve_scoped(32, "released failed storage").expect("storage released by its guard");
 }
+
+// Delegating collection operations retain the same capacity accounting.
+storage_case!(optional_collection_vec_storage, 8, 40, |ctx: &DecodeContext<'_>, count| {
+    ctx.optional_collection_vec::<u64>(true, count, "optional collection storage")
+});
+storage_case!(collect_indexed_vec_storage, 8, 40, |ctx: &DecodeContext<'_>, count| {
+    ctx.collect_indexed_vec(count, "indexed collection storage", |_| Ok(0u64))
+});
+storage_case!(copy_slice_storage, 8, 40, |ctx: &DecodeContext<'_>, count| {
+    ctx.copy_slice(&[0u64; 5][..count], "copied collection storage")
+});
+storage_case!(collect_retained_vec_storage, 8, 40, |ctx: &DecodeContext<'_>, count| {
+    ctx.collect_retained_vec(std::iter::repeat_n(0u64, count), "retained collection storage")
+});
+storage_case!(collect_hash_set_storage, 67, 103, |ctx: &DecodeContext<'_>, count| {
+    ctx.collect_hash_set((0..count).map(|value| u64::try_from(value).expect("small test index")), "collected set storage")
+});
+storage_case!(extend_hash_set_storage, 67, 103, |ctx: &DecodeContext<'_>, count| {
+    let mut values = HashSet::new();
+    ctx.extend_hash_set(&mut values, (0..count).map(|value| u64::try_from(value).expect("small test index")), "extended set storage")?;
+    Ok(values)
+});
+storage_case!(collect_btree_set_storage, 232, 3016, |ctx: &DecodeContext<'_>, count| {
+    ctx.collect_btree_set((0..count).map(|value| u64::try_from(value).expect("small test index")), "collected tree storage")
+});
+storage_case!(reserve_heap_storage, 32, 40, |ctx: &DecodeContext<'_>, count| {
+    let mut values = BinaryHeap::<u64>::new();
+    ctx.reserve_heap(&mut values, count, "heap storage")?;
+    Ok(values)
+});
+storage_case!(push_back_storage, 32, 64, |ctx: &DecodeContext<'_>, count| {
+    let mut values = VecDeque::new();
+    for _ in 0..count { ctx.push_back(&mut values, 0u64, "deque back storage")?; }
+    Ok(values)
+});
+storage_case!(push_front_storage, 32, 64, |ctx: &DecodeContext<'_>, count| {
+    let mut values = VecDeque::new();
+    for _ in 0..count { ctx.push_front(&mut values, 0u64, "deque front storage")?; }
+    Ok(values)
+});
+storage_case!(join_display_retained_storage, 1, 5, |ctx: &DecodeContext<'_>, count| {
+    ctx.join_display_retained(std::iter::repeat_n("x", count), "", "display join storage")
+});
