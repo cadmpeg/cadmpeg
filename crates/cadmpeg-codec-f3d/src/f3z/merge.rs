@@ -222,9 +222,9 @@ impl MergeSession<'_, '_> {
             )?;
             self.stack.pop();
             if let Some(transform) = reference.transform {
-                apply_occurrence_transform(&mut component_ir.model, transform)?;
+                apply_occurrence_transform(self.ctx, &mut component_ir.model, transform)?;
             }
-            append_feature_history(&parent_ir.model, &mut component_ir.model)?;
+            append_feature_history(self.ctx, &parent_ir.model, &mut component_ir.model)?;
             let occurrence_start = parent_ir.model.occurrences.len();
             let mut scope = OccurrenceScope {
                 ctx: self.ctx,
@@ -308,7 +308,8 @@ fn reparent_component_roots(
 }
 
 /// Places one component's feature history after the histories already merged.
-fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), CodecError> {
+fn append_feature_history(ctx: &DecodeContext<'_>, parent: &Model, component: &mut Model) -> Result<(), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(component.features.len()), "scan F3Z component feature ordinals")?;
     let Some(component_minimum) = component
         .features
         .iter()
@@ -317,6 +318,7 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
     else {
         return Ok(());
     };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(parent.features.len()), "scan F3Z parent feature ordinals")?;
     let next = parent
         .features
         .iter()
@@ -327,6 +329,7 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
                 CodecError::Malformed("merged F3Z feature ordinal exceeds u64::MAX".into())
             })
         })?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(component.features.len()), "rewrite F3Z feature ordinals")?;
     for feature in &mut component.features {
         feature.ordinal = feature
             .ordinal
@@ -447,6 +450,7 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
 }
 
 fn apply_occurrence_transform(
+    ctx: &DecodeContext<'_>,
     model: &mut Model,
     transform: crate::records::xref::XrefPlacementTransform,
 ) -> Result<(), CodecError> {
@@ -460,6 +464,7 @@ fn apply_occurrence_transform(
             "F3Z occurrence translation is not a finite affine transform"
         ))
     })?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(model.bodies.len()).checked_mul(48).ok_or_else(|| ctx.refuse_codec_limit("compose F3Z body transforms", 0, u64::MAX))?, "compose F3Z body transforms")?;
     for body in &mut model.bodies {
         body.transform = Some(match body.transform {
             Some(local) => compose_transforms(occurrence, local)?,
@@ -994,7 +999,7 @@ mod tests {
         ];
         let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
         let source = crate::records::xref::XrefPlacementTransform::try_from(source.rows()).unwrap();
-        let error = apply_occurrence_transform(&mut Model::default(), source).unwrap_err();
+        let error = crate::test_support::with_decode_context(|ctx| apply_occurrence_transform(ctx, &mut Model::default(), source)).unwrap_err();
         assert!(error
             .to_string()
             .contains("F3Z occurrence translation is not a finite affine transform"));

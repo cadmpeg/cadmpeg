@@ -1896,8 +1896,8 @@ fn validate_body_bindings(
         std::collections::HashMap::<(&str, u64), Vec<&records::bodies::DesignBodyBinding>>::new();
     for binding in &native.design_body_bindings {
         let native_stream = design_stream(&binding.id);
-        let valid = design_stream_contains_entry(native_stream, &binding.stream)
-            && binding.body.as_ref().is_none_or(|body| {
+        let resolved_valid = if let Some(body) = &binding.body {
+                ctx.decode.charge_work(cadmpeg_core::decode::u64_from_index(native.body_native_keys.len()).checked_mul(2).ok_or_else(|| ctx.decode.refuse_codec_limit("scan F3D validation body sources", 0, u64::MAX))?, "scan F3D validation body sources")?;
                 let has_named_source = native.body_native_keys.iter().any(|key| {
                     ids::same_native_occurrence(key.source_namespace.as_str(), &binding.id)
                         && key.source_brep.as_deref() == Some(binding.blob_name())
@@ -1910,11 +1910,14 @@ fn validate_body_bindings(
                             key.source_brep.is_none()
                         }
                 });
-                matches!(
-                    crate::brep::resolve_body_selector(source_keys, binding.asm_body_key),
-                    Ok(Some(resolved)) if resolved == body
-                )
-            })
+                match crate::brep::resolve_body_selector(ctx.decode, source_keys, binding.asm_body_key) {
+                    Ok(Some(resolved)) => resolved == body,
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Ok(None) | Err(_) => false,
+                }
+            } else { true };
+        let valid = design_stream_contains_entry(native_stream, &binding.stream)
+            && resolved_valid
             && ctx.decode.insert_hash_set(
                 &mut binding_offsets,
                 (native_stream, binding.asm_body_key_offset()),

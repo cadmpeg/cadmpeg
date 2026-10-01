@@ -57,7 +57,7 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
         feature("f3d:test:feature#component-1", 12),
     ];
 
-    append_feature_history(&parent, &mut component).unwrap();
+    crate::test_support::with_decode_context(|ctx| append_feature_history(ctx, &parent, &mut component)).unwrap();
 
     assert_eq!(
         component
@@ -76,7 +76,7 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
     let mut component = Model::default();
     component.features = vec![feature("f3d:test:feature#component", 0)];
 
-    let error = append_feature_history(&parent, &mut component).unwrap_err();
+    let error = crate::test_support::with_decode_context(|ctx| append_feature_history(ctx, &parent, &mut component)).unwrap_err();
 
     assert!(error
         .to_string()
@@ -664,5 +664,48 @@ fn occurrence_merge_refuses_destination_growth_before_rewriting() {
         assert_eq!(limit.operation, "append F3Z model entities");
         assert_eq!(Some(limit), ctx.resource_refusal());
         assert!(parent.features.is_empty());
+    });
+}
+
+#[test]
+fn feature_history_scans_preserve_work_refusals() {
+    let mut parent = Model::default();
+    parent.features = vec![feature("f3d:test:feature#parent", 5), feature("f3d:test:feature#other", 6)];
+    for (work, operation) in [(0, "scan F3Z component feature ordinals"), (1, "scan F3Z parent feature ordinals"), (3, "rewrite F3Z feature ordinals")] {
+        let mut component = Model::default();
+        component.features = vec![feature("f3d:test:feature#component", 10)];
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = append_feature_history(ctx, &parent, &mut component).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("ordinal scan must refuse"); };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(Some(limit), ctx.resource_refusal());
+            assert_eq!(component.features[0].ordinal, 10);
+        });
+    }
+}
+
+#[test]
+fn occurrence_body_composition_preserves_work_refusal() {
+    let mut model = Model::default();
+    model.bodies.push(Body {
+        id: BodyId::mint("f3d:brep:body#1").unwrap(),
+        name: None,
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        visible: None,
+        color: None,
+    });
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let transform = crate::records::xref::XrefPlacementTransform::try_from([[1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.],[0.,0.,0.,1.]]).unwrap();
+        let error = super::super::apply_occurrence_transform(ctx, &mut model, transform).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("body composition must refuse"); };
+        assert_eq!(limit.operation, "compose F3Z body transforms");
+        assert_eq!(Some(limit), ctx.resource_refusal());
+        assert!(model.bodies[0].transform.is_none());
     });
 }

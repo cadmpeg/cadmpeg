@@ -11,7 +11,7 @@ use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::lp_utf16_bounded_scoped;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::design::decode::text::{
-    fixed_relaxed_guid_text, lp_utf16_bounded_charged, relaxed_guid_end,
+    lp_utf16_bounded_charged, relaxed_guid_end,
 };
 use crate::ids::native_stream;
 use crate::layout::component_insert_carrier_334_prefix as component_carrier_334;
@@ -284,8 +284,10 @@ pub(super) fn exact_component_insert_construction(
                 .filter(|at| **at < relation_at)
             {
                 for at in carrier_at + 11..relation_at {
-                    let Some((role, after_role)) = fixed_relaxed_guid_text(bytes, at)
-                        .map(|(guid, end)| (String::from(guid), end))
+                    if let Err(error) = ctx.charge_work(76, "scan F3D component insert role") {
+                        return Some(Err(error));
+                    }
+                    let Some(after_role) = fixed_guid_end(bytes, at)
                     else {
                         continue;
                     };
@@ -295,6 +297,9 @@ pub(super) fn exact_component_insert_construction(
                         continue;
                     }
                     for transform_at in carrier_at + 11..at {
+                        if let Err(error) = ctx.charge_work(128, "match F3D component insert matrix") {
+                            return Some(Err(error));
+                        }
                         if rigid_transform_at(bytes, transform_at) == Some(transform) {
                             if let Err(error) = ctx.reserve_vec(
                                 &mut placements,
@@ -303,7 +308,12 @@ pub(super) fn exact_component_insert_construction(
                             ) {
                                 return Some(Err(error));
                             }
-                            placements.push((role.clone(), at + 4, Some(transform_at)));
+                            let role = match lp_utf16_bounded_charged(ctx, bytes, at, 36..=36) {
+                                Ok(Some((role, _))) => role,
+                                Ok(None) => return None,
+                                Err(error) => return Some(Err(error)),
+                            };
+                            placements.push((role, at + 4, Some(transform_at)));
                         }
                     }
                 }
@@ -913,11 +923,11 @@ fn legacy_component_insert_placements(
     }
     let mut placements = Vec::new();
     for first_at in carrier_at + 11..relation_at {
+        ctx.charge_work(152, "scan F3D legacy component insert role")?;
         let Some(role_at) = fixed_guid_end(bytes, first_at) else {
             continue;
         };
-        let Some((role, after_role)) =
-            fixed_relaxed_guid_text(bytes, role_at).map(|(guid, end)| (String::from(guid), end))
+        let Some(after_role) = fixed_guid_end(bytes, role_at)
         else {
             continue;
         };
@@ -958,6 +968,9 @@ fn legacy_component_insert_placements(
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         {
             ctx.reserve_vec(&mut placements, 1, "f3d legacy component insert placements")?;
+            let Some((role, _)) = lp_utf16_bounded_charged(ctx, bytes, role_at, 36..=36)? else {
+                continue;
+            };
             placements.push((role, role_at + 4, Some(carrier_transform_at)));
         }
     }
