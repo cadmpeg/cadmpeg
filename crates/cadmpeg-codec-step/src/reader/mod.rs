@@ -259,26 +259,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         source_fidelity: SourceFidelity,
         opaque_offsets: BTreeSet<usize>,
     ) -> Result<AnalyzedExchange, CodecError> {
-        for (name, value) in self.matched.declared() {
-            self.ctx
-                .charge_collection_items(1, "step_dialect_match_copy_items")?;
-            let bytes = u64_from_index(name.as_str().len())
-                .checked_add(u64_from_index(value.len()))
-                .ok_or_else(|| {
-                    self.ctx
-                        .refuse_codec_limit("step_dialect_match_copy_text", 0, u64::MAX)
-                })?;
-            self.ctx
-                .charge_retained(bytes, "step_dialect_match_copy_text")?;
-        }
-        if let Some(instance) = self.matched.instance() {
-            self.ctx.charge_retained(
-                u64_from_index(instance.len()),
-                "step_dialect_match_copy_text",
-            )?;
-        }
         self.ir.source = Some(SourceMeta::classified(
-            cadmpeg_core::dialect::DialectLayers::of(self.matched.clone()),
+            cadmpeg_core::dialect::DialectLayers::of(self.matched.try_clone_for_decode(self.ctx, "copy STEP dialect layer")?),
             self.source_attributes,
         ));
         Ok(AnalyzedExchange {

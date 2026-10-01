@@ -289,21 +289,26 @@ pub fn extra_layers(
 /// operation and its explanation so NX and SLDPRT cannot describe the same
 /// Parasolid collision differently.
 pub fn push_extras(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     layers: &mut DialectLayers,
     extras: impl IntoIterator<Item = ClassifiedLayer>,
-) -> Vec<String> {
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let mut collisions = Vec::new();
     for layer in extras {
-        let format = layer.matched().format().to_owned();
-        let carrier = layer.carrier().clone();
-        if layers.insert(layer.into_matched()).is_err() {
-            collisions.push(format!(
-                "the container produced a duplicate {format} dialect layer at carrier {carrier}; \
-                 the later classification was omitted"
-            ));
+        let ClassifiedLayer { matched, carrier } = layer;
+        match layers.insert_for_decode(ctx, matched, "collect Parasolid dialect layers") {
+            Ok(()) => {}
+            Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)) => {
+                let message = ctx.format_retained(format_args!(
+                    "the container produced a duplicate {} dialect layer at carrier {carrier}; the later classification was omitted",
+                    rejected.format()
+                ), "Parasolid dialect collision")?;
+                ctx.push_retained_vec(&mut collisions, message, "Parasolid dialect collisions")?;
+            }
+            Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => return Err(limit.into()),
         }
     }
-    collisions
+    Ok(collisions)
 }
 
 /// Explain why a Parasolid layer was admitted without verification.
@@ -490,7 +495,11 @@ mod tests {
             &[],
         );
 
-        let collisions = push_extras(&mut layers, [first.clone(), later]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("empty root");
+        let collisions = push_extras(&ctx, &mut layers, [first.clone(), later]).expect("admitted layers");
 
         assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [first.matched()]);
         assert_eq!(

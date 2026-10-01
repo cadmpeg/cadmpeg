@@ -397,6 +397,14 @@ impl DecodeBudget {
         units: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_work_limit(units, operation).map_err(Into::into)
+    }
+
+    pub(super) fn charge_work_limit(
+        &self,
+        units: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::WorkUnits,
             &self.work,
@@ -404,7 +412,6 @@ impl DecodeBudget {
             units,
             operation,
         )
-        .map_err(Into::into)
     }
 }
 

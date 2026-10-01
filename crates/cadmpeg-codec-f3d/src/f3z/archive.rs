@@ -119,7 +119,7 @@ pub(super) fn classify_members<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ArchiveSession<'a>, CodecError> {
     let mut members = BTreeMap::new();
-    let primary = scan.kind.dialect().try_clone_for_decode(ctx)?;
+    let primary = scan.kind.dialect().try_clone_for_decode(ctx, "copy dialect layers")?;
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     for member_path in scan
@@ -205,7 +205,7 @@ pub(super) fn merge_member_layers(
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     for matched in member.iter() {
-        let matched = matched.try_clone_for_decode(ctx)?;
+        let matched = matched.try_clone_for_decode(ctx, "copy dialect layers")?;
         let instance = match matched.instance() {
             Some(nested) => ctx.format_retained(
                 format_args!("{member_path}/{nested}"),
@@ -214,7 +214,7 @@ pub(super) fn merge_member_layers(
             None => ctx.copy_retained_text(member_path, "retain F3Z dialect layer instance")?,
         };
         let matched = matched
-            .with_declared_entry_charged(
+            .with_declared_entry(
                 ctx,
                 cadmpeg_core::nonblank_const!(crate::dialect::DECLARED_ARCHIVE_MEMBER),
                 member_path,
@@ -222,7 +222,11 @@ pub(super) fn merge_member_layers(
             )?
             .with_instance(instance);
         if let Err(rejected) =
-            target.insert_charged(ctx, matched, "collect F3Z member dialect layers")?
+            match target.insert_for_decode(ctx, matched, "collect F3Z member dialect layers") {
+                Ok(()) => Ok(()),
+                Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
+                Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => return Err(limit.into()),
+            }
         {
             let format = rejected.format();
             let collision_instance = rejected.instance().unwrap_or("unidentified");

@@ -3887,7 +3887,7 @@ fn source_meta(
     add_preview_metadata(ctx, scan, &mut attributes)?;
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
     Ok(SourceMeta::classified(
-        classification.layers().clone_charged(ctx)?,
+        classification.layers().try_clone_for_decode(ctx, "copy dialect layers")?,
         attributes,
     ))
 }
@@ -4224,7 +4224,7 @@ fn build_metadata_ir(
     }
 
     ir.source = Some(SourceMeta::classified(
-        classification.layers().clone_charged(ctx)?,
+        classification.layers().try_clone_for_decode(ctx, "copy dialect layers")?,
         attributes,
     ));
     project_design_history(

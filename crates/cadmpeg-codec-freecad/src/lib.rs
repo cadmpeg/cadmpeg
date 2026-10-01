@@ -833,7 +833,7 @@ impl CodecBackend for FcstdCodec {
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
-        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
+        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.try_clone_for_decode(ctx, "copy FreeCAD dialect layers")?, attributes));
         if let Some((name, bytes)) = thumbnail {
             source_fidelity.attach_native_unknown_records(
                 &mut ir,

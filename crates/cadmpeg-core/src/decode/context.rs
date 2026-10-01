@@ -305,6 +305,14 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_retained(bytes, operation)
     }
 
+    pub(crate) fn charge_retained_limit(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.budget.charge_retained_limit(bytes, operation)
+    }
+
     /// Checks a later retained-byte request without charging it twice.
     pub fn preflight_retained(
         &self,
@@ -576,6 +584,14 @@ impl<'a> DecodeContext<'a> {
     /// Charges session-global algorithm work, fusing on refusal.
     pub fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_work(units, operation)
+    }
+
+    pub(crate) fn charge_work_limit(
+        &self,
+        units: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.budget.charge_work_limit(units, operation)
     }
 
     /// Sort admitted values stably using fallible index scratch.

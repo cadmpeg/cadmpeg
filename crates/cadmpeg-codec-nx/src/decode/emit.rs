@@ -2150,7 +2150,7 @@ pub(super) fn source_meta(
         }
     }
     Ok(SourceMeta::classified(
-        dialects.try_clone_for_decode(ctx)?,
+        dialects.try_clone_for_decode(ctx, "copy dialect layers")?,
         cadmpeg_core::text::named_entries_for_decode(ctx, "the nx part", attributes)?,
     ))
 }
