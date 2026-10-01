@@ -7,8 +7,7 @@ use std::collections::BTreeMap;
 #[test]
 fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
     let source = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Source".into(),
-        name: "Source".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Source".into(), "Source".into()).expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -19,13 +18,12 @@ fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
         data: None,
     };
     let dependent = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Dependent".into(),
-        name: "Dependent".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Dependent".into(), "Dependent".into()).expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
         attributes: BTreeMap::default(),
-        dependencies: vec![source.id.clone()],
+        dependencies: vec![source.id().clone()],
         dependency_allow_partial: None,
         order: 1,
         data: None,
@@ -50,8 +48,7 @@ fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
 #[test]
 fn design_distinct_feature_outputs_refuse_at_collection_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Shape".into(),
-        name: "Shape".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Shape".into(), "Shape".into()).expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -63,7 +60,7 @@ fn design_distinct_feature_outputs_refuse_at_collection_limit() {
     };
     let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#Shape:Shape".into(),
-        owner: object.id.clone(),
+        owner: object.id().clone(),
         name: "Shape".into(),
         type_name: "Part::PropertyPartShape".into(),
         family: crate::native::PropertyFamily::Unknown,
@@ -114,8 +111,7 @@ fn design_distinct_feature_outputs_refuse_at_collection_limit() {
 #[test]
 fn design_census_missing_projection_diagnostic_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Shape".into(),
-        name: "Shape".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Shape".into(), "Shape".into()).expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -171,8 +167,7 @@ fn design_spreadsheet_value_diagnostic_refuses_at_retained_limit() {
 #[test]
 fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Sheet".into(),
-        name: "Sheet".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sheet".into(), "Sheet".into()).expect("object identity"),
         type_name: "Spreadsheet::Sheet".into(),
         persistent_id: None,
         view_type: None,
@@ -184,7 +179,7 @@ fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
     };
     let property = crate::native::PropertyRecord {
         id: "cells-property".into(),
-        owner: object.id.clone(),
+        owner: object.id().clone(),
         name: "cells".into(),
         type_name: "Spreadsheet::PropertySheet".into(),
         family: crate::native::PropertyFamily::Unknown,
@@ -209,8 +204,7 @@ fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
 #[test]
 fn design_spreadsheet_dimensions_refuse_at_distinct_collection_limits() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Sheet".into(),
-        name: "Sheet".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sheet".into(), "Sheet".into()).expect("object identity"),
         type_name: "Spreadsheet::Sheet".into(),
         persistent_id: None,
         view_type: None,
@@ -223,7 +217,7 @@ fn design_spreadsheet_dimensions_refuse_at_distinct_collection_limits() {
     let property =
         |id: &str, name: &str, type_name: &str, xml: &str| crate::native::PropertyRecord {
             id: id.into(),
-            owner: object.id.clone(),
+            owner: object.id().clone(),
             name: name.into(),
             type_name: type_name.into(),
             family: crate::native::PropertyFamily::Unknown,

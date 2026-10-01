@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, type_id_string, Cursor, PmDcContentHeader,
+    content_header, inventor_id, reference_list, Cursor, PmDcContentHeader,
     PmDcReference, PmDcReferenceList,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
@@ -493,7 +493,7 @@ pub(crate) fn inventory(
                 )?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Sketch {
-                        type_id: type_id_string(record.type_id),
+                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
                     },
                     segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,

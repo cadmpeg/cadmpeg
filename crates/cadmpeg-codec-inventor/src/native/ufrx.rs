@@ -558,15 +558,15 @@ impl UfrxRecordWire {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "ExternalReferenceRecordWire")]
 pub(crate) struct ExternalReferenceRecord {
-    pub(crate) id: String,
-    pub(crate) ordinal: u32,
+    id: String,
+    ordinal: u32,
     identity: ExternalReferenceIdentity,
     library_id: i32,
     library_name: String,
     display_name: String,
     state_groups: Vec<[u16; 3]>,
     pub(crate) state: [u16; 2],
-    database_id: String,
+    database_id: Identifier16,
     pub(crate) reference_id: u32,
     pub(crate) occurrence_count: u32,
     version: u32,
@@ -597,7 +597,7 @@ impl Serialize for ExternalReferenceRecord {
         if let Some(document_id) = document_id {
             fields.serialize_field("document_id", document_id)?;
         }
-        fields.serialize_field("database_id", &self.database_id)?;
+        fields.serialize_field("database_id", self.database_id.as_str())?;
         fields.serialize_field("reference_id", &self.reference_id)?;
         fields.serialize_field("occurrence_count", &self.occurrence_count)?;
         fields.serialize_field("version", &self.version)?;
@@ -632,6 +632,16 @@ pub(crate) struct ExternalReferenceRecordWire {
 impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
     type Error = String;
     fn try_from(wire: ExternalReferenceRecordWire) -> Result<Self, Self::Error> {
+        let suffix = wire.id.strip_prefix("inventor:ufrx:external-reference#")
+            .ok_or_else(|| "external reference id has an invalid namespace".to_owned())?;
+        if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit())
+            || (suffix.len() > 1 && suffix.starts_with('0'))
+            || suffix.parse::<u32>().ok() != Some(wire.ordinal)
+        {
+            return Err("external reference id disagrees with ordinal".to_owned());
+        }
+        let database_id = Identifier16::try_new(wire.database_id)
+            .map_err(|error| format!("database_id: {error}"))?;
         let document_id = wire.document_id
             .map(Identifier16::try_new)
             .transpose()
@@ -656,7 +666,7 @@ impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
             display_name: wire.display_name,
             state_groups: wire.state_groups,
             state: wire.state,
-            database_id: wire.database_id,
+            database_id,
             reference_id: wire.reference_id,
             occurrence_count: wire.occurrence_count,
             version: wire.version,
@@ -675,6 +685,14 @@ enum ExternalReferenceIdentity {
 }
 
 impl ExternalReferenceRecord {
+    pub(crate) fn id(&self) -> &String {
+        &self.id
+    }
+
+    pub(crate) fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+
     pub(crate) fn document_copy_len(&self) -> usize {
         match &self.identity {
             ExternalReferenceIdentity::Path { path, .. } => path.as_str().len(),
@@ -970,7 +988,7 @@ mod tests {
             "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
             "path": "part.ipt", "library_id": 0, "library_name": "",
             "display_name": "", "state_groups": [], "state": [0, 0],
-            "database_id": "", "reference_id": 1, "occurrence_count": 0,
+            "database_id": "0".repeat(32), "reference_id": 1, "occurrence_count": 0,
             "version": 0, "flags": 0
         });
         let record: ExternalReferenceRecord =
@@ -1068,11 +1086,36 @@ mod tests {
     }
 
     #[test]
+    fn external_reference_database_identity_and_ordinal_are_checked() {
+        let valid = serde_json::json!({
+            "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
+            "path": "part.ipt", "library_id": 0, "library_name": "", "display_name": "",
+            "state_groups": [], "state": [0, 0], "database_id": "0".repeat(32),
+            "reference_id": 1, "occurrence_count": 0, "version": 0, "flags": 0
+        });
+        let record: ExternalReferenceRecord = serde_json::from_value(valid.clone()).expect("zero database ID is valid");
+        assert_eq!(serde_json::to_value(record).expect("record"), valid);
+        for database_id in ["", "not-hex", "0001", "g0000000000000000000000000000000"] {
+            let mut wire = valid.clone();
+            wire["database_id"] = serde_json::json!(database_id);
+            assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());
+        }
+        for id in ["", "inventor:ufrx:external-reference#7", "inventor:ufrx:external-reference#00", "inventor:ufrx:external-reference#+0"] {
+            let mut wire = valid.clone();
+            wire["id"] = serde_json::json!(id);
+            assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());
+        }
+        let mut wrong_ordinal = valid;
+        wrong_ordinal["ordinal"] = serde_json::json!(7);
+        assert!(serde_json::from_value::<ExternalReferenceRecord>(wrong_ordinal).is_err());
+    }
+
+    #[test]
     fn external_reference_requires_path_or_nonzero_document_id() {
         let valid = serde_json::json!({
-            "id": "reference", "ordinal": 0, "path": "part.ipt", "library_id": 0,
+            "id": "inventor:ufrx:external-reference#0", "ordinal": 0, "path": "part.ipt", "library_id": 0,
             "library_name": "", "display_name": "", "state_groups": [], "state": [0,0],
-            "document_id": "0".repeat(32), "database_id": "", "reference_id": 1,
+            "document_id": "0".repeat(32), "database_id": "0".repeat(32), "reference_id": 1,
             "occurrence_count": 0, "version": 0, "flags": 0
         });
         for (path, document_id, accepted) in [

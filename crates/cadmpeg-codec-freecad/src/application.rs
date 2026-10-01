@@ -133,7 +133,7 @@ fn wire_records<'a>(
     }
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     for object in objects {
-        let mut owned = by_owner.remove(object.id.as_str()).unwrap_or_default();
+        let mut owned = by_owner.remove(object.id().as_str()).unwrap_or_default();
         ctx.stable_sort_by(
             &mut owned,
             |left, right| {
@@ -190,10 +190,10 @@ fn wire_records<'a>(
                 id: crate::native::native_child_id_charged(
                     ctx,
                     "application-property",
-                    &object.id,
+                    object.id(),
                     &property.name,
                 )?,
-                object: &object.id,
+                object: object.id(),
                 property: &property.id,
                 type_name: &property.type_name,
                 family: property.family,
@@ -214,8 +214,8 @@ fn wire_records<'a>(
         )?;
         ctx.charge_retained(64, "FreeCAD application object digest")?;
         records.push(ApplicationRecordWire {
-            id: crate::native::native_id_charged(ctx, "application", &object.name)?,
-            object: &object.id,
+            id: crate::native::native_id_charged(ctx, "application", object.name())?,
+            object: object.id(),
             type_name: &object.type_name,
             domain: object
                 .type_name

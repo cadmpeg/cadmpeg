@@ -191,7 +191,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     let object_ids = objects
         .iter()
-        .map(|record| record.id.as_str())
+        .map(|record| record.id().as_str())
         .collect::<HashSet<_>>();
     let entry_names = entries
         .iter()
@@ -220,15 +220,15 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             if !object_ids.contains(dependency.as_str()) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
-                    format!("{} has missing dependency {dependency}", object.id),
-                    Some(object.id.clone()),
+                    format!("{} has missing dependency {dependency}", object.id()),
+                    Some(object.id().clone()),
                 ));
             }
         }
     }
     let object_by_id = objects
         .iter()
-        .map(|object| (object.id.as_str(), object))
+        .map(|object| (object.id().as_str(), object))
         .collect::<HashMap<_, _>>();
     let applications_match =
         match application::matches_native(ctx, namespace, &objects, &properties, &entries) {
@@ -377,7 +377,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     for joint in &joints {
-        let missing_link = !object_ids.contains(joint.object.as_str())
+        let missing_link = !object_ids.contains(joint.object())
             || joint.references().any(|reference| {
                 reference.document().is_none()
                     && reference
@@ -389,9 +389,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 Check::NativeLinks,
                 format!(
                     "{} has missing operands or invalid connector frames",
-                    joint.id
+                    joint.id()
                 ),
-                Some(joint.id.clone()),
+                Some(joint.id().to_owned()),
             ));
         }
     }
@@ -461,7 +461,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let expected_annotation_objects = objects
         .iter()
         .filter(|object| annotation::is_annotation_type(&object.type_name))
-        .map(|object| object.id.as_str())
+        .map(|object| object.id().as_str())
         .collect::<HashSet<_>>();
     let annotation_objects = annotations
         .iter()

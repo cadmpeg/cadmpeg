@@ -31,7 +31,7 @@ pub(crate) fn transfer(
     let mut output = Vec::new();
     for object in objects {
         let source = by_owner
-            .get(object.id.as_str())
+            .get(object.id().as_str())
             .map_or(&[][..], Vec::as_slice);
         let mut owned = ctx.collection_vec(source.len(), "fcstd joint selected properties")?;
         owned.extend_from_slice(source);
@@ -42,7 +42,7 @@ pub(crate) fn transfer(
                 ctx,
                 format_args!(
                     "joint object {} carries both ObjectToGround and JointType",
-                    object.id
+                    object.id()
                 ),
                 "fcstd joint diagnostic",
             ));
@@ -150,8 +150,8 @@ pub(crate) fn transfer(
         ctx.reserve_vec(&mut output, 1, "fcstd joint records")?;
         output.push(JointRecord::try_new(
             ctx,
-            crate::native::native_id_charged(ctx, "joint", &object.name)?,
-            ctx.copy_retained_text(&object.id, "fcstd joint object")?,
+            crate::native::native_id_charged(ctx, "joint", object.name())?,
+            ctx.copy_retained_text(object.id(), "fcstd joint object")?,
             body,
             parameters,
         )?);
@@ -257,7 +257,7 @@ pub(crate) fn transfer_neutral(
         let id = JointId::mint(crate::native::model_id_charged(
             ctx,
             "joint",
-            &record.object,
+            record.object(),
             "constraint",
         )?)
         .map_err(CodecError::malformed)?;
@@ -343,7 +343,7 @@ pub(crate) fn transfer_neutral(
         };
         joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
         joint.native_ref =
-            Some(ctx.copy_retained_text(&record.id, "fcstd joint native reference")?);
+            Some(ctx.copy_retained_text(record.id(), "fcstd joint native reference")?);
         ctx.reserve_vec(&mut output, 1, "fcstd neutral joints")?;
         output.push(joint);
     }
@@ -947,8 +947,7 @@ pub(crate) mod tests {
     #[test]
     fn joint_carrier_diagnostics_refuse_at_retained_limit() {
         let object = crate::native::ObjectRecord {
-            id: "fcstd:native:object#Joint".into(),
-            name: "Joint".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Joint".into(), "Joint".into()).expect("object identity"),
             type_name: "App::FeaturePython".into(),
             persistent_id: None,
             view_type: None,
@@ -979,7 +978,7 @@ pub(crate) mod tests {
         policy.limits.max_retained_bytes = 0;
         for mut properties in cases {
             for property in &mut properties {
-                property.owner = object.id.clone();
+                property.owner = object.id().clone();
             }
             let ctx = diagnostic_context(&arena, &policy);
             let error = super::transfer(&ctx, std::slice::from_ref(&object), &properties)
@@ -1015,8 +1014,7 @@ pub(crate) mod tests {
     #[test]
     fn joint_record_collection_refuses_at_caller_limit() {
         let object = crate::native::ObjectRecord {
-            id: "fcstd:native:object#Joint".into(),
-            name: "Joint".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Joint".into(), "Joint".into()).expect("object identity"),
             type_name: "App::FeaturePython".into(),
             persistent_id: None,
             view_type: None,
@@ -1028,7 +1026,7 @@ pub(crate) mod tests {
         };
         let property = crate::native::PropertyRecord {
             id: "property".into(),
-            owner: object.id.clone(),
+            owner: object.id().clone(),
             name: "ObjectToGround".into(),
             type_name: "App::PropertyLink".into(),
             family: crate::native::PropertyFamily::Unknown,
@@ -1051,8 +1049,7 @@ pub(crate) mod tests {
     #[test]
     fn joint_native_identity_refuses_at_retained_limit() {
         let object = crate::native::ObjectRecord {
-            id: "fcstd:native:object#Joint".into(),
-            name: "Joint".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Joint".into(), "Joint".into()).expect("object identity"),
             type_name: "App::FeaturePython".into(),
             persistent_id: None,
             view_type: None,
@@ -1064,7 +1061,7 @@ pub(crate) mod tests {
         };
         let property = crate::native::PropertyRecord {
             id: "property".into(),
-            owner: object.id.clone(),
+            owner: object.id().clone(),
             name: "ObjectToGround".into(),
             type_name: "App::PropertyLink".into(),
             family: crate::native::PropertyFamily::Unknown,
@@ -1077,7 +1074,7 @@ pub(crate) mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::native_id("joint", &object.name).len(),
+            crate::native::native_id("joint", object.name()).len(),
         ) - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
@@ -1105,7 +1102,7 @@ pub(crate) mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::model_id("joint", &record.object, "constraint").len(),
+            crate::native::model_id("joint", record.object(), "constraint").len(),
         ) - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");

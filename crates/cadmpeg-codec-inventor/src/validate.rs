@@ -1929,7 +1929,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         data.ufrx
             .external_references()
             .iter()
-            .map(|record| record.ordinal),
+            .map(|record| record.ordinal()),
         "external reference ordinal",
     );
     unique(
@@ -2041,7 +2041,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Inventor external-reference occurrence count does not match its typed records"
                     .into(),
-                Some(reference.id.clone()),
+                Some(reference.id().clone()),
             ));
         }
     }

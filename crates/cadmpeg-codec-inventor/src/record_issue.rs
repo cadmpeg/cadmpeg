@@ -4,13 +4,15 @@
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
+use crate::record_identity::RecordTypeId;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RecordIssueFamily {
     Assembly,
     Presentation,
-    Design { type_id: String },
-    Sketch { type_id: String },
-    Feature { type_id: String },
+    Design { type_id: RecordTypeId },
+    Sketch { type_id: RecordTypeId },
+    Feature { type_id: RecordTypeId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -55,7 +57,7 @@ impl Serialize for RecordIssue {
             RecordIssueFamily::Design { type_id }
             | RecordIssueFamily::Sketch { type_id }
             | RecordIssueFamily::Feature { type_id } => {
-                map.serialize_entry("type_id", type_id)?;
+                map.serialize_entry("type_id", type_id.as_str())?;
             }
         }
         map.serialize_entry("segment_token", self.segment_token.as_str())?;
@@ -85,6 +87,7 @@ struct RecordIssueWire {
     detail: String,
 }
 
+#[cfg(test)]
 impl From<RecordIssue> for RecordIssueWire {
     fn from(value: RecordIssue) -> Self {
         Self {
@@ -93,7 +96,7 @@ impl From<RecordIssue> for RecordIssueWire {
                 RecordIssueFamily::Assembly | RecordIssueFamily::Presentation => None,
                 RecordIssueFamily::Design { type_id }
                 | RecordIssueFamily::Sketch { type_id }
-                | RecordIssueFamily::Feature { type_id } => Some(type_id),
+                | RecordIssueFamily::Feature { type_id } => Some(type_id.as_str().to_owned()),
             },
             segment_token: value.segment_token.as_str().to_owned(),
             record_ordinal: value.record_ordinal,
@@ -111,13 +114,13 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
             (Some("inventor:assembly:record-issue"), None) => RecordIssueFamily::Assembly,
             (Some("inventor:presentation:record-issue"), None) => RecordIssueFamily::Presentation,
             (Some("inventor:pmdc:record-issue"), Some(type_id)) => {
-                RecordIssueFamily::Design { type_id }
+                RecordIssueFamily::Design { type_id: type_id.try_into().map_err(str::to_owned)? }
             }
             (Some("inventor:pmdc:sketch-record-issue"), Some(type_id)) => {
-                RecordIssueFamily::Sketch { type_id }
+                RecordIssueFamily::Sketch { type_id: type_id.try_into().map_err(str::to_owned)? }
             }
             (Some("inventor:pmdc:feature-record-issue"), Some(type_id)) => {
-                RecordIssueFamily::Feature { type_id }
+                RecordIssueFamily::Feature { type_id: type_id.try_into().map_err(str::to_owned)? }
             }
             _ => return Err("record issue id family and type_id do not agree".into()),
         };
@@ -139,6 +142,16 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
 mod tests {
     use super::{RecordIssue, RecordIssueFamily, RecordIssueWire};
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn record_issues_reject_invalid_type_guids() {
+        for prefix in ["inventor:pmdc:record-issue", "inventor:pmdc:sketch-record-issue", "inventor:pmdc:feature-record-issue"] {
+            for type_id in ["not-a-guid", "", "0001", "ABCDEF0123456789abcdef0123456789ab"] {
+                let wire = serde_json::json!({"id": format!("{prefix}#segment-0"), "type_id": type_id, "segment_token": "segment", "record_ordinal": 0, "detail": "invalid"});
+                assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
+            }
+        }
+    }
 
     #[test]
     fn record_issues_reject_invalid_segment_tokens() {
@@ -163,21 +176,21 @@ mod tests {
             ),
             (
                 RecordIssueFamily::Design {
-                    type_id: "0123456789abcdef0123456789abcdef".into(),
+                    type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
                 },
                 "inventor:pmdc:record-issue",
                 true,
             ),
             (
                 RecordIssueFamily::Sketch {
-                    type_id: "0123456789abcdef0123456789abcdef".into(),
+                    type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
                 },
                 "inventor:pmdc:sketch-record-issue",
                 true,
             ),
             (
                 RecordIssueFamily::Feature {
-                    type_id: "0123456789abcdef0123456789abcdef".into(),
+                    type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
                 },
                 "inventor:pmdc:feature-record-issue",
                 true,
@@ -229,7 +242,7 @@ mod tests {
     fn record_issue_borrowed_wire_refuses_retained_limit_before_text_copy() {
         let issue = RecordIssue {
             family: RecordIssueFamily::Design {
-                type_id: "0123456789abcdef0123456789abcdef".to_owned(),
+                type_id: "0123456789abcdef0123456789abcdef".to_owned().try_into().expect("GUID"),
             },
             segment_token: cadmpeg_ir::ids::IdentityKey::try_new("segment").expect("token"),
             record_ordinal: 1,

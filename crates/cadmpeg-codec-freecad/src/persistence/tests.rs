@@ -555,7 +555,7 @@ pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() 
     assert_eq!(properties.len(), 2);
     assert_eq!(
         properties[1].links()[0].as_ref().expect("link").object(),
-        Some(objects[0].id.as_str())
+        Some(objects[0].id().as_str())
     );
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
@@ -583,14 +583,14 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
     assert_eq!(
         objects
             .iter()
-            .map(|object| object.name.as_str())
+            .map(|object| object.name().as_str())
             .collect::<Vec<_>>(),
         ["First", "Second"]
     );
     assert_eq!(properties.len(), 2);
     assert_eq!(
         properties[1].links()[0].as_ref().expect("link").object(),
-        Some(objects[0].id.as_str())
+        Some(objects[0].id().as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
