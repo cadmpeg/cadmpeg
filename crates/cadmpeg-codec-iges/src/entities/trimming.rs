@@ -3139,7 +3139,7 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model_mut().finalize();
+        candidate.model_mut().finalize(ctx)?;
         ctx.reserve_vec(&mut staged, 1, "iges trimming staged candidates")?;
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }

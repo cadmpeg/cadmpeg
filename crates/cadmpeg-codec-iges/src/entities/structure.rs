@@ -1903,7 +1903,7 @@ fn plane_face_draft(
         color: None,
         visible: None,
     });
-    candidate.model_mut().finalize();
+    candidate.model_mut().finalize(ctx)?;
     Ok(candidate)
 }
 

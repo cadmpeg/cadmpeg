@@ -238,7 +238,7 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
     ir.model.surfaces.append(&mut adjacent.model.surfaces);
     ir.model.curves.append(&mut adjacent.model.curves);
     ir.model.pcurves.append(&mut adjacent.model.pcurves);
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -316,7 +316,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         )),
         source_object: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,

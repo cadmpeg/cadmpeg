@@ -494,11 +494,12 @@ macro_rules! declare_model {
             }
 
             /// Sort each arena lexicographically by its entity identity.
-            pub fn finalize(&mut self) {
-                $(self.$field.sort_by(|left, right| {
+            pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+                $(ctx.stable_sort_by(&mut self.$field, |left, right| {
                     crate::schema::EntitySchema::identity(left)
                         .cmp(crate::schema::EntitySchema::identity(right))
-                });)*
+                }, |entity| crate::schema::EntitySchema::identity(entity).len(), "finalize model arena")?;)*
+                Ok(())
             }
 
             /// Append every arena of `other` onto the matching arena of this
@@ -1912,7 +1913,9 @@ impl CadIr {
     /// Refuses a document holding a non-finite float.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
-        canonical.finalize();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+        canonical.finalize(&ctx)?;
         crate::hash::finite_json::to_canonical_json_string(&canonical)
     }
 
@@ -1933,9 +1936,9 @@ impl CadIr {
     }
 
     /// Sort model, native, and unknown-record arenas by identity.
-    pub fn finalize(&mut self) {
-        self.model.finalize();
-        self.native.finalize();
+    pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        self.model.finalize(ctx)?;
+        self.native.finalize(ctx)
     }
 
     /// Count arena rows and native loss tallies without running validation.

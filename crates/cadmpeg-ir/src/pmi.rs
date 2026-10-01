@@ -690,7 +690,7 @@ mod tests {
                 .expect("valid datum compartments"),
             },
         });
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
         assert!(validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail")
@@ -931,7 +931,7 @@ mod tests {
                 .expect("compatible dimension"),
             ),
         });
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
         assert!(validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail")

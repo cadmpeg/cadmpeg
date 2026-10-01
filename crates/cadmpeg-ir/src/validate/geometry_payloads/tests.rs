@@ -32,7 +32,7 @@ fn tessellation_counts_must_be_consistent() {
             FaceId::mint("synthetic:test:face#missing").expect("valid identity")
         ]),
     );
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
@@ -115,7 +115,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
         .expect("valid asset"),
     );
     ir.model.tessellations.extend([valid, invalid_texture]);
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     let errors_for = |entity: &str| {
         report

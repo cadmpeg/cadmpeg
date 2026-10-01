@@ -686,7 +686,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 Err(error) => return Some(Err(error)),
             };
             if transferred {
-                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
                     Ok(admissible) => admissible,
                     Err(limit) => return Some(Err(limit.into())),
                 }
@@ -4581,7 +4581,7 @@ mod tests {
             ir.model.points[0].position().get(),
             Point3::new(7.0, 11.0, 13.0)
         );
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -4737,7 +4737,7 @@ mod tests {
             assert!((actual.y - expected.y).abs() < 1.0e-12);
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);

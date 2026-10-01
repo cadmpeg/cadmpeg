@@ -221,7 +221,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let source_ordinal = ir
         .model
         .sketch_entities
@@ -402,7 +402,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.as_str())
@@ -602,7 +602,7 @@ fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
             native_ref: None,
         });
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for (name, _, refusal) in cases {

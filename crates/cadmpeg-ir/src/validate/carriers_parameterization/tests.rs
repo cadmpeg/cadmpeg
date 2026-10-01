@@ -106,7 +106,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     carrier.id = CurveId::mint("test:model:curve#native-only").unwrap();
     let carrier_id = carrier.id.as_str().to_owned();
     ir.model.curves.push(carrier);
-    ir.model.finalize();
+    ir.model.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let mut wire = serde_json::to_value(&ir).unwrap();
     wire["native"] = serde_json::json!({"test": {"unknowns": [
         {"id": "test:source:unknown#good", "links": [carrier_id]},

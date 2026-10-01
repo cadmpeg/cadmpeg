@@ -51,7 +51,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
@@ -282,7 +282,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     });
     ir.model.configurations[0].active = true;
     ir.model.configurations[1].active = true;
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings

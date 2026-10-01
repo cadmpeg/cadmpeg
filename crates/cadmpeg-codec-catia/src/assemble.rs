@@ -88,10 +88,11 @@ pub(crate) fn annotate(
 /// sorts arenas by entity id before a document leaves the codec. Admission uses
 /// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
 pub(crate) fn neutral_model_is_admissible(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     pending_unknowns: &[UnknownRecord],
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    ir.model.finalize();
+) -> Result<bool, cadmpeg_core::CodecError> {
+    ir.model.finalize(ctx)?;
     Ok(cadmpeg_ir::admit_with_additional_native_identities(
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
@@ -1560,13 +1561,13 @@ mod route_tests {
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
         assert!(
-            neutral_model_is_admissible(&mut valid, &[]).expect("resource allocation did not fail")
+            neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut valid, &[]).expect("resource allocation did not fail")
         );
 
         let mut invalid =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
-        assert!(!neutral_model_is_admissible(&mut invalid, &[])
+        assert!(!neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut invalid, &[])
             .expect("resource allocation did not fail"));
     }
 
@@ -1574,12 +1575,12 @@ mod route_tests {
     #[test]
     fn phase5_freeze_shared_admissibility_fixtures() {
         let mut accepted = cadmpeg_test_support::admissibility::accepted_empty();
-        assert!(neutral_model_is_admissible(&mut accepted, &[])
+        assert!(neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut accepted, &[])
             .expect("resource allocation did not fail"));
         let mut rejected =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
-        assert!(!neutral_model_is_admissible(&mut rejected, &[])
+        assert!(!neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut rejected, &[])
             .expect("resource allocation did not fail"));
     }
 
@@ -1613,7 +1614,7 @@ mod route_tests {
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
 
-        neutral_model_is_admissible(&mut ir, &[]).expect("resource allocation did not fail");
+        neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[]).expect("resource allocation did not fail");
 
         assert_eq!(
             ir.model
@@ -1670,7 +1671,7 @@ mod route_tests {
             Vec::new(),
         )];
 
-        assert!(neutral_model_is_admissible(&mut ir, &unknowns)
+        assert!(neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &unknowns)
             .expect("resource allocation did not fail"));
     }
 

@@ -2943,7 +2943,7 @@ impl<'a> DecodeContext<'a> {
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.ir.finalize();
+        self.ir.finalize(ctx)?;
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes(ctx)?;
         let decoded = outcomes

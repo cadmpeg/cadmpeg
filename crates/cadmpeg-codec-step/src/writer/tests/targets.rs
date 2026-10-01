@@ -80,7 +80,7 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
         )
         .expect("valid native identity")],
     );
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let encoder = StepCodec {
         options: StepWriteOptions {
             ..StepWriteOptions::default()

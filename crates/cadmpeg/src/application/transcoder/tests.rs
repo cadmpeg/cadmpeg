@@ -130,7 +130,7 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
         )
         .expect("valid native identity")],
     );
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     ir
 }
 

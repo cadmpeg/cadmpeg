@@ -1565,7 +1565,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         "one component cannot unsort this many arenas: {unsorted_arenas}"
     );
 
-    assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+    assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
         .expect("resource allocation did not fail"));
     assert_eq!(
         ir.model

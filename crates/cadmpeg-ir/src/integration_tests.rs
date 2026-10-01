@@ -96,7 +96,7 @@ fn ir_strategy() -> impl Strategy<Value = CadIr> {
         for id in ids {
             ir.model.points.push(point(&id));
         }
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         ir
     })
 }
@@ -220,7 +220,7 @@ proptest! {
                 point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,
             });
-            broken.finalize();
+            broken.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
             let report = validate_neutral(&broken, Vec::new()).expect("resource allocation did not fail");
             prop_assert!(
                 has_error(&report, Check::ReferentialIntegrity),
@@ -283,7 +283,7 @@ proptest! {
         );
         let mut base = CadIr::empty();
         draft.commit_model(&mut base).unwrap();
-        base.finalize();
+        base.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         let report = validate_neutral(&base, Vec::new()).expect("resource allocation did not fail");
         prop_assert_eq!(
             report.error_count(),

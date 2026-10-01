@@ -827,7 +827,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         )
         .expect("valid native identity")],
     );
-    right.native.finalize();
+    right.native.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
     let result = diff(&left, &right);
     assert_eq!(
@@ -863,7 +863,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         serde_json::Map::new(),
     )
     .expect("valid native identity");
-    right.native.finalize();
+    right.native.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&right, Vec::new())
         .expect("resource allocation did not fail")
         .findings

@@ -1762,7 +1762,7 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model_mut().finalize();
+        candidate.model_mut().finalize(ctx)?;
         drop(model_index);
         if commit_session
             .commit_model_for_decode(candidate, ctx)?

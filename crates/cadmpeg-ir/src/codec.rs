@@ -220,23 +220,25 @@ impl DecodeResult {
     ///
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
-    #[must_use]
-    fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
+    fn new(decoded: Decoded, format: FormatId, container_only: bool, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
             body,
             source_fidelity,
         } = decoded;
         let classification = match ir.source.as_ref() {
-            Some(source) => source.classification().clone(),
-            None => FormatIdentity::unclassified(format.as_str()),
+            Some(source) => match source.classification() {
+                FormatIdentity::Classified { dialects } => FormatIdentity::classified(dialects.try_clone_for_decode(ctx, "decode result classification")?),
+                FormatIdentity::Unclassified { format } => FormatIdentity::unclassified(ctx.copy_retained_text(format, "decode result classification")?),
+            },
+            None => FormatIdentity::unclassified(ctx.copy_retained_text(format.as_str(), "decode result classification")?),
         };
-        ir.finalize();
-        Self {
+        ir.finalize(ctx)?;
+        Ok(Self {
             ir,
             report: DecodeReport::from_body(classification, body, container_only),
             source_fidelity,
-        }
+        })
     }
 
     /// Borrow the finalized IR.
@@ -429,8 +431,11 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let (ctx, root) =
             DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
         let decoded = self.decode_impl(&ctx, root);
-        ctx.finish_session()?;
-        let result = DecodeResult::new(decoded?, C::FORMAT, options.container_only);
+        let decoded = match decoded {
+            Ok(decoded) => decoded,
+            Err(error) => { ctx.finish_session()?; return Err(error.into()); }
+        };
+        let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, &ctx)?;
         if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -440,6 +445,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             .into());
         }
         crate::validate::evaluation_cycles::admit_evaluation_cycles(result.ir())?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(result.report().losses.len()), "decode strict loss scan")?;
         let strict_loss_index =
             if options.policy.mode == DecodeMode::Strict && !options.container_only {
                 result
@@ -453,10 +459,12 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             };
         if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
-            return Err(DecodeFailure::StrictRejected {
-                rejection: StrictDecodeRejection::new(report, loss_index),
-            });
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DecodeReport>()), "decode strict rejection report")?;
+            let rejection = StrictDecodeRejection::new(report, loss_index);
+            ctx.finish_session()?;
+            return Err(DecodeFailure::StrictRejected { rejection });
         }
+        ctx.finish_session()?;
         Ok(result)
     }
 }

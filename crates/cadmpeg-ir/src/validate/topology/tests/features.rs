@@ -178,7 +178,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert_eq!(
         report
@@ -272,7 +272,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ),
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for fragment in [
         "does not precede",
@@ -337,7 +337,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             native_ref: None,
         });
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
@@ -469,7 +469,7 @@ fn document_parameters_can_feed_feature_parameters() {
         pmi: None,
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings.is_empty());
 }
 
@@ -518,7 +518,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
             .unwrap(),
         }),
     ));
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report
@@ -1090,7 +1090,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         ),
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     assert_eq!(
         serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
@@ -1149,6 +1149,6 @@ fn decals_require_valid_assets_faces_and_opacity() {
         ),
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
 }
