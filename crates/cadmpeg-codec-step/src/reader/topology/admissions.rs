@@ -36,13 +36,19 @@ pub(super) fn pcurve_admission_note(
         return Ok(None);
     }
     let named = admissions.iter().take(PCURVE_UNPROVED_NOTE_EXEMPLARS).len();
-    ctx.charge_work(u64_from_index(named).checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("step_pcurve_admission_note", u64::MAX, u64::MAX)
-    })?, "step_pcurve_admission_note")?;
-    let message = ctx.format_retained_with_work(
-        format_args!("{}", AdmissionWarning(admissions)), "step_pcurve_admission_note",
+    ctx.charge_work(
+        u64_from_index(named).checked_mul(2).ok_or_else(|| {
+            ctx.refuse_codec_limit("step_pcurve_admission_note", u64::MAX, u64::MAX)
+        })?,
+        "step_pcurve_admission_note",
     )?;
-    Ok(Some(StepLossCode::PcurveGlobalFidelityUnproved.note(message)))
+    let message = ctx.format_retained_with_work(
+        format_args!("{}", AdmissionWarning(admissions)),
+        "step_pcurve_admission_note",
+    )?;
+    Ok(Some(
+        StepLossCode::PcurveGlobalFidelityUnproved.note(message),
+    ))
 }
 
 struct AdmissionWarning<'a>(&'a [PcurveAdmission]);
@@ -51,14 +57,25 @@ impl fmt::Display for AdmissionWarning<'_> {
     fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
         let count = self.0.len();
         write!(output, "a finite endpoint and locus witness admits {count} pcurve relation(s); global model-space point-set equality and direction are unproved: ")?;
-        for (index, admission) in self.0.iter().take(PCURVE_UNPROVED_NOTE_EXEMPLARS).enumerate() {
+        for (index, admission) in self
+            .0
+            .iter()
+            .take(PCURVE_UNPROVED_NOTE_EXEMPLARS)
+            .enumerate()
+        {
             if index != 0 {
                 output.write_str(", ")?;
             }
-            write!(output, "curve #{} on surface #{} at coedge use #{}",
-                admission.curve, admission.surface, admission.coedge_use)?;
+            write!(
+                output,
+                "curve #{} on surface #{} at coedge use #{}",
+                admission.curve, admission.surface, admission.coedge_use
+            )?;
         }
-        if let Some(unnamed) = count.checked_sub(PCURVE_UNPROVED_NOTE_EXEMPLARS).filter(|count| *count > 0) {
+        if let Some(unnamed) = count
+            .checked_sub(PCURVE_UNPROVED_NOTE_EXEMPLARS)
+            .filter(|count| *count > 0)
+        {
             write!(output, ", and {unnamed} more")?;
         }
         Ok(())

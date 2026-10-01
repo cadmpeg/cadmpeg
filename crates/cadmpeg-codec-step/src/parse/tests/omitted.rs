@@ -198,9 +198,15 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
         vec![
             crate::parse::Value::String(Vec::new()),
             crate::parse::Value::List(vec![
-                crate::parse::Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
-                crate::parse::Value::Real(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture")),
-                crate::parse::Value::Real(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite fixture")),
+                crate::parse::Value::Real(
+                    cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")
+                ),
+                crate::parse::Value::Real(
+                    cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture")
+                ),
+                crate::parse::Value::Real(
+                    cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite fixture")
+                ),
             ]),
         ]
     );

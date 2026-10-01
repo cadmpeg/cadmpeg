@@ -579,7 +579,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 }
                 index += 1;
             }
-            let parsed = raw.parse::<f64>()
+            let parsed = raw
+                .parse::<f64>()
                 .map_err(|_| Self::error(start, "invalid real"))?;
             FiniteReal::new(parsed)
                 .map(TokenKind::Real)

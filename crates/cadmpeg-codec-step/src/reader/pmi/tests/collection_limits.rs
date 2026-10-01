@@ -669,10 +669,14 @@ fn pmi_target_reference_filter_propagates_depth_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let ids = crate::reader::reference::references(&value, ctx)
-            .filter(|id| match id { Ok(id) => *id == 1, Err(_) => true });
-        assert!(matches!(super::super::targets(ids, ctx), Err(CodecError::ResourceLimit(refusal))
+        let ids = crate::reader::reference::references(&value, ctx).filter(|id| match id {
+            Ok(id) => *id == 1,
+            Err(_) => true,
+        });
+        assert!(
+            matches!(super::super::targets(ids, ctx), Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_reference_value_walk"));
+                && refusal.operation == "step_reference_value_walk")
+        );
     });
 }

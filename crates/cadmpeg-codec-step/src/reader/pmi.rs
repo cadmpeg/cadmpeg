@@ -262,7 +262,10 @@ pub(super) fn decode(
                         .parameters()
                         .iter()
                         .flat_map(|value| references(value, ctx))
-                        .filter(|id| match id { Ok(id) => base_aspects.contains(id), Err(_) => true }),
+                        .filter(|id| match id {
+                            Ok(id) => base_aspects.contains(id),
+                            Err(_) => true,
+                        }),
                     ctx,
                 )?,
                 visible: None,
@@ -345,7 +348,10 @@ pub(super) fn decode(
             .iter()
             .flat_map(|partial| &partial.parameters)
             .flat_map(|value| references(value, ctx))
-            .filter(|reference| match reference { Ok(id) => shape_aspects.contains(id), Err(_) => true });
+            .filter(|reference| match reference {
+                Ok(id) => shape_aspects.contains(id),
+                Err(_) => true,
+            });
         annotations.push(
             ctx,
             ir,
@@ -633,14 +639,27 @@ pub(super) fn decode(
         // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
         // system as a separate aggregate.
         let datum_system = first_matching(
-            record.partials.iter()
+            record
+                .partials
+                .iter()
                 .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")
-                .into_iter().flat_map(|partial| partial.parameters.iter()),
+                .into_iter()
+                .flat_map(|partial| partial.parameters.iter()),
             ctx,
-            |id| annotations.get(id).is_some_and(|index| {
-                matches!(ir.model.pmi[index.get()].definition, PmiDefinition::DatumSystem { .. })
-            }),
-        )?.and_then(|id| annotations.get(id).map(|index| ir.model.pmi[index.get()].id.clone()));
+            |id| {
+                annotations.get(id).is_some_and(|index| {
+                    matches!(
+                        ir.model.pmi[index.get()].definition,
+                        PmiDefinition::DatumSystem { .. }
+                    )
+                })
+            },
+        )?
+        .and_then(|id| {
+            annotations
+                .get(id)
+                .map(|index| ir.model.pmi[index.get()].id.clone())
+        });
         annotations.push(
             ctx,
             ir,
@@ -662,7 +681,10 @@ pub(super) fn decode(
                     .transpose()?
                     .flatten(),
                 targets: targets(
-                    refs.iter().copied().filter(|id| base_aspects.contains(id)).map(Ok),
+                    refs.iter()
+                        .copied()
+                        .filter(|id| base_aspects.contains(id))
+                        .map(Ok),
                     ctx,
                 )?,
                 visible: None,
@@ -688,10 +710,18 @@ pub(super) fn decode(
             }),
             "step_pmi_typed_claims",
         )?;
-        for value in record.partials.iter().flat_map(|partial| partial.parameters.iter()) {
+        for value in record
+            .partials
+            .iter()
+            .flat_map(|partial| partial.parameters.iter())
+        {
             for reference in references(value, ctx) {
                 let reference = reference?;
-                if exchange.records().get(&reference).is_some_and(is_measure_record) {
+                if exchange
+                    .records()
+                    .get(&reference)
+                    .is_some_and(is_measure_record)
+                {
                     ctx.insert_hash_set(&mut typed, reference, "step_pmi_typed_claims")?;
                 }
             }
@@ -892,7 +922,8 @@ fn mark_characteristic_representations(
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let Some(_) = first_matching(record_values(record), ctx, |reference| {
             annotations.get(reference).is_some()
-        })? else {
+        })?
+        else {
             continue;
         };
         ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")?;
@@ -1030,7 +1061,8 @@ fn resolve_geometric_item_usages(
         let Some(definition) = first_matching(partial.parameters.get(2), ctx, |_| true)? else {
             continue;
         };
-        let Some(identified_item) = first_matching(partial.parameters.get(4), ctx, |_| true)? else {
+        let Some(identified_item) = first_matching(partial.parameters.get(4), ctx, |_| true)?
+        else {
             continue;
         };
         let mut annotation_indices = BTreeSet::new();
@@ -1162,11 +1194,20 @@ fn relationship_endpoints(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(u64, u64)>, CodecError> {
     let Some(parameters) = record.partials.iter().find_map(|partial| {
-        matches!(partial.name.as_str(), "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")
-            .then_some(partial.parameters.as_slice())
-    }) else { return Ok(None); };
-    let Some(relating) = first_matching(parameters.get(2), ctx, |_| true)? else { return Ok(None); };
-    let Some(related) = first_matching(parameters.get(3), ctx, |_| true)? else { return Ok(None); };
+        matches!(
+            partial.name.as_str(),
+            "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
+        )
+        .then_some(partial.parameters.as_slice())
+    }) else {
+        return Ok(None);
+    };
+    let Some(relating) = first_matching(parameters.get(2), ctx, |_| true)? else {
+        return Ok(None);
+    };
+    let Some(related) = first_matching(parameters.get(3), ctx, |_| true)? else {
+        return Ok(None);
+    };
     Ok(Some((relating, related)))
 }
 
@@ -1519,7 +1560,11 @@ fn collect_typed_placement_candidates(
         if !is_carrier {
             continue;
         }
-        for reference in partial.parameters.iter().flat_map(|value| references(value, ctx)) {
+        for reference in partial
+            .parameters
+            .iter()
+            .flat_map(|value| references(value, ctx))
+        {
             let reference = reference?;
             if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&reference) {
                 if let Some(transform) =
@@ -2043,7 +2088,8 @@ fn characteristic_values(
                     .iter()
                     .any(|partial| is_dimension_name(&partial.name))
             })
-        })? else {
+        })?
+        else {
             continue;
         };
         let representation = first_matching(record_values(record), ctx, |id| {

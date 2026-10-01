@@ -447,9 +447,14 @@ fn real_lexeme_rejects_binary64_overflow() {
 fn real_lexeme_preserves_finite_bits() {
     for number in [-0.0, f64::MAX, f64::from_bits(1)] {
         let source = format!("{number:.17e}");
-        let tokens = crate::test_support::with_service_context(source.as_bytes(), crate::lex::lex_with_context)
-            .expect("finite real token");
-        let crate::lex::TokenKind::Real(real) = tokens[0].kind else { panic!("real token required") };
+        let tokens = crate::test_support::with_service_context(
+            source.as_bytes(),
+            crate::lex::lex_with_context,
+        )
+        .expect("finite real token");
+        let crate::lex::TokenKind::Real(real) = tokens[0].kind else {
+            panic!("real token required")
+        };
         assert_eq!(real.get().to_bits(), number.to_bits());
     }
 }

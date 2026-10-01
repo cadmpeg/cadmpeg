@@ -643,7 +643,11 @@ pub(super) fn decode(
                 for id in super::reference::references(parameter, ctx) {
                     let id = id?;
                     if points.contains_key(&id) {
-                        ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
+                        ctx.insert_btree_set(
+                            &mut point_carriers,
+                            id,
+                            "step_geometry_point_carriers",
+                        )?;
                     }
                 }
             }
