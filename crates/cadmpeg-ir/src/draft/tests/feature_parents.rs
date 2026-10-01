@@ -45,7 +45,8 @@ fn commit(model: Model, base: &mut CadIr, use_session: bool) -> Result<(), Draft
     let mut draft = ModelDraft::new();
     *draft.model_mut() = model;
     if use_session {
-        CommitSession::new(base).commit_model(draft)
+        CommitSession::new(base, &cadmpeg_test_support::service_decode_context())?
+            .commit_model(draft)?
     } else {
         draft.commit_model(base)
     }

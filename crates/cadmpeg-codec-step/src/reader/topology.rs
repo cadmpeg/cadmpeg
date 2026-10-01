@@ -11,7 +11,7 @@ use super::{source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::draft::{CommitSession, DecodeCommitSession, DraftError, ModelDraft};
+use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
     model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
@@ -398,7 +398,7 @@ pub(super) fn decode(
     carrier_index: &CarrierIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<TopologyData>, CodecError> {
-    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx)?;
     let mut result = StageOutcome {
         value: TopologyData {
             body_by_root: BTreeMap::new(),
@@ -508,7 +508,7 @@ pub(super) fn decode(
             let (built, failures) = outcome.into_parts();
             let mut committed = 0;
             for mut built in built {
-                if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+                if let Err(error) = commit_session.commit_model(built.draft)? {
                     ctx.push_vec(
                         &mut losses,
                         StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -573,7 +573,7 @@ pub(super) fn decode(
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
-            if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+            if let Err(error) = commit_session.commit_model(built.draft)? {
                 ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -724,7 +724,7 @@ pub(super) fn decode(
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &mut commit_session, ctx)?;
-            if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+            if let Err(error) = commit_session.commit_model(built.draft)? {
                 ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -867,7 +867,7 @@ pub(super) fn decode(
             )), "step_topology_losses")?;
             continue;
         };
-        if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
+        if let Err(error) = commit_session.commit_model(built.draft)? {
             ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -2445,15 +2445,16 @@ struct Built {
 
 fn drop_committed_surfaces(
     draft: &mut ModelDraft,
-    session: &mut DecodeCommitSession<'_, '_>,
+    session: &mut CommitSession<'_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    ctx.charge_work(u64_from_index(draft.model().surfaces.len()), "filter committed surfaces")?;
     let mut refusal = None;
     draft.model_mut().surfaces.retain(|surface| {
         if refusal.is_some() {
             return true;
         }
-        match session.contains_for_decode(surface.id.as_str(), ctx) {
+        match session.contains(surface.id.as_str()) {
             Ok(contains) => !contains,
             Err(error) => {
                 refusal = Some(error);
