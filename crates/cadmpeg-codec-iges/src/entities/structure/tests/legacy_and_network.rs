@@ -587,38 +587,26 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
 }
 
 #[test]
-fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
-    let result = crate::reader::decode_with_test_occurrence_limits(
-        &occurrence_limit_file(),
-        DecodeOptions::default(),
-        100,
-        crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
-    )
-    .unwrap();
-    let native = result.ir().native.namespace("iges").unwrap();
-
-    assert_eq!(native.arenas()["product_occurrences"].len(), 100);
-    let expansion = &native.arenas()["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["output_limit"], 100);
-    assert_eq!(expansion.fields()["depth_limit"], 64);
-    assert_eq!(expansion.fields()["emitted"], 100);
-    assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["issues"][0], "output_limit");
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message == "IGES product occurrence expansion reached its configured output limit"
-    }));
-    let loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionOutputTruncated.kind())
-        .unwrap();
-    assert_eq!(
-        loss.provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("directory_entry:D203")
-    );
+fn decode_refuses_product_occurrence_output_exhaustion() {
+    for mode in [cadmpeg_core::decode::DecodeMode::Strict, cadmpeg_core::decode::DecodeMode::Salvage] {
+        let mut options = DecodeOptions::default();
+        options.policy.mode = mode;
+        let error = crate::reader::decode_with_test_occurrence_limits(
+            &occurrence_limit_file(),
+            options,
+            100,
+            crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_output")
+                    && limit.limit == 100
+                    && limit.used == 100
+                    && limit.additional == 1
+        ));
+    }
 }
 
 #[test]

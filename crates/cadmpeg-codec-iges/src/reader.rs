@@ -672,16 +672,6 @@ fn decode_with_occurrence_limits(
         "iges combined record losses",
     )?;
     losses.extend(record_losses);
-    if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
-        push_occurrence_loss(
-            ctx,
-            &mut losses,
-            IgesLossCode::OccurrenceExpansionOutputTruncated,
-            format_args!("IGES product occurrence expansion reached its configured output limit"),
-            source_sequence,
-            &parse.directory,
-        )?;
-    }
     if let Some(source_sequence) = product_occurrence_expansion.depth_truncated_at {
         push_occurrence_loss(
             ctx,
