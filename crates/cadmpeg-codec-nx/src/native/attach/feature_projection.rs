@@ -2302,7 +2302,7 @@ pub(super) fn simple_hole_operations(
             return Ok(None);
         }
         for member in group.members.iter() {
-            ctx.push_retained_vec(
+            ctx.push_vec(
                 &mut operations,
                 ctx.copy_retained_text(&member.operation_label, "NX hole operation labels")?,
                 "NX hole operation labels",
@@ -2310,7 +2310,7 @@ pub(super) fn simple_hole_operations(
         }
     } else {
         for template in ordered_templates {
-            ctx.push_retained_vec(
+            ctx.push_vec(
                 &mut operations,
                 ctx.copy_retained_text(&template.operation_label, "NX hole operation labels")?,
                 "NX hole operation labels",
@@ -2343,7 +2343,7 @@ pub(super) fn selected_hole_operations(
             .count()
             == 1
         {
-            ctx.push_retained_vec(
+            ctx.push_vec(
                 &mut operations,
                 ctx.copy_retained_text(&template.operation_label, "NX hole operation labels")?,
                 "NX hole operation labels",
@@ -3050,7 +3050,7 @@ pub(super) fn hole_axis_placements_for_body(
         ) else {
             return Ok(Vec::new());
         };
-        ctx.reserve_retained_vec(&mut placements, 1, "NX hole axis placements")?;
+        ctx.reserve_vec(&mut placements, 1, "NX hole axis placements")?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
     ctx.stable_sort_by(
@@ -3650,7 +3650,7 @@ pub(super) fn counterbore_cylinders(
         return Ok(None);
     }
     let mut witnesses =
-        ctx.retained_vec(cylinders.len() / 2, "nx counterbore cylinder witnesses")?;
+        ctx.collection_vec(cylinders.len() / 2, "nx counterbore cylinder witnesses")?;
     let mut used = ctx.alloc_filled(
         cylinders.len(),
         false,
@@ -3788,7 +3788,7 @@ pub(super) fn blind_bore_cylinders(
     } else {
         Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
     };
-    let mut witnesses = ctx.retained_vec(1, "NX blind bore witness")?;
+    let mut witnesses = ctx.collection_vec(1, "NX blind bore witness")?;
     witnesses.push(BlindBoreCylinderWitness {
         position,
         direction,

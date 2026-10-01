@@ -4693,8 +4693,8 @@ fn stage_extrusion_caps(
                 ))?;
             let nurbs = PcurveNurbs::from_lanes(
                 pcurve.degree,
-                ctx.copy_retained_slice(&pcurve.knots, "Rhino extrusion cap pcurve knots")?,
-                ctx.copy_retained_slice(
+                ctx.copy_slice(&pcurve.knots, "Rhino extrusion cap pcurve knots")?,
+                ctx.copy_slice(
                     &pcurve.control_points,
                     "Rhino extrusion cap pcurve poles",
                 )?,
@@ -4702,7 +4702,7 @@ fn stage_extrusion_caps(
                     .weights
                     .as_ref()
                     .map(|weights| {
-                        ctx.copy_retained_slice(weights, "Rhino extrusion cap pcurve weights")
+                        ctx.copy_slice(weights, "Rhino extrusion cap pcurve weights")
                     })
                     .transpose()?,
                 pcurve.periodic,

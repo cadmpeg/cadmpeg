@@ -909,7 +909,7 @@ pub(crate) fn summarize(
                 "collect SLDPRT inventory attributes",
             )?;
         }
-        ctx.push_retained_vec(
+        ctx.push_vec(
             &mut entries,
             ContainerEntry {
                 name: ctx.format_retained(
@@ -948,7 +948,7 @@ pub(crate) fn summarize(
             )?,
             "collect SLDPRT inventory attributes",
         )?;
-        ctx.push_retained_vec(
+        ctx.push_vec(
             &mut entries,
             ContainerEntry {
                 name: ctx.format_retained(
@@ -983,7 +983,7 @@ pub(crate) fn summarize(
             )?,
             "collect SLDPRT inventory attributes",
         )?;
-        ctx.push_retained_vec(
+        ctx.push_vec(
             &mut entries,
             ContainerEntry {
                 name: ctx.format_retained(
@@ -1035,7 +1035,7 @@ pub(crate) fn summarize(
             )?,
             "collect SLDPRT inventory attributes",
         )?;
-        ctx.push_retained_vec(
+        ctx.push_vec(
             &mut entries,
             ContainerEntry {
                 name: ctx.format_retained(
@@ -1073,7 +1073,7 @@ pub(crate) fn notes_charged(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<Vec<String>, CodecError> {
-    let mut notes = ctx.retained_vec(3, "collect SLDPRT container notes")?;
+    let mut notes = ctx.collection_vec(3, "collect SLDPRT container notes")?;
     notes.push(ctx.format_retained(
         format_args!(
             "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \

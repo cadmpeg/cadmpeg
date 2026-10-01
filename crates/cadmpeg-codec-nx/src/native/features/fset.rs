@@ -235,7 +235,7 @@ pub(in crate::native) fn feature_fset_reference_graphs(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.reserve_retained_vec(&mut graphs, 1, "NX FSET reference graphs")?;
+                    ctx.reserve_vec(&mut graphs, 1, "NX FSET reference graphs")?;
                     Ok(Some(FeatureFsetReferenceGraph {
                         id,
                         operation_label,
@@ -280,7 +280,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
             else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut output, 1, "NX FSET construction payloads")?;
+            ctx.reserve_vec(&mut output, 1, "NX FSET construction payloads")?;
             output.push(payload);
         }
     }

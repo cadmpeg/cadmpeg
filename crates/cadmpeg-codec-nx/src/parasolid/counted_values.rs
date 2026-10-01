@@ -162,7 +162,7 @@ impl<'a, T: CountedValue> BorrowedValues<'a, T> {
             cadmpeg_core::decode::u64_from_index(count),
             "materialize NX numeric value lane",
         )?;
-        let mut values = ctx.retained_vec(count, "NX numeric value payload")?;
+        let mut values = ctx.collection_vec(count, "NX numeric value payload")?;
         for bytes in self.bytes.chunks_exact(T::WIDTH) {
             let value = T::read(bytes)
                 .and_then(T::admit)

@@ -14,9 +14,9 @@ impl A8KnotLane {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
-            distinct: ctx.copy_retained_slice(&self.distinct, "catia_a8_copied_distinct_knots")?,
+            distinct: ctx.copy_slice(&self.distinct, "catia_a8_copied_distinct_knots")?,
             multiplicities: ctx
-                .copy_retained_slice(&self.multiplicities, "catia_a8_copied_multiplicities")?,
+                .copy_slice(&self.multiplicities, "catia_a8_copied_multiplicities")?,
         })
     }
 

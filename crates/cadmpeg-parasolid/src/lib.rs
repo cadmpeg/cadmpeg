@@ -304,7 +304,7 @@ pub fn extra_layers(
         u64_from_index(streams.len()),
         "scan Parasolid schema carriers",
     )?;
-    let mut layers = ctx.retained_vec(streams.len(), "collect Parasolid classified layers")?;
+    let mut layers = ctx.collection_vec(streams.len(), "collect Parasolid classified layers")?;
     for (schema, carrier) in streams {
         layers.push(classify_layer(ctx, schema, carrier, instance, verified)?);
     }
@@ -331,7 +331,7 @@ pub fn push_extras(
                     "the container produced a duplicate {} dialect layer at carrier {carrier}; the later classification was omitted",
                     rejected.format()
                 ), "retain Parasolid collision message")?;
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     &mut collisions,
                     message,
                     "collect Parasolid collision messages",

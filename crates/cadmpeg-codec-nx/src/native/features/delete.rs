@@ -202,7 +202,7 @@ pub(in crate::native) fn feature_delete_reference_fields(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.reserve_retained_vec(&mut fields, 1, "NX DELETE reference fields")?;
+                    ctx.reserve_vec(&mut fields, 1, "NX DELETE reference fields")?;
                     Ok(Some(FeatureDeleteReferenceField {
                         id,
                         operation_label,
@@ -235,7 +235,7 @@ pub(in crate::native) fn feature_delete_construction_payloads(
         let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut output, 1, "NX DELETE construction payloads")?;
+        ctx.reserve_vec(&mut output, 1, "NX DELETE construction payloads")?;
         output.push(payload);
     }
     Ok(output)

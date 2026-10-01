@@ -92,7 +92,7 @@ impl CountedPatternReferences<()> {
         };
         let count = usize::from(count);
 
-        let mut entries = ctx.retained_vec(count, "NX counted pattern references")?;
+        let mut entries = ctx.collection_vec(count, "NX counted pattern references")?;
         let Some(mut at) = start.checked_add(2) else {
             return Ok(None);
         };

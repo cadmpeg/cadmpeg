@@ -138,7 +138,7 @@ pub(super) fn feature_operation_chronological_labels<'a>(
             .and_modify(|first| *first = (*first).min(label.source_offset))
             .or_insert(label.source_offset);
     }
-    let mut ordered = ctx.retained_vec(labels.len(), "NX chronological feature labels")?;
+    let mut ordered = ctx.collection_vec(labels.len(), "NX chronological feature labels")?;
     ordered.extend(labels);
     ctx.stable_sort_by(
         &mut ordered,
@@ -3870,7 +3870,7 @@ pub(super) fn feature_operation_labels(
             .map_err(|_| ctx.refuse_codec_limit("write NX feature label section key", 0, 1))?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let records = section.operation_records_with_label_ordinals(ctx)?;
-        ctx.reserve_retained_vec(&mut labels, records.len(), "NX feature operation labels")?;
+        ctx.reserve_vec(&mut labels, records.len(), "NX feature operation labels")?;
         for (ordinal, record) in records {
             let label = record.label();
             let ordinal_u32 = u32::try_from(ordinal)
@@ -3934,7 +3934,7 @@ pub(super) fn feature_boolean_operations(
             let item = (|| -> Result<FeatureBooleanOperation, CodecError> {
                 let mut tools = Vec::new();
                 for tool in operation.tools {
-                    ctx.reserve_retained_vec(&mut tools, 1, "NX Boolean tool references")?;
+                    ctx.reserve_vec(&mut tools, 1, "NX Boolean tool references")?;
                     tools.push(crate::om::PayloadObjectReference {
                         token: tool.token,
                         offset: entry_offset + cadmpeg_core::decode::u64_from_index(tool.offset),
@@ -4181,7 +4181,7 @@ pub(super) fn feature_unlabeled_operation_records(
                 record,
             )? {
                 ctx.charge_entities(1, "NX unlabeled operation record")?;
-                ctx.reserve_retained_vec(&mut records, 1, "NX unlabeled operation records")?;
+                ctx.reserve_vec(&mut records, 1, "NX unlabeled operation records")?;
                 records.push(record);
             }
             Ok(())
@@ -4234,7 +4234,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                 let ordinal = u32::try_from(ordinal)
                     .map_err(|_| ctx.refuse_codec_limit("NX unlabeled body write ordinal", 0, 1))?;
                 ctx.charge_entities(1, "NX unlabeled operation body write")?;
-                ctx.reserve_retained_vec(&mut writes, 1, "NX unlabeled operation body writes")?;
+                ctx.reserve_vec(&mut writes, 1, "NX unlabeled operation body writes")?;
                 writes.push(FeatureOperationBodyWrite {
                     operation_label: None,
                     id,
@@ -4413,7 +4413,7 @@ pub(super) fn feature_operation_body_image_segment_uses(
             segment_body_binding: ctx
                 .copy_retained_text(&binding.id, "NX body-image segment binding identity")?,
         };
-        ctx.reserve_retained_vec(&mut output, 1, "NX body-image segment uses")?;
+        ctx.reserve_vec(&mut output, 1, "NX body-image segment uses")?;
         output.push(item);
     }
     Ok(output)
@@ -4463,7 +4463,7 @@ pub(super) fn feature_operation_body_identity_segment_uses(
             segment_body_binding: ctx
                 .copy_retained_text(&binding.id, "NX body-identity segment binding identity")?,
         };
-        ctx.reserve_retained_vec(&mut output, 1, "NX body-identity segment uses")?;
+        ctx.reserve_vec(&mut output, 1, "NX body-identity segment uses")?;
         output.push(item);
     }
     Ok(output)
@@ -4608,7 +4608,7 @@ pub(super) fn feature_operation_body_partition_uses(
             group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
                 && group.node_id == write.frame.group_node().value()
         }) {
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut parasolid_group_records,
                 1,
                 "NX body partition group records",
@@ -4622,7 +4622,7 @@ pub(super) fn feature_operation_body_partition_uses(
             member.partition_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == write.frame.group_node().value()
         }) {
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut parasolid_group_members,
                 1,
                 "NX body partition group members",
@@ -4650,7 +4650,7 @@ pub(super) fn feature_operation_body_partition_uses(
             parasolid_group_records,
             parasolid_group_members,
         };
-        ctx.reserve_retained_vec(&mut output, 1, "NX body partition uses")?;
+        ctx.reserve_vec(&mut output, 1, "NX body partition uses")?;
         output.push(item);
     }
     Ok(output)
@@ -4708,7 +4708,7 @@ pub(super) fn feature_body_write_group_partition_uses(
         }
         let mut parasolid_group_records = Vec::new();
         for group in groups.iter().filter(|group| group.node_id == group_node) {
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut parasolid_group_records,
                 1,
                 "NX body-write group records",
@@ -4721,7 +4721,7 @@ pub(super) fn feature_body_write_group_partition_uses(
             member.partition_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == group_node
         }) {
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut parasolid_group_members,
                 1,
                 "NX body-write group members",
@@ -4744,7 +4744,7 @@ pub(super) fn feature_body_write_group_partition_uses(
             parasolid_group_records,
             parasolid_group_members,
         };
-        ctx.reserve_retained_vec(&mut output, 1, "NX body-write group partition uses")?;
+        ctx.reserve_vec(&mut output, 1, "NX body-write group partition uses")?;
         output.push(use_record);
     }
     Ok(output)
@@ -4796,7 +4796,7 @@ pub(super) fn feature_operation_object_references(
                         continue;
                     };
                     ctx.charge_work(1, "resolve NX operation object reference")?;
-                    ctx.reserve_retained_vec(&mut references, 1, "NX operation object references")?;
+                    ctx.reserve_vec(&mut references, 1, "NX operation object references")?;
                     references.push(FeatureOperationObjectReference {
                         id: format_feature_history_id(
                             ctx,
@@ -4883,7 +4883,7 @@ pub(super) fn feature_operation_common_frames(
                     else {
                         continue;
                     };
-                    ctx.reserve_retained_vec(&mut frames, 1, "NX operation common frames")?;
+                    ctx.reserve_vec(&mut frames, 1, "NX operation common frames")?;
                     frames.push(FeatureOperationCommonFrame {
                         id: format_feature_history_id(
                             ctx,
@@ -4979,7 +4979,7 @@ pub(super) fn feature_operation_terminal_frames(
                 else {
                     return Ok(());
                 };
-                ctx.reserve_retained_vec(&mut frames, 1, "NX operation terminal frames")?;
+                ctx.reserve_vec(&mut frames, 1, "NX operation terminal frames")?;
                 frames.push(FeatureOperationTerminalFrame {
                     id: format_feature_history_id(
                         ctx,
@@ -5107,7 +5107,7 @@ pub(super) fn feature_operation_state_journal_uses(
             "{prefix}{operation_key}-{journal_key}-{journal_row_ordinal:010}"
         )
         .map_err(|_| ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1))?;
-        ctx.reserve_retained_vec(&mut uses, 1, "NX operation journal uses")?;
+        ctx.reserve_vec(&mut uses, 1, "NX operation journal uses")?;
         uses.push(FeatureOperationStateJournalUse {
             id,
             section_link: ctx
@@ -5157,7 +5157,7 @@ pub(super) fn feature_payload_strings(
                     else {
                         continue;
                     };
-                    ctx.reserve_retained_vec(&mut strings, 1, "NX feature payload strings")?;
+                    ctx.reserve_vec(&mut strings, 1, "NX feature payload strings")?;
                     let text = ctx.copy_retained_text(
                         value.value.as_str(),
                         "NX feature payload string text",
@@ -5221,7 +5221,7 @@ pub(super) fn feature_body_references(
                     return Ok(());
                 };
                 ctx.charge_work(1, "resolve NX feature body reference")?;
-                ctx.reserve_retained_vec(&mut references, 1, "NX feature body references")?;
+                ctx.reserve_vec(&mut references, 1, "NX feature body references")?;
                 references.push(FeatureBodyReference {
                     ordinal: None,
                     id: format_feature_history_id(
@@ -5321,7 +5321,7 @@ pub(super) fn feature_body_reference_occurrences(
                         continue;
                     };
                     ctx.charge_work(1, "resolve NX body reference occurrence")?;
-                    ctx.reserve_retained_vec(&mut references, 1, "NX body reference occurrences")?;
+                    ctx.reserve_vec(&mut references, 1, "NX body reference occurrences")?;
                     references.push(FeatureBodyReference {
                         id: format_feature_history_id(
                             ctx,
@@ -5489,7 +5489,7 @@ pub(super) fn feature_body_segment_uses(
         };
         let feature_body_reference = copy(&reference.id, "NX body segment reference identity")?;
         let segment_body_binding = copy(&binding.id, "NX body segment binding identity")?;
-        ctx.reserve_retained_vec(&mut output, 1, "NX body segment uses")?;
+        ctx.reserve_vec(&mut output, 1, "NX body segment uses")?;
         output.push(FeatureBodySegmentUse {
             id,
             feature_body_reference,
@@ -5688,7 +5688,7 @@ pub(super) fn feature_body_data_block_uses(
             id.push_str(new);
         }
         id.push_str(suffix);
-        ctx.reserve_retained_vec(&mut uses, 1, "NX feature body block uses")?;
+        ctx.reserve_vec(&mut uses, 1, "NX feature body block uses")?;
         uses.push(FeatureBodyDataBlockUse {
             id,
             feature_body_reference: ctx
@@ -5732,7 +5732,7 @@ pub(super) fn feature_input_blocks(
                     else {
                         return Ok(());
                     };
-                    ctx.reserve_retained_vec(&mut inputs, 1, "NX feature input blocks")?;
+                    ctx.reserve_vec(&mut inputs, 1, "NX feature input blocks")?;
                     inputs.push(FeatureInputBlock {
                         id: format_feature_history_id(
                             ctx,
@@ -5838,7 +5838,7 @@ pub(super) fn feature_input_block_identity_groups(
     for (ordinal, (data_block, members)) in groups.into_iter().enumerate() {
         let mut retained_members = Vec::new();
         for member in members {
-            ctx.reserve_retained_vec(&mut retained_members, 1, "NX input block identity members")?;
+            ctx.reserve_vec(&mut retained_members, 1, "NX input block identity members")?;
             retained_members.push(FeatureInputBlockIdentityMember {
                 input_block: ctx
                     .copy_retained_text(&member.id, "NX input block identity member")?,
@@ -5864,7 +5864,7 @@ pub(super) fn feature_input_block_identity_groups(
         let mut id = ctx.retained_string(id_len, "NX input block identity group id")?;
         write!(&mut id, "{prefix}{ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("format NX input block identity group id", 0, 1))?;
-        ctx.reserve_retained_vec(&mut output, 1, "NX input block identity groups")?;
+        ctx.reserve_vec(&mut output, 1, "NX input block identity groups")?;
         output.push(FeatureInputBlockIdentityGroup {
             id,
             data_block: ctx.copy_retained_text(data_block, "NX grouped input data block")?,
@@ -6011,7 +6011,7 @@ pub(super) fn feature_input_column_row_uses(
                     return Ok(());
                 }
                 let table = unique_column_table(ctx, row, tables)?;
-                ctx.reserve_retained_vec(&mut output, 1, "NX input column row uses")?;
+                ctx.reserve_vec(&mut output, 1, "NX input column row uses")?;
                 output.push(FeatureInputColumnRowUse {
                     id: format_column_relation_id(
                         ctx,
@@ -6075,7 +6075,7 @@ pub(super) fn feature_datum_csys_column_row_uses(
                         return Ok(());
                     }
                     let table = unique_column_table(ctx, row, tables)?;
-                    ctx.reserve_retained_vec(&mut output, 1, "NX datum CSYS column row uses")?;
+                    ctx.reserve_vec(&mut output, 1, "NX datum CSYS column row uses")?;
                     output.push(FeatureDatumCsysColumnRowUse {
                         id: format_column_relation_id(
                             ctx,
@@ -6217,7 +6217,7 @@ pub(super) fn feature_input_column_targets(
         let mut id = ctx.retained_string(id_len, "NX input column target identity")?;
         id.push_str(prefix);
         id.push_str(key);
-        ctx.reserve_retained_vec(&mut output, 1, "NX input column targets")?;
+        ctx.reserve_vec(&mut output, 1, "NX input column targets")?;
         output.push(FeatureInputColumnTarget {
             id,
             input_block: ctx
@@ -6316,7 +6316,7 @@ pub(super) fn feature_datum_csys_constructions(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_retained_vec(&mut constructions, 1, "NX datum CSYS constructions")?;
+                ctx.reserve_vec(&mut constructions, 1, "NX datum CSYS constructions")?;
                 constructions.push(FeatureDatumCsysConstruction {
                     id,
                     operation_label,
@@ -6381,7 +6381,7 @@ pub(super) fn feature_datum_plane_payloads(
         )?;
         let datum_plane_header =
             ctx.copy_retained_text(&header.id, "NX datum plane payload header identity")?;
-        ctx.reserve_retained_vec(&mut output, 1, "NX datum plane payloads")?;
+        ctx.reserve_vec(&mut output, 1, "NX datum plane payloads")?;
         output.push(FeatureDatumPlanePayload {
             id,
             operation_label,
@@ -6442,7 +6442,7 @@ pub(super) fn feature_datum_csys_payloads(
             &construction.id,
             "NX datum CSYS payload construction identity",
         )?;
-        ctx.reserve_retained_vec(&mut output, 1, "NX datum CSYS payloads")?;
+        ctx.reserve_vec(&mut output, 1, "NX datum CSYS payloads")?;
         output.push(FeatureDatumCsysPayload {
             id,
             operation_label,
@@ -6483,7 +6483,7 @@ fn construction_payload_frames<P, S, R>(
             let Some(record) = build(payload, ordinal, row, &source_offset)? else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut output, 1, "NX construction payload frames")?;
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
             output.push(record);
         }
     }
@@ -6659,7 +6659,7 @@ pub(super) fn feature_datum_csys_descriptors(
             )?;
             let data_block =
                 ctx.copy_retained_text(data_block, "NX datum CSYS descriptor data block")?;
-            ctx.reserve_retained_vec(&mut descriptors, 1, "NX datum CSYS descriptors")?;
+            ctx.reserve_vec(&mut descriptors, 1, "NX datum CSYS descriptors")?;
             descriptors.push(FeatureDatumCsysDescriptor {
                 id,
                 operation_label,
@@ -6715,7 +6715,7 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
                 ctx.copy_retained_text(&csys.id, "NX datum identity CSYS descriptor")?;
             let datum_csys_operation_label =
                 ctx.copy_retained_text(&csys.operation_label, "NX datum identity CSYS label")?;
-            ctx.reserve_retained_vec(&mut uses, 1, "NX datum descriptor identity uses")?;
+            ctx.reserve_vec(&mut uses, 1, "NX datum descriptor identity uses")?;
             uses.push(FeatureDatumPlaneCsysIdentityUse {
                 id,
                 identity,
@@ -6808,7 +6808,7 @@ pub(super) fn feature_datum_plane_descriptors(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum plane descriptor ordinal", 0, 1))?;
             let data_block =
                 ctx.copy_retained_text(data_block, "NX datum plane descriptor data block")?;
-            ctx.reserve_retained_vec(&mut descriptors, 1, "NX datum plane descriptors")?;
+            ctx.reserve_vec(&mut descriptors, 1, "NX datum plane descriptors")?;
             descriptors.push(FeatureDatumPlaneDescriptor {
                 id,
                 operation_label,
@@ -6873,7 +6873,7 @@ pub(super) fn feature_datum_plane_block_uses(
                         &input.operation_label,
                         "NX datum plane block use input label",
                     )?;
-                    ctx.reserve_retained_vec(&mut uses, 1, "NX datum plane block uses")?;
+                    ctx.reserve_vec(&mut uses, 1, "NX datum plane block uses")?;
                     uses.push(FeatureDatumPlaneBlockUse {
                         id,
                         datum_plane_header,
@@ -6939,7 +6939,7 @@ pub(super) fn feature_datum_csys_block_uses(
                     &input.operation_label,
                     "NX datum CSYS block use input label",
                 )?;
-                ctx.reserve_retained_vec(&mut uses, 1, "NX datum CSYS block uses")?;
+                ctx.reserve_vec(&mut uses, 1, "NX datum CSYS block uses")?;
                 uses.push(FeatureDatumCsysBlockUse {
                     id,
                     construction: construction_id,
@@ -7029,14 +7029,14 @@ pub(super) fn feature_sketch_records(
         let mut input_ids = Vec::new();
         for input in input_blocks {
             let id = ctx.copy_retained_text(&input.id, "NX sketch input identity")?;
-            ctx.reserve_retained_vec(&mut input_ids, 1, "NX sketch input identities")?;
+            ctx.reserve_vec(&mut input_ids, 1, "NX sketch input identities")?;
             input_ids.push(id);
         }
         drop(input_reservation);
         let mut reference_ids = Vec::new();
         for reference in payload_references {
             let id = ctx.copy_retained_text(&reference.id, "NX sketch reference identity")?;
-            ctx.reserve_retained_vec(&mut reference_ids, 1, "NX sketch reference identities")?;
+            ctx.reserve_vec(&mut reference_ids, 1, "NX sketch reference identities")?;
             reference_ids.push(id);
         }
         drop(reference_reservation);
@@ -7051,7 +7051,7 @@ pub(super) fn feature_sketch_records(
             ctx.copy_retained_text(&label.id, "NX sketch record operation label")?;
         let operation_record =
             ctx.copy_retained_text(&record.id, "NX sketch operation record identity")?;
-        ctx.reserve_retained_vec(&mut sketches, 1, "NX sketch records")?;
+        ctx.reserve_vec(&mut sketches, 1, "NX sketch records")?;
         sketches.push(FeatureSketchRecord {
             id,
             operation_label,
@@ -7134,7 +7134,7 @@ pub(super) fn feature_sketch_construction_inputs(
             };
             let data_block =
                 ctx.copy_retained_text(data_block, "NX sketch construction member block")?;
-            ctx.reserve_retained_vec(&mut member_rows, 1, "NX sketch construction members")?;
+            ctx.reserve_vec(&mut member_rows, 1, "NX sketch construction members")?;
             member_rows.push(FeatureConstructionMember {
                 reference: reference_id,
                 data_block,
@@ -7159,7 +7159,7 @@ pub(super) fn feature_sketch_construction_inputs(
             ctx.copy_retained_text(terminal_data_block, "NX sketch construction terminal block")?;
         drop(field);
         drop(field_reservation);
-        ctx.reserve_retained_vec(&mut inputs, 1, "NX sketch construction inputs")?;
+        ctx.reserve_vec(&mut inputs, 1, "NX sketch construction inputs")?;
         inputs.push(FeatureSketchConstructionInputs {
             id,
             operation_label,
@@ -7208,7 +7208,7 @@ pub(super) fn feature_sketch_construction_payloads(
             &construction.id,
             "NX sketch construction payload input identity",
         )?;
-        ctx.reserve_retained_vec(&mut output, 1, "NX sketch construction payloads")?;
+        ctx.reserve_vec(&mut output, 1, "NX sketch construction payloads")?;
         output.push(FeatureConstructionPayload {
             id,
             operation_label,
@@ -7516,7 +7516,7 @@ pub(super) fn feature_sketch_payload_scalars(
                 &construction.operation_label,
                 "NX sketch payload scalar operation label",
             )?;
-            ctx.reserve_retained_vec(&mut output, 1, "NX sketch payload scalars")?;
+            ctx.reserve_vec(&mut output, 1, "NX sketch payload scalars")?;
             output.push(FeaturePayloadScalar {
                 id,
                 operation_label,
@@ -7638,7 +7638,7 @@ pub(super) fn feature_sketch_payload_names(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch payload name ordinal", 0, 1))?;
             let id = format_feature_history_id(ctx, "sketch-payload-name", key, ordinal, None)?;
-            ctx.reserve_retained_vec(&mut names, 1, "NX sketch payload names")?;
+            ctx.reserve_vec(&mut names, 1, "NX sketch payload names")?;
             names.push(FeaturePayloadName {
                 id,
                 operation_label: ctx.copy_retained_text(
@@ -7748,7 +7748,7 @@ pub(super) fn feature_sketch_payload_named_records(
                 record_mixed_pairs.iter().map(|pair| pair.id.as_str()),
                 "NX sketch payload record IDs",
             )?;
-            ctx.reserve_retained_vec(&mut records, 1, "NX sketch payload named records")?;
+            ctx.reserve_vec(&mut records, 1, "NX sketch payload named records")?;
             records.push(FeatureSketchPayloadNamedRecord {
                 id,
                 operation_label: ctx.copy_retained_text(
@@ -7825,7 +7825,7 @@ pub(super) fn feature_sketch_points(
         let name = ctx.copy_retained_text(name.frame.value(), "NX sketch point name")?;
         let first_id = ctx.copy_retained_text(&first.id, "NX sketch point first scalar")?;
         let second_id = ctx.copy_retained_text(&second.id, "NX sketch point second scalar")?;
-        ctx.reserve_retained_vec(&mut points, 1, "NX sketch points")?;
+        ctx.reserve_vec(&mut points, 1, "NX sketch points")?;
         points.push(FeatureSketchPoint {
             id,
             operation_label,
@@ -7919,7 +7919,7 @@ pub(super) fn feature_sketch_fixed_points(
             ctx.copy_retained_text(&record.id, "NX sketch fixed point named record")?;
         let name = ctx.copy_retained_text(name.frame.value(), "NX sketch fixed point name")?;
         let fixed_pair = ctx.copy_retained_text(&pair.id, "NX sketch fixed point pair")?;
-        ctx.reserve_retained_vec(&mut points, 1, "NX sketch fixed points")?;
+        ctx.reserve_vec(&mut points, 1, "NX sketch fixed points")?;
         points.push(FeatureSketchFixedPoint {
             id,
             operation_label,
@@ -7969,7 +7969,7 @@ pub(super) fn feature_sketch_point_groups(
             continue;
         }
 
-        let mut members = ctx.retained_vec(count, "NX sketch point group members")?;
+        let mut members = ctx.collection_vec(count, "NX sketch point group members")?;
         for witness in points.iter().filter(&matches) {
             members.push(ctx.copy_retained_text(&witness.id, "NX sketch point group member")?);
         }
@@ -7982,7 +7982,7 @@ pub(super) fn feature_sketch_point_groups(
         let mut id = ctx.retained_string(length, "NX sketch point group identity")?;
         id.push_str(prefix);
         id.push_str(key);
-        ctx.reserve_retained_vec(&mut groups, 1, "NX sketch point groups")?;
+        ctx.reserve_vec(&mut groups, 1, "NX sketch point groups")?;
         groups.push(FeatureSketchPointGroup {
             id,
             operation_label: ctx
@@ -8058,10 +8058,10 @@ pub(super) fn offset_store_named_points(
                     format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
                     "NX named point data block identity",
                 )?;
-                ctx.reserve_retained_vec(&mut data_blocks, 1, "NX named point data blocks")?;
+                ctx.reserve_vec(&mut data_blocks, 1, "NX named point data blocks")?;
                 data_blocks.push(block_id);
             }
-            ctx.reserve_retained_vec(&mut points, 1, "NX named points")?;
+            ctx.reserve_vec(&mut points, 1, "NX named points")?;
             points.push(OffsetStoreNamedPoint {
                 id,
                 name: point.name,
@@ -8124,7 +8124,7 @@ pub(super) fn feature_sketch_named_point_block_uses(
                 ctx.copy_retained_text(data_block, "NX sketch named point block use data block")?;
             let point_block_ordinal = u32::try_from(point_block_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
-            ctx.reserve_retained_vec(&mut uses, 1, "NX sketch named point block uses")?;
+            ctx.reserve_vec(&mut uses, 1, "NX sketch named point block uses")?;
             uses.push(FeatureSketchNamedPointBlockUse {
                 id,
                 operation_label,
@@ -8266,14 +8266,14 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
         let mut point_data_blocks = Vec::new();
         for block in &point.data_blocks {
             let block = ctx.copy_retained_text(block, "NX preceding named-point source block")?;
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut point_data_blocks,
                 1,
                 "NX preceding named-point source blocks",
             )?;
             point_data_blocks.push(block);
         }
-        ctx.reserve_retained_vec(&mut uses, 1, "NX preceding named-point uses")?;
+        ctx.reserve_vec(&mut uses, 1, "NX preceding named-point uses")?;
         uses.push(FeatureSketchPrecedingNamedPointUse {
             id,
             operation_label,
@@ -8391,7 +8391,7 @@ pub(super) fn feature_sketch_point_uses(
                 .copy_retained_text(&block_use.sketch_reference, "NX sketch point use reference")?;
             let block_use_id =
                 ctx.copy_retained_text(&block_use.id, "NX sketch point use block identity")?;
-            ctx.reserve_retained_vec(&mut references, 1, "NX sketch point use references")?;
+            ctx.reserve_vec(&mut references, 1, "NX sketch point use references")?;
             references.push(FeatureSketchPointUseReference {
                 sketch_reference,
                 block_use: block_use_id,
@@ -8404,7 +8404,7 @@ pub(super) fn feature_sketch_point_uses(
             ctx.copy_retained_text(&point_group.id, "NX sketch point use group identity")?;
         let named_point =
             ctx.copy_retained_text(&named_point.id, "NX sketch point use named point")?;
-        ctx.reserve_retained_vec(&mut uses, 1, "NX sketch point uses")?;
+        ctx.reserve_vec(&mut uses, 1, "NX sketch point uses")?;
         uses.push(FeatureSketchPointUse {
             id,
             operation_label,
@@ -8567,7 +8567,7 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             }) {
                 let datum_csys_scalar =
                     ctx.copy_retained_text(&scalar.id, "NX sketch datum scalar identity")?;
-                ctx.reserve_retained_vec(&mut scalar_aliases, 1, "NX sketch datum scalar aliases")?;
+                ctx.reserve_vec(&mut scalar_aliases, 1, "NX sketch datum scalar aliases")?;
                 scalar_aliases.push(FeatureSketchDatumCsysScalarAlias {
                     sketch_coordinate_ordinal: u8::try_from(coordinate_ordinal).map_err(|_| {
                         ctx.refuse_codec_limit("NX sketch datum coordinate ordinal", 0, 1)
@@ -8609,7 +8609,7 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             ctx.copy_retained_text(&point_use.id, "NX sketch datum point use")?;
         let datum_csys_construction =
             ctx.copy_retained_text(&construction.id, "NX sketch datum construction")?;
-        ctx.reserve_retained_vec(&mut dependencies, 1, "NX sketch datum dependencies")?;
+        ctx.reserve_vec(&mut dependencies, 1, "NX sketch datum dependencies")?;
         dependencies.push(FeatureSketchDatumCsysDependency {
             id,
             sketch_operation_label,
@@ -8687,7 +8687,7 @@ pub(super) fn feature_sketch_references(
                         .ok_or_else(|| {
                             ctx.refuse_codec_limit("NX sketch reference source offset", 0, 1)
                         })?;
-                    ctx.reserve_retained_vec(&mut references, 1, "NX sketch references")?;
+                    ctx.reserve_vec(&mut references, 1, "NX sketch references")?;
                     references.push(FeatureSketchReference {
                         id,
                         operation_label,
@@ -8760,7 +8760,7 @@ pub(super) fn feature_parameter_bindings(
                 }
                 _ => None,
             };
-            ctx.reserve_retained_vec(&mut bindings, 1, "NX parameter bindings")?;
+            ctx.reserve_vec(&mut bindings, 1, "NX parameter bindings")?;
             bindings.push(FeatureParameterBinding {
                 id,
                 operation_label,
@@ -8822,7 +8822,7 @@ pub(super) fn feature_parameter_uses(
                 && candidate.expression.as_deref() == Some(expression)
         }) {
             let binding_id = ctx.copy_retained_text(&candidate.id, "NX parameter use binding")?;
-            ctx.reserve_retained_vec(&mut occurrences, 1, "NX parameter use bindings")?;
+            ctx.reserve_vec(&mut occurrences, 1, "NX parameter use bindings")?;
             occurrences.push(FeatureParameterUseBinding {
                 binding: binding_id,
                 source_offset: candidate.source_offset,
@@ -8834,7 +8834,7 @@ pub(super) fn feature_parameter_uses(
             |_| 0,
             "sort NX parameter use bindings",
         )?;
-        ctx.reserve_retained_vec(&mut uses, 1, "NX parameter uses")?;
+        ctx.reserve_vec(&mut uses, 1, "NX parameter uses")?;
         uses.push(FeatureParameterUse {
             id,
             operation_label,

@@ -87,7 +87,7 @@ fn try_clone_value(
         }
         Value::String(bytes) => {
             budget.charge_work(u64_from_index(bytes.len()), operation)?;
-            let copied = budget.copy_retained_slice(bytes, operation)?;
+            let copied = budget.copy_slice(bytes, operation)?;
             Value::String(copied)
         }
         Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
@@ -98,7 +98,7 @@ fn try_clone_value(
         Value::Omitted => Value::Omitted,
         Value::Derived => Value::Derived,
         Value::List(values) => {
-            let mut copied = budget.retained_vec(values.len(), operation)?;
+            let mut copied = budget.collection_vec(values.len(), operation)?;
             for value in values {
                 copied.push(try_clone_value(value, budget, operation)?);
             }
@@ -1319,7 +1319,7 @@ impl Parser<'_, '_, '_> {
         loop {
             let value = self.value()?;
             self.budget
-                .push_retained_vec(&mut values, value, "step_parse_parameter")?;
+                .push_vec(&mut values, value, "step_parse_parameter")?;
             if self.peek(&TokenKind::Comma) {
                 self.next_kind()?;
             } else {
@@ -2497,7 +2497,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let mut expanded_nodes = 0usize;
                 let mut resolved = self
                     .budget
-                    .retained_vec(values.len(), "step_anchor_list_items")
+                    .collection_vec(values.len(), "step_anchor_list_items")
                     .map_err(ResolveError::Resource)?;
                 for value in values {
                     let remaining = budget
@@ -2648,7 +2648,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 self.admit_copy(1)?;
                 let mut resolved = self
                     .budget
-                    .retained_vec(values.len(), "step_reference_list_items")
+                    .collection_vec(values.len(), "step_reference_list_items")
                     .map_err(ResolveError::Resource)?;
                 for value in values {
                     resolved.push(self.resolve_value(value, depth + 1)?);

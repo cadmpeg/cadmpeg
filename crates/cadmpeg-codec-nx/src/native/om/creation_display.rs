@@ -78,7 +78,7 @@ fn push_relation(
     definition_offset: usize,
     source_entry: &str,
 ) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(relations, 1, "NX creation display relations")?;
+    ctx.reserve_vec(relations, 1, "NX creation display relations")?;
     let class_len = "nx:om-entry-:class#"
         .len()
         .checked_add(decimal_len(entry_index))

@@ -126,7 +126,7 @@ pub(super) fn decode(
         for item in item_ids {
             associator.visit(item, None)?;
         }
-        ctx.insert_retained_hash_set(&mut typed, id, "step_tessellation_claims")?;
+        ctx.insert_hash_set(&mut typed, id, "step_tessellation_claims")?;
     }
     let mut representation_cache = BTreeMap::new();
     let (product_representations, product_representation_bytes) =
@@ -730,7 +730,7 @@ pub(super) fn decode(
             )?;
         }
 
-        ctx.reserve_retained_vec(
+        ctx.reserve_vec(
             &mut ir.model.tessellations,
             1,
             "step_tessellation_mesh_list",
@@ -755,8 +755,8 @@ pub(super) fn decode(
         ir.model
             .tessellations
             .push(mesh.with_body(body).with_source_object(source_object));
-        ctx.insert_retained_hash_set(&mut typed, id, "step_tessellation_claims")?;
-        ctx.insert_retained_hash_set(&mut typed, coordinate_id, "step_tessellation_claims")?;
+        ctx.insert_hash_set(&mut typed, id, "step_tessellation_claims")?;
+        ctx.insert_hash_set(&mut typed, coordinate_id, "step_tessellation_claims")?;
     }
     if !ir.model.tessellations.is_empty() {
         for (&id, record) in exchange.records() {
@@ -764,7 +764,7 @@ pub(super) fn decode(
                 || has_entity(record, "TESSELLATED_SOLID")
                 || has_entity(record, "TESSELLATED_SHELL")
             {
-                ctx.insert_retained_hash_set(&mut typed, id, "step_tessellation_claims")?;
+                ctx.insert_hash_set(&mut typed, id, "step_tessellation_claims")?;
             }
         }
     }
@@ -957,7 +957,7 @@ impl TessellationItemAssociator<'_, '_, '_> {
             }
             if self.mode != AssociationMode::DetachedAnnotation {
                 self.ctx
-                    .insert_retained_hash_set(self.typed, id, "step_tessellation_claims")?;
+                    .insert_hash_set(self.typed, id, "step_tessellation_claims")?;
             }
             if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
             {
@@ -1543,7 +1543,7 @@ fn push_loss(
     message: std::fmt::Arguments<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(losses, 1, "step_tessellation_loss_notes")?;
+    ctx.reserve_vec(losses, 1, "step_tessellation_loss_notes")?;
     let vocabulary_bytes = u64_from_index(code.code().len())
         .checked_add(u64_from_index("step".len()))
         .ok_or_else(|| {

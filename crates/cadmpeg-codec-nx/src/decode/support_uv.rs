@@ -168,7 +168,7 @@ pub(super) fn linear_knots(
         cadmpeg_core::decode::u64_from_index(count),
         "form nx linear knots",
     )?;
-    let mut knots = ctx.retained_vec(count, "nx linear knots")?;
+    let mut knots = ctx.collection_vec(count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
@@ -281,7 +281,7 @@ pub(super) fn validate_serialized_support_uv_with_index(
         )? {
             admitted[side] = Some(
                 crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_retained_slice(values.as_slice(), "NX solved support-UV lane copy")?,
+                    ctx.copy_slice(values.as_slice(), "NX solved support-UV lane copy")?,
                     values.as_slice().len(),
                 )
                 .ok_or_else(|| {
@@ -418,7 +418,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
             .as_ref()
             .map(|lane| {
                 crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                     lane.as_slice().len(),
                 )
                 .ok_or_else(|| {
@@ -442,7 +442,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
                 .as_ref()
                 .map(|lane| {
                     crate::intersection::SupportUvLane::from_checked(
-                        ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                        ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                         lane.as_slice().len(),
                     )
                     .ok_or_else(|| {

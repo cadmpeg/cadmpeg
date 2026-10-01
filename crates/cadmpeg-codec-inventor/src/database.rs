@@ -430,7 +430,7 @@ impl<'a> Cursor<'a> {
                     "Inventor registry identifier count exceeds remaining payload",
                 )
             })?;
-        let mut ids = ctx.retained_vec(count, "admit Inventor registry identifier list")?;
+        let mut ids = ctx.collection_vec(count, "admit Inventor registry identifier list")?;
         for _ in 0..count {
             ids.push(self.array(field)?);
         }

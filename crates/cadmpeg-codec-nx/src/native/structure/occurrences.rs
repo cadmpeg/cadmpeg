@@ -57,7 +57,7 @@ impl FastLoadOccurrences {
             ctx.refuse_codec_limit("admit NX occurrence roster", u64::MAX - 1, u64::MAX)
         })?;
         ctx.charge_work(u64_from_index(work), "admit NX occurrence roster")?;
-        let records = ctx.retained_vec(wire.len(), "NX admitted occurrence records")?;
+        let records = ctx.collection_vec(wire.len(), "NX admitted occurrence records")?;
         Self::from_wire_with_storage(wire, records)
     }
 

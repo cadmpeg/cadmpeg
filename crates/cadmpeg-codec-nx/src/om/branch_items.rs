@@ -52,7 +52,7 @@ impl<T> BranchItems<T> {
         mut f: impl FnMut(usize, T) -> U,
     ) -> Result<BranchItems<U>, CodecError> {
         let count = self.0.len();
-        let mut mapped = ctx.retained_vec(count, "NX branch item mapping")?;
+        let mut mapped = ctx.collection_vec(count, "NX branch item mapping")?;
         for (index, item) in self.0.into_iter().enumerate() {
             mapped.push(f(index, item));
         }
@@ -65,7 +65,7 @@ impl<T> BranchItems<T> {
         mut f: impl FnMut(usize, T) -> Result<U, CodecError>,
     ) -> Result<BranchItems<U>, CodecError> {
         let count = self.0.len();
-        let mut mapped = ctx.retained_vec(count, "NX branch item mapping")?;
+        let mut mapped = ctx.collection_vec(count, "NX branch item mapping")?;
         for (index, item) in self.0.into_iter().enumerate() {
             mapped.push(f(index, item)?);
         }

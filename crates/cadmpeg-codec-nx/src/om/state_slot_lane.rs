@@ -69,7 +69,7 @@ impl StateSlotLane {
             };
             cursor = next;
             ctx.charge_work(1, "scan NX state slots")?;
-            ctx.reserve_retained_vec(&mut slots, 1, "nx state slots")?;
+            ctx.reserve_vec(&mut slots, 1, "nx state slots")?;
             slots.push(slot.token());
         }
         Ok(None)

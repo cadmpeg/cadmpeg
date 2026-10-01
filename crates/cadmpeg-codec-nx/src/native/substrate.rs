@@ -33,7 +33,7 @@ pub(crate) fn topology_streams<'a>(
     scan: &'a Scan<'_>,
 ) -> Result<Vec<Cow<'a, [u8]>>, CodecError> {
     let semantic = prepare_topology_streams(ctx, scan, None)?;
-    let mut bytes = ctx.retained_vec(semantic.len(), "nx topology byte views")?;
+    let mut bytes = ctx.collection_vec(semantic.len(), "nx topology byte views")?;
     for stream in semantic {
         bytes.push(stream.bytes);
     }
@@ -45,7 +45,7 @@ fn prepare_topology_streams<'a>(
     scan: &'a Scan<'_>,
     mut unmatched_tombstone_counts: Option<&mut BTreeMap<&'static str, usize>>,
 ) -> Result<Vec<TopologyStream<'a>>, CodecError> {
-    let mut semantic = ctx.retained_vec(scan.streams.len(), "nx prepared topology streams")?;
+    let mut semantic = ctx.collection_vec(scan.streams.len(), "nx prepared topology streams")?;
     for stream in &scan.streams {
         semantic.push(TopologyStream {
             bytes: Cow::Borrowed(stream.inflated.as_slice()),
@@ -186,7 +186,7 @@ pub(super) fn pair_stream_indices(
                 )?;
             }
             let deltas = pairs.entry(partition).or_default();
-            ctx.reserve_retained_vec(deltas, 1, "nx delta pair members")?;
+            ctx.reserve_vec(deltas, 1, "nx delta pair members")?;
             deltas.push(delta);
         }
     }
@@ -361,7 +361,7 @@ impl<'a> ParsedStreams<'a> {
             ctx.insert_btree_set(&mut paired_deltas, delta, "nx parsed stream paired deltas")?;
         }
 
-        let mut streams = ctx.retained_vec(scan.streams.len(), "nx parsed stream records")?;
+        let mut streams = ctx.collection_vec(scan.streams.len(), "nx parsed stream records")?;
         for (si, stream) in scan.streams.iter().enumerate() {
             let mut semantic_bytes = std::mem::take(&mut topology_streams[si].bytes);
             let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
@@ -535,7 +535,7 @@ impl<'a> ParsedStreams<'a> {
         &mut self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Option<Census>>, CodecError> {
-        let mut censuses = ctx.retained_vec(self.streams.len(), "nx delta census slots")?;
+        let mut censuses = ctx.collection_vec(self.streams.len(), "nx delta census slots")?;
         for stream in &mut self.streams {
             censuses.push(stream.delta_census.take());
         }

@@ -2158,7 +2158,7 @@ impl FeatureContent {
                 }
             }
         }
-        ctx.reserve_retained_vec_limit(&mut self.0, 1, operation)?;
+        ctx.reserve_vec_limit(&mut self.0, 1, operation)?;
         self.0.push(value);
         Ok(())
     }
@@ -2832,7 +2832,7 @@ impl TreeChildren {
             cadmpeg_core::decode::u64_from_index(self.children.len()),
             operation,
         )?;
-        ctx.reserve_retained_vec_limit(&mut self.children.0, 1, operation)?;
+        ctx.reserve_vec_limit(&mut self.children.0, 1, operation)?;
         self.insert(child);
         Ok(())
     }
@@ -6868,7 +6868,7 @@ impl<T: PartialEq> DistinctMembers<T> {
             cadmpeg_core::decode::u64_from_index(self.0.len()),
             operation,
         )?;
-        ctx.reserve_retained_vec_limit(&mut self.0, 1, operation)?;
+        ctx.reserve_vec_limit(&mut self.0, 1, operation)?;
         Ok(self.insert(value))
     }
 

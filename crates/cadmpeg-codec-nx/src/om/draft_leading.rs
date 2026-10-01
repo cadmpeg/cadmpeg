@@ -142,7 +142,7 @@ pub(crate) fn scan(
         return Ok(None);
     }
     let operation = "NX draft leading index members";
-    let mut indices = ctx.retained_vec(member_count, operation)?;
+    let mut indices = ctx.collection_vec(member_count, operation)?;
     for _ in 1..declared_count {
         let Some(token) = LocatedCompactIndex::read(record.payload(), at) else {
             return Ok(None);

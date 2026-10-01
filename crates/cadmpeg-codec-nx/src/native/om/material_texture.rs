@@ -224,7 +224,7 @@ pub(in crate::native) fn material_texture_assets(
         let Some((offset, size, payload, byte_order, first_ifd_offset)) = parsed else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut assets, 1, "NX material texture assets")?;
+        ctx.reserve_vec(&mut assets, 1, "NX material texture assets")?;
         let ordinal = assets.len();
         let mut digits = 1;
         let mut value = ordinal;

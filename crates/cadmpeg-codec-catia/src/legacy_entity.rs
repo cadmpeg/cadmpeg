@@ -663,7 +663,7 @@ fn parse_schema_program(
     })() else {
         return Ok(None);
     };
-    let bytes = ctx.copy_retained_slice(source, "catia_legacy_schema_program_bytes")?;
+    let bytes = ctx.copy_slice(source, "catia_legacy_schema_program_bytes")?;
     Ok(Some(LegacySchemaProgram {
         offset,
         boundary_offset,
@@ -1433,7 +1433,7 @@ fn parse_schema_fields(
             role_offset: role.offset,
             boundary_role_offset: boundary.offset,
             field_code,
-            payload: ctx.copy_retained_slice(payload, "catia_legacy_schema_field_payload")?,
+            payload: ctx.copy_slice(payload, "catia_legacy_schema_field_payload")?,
         };
         ctx.push_vec(&mut fields, field, "catia_legacy_schema_fields")?;
     }

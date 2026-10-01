@@ -76,7 +76,7 @@ impl KnotVector {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        Ok(Self(ctx.copy_retained_slice(&self.0, operation)?))
+        Ok(Self(ctx.copy_slice(&self.0, operation)?))
     }
 
     /// Reverse the order and negate every value, the knots of the reversed
@@ -320,7 +320,7 @@ fn reserve_pole_storage<T>(
     if let Some(storage) = storage {
         ctx.reserve_scoped_vec(storage, values, 1, operation)
     } else {
-        ctx.reserve_retained_vec(values, 1, operation)
+        ctx.reserve_vec(values, 1, operation)
     }
 }
 

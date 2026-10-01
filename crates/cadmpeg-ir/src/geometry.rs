@@ -42,7 +42,7 @@ pub(super) fn copy_decode_slice<T: Copy>(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    ctx.copy_retained_slice(values, operation)
+    ctx.copy_slice(values, operation)
 }
 
 pub mod analytic;
@@ -481,7 +481,7 @@ impl SolvedCurveGeometry {
                 self_intersect,
             } => {
                 let mut copy = Vec::new();
-                ctx.reserve_retained_vec(&mut copy, segments.len(), operation)?;
+                ctx.reserve_vec(&mut copy, segments.len(), operation)?;
                 ctx.charge_work(u64_from_index(segments.len()), operation)?;
                 for segment in segments {
                     copy.push(CompositeCurveSegment {
@@ -3395,7 +3395,7 @@ impl RollingBallJetStations {
         if let Err(error) = Self::admit_controls(ctx, degree, &stations, |row| row.knot)? {
             return Ok(Err(error));
         }
-        let mut admitted = ctx.retained_vec(stations.len(), "rolling-ball jet stations")?;
+        let mut admitted = ctx.collection_vec(stations.len(), "rolling-ball jet stations")?;
         for row in stations {
             ctx.charge_work(1, "rolling-ball jet station controls")?;
             let Some(knot) = FiniteReal::new(row.knot) else {

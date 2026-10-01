@@ -760,7 +760,7 @@ impl EntityValuePacket {
                 type_selector: *type_selector,
                 layout_atom: *layout_atom,
                 value_atom: *value_atom,
-                items: ctx.copy_retained_slice(items, "catia_native_numeric_packet_items")?,
+                items: ctx.copy_slice(items, "catia_native_numeric_packet_items")?,
                 terminator_count: *terminator_count,
             }),
             other => Ok(other.clone()),

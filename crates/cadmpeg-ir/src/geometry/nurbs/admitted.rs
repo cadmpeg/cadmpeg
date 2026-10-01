@@ -459,7 +459,7 @@ pub(super) fn admit_grid<P: PoleValue<T>, T>(
         NurbsPoleGrid::Polynomial { rows } => {
             let mut output = Vec::new();
             for points in rows {
-                ctx.reserve_retained_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
+                ctx.reserve_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
                 let points = collect(
                     ctx,
                     points.into_iter().map(|point| finite_point(ctx, point)),
@@ -472,7 +472,7 @@ pub(super) fn admit_grid<P: PoleValue<T>, T>(
         NurbsPoleGrid::Rational { rows } => {
             let mut output = Vec::new();
             for points in rows {
-                ctx.reserve_retained_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
+                ctx.reserve_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
                 let points = collect(
                     ctx,
                     points.into_iter().map(|pole| {

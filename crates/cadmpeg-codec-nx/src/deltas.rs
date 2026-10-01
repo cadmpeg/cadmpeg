@@ -3054,7 +3054,7 @@ fn materialize_attdef_list(
     let count = usize::try_from(shape.slot_count).map_err(|_| {
         ctx.refuse_codec_limit("NX ATTDEF references", 0, u64::from(shape.slot_count))
     })?;
-    let mut references = ctx.retained_vec(count, "NX ATTDEF references")?;
+    let mut references = ctx.collection_vec(count, "NX ATTDEF references")?;
     let mut at = shape.references_start;
     for _ in 0..count {
         let Some((reference, consumed)) = read_xmt(stream, at) else {

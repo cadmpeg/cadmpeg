@@ -84,7 +84,7 @@ fn canonicalize_topology_boundary_gauges(
     for face in &mut topology.faces {
         for boundary in &mut face.boundaries {
             rotate_to_minimum(&mut boundary.coedges);
-            let reversed = ctx.copy_retained_slice(
+            let reversed = ctx.copy_slice(
                 boundary.coedges.as_slice(),
                 "catia_mesh_gauge_reversed_coedges",
             )?;
@@ -262,7 +262,7 @@ fn enumerate_coordinate_permutations(
     output: &mut Vec<Vec<usize>>,
 ) -> Result<(), CodecError> {
     if index == points.len() {
-        let copy = ctx.copy_retained_slice(current, "catia_gauge_permutation_values")?;
+        let copy = ctx.copy_slice(current, "catia_gauge_permutation_values")?;
         ctx.push_vec(output, copy, "catia_gauge_permutations")?;
         return Ok(());
     }
@@ -556,7 +556,7 @@ pub(super) fn build_mesh_coordinate_gauge(
                 if edge_identity_evidence[edge] {
                     continue;
                 }
-                let original = ctx.copy_retained_slice(
+                let original = ctx.copy_slice(
                     &normalized_options[edge],
                     "catia_gauge_original_options",
                 )?;
@@ -584,7 +584,7 @@ pub(super) fn build_mesh_coordinate_gauge(
             }
             for &edge in edges.iter().filter(|edge| edge_identity_evidence[**edge]) {
                 if mapped_normalized_endpoint_options(ctx, &edge_candidates[edge], permutation)?
-                    != Some(ctx.copy_retained_slice(
+                    != Some(ctx.copy_slice(
                         &normalized_options[edge],
                         "catia_gauge_identity_options",
                     )?)
@@ -655,7 +655,7 @@ pub(super) fn build_mesh_coordinate_gauge(
             for permutation in &local_orders {
                 for order in &class_orders {
                     let mut permutation =
-                        ctx.copy_retained_slice(permutation, "catia_gauge_order_copy")?;
+                        ctx.copy_slice(permutation, "catia_gauge_order_copy")?;
                     for (&source, &target) in class.iter().zip(order) {
                         permutation[source] = target;
                     }
@@ -785,7 +785,7 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
                 };
                 mapped
             }
-            None => ctx.copy_retained_slice(&source_options, "catia_gauge_target_options")?,
+            None => ctx.copy_slice(&source_options, "catia_gauge_target_options")?,
         };
         let source_key = (base, target_options);
         ctx.push_btree_group(
@@ -854,7 +854,7 @@ fn canonicalize_partial_endpoint_pair_gauge(
     };
     if let Some(coordinate_gauge) = gauge.coordinate_gauge {
         for permutations in &coordinate_gauge.components {
-            let mut best = ctx.copy_retained_slice(&canonical, "catia_gauge_best_pairs")?;
+            let mut best = ctx.copy_slice(&canonical, "catia_gauge_best_pairs")?;
             for permutation in permutations {
                 let Some(candidate) = canonicalize_partial_endpoint_pair_gauge_with_permutation(
                     ctx,
@@ -1036,7 +1036,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 gauge.edge_geometry[edge],
                 row.handles.len(),
                 match ctx
-                    .copy_retained_slice(&incident_faces[edge], "catia_mesh_gauge_incident_copy")
+                    .copy_slice(&incident_faces[edge], "catia_mesh_gauge_incident_copy")
                 {
                     Ok(faces) => faces,
                     Err(error) => return Some(Err(error)),
@@ -1052,7 +1052,7 @@ fn canonicalize_mesh_edge_row_gauges(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 },
-                None => match ctx.copy_retained_slice(
+                None => match ctx.copy_slice(
                     &source_option_keys[edge],
                     "catia_mesh_gauge_target_options",
                 ) {
@@ -1061,7 +1061,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 },
             };
             let base_copy =
-                match ctx.copy_retained_slice(&base.4, "catia_mesh_gauge_base_faces_copy") {
+                match ctx.copy_slice(&base.4, "catia_mesh_gauge_base_faces_copy") {
                     Ok(faces) => (base.0, base.1, base.2, base.3, faces),
                     Err(error) => return Some(Err(error)),
                 };
@@ -1076,7 +1076,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 return Some(Err(error));
             }
             let source_options = match ctx
-                .copy_retained_slice(&source_option_keys[edge], "catia_mesh_gauge_source_options")
+                .copy_slice(&source_option_keys[edge], "catia_mesh_gauge_source_options")
             {
                 Ok(options) => options,
                 Err(error) => return Some(Err(error)),
@@ -1120,7 +1120,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 return Some(Err(error));
             }
             let mut ordered =
-                match ctx.copy_retained_slice(&group, "catia_mesh_gauge_ordered_group") {
+                match ctx.copy_slice(&group, "catia_mesh_gauge_ordered_group") {
                     Ok(group) => group,
                     Err(error) => return Some(Err(error)),
                 };
@@ -1150,7 +1150,7 @@ fn canonicalize_mesh_edge_row_gauges(
         }
 
         let mut permuting = match ctx
-            .copy_retained_slice(&row_permutation, "catia_mesh_gauge_row_permutation_copy")
+            .copy_slice(&row_permutation, "catia_mesh_gauge_row_permutation_copy")
         {
             Ok(permuting) => permuting,
             Err(error) => return Some(Err(error)),
@@ -2025,7 +2025,7 @@ fn copy_endpoint_relation_state(
     ctx: &DecodeContext<'_>,
     state: &MeshEndpointRelationStateSignature,
 ) -> Result<MeshEndpointRelationStateSignature, CodecError> {
-    let assigned = ctx.copy_retained_slice(&state.0, "catia_relation_state_assigned_copy")?;
+    let assigned = ctx.copy_slice(&state.0, "catia_relation_state_assigned_copy")?;
     let mut domains = Vec::new();
     for row in &state.1 {
         let mut choices = Vec::new();
@@ -2037,9 +2037,9 @@ fn copy_endpoint_relation_state(
                     edge_pairs,
                 } => MeshEndpointRelationSelection::Enumerated {
                     assignments: ctx
-                        .copy_retained_slice(assignments, "catia_relation_state_assignment_copy")?,
+                        .copy_slice(assignments, "catia_relation_state_assignment_copy")?,
                     edge_pairs: ctx
-                        .copy_retained_slice(edge_pairs, "catia_relation_state_pair_copy")?,
+                        .copy_slice(edge_pairs, "catia_relation_state_pair_copy")?,
                 },
             };
             ctx.push_vec(&mut choices, copied, "catia_relation_state_choice_copy")?;
@@ -2115,7 +2115,7 @@ fn map_endpoint_relation_state(
                         "catia_relation_mapped_pairs_sort",
                     )?;
                     MeshEndpointRelationSelection::Enumerated {
-                        assignments: ctx.copy_retained_slice(
+                        assignments: ctx.copy_slice(
                             assignments,
                             "catia_relation_mapped_assignments",
                         )?,

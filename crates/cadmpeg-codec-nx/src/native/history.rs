@@ -63,7 +63,7 @@ impl BodyWriterHistory {
     ) -> Result<(), CodecError> {
         let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
             if !dependencies.contains(writer) {
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     dependencies,
                     writer.try_clone_for_decode(ctx, "NX primary writer dependencies")?,
                     "NX primary writer dependencies",

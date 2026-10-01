@@ -4011,12 +4011,12 @@ fn rechart_equivalent_surface_pcurve(
             let mut poles = match nurbs.pole_rows() {
                 PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
                     points: ctx
-                        .copy_retained_slice(points, "catia_freeform_rechart_poles")
+                        .copy_slice(points, "catia_freeform_rechart_poles")
                         .map_err(RechartFailure::Resource)?,
                 },
                 PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
                     points: ctx
-                        .copy_retained_slice(points, "catia_freeform_rechart_poles")
+                        .copy_slice(points, "catia_freeform_rechart_poles")
                         .map_err(RechartFailure::Resource)?,
                 },
             };

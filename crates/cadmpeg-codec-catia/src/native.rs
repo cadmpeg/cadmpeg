@@ -5844,7 +5844,7 @@ fn entity_suffix_framing(
         }
         [0x81, 0x49] => CatiaEntitySuffixFraming::Token8149,
         [0xfe, 0xf6, payload @ ..] if payload.len() == 16 => CatiaEntitySuffixFraming::FixedFeF6 {
-            payload: ctx.copy_retained_slice(payload, "catia_native_fixed_suffix_payload")?,
+            payload: ctx.copy_slice(payload, "catia_native_fixed_suffix_payload")?,
         },
         [lead @ 0xd1..=0xe4, low, 0x01] => CatiaEntitySuffixFraming::PagedAtomState01 {
             value: u32::from(*lead - 0xd1) * 256 + u32::from(*low) + 1,
@@ -9648,7 +9648,7 @@ impl CatiaNative {
             let family = ctx
                 .copy_retained_text(finjpl_family(segment.kind()), "catia_native_finjpl_family")?;
             let data = ctx
-                .copy_retained_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
+                .copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
             ctx.push_vec(
                 &mut finjpl_segments,
                 CatiaFinjplSegment {

@@ -596,7 +596,7 @@ pub(super) fn segment_body_lineage_statuses(
         let mut segment_body_binding =
             ctx.retained_string(binding.id.len(), "NX segment lineage binding identity")?;
         segment_body_binding.push_str(&binding.id);
-        ctx.reserve_retained_vec(&mut output, 1, "NX segment lineage statuses")?;
+        ctx.reserve_vec(&mut output, 1, "NX segment lineage statuses")?;
         output.push(SegmentBodyLineageStatus {
             id,
             segment_body_binding,
@@ -884,7 +884,7 @@ pub(super) fn segment_om_links(
             }) else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut links, 1, "NX segment OM links")?;
+            ctx.reserve_vec(&mut links, 1, "NX segment OM links")?;
             let id = segment_link_identity(ctx, "nx:segment-om-links:link#", links.len())?;
             let row = segment_link_identity(ctx, "nx:segment-index:row#", row_ordinal)?;
             links.push(SegmentOmLink {

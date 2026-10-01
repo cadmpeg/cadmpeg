@@ -399,7 +399,7 @@ impl<'a> Container<'a> {
             .om_section_cache
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
-        let mut result = ctx.retained_vec(
+        let mut result = ctx.collection_vec(
             match framed_cache {
                 FramedSectionCache::Borrowed { sections } => sections.len(),
                 FramedSectionCache::Owned { layouts } => layouts.len(),
@@ -497,7 +497,7 @@ impl<'a> Container<'a> {
             .indexed_section_layouts
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
-        let mut result = ctx.retained_vec(
+        let mut result = ctx.collection_vec(
             match cache {
                 IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
                 IndexedSectionCache::Owned { layouts } => layouts.len(),
@@ -545,7 +545,7 @@ impl<'a> Container<'a> {
     ) -> Result<Vec<String>, CodecError> {
         let strings = self.external_reference_strings(ctx)?;
         let count = strings.len();
-        let mut paths = ctx.retained_vec(count, "nx external reference paths")?;
+        let mut paths = ctx.collection_vec(count, "nx external reference paths")?;
         for (_, _, path) in strings {
             let mut copy = ctx.retained_string(path.len(), "nx external reference path")?;
             copy.push_str(&path);
@@ -581,7 +581,7 @@ impl<'a> Container<'a> {
                 continue;
             };
             let count = strings.len();
-            ctx.reserve_retained_vec(&mut out, count, "nx external reference strings")?;
+            ctx.reserve_vec(&mut out, count, "nx external reference strings")?;
             out.extend(
                 strings
                     .into_iter()
@@ -616,7 +616,7 @@ impl<'a> Container<'a> {
             };
             let records = parse_extref_records(ctx, payload)?;
             let count = records.len();
-            ctx.reserve_retained_vec(&mut out, count, "nx external reference record entries")?;
+            ctx.reserve_vec(&mut out, count, "nx external reference record entries")?;
             out.extend(records.into_iter().map(|record| (entry, record)));
         }
         Ok(out)
@@ -649,7 +649,7 @@ impl<'a> Container<'a> {
                 continue;
             };
             let count = records.len();
-            ctx.reserve_retained_vec(&mut out, count, "nx external reference indexed entries")?;
+            ctx.reserve_vec(&mut out, count, "nx external reference indexed entries")?;
             out.extend(records.into_iter().map(|record| (entry, record)));
         }
         Ok(out)
@@ -829,7 +829,7 @@ fn parse_extref_string_table(
     let Some((marker, count, start)) = locate_extref_string_table(ctx, payload)? else {
         return Ok(None);
     };
-    let mut out = ctx.retained_vec(count, "nx external reference string table")?;
+    let mut out = ctx.collection_vec(count, "nx external reference string table")?;
     let mut pos = start;
     for _ in 0..count {
         let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
@@ -900,7 +900,7 @@ fn parse_extref_records(
                 return Ok(None);
             }
         }
-        let mut handles = ctx.retained_vec(handle_token_count, "nx external reference handles")?;
+        let mut handles = ctx.collection_vec(handle_token_count, "nx external reference handles")?;
         for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             let Some(handle) = View::u32_be_at(bytes, token + 1) else {
@@ -935,7 +935,7 @@ fn parse_extref_records(
         let Some(parsed) = parse_record(record.record_id, record.offset, end)? else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut records, 1, "nx external reference records")?;
+        ctx.reserve_vec(&mut records, 1, "nx external reference records")?;
         records.push(parsed);
     }
     Ok(records)
@@ -984,7 +984,7 @@ fn parse_extref_record_index(
         if offset >= string_table {
             return Ok(None);
         }
-        ctx.reserve_retained_vec(&mut directory, 1, "nx external reference directory")?;
+        ctx.reserve_vec(&mut directory, 1, "nx external reference directory")?;
         directory.push((record_id, offset));
     }
     if directory.is_empty()
@@ -994,7 +994,7 @@ fn parse_extref_record_index(
         return Ok(None);
     }
     let count = directory.len();
-    let mut records = ctx.retained_vec(count, "nx external reference index")?;
+    let mut records = ctx.collection_vec(count, "nx external reference index")?;
     for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
         let end = directory
             .get(index + 1)
@@ -1040,7 +1040,7 @@ pub(crate) fn parse_extref_reference_pairs(
             ))
         })();
         if let Some((handle, tagged_reference)) = pair {
-            ctx.reserve_retained_vec(&mut pairs, 1, "nx external reference tail pairs")?;
+            ctx.reserve_vec(&mut pairs, 1, "nx external reference tail pairs")?;
             pairs.push((at, handle, tagged_reference));
             at += 9;
         } else {
@@ -1209,10 +1209,10 @@ fn parse_framed_section_cache<'bytes>(
                 else {
                     continue;
                 };
-                ctx.reserve_retained_vec(&mut layouts, 1, "NX framed cache layouts")?;
+                ctx.reserve_vec(&mut layouts, 1, "NX framed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
-            ctx.reserve_retained_vec(&mut sections, 1, "NX framed cache sections")?;
+            ctx.reserve_vec(&mut sections, 1, "NX framed cache sections")?;
             sections.push((entry_index, section));
         }
     }
@@ -1272,10 +1272,10 @@ fn parse_indexed_section_cache<'bytes>(
                 else {
                     continue;
                 };
-                ctx.reserve_retained_vec(&mut layouts, 1, "NX indexed cache layouts")?;
+                ctx.reserve_vec(&mut layouts, 1, "NX indexed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
-            ctx.reserve_retained_vec(&mut sections, 1, "NX indexed cache sections")?;
+            ctx.reserve_vec(&mut sections, 1, "NX indexed cache sections")?;
             sections.push((entry_index, section));
         }
     }
@@ -1490,7 +1490,7 @@ pub(crate) fn scan_legacy<'a>(
             span,
             "legacy NX stream spans",
         )?;
-        ctx.reserve_retained_vec(&mut stream_views, 1, "legacy NX stream views")?;
+        ctx.reserve_vec(&mut stream_views, 1, "legacy NX stream views")?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;

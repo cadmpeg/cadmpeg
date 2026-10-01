@@ -2439,7 +2439,7 @@ fn try_decode_standard_population(
         }
     };
     let records = if let Some(selection) = selection {
-        match ctx.copy_retained_slice(&selection.records, "catia_standard_selected_records") {
+        match ctx.copy_slice(&selection.records, "catia_standard_selected_records") {
             Ok(records) => records,
             Err(error) => return Some(Err(error)),
         }
@@ -2498,7 +2498,7 @@ fn try_decode_standard_population(
         count.filter(|count| *count > 0)
     };
     let curve_supports = if let Some(selection) = selection {
-        match ctx.copy_retained_slice(&selection.supports, "catia_standard_selected_supports") {
+        match ctx.copy_slice(&selection.supports, "catia_standard_selected_supports") {
             Ok(supports) => supports,
             Err(error) => return Some(Err(error)),
         }
@@ -4075,7 +4075,7 @@ pub(super) fn standard_object_evidence_from_streams(
     for population in &populations {
         let mut objects = HashMap::<u32, Option<Vec<u8>>>::new();
         for frame in crate::families::b5::graph::object_stream_frames(population) {
-            let bytes = ctx.copy_retained_slice(
+            let bytes = ctx.copy_slice(
                 &population[frame.start..frame.end],
                 "catia_standard_population_object_bytes",
             )?;
@@ -5350,7 +5350,7 @@ fn attach_standard_topology(
                     Some(edge_count),
                 )
             },
-            |supports| ctx.copy_retained_slice(supports, "catia_topology_support_override"),
+            |supports| ctx.copy_slice(supports, "catia_topology_support_override"),
         )
         .map_err(StandardTopologyError::Resource)?;
     if supports.is_empty() {
@@ -5536,7 +5536,7 @@ fn attach_standard_topology(
                     )
                     .map_err(StandardTopologyError::Resource)?;
                 }
-                ctx.copy_retained_slice(
+                ctx.copy_slice(
                     &incidence_candidates[&faces],
                     "catia_incidence_candidate_copy",
                 )
@@ -5944,7 +5944,7 @@ fn attach_standard_topology(
         };
         let endpoint_completed = match endpoint_closures.as_deref() {
             Some([closure]) => Some(
-                ctx.copy_retained_slice(closure, "catia_repeated_endpoint_completed")
+                ctx.copy_slice(closure, "catia_repeated_endpoint_completed")
                     .map_err(StandardTopologyError::Resource)?,
             ),
             _ => None,
@@ -8020,7 +8020,7 @@ fn resolve_standard_endpoint_pairs(
         } else {
             for edge in edges {
                 resolved[edge] =
-                    ctx.copy_retained_slice(&pairs, "catia_standard_line_pair_copy")?;
+                    ctx.copy_slice(&pairs, "catia_standard_line_pair_copy")?;
             }
         }
     }
@@ -8353,7 +8353,7 @@ fn merge_native_endpoint_evidence(
             // relation. Graph coordinates are reconstructed from independent
             // object records and only supply identities absent from the roster.
             if roster.iter().all(Option::is_some) {
-                return Ok(Ok(Some(ctx.copy_retained_slice(
+                return Ok(Ok(Some(ctx.copy_slice(
                     roster,
                     "catia_native_roster_evidence_copy",
                 )?)));
@@ -8377,7 +8377,7 @@ fn merge_native_endpoint_evidence(
             Ok(Ok(Some(merged)))
         }
         (Some(pairs), None) | (None, Some(pairs)) => Ok(Ok(Some(
-            ctx.copy_retained_slice(pairs, "catia_native_endpoint_evidence_copy")?,
+            ctx.copy_slice(pairs, "catia_native_endpoint_evidence_copy")?,
         ))),
         (None, None) => Ok(Ok(None)),
     }

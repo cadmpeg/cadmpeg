@@ -453,7 +453,7 @@ impl DialectLayers {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let primary = self.primary.try_clone_for_decode(ctx, operation)?;
-        let mut extra = ctx.retained_vec(self.extra.len(), operation)?;
+        let mut extra = ctx.collection_vec(self.extra.len(), operation)?;
         ctx.charge_work(crate::decode::u64_from_index(self.extra.len()), operation)?;
         for layer in &self.extra {
             extra.push(layer.try_clone_for_decode(ctx, operation)?);
@@ -505,7 +505,7 @@ impl DialectLayers {
         {
             return Err(DialectLayerError::Duplicate(layer));
         }
-        ctx.reserve_retained_vec_limit(&mut self.extra, 1, operation)
+        ctx.reserve_vec_limit(&mut self.extra, 1, operation)
             .map_err(DialectLayerError::ResourceLimit)?;
         self.extra.push(layer);
         Ok(())

@@ -684,7 +684,7 @@ fn owned_symbolic_thread(
     let id =
         format_feature_history_id(ctx, "symbolic-thread", section_key, operation_ordinal, None)?;
 
-    let mut text_frames = ctx.retained_vec(frames.len(), "NX symbolic thread text frames")?;
+    let mut text_frames = ctx.collection_vec(frames.len(), "NX symbolic thread text frames")?;
     for (ordinal, frame) in frames.into_iter().enumerate() {
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX symbolic thread text frame ordinal", 0, 1))?;
@@ -891,7 +891,7 @@ fn hole_template_candidates<T>(
         let Some(item) = build(ctx, string, label)? else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut output, 1, "NX hole templates")?;
+        ctx.reserve_vec(&mut output, 1, "NX hole templates")?;
         output.push(item);
     }
     Ok(output)
@@ -1428,7 +1428,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                 ctx.copy_retained_text(&lane.id, "NX simple hole group scalar lane")?;
             let block_reference =
                 ctx.copy_retained_text(&reference.id, "NX simple hole group block reference")?;
-            ctx.reserve_retained_vec(&mut members, 1, "NX simple hole group members")?;
+            ctx.reserve_vec(&mut members, 1, "NX simple hole group members")?;
             members.push(FeatureSimpleHoleConstructionMember {
                 operation_label,
                 scalar_lane,
@@ -1464,7 +1464,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             ctx.copy_retained_text(key.1[0], "NX simple hole second block")?,
             ctx.copy_retained_text(key.1[1], "NX simple hole second block")?,
         ];
-        ctx.reserve_retained_vec(&mut groups, 1, "NX simple hole construction groups")?;
+        ctx.reserve_vec(&mut groups, 1, "NX simple hole construction groups")?;
         groups.push(FeatureSimpleHoleConstructionGroup {
             id,
             first_data_blocks,
@@ -1684,7 +1684,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
             ctx.copy_retained_text(&lane.id, "NX hole package group use lane")?;
         let simple_hole_construction_group =
             ctx.copy_retained_text(&group.id, "NX hole package group use group")?;
-        ctx.reserve_retained_vec(&mut uses, 1, "NX hole package group uses")?;
+        ctx.reserve_vec(&mut uses, 1, "NX hole package group uses")?;
         uses.push(FeatureHolePackageConstructionGroupUse {
             id,
             operation_label,

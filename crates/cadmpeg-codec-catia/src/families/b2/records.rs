@@ -538,11 +538,11 @@ pub(crate) struct B2UseMetadata {
 
 impl B2UseMetadata {
     pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let payload = ctx.copy_retained_slice(&self.payload, "catia_b2_use_clone_payload")?;
+        let payload = ctx.copy_slice(&self.payload, "catia_b2_use_clone_payload")?;
         let kind = match &self.kind {
             B2UsePayload::Closed { sense, references } => B2UsePayload::Closed {
                 sense: *sense,
-                references: ctx.copy_retained_slice(references, "catia_b2_use_clone_references")?,
+                references: ctx.copy_slice(references, "catia_b2_use_clone_references")?,
             },
             B2UsePayload::SenseOnly(sense) => B2UsePayload::SenseOnly(*sense),
             B2UsePayload::Opaque => B2UsePayload::Opaque,
@@ -626,7 +626,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
     let mut uses = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x06) {
         let payload =
-            ctx.copy_retained_slice(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
+            ctx.copy_slice(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
         let sense = match payload.last() {
             Some(0x84) => Some(B2UseSense::Sense84),
             Some(0x88) => Some(B2UseSense::Sense88),
@@ -651,7 +651,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
                         *value = reference;
                     }
                     if valid && at == end {
-                        Some(ctx.copy_retained_slice(&parsed[..count], "catia_b2_use_references")?)
+                        Some(ctx.copy_slice(&parsed[..count], "catia_b2_use_references")?)
                     } else {
                         None
                     }
@@ -827,7 +827,7 @@ pub(crate) fn b2_cone_faces(
             && program.ends_with(&[0x03, 0x11])
             && half_angle.get() < std::f64::consts::FRAC_PI_2
         {
-            let program = ctx.copy_retained_slice(program, "catia_b2_cone_face_program")?;
+            let program = ctx.copy_slice(program, "catia_b2_cone_face_program")?;
             ctx.push_vec(
                 &mut faces,
                 B2ConeFace {
@@ -947,7 +947,7 @@ pub(crate) fn b2_counted_owners_from_records(
         if !valid || at >= frame.end {
             continue;
         }
-        let tail = ctx.copy_retained_slice(&data[at..frame.end], "catia_b2_counted_owner_tail")?;
+        let tail = ctx.copy_slice(&data[at..frame.end], "catia_b2_counted_owner_tail")?;
         ctx.push_vec(
             &mut owners,
             B2CountedOwner {
@@ -1563,8 +1563,8 @@ pub(crate) fn b2_counted_61_from_records(
             continue;
         }
         let references =
-            ctx.copy_retained_slice(&parsed[..count], "catia_b2_counted61_references")?;
-        let tail = ctx.copy_retained_slice(tail, "catia_b2_counted61_tail")?;
+            ctx.copy_slice(&parsed[..count], "catia_b2_counted61_references")?;
+        let tail = ctx.copy_slice(tail, "catia_b2_counted61_tail")?;
         ctx.push_vec(
             &mut output,
             B2Counted61 {
@@ -1704,7 +1704,7 @@ pub(crate) fn b2_class5b5c_records_from_records(
         let Some(payload) = record.payload().and_then(|range| data.get(range)) else {
             continue;
         };
-        let payload = ctx.copy_retained_slice(payload, "catia_b2_class5b5c_payload")?;
+        let payload = ctx.copy_slice(payload, "catia_b2_class5b5c_payload")?;
         ctx.push_vec(
             &mut output,
             B2Class5b5cRecord {

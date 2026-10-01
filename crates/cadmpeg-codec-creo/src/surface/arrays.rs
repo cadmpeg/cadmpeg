@@ -124,8 +124,8 @@ impl<Shape> Scalars<Shape> {
         {
             return Ok(None);
         }
-        let mut values = ctx.retained_vec(slots.len(), "creo scalar array values")?;
-        let mut tokens = ctx.retained_vec(slots.len(), "creo scalar array tokens")?;
+        let mut values = ctx.collection_vec(slots.len(), "creo scalar array values")?;
+        let mut tokens = ctx.collection_vec(slots.len(), "creo scalar array tokens")?;
         ctx.charge_work(u64_from_index(slots.len()), "creo scalar array filling")?;
         for (value, token) in slots {
             values.push(value);

@@ -170,7 +170,7 @@ pub(crate) fn operation_terminal_discriminator(
         return Ok(None);
     };
     let operation = "NX terminal discriminator trailing indices";
-    let mut trailing_indices = ctx.retained_vec(trailing_count, operation)?;
+    let mut trailing_indices = ctx.collection_vec(trailing_count, operation)?;
     let mut scan = 0;
     while scan < trailing_bytes.len() {
         let Some(tail) = trailing_bytes.get(scan..) else {

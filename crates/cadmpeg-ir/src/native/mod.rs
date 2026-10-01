@@ -510,7 +510,7 @@ where
     let mut converted = Vec::new();
     for (ordinal, record) in records.into_iter().enumerate() {
         let record = record?;
-        ctx.reserve_retained_vec(&mut converted, 1, "store native record")
+        ctx.reserve_vec(&mut converted, 1, "store native record")
             .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
         let writer = RefCell::new(ChargingJsonWriter { ctx, refusal: None });
         let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
@@ -712,7 +712,7 @@ impl NativeNamespace {
         let mut typed = Vec::new();
         if let Some((arena, records)) = self.arenas.get_key_value(name) {
             for record in records {
-                ctx.reserve_retained_vec(&mut typed, 1, "load typed native record")?;
+                ctx.reserve_vec(&mut typed, 1, "load typed native record")?;
                 typed.push(read_record(ctx, arena, record)?);
             }
         }

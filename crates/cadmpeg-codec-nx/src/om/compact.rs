@@ -206,7 +206,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
     ) -> Result<CountedIndexMembers<U, RESERVED>, cadmpeg_core::CodecError> {
         let count = self.0.len();
         let operation = "NX mapped counted index members";
-        let mut mapped = ctx.retained_vec(count, operation)?;
+        let mut mapped = ctx.collection_vec(count, operation)?;
         for member in self.0 {
             mapped.push(map(member)?);
         }
@@ -219,7 +219,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
     ) -> Result<Option<CountedIndexMembers<U, RESERVED>>, cadmpeg_core::CodecError> {
         let count = self.0.len();
         let operation = "NX resolved counted index members";
-        let mut mapped = ctx.retained_vec(count, operation)?;
+        let mut mapped = ctx.collection_vec(count, operation)?;
         for member in self.0 {
             let Some(value) = map(member)? else {
                 return Ok(None);

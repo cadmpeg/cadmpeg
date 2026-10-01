@@ -53,7 +53,7 @@ pub(crate) fn admitted_json(
     let mut count = ByteCount(0);
     serde_json::to_writer(&mut count, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let mut bytes = ctx.retained_vec(count.0, operation)?;
+    let mut bytes = ctx.collection_vec(count.0, operation)?;
     serde_json::to_writer(&mut bytes, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
