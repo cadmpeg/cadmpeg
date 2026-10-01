@@ -649,7 +649,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
         let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
             let outcome =
-                cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
+                cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, record_frames.frames())?;
             for rejected in &outcome.rejected {
                 let note = ctx.format_retained(
                     format_args!(
@@ -671,12 +671,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 decoded.iter().map(|appearance| appearance.id.as_str()),
                 "index F3D schema appearance IDs",
             )?;
-            let mut fixed = decode_fixed_logical_records(ctx, &record_frames)?;
+            let mut fixed = decode_fixed_logical_records(ctx, record_frames.frames())?;
             fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
             ctx.append_vec(&mut decoded, &mut { fixed }, "merge F3D fixed appearances")?;
             decoded
         } else {
-            decode_fixed_logical_records(ctx, &record_frames)?
+            decode_fixed_logical_records(ctx, record_frames.frames())?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -2013,7 +2013,7 @@ fn definition_catalog<'a>(
     };
     let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, entry.window())?;
     let mut definitions = std::collections::HashMap::new();
-    for frame in frames {
+    for frame in frames.frames() {
         let definition = decode_definition_catalog_record(ctx, frame.bytes())?;
         merge_definition_catalog_record(ctx, &mut definitions, definition)?;
     }

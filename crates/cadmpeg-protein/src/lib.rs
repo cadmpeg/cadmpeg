@@ -319,7 +319,7 @@ pub fn decode_detailed<'a>(
         },
     };
     let frames = framing::record_frames_admitted(ctx, instance.window())?;
-    decode_frames_admitted(ctx, &mut catalog, &frames)
+    decode_frames_admitted(ctx, &mut catalog, frames.frames())
 }
 
 /// Decode already framed records for source-retaining export edits.
@@ -356,50 +356,24 @@ fn decode_frames(
         ctx.charge_collection_items(1, "Protein record outcome")?;
         match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
             Ok(Some(record)) => {
+                ctx.reserve_retained_admitted_vec(&mut outcome.records, 1, "Protein record outcome")?;
                 outcome.records.push(record);
             }
             Ok(None) => {
                 const DETAIL: &str = "Protein instance record header is malformed";
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(DETAIL.len()),
-                    "Protein rejected record detail",
-                )?;
-                outcome.rejected.push(RejectedRecord {
-                    ordinal,
-                    detail: DETAIL.into(),
-                });
+                let detail = ctx.copy_retained_text(DETAIL, "Protein rejected record detail")?;
+                ctx.reserve_retained_admitted_vec(&mut outcome.rejected, 1, "Protein record outcome")?;
+                outcome.rejected.push(RejectedRecord { ordinal, detail });
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                ctx.charge_retained(
-                    rejection_detail_len(&error)?,
-                    "Protein rejected record detail",
-                )?;
-                outcome.rejected.push(RejectedRecord {
-                    ordinal,
-                    detail: error.to_string(),
-                });
+                let detail = ctx.format_retained_with_work(format_args!("{error}"), "Protein rejected record detail")?;
+                ctx.reserve_retained_admitted_vec(&mut outcome.rejected, 1, "Protein record outcome")?;
+                outcome.rejected.push(RejectedRecord { ordinal, detail });
             }
         }
     }
     Ok(outcome)
-}
-
-fn rejection_detail_len(error: &CodecError) -> Result<u64, CodecError> {
-    struct Length(u64);
-    impl std::fmt::Write for Length {
-        fn write_str(&mut self, text: &str) -> std::fmt::Result {
-            self.0 = self
-                .0
-                .checked_add(cadmpeg_core::decode::u64_from_index(text.len()))
-                .ok_or(std::fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut length = Length(0);
-    std::fmt::write(&mut length, format_args!("{error}"))
-        .map_err(|_| CodecError::Malformed("Protein rejection detail length overflows".into()))?;
-    Ok(length.0)
 }
 
 /// Whether the Protein archive packages schema XML documents.
@@ -1227,7 +1201,7 @@ mod tests {
         assert_eq!(
             framing::record_frames_admitted(&ctx, &stream)
                 .unwrap()
-                .len(),
+                .frames().len(),
             1
         );
     }
@@ -1242,6 +1216,9 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
+        let (small, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy).expect("input");
+        assert!(matches!(framing::record_frames_admitted(&small, &stream), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems));
+        policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(record.len() + super::RECORD_MARKER.len()) + 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("stream fits input limit");
         let frames = framing::record_frames_admitted(&ctx, &stream)
@@ -1253,7 +1230,7 @@ mod tests {
                 std::collections::BTreeMap::new(),
             )]),
         };
-        let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
+        let outcome = super::decode_frames_admitted(&ctx, &mut catalog, frames.frames())
             .expect("one outcome needs no second framing pass");
         assert_eq!(outcome.records.len(), 1);
         assert!(matches!(
@@ -1337,18 +1314,18 @@ mod tests {
     }
 
     #[test]
-    fn copied_record_range_refuses_before_frame_growth() {
+    fn temporary_record_range_refuses_before_frame_growth() {
         let stream = paged_stream(&[b"frame"]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
+        policy.limits.max_materialized_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("stream fits input limit");
         assert!(matches!(
             framing::record_frames_admitted(&ctx, &stream),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "Protein copied record range"
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "Protein temporary frames"
         ));
     }
 

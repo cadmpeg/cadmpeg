@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Paged logical-record framing.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::{continuation_page, instance_stream_header, record_start_page, terminal_page};
@@ -40,117 +40,94 @@ impl RecordFrame {
 pub fn record_frames_for_edit(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())?;
-    frame_records(bytes, &ctx)
+    frame_records(bytes, &ctx, None)
 }
 
-/// Split an instance stream while charging every copied range and logical frame.
-pub fn record_frames_admitted(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<RecordFrame>, CodecError> {
-    frame_records(bytes, ctx)
+/// Temporary frames and the reservation that remains live while their bytes exist.
+#[derive(Debug)]
+pub struct RecordFrames<'ctx> {
+    frames: Vec<RecordFrame>,
+    _reservation: ScopedReservation<'ctx>,
 }
 
-fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<RecordFrame>, CodecError> {
-    if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
-        return Err(CodecError::Malformed(
-            "Protein page stream is shorter than its header and one page".into(),
-        ));
+impl RecordFrames<'_> {
+    /// Borrows the framed records without releasing their storage reservation.
+    pub fn frames(&self) -> &[RecordFrame] {
+        &self.frames
     }
-    if View::u32_le_at(bytes, instance_stream_header::DECLARED_SIZE)
-        .map(cadmpeg_core::decode::index_from_u32)
-        != Some(PAGE_SIZE)
-    {
-        return Err(CodecError::Malformed(
-            "Protein declared page size is invalid".into(),
-        ));
+}
+
+/// Split an instance stream into caller-owned temporary frames.
+pub fn record_frames_admitted<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<RecordFrames<'ctx>, CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "Protein temporary frames")?;
+    let frames = frame_records(bytes, ctx, Some(&mut reservation))?;
+    Ok(RecordFrames { frames, _reservation: reservation })
+}
+
+fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>, mut scope: Option<&mut ScopedReservation<'_>>) -> Result<Vec<RecordFrame>, CodecError> {
+    if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
+        return Err(CodecError::Malformed("Protein page stream is shorter than its header and one page".into()));
+    }
+    if View::u32_le_at(bytes, instance_stream_header::DECLARED_SIZE).map(cadmpeg_core::decode::index_from_u32) != Some(PAGE_SIZE) {
+        return Err(CodecError::Malformed("Protein declared page size is invalid".into()));
     }
     if !(bytes.len() - STREAM_HEADER_LEN).is_multiple_of(PAGE_SIZE) {
-        return Err(CodecError::Malformed(
-            "Protein page stream has a partial trailing page".into(),
-        ));
+        return Err(CodecError::Malformed("Protein page stream has a partial trailing page".into()));
     }
     let mut records = Vec::new();
     let mut current: Option<RecordFrame> = None;
     let mut logical_offset = 0usize;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len() - STREAM_HEADER_LEN), "Protein page framing scan")?;
     for page in bytes[STREAM_HEADER_LEN..].chunks_exact(PAGE_SIZE) {
-        if page.get(record_start_page::MARKER..record_start_page::BODY) == Some(RECORD_MARKER) {
+        let (payload, terminal) = if page.get(record_start_page::MARKER..record_start_page::BODY) == Some(RECORD_MARKER) {
             if let Some(record) = current.take() {
-                logical_offset =
-                    logical_offset
-                        .checked_add(record.bytes.len())
-                        .ok_or_else(|| {
-                            CodecError::Malformed(
-                                "Protein record-start logical offset overflow".into(),
-                            )
-                        })?;
+                logical_offset = logical_offset.checked_add(record.bytes.len()).ok_or_else(|| CodecError::Malformed("Protein record-start logical offset overflow".into()))?;
                 records.push(record);
             }
-            ctx.charge_collection_items(1, "Protein logical record frame")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    RECORD_MARKER.len() + page[record_start_page::BODY..].len(),
-                ),
-                "Protein copied record range",
-            )?;
-            let mut frame = RecordFrame {
-                logical_offset,
-                bytes: RECORD_MARKER.to_vec(),
-            };
-            frame
-                .bytes
-                .extend_from_slice(&page[record_start_page::BODY..]);
-            current = Some(frame);
-        } else if page.get(continuation_page::MARKER..continuation_page::BODY)
-            == Some(CONTINUATION_MARKER)
-        {
-            let frame = current.as_mut().ok_or_else(|| {
-                CodecError::Malformed("Protein continuation page has no open record".into())
-            })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(page[continuation_page::BODY..].len()),
-                "Protein copied record range",
-            )?;
-            frame
-                .bytes
-                .extend_from_slice(&page[continuation_page::BODY..]);
-        } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
-            let used =
-                usize::from(View::u16_le_at(page, terminal_page::USED).ok_or_else(|| {
-                    CodecError::Malformed("Protein terminal used-byte count is truncated".into())
-                })?);
-            let payload = page
-                .get(terminal_page::BODY..terminal_page::BODY + used)
-                .ok_or_else(|| {
-                    CodecError::Malformed("Protein terminal payload is truncated".into())
-                })?;
+            (&page[record_start_page::BODY..], false)
+        } else if page.get(continuation_page::MARKER..continuation_page::BODY) == Some(CONTINUATION_MARKER) {
             if current.is_none() {
-                ctx.charge_collection_items(1, "Protein logical record frame")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()),
-                    "Protein copied record range",
-                )?;
+                return Err(CodecError::Malformed("Protein continuation page has no open record".into()));
             }
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(payload.len()),
-                "Protein copied record range",
-            )?;
-            let mut frame = current.take().unwrap_or_else(|| RecordFrame {
-                logical_offset,
-                bytes: RECORD_MARKER.to_vec(),
-            });
-            frame.bytes.extend_from_slice(payload);
-            logical_offset = logical_offset
-                .checked_add(frame.bytes.len())
-                .ok_or_else(|| {
-                    CodecError::Malformed("Protein terminal logical offset overflow".into())
-                })?;
-            records.push(frame);
+            (&page[continuation_page::BODY..], false)
+        } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
+            let used = usize::from(View::u16_le_at(page, terminal_page::USED).ok_or_else(|| CodecError::Malformed("Protein terminal used-byte count is truncated".into()))?);
+            let payload = page.get(terminal_page::BODY..terminal_page::BODY + used).ok_or_else(|| CodecError::Malformed("Protein terminal payload is truncated".into()))?;
+            (payload, true)
         } else {
-            return Err(CodecError::Malformed(
-                "Protein page marker is unknown".into(),
-            ));
+            return Err(CodecError::Malformed("Protein page marker is unknown".into()));
+        };
+        if current.is_none() {
+            if let Some(scope) = scope.as_deref_mut() {
+                ctx.reserve_scoped_vec(scope, &mut records, 1, "Protein logical record frame")?;
+            } else {
+                ctx.reserve_retained_vec(&mut records, 1, "Protein logical record frame")?;
+            }
+            let mut frame = RecordFrame { logical_offset, bytes: Vec::new() };
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()), "Protein copied record range")?;
+            if let Some(scope) = scope.as_deref_mut() {
+                ctx.reserve_scoped_vec(scope, &mut frame.bytes, RECORD_MARKER.len(), "Protein copied record range")?;
+            } else {
+                ctx.reserve_retained_vec(&mut frame.bytes, RECORD_MARKER.len(), "Protein copied record range")?;
+            }
+            frame.bytes.extend_from_slice(RECORD_MARKER);
+            current = Some(frame);
+        }
+        let frame = current.as_mut().ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len()), "Protein copied record range")?;
+        if let Some(scope) = scope.as_deref_mut() {
+            ctx.reserve_scoped_vec(scope, &mut frame.bytes, payload.len(), "Protein copied record range")?;
+        } else {
+            ctx.reserve_retained_vec(&mut frame.bytes, payload.len(), "Protein copied record range")?;
+        }
+        frame.bytes.extend_from_slice(payload);
+        if terminal {
+            let frame = current.take().ok_or_else(|| CodecError::Malformed("Protein terminal page has no record owner".into()))?;
+            logical_offset = logical_offset.checked_add(frame.bytes.len()).ok_or_else(|| CodecError::Malformed("Protein terminal logical offset overflow".into()))?;
+            records.push(frame);
         }
     }
     if let Some(record) = current {
@@ -161,6 +138,32 @@ fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<RecordFram
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn temporary_frames_release_their_live_storage() {
+        let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + crate::PAGE_SIZE];
+        let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
+        bytes[offset..offset + 4].copy_from_slice(&u32::try_from(crate::PAGE_SIZE).expect("page size").to_le_bytes());
+        let page = &mut bytes[crate::STREAM_HEADER_LEN..];
+        page[..4].copy_from_slice(crate::TERMINAL_MARKER);
+        page[4..6].copy_from_slice(&5_u16.to_le_bytes());
+        let body = crate::layout::terminal_page::BODY;
+        page[body..body + 5].copy_from_slice(b"frame");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        let live = std::mem::size_of::<super::RecordFrame>() + crate::RECORD_MARKER.len() + 5;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let frames = super::record_frames_admitted(&ctx, &bytes).expect("temporary frames use no retained allowance");
+        assert_eq!(frames.frames()[0].bytes(), [crate::RECORD_MARKER, b"frame"].concat());
+        drop(frames);
+        let reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(live), "reuse frame storage").expect("frame owner released all scoped storage");
+        drop(reservation);
+        let frames = super::record_frames_admitted(&ctx, &bytes).expect("frame storage can be reused");
+        assert!(matches!(ctx.reserve_scoped(1, "probe live frame storage"), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        drop(frames);
+    }
+
     #[test]
     fn page_framing_admits_work_before_scanning_pages() {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + crate::PAGE_SIZE];
