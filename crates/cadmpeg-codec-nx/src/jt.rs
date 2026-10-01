@@ -922,7 +922,7 @@ fn parse_probability_context<'a>(
         let (mut entries, reservation) =
             propagate_resource!(ctx.temporary_vec(entry_count, "nx JT decoded vector"));
         for _ in 0..entry_count {
-            let symbol = bits.read(symbol_bits)?.cast_signed() - 2;
+            let symbol = bits.read(symbol_bits)?.cast_signed().checked_sub(2)?;
             let occurrence_count = bits.read(occurrence_bits)?;
             let value = (bits.read(value_bits)?.cast_signed()).wrapping_add(minimum);
             entries.push(ProbabilityEntry {
