@@ -1135,25 +1135,6 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             )?;
             graph.push(reference);
         }
-        let sort_work = graph
-            .len()
-            .checked_mul(graph.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX pattern construction graph", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
-            "sort NX pattern construction graph",
-        )?;
-        let _sorting = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(
-                graph
-                    .len()
-                    .checked_mul(std::mem::size_of::<&FeaturePatternReference>())
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("sort NX pattern construction graph", 0, 1)
-                    })?,
-            ),
-            "sort NX pattern construction graph",
-        )?;
         ctx.stable_sort_by(
             &mut graph,
             |first, second| first.ordinal.cmp(&second.ordinal),

@@ -1186,17 +1186,6 @@ fn history_object_offsets(
         ctx.reserve_collection_vec(&mut objects, 1, operation)?;
         objects.push((name.offset, id));
     }
-    let levels = if objects.len() > 1 {
-        objects.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(objects.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )?;
     ctx.sort_unstable_by(
         &mut objects,
         |left, right| left.0.cmp(&right.0),
@@ -1335,17 +1324,6 @@ pub(crate) fn project_surface_sweep_profiles(
                 objects.push((name.offset, *feature));
             }
         }
-        let levels = if objects.len() > 1 {
-            objects.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(objects.len())
-                .checked_mul(u64::from(levels))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
         ctx.sort_unstable_by(
             &mut objects,
             |(left, _), (right, _)| left.cmp(right),

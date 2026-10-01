@@ -100,7 +100,7 @@ pub(crate) fn decode_parameters(
             }
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design parameters 1")?;
     Ok(out)
 }
 
@@ -669,7 +669,7 @@ pub(crate) fn decode_parameter_owners(
         ctx.reserve_vec(&mut out, 1, "f3d parameter owner")?;
         out.push(owner);
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id().cmp(b.id()))?;
+    ctx.stable_sort_by(&mut out[..], |a, b| a.id().cmp(b.id()), |_| 0, "sort f3d design parameters 2")?;
     Ok(out)
 }
 
@@ -1006,7 +1006,7 @@ pub(crate) fn decode_parameter_companions(
         ctx.reserve_vec(&mut out, 1, "f3d parameter companions")?;
         out.push(companion);
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id().cmp(b.id()))?;
+    ctx.stable_sort_by(&mut out[..], |a, b| a.id().cmp(b.id()), |_| 0, "sort f3d design parameters 3")?;
     Ok(out)
 }
 
@@ -1198,7 +1198,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
         ctx.reserve_vec(&mut owned, 1, "f3d companion owned recipes")?;
         owned.push(recipe);
     }
-    crate::design::sort::sort_by_key(ctx, &mut owned[..], |recipe| recipe.byte_offset)?;
+    ctx.stable_sort_by(&mut owned[..], |left, right| { let left_key = { let recipe = left; recipe.byte_offset }; let right_key = { let recipe = right; recipe.byte_offset }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design parameters 4")?;
     let mut owned_ids = Vec::new();
     for recipe in owned {
         let id = String::from_utf8(ctx.copy_retained(

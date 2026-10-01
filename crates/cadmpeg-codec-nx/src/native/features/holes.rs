@@ -1397,14 +1397,6 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         if missing {
             continue;
         }
-        let member_work = positioned
-            .len()
-            .checked_mul(positioned.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX simple hole group members", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(member_work),
-            "sort NX simple hole group members",
-        )?;
         ctx.sort_unstable_by(
             &mut positioned,
             |(left_pos, left_index, left, _), (right_pos, right_index, right, _)| {
@@ -1666,14 +1658,6 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         )?;
         matches.push((group, lane));
     }
-    let sort_work = matches
-        .len()
-        .checked_mul(matches.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("sort NX hole package groups", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "sort NX hole package groups",
-    )?;
     ctx.sort_unstable_by(
         &mut matches,
         |(left, _), (right, _)| simple_hole_group_key(left).cmp(&simple_hole_group_key(right)),

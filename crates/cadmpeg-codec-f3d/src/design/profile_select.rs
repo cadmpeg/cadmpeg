@@ -478,11 +478,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             "f3d extrude matching selection group",
                         )?;
                     }
-                    crate::design::sort::sort_by_key(
-                        resolution.ctx,
-                        &mut matching_groups[..],
-                        |group| group.scope_reference_ordinal,
-                    )?;
+                    resolution.ctx.stable_sort_by(&mut matching_groups[..], |left, right| { let left_key = { let group = left; group.scope_reference_ordinal }; let right_key = { let group = right; group.scope_reference_ordinal }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design profile_select 1")?;
                     let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
                         definition
                     else {
@@ -850,9 +846,11 @@ fn historical_face_profile_selection(
                 "f3d historical profile group member",
             )?;
         }
-        crate::design::sort::sort_by_key(ctx, &mut group_members[..], |member| {
+        ctx.stable_sort_by(&mut group_members[..], |left, right| { let left_key = { let member = left; {
             member.group_member_ordinal
-        })?;
+        } }; let right_key = { let member = right; {
+            member.group_member_ordinal
+        } }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design profile_select 2")?;
         if group_members.len() != group.members().len()
             || group_members
                 .iter()
@@ -1333,9 +1331,11 @@ pub(super) fn resolved_extrude_profile_selection(
             "f3d extrude selection member",
         )?;
     }
-    crate::design::sort::sort_by_key(resolution.ctx, &mut selection_members[..], |member| {
+    resolution.ctx.stable_sort_by(&mut selection_members[..], |left, right| { let left_key = { let member = left; {
         member.group_member_ordinal
-    })?;
+    } }; let right_key = { let member = right; {
+        member.group_member_ordinal
+    } }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design profile_select 3")?;
     let exact_member_run = selection_members.len() == group.members().len()
         && selection_members
             .iter()
@@ -1719,9 +1719,11 @@ fn resolved_spatial_extrude_profile_selection(
             "f3d spatial profile group member",
         )?;
     }
-    crate::design::sort::sort_by_key(resolution.ctx, &mut group_members[..], |member| {
+    resolution.ctx.stable_sort_by(&mut group_members[..], |left, right| { let left_key = { let member = left; {
         member.group_member_ordinal
-    })?;
+    } }; let right_key = { let member = right; {
+        member.group_member_ordinal
+    } }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design profile_select 4")?;
     let exact_member_run = group_members.len() == group.members().len()
         && group_members
             .iter()

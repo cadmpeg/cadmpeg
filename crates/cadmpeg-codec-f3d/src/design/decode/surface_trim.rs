@@ -252,7 +252,7 @@ pub(crate) fn decode_surface_trim_operations(
         ctx.reserve_vec(&mut out, 1, "f3d surface-trim operations")?;
         out.push(operation);
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |left, right| left.id.cmp(&right.id))?;
+    ctx.stable_sort_by(&mut out[..], |left, right| left.id.cmp(&right.id), |value| value.id.as_str().len(), "sort f3d design surface_trim 1")?;
     Ok(out)
 }
 

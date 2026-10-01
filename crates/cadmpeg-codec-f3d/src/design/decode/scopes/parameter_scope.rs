@@ -506,7 +506,7 @@ pub(crate) fn decode_parameter_scopes(
         bind_joint_origin_frames_from_assemblies(ctx, bytes, &mut out[stream_scope_start..])?;
         bind_axial_assembly_operand_targets(ctx, bytes, &records, &mut out[stream_scope_start..])?;
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design parameter_scope 1")?;
     out.dedup_by(|a, b| a.id == b.id);
     Ok(out)
 }

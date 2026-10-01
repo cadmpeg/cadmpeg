@@ -5325,22 +5325,6 @@ pub(super) fn data_block_control_handle_pairs(
     let mut pairs = Vec::new();
     for (data_block, mut block_references) in by_block {
         let count = block_references.len();
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-        let comparisons = count_u64
-            .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("sort NX control handle pair references", 0, 1)
-            })?;
-        ctx.charge_work(comparisons, "sort NX control handle pair references")?;
-        let scratch_bytes = count
-            .checked_mul(std::mem::size_of::<(&DataBlockControlReference, u32)>())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("sort NX control handle pair references", 0, 1)
-            })?;
-        let _sort_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(scratch_bytes),
-            "sort NX control handle pair references",
-        )?;
         ctx.stable_sort_by(
             &mut block_references,
             |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),
@@ -6057,10 +6041,6 @@ pub(super) fn object_record_handle_pairs(
     }
     let mut pairs = Vec::new();
     for (record, mut record_references) in by_record {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(record_references.len()),
-            "sort NX record handle references",
-        )?;
         ctx.stable_sort_by(
             &mut record_references,
             |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),

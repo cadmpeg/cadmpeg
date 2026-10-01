@@ -111,29 +111,12 @@ fn finalize_assignments(
     ctx: &DecodeContext<'_>,
     mut assignments: Vec<RmDisplayColorAssignment>,
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
-    let sort_bytes = assignments
-        .len()
-        .checked_mul(std::mem::size_of::<RmDisplayColorAssignment>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX display color sort bytes", 0, 1))?;
-    let sort_reservation = ctx.reserve_scoped(
-        u64_from_index(sort_bytes),
-        "sort NX display color assignments",
-    )?;
-    let sort_work = assignments
-        .len()
-        .checked_mul(assignments.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX display color sort work", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(sort_work),
-        "sort NX display color assignments",
-    )?;
     ctx.stable_sort_by(
         &mut assignments,
         |first, second| first.frame.offset().cmp(&second.frame.offset()),
         |_| 0,
         "sort NX display color assignments",
     )?;
-    drop(sort_reservation);
     for (ordinal, assignment) in assignments.iter_mut().enumerate() {
         assignment.ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX display color ordinal", 0, 1))?;

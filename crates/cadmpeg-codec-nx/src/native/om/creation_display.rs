@@ -105,29 +105,12 @@ fn finalize_relations(
     ctx: &DecodeContext<'_>,
     mut relations: Vec<RmCreationDisplayDataRelation>,
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
-    let sort_bytes = relations
-        .len()
-        .checked_mul(std::mem::size_of::<RmCreationDisplayDataRelation>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX creation display sort bytes", 0, 1))?;
-    let sort_reservation = ctx.reserve_scoped(
-        u64_from_index(sort_bytes),
-        "sort NX creation display relations",
-    )?;
-    let sort_work = relations
-        .len()
-        .checked_mul(relations.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX creation display sort work", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(sort_work),
-        "sort NX creation display relations",
-    )?;
     ctx.stable_sort_by(
         &mut relations,
         |left, right| left.encoding.offset().cmp(&right.encoding.offset()),
         |_| 0,
         "sort NX creation display relations",
     )?;
-    drop(sort_reservation);
     for (ordinal, relation) in relations.iter_mut().enumerate() {
         relation.ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX creation display ordinal", 0, 1))?;

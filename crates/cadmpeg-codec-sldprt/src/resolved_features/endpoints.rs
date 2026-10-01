@@ -1412,15 +1412,6 @@ fn resolve_indexed_marker_candidates<'a>(
     {
         return Ok((Vec::new(), true));
     }
-    let factor = u64::from(pairs.len().checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|v| v.checked_mul(8))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    for pair in &pairs {
-        for marker in pair {
-            charge_endpoint_work(ctx, marker.id().len(), factor, OPERATION)?;
-        }
-    }
     ctx.sort_unstable_by(
         &mut pairs,
         |left, right| {
@@ -1429,7 +1420,7 @@ fn resolve_indexed_marker_candidates<'a>(
                 .cmp(right[0].id())
                 .then_with(|| left[1].id().cmp(right[1].id()))
         },
-        |pair| pair[0].id().len().saturating_add(pair[1].id().len()),
+        |pair| pair[0].id().len() + pair[1].id().len(),
         OPERATION,
     )?;
     Ok((copy_endpoint_markers(ctx, &pairs[0])?, false))
@@ -2313,11 +2304,6 @@ fn point_distance_component_has_solution(
     charge_endpoint_work(ctx, component.len(), 4, POINT_SOLVER_OPERATION)?;
     reserve_point_solver_vec(ctx, &mut unassigned, component.len())?;
     unassigned.extend(component);
-    let factor = u64::from(unassigned.len().checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(32))
-        .ok_or_else(|| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
-    charge_endpoint_work(ctx, unassigned.len(), factor, POINT_SOLVER_OPERATION)?;
     let domain_key =
         |index: &u32| std::cmp::Reverse(domains.get(index).map_or(usize::MAX, Vec::len));
     ctx.sort_unstable_by(
@@ -3203,66 +3189,80 @@ pub(super) fn coordinate_circle_radius(
     charge_endpoint_work(ctx, coordinates.len(), 4, OPERATION)?;
     let insertion = coordinates.partition_point(|marker| marker.offset() < circle.offset());
     ctx.charge_work(2048, OPERATION)?;
-    Ok((|| {
-        let grids = [
+    let grids = (|| {
+        Some([
             insertion
                 .checked_sub(6)
                 .and_then(|start| coordinates.get(start..insertion)),
             coordinates.get(insertion..insertion.checked_add(6)?),
-        ];
-        let radii = grids.map(|grid| {
-            let grid: [&SketchInputEntity; 6] = grid?.try_into().ok()?;
-            let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth), Some(sixth)] =
-                grid.map(|marker| {
-                    marker
-                        .coordinates_m
-                        .map(cadmpeg_ir::units::FiniteVector::get)
-                })
-            else {
-                return None;
-            };
-            let mut points = [first, second, third, fourth, fifth, sixth];
-            let mut axes = [points.map(|point| point[0]), points.map(|point| point[1])];
-            let mut counts = [1usize; 2];
-            for (axis, count) in axes.iter_mut().zip(&mut counts) {
-                axis.sort_unstable_by(f64::total_cmp);
-                for index in 1..axis.len() {
-                    if axis[index] != axis[*count - 1] {
-                        axis[*count] = axis[index];
-                        *count += 1;
-                    }
+        ])
+    })();
+    let Some(grids) = grids else {
+        return Ok(None);
+    };
+    let mut radii = [None, None];
+    for (slot, grid) in radii.iter_mut().zip(grids) {
+        let Some(grid) = grid else {
+            continue;
+        };
+        let Ok(grid) = <[&SketchInputEntity; 6]>::try_from(grid) else {
+            continue;
+        };
+        let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth), Some(sixth)] = grid
+            .map(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            })
+        else {
+            continue;
+        };
+        let mut points = [first, second, third, fourth, fifth, sixth];
+        let mut axes = [points.map(|point| point[0]), points.map(|point| point[1])];
+        let mut counts = [1usize; 2];
+        for (axis, count) in axes.iter_mut().zip(&mut counts) {
+            ctx.sort_unstable_by(axis, f64::total_cmp, |_| 0, OPERATION)?;
+            for index in 1..axis.len() {
+                if axis[index] != axis[*count - 1] {
+                    axis[*count] = axis[index];
+                    *count += 1;
                 }
             }
-            let (u_min, u_max) = (axes[0][0], axes[0][counts[0] - 1]);
-            let (v_min, v_max) = (axes[1][0], axes[1][counts[1] - 1]);
-            points.sort_unstable_by(|left, right| {
+        }
+        let (u_min, u_max) = (axes[0][0], axes[0][counts[0] - 1]);
+        let (v_min, v_max) = (axes[1][0], axes[1][counts[1] - 1]);
+        ctx.sort_unstable_by(
+            &mut points,
+            |left, right| {
                 left[0]
                     .total_cmp(&right[0])
                     .then_with(|| left[1].total_cmp(&right[1]))
-            });
-            let point_count = 1 + points.windows(2).filter(|pair| pair[0] != pair[1]).count();
-            let complete_grid = point_count == 6 && counts[0] * counts[1] == 6;
-            let centered = same_dimension_length(center_u - u_min, u_max - center_u)
-                && same_dimension_length(center_v - v_min, v_max - center_v);
-            let square = same_dimension_length(u_max - u_min, v_max - v_min);
-            let radius = (u_max - u_min) * 0.5;
-            (complete_grid
-                && centered
-                && square
-                && matches!((counts[0], counts[1]), (3, 2) | (2, 3))
-                && radius.is_finite()
-                && radius > 0.0)
-                .then_some(radius)
-        });
-        match radii {
-            [None, None] => None,
-            [Some(radius), None] | [None, Some(radius)] => Some(radius),
-            [Some(first), Some(second)] if same_dimension_length(first, second) => {
-                Some(first.min(second))
-            }
-            [Some(_), Some(_)] => None,
+            },
+            |_| 0,
+            OPERATION,
+        )?;
+        let point_count = 1 + points.windows(2).filter(|pair| pair[0] != pair[1]).count();
+        let complete_grid = point_count == 6 && counts[0] * counts[1] == 6;
+        let centered = same_dimension_length(center_u - u_min, u_max - center_u)
+            && same_dimension_length(center_v - v_min, v_max - center_v);
+        let square = same_dimension_length(u_max - u_min, v_max - v_min);
+        let radius = (u_max - u_min) * 0.5;
+        *slot = (complete_grid
+            && centered
+            && square
+            && matches!((counts[0], counts[1]), (3, 2) | (2, 3))
+            && radius.is_finite()
+            && radius > 0.0)
+            .then_some(radius);
+    }
+    Ok(match radii {
+        [None, None] => None,
+        [Some(radius), None] | [None, Some(radius)] => Some(radius),
+        [Some(first), Some(second)] if same_dimension_length(first, second) => {
+            Some(first.min(second))
         }
-    })())
+        [Some(_), Some(_)] => None,
+    })
 }
 
 pub(super) fn legacy_coordinate_circle_radius(
@@ -4478,11 +4478,6 @@ fn sort_endpoint_points(
     points: &mut [[f64; 2]],
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let factor = u64::from(points.len().checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(64))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    charge_endpoint_work(ctx, points.len(), factor, operation)?;
     ctx.sort_unstable_by(
         points,
         |left, right| {
@@ -4565,11 +4560,6 @@ pub(super) fn sort_endpoint_markers(
     markers: &mut [&SketchInputEntity],
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let factor = u64::from(markers.len().checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(64))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    charge_endpoint_work(ctx, markers.len(), factor, operation)?;
     ctx.sort_unstable_by(
         markers,
         |left, right| left.offset().cmp(&right.offset()),
@@ -6069,11 +6059,6 @@ pub(super) fn unique_arc_center_marker(
         Some((quantize(center, tolerance), center))
     });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
-    let factor = u64::from(centers.len().checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(64))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    charge_endpoint_work(ctx, centers.len(), factor, OPERATION)?;
     ctx.sort_unstable_by(
         &mut centers,
         |(left, _), (right, _)| left.cmp(right),

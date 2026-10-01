@@ -185,13 +185,6 @@ pub(in crate::native) fn material_texture_assets(
         .iter()
         .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
         .count();
-    let entry_bytes = count
-        .checked_mul(std::mem::size_of::<&crate::container::DirEntry>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX material texture entry slots", 0, 1))?;
-    let _entry_reservation = ctx.reserve_scoped(
-        u64_from_index(entry_bytes),
-        "sort NX material texture entries",
-    )?;
     let mut entries = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut entries,
@@ -204,13 +197,6 @@ pub(in crate::native) fn material_texture_assets(
             .iter()
             .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX)),
     );
-    let sort_work = count
-        .checked_mul(count)
-        .ok_or_else(|| ctx.refuse_codec_limit("NX material texture sort work", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(sort_work),
-        "sort NX material texture entries",
-    )?;
     ctx.stable_sort_by(
         &mut entries,
         |first, second| first.name.cmp(&second.name),

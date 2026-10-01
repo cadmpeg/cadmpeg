@@ -448,17 +448,23 @@ pub(super) fn build_mesh_coordinate_gauge(
             ctx.refuse_codec_limit("catia_gauge_refinement_limit", u64::MAX, u64::MAX)
         })?;
     for _ in 0..refinement_limit {
-        let next_option_colors = intern_gauge_signatures(
-            ctx,
-            option_records
-                .iter()
-                .enumerate()
-                .map(|(option, (edge, [left, right]))| {
-                    let mut endpoints = [point_colors[*left], point_colors[*right]];
-                    endpoints.sort_unstable();
-                    (option_colors[option], row_colors[*edge], endpoints)
-                }),
+        let mut option_signatures = Vec::new();
+        ctx.reserve_vec(
+            &mut option_signatures,
+            option_records.len(),
+            "catia_gauge_option_signatures",
         )?;
+        for (option, (edge, [left, right])) in option_records.iter().enumerate() {
+            let mut endpoints = [point_colors[*left], point_colors[*right]];
+            ctx.sort_unstable_by(
+                &mut endpoints,
+                Ord::cmp,
+                |_| 0,
+                "catia_gauge_option_endpoints_sort",
+            )?;
+            option_signatures.push((option_colors[option], row_colors[*edge], endpoints));
+        }
+        let next_option_colors = intern_gauge_signatures(ctx, option_signatures)?;
         let mut row_signatures = Vec::new();
         for edge in 0..edge_rows.len() {
             let mut options = Vec::new();

@@ -111,7 +111,7 @@ pub(crate) fn project_canvas_images(
                 },
             ));
     }
-    crate::design::sort::sort_by(ctx, &mut assets[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(&mut assets[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design canvas 1")?;
     Ok(assets)
 }
 

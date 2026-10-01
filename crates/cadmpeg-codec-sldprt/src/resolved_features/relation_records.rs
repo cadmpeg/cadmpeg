@@ -1430,7 +1430,7 @@ fn bind_dynamic_point_relation(
     ctx.sort_unstable_by(
         &mut matches,
         Ord::cmp,
-        |(first, second)| first.len().saturating_add(second.len()),
+        |(first, second)| first.len() + second.len(),
         "sort SLDPRT dynamic point matches",
     )?;
     matches.dedup();

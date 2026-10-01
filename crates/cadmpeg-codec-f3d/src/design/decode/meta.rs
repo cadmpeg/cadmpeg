@@ -347,7 +347,7 @@ pub(crate) fn decode_component_naming_spaces(
         )?;
         out.extend(by_component.into_values());
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design meta 1")?;
     Ok(out)
 }
 

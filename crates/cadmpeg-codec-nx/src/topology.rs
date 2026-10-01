@@ -1235,11 +1235,6 @@ impl Graph {
         stream: &[u8],
         mut nodes: Vec<NodeCandidate>,
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        let count = u64_from_index(nodes.len());
-        let sort_work = count
-            .checked_mul(u64::from(usize::BITS - nodes.len().leading_zeros()))
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX topology candidates", 0, count))?;
-        ctx.charge_work(sort_work, "sort NX topology candidates")?;
         ctx.stable_sort_by(
             &mut nodes,
             |left, right| {
@@ -1774,7 +1769,6 @@ impl Graph {
         let Some(count) = self.shell_face_count(shell) else {
             return Ok(None);
         };
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         let mut faces = ctx.retained_vec(count, "NX shell face identities")?;
         let Some(fields) = shell.shell_fields() else {
             return Ok(None);
@@ -1798,10 +1792,6 @@ impl Graph {
                     .and_then(Node::face_fields)
                     .and_then(|face| face.next_face);
             }
-            let sort_work = count_u64
-                .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
-                .ok_or_else(|| ctx.refuse_codec_limit("sort NX shell faces", 0, count_u64))?;
-            ctx.charge_work(sort_work, "sort NX shell faces")?;
             ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort NX shell faces")?;
         }
         Ok(Some(faces))

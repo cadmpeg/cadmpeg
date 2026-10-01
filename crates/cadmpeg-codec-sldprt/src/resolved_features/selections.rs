@@ -77,17 +77,6 @@ fn selection_objects<'history, 'lane>(
         ctx.reserve_collection_vec(&mut objects, 1, operation)?;
         objects.push((name, feature, input_index));
     }
-    let levels = if objects.len() > 1 {
-        objects.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(objects.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )?;
     ctx.sort_unstable_by(
         &mut objects,
         |(left_name, _, left_index), (right_name, _, right_index)| {
@@ -459,17 +448,6 @@ pub(super) fn compact_edge_selections(
         let interval = edge_selection_vectors_in_interval(ctx, &lane.native_payload, start, end)?;
         ctx.reserve_collection_vec(&mut selections, interval.len(), OPERATION)?;
         selections.extend(interval);
-        let levels = if selections.len() > 1 {
-            selections.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(selections.len())
-                .checked_mul(u64::from(levels) + 1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
         ctx.sort_unstable_by(
             &mut selections,
             |left, right| left.0.cmp(&right.0),
@@ -1043,17 +1021,6 @@ fn fillet_face_selection_candidates(
         ctx.reserve_collection_vec(&mut class_bodies, 1, OPERATION)?;
         class_bodies.push((body, token));
     }
-    let levels = if class_bodies.len() > 1 {
-        class_bodies.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(class_bodies.len())
-            .checked_mul(u64::from(levels) + 1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut class_bodies,
         Ord::cmp,
@@ -1217,15 +1184,7 @@ fn order_surface_candidates(
 ) -> Result<(), CodecError> {
     let mut indexed = Vec::new();
     ctx.reserve_collection_vec(&mut indexed, candidates.len(), operation)?;
-    let levels = if candidates.len() > 1 {
-        candidates.len().ilog2() + 1
-    } else {
-        1
-    };
-    let work = u64_from_index(candidates.len())
-        .checked_mul(u64::from(levels) + 2)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)?;
+    ctx.charge_work(u64_from_index(candidates.len()), operation)?;
     for (index, (offset, components)) in candidates.drain(..).enumerate() {
         indexed.push((offset, components, index));
     }
@@ -1559,17 +1518,6 @@ fn cosmetic_thread_cylinder_references(
             offsets.push(offset);
         }
     }
-    let levels = if offsets.len() > 1 {
-        offsets.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(offsets.len())
-            .checked_mul(u64::from(levels) + 1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut offsets,
         Ord::cmp,
@@ -1619,17 +1567,6 @@ fn cosmetic_thread_component_references(
         ctx.reserve_collection_vec(&mut classes, 1, OPERATION)?;
         classes.push((offset, class));
     }
-    let levels = if classes.len() > 1 {
-        classes.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(classes.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut classes,
         |(left, _), (right, _)| left.cmp(right),
@@ -1828,19 +1765,6 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         ctx.reserve_collection_vec(&mut markers, 1, OPERATION)?;
         markers.push(marker);
     }
-    let count = u64::try_from(markers.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let levels = if markers.len() > 1 {
-        markers.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        count
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut markers,
         Ord::cmp,
@@ -3088,17 +3012,6 @@ pub(crate) fn generated_surface_identities(
             components,
         });
     }
-    let levels = if result.len() > 1 {
-        result.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(result.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut result,
         |left, right| (left.offset, left.input_index).cmp(&(right.offset, right.input_index)),
@@ -3458,17 +3371,6 @@ pub(super) fn variable_fillet_control_references(
             controls.push((marker, references));
         }
     }
-    let levels = if controls.len() > 1 {
-        controls.len().ilog2() + 1
-    } else {
-        1
-    };
-    let count = u64::try_from(controls.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let units = count
-        .checked_mul(u64::from(levels))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(units, OPERATION)?;
     ctx.sort_unstable_by(
         &mut controls,
         |(left, _), (right, _)| left.cmp(right),

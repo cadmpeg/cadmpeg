@@ -4374,28 +4374,43 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
             }
         }
         for assignments in &mut faces {
-            assignments.retain_mut(|assignment| {
-                assignment.iter_mut().all(|candidate| {
+            let mut kept = Vec::new();
+            ctx.reserve_vec(&mut kept, assignments.len(), "catia_placement_kept_assignments")?;
+            for mut assignment in std::mem::take(assignments) {
+                let mut keep = true;
+                for candidate in &mut assignment {
                     let edge = candidate.placement.edge;
-                    let seed = edge_points[edge].map(|mut pair| {
-                        pair.sort_unstable();
-                        pair
-                    });
+                    let mut seed = edge_points[edge];
+                    if let Some(pair) = &mut seed {
+                        ctx.sort_unstable_by(
+                            pair,
+                            Ord::cmp,
+                            |_| 0,
+                            "catia_placement_seed_pair_sort",
+                        )?;
+                    }
                     let opposite = edge_faces[edge]
                         .into_iter()
                         .find(|&face| face != candidate.placement.face)
                         .and_then(|face| face_domains.get(&(face, edge)))
                         .and_then(Option::as_ref);
                     let Some(domain) = &mut candidate.endpoint_pairs else {
-                        return true;
+                        continue;
                     };
                     domain.retain(|pair| {
                         seed.is_none_or(|seed| same_unordered_pair(*pair, seed))
                             && opposite.is_none_or(|opposite| opposite.contains(pair))
                     });
-                    !domain.is_empty()
-                })
-            });
+                    if domain.is_empty() {
+                        keep = false;
+                        break;
+                    }
+                }
+                if keep {
+                    kept.push(assignment);
+                }
+            }
+            *assignments = kept;
             if assignments.is_empty() {
                 return Ok(None);
             }

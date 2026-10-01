@@ -891,13 +891,6 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
                 .iter()
                 .filter(|reference| reference.operation_label == lane.operation_label),
         );
-        let sort_work = count
-            .checked_mul(count)
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX draft construction graph", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
-            "sort NX draft construction graph",
-        )?;
         ctx.stable_sort_by(
             &mut graph,
             |left, right| left.ordinal.cmp(&right.ordinal),

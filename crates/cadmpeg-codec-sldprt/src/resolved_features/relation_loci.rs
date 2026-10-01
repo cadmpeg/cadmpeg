@@ -2277,27 +2277,6 @@ pub(super) fn canonical_profile_loci(
             ));
         }
     }
-    let count = cadmpeg_core::decode::u64_from_index(indexed.len());
-    ctx.charge_work(count, OPERATION)?;
-    let max_bytes = indexed
-        .iter()
-        .map(|(_, _, locus)| locus_entity(locus).as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(8)
-                    .and_then(|bytes| bytes.checked_add(256))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     // Source order breaks equal geometric and identity keys without sort scratch.
     ctx.sort_unstable_by(
         &mut indexed,
@@ -3517,27 +3496,6 @@ fn dynamic_line_operand_candidates(
     }
     entities.truncate(write);
     if entities.len() > 1 {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-            OPERATION,
-        )?;
-        let max_bytes = entities
-            .iter()
-            .map(|entity| entity.as_str().len())
-            .max()
-            .unwrap_or(0);
-        let levels = u64::from(usize::BITS - entities.len().leading_zeros());
-        let work = cadmpeg_core::decode::u64_from_index(entities.len())
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
         ctx.sort_unstable_by(
             &mut entities,
             Ord::cmp,
@@ -3803,30 +3761,6 @@ fn dynamic_marker_line_candidates(
             candidates.push(entity);
         }
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(candidates.len()),
-        OPERATION,
-    )?;
-    let max_bytes = candidates
-        .iter()
-        .map(|entity| entity.as_str().len())
-        .max()
-        .unwrap_or(0);
-    let count = cadmpeg_core::decode::u64_from_index(candidates.len());
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut candidates,
         Ord::cmp,
@@ -4370,32 +4304,6 @@ fn collect_relation_marker_candidates<'a>(
     Ok(candidates)
 }
 
-fn charge_relation_marker_sort(
-    ctx: &DecodeContext<'_>,
-    candidates: &[&SketchInputEntity],
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(candidates.len());
-    ctx.charge_work(count, operation)?;
-    let max_bytes = candidates
-        .iter()
-        .map(|marker| marker.id().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    let work = count
-        .checked_mul(levels)
-        .and_then(|work| work.checked_mul(64))
-        .and_then(|work| {
-            cadmpeg_core::decode::u64_from_index(max_bytes)
-                .checked_mul(2)
-                .and_then(|bytes| bytes.checked_add(1))
-                .and_then(|bytes| work.checked_mul(bytes))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)
-}
-
 pub(super) fn relation_operand_marker<'a>(
     ctx: &DecodeContext<'_>,
     relation: &'a FeatureInputRelationInstance,
@@ -4417,7 +4325,6 @@ pub(super) fn relation_operand_marker<'a>(
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
             })?;
-        charge_relation_marker_sort(ctx, &coordinate_handles, OPERATION)?;
         ctx.sort_unstable_by(
             &mut coordinate_handles,
             |left, right| left.offset().cmp(&right.offset()),
@@ -4525,7 +4432,6 @@ fn dynamic_relation_marker<'a>(
     }
     let mut ordinal =
         collect_relation_marker_candidates(ctx, relation, markers_by_id, direct_kind)?;
-    charge_relation_marker_sort(ctx, &ordinal, "sort SLDPRT ordinal operand markers")?;
     ctx.sort_unstable_by(
         &mut ordinal,
         |left, right| {
@@ -5120,27 +5026,6 @@ pub(super) fn single_marker_line_entity(
         loci_by_marker,
         MarkerEntityFilter::Lines(sketch_entities),
     )?;
-    let count = cadmpeg_core::decode::u64_from_index(entities.len());
-    ctx.charge_work(count, OPERATION)?;
-    let max_bytes = entities
-        .iter()
-        .map(|identity| identity.as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut entities,
         Ord::cmp,
@@ -5476,23 +5361,6 @@ fn sort_profile_loci(
     loci: &mut Vec<SketchLocus>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    const COMPARE_WORK_FACTOR: u64 = 64;
-    let count = cadmpeg_core::decode::u64_from_index(loci.len());
-    ctx.charge_work(count, operation)?;
-    let max_identity_bytes = loci.iter().fold(0u64, |bytes, locus| {
-        bytes.max(cadmpeg_core::decode::u64_from_index(
-            locus_key(locus).0.len(),
-        ))
-    });
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(COMPARE_WORK_FACTOR))
-            .and_then(|work| work.checked_mul(max_identity_bytes.checked_mul(2)?.checked_add(1)?))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )?;
     // Equal sort keys identify equal locus values.
     ctx.sort_unstable_by(
         loci.as_mut_slice(),
