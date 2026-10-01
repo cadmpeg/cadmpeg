@@ -78,10 +78,7 @@ fn named_act_channels(
     channels: Option<&BTreeMap<String, String>>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let copied = copy_act_channels(ctx, channels)?;
-    let count = u64::try_from(copied.len())
-        .map_err(|_| ctx.refuse_codec_limit("index F3D named ACT channels", 0, u64::MAX))?;
-    ctx.charge_collection_items(count, "index F3D named ACT channels")?;
-    Ok(cadmpeg_core::text::named_entries(owner, copied)?)
+    cadmpeg_core::text::named_entries_checked(ctx, owner, copied)
 }
 
 fn lp_ascii_printable_charged(
@@ -916,7 +913,8 @@ fn appearances_from_schema_records(
             schema: Some(ctx.copy_retained_text(&record.schema, "copy F3D appearance schema")?),
             category: None,
             base_color,
-            properties: cadmpeg_core::text::named_entries(
+            properties: cadmpeg_core::text::named_entries_checked(
+                ctx,
                 format_args!("f3d:design:appearance#{}", record.guid),
                 properties,
             )?,
@@ -2246,7 +2244,8 @@ fn decode_fixed_record(
     } else if schema == "PrismTransparentSchema" {
         fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
-    let properties = cadmpeg_core::text::named_entries(
+    let properties = cadmpeg_core::text::named_entries_checked(
+                ctx,
         format_args!("f3d:design:appearance#{guid}"),
         properties,
     )?;
