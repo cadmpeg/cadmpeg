@@ -949,6 +949,33 @@ fn local() {
         ) + "\n}\n")
         self.assertEqual(self.findings("uncharged_decode_sort"), [])
 
+    def test_decode_crate_sort_without_context_is_rejected(self) -> None:
+        for crate in ("cadmpeg-codec-demo", "cadmpeg-container", "cadmpeg-asm", "cadmpeg-parasolid", "cadmpeg-protein"):
+            with self.subTest(crate=crate):
+                self.write(f"crates/{crate}/src/geometry.rs", "fn knots(values: &mut [f64]) {\n    values.sort_by(f64::total_cmp);\n}\n")
+                findings = [item for item in self.findings("uncharged_decode_sort") if item.path.startswith(f"crates/{crate}/")]
+                self.assertEqual([(item.path, item.line) for item in findings], [(f"crates/{crate}/src/geometry.rs", 2)])
+                self.assertIn("pass the decode context", findings[0].message)
+
+    def test_array_return_type_keeps_the_function_body(self) -> None:
+        self.write("crates/demo/src/lib.rs",
+                   "fn read(ctx: &DecodeContext<'_>) -> Result<Vec<[usize; 2]>, CodecError> {\n    values.sort();\n}\n")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [2])
+
+    def test_decode_crate_encoders_without_context_are_accepted(self) -> None:
+        for path in ("src/writer.rs", "src/writer_patch.rs", "src/writer/generate/attributes.rs",
+                     "src/history/encode/solid.rs", "src/history/write/features.rs",
+                     "src/resolved_features/write_generate.rs", "src/zip_write.rs", "src/export.rs",
+                     "src/bin/profile.rs"):
+            self.write(f"crates/cadmpeg-codec-demo/{path}", "fn order() { values.sort(); }")
+        self.write("crates/cadmpeg-ir/src/document.rs", "fn order() { values.sort(); }")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_decode_crate_encoder_with_context_is_rejected(self) -> None:
+        self.write("crates/cadmpeg-codec-demo/src/writer.rs",
+                   "fn reread(ctx: &DecodeContext<'_>) {\n    values.sort();\n}\n")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [2])
+
     def test_core_sort_implementations_are_accepted(self) -> None:
         for path in sorted(policy.DECODE_SORT_EXEMPT_FILES):
             self.write(path, "fn sort(ctx: &DecodeContext<'_>) { values.sort_unstable_by(compare); }")

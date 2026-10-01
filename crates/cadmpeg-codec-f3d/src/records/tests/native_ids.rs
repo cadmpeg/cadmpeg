@@ -11,6 +11,7 @@ fn timeline_id_binds_a_design_stream_and_frame_offset() {
         DesignFeatureTimeline::try_new(
             id.into(),
             DesignTimelineFrame::new(
+                crate::records::admission::RecordAdmission::Admitted,
                 200,
                 100,
                 220,

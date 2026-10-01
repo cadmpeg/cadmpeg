@@ -501,6 +501,7 @@ pub(in crate::history) fn sync_neutral_features(
         })
         .collect::<std::collections::HashSet<_>>();
     crate::resolved_features::parameters::sync_changed_feature_scalars(
+        &ctx,
         &native.feature_histories,
         &mut native.feature_input_lanes,
         &changed_parameters,

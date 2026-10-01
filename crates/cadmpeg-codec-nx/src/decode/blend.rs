@@ -118,24 +118,30 @@ mod tests {
 
     #[test]
     fn periodic_blend_lifts_a_finite_parameter_across_a_wide_domain() {
-        assert_eq!(
-            super::lift_periodic_parameters(
-                vec![-f64::MAX],
-                [-f64::MAX, f64::MAX],
-                true,
-                Some(f64::MAX),
-            ),
-            vec![f64::MAX]
-        );
-        assert_eq!(
-            super::lift_periodic_parameters(
-                vec![-f64::MAX],
-                [-f64::MAX, f64::MAX],
-                true,
-                Some(0.0),
-            ),
-            vec![-f64::MAX]
-        );
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(
+                super::lift_periodic_parameters(
+                    ctx,
+                    vec![-f64::MAX],
+                    [-f64::MAX, f64::MAX],
+                    true,
+                    Some(f64::MAX),
+                )
+                .expect("lift is admitted"),
+                vec![f64::MAX]
+            );
+            assert_eq!(
+                super::lift_periodic_parameters(
+                    ctx,
+                    vec![-f64::MAX],
+                    [-f64::MAX, f64::MAX],
+                    true,
+                    Some(0.0),
+                )
+                .expect("lift is admitted"),
+                vec![-f64::MAX]
+            );
+        });
     }
 
     use super::{
@@ -2999,8 +3005,9 @@ pub(super) fn closest_pcurve_parameters(
             .collect::<Vec<_>>();
         closest_parameter_candidates(candidates, search_seed, &geometry_budget)?
     };
-    Ok(candidates
-        .map(|candidates| lift_periodic_parameters(candidates, domain, nurbs.periodic(), seed)))
+    candidates
+        .map(|candidates| lift_periodic_parameters(ctx, candidates, domain, nurbs.periodic(), seed))
+        .transpose()
 }
 
 struct HomogeneousCurveSpans<const DIMENSION: usize> {
@@ -3453,7 +3460,18 @@ pub(super) fn scalar_bezier_roots_with_budget(
         intervals.push(second);
         intervals.push(first);
     }
-    parameters.sort_by(f64::total_cmp);
+    if geometry_budget
+        .charges
+        .stable_sort_by(
+            &mut parameters,
+            f64::total_cmp,
+            |_| 0,
+            "nx Bezier root parameters sort",
+        )
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    }
     parameters.dedup_by(|first, second| {
         let first = cadmpeg_ir::math::parameter_fraction(*first, domain[0], domain[1]);
         let second = cadmpeg_ir::math::parameter_fraction(*second, domain[0], domain[1]);
@@ -3608,17 +3626,28 @@ fn closest_parameter_candidates(
             nearest.push(candidate.0);
         }
     }
-    nearest.sort_by(|first, second| {
-        seed.map_or_else(
-            || first.total_cmp(second),
-            |seed| {
-                (first - seed)
-                    .abs()
-                    .total_cmp(&(second - seed).abs())
-                    .then_with(|| first.total_cmp(second))
+    if geometry_budget
+        .charges
+        .stable_sort_by(
+            &mut nearest,
+            |first, second| {
+                seed.map_or_else(
+                    || first.total_cmp(second),
+                    |seed| {
+                        (first - seed)
+                            .abs()
+                            .total_cmp(&(second - seed).abs())
+                            .then_with(|| first.total_cmp(second))
+                    },
+                )
             },
+            |_| 0,
+            "nx closest parameter minima sort",
         )
-    });
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    }
     nearest.dedup_by(|first, second| first.to_bits() == second.to_bits());
     Ok((!nearest.is_empty()).then_some(nearest))
 }
@@ -3632,13 +3661,14 @@ fn canonical_periodic_parameter(domain: [f64; 2], periodic: bool, parameter: f64
 }
 
 fn lift_periodic_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut parameters: Vec<f64>,
     domain: [f64; 2],
     periodic: bool,
     seed: Option<f64>,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
     let Some(seed) = seed.filter(|_| periodic) else {
-        return parameters;
+        return Ok(parameters);
     };
     let period = domain[1] - domain[0];
     for parameter in &mut parameters {
@@ -3664,21 +3694,26 @@ fn lift_periodic_parameters(
             }
         };
     }
-    parameters.sort_by(|first, second| {
-        if period.is_finite() {
-            (first - seed)
-                .abs()
-                .total_cmp(&(second - seed).abs())
-                .then_with(|| first.total_cmp(second))
-        } else {
-            (first * 0.5 - seed * 0.5)
-                .abs()
-                .total_cmp(&(second * 0.5 - seed * 0.5).abs())
-                .then_with(|| first.total_cmp(second))
-        }
-    });
+    ctx.stable_sort_by(
+        &mut parameters,
+        |first, second| {
+            if period.is_finite() {
+                (first - seed)
+                    .abs()
+                    .total_cmp(&(second - seed).abs())
+                    .then_with(|| first.total_cmp(second))
+            } else {
+                (first * 0.5 - seed * 0.5)
+                    .abs()
+                    .total_cmp(&(second * 0.5 - seed * 0.5).abs())
+                    .then_with(|| first.total_cmp(second))
+            }
+        },
+        |_| 0,
+        "nx lifted periodic parameters sort",
+    )?;
     parameters.dedup_by(|first, second| first.to_bits() == second.to_bits());
-    parameters
+    Ok(parameters)
 }
 
 fn spine_contact_point_with_index_and_budget(
@@ -4715,8 +4750,10 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
-    let Some(roots) = real_polynomial_roots(&coefficients) else {
-        return Ok(None);
+    let roots = match real_polynomial_roots(geometry_budget.charges, &coefficients) {
+        Ok(Some(roots)) => roots,
+        Ok(None) => return Ok(None),
+        Err(_) => return geometry_budget.resource_refusal().map_or(Ok(None), Err),
     };
     let parameters = roots
         .into_iter()
@@ -4748,29 +4785,45 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     )
 }
 
-pub(super) fn real_polynomial_roots(coefficients: &[f64]) -> Option<Vec<f64>> {
+pub(super) fn real_polynomial_roots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    coefficients: &[f64],
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     if coefficients
         .iter()
         .any(|coefficient| !coefficient.is_finite())
     {
-        return None;
+        return Ok(None);
     }
-    let mut roots = polynomial_roots_in_unit_interval(coefficients)?;
+    let Some(mut roots) = polynomial_roots_in_unit_interval(ctx, coefficients)? else {
+        return Ok(None);
+    };
     let reversed = coefficients.iter().rev().copied().collect::<Vec<_>>();
+    let Some(reversed_roots) = polynomial_roots_in_unit_interval(ctx, &reversed)? else {
+        return Ok(None);
+    };
     roots.extend(
-        polynomial_roots_in_unit_interval(&reversed)?
+        reversed_roots
             .into_iter()
             .filter(|root| *root != 0.0)
             .map(f64::recip),
     );
-    roots.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(
+        &mut roots,
+        f64::total_cmp,
+        |_| 0,
+        "nx polynomial real roots sort",
+    )?;
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Some(roots)
+    Ok(Some(roots))
 }
 
-fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
+fn polynomial_roots_in_unit_interval(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    coefficients: &[f64],
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut coefficients = coefficients.to_vec();
     while coefficients
         .last()
@@ -4779,41 +4832,53 @@ fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
         coefficients.pop();
     }
     if coefficients.is_empty() {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
-    let degree = coefficients.len().checked_sub(1)?;
+    let Some(degree) = coefficients.len().checked_sub(1) else {
+        return Ok(None);
+    };
     if degree == 0 {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     let scale = coefficients
         .iter()
         .fold(0.0_f64, |scale, coefficient| scale.max(coefficient.abs()));
     if !scale.is_finite() || scale == 0.0 {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     for coefficient in &mut coefficients {
         *coefficient /= scale;
     }
     if degree == 1 {
         let root = -coefficients[0] / coefficients[1];
-        return root.is_finite().then(|| {
+        return Ok(root.is_finite().then(|| {
             if (-1.0..=1.0).contains(&root) {
                 vec![root]
             } else {
                 Vec::new()
             }
-        });
+        }));
     }
-    let derivative = coefficients
+    let Some(derivative) = coefficients
         .iter()
         .enumerate()
         .skip(1)
         .map(|(degree, coefficient)| {
             Some(*coefficient * cadmpeg_core::convert::f64_from_index(degree)?)
         })
-        .collect::<Option<Vec<_>>>()?;
-    let mut critical = polynomial_roots_in_unit_interval(&derivative)?;
-    critical.sort_by(f64::total_cmp);
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(mut critical) = polynomial_roots_in_unit_interval(ctx, &derivative)? else {
+        return Ok(None);
+    };
+    ctx.stable_sort_by(
+        &mut critical,
+        f64::total_cmp,
+        |_| 0,
+        "nx polynomial critical points sort",
+    )?;
     critical.dedup_by(|first, second| {
         (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
@@ -4870,11 +4935,16 @@ fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
         }
         roots.push(lower + (upper - lower) * 0.5);
     }
-    roots.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(
+        &mut roots,
+        f64::total_cmp,
+        |_| 0,
+        "nx polynomial unit interval roots sort",
+    )?;
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Some(roots)
+    Ok(Some(roots))
 }
 
 fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
@@ -4978,11 +5048,16 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
-    Ok(
-        lift_periodic_parameters(parameters, domain, curve.periodic(), seed)
-            .into_iter()
-            .next(),
-    )
+    let Ok(parameters) = lift_periodic_parameters(
+        geometry_budget.charges,
+        parameters,
+        domain,
+        curve.periodic(),
+        seed,
+    ) else {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    };
+    Ok(parameters.into_iter().next())
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {

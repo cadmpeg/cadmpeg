@@ -1231,12 +1231,21 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         native.design_types.iter(),
         "order F3D feature timeline types",
     )?;
-    design_types.sort_by_key(|design_type| {
-        (
-            ids::native_stream(&design_type.id).unwrap_or_default(),
-            design_type.byte_offset,
-        )
-    });
+    ctx.decode.stable_sort_by(
+        &mut design_types,
+        |left, right| {
+            (
+                ids::native_stream(&left.id).unwrap_or_default(),
+                left.byte_offset,
+            )
+                .cmp(&(
+                    ids::native_stream(&right.id).unwrap_or_default(),
+                    right.byte_offset,
+                ))
+        },
+        |design_type| design_type.id.len(),
+        "f3d feature timeline types sort",
+    )?;
     for design_type in design_types {
         let Some(meta_stream) = ids::native_stream(&design_type.id) else {
             continue;
@@ -1321,7 +1330,14 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         native.design_feature_timelines.iter(),
         "order F3D feature timeline records",
     )?;
-    actual.sort_by_key(|timeline| (timeline.segment(), timeline.source_ordinal));
+    ctx.decode.stable_sort_by(
+        &mut actual,
+        |left, right| {
+            (left.segment(), left.source_ordinal).cmp(&(right.segment(), right.source_ordinal))
+        },
+        |timeline| timeline.segment().len(),
+        "f3d feature timeline records sort",
+    )?;
     let mut actual_records = HashSet::<(&str, u64)>::new();
     let mut item_records = HashSet::<(&str, u64)>::new();
     for timeline in actual {
@@ -1548,7 +1564,12 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), 
             feature.texture_table.resources().iter(),
             "collect F3D mesh texture resources",
         )?;
-        resources.sort_by_key(|resource| resource.filename_ordinal);
+        ctx.decode.stable_sort_by(
+            &mut resources,
+            |left, right| left.filename_ordinal.cmp(&right.filename_ordinal),
+            |_| 0,
+            "f3d mesh texture resources sort",
+        )?;
         let mut resources_valid = true;
         for resource in &resources {
             let filename_key = (stream, resource.file.record().record_index());
@@ -1815,7 +1836,12 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
                         }),
                         "collect F3D Decal projected faces",
                     )?;
-                    faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+                    ctx.decode.stable_sort_by(
+                        &mut faces,
+                        |left, right| left.as_str().cmp(right.as_str()),
+                        |face| face.as_str().len(),
+                        "f3d decal projected faces sort",
+                    )?;
                     faces.dedup();
                     (!faces.is_empty()).then_some((operand, faces))
                 } else {
@@ -1965,7 +1991,12 @@ fn validate_body_bindings(
         )?;
     }
     for bindings in binding_groups.values_mut() {
-        bindings.sort_by_key(|binding| binding.pair_ordinal());
+        ctx.decode.stable_sort_by(
+            bindings,
+            |left, right| left.pair_ordinal().cmp(&right.pair_ordinal()),
+            |_| 0,
+            "f3d body binding pair run sort",
+        )?;
         let complete = bindings
             .first()
             .is_some_and(|first| usize::try_from(first.pair_count()).ok() == Some(bindings.len()))
@@ -2006,7 +2037,12 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
             }),
             "collect F3D expected body bounds bindings",
         )?;
-        expected_bindings.sort_by_key(|binding| binding.asm_body_key_offset());
+        ctx.decode.stable_sort_by(
+            &mut expected_bindings,
+            |left, right| left.asm_body_key_offset().cmp(&right.asm_body_key_offset()),
+            |_| 0,
+            "f3d body bounds binding sort",
+        )?;
         let valid_frame = ctx
             .entities_by_suffix
             .get(&(native_stream, bounds.entity_suffix()))
@@ -5574,7 +5610,15 @@ fn validate_extrude_parameter_operands(
                             matches!(role, records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_))
                         })
                 }), "collect F3D Extrude face operand groups")?;
-            face_groups.sort_by_key(|group| group.scope_reference_ordinal);
+            ctx.decode.stable_sort_by(
+                &mut face_groups,
+                |left, right| {
+                    left.scope_reference_ordinal
+                        .cmp(&right.scope_reference_ordinal)
+                },
+                |_| 0,
+                "f3d extrude face operand groups sort",
+            )?;
             let expected_face_roles = match (extrude_start, extrude_extent) {
                 (
                     records::feature::extrude::DesignExtrudeStart::FromFace,
@@ -6418,7 +6462,12 @@ fn validate_operand_group_carriers<'a>(
                 }),
             "collect F3D operand group identity members",
         )?;
-        identity_members.sort_by_key(|operand| operand.group_member_ordinal);
+        ctx.decode.stable_sort_by(
+            &mut identity_members,
+            |left, right| left.group_member_ordinal.cmp(&right.group_member_ordinal),
+            |_| 0,
+            "f3d operand group identity members sort",
+        )?;
         let has_exact_identity_members = !group.members().is_empty()
             && identity_members.len() == group.members().len()
             && identity_members
@@ -6655,12 +6704,17 @@ fn validate_extrude_selection_members(
                 }),
             "collect F3D Extrude selection identities",
         )?;
-        expected_identities.sort_by_key(|identity| {
-            identity
-                .wrappers()
-                .first()
-                .map(|wrapper| wrapper.byte_offset)
-        });
+        ctx.decode.stable_sort_by(
+            &mut expected_identities,
+            |left, right| {
+                left.wrappers()
+                    .first()
+                    .map(|wrapper| wrapper.byte_offset)
+                    .cmp(&right.wrappers().first().map(|wrapper| wrapper.byte_offset))
+            },
+            |_| 0,
+            "f3d extrude selection identities sort",
+        )?;
         let expected_history = history::selection::historical_extrude_selection_identity_kind(
             ctx.decode,
             member,
@@ -6932,18 +6986,19 @@ fn validate_edge_operands<'a>(
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index()));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
-        let expected_faces = recipe
+        let design_reference = recipe
             .and_then(|recipe| recipe.record_index)
             .map(|record_index| i64::from(record_index.value))
-            .filter(|value| *value >= 0)
-            .map(|design_reference| {
-                design::decode::operands::edge_operand_candidate_faces(
-                    design_reference,
-                    &native.persistent_subentity_tags,
-                    Some(&operand.id),
-                )
-            })
-            .unwrap_or_default();
+            .filter(|value| *value >= 0);
+        let expected_faces = match design_reference {
+            Some(design_reference) => design::decode::operands::edge_operand_candidate_faces(
+                ctx.decode,
+                design_reference,
+                &native.persistent_subentity_tags,
+                Some(&operand.id),
+            )?,
+            None => Vec::new(),
+        };
         let mut expected_references =
             design::decode::dimension_frames::decode_recipe_references_charged(
                 ctx.decode,
@@ -7259,7 +7314,12 @@ fn validate_face_operands<'a>(
                 }),
             "collect F3D expected operand faces",
         )?;
-        expected_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        ctx.decode.stable_sort_by(
+            &mut expected_faces,
+            |left, right| left.as_str().cmp(right.as_str()),
+            |face| face.as_str().len(),
+            "f3d face operand expected faces sort",
+        )?;
         expected_faces.dedup();
         let mut expected_references =
             design::decode::dimension_frames::decode_recipe_references_charged(
@@ -7302,7 +7362,12 @@ fn validate_face_operands<'a>(
                 .flat_map(|reference| &reference.alternate_selector_faces),
             "collect F3D alternate selector operand faces",
         )?;
-        expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        ctx.decode.stable_sort_by(
+            &mut expected_alternate_selector_faces,
+            |left, right| left.as_str().cmp(right.as_str()),
+            |face| face.as_str().len(),
+            "f3d face operand alternate selector faces sort",
+        )?;
         expected_alternate_selector_faces.dedup();
         let expected_node_offsets = ctx.decode.try_collect_vec(
             operand
@@ -7972,7 +8037,12 @@ fn validate_parameter_companions(
             }),
             "collect F3D companion expected recipes",
         )?;
-        expected_recipes.sort_by_key(|recipe| recipe.byte_offset);
+        ctx.decode.stable_sort_by(
+            &mut expected_recipes,
+            |left, right| left.byte_offset.cmp(&right.byte_offset),
+            |_| 0,
+            "f3d parameter companion recipes sort",
+        )?;
         let unique_index = ctx.decode.insert_hash_set(
             &mut companion_indices,
             (native_stream, companion.record_index()),
@@ -8480,6 +8550,7 @@ fn validate_dimension_locus_groups<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
+    let decode: &DecodeContext<'_> = ctx.decode;
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -8559,8 +8630,18 @@ fn validate_dimension_locus_groups<'a>(
             group.loci.iter().map(|locus| locus.returned.value),
             "collect F3D dimension return members",
         )?;
-        locus_members.sort_unstable();
-        return_members.sort_unstable();
+        decode.sort_unstable_by(
+            &mut locus_members,
+            Ord::cmp,
+            |_| 0,
+            "f3d dimension locus members sort",
+        )?;
+        decode.sort_unstable_by(
+            &mut return_members,
+            Ord::cmp,
+            |_| 0,
+            "f3d dimension return members sort",
+        )?;
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.in_sketch_module());
@@ -9289,7 +9370,12 @@ fn validate_body_links(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
         )?;
     }
     for links in body_links.values_mut() {
-        links.sort_by_key(|link| link.ordinal);
+        ctx.decode.stable_sort_by(
+            links,
+            |left, right| left.ordinal.cmp(&right.ordinal),
+            |_| 0,
+            "f3d body links sort",
+        )?;
         if links
             .iter()
             .enumerate()
@@ -9358,7 +9444,12 @@ fn validate_subentity_tags(
         )?;
     }
     for tags in subentity_tags.values_mut() {
-        tags.sort_by_key(|tag| tag.ordinal);
+        ctx.decode.stable_sort_by(
+            tags,
+            |left, right| left.ordinal.cmp(&right.ordinal),
+            |_| 0,
+            "f3d subentity tags sort",
+        )?;
         if tags
             .iter()
             .enumerate()

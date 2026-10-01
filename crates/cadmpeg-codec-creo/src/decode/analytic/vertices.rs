@@ -229,7 +229,7 @@ fn line_conic_intersections(
             + constant.abs(),
     );
     let mut points = Vec::new();
-    for parameter in real_roots(line_quadratic, line_linear, line_constant) {
+    for parameter in real_roots(ctx, line_quadratic, line_linear, line_constant)? {
         let point = std::array::from_fn(|coordinate| {
             direction[coordinate].mul_add(parameter, origin[coordinate])
         });

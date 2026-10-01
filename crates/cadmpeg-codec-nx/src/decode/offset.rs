@@ -702,7 +702,18 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             return Some(Err(limit));
         }
         u_breaks.extend(candidate_u_breaks);
-        u_breaks.sort_by(f64::total_cmp);
+        if geometry_budget
+            .charges
+            .stable_sort_by(
+                &mut u_breaks,
+                f64::total_cmp,
+                |_| 0,
+                "nx offset u breaks sort",
+            )
+            .is_err()
+        {
+            return geometry_budget.resource_refusal().map(Err);
+        }
         u_breaks.dedup();
         let (mut v_breaks, mut v_storage) = match geometry_budget.charges.copy_temporary_slice(
             &support_net.v_knots[support_net.v_degree..=support_net.v_count],
@@ -722,7 +733,18 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             return Some(Err(limit));
         }
         v_breaks.extend(candidate_v_breaks);
-        v_breaks.sort_by(f64::total_cmp);
+        if geometry_budget
+            .charges
+            .stable_sort_by(
+                &mut v_breaks,
+                f64::total_cmp,
+                |_| 0,
+                "nx offset v breaks sort",
+            )
+            .is_err()
+        {
+            return geometry_budget.resource_refusal().map(Err);
+        }
         v_breaks.dedup();
         let mut rectangles = Vec::new();
         for u in u_breaks.windows(2).filter(|span| span[0] < span[1]) {

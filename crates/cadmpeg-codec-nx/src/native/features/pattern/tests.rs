@@ -19,7 +19,7 @@ fn pattern_construction_route_refusal(
 ) -> cadmpeg_core::CodecError {
     use crate::native::features::FeatureOperationLabel;
     let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
-    let part = crate::test_support::test_om::composed_feature_history_payload(
+    let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
         &[(
             &[0xff; 4],
             "Pattern Feature",
@@ -108,7 +108,7 @@ fn pattern_construction_route_refuses_work_limit() {
 fn pattern_reference_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let part = crate::test_support::test_om::composed_feature_history_payload(
+    let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
         &[(
             &[0xff; 4],
             "Pattern Geometry",
@@ -185,7 +185,7 @@ fn pattern_output_lane_refusal<T>(
     ) -> Result<Vec<T>, cadmpeg_core::CodecError>,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let part = crate::test_support::test_om::composed_feature_history_payload(
+    let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
         &[(&[0xff; 4], label, payload.to_vec())],
         &[],
     );
@@ -301,7 +301,7 @@ fn pattern_content_refusal(
         FeatureConstructionOwner, FeatureConstructionPayload, FeaturePatternKind,
     };
     let store = (0..600).map(|_| bytes).collect::<Vec<_>>();
-    let part = crate::test_support::test_om::composed_feature_history_payload(
+    let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
         &[(&[0xff; 4], "Pattern Feature", Vec::new())],
         &store,
     );

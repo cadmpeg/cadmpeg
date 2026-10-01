@@ -1538,31 +1538,28 @@ pub(crate) fn project_relation_solved_line_geometry(
                         ctx, expected, sketch, entities, &generated, QUANTUM,
                     )? {
                         let selected = [first, second];
-                        let aliases_match =
-                            relation
-                                .operands
-                                .iter()
-                                .zip(selected.iter())
-                                .all(|(operand, line)| {
-                                    entities
-                                        .iter()
-                                        .filter(|entity| {
-                                            entity.sketch == *sketch
-                                                && entity.geometry_ref.as_deref().is_some_and(
-                                                    |geometry_ref| {
-                                                        solver_line_geometry_ref_matches(
-                                                            geometry_ref,
-                                                            &relation.feature_ref,
-                                                            operand.entity_index,
-                                                        )
-                                                    },
-                                                )
-                                        })
-                                        .all(|entity| {
-                                            dynamic_line_geometry_key(entity, QUANTUM)
-                                                == dynamic_line_geometry_key(line, QUANTUM)
-                                        })
-                                });
+                        let mut aliases_match = true;
+                        'operands: for (operand, line) in
+                            relation.operands.iter().zip(selected.iter())
+                        {
+                            for entity in entities.iter().filter(|entity| {
+                                entity.sketch == *sketch
+                                    && entity.geometry_ref.as_deref().is_some_and(|geometry_ref| {
+                                        solver_line_geometry_ref_matches(
+                                            geometry_ref,
+                                            &relation.feature_ref,
+                                            operand.entity_index,
+                                        )
+                                    })
+                            }) {
+                                if dynamic_line_geometry_key(ctx, entity, QUANTUM)?
+                                    != dynamic_line_geometry_key(ctx, line, QUANTUM)?
+                                {
+                                    aliases_match = false;
+                                    break 'operands;
+                                }
+                            }
+                        }
                         if !aliases_match {
                             continue;
                         }
@@ -1737,7 +1734,7 @@ fn unique_dynamic_line_pair<'a>(
         {
             continue;
         }
-        let Some(key) = dynamic_line_geometry_key(entity, quantum) else {
+        let Some(key) = dynamic_line_geometry_key(ctx, entity, quantum)? else {
             continue;
         };
         if candidates.iter().any(|(candidate, _)| *candidate == key) {
@@ -1754,7 +1751,12 @@ fn unique_dynamic_line_pair<'a>(
                 .is_some_and(|measured| same_dimension_length(measured, expected))
             {
                 let mut pair_key = [*first_key, *second_key];
-                pair_key.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut pair_key,
+                    Ord::cmp,
+                    |_| 0,
+                    "sldprt dynamic line pair keys sort",
+                )?;
                 if let Some((previous, _)) = match_pair {
                     if previous != pair_key {
                         return Ok(None);
@@ -1768,16 +1770,16 @@ fn unique_dynamic_line_pair<'a>(
     let Some((_, pair)) = match_pair else {
         return Ok(None);
     };
-    let Some(first_key) = dynamic_line_geometry_key(generated[0], quantum) else {
+    let Some(first_key) = dynamic_line_geometry_key(ctx, generated[0], quantum)? else {
         return Ok(None);
     };
-    let Some(second_key) = dynamic_line_geometry_key(generated[1], quantum) else {
+    let Some(second_key) = dynamic_line_geometry_key(ctx, generated[1], quantum)? else {
         return Ok(None);
     };
-    let ordered = if dynamic_line_geometry_key(pair[0], quantum) == Some(first_key) {
+    let ordered = if dynamic_line_geometry_key(ctx, pair[0], quantum)? == Some(first_key) {
         pair
-    } else if dynamic_line_geometry_key(pair[1], quantum) == Some(first_key)
-        || dynamic_line_geometry_key(pair[0], quantum) == Some(second_key)
+    } else if dynamic_line_geometry_key(ctx, pair[1], quantum)? == Some(first_key)
+        || dynamic_line_geometry_key(ctx, pair[0], quantum)? == Some(second_key)
     {
         [pair[1], pair[0]]
     } else {
@@ -1843,13 +1845,22 @@ fn copy_dynamic_line_entity(
     .with_endpoint_refs(endpoint_refs))
 }
 
-fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[GridPoint; 2]> {
+fn dynamic_line_geometry_key(
+    ctx: &DecodeContext<'_>,
+    entity: &SketchEntity,
+    quantum: f64,
+) -> Result<Option<[GridPoint; 2]>, cadmpeg_core::CodecError> {
     let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
-        return None;
+        return Ok(None);
     };
     let mut endpoints = [quantize(start.get(), quantum), quantize(end.get(), quantum)];
-    endpoints.sort_unstable();
-    Some(endpoints)
+    ctx.sort_unstable_by(
+        &mut endpoints,
+        Ord::cmp,
+        |_| 0,
+        "sldprt dynamic line endpoints sort",
+    )?;
+    Ok(Some(endpoints))
 }
 
 pub(crate) fn project_relation_solved_point_geometry(
@@ -2163,19 +2174,6 @@ fn collect_handle_markers<'a>(
         result.push(marker);
     }
     Ok(result)
-}
-
-fn charge_handle_sort_work(
-    ctx: &DecodeContext<'_>,
-    len: usize,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let levels = u64::from(len.checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(64))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(DIMENSIONED_HANDLE_OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
-    charge_relation_parameter_work(ctx, len, levels, DIMENSIONED_HANDLE_OPERATION)
 }
 
 fn sort_handle_markers(
@@ -3042,8 +3040,15 @@ fn declared_entity_handle_pairs<'a>(
     charge_relation_parameter_work(ctx, extending, 4, DIMENSIONED_HANDLE_OPERATION)?;
     ctx.reserve_vec(&mut pairs, indexed.len(), DIMENSIONED_HANDLE_OPERATION)?;
     pairs.extend(indexed);
-    charge_handle_sort_work(ctx, pairs.len())?;
-    pairs.sort_unstable_by_key(|[center, radial]| (center.offset(), radial.offset()));
+    ctx.sort_unstable_by(
+        &mut pairs,
+        |[left_center, left_radial], [right_center, right_radial]| {
+            (left_center.offset(), left_radial.offset())
+                .cmp(&(right_center.offset(), right_radial.offset()))
+        },
+        |_| 0,
+        "sldprt declared entity handle pairs sort",
+    )?;
     for [center, radial] in &pairs {
         charge_relation_parameter_work(ctx, center.id().len(), 4, DIMENSIONED_HANDLE_OPERATION)?;
         charge_relation_parameter_work(ctx, radial.id().len(), 4, DIMENSIONED_HANDLE_OPERATION)?;

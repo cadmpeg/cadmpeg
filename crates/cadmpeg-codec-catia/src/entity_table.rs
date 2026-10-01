@@ -806,6 +806,12 @@ trait PacketGrowth {
         operation: &'static str,
     ) -> Result<(), Self::Error>;
     fn work(&self, units: usize, operation: &'static str) -> Result<(), Self::Error>;
+    fn arrange<T>(
+        &self,
+        values: &mut Vec<T>,
+        key: impl Fn(&T) -> (usize, u8),
+        operation: &'static str,
+    ) -> Result<(), Self::Error>;
 }
 
 struct UnchargedPacketGrowth;
@@ -836,6 +842,21 @@ impl PacketGrowth for UnchargedPacketGrowth {
     fn work(&self, _units: usize, _operation: &'static str) -> Result<(), Self::Error> {
         Ok(())
     }
+
+    fn arrange<T>(
+        &self,
+        values: &mut Vec<T>,
+        key: impl Fn(&T) -> (usize, u8),
+        _operation: &'static str,
+    ) -> Result<(), Self::Error> {
+        let sorted = std::mem::take(values)
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| ((key(&value), index), value))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        values.extend(sorted.into_values());
+        Ok(())
+    }
 }
 
 struct ChargedPacketGrowth<'a, 'ctx>(&'a DecodeContext<'ctx>);
@@ -864,6 +885,21 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
     fn work(&self, units: usize, operation: &'static str) -> Result<(), Self::Error> {
         let units = cadmpeg_core::decode::u64_from_index(units);
         self.0.charge_work(units, operation)
+    }
+
+    fn arrange<T>(
+        &self,
+        values: &mut Vec<T>,
+        key: impl Fn(&T) -> (usize, u8),
+        operation: &'static str,
+    ) -> Result<(), Self::Error> {
+        let ctx: &DecodeContext<'_> = self.0;
+        ctx.sort_unstable_by(
+            values,
+            |left, right| key(left).cmp(&key(right)),
+            |_| 0,
+            operation,
+        )
     }
 }
 
@@ -950,14 +986,16 @@ fn value_packets_with<G: PacketGrowth>(
     {
         growth.push(&mut packets, packet, "catia_value_packets")?;
     }
-    growth.work(packets.len(), "catia_value_packet_sort")?;
-    packets.sort_unstable_by_key(|packet| match packet {
-        EntityValuePacket::Numeric { offset, .. } => (*offset, 0u8),
-        EntityValuePacket::E9Scalar { offset, .. } => (*offset, 1u8),
-        EntityValuePacket::Compact { offset, .. } | EntityValuePacket::Layout { offset, .. } => {
-            (*offset, 2u8)
-        }
-    });
+    growth.arrange(
+        &mut packets,
+        |packet| match packet {
+            EntityValuePacket::Numeric { offset, .. } => (*offset, 0u8),
+            EntityValuePacket::E9Scalar { offset, .. } => (*offset, 1u8),
+            EntityValuePacket::Compact { offset, .. }
+            | EntityValuePacket::Layout { offset, .. } => (*offset, 2u8),
+        },
+        "catia value packets sort",
+    )?;
     Ok(packets)
 }
 

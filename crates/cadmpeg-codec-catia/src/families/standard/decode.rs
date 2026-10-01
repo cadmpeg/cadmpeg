@@ -5478,9 +5478,13 @@ fn attach_standard_topology(
             crate::families::standard::records::StandardCurveGeometry::Line
             | crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
-                ctx
-                    .sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "catia_standard_curve_support_faces_sort")
-                    .map_err(StandardTopologyError::Resource)?;
+                ctx.sort_unstable_by(
+                    &mut faces,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_standard_curve_support_faces_sort",
+                )
+                .map_err(StandardTopologyError::Resource)?;
                 for (face, surface) in [
                     (support.faces[0], &surface0.geometry),
                     (support.faces[1], &surface1.geometry),
@@ -5718,9 +5722,13 @@ fn attach_standard_topology(
                 .map_err(StandardTopologyError::Resource)?;
                 limit_pairs.push(points);
             }
-            ctx
-                .sort_unstable_by(&mut limit_pairs, Ord::cmp, |_| 0, "catia_limit_endpoint_pairs_sort")
-                .map_err(StandardTopologyError::Resource)?;
+            ctx.sort_unstable_by(
+                &mut limit_pairs,
+                Ord::cmp,
+                |_| 0,
+                "catia_limit_endpoint_pairs_sort",
+            )
+            .map_err(StandardTopologyError::Resource)?;
             limit_pairs.dedup();
             if options[edge].is_empty() {
                 options[edge] = limit_pairs;
@@ -6241,8 +6249,7 @@ fn attach_standard_topology(
             if let Some(limit) = refusal {
                 return Err(StandardTopologyError::Resource(CodecError::from(limit)));
             }
-            ctx
-                .sort_unstable_by(pairs, Ord::cmp, |_| 0, "catia_standard_endpoint_pairs_sort")
+            ctx.sort_unstable_by(pairs, Ord::cmp, |_| 0, "catia_standard_endpoint_pairs_sort")
                 .map_err(StandardTopologyError::Resource)?;
             pairs.dedup();
         }
@@ -6764,6 +6771,7 @@ fn attach_standard_topology(
                 )?;
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+                let circle_refusal = RefCell::new(None);
                 let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
                     ctx,
                     crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs {
@@ -6791,18 +6799,27 @@ fn attach_standard_topology(
                                 && line_constraint
                                     .edge_pairs(pairs)
                                     .is_some_and(|pairs| line_constraint.is_simple(&pairs))
-                                && standard_circle_pair_solution_is_simple(
-                                    &circle_constraint,
+                                && circle_refusal.borrow().is_none()
+                                && match circle_constraint.solution_is_simple(
                                     ir,
                                     bindings,
                                     &surface_indices,
                                     selected_supports,
                                     &solver_options,
                                     pairs,
-                                )
+                                ) {
+                                    Ok(simple) => simple,
+                                    Err(error) => {
+                                        *circle_refusal.borrow_mut() = Some(error);
+                                        false
+                                    }
+                                }
                         },
                     },
                 )?;
+                if let Some(error) = circle_refusal.take() {
+                    return Err(error);
+                }
                 if !solve_budget.charge_by(preferred_budget.consumed()) {
                     return Ok(mesh_quotient::MeshSolve::Failed(
                         mesh_quotient::MeshCandidateFailure::Exhausted(
@@ -7871,7 +7888,12 @@ fn resolve_standard_endpoint_pairs(
             continue;
         }
         let mut faces = support.faces;
-        faces.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut faces,
+            Ord::cmp,
+            |_| 0,
+            "catia standard line support faces sort",
+        )?;
         let line_like = match support.geometry {
             crate::families::standard::records::StandardCurveGeometry::Line => true,
             crate::families::standard::records::StandardCurveGeometry::Bspline => {
@@ -7978,7 +8000,12 @@ fn resolve_standard_endpoint_pairs(
                 }
             }
         }
-        pairs.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut pairs,
+            Ord::cmp,
+            |_| 0,
+            "catia standard line endpoint pairs sort",
+        )?;
         pairs.dedup();
         if pairs.len() < edges.len() {
             continue;
@@ -8036,7 +8063,12 @@ fn standard_curve_edge_classes(
     ctx.reserve_vec(&mut classes, supports.len(), "catia_standard_edge_classes")?;
     for (edge, support) in supports.iter().enumerate() {
         let mut support_faces = support.faces;
-        ctx.sort_unstable_by(&mut support_faces, Ord::cmp, |_| 0, "catia_standard_edge_class_faces")?;
+        ctx.sort_unstable_by(
+            &mut support_faces,
+            Ord::cmp,
+            |_| 0,
+            "catia_standard_edge_class_faces",
+        )?;
         let mut found = None;
         for (index, candidate) in supports[..edge].iter().enumerate() {
             let mut candidate_faces = candidate.faces;
@@ -8047,28 +8079,28 @@ fn standard_curve_edge_classes(
                 "catia_standard_edge_class_faces",
             )?;
             if candidate_faces == support_faces
-                    && match (&candidate.geometry, &support.geometry) {
-                        (
-                            crate::families::standard::records::StandardCurveGeometry::Circle {
-                                center: left_center,
-                                radius: left_radius,
-                            },
-                            crate::families::standard::records::StandardCurveGeometry::Circle {
-                                center: right_center,
-                                radius: right_radius,
-                            },
-                        ) => {
-                            left_center.x.to_bits() == right_center.x.to_bits()
-                                && left_center.y.to_bits() == right_center.y.to_bits()
-                                && left_center.z.to_bits() == right_center.z.to_bits()
-                                && left_radius.get().to_bits() == right_radius.get().to_bits()
-                        }
-                        (
-                            crate::families::standard::records::StandardCurveGeometry::Line,
-                            crate::families::standard::records::StandardCurveGeometry::Line,
-                        ) => true,
-                        _ => false,
+                && match (&candidate.geometry, &support.geometry) {
+                    (
+                        crate::families::standard::records::StandardCurveGeometry::Circle {
+                            center: left_center,
+                            radius: left_radius,
+                        },
+                        crate::families::standard::records::StandardCurveGeometry::Circle {
+                            center: right_center,
+                            radius: right_radius,
+                        },
+                    ) => {
+                        left_center.x.to_bits() == right_center.x.to_bits()
+                            && left_center.y.to_bits() == right_center.y.to_bits()
+                            && left_center.z.to_bits() == right_center.z.to_bits()
+                            && left_radius.get().to_bits() == right_radius.get().to_bits()
                     }
+                    (
+                        crate::families::standard::records::StandardCurveGeometry::Line,
+                        crate::families::standard::records::StandardCurveGeometry::Line,
+                    ) => true,
+                    _ => false,
+                }
             {
                 found = Some(index);
                 break;
@@ -9098,7 +9130,12 @@ fn standard_shared_boundary_group_domains(
             continue;
         }
         let mut faces = support.faces;
-        ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "catia_shared_boundary_faces_sort")?;
+        ctx.sort_unstable_by(
+            &mut faces,
+            Ord::cmp,
+            |_| 0,
+            "catia_shared_boundary_faces_sort",
+        )?;
         if let Some(edges) = groups.get_mut(&faces) {
             ctx.push_vec(edges, edge, "catia_shared_boundary_group_edges")?;
         } else {
@@ -9123,7 +9160,12 @@ fn standard_shared_boundary_group_domains(
             .iter()
             .flat_map(|edge| filtered[*edge].iter().copied())
         {
-            ctx.sort_unstable_by(&mut pair, Ord::cmp, |_| 0, "catia_shared_boundary_filtered_pair_sort")?;
+            ctx.sort_unstable_by(
+                &mut pair,
+                Ord::cmp,
+                |_| 0,
+                "catia_shared_boundary_filtered_pair_sort",
+            )?;
             ctx.insert_hash_set(
                 &mut filtered_pairs,
                 pair,
@@ -9710,13 +9752,14 @@ impl AsRef<[[f64; 2]]> for CircleRangeChoices {
     }
 }
 
-struct StandardCirclePairConstraint {
+struct StandardCirclePairConstraint<'a, 'ctx> {
+    ctx: &'a DecodeContext<'ctx>,
     ranges_by_face: RefCell<HashMap<CircleFaceKey, Vec<CircleRangeChoices>>>,
 }
 
-impl StandardCirclePairConstraint {
+impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
     fn new(
-        ctx: &DecodeContext<'_>,
+        ctx: &'a DecodeContext<'ctx>,
         supports: &[crate::families::standard::records::StandardCurveSupport],
         endpoint_options: &[Vec<[usize; 2]>],
     ) -> Result<Self, CodecError> {
@@ -9766,97 +9809,102 @@ impl StandardCirclePairConstraint {
             ranges.clear();
         }
         Ok(Self {
+            ctx,
             ranges_by_face: RefCell::new(ranges_by_face),
         })
     }
-}
 
-fn standard_circle_pair_solution_is_simple(
-    constraint: &StandardCirclePairConstraint,
-    ir: &CadIr,
-    bindings: &[(SurfaceId, bool, usize)],
-    surface_indices: &HashMap<SurfaceId, usize>,
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    endpoint_options: &[Vec<[usize; 2]>],
-    pairs: &[Option<[usize; 2]>],
-) -> bool {
-    let mut range_choices = constraint.ranges_by_face.borrow_mut();
-    for choices in range_choices.values_mut() {
-        choices.clear();
-    }
-    for ((support, options), pair) in supports.iter().zip(endpoint_options).zip(pairs) {
-        let Some(pair) = pair else {
-            continue;
-        };
-        if options.len() <= 1 {
-            continue;
+    fn solution_is_simple(
+        &self,
+        ir: &CadIr,
+        bindings: &[(SurfaceId, bool, usize)],
+        surface_indices: &HashMap<SurfaceId, usize>,
+        supports: &[crate::families::standard::records::StandardCurveSupport],
+        endpoint_options: &[Vec<[usize; 2]>],
+        pairs: &[Option<[usize; 2]>],
+    ) -> Result<bool, CodecError> {
+        let mut range_choices = self.ranges_by_face.borrow_mut();
+        for choices in range_choices.values_mut() {
+            choices.clear();
         }
-        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
-            &support.geometry
-        else {
-            continue;
-        };
-        let center = center.get();
-        let radius = radius.get();
-        let Some(start) = ir
-            .model
-            .points
-            .get(pair[0])
-            .map(|point| point.position().get())
-        else {
-            return false;
-        };
-        let Some(end) = ir
-            .model
-            .points
-            .get(pair[1])
-            .map(|point| point.position().get())
-        else {
-            return false;
-        };
-        let axes = support
-            .faces
-            .iter()
-            .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-            .filter_map(|surface| {
-                standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-            });
-        let mut axes = axes;
-        let Some(axis) = axes
-            .next()
-            .and_then(|axis| canonical_unoriented_axis(*axis.as_raw()))
-        else {
-            continue;
-        };
-        if axes.any(|other| {
-            canonical_unoriented_axis(*other.as_raw())
-                .is_none_or(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
-        }) {
-            return false;
-        }
-        let Some(choices) = circle_endpoint_range_choices(center, radius, axis, start, end) else {
-            continue;
-        };
-        for &face in &support.faces {
-            let key = (
-                center.x.to_bits(),
-                center.y.to_bits(),
-                center.z.to_bits(),
-                radius.to_bits(),
-                face,
-            );
-            let Some(ranges) = range_choices.get_mut(&key) else {
-                return false;
+        for ((support, options), pair) in supports.iter().zip(endpoint_options).zip(pairs) {
+            let Some(pair) = pair else {
+                continue;
             };
-            ranges.push(choices);
+            if options.len() <= 1 {
+                continue;
+            }
+            let crate::families::standard::records::StandardCurveGeometry::Circle {
+                center,
+                radius,
+            } = &support.geometry
+            else {
+                continue;
+            };
+            let center = center.get();
+            let radius = radius.get();
+            let Some(start) = ir
+                .model
+                .points
+                .get(pair[0])
+                .map(|point| point.position().get())
+            else {
+                return Ok(false);
+            };
+            let Some(end) = ir
+                .model
+                .points
+                .get(pair[1])
+                .map(|point| point.position().get())
+            else {
+                return Ok(false);
+            };
+            let axes = support
+                .faces
+                .iter()
+                .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
+                .filter_map(|surface| {
+                    standard_circle_axis_from_carrier(center, radius, &surface.geometry)
+                });
+            let mut axes = axes;
+            let Some(axis) = axes
+                .next()
+                .and_then(|axis| canonical_unoriented_axis(*axis.as_raw()))
+            else {
+                continue;
+            };
+            if axes.any(|other| {
+                canonical_unoriented_axis(*other.as_raw())
+                    .is_none_or(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
+            }) {
+                return Ok(false);
+            }
+            let Some(choices) =
+                circle_endpoint_range_choices(self.ctx, center, radius, axis, start, end)?
+            else {
+                continue;
+            };
+            for &face in &support.faces {
+                let key = (
+                    center.x.to_bits(),
+                    center.y.to_bits(),
+                    center.z.to_bits(),
+                    radius.to_bits(),
+                    face,
+                );
+                let Some(ranges) = range_choices.get_mut(&key) else {
+                    return Ok(false);
+                };
+                ranges.push(choices);
+            }
         }
-    }
-    for choices in range_choices.values() {
-        if !circular_range_choices_have_simple_selection(choices) {
-            return false;
+        for choices in range_choices.values() {
+            if !circular_range_choices_have_simple_selection(choices) {
+                return Ok(false);
+            }
         }
+        Ok(true)
     }
-    true
 }
 
 /// Require line endpoint assignments to partition each shared straight

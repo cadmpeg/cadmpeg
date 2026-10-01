@@ -351,7 +351,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                         resolved.push(external_id);
                     }
                 }
-                resolved.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut resolved,
+                    Ord::cmp,
+                    |_| 0,
+                    "creo sketch explicit incident entities sort",
+                )?;
                 if resolved.len() == vertex.entities.len() {
                     ctx.admit_btree_entry(
                         &result,
@@ -380,7 +385,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 incident.get(vertex).into_iter().flatten().copied(),
                 "creo sketch incident comparison copy",
             )?;
-            derived.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut derived,
+                Ord::cmp,
+                |_| 0,
+                "creo sketch incident comparison sort",
+            )?;
             derived.dedup();
             if derived != *entities {
                 continue;
@@ -426,7 +436,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         )?;
     }
     for (vertex, mut entities) in incident {
-        entities.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut entities,
+            Ord::cmp,
+            |_| 0,
+            "creo sketch incident entities sort",
+        )?;
         if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
             continue;
         }

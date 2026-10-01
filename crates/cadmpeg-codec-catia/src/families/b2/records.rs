@@ -1085,17 +1085,18 @@ pub(crate) fn b2_owner_identity_targets_from_records(
 /// this predicate does not assign a face or promote the records to a global
 /// identity namespace.
 pub(in crate::families) fn b2_closed_owner_boundary_edges(
+    ctx: &DecodeContext<'_>,
     targets: &[B2OwnerIdentityTarget],
     endpoint_records: &HashMap<usize, [usize; 2]>,
-) -> Option<[B2OwnerBoundaryEdge; 4]> {
+) -> Result<Option<[B2OwnerBoundaryEdge; 4]>, CodecError> {
     let [first, second, third, fourth] = targets else {
-        return None;
+        return Ok(None);
     };
     if targets
         .iter()
         .any(|target| target.target_class != crate::native::CatiaOwnerIdentityClass::Edge)
     {
-        return None;
+        return Ok(None);
     }
     let edge = |target: &B2OwnerIdentityTarget| {
         Some(B2OwnerBoundaryEdge {
@@ -1104,14 +1105,24 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
             endpoint_records: *endpoint_records.get(&target.target_pos)?,
         })
     };
-    let mut edges = [edge(first)?, edge(second)?, edge(third)?, edge(fourth)?];
-    edges.sort_unstable_by_key(|edge| edge.slot);
+    let (Some(first), Some(second), Some(third), Some(fourth)) =
+        (edge(first), edge(second), edge(third), edge(fourth))
+    else {
+        return Ok(None);
+    };
+    let mut edges = [first, second, third, fourth];
+    ctx.sort_unstable_by(
+        &mut edges,
+        |left, right| left.slot.cmp(&right.slot),
+        |_| 0,
+        "catia b2 owner boundary edges sort",
+    )?;
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
         || edges
             .iter()
             .any(|edge| edge.endpoint_records[0] == edge.endpoint_records[1])
     {
-        return None;
+        return Ok(None);
     }
 
     let mut edge_keys = edges.map(|edge| {
@@ -1122,9 +1133,14 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
             [end, start]
         }
     });
-    edge_keys.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut edge_keys,
+        Ord::cmp,
+        |_| 0,
+        "catia b2 owner boundary edge keys sort",
+    )?;
     if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
-        return None;
+        return Ok(None);
     }
     let mut vertices = [
         edges[0].endpoint_records[0],
@@ -1136,15 +1152,20 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         edges[3].endpoint_records[0],
         edges[3].endpoint_records[1],
     ];
-    vertices.sort_unstable();
-    (vertices[0] == vertices[1]
+    ctx.sort_unstable_by(
+        &mut vertices,
+        Ord::cmp,
+        |_| 0,
+        "catia b2 owner boundary vertices sort",
+    )?;
+    Ok((vertices[0] == vertices[1]
         && vertices[1] != vertices[2]
         && vertices[2] == vertices[3]
         && vertices[3] != vertices[4]
         && vertices[4] == vertices[5]
         && vertices[5] != vertices[6]
         && vertices[6] == vertices[7])
-        .then_some(edges)
+        .then_some(edges))
 }
 
 /// Decode source-closed carrier/reference/side/owner chart productions.

@@ -174,6 +174,11 @@ fn body_preserving_feature(
     }
 }
 
+fn evaluate_saved_body_census(ir: &CadIr) -> super::BodyCensusEvaluation {
+    crate::test_support::with_decode_context(|ctx| super::evaluate_saved_body_census(ctx, ir))
+        .expect("body census evaluation is admitted")
+}
+
 fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -> Feature {
     Feature {
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),

@@ -1496,9 +1496,13 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
     }
     let mut cycles = Vec::new();
     for packet in b2_owner_packets_from_records(data, records) {
-        let cycle = (|| {
-            let targets = targets_by_owner.get(&(packet.source_index, packet.pos))?;
-            let edges = b2_closed_owner_boundary_edges(targets, &endpoint_records)?;
+        let Some(targets) = targets_by_owner.get(&(packet.source_index, packet.pos)) else {
+            continue;
+        };
+        let Some(edges) = b2_closed_owner_boundary_edges(ctx, targets, &endpoint_records)? else {
+            continue;
+        };
+        let cycle = {
             let face_node = (|| {
                 let first_edge_pos = edges.iter().map(|edge| edge.target_pos).min()?;
                 let &first_edge_index = record_indices.get(&first_edge_pos)?;
@@ -1545,7 +1549,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                     face_node,
                     edges,
                 })
-        })();
+        };
         if let Some(cycle) = cycle {
             ctx.push_vec(&mut cycles, cycle, "catia_owner_boundary_cycles")?;
         }
