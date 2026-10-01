@@ -40,7 +40,7 @@ impl<Id> DesignSecondaryIdentity<Id> {
 /// Design entity identity with a decimal u64 suffix after its final underscore.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignEntityId {
-    pub(super) text: String,
+    text: String,
     suffix: u64,
 }
 
@@ -71,6 +71,11 @@ impl DesignEntityId {
 
     pub(crate) fn as_str(&self) -> &str {
         &self.text
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_string(self) -> String {
+        self.text
     }
 
     pub(crate) fn suffix(&self) -> u64 {
@@ -367,9 +372,10 @@ pub(super) fn deserialize_absent_u64_offset<'de, D: Deserializer<'de>>(
 /// A finite row-major affine placement.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub(super) struct DesignAffineTransform(pub(super) [[f64; 4]; 4]);
+pub(super) struct DesignAffineTransform([[f64; 4]; 4]);
 
 impl DesignAffineTransform {
+    pub(super) const IDENTITY: Self = Self(IDENTITY_MATRIX);
     /// Four row-major rows.
     pub(super) fn rows(self) -> [[f64; 4]; 4] {
         self.0
@@ -400,7 +406,7 @@ impl std::ops::Deref for DesignAffineTransform {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct NativeRecordId {
-    pub(super) text: String,
+    text: String,
     stream_end: usize,
 }
 
@@ -434,6 +440,15 @@ impl NativeRecordId {
         let stream_end = stream.len();
         Ok(Self { text, stream_end })
     }
+    pub(super) fn text(&self) -> &String {
+        &self.text
+    }
+
+    #[cfg(test)]
+    pub(super) fn into_string(self) -> String {
+        self.text
+    }
+
     pub(super) fn stream(&self) -> &str {
         &self.text[..self.stream_end]
     }
@@ -448,6 +463,8 @@ mod native_record_id_tests {
         let id = NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#42".into(), "act-guid", 42)
             .unwrap();
         assert_eq!(id.stream(), "f3d:Design%2Fmain");
+        assert_eq!(id.text(), "f3d:Design%2Fmain:act-guid#42");
+        assert_eq!(id.into_string(), "f3d:Design%2Fmain:act-guid#42");
         assert!(
             NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#43".into(), "act-guid", 42,)
                 .is_err()
