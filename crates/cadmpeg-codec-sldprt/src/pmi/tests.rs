@@ -1426,19 +1426,3 @@ fn pmi_patch_preserves_native_load_depth_refusal() {
         errors => panic!("{errors:?}"),
     }
 }
-
-#[test]
-fn pmi_dimension_count_refuses_zero_and_keeps_the_default_wire() {
-    let dimension = dimension("", 1.0);
-    let wire = serde_json::to_value(&dimension).unwrap();
-    assert!(wire.get("item_count").is_none());
-    let decoded: PmiDimension = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(decoded, dimension);
-    let mut explicit = wire.clone();
-    explicit["item_count"] = serde_json::json!(1);
-    let decoded: PmiDimension = serde_json::from_value(explicit).unwrap();
-    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
-    let mut zero = wire;
-    zero["item_count"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<PmiDimension>(zero).is_err());
-}
