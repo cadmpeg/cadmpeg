@@ -1202,14 +1202,7 @@ fn copy_resolved_extrusion_support(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support: &ResolvedExtrusionSupport,
 ) -> Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError> {
-    let surface = match &support.surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                nurbs.try_clone_for_decode(ctx, "catia_b5_extrusion_support_surface_copy")?,
-            ))
-        }
-        other => other.clone(),
-    };
+    let surface = support.surface.try_clone_for_decode(ctx, "catia_b5_extrusion_support_surface_copy")?;
     Ok(ResolvedExtrusionSupport {
         surface_object_id: support.surface_object_id,
         surface,

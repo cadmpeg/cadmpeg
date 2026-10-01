@@ -1201,16 +1201,7 @@ fn inherit_configuration_hole_semantics(
     if inherit_placements && placements.is_none() {
         if let Some(base_placements) = base_placements {
             const OPERATION: &str = "copy SLDPRT configuration hole placements";
-            let work = base_placements
-                .len()
-                .checked_mul(std::mem::size_of::<
-                    cadmpeg_ir::features::holes::HolePlacement,
-                >())
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-            let mut copied = Vec::new();
-            ctx.reserve_vec(&mut copied, base_placements.len(), OPERATION)?;
-            copied.extend(base_placements.iter().cloned());
+            let copied = ctx.try_collect_retained_with(base_placements, OPERATION, |placement| placement.try_clone_for_decode(ctx, OPERATION))?;
             *placements = Some(copied);
         }
     }

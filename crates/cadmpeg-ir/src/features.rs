@@ -9836,7 +9836,7 @@ macro_rules! feature_copy_api {
         }
     })+ };
 }
-feature_copy_api!(PlanarProfileRef, VertexSelection, LinearTermination, ParameterValue, Feature, ConfigurationFeatureState, FaceSelection);
+feature_copy_api!(RevolutionAxis, PlanarProfileRef, VertexSelection, LinearTermination, ParameterValue, Feature, ConfigurationFeatureState, FaceSelection);
 impl Feature {
     /// Copy the evaluated construction state for one configuration.
     pub fn configuration_state(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<ConfigurationFeatureState, cadmpeg_core::CodecError> {

@@ -615,7 +615,7 @@ pub(crate) fn source_meta(
         )?;
     }
     Ok(SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::copy_match(ctx, matched)?),
+        cadmpeg_core::dialect::DialectLayers::of(matched.try_clone_for_decode(ctx, "catia_dialect_copy")?),
         attributes,
     ))
 }

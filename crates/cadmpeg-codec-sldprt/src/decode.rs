@@ -33,7 +33,6 @@ use crate::loss::SldprtLossCode;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-mod configuration_copies;
 mod digest_partition;
 
 use crate::container::configuration_index;
@@ -2693,7 +2692,7 @@ fn ensure_display_appearance(
         appearance.name.as_deref() == Some(definition.name.as_str())
             && appearance.base_color == Some(definition.color)
     }) {
-        return Ok(existing.id.clone());
+        return Ok(existing.id.try_clone_for_decode(ctx, "SLDPRT display appearance identity")?);
     }
     let id = AppearanceId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
@@ -4713,16 +4712,7 @@ fn complete_resolved_configuration_parameter_snapshots(
                 "retain SLDPRT snapshot parameter ID",
             )?)
             .map_err(CodecError::malformed)?;
-            let value = match value {
-                cadmpeg_ir::features::ParameterValue::String(value) => {
-                    cadmpeg_ir::features::ParameterValue::String(copy_retained_string(
-                        ctx,
-                        value,
-                        "retain SLDPRT snapshot parameter value",
-                    )?)
-                }
-                value => value.clone(),
-            };
+            let value = value.try_clone_for_decode(ctx, "retain SLDPRT snapshot parameter value")?;
             ctx.charge_collection_items(1, "complete SLDPRT configuration parameter snapshot")?;
             configuration.parameter_values.insert(id, value);
         }
@@ -4811,16 +4801,7 @@ fn snapshot_active_configuration(
         let Some(value) = &parameter.value else {
             continue;
         };
-        let value = match value {
-            cadmpeg_ir::features::ParameterValue::String(text) => {
-                cadmpeg_ir::features::ParameterValue::String(copy_retained_string(
-                    ctx,
-                    text,
-                    "retain SLDPRT configuration parameter value",
-                )?)
-            }
-            _ => value.clone(),
-        };
+        let value = value.try_clone_for_decode(ctx, "retain SLDPRT configuration parameter value")?;
         let id = cadmpeg_ir::features::ParameterId::mint(copy_retained_string(
             ctx,
             parameter.id.as_str(),
@@ -4950,7 +4931,7 @@ fn sync_active_configuration_resolutions(
         let copied_placements = if placements.is_none() {
             resolved_placements
                 .as_deref()
-                .map(|source| configuration_copies::placements(ctx, source))
+                .map(|source| ctx.try_collect_retained_with(source, "copy SLDPRT active configuration hole", |placement| placement.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")))
                 .transpose()?
         } else {
             None
@@ -4994,17 +4975,14 @@ fn sync_active_configuration_resolutions(
                     cadmpeg_ir::features::holes::HoleConstruction::Form { .. }
                 )
             ) {
-            Some(configuration_copies::construction(
-                ctx,
-                resolved_construction,
-            )?)
+            Some(resolved_construction.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")?)
         } else {
             None
         };
         let copied_extent = if apply_resolution {
             resolved_extent
                 .as_ref()
-                .map(|source| configuration_copies::termination(ctx, source))
+                .map(|source| source.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole"))
                 .transpose()?
         } else {
             None
@@ -5145,7 +5123,7 @@ fn sync_active_configuration_resolutions(
             continue;
         };
         if seeds == resolved_seeds && pattern.is_unresolved() {
-            *pattern = resolved_pattern.clone();
+            *pattern = resolved_pattern.try_clone_for_decode(ctx, "copy SLDPRT resolved configuration pattern")?;
         }
     }
 

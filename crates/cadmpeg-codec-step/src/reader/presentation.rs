@@ -423,7 +423,7 @@ pub(super) fn decode(
         } = color;
         let appearance_key = (color_id, color.a().to_bits());
         let appearance_id = if let Some(appearance_id) = appearance_ids.get(&appearance_key) {
-            appearance_id.clone()
+            appearance_id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?
         } else {
             let key = if color.a() == 1.0 {
                 IdentityKey::from(color_id)
@@ -436,7 +436,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.appearances,
                 Appearance {
-                    id: id.clone(),
+                    id: id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
                     name,
                     asset_guid: None,
                     library_id: None,
@@ -453,7 +453,7 @@ pub(super) fn decode(
             ctx.insert_btree_map(
                 &mut appearance_ids,
                 appearance_key,
-                id.clone(),
+                id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
                 "step_presentation_appearance_ids",
             )?;
             id
@@ -493,7 +493,7 @@ pub(super) fn decode(
                         )
                         .into(),
                         target,
-                        appearance: appearance_id.clone(),
+                        appearance: appearance_id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
                         source_entity_id: Some(format!("#{style_id}")),
                         object_type: None,
                         visible: style_is_hidden(

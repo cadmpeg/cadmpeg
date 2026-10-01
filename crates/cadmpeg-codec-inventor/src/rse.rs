@@ -58,6 +58,10 @@ enum SegmentPrefix {
 }
 
 impl SegmentToken {
+    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        self.0.try_clone_for_decode(ctx, operation).map(Self)
+    }
+
     fn parse(
         ctx: &DecodeContext<'_>,
         name: &str,
@@ -527,12 +531,8 @@ impl<'a> RseInventory<'a> {
                 continue;
             };
             ctx.charge_collection_items(1, "pair RSe segment streams")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(token.as_str().len()),
-                "retain RSe paired token",
-            )?;
             pairs.push(SegmentPair {
-                token: token.clone(),
+                token: token.try_clone_for_decode(ctx, "retain RSe paired token")?,
                 metadata: *metadata_id,
                 bulk: *bulk_id,
             });
@@ -601,20 +601,12 @@ impl<'a> RseInventory<'a> {
         let mut unpaired_metadata = Vec::new();
         for token in metadata.keys().filter(|token| !bulk.contains_key(*token)) {
             ctx.charge_collection_items(1, "collect RSe unpaired metadata")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(token.as_str().len()),
-                "retain RSe unpaired metadata token",
-            )?;
-            unpaired_metadata.push(token.clone());
+            unpaired_metadata.push(token.try_clone_for_decode(ctx, "retain RSe unpaired metadata token")?);
         }
         let mut unpaired_bulk = Vec::new();
         for token in bulk.keys().filter(|token| !metadata.contains_key(*token)) {
             ctx.charge_collection_items(1, "collect RSe unpaired bulk")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(token.as_str().len()),
-                "retain RSe unpaired bulk token",
-            )?;
-            unpaired_bulk.push(token.clone());
+            unpaired_bulk.push(token.try_clone_for_decode(ctx, "retain RSe unpaired bulk token")?);
         }
         let document_kind = document_kind_for_segments(&segments);
         let active_carrier = select_active_carrier(ctx, &segments, &document_kind)?;

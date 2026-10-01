@@ -393,7 +393,7 @@ pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
             .curve(attr)?
             .carrier()
             .geometry
-            .clone(),
+            .try_clone_for_decode(&ctx, "SLDPRT patch curve geometry copy").ok()?,
     )
 }
 

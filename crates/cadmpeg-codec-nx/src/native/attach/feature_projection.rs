@@ -519,12 +519,7 @@ pub(super) fn blend_feature_definition(
                 (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
                     cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces)
                         .ok()
-                        .map(|operands| {
-                            FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-                                operands,
-                                radius: radius.clone(),
-                            })
-                        })
+                        .map(|operands| radius.try_clone_for_decode(ctx, "NX face blend radius copy").map(|radius| FeatureDefinition::Operation(FeatureOperation::FaceBlend { operands, radius }))).transpose()?
                 }
                 _ => None,
             }
@@ -989,7 +984,7 @@ pub(super) fn support_face_projection(
         }
         let bytes = std::mem::size_of_val(&face.id)
             .checked_add(std::mem::size_of::<Sense>())
-            .and_then(|bytes| bytes.checked_add(face.id.as_str().len()))
+
             .ok_or_else(|| ctx.refuse_codec_limit("NX support face projection", 0, 1))?;
         ctx.charge_collection_items(1, "NX support face projection")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
@@ -998,7 +993,7 @@ pub(super) fn support_face_projection(
             1,
             "NX support face projection",
         )?;
-        selected.push((face.id.clone(), face.sense));
+        selected.push((face.id.try_clone_for_decode(ctx, "NX support face identity copy")?, face.sense));
     }
     let mut faces = Vec::new();
     let mut senses = Vec::new();
@@ -1006,7 +1001,7 @@ pub(super) fn support_face_projection(
         ctx.charge_collection_items(2, "NX resolved support faces")?;
         let bytes = std::mem::size_of_val(&face)
             .checked_add(std::mem::size_of::<Sense>())
-            .and_then(|bytes| bytes.checked_add(face.as_str().len()))
+
             .ok_or_else(|| ctx.refuse_codec_limit("NX resolved support faces", 0, 1))?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(bytes),
@@ -1447,20 +1442,8 @@ pub(super) fn block_placement(
     ]) else {
         return Ok(None);
     };
-    let body_bytes = std::mem::size_of::<BodyId>()
-        .checked_add(body.as_str().len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX block output body",
-                0,
-                cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(body_bytes),
-        "NX block output body",
-    )?;
-    Ok(Some((body.clone(), placement)))
+    
+    Ok(Some((body.try_clone_for_decode(ctx, "NX block output body")?, placement)))
 }
 
 /// Return the complete primitive witness for an NX `SPHERE` operation.
@@ -1542,20 +1525,8 @@ pub(super) fn sphere_body_projection(
     let Ok(radius) = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()) else {
         return Ok(None);
     };
-    let body_bytes = std::mem::size_of::<BodyId>()
-        .checked_add(body.as_str().len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sphere output body",
-                0,
-                cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(body_bytes),
-        "NX sphere output body",
-    )?;
-    Ok(Some((body.clone(), center, radius)))
+    
+    Ok(Some((body.try_clone_for_decode(ctx, "NX sphere output body")?, center, radius)))
 }
 
 pub(super) struct NewBodyEvidence<'a> {
@@ -2736,15 +2707,7 @@ pub(super) fn insert_hole_output_body(
     operation: &str,
     body: &BodyId,
 ) -> Result<(), CodecError> {
-    let nested_bytes = std::mem::size_of::<BodyId>()
-        .checked_add(body.as_str().len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX hole output body",
-                0,
-                cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-            )
-        })?;
+    let nested_bytes = std::mem::size_of::<BodyId>();
     ctx.charge_collection_items(1, "NX hole output body")?;
     ctx.admit_retained_btree_record::<String, Vec<BodyId>>(
         operation
@@ -2759,7 +2722,7 @@ pub(super) fn insert_hole_output_body(
         1,
         "NX hole output body",
     )?;
-    bodies.push(body.clone());
+    bodies.push(body.try_clone_for_decode(ctx, "NX hole output body")?);
     outputs.insert(operation.to_owned(), bodies);
     Ok(())
 }
@@ -3425,16 +3388,7 @@ pub(super) fn cylindrical_face_witnesses(
         if (first - second).abs() <= linear_tolerance {
             return Ok(None);
         }
-        let bytes = std::mem::size_of::<CylindricalFaceWitness>()
-            .checked_add(first_loop.as_str().len())
-            .and_then(|bytes| bytes.checked_add(second_loop.as_str().len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX cylindrical face witness",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(first_loop.as_str().len()),
-                )
-            })?;
+        let bytes = std::mem::size_of::<CylindricalFaceWitness>();
         ctx.charge_collection_items(1, "NX cylindrical face witnesses")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(bytes),
@@ -3450,7 +3404,7 @@ pub(super) fn cylindrical_face_witnesses(
             axis,
             radius,
             stations: [*first, *second],
-            loop_ids: [first_loop.clone(), second_loop.clone()],
+            loop_ids: [first_loop.try_clone_for_decode(ctx, "NX cylindrical first loop identity")?, second_loop.try_clone_for_decode(ctx, "NX cylindrical second loop identity")?],
         });
     }
     Ok(Some(witnesses))
@@ -3871,20 +3825,12 @@ pub(super) fn hole_operations_by_body(
             };
             if !operations_by_body.contains_key(body) {
                 ctx.charge_collection_items(1, "NX hole operation body groups")?;
-                let bytes = std::mem::size_of::<(BodyId, Vec<String>)>()
-                    .checked_add(body.as_str().len())
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "NX hole operation body groups",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-                        )
-                    })?;
+                let bytes = std::mem::size_of::<(BodyId, Vec<String>)>();
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(bytes),
                     "NX hole operation body groups",
                 )?;
-                operations_by_body.insert(body.clone(), Vec::new());
+                operations_by_body.insert(body.try_clone_for_decode(ctx, "NX hole operation body identity")?, Vec::new());
             }
             let group = operations_by_body
                 .get_mut(body)
@@ -3927,15 +3873,7 @@ pub(super) fn hole_operations_by_body(
         return Ok(None);
     };
     ctx.charge_collection_items(1, "NX hole operation body groups")?;
-    let map_bytes = std::mem::size_of::<(BodyId, Vec<String>)>()
-        .checked_add(body.id.as_str().len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX hole operation body groups",
-                0,
-                cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
-            )
-        })?;
+    let map_bytes = std::mem::size_of::<(BodyId, Vec<String>)>();
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(map_bytes),
         "NX hole operation body groups",
@@ -3963,7 +3901,7 @@ pub(super) fn hole_operations_by_body(
         )?;
         group.push(operation.clone());
     }
-    Ok(Some(BTreeMap::from([(body.id.clone(), group)])))
+    Ok(Some(BTreeMap::from([(body.id.try_clone_for_decode(ctx, "NX hole operation body identity")?, group)])))
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple

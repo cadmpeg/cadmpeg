@@ -435,30 +435,6 @@ fn copy_parameter_id(ctx: &DecodeContext<'_>, id: &ParameterId) -> Result<Parame
     .map_err(CodecError::malformed)
 }
 
-fn copy_parameter_value(
-    ctx: &DecodeContext<'_>,
-    value: &ParameterValue,
-) -> Result<ParameterValue, CodecError> {
-    match value {
-        ParameterValue::String(value) => {
-            let work = cadmpeg_core::decode::u64_from_index(value.len())
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "retain SLDPRT parameter value text",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            ctx.charge_work(work, "retain SLDPRT parameter value text")?;
-            Ok(ParameterValue::String(
-                ctx.format_retained(format_args!("{value}"), "retain SLDPRT parameter value text")?,
-            ))
-        }
-        _ => Ok(value.clone()),
-    }
-}
-
 fn project_parameter_dependencies(
     ctx: &DecodeContext<'_>,
     parameter: &DesignParameter,
@@ -820,7 +796,7 @@ fn insert_parameter_value(
     const OPERATION: &str = "index SLDPRT parameter values";
     ctx.charge_work(1, OPERATION)?;
     let id = copy_parameter_id(ctx, id)?;
-    let value = copy_parameter_value(ctx, value)?;
+    let value = (value).try_clone_for_decode(ctx, "retain SLDPRT parameter value text")?;
     if !values.contains_key(&id) {
         ctx.charge_collection_items(1, OPERATION)?;
         values

@@ -8,7 +8,7 @@ use cadmpeg_ir::{
 };
 use std::collections::HashMap;
 
-use super::{copy_parameter_value, ParameterAliasView, ParameterTokenText};
+use super::{ParameterAliasView, ParameterTokenText};
 use crate::history::literals::parse_parameter_literal;
 
 enum Token<'a, 'ctx> {
@@ -227,7 +227,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 .and_then(Option::as_ref)
                 .and_then(|id| self.values.get(id))
                 .ok_or(ExpressionFailure::NoValue)?;
-            Ok(copy_parameter_value(self.ctx, value)?)
+            Ok((value).try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
         };
         match token {
             Token::Quoted(token) => referenced(token.as_str()),

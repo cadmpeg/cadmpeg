@@ -1051,10 +1051,10 @@ fn decode_container<'a>(
             source_fidelity.retain_unknown_records(
                 format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
-                    UnknownId::compose(
+                    { let mut copied_storage = ctx.reserve_scoped(0, "Inventor temporary carrier identity key")?; copied_storage.with_storage(|| Ok::<_, CodecError>(UnknownId::compose(
                         &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
-                        carrier.segment_token.clone().dash(carrier.record_ordinal),
-                    ),
+                        carrier.segment_token.try_clone_for_decode(ctx, "Inventor temporary carrier identity key")?.dash(carrier.record_ordinal),
+                    ))) }?,
                     carrier.carrier_offset,
                     data,
                     vec![active_carrier.id().to_owned()],

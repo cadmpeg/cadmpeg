@@ -171,6 +171,7 @@ pub(super) fn decode(
         }
         *definition_counts.entry(*product).or_default() += 1;
     }
+    let mut prototype_copy_storage = ctx.reserve_scoped(0, "step_product_prototype_identity_copy")?;
     let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
     let mut product_definition_ids_by_source = BTreeMap::<u64, Vec<ProductDefinitionId>>::new();
 
@@ -243,7 +244,7 @@ pub(super) fn decode(
                 |definition| {
                     let id = product_definition_ir_id(step_id, definition, definition_count);
                     ctx.charge_collection_items(1, "step_product_definition_prototypes")?;
-                    definition_prototypes.insert(definition, id.clone());
+                    definition_prototypes.insert(definition, prototype_copy_storage.with_storage(|| id.try_clone_for_decode(ctx, "step_product_prototype_identity_copy"))?);
                     Ok(id)
                 },
             )?;
@@ -317,7 +318,7 @@ pub(super) fn decode(
                 "step_product_definition_ir_items",
             )?;
             ir.model.product_definitions.push(ProductDefinition {
-                id: product_definition_id.clone(),
+                id: product_definition_id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
                 kind: ProductDefinitionKind::Part,
                 source_name: name
                     .as_deref()
@@ -355,7 +356,7 @@ pub(super) fn decode(
             continue;
         };
         ctx.charge_collection_items(1, "step_product_shape_prototypes")?;
-        product_definition_ids_by_shape.insert(shape_id, prototype.clone());
+        product_definition_ids_by_shape.insert(shape_id, prototype.try_clone_for_decode(ctx, "step_product_identity_copy")?);
     }
     for id in formations.keys().chain(definitions.keys()) {
         ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")?;
@@ -404,6 +405,7 @@ pub(super) fn decode(
             child_definitions.insert(usage.child_definition);
         }
     }
+    let mut occurrence_index_copy_storage = ctx.reserve_scoped(0, "step_product_occurrence_index_identity_copy")?;
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
@@ -411,7 +413,7 @@ pub(super) fn decode(
         if child_definitions.contains(&definition) {
             continue;
         }
-        let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
+        let Some(prototype) = definition_prototypes.get(&definition).map(|id| id.try_clone_for_decode(ctx, "step_product_definition_identity_copy")).transpose()? else {
             ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRODUCT_DEFINITION #{definition} has no local product prototype"
@@ -424,7 +426,7 @@ pub(super) fn decode(
         ));
         ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_root_occurrence_items")?;
         ir.model.occurrences.push(Occurrence {
-            id: id.clone(),
+            id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
             prototype: PrototypeReference::Local {
                 definition: prototype,
             },
@@ -448,7 +450,7 @@ pub(super) fn decode(
             .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
         ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
         ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
-        occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
+        occurrence_paths.insert(occurrence_index_copy_storage.with_storage(|| id.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy"))?, BTreeSet::from([definition]));
         ctx.push_back(
             &mut pending_occurrences,
             (definition, id),
@@ -522,7 +524,7 @@ pub(super) fn decode(
                 continue;
             }
             let usage = &usages[&usage_id];
-            let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
+            let Some(prototype) = definition_prototypes.get(&usage.child_definition).map(|id| id.try_clone_for_decode(ctx, "step_product_definition_identity_copy")).transpose()?
             else {
                 ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -573,7 +575,7 @@ pub(super) fn decode(
             if !child_ordinals.contains_key(&parent) {
                 ctx.charge_collection_items(1, "step_child_occurrence_ordinals")?;
             }
-            let ordinal = child_ordinals.entry(parent.clone()).or_default();
+            let ordinal = child_ordinals.entry(occurrence_index_copy_storage.with_storage(|| parent.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy"))?).or_default();
             let transform = if let Some(transform) = placements.get(&usage_id).copied() {
                 transform
             } else {
@@ -591,12 +593,12 @@ pub(super) fn decode(
             };
             ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_child_occurrence_items")?;
             ir.model.occurrences.push(Occurrence {
-                id: id.clone(),
+                id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
                 prototype: PrototypeReference::Local {
                     definition: prototype,
                 },
                 parent: OccurrenceParent::Occurrence {
-                    occurrence: parent.clone(),
+                    occurrence: parent.try_clone_for_decode(ctx, "step_product_identity_copy")?,
                 },
                 ordinal: *ordinal,
                 transform,
@@ -629,7 +631,7 @@ pub(super) fn decode(
             ctx.charge_collection_items(1, "step_child_occurrence_path_members")?;
             ctx.charge_collection_items(1, "step_child_occurrence_path_map")?;
             path.insert(usage.child_definition);
-            occurrence_paths.insert(id.clone(), path);
+            occurrence_paths.insert(occurrence_index_copy_storage.with_storage(|| id.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy"))?, path);
             ctx.push_back(
                 &mut pending_occurrences,
                 (usage.child_definition, id),
@@ -759,10 +761,11 @@ fn apply_body_placements(
             assembly_representations.insert(*representation);
         }
     }
+    let mut body_index_copy_storage = ctx.reserve_scoped(0, "step_body_placement_identity_copy")?;
     let mut body_indices = BTreeMap::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
         ctx.charge_collection_items(1, "step_body_placement_indices")?;
-        body_indices.insert(body.id.clone(), index);
+        body_indices.insert(body_index_copy_storage.with_storage(|| body.id.try_clone_for_decode(ctx, "step_body_placement_identity_copy"))?, index);
     }
     let mut representation_cache = BTreeMap::new();
     let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();

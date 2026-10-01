@@ -2402,12 +2402,8 @@ fn transform_curve(
     let solved = geometry.solved().ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
     })?;
-    let basis = match solved {
-        SolvedCurveGeometry::Nurbs(nurbs) => {
-            SolvedCurveGeometry::Nurbs(nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?)
-        }
-        other => other.clone(),
-    };
+    let basis = solved.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedCurveGeometry>()), "FreeCAD curve placement basis")?;
     Ok(CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2423,12 +2419,8 @@ fn transform_surface(
     let solved = geometry.solved().ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
     })?;
-    let basis = match solved {
-        SolvedSurfaceGeometry::Nurbs(nurbs) => SolvedSurfaceGeometry::Nurbs(
-            nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?,
-        ),
-        other => other.clone(),
-    };
+    let basis = solved.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedSurfaceGeometry>()), "FreeCAD surface placement basis")?;
     Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
             .map_err(cadmpeg_core::CodecError::malformed)?,

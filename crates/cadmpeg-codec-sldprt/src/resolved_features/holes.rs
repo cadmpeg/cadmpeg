@@ -1623,7 +1623,7 @@ pub(crate) fn project_profiled_hole_constructions(
             if direct.is_some() || native.properties.contains_key("DissectableChildren") {
                 direct
             } else {
-                fallback_constructions.get(&native.id.as_str()).cloned()
+                fallback_constructions.get(&native.id.as_str()).map(|source| source.extent.try_clone_for_decode(ctx, "SLDPRT profiled hole extent copy").map(|extent| ProfiledHoleConstruction { extent, ..*source })).transpose()?
             };
         let Some(construction) = construction else {
             continue;
@@ -2285,7 +2285,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 break;
             };
             ctx.reserve_vec(&mut resolved, 1, "collect SLDPRT spatial hole placements")?;
-            resolved.push(placement.clone());
+            resolved.push(placement.try_clone_for_decode(ctx, "SLDPRT spatial hole placement copy")?);
         }
         if resolved.is_empty() && !ambiguous {
             let mut points = Vec::new();
@@ -3351,7 +3351,7 @@ fn partition_seeded_hole_axes(
         partitions[partition]
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("SLDPRT seeded hole-axis placements", 1, 1))?;
-        partitions[partition].push(placement.clone());
+        partitions[partition].push(placement.try_clone_for_decode(ctx, "SLDPRT seeded hole placement copy")?);
     }
     if partitions.iter().any(Vec::is_empty) {
         return Ok(());

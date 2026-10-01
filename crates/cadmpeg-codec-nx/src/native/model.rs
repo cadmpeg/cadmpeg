@@ -682,19 +682,11 @@ pub(crate) fn terminal_feature_body_ids(
         {
             if !mapped.contains(body) {
                 ctx.charge_collection_items(1, "nx mapped terminal body")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-                    "nx mapped terminal body identity",
-                )?;
-                mapped.insert(body.clone());
+                mapped.insert(body.try_clone_for_decode(ctx, "nx mapped terminal body identity")?);
             }
             if status.terminal && !selected.contains(body) {
                 ctx.charge_collection_items(1, "nx selected terminal body")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-                    "nx selected terminal body identity",
-                )?;
-                selected.insert(body.clone());
+                selected.insert(body.try_clone_for_decode(ctx, "nx selected terminal body identity")?);
             }
         }
     }
