@@ -2,7 +2,6 @@
 //! Sketch profile connectivity, intersection, and containment.
 
 use super::super::holes::placement::ExtrusionSpan;
-use super::super::uniqueness::exactly_one;
 use super::nurbs::{oriented_sketch_nurbs_curve, sketch_nurbs_curve, sketch_nurbs_pcurve};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use cadmpeg_ir::document::CadIr;
@@ -79,6 +78,32 @@ fn sketch_geometry_endpoints(
     Ok(endpoints.filter(|points| points.iter().flatten().all(|value| value.is_finite())))
 }
 
+fn unique_profile_sketch<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &'a CadIr, sketch_id: &SketchId) -> Result<Option<&'a cadmpeg_ir::sketches::Sketch>, cadmpeg_core::CodecError> {
+    let mut found = None;
+    for sketch in &ir.model.sketches {
+        let work = cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len()).checked_add(cadmpeg_core::decode::u64_from_index(sketch_id.as_str().len())).and_then(|work| work.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit("creo profile sketch lookup", u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, "creo profile sketch lookup")?;
+        if sketch.id == *sketch_id {
+            if found.is_some() { return Ok(None); }
+            found = Some(sketch);
+        }
+    }
+    Ok(found)
+}
+
+fn unique_profile_entity<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &'a CadIr, sketch_id: &SketchId, entity_id: &cadmpeg_ir::sketches::SketchEntityId) -> Result<Option<&'a cadmpeg_ir::sketches::SketchEntity>, cadmpeg_core::CodecError> {
+    let mut found = None;
+    for entity in &ir.model.sketch_entities {
+        let work = cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len()).checked_add(cadmpeg_core::decode::u64_from_index(sketch_id.as_str().len())).and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()))).and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(entity_id.as_str().len()))).and_then(|work| work.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit("creo profile entity lookup", u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, "creo profile entity lookup")?;
+        if entity.sketch == *sketch_id && entity.id() == entity_id {
+            if found.is_some() { return Ok(None); }
+            found = Some(entity);
+        }
+    }
+    Ok(found)
+}
+
 pub(in super::super) fn connected_sketch_profile_vertices(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
@@ -88,16 +113,12 @@ pub(in super::super) fn connected_sketch_profile_vertices(
     impl ExactSizeIterator<Item = (usize, Vec<[f64; 2]>)> + std::fmt::Debug,
     cadmpeg_core::CodecError,
 > {
-    let Some(sketch) = exactly_one(
-        ir.model
-            .sketches
-            .iter()
-            .filter(|sketch| sketch.id == *sketch_id),
-    ) else {
+    let Some(sketch) = unique_profile_sketch(ctx, ir, sketch_id)? else {
         return Ok(Vec::new().into_iter());
     };
     let mut profiles = Vec::new();
     for (profile_index, profile) in sketch.profiles.iter().enumerate() {
+        ctx.charge_work(1, "creo connected profile row scan")?;
         if profile.is_empty() {
             continue;
         }
@@ -105,9 +126,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         let mut valid = true;
         for entity_use in profile {
             let Some(geometry) =
-                exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                    entity.sketch == *sketch_id && entity.id() == &entity_use.entity
-                }))
+                unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
                 .map(|entity| source_carriers.sketch_geometry(entity))
             else {
                 valid = false;
@@ -126,11 +145,13 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         if !valid {
             continue;
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(uses.len()).checked_mul(4).ok_or_else(|| ctx.refuse_codec_limit("creo connected profile scale", u64::MAX, u64::MAX))?, "creo connected profile scale")?;
         let scale = uses
             .iter()
             .flat_map(|(start, end)| start.iter().chain(end))
             .map(|coordinate| coordinate.abs())
             .fold(1.0, f64::max);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(uses.len()).checked_mul(6).ok_or_else(|| ctx.refuse_codec_limit("creo connected profile closure", u64::MAX, u64::MAX))?, "creo connected profile closure")?;
         if !uses.windows(2).all(|adjacent| {
             let end = adjacent[0].1;
             let next = adjacent[1].0;
@@ -146,6 +167,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         };
         let mut vertices = Vec::new();
         ctx.reserve_vec(&mut vertices, uses.len(), "creo connected profile vertices")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(uses.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("creo connected profile projection", u64::MAX, u64::MAX))?, "creo connected profile projection")?;
         vertices.extend(uses.iter().map(|(start, _)| *start));
         if (terminal[0] - first[0]).hypot(terminal[1] - first[1]) > EPS_ENDPOINT_AGREEMENT * scale {
             ctx.reserve_vec(&mut vertices, 1, "creo connected profile vertices")?;
@@ -709,12 +731,7 @@ pub(in super::super) fn resolved_sketch_profiles(
     sketch_id: &SketchId,
     minimum_entity_count: usize,
 ) -> Result<Option<Vec<ExtrusionProfile>>, cadmpeg_core::CodecError> {
-    let Some(sketch) = exactly_one(
-        ir.model
-            .sketches
-            .iter()
-            .filter(|sketch| sketch.id == *sketch_id),
-    ) else {
+    let Some(sketch) = unique_profile_sketch(ctx, ir, sketch_id)? else {
         return Ok(None);
     };
     if sketch.profiles.is_empty() {
@@ -722,12 +739,11 @@ pub(in super::super) fn resolved_sketch_profiles(
     }
     let mut profiles = Vec::new();
     for profile in &sketch.profiles {
+        ctx.charge_work(1, "creo resolved profile row scan")?;
         let mut geometries = Vec::new();
         for entity_use in profile {
             let Some(entity) =
-                exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                    entity.sketch == *sketch_id && entity.id() == &entity_use.entity
-                }))
+                unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
             else {
                 return Ok(None);
             };
@@ -752,11 +768,13 @@ pub(in super::super) fn resolved_sketch_profiles(
         if geometries.len() < minimum_entity_count {
             return Ok(None);
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(geometries.len()).checked_mul(4).ok_or_else(|| ctx.refuse_codec_limit("creo resolved profile scale", u64::MAX, u64::MAX))?, "creo resolved profile scale")?;
         let scale = geometries
             .iter()
             .flat_map(|entity| entity.start().into_iter().chain(entity.end()))
             .map(|value| value.abs())
             .fold(1.0, f64::max);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(geometries.len()).checked_mul(6).ok_or_else(|| ctx.refuse_codec_limit("creo resolved profile closure", u64::MAX, u64::MAX))?, "creo resolved profile closure")?;
         if !geometries
             .iter()
             .enumerate()

@@ -1162,3 +1162,5 @@ fn container_framing_misses_and_text_copies_refuse_work() {
 }
 
 mod unit_selection;
+
+mod work_admission;

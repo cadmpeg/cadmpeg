@@ -1355,14 +1355,14 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     let du = [1.0, 0.0, 1.0];
     let dv = [0.0, 1.0, 2.0];
     let zero = [0.0; 3];
-    let grid = crate::interpolation_grid::InterpolationGrid::try_new(
+    let grid = crate::decode::with_test_decode_ctx(|ctx| crate::interpolation_grid::InterpolationGrid::try_new(ctx, 
         points.to_vec(),
         vec![0.0, 1.0],
         vec![0.0, 1.0],
         vec![du, du, du, du],
         vec![dv, dv, dv, dv],
         [zero, zero, zero, zero],
-    )
+    )).expect("grid work admission")
     .expect("complete interpolation grid");
     let nurbs = crate::decode::with_test_decode_ctx(|ctx| {
         interpolation_spline_surface(

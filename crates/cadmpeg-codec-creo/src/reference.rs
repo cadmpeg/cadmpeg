@@ -1083,7 +1083,7 @@ pub(crate) fn line3d_lines(
     Ok(result)
 }
 
-fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<ReferenceCircle> {
+fn arc_z_fields(ctx: &DecodeContext<'_>, body: &[u8], cache: &ScalarCache, entity_id: u32) -> Result<Option<ReferenceCircle>, CodecError> {
     fn scalar_run<const COUNT: usize>(
         body: &[u8],
         start: usize,
@@ -1134,6 +1134,8 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
                     Some((direction, first, second))
                 })
         };
+    let work = cadmpeg_core::decode::u64_from_index(body.len()).checked_mul(512).ok_or_else(|| ctx.refuse_codec_limit("creo arc-z numeric trials", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "creo arc-z numeric trials")?;
     let explicit = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<10>(body, start, cache)?;
         let center = [values[0], values[1], values[2]];
@@ -1188,8 +1190,8 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         })
     });
     let mut candidates = explicit.chain(diametric);
-    let circle = candidates.next()?;
-    candidates.next().is_none().then_some(circle)
+    let Some(circle) = candidates.next() else { return Ok(None); };
+    Ok(candidates.next().is_none().then_some(circle))
 }
 
 /// Decode complete positional `arc_z` rows whose stored center, radius, and
@@ -1205,18 +1207,22 @@ pub(crate) fn arc_z_circles(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = payload[search..]
+    loop {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len() - search), "creo arc-z prototype search")?;
+        let Some(prototype) = payload[search..]
         .windows(PROTOTYPE.len())
         .position(|window| window == PROTOTYPE)
         .map(|relative| search + relative)
-    {
+        else { break; };
         let rows_start = prototype + PROTOTYPE.len();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len() - rows_start), "creo arc-z block search")?;
         let block_end = payload[rows_start..]
             .windows(LIST.len())
             .position(|window| window == LIST)
             .map_or(payload.len(), |relative| rows_start + relative);
         let mut headers = Vec::new();
         for close in rows_start..block_end {
+            ctx.charge_work(32, "creo arc-z row headers")?;
             if payload.get(close) != Some(&0xe3) {
                 continue;
             }
@@ -1237,7 +1243,7 @@ pub(crate) fn arc_z_circles(
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _)| *next_close);
-            let Some(mut circle) = arc_z_fields(&payload[body_start..body_end], &cache, entity_id)
+            let Some(mut circle) = arc_z_fields(ctx, &payload[body_start..body_end], &cache, entity_id)?
             else {
                 continue;
             };
@@ -1245,7 +1251,7 @@ pub(crate) fn arc_z_circles(
             ctx.reserve_vec(&mut result, 1, "creo arc-z circles")?;
             result.push(circle);
         }
-        search = block_end.max(rows_start);
+        search = block_end;
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
@@ -1253,6 +1259,7 @@ pub(crate) fn arc_z_circles(
         |_| 0,
         "creo arc z circles result ordering",
     )?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(result.len()), "creo arc-z row deduplication")?;
     result.dedup_by_key(|circle| circle.offset);
     Ok(result)
 }
