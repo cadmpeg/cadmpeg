@@ -88,8 +88,8 @@ impl BinaryValue {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let mut data = ctx.collection_vec(self.data.len(), operation)?;
-        data.extend_from_slice(&self.data);
+        ctx.charge_work(u64_from_index(self.data.len()), operation)?;
+        let data = ctx.copy_retained_slice(&self.data, operation)?;
         Ok(Self {
             unused_bits: self.unused_bits,
             data: data.into_boxed_slice(),
