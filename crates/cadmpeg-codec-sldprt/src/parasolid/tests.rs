@@ -121,8 +121,14 @@ fn declared_frame_above_local_cap_refuses_without_allocation() {
     let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
         panic!("expected the local frame refusal");
     };
-    assert_eq!(limit.dimension, ResourceDimension::Codec("inflate Parasolid frame"));
-    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(super::MAX_WRAPPED_FRAME_UNCOMPRESSED));
+    assert_eq!(
+        limit.dimension,
+        ResourceDimension::Codec("inflate Parasolid frame")
+    );
+    assert_eq!(
+        limit.limit,
+        cadmpeg_core::decode::u64_from_index(super::MAX_WRAPPED_FRAME_UNCOMPRESSED)
+    );
     assert_eq!(allocations, 0);
 }
 

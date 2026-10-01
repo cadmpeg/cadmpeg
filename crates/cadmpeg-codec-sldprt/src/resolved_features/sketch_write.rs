@@ -955,7 +955,10 @@ fn patch_direct_curve_body(
 fn edit_stream(
     payload: &mut Vec<u8>,
     stream_ordinal: usize,
-    edit: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>, &mut [u8]) -> Result<(), cadmpeg_core::CodecError>,
+    edit: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut [u8],
+    ) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::read_root(
@@ -965,7 +968,8 @@ fn edit_stream(
         false,
     )?;
     let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
-        .into_iter().nth(stream_ordinal)
+        .into_iter()
+        .nth(stream_ordinal)
         .ok_or_else(|| {
             cadmpeg_core::CodecError::Malformed("SLDPRT sketch stream is missing".into())
         })?;
@@ -974,7 +978,10 @@ fn edit_stream(
         .windows(stream.payload.len())
         .position(|candidate| candidate == stream.payload.as_slice())
     {
-        return edit(&ctx, &mut payload[start + body_offset..start + stream.payload.len()]);
+        return edit(
+            &ctx,
+            &mut payload[start + body_offset..start + stream.payload.len()],
+        );
     }
     let (start, end) = compressed_member(payload, &stream.payload).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
