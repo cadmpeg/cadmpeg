@@ -326,7 +326,8 @@ pub(super) fn edge_node_wires_charged(
     nodes: Vec<CatiaConsolidatedEdgeNode>,
     identities: &[CatiaConsolidatedVertexIdentity],
 ) -> Result<Vec<CatiaConsolidatedEdgeNodeWire>, cadmpeg_core::CodecError> {
-    let index = identity_index_charged(ctx, identities)?;
+    let mut index_storage = ctx.reserve_scoped(0, "CATIA edge wire identity lookup")?;
+    let index = index_storage.with_storage(|| identity_index_charged(ctx, identities))?;
     let mut wires = Vec::new();
     for node in nodes {
         let vertices = [
@@ -381,6 +382,7 @@ pub(super) fn consolidated_vertex_identities(
     nodes: &[CatiaConsolidatedEdgeNode],
 ) -> Result<Vec<CatiaConsolidatedVertexIdentity>, cadmpeg_core::CodecError> {
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
+    let mut identity_storage = ctx.reserve_scoped(0, "CATIA vertex identity lookup")?;
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
     for node in nodes {
         if node.endpoint_records.is_none() && node.uses.is_none() {
@@ -427,12 +429,14 @@ pub(super) fn consolidated_vertex_identities(
                     },
                     "catia_native_vertex_identities",
                 )?;
-                ctx.insert_hash_map(
-                    &mut identity_indices,
-                    key,
-                    index,
-                    "catia_native_vertex_identity_index",
-                )?;
+                identity_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut identity_indices,
+                        key,
+                        index,
+                        "catia_native_vertex_identity_index",
+                    )
+                })?;
                 index
             };
             let vertex = &mut identities[index];
@@ -503,8 +507,12 @@ mod tests {
             incident_edge_nodes: Vec::new(),
         }];
         crate::test_support::with_retained_limit(0, |ctx| {
-            let index =
-                super::identity_index_charged(ctx, &identities).expect("borrowed index owners");
+            let mut index_storage = ctx
+                .reserve_scoped(0, "CATIA borrowed identity lookup")
+                .expect("lookup storage");
+            let index = index_storage
+                .with_storage(|| super::identity_index_charged(ctx, &identities))
+                .expect("borrowed index owners");
             assert_eq!(
                 super::joined_vertex_charged(ctx, &node, 0, &index).expect("borrowed lookup owner"),
                 ""
@@ -567,13 +575,16 @@ mod tests {
                         .sum::<usize>()
             })
             .sum::<usize>();
+        let retained = retained
+            + 4 * std::mem::size_of::<super::CatiaConsolidatedVertexIdentity>()
+            + expected.len() * 4 * (std::mem::size_of::<u32>() + std::mem::size_of::<String>());
         let nodes = (0..64).map(|_| node.clone()).collect::<Vec<_>>();
         crate::test_support::with_retained_limit(
             u64::try_from(retained).expect("identity retained bytes"),
             |ctx| {
                 assert_eq!(
                     super::consolidated_vertex_identities(ctx, &nodes)
-                        .expect("only arena names are retained"),
+                        .expect("arena names and output vector slots are retained"),
                     expected
                 );
             },

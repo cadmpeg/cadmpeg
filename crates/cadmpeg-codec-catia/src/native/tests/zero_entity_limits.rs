@@ -31,12 +31,10 @@ fn native_zero_entity_records_refuse_collection_limit_before_materialization() {
 #[test]
 fn native_zero_entity_record_id_refuses_retained_limit() {
     let bytes = [0xa9, 0x03, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("fixture fits input limit");
-    let refused = super::super::zero_entity_records(&ctx, &bytes, 0..bytes.len());
+    let refused =
+        crate::test_support::with_retained_refusal(&[], "catia_native_zero_record_id", |ctx| {
+            super::super::zero_entity_records(ctx, &bytes, 0..bytes.len())
+        });
     assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_zero_record_id"));
 }
@@ -52,11 +50,11 @@ fn native_zero_entity_pair_ids_refuse_retained_limit() {
         model_endpoints: [point, point],
         model_midpoint: point,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let refused = super::super::zero_entity_endpoint_pair_candidates(&ctx, vec![pair]);
+    let refused = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_native_zero_face_record_id",
+        |ctx| super::super::zero_entity_endpoint_pair_candidates(ctx, vec![pair]),
+    );
     assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_zero_face_record_id"));
     let admitted = crate::test_support::with_service_context(|ctx| {

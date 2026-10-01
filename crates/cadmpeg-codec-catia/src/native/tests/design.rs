@@ -133,9 +133,10 @@ fn native_design_objects_refuse_caller_collection_limit() {
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
-    });
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_design_object_id", |ctx| {
+            super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+        });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_object_id")

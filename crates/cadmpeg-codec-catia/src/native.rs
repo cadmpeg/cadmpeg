@@ -8337,8 +8337,8 @@ fn consolidated_class5b5c_records(
     ctx.stable_sort_by(
         &mut control_records,
         |left, right| {
-        (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
-    },
+            (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
+        },
         |_| 0,
         "catia_native_class5b5c_sort",
     )?;
@@ -8379,9 +8379,10 @@ mod consolidated_class_record_limit_tests {
             assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
                 if error.operation == operation));
         }
-        let limited = crate::test_support::with_retained_limit(24, |ctx| {
-            consolidated_class61_records(ctx, &bytes, &records)
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_class61_id", |ctx| {
+                consolidated_class61_records(ctx, &bytes, &records)
+            });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_class61_id"));
     }
@@ -8411,9 +8412,10 @@ mod consolidated_class_record_limit_tests {
             });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_class5b5c_records"));
-        let limited = crate::test_support::with_retained_limit(payload_bytes, |ctx| {
-            consolidated_class5b5c_records(ctx, &bytes, &records)
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_class5b5c_id", |ctx| {
+                consolidated_class5b5c_records(ctx, &bytes, &records)
+            });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_class5b5c_id"));
     }
@@ -8433,9 +8435,10 @@ mod consolidated_cone_face_limit_tests {
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_faces"));
-        let limited = crate::test_support::with_retained_limit(16, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &[])
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_cone_face_id", |ctx| {
+                consolidated_cone_faces(ctx, &bytes, &records, &[])
+            });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_face_id"));
     }
@@ -8461,17 +8464,18 @@ mod consolidated_cone_face_limit_tests {
             assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
                 if error.operation == operation));
         }
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &points)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_cone_face_point_index_id",
+            |ctx| consolidated_cone_faces(ctx, &bytes, &records, &points),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_face_point_index_id"));
-        let indexed_id_bytes =
-            u64::try_from(points.iter().map(|point| point.id.len()).sum::<usize>())
-                .expect("fixture ids fit u64");
-        let limited = crate::test_support::with_retained_limit(indexed_id_bytes + 16, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &points)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_cone_face_parameter_id",
+            |ctx| consolidated_cone_faces(ctx, &bytes, &records, &points),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_face_parameter_id"));
     }
@@ -8847,9 +8851,11 @@ mod consolidated_analytic_limit_tests {
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_reference_lists"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_reference_lists(ctx, &bytes, &records)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_reference_list_id",
+            |ctx| consolidated_reference_lists(ctx, &bytes, &records),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_reference_list_id"));
     }
@@ -8863,9 +8869,11 @@ mod consolidated_analytic_limit_tests {
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_plane_carriers"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_plane_carriers(ctx, &bytes, &records)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_plane_carrier_id",
+            |ctx| consolidated_plane_carriers(ctx, &bytes, &records),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_plane_carrier_id"));
     }
@@ -9061,9 +9069,10 @@ mod consolidated_pcurve_limit_tests {
     fn native_pcurve_id_and_output_refuse_limits() {
         let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_retained_limit(1, |ctx| {
-            super::consolidated_pcurves(ctx, &bytes, &records)
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_pcurve_id", |ctx| {
+                super::consolidated_pcurves(ctx, &bytes, &records)
+            });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_native_pcurve_id")
@@ -9092,24 +9101,33 @@ fn consolidated_revolutions(
 ) -> Result<Vec<CatiaConsolidatedRevolution>, CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "catia native revolution workspace")?;
     let mut resolved_profiles = HashMap::new();
-    let (resolved, _resolved_storage) = ctx.with_scoped_storage("catia native revolution profiles", || crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records))?;
+    let (resolved, _resolved_storage) = ctx
+        .with_scoped_storage("catia native revolution profiles", || {
+            crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)
+        })?;
     for resolved in resolved {
-        temporary.with_storage(|| ctx.insert_hash_map(
-            &mut resolved_profiles,
-            u64_from_index(resolved.revolution.pos),
-            u64_from_index(resolved.profile.pos),
-            "catia_native_revolution_profile_index",
-        ))?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut resolved_profiles,
+                u64_from_index(resolved.revolution.pos),
+                u64_from_index(resolved.profile.pos),
+                "catia_native_revolution_profile_index",
+            )
+        })?;
     }
     let mut circle_ids = HashMap::new();
     for circle in circles {
-        let id = temporary.with_storage(|| ctx.copy_retained_text(&circle.id, "catia_native_revolution_circle_id"))?;
-        temporary.with_storage(|| ctx.insert_hash_map(
-            &mut circle_ids,
-            circle.byte_offset,
-            id,
-            "catia_native_revolution_circle_index",
-        ))?;
+        let id = temporary.with_storage(|| {
+            ctx.copy_retained_text(&circle.id, "catia_native_revolution_circle_id")
+        })?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut circle_ids,
+                circle.byte_offset,
+                id,
+                "catia_native_revolution_circle_index",
+            )
+        })?;
     }
     let mut revolutions = Vec::new();
     for (index, revolution) in
@@ -9647,8 +9665,8 @@ impl CatiaNative {
             )?;
             let family = ctx
                 .copy_retained_text(finjpl_family(segment.kind()), "catia_native_finjpl_family")?;
-            let data = ctx
-                .copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
+            let data =
+                ctx.copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
             ctx.push_vec(
                 &mut finjpl_segments,
                 CatiaFinjplSegment {

@@ -698,7 +698,8 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
 fn e5_topology_emission_refuses_retained_identity_copies() {
     let file = object_main_catpart(&e5_torus_topology_stream());
     let mut refused = std::collections::HashSet::new();
-    for cap in 0..32_768 {
+    let mut cap = 0;
+    for _ in 0..4096 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         match CatiaCodec.decode(
@@ -712,6 +713,8 @@ fn e5_topology_emission_refuses_retained_identity_copies() {
                 limit,
             ))) => {
                 refused.insert(limit.operation);
+                assert!(limit.used + limit.additional > cap);
+                cap = limit.used + limit.additional;
             }
             Ok(_) => break,
             Err(error) => panic!("unexpected E5 topology decode refusal: {error}"),

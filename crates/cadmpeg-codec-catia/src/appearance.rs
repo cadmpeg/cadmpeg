@@ -498,15 +498,16 @@ mod tests {
                 "limit {limit}"
             );
         }
-        let retained_refusal = crate::test_support::with_retained_limit(4, |ctx| {
-            transfer(
-                ctx,
-                &mut model(0),
-                &input,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                None,
-            )
-        });
+        let retained_refusal =
+            crate::test_support::with_retained_refusal(&[], "catia_appearance_source_id", |ctx| {
+                transfer(
+                    ctx,
+                    &mut model(0),
+                    &input,
+                    &crate::decode::ModelingGraphScope::Unscoped,
+                    None,
+                )
+            });
         assert!(matches!(
             retained_refusal,
             Err(cadmpeg_core::CodecError::ResourceLimit(resource))

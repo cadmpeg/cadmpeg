@@ -1304,14 +1304,12 @@ mod allocation_tests {
             assert!(operations.contains(operation), "no refusal at {operation}");
         }
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[f64; 3]>()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("fixture fits the input limit");
-        let refusal = parse_vertex_table(&ctx, &bytes, vertex_header)
-            .expect_err("coordinate copy exceeds retained bytes");
+        let refusal = crate::test_support::with_retained_refusal(
+            &bytes,
+            "catia_fbb_vertex_coordinates",
+            |ctx| parse_vertex_table(ctx, &bytes, vertex_header),
+        )
+        .expect_err("coordinate copy exceeds retained bytes");
         assert!(matches!(refusal, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "catia_fbb_vertex_coordinates"));
@@ -2071,8 +2069,7 @@ fn parse_trim_record_with_length_encoding(
         }
 
         let (strip_lengths, fan_lengths) = lengths.split_at_checked(layout.strip_count)?;
-        let strip_lengths = match ctx.copy_slice(strip_lengths, "catia_trim_strip_lengths")
-        {
+        let strip_lengths = match ctx.copy_slice(strip_lengths, "catia_trim_strip_lengths") {
             Ok(lengths) => lengths,
             Err(error) => return Some(Err(error)),
         };

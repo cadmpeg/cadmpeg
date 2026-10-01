@@ -161,12 +161,14 @@ fn native_edge_node_storage_refuses_collection_and_retained_limits() {
     // Vector growth admits four slots up to 1024 bytes per record, otherwise one.
     let record_size = std::mem::size_of::<crate::native::CatiaConsolidatedEdgeNode>();
     let record_storage = record_size * if record_size <= 1024 { 4 } else { 1 };
-    let limited = crate::test_support::with_retained_limit(u64::try_from(record_storage).expect("record storage fits"), |ctx| {
-        super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
-    });
+    let limited = crate::test_support::with_retained_limit(
+        u64::try_from(record_storage).expect("record storage fits"),
+        |ctx| super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[]),
+    );
     assert!(
         matches!(&limited, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-        if refusal.operation == "catia_native_edge_node_id"), "{limited:?}"
+        if refusal.operation == "catia_native_edge_node_id"),
+        "{limited:?}"
     );
     let nodes = crate::test_support::with_service_context(|ctx| {
         super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])

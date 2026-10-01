@@ -909,8 +909,7 @@ fn parse_curve_support(
     else {
         return Ok(None);
     };
-    let tail =
-        ctx.copy_slice(&record.payload[position..], "catia_e5_curve_support_tail")?;
+    let tail = ctx.copy_slice(&record.payload[position..], "catia_e5_curve_support_tail")?;
     Ok(Some(E5CurveSupport {
         kind,
         mode,
@@ -2987,7 +2986,9 @@ mod tests {
         let service = crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes));
         assert!(matches!(service, Ok(None)));
         let limited =
-            crate::test_support::with_retained_limit(0, |ctx| parse_topology(ctx, &bytes));
+            crate::test_support::with_retained_refusal(&[], "catia_e5_edge_tail", |ctx| {
+                parse_topology(ctx, &bytes)
+            });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_e5_edge_tail")

@@ -183,9 +183,10 @@ fn legacy_relation_signature_refuses_nested_limits() {
         matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_legacy_relation_names")
     );
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::parse_relation_signature(ctx, signature)
-    });
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_legacy_relation_parameter", |ctx| {
+            super::parse_relation_signature(ctx, signature)
+        });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_legacy_relation_parameter")
