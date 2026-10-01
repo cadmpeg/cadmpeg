@@ -123,15 +123,6 @@ fn report_unkeyed_property(
     Ok(())
 }
 
-/// The key a history record id carries: the ordinal of the section it was read
-/// from and its position in that section.
-///
-/// Composed from the two integers, so the key is key text by construction and
-/// the projection recovers it from the id without a fallible re-parse.
-fn history_record_key(source: usize, ordinal: usize) -> cadmpeg_ir::ids::IdentityKey {
-    cadmpeg_ir::ids::IdentityKey::from(source).colon(ordinal)
-}
-
 pub(crate) fn histories(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -157,16 +148,13 @@ pub(crate) fn histories(
                 return Ok(histories);
             }
             let stream = section.source_stream();
-            let parent = format!("sldprt:history:feature-history#{source}");
+            let parent = ctx.format_retained_with_work(format_args!("sldprt:history:feature-history#{source}"), "retain SLDPRT history identity")?;
             let configurations = root
                 .children()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
                 .enumerate()
                 .try_fold(Vec::new(), |mut configurations, (ordinal, node)| {
-                    let id = format!(
-                        "sldprt:history:configuration#{}",
-                        history_record_key(source, ordinal)
-                    );
+                    let id = ctx.format_retained_with_work(format_args!("sldprt:history:configuration#{source}:{ordinal}"), "retain SLDPRT configuration identity")?;
                     crate::annotations::note(
                         ctx,
                         annotations,
@@ -193,7 +181,7 @@ pub(crate) fn histories(
                     )?;
                     configurations.push(Configuration {
                         id,
-                        parent: parent.clone(),
+                        parent: copy_history_text(ctx, &parent, "retain SLDPRT history parent identity")?,
                         ordinal: u32::try_from(ordinal).map_err(|_| {
                             ctx.refuse_codec_limit(
                                 "index SLDPRT history configuration ordinals",
@@ -239,10 +227,7 @@ pub(crate) fn histories(
                     ctx.insert_hash_map(
                         &mut ids,
                         node.range().start,
-                        format!(
-                            "sldprt:history:feature#{}",
-                            history_record_key(source, ordinal)
-                        ),
+                        ctx.format_retained_with_work(format_args!("sldprt:history:feature#{source}:{ordinal}"), "retain SLDPRT feature identity")?,
                         "index SLDPRT history feature IDs",
                     )?;
                     Ok::<_, CodecError>(ids)
@@ -251,7 +236,8 @@ pub(crate) fn histories(
             let features = feature_nodes().enumerate().try_fold(
                 Vec::new(),
                 |mut features, (ordinal, node)| {
-                    let id = feature_ids[&node.range().start].clone();
+                    let source_id = feature_ids.get(&node.range().start).ok_or_else(|| CodecError::malformed("missing SLDPRT history feature identity"))?;
+                    let id = copy_history_text(ctx, source_id, "retain SLDPRT feature identity")?;
                     crate::annotations::note(
                         ctx,
                         annotations,
@@ -306,8 +292,7 @@ pub(crate) fn histories(
                         } else {
                             feature_ids
                                 .get(&child.range().start)
-                                .cloned()
-                                .map(FeatureContent::Feature)
+                                .map(|id| copy_history_text(ctx, id, "retain SLDPRT feature content identity").map(FeatureContent::Feature)).transpose()?
                         };
                         if let Some(item) = item {
                             ctx.reserve_collection_vec(
@@ -396,21 +381,19 @@ pub(crate) fn histories(
                     };
                     features.push(Feature {
                         id,
-                        parent: parent.clone(),
+                        parent: copy_history_text(ctx, &parent, "retain SLDPRT history parent identity")?,
                         xml_tag: copy_history_text(
                             ctx,
                             node.tag_name().name(),
                             "retain SLDPRT feature XML tag",
                         )?,
                         tree_parent: node.ancestors().skip(1).find_map(|ancestor| {
-                            let record_id = feature_ids.get(&ancestor.range().start)?.clone();
-                            Some(crate::records::TreeParent::Record {
+                            let record_id = feature_ids.get(&ancestor.range().start)?;
+                            Some(copy_history_text(ctx, record_id, "retain SLDPRT ancestor identity").map(|record_id| crate::records::TreeParent::Record {
                                 record_id,
-                                source_id: ancestor
-                                    .attribute("id")
-                                    .and_then(|value| FeatureSource::try_from(value).ok()),
-                            })
-                        }),
+                                source_id: ancestor.attribute("id").and_then(|value| FeatureSource::try_from(value).ok()),
+                            }))
+                        }).transpose()?,
                         source_id: node
                             .attribute("id")
                             .and_then(|value| FeatureSource::try_from(value).ok()),
@@ -458,17 +441,13 @@ pub(crate) fn histories(
                 } else if !child.is_element() {
                     None
                 } else if child.tag_name().name() == "Configuration" {
-                    let id = format!(
-                        "sldprt:history:configuration#{}",
-                        history_record_key(source, configuration_ordinal)
-                    );
+                    let id = ctx.format_retained_with_work(format_args!("sldprt:history:configuration#{source}:{configuration_ordinal}"), "retain SLDPRT configuration content identity")?;
                     configuration_ordinal += 1;
                     Some(HistoryContent::Configuration(id))
                 } else {
                     feature_ids
                         .get(&child.range().start)
-                        .cloned()
-                        .map(HistoryContent::Feature)
+                        .map(|id| copy_history_text(ctx, id, "retain SLDPRT history content identity").map(HistoryContent::Feature)).transpose()?
                 };
                 if let Some(item) = item {
                     ctx.reserve_collection_vec(&mut content, 1, "collect SLDPRT history content")?;

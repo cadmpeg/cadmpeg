@@ -1375,3 +1375,23 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
     let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
+
+#[test]
+fn pmi_alias_comparison_refuses_long_semantic_strings() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut first = dimension("linear", 1.0);
+    first.id = "bound".into();
+    first.cad_text = "x".repeat(1024);
+    let mut second = first.clone();
+    second.id = "unbound".into();
+    second.cad_text.push('y');
+    let records = [first, second];
+    let bound = std::collections::HashSet::from(["bound"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 100;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::unbound_dimension_count(&ctx, &records, &bound).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare SLDPRT PMI aliases"));
+    assert_eq!(super::unbound_dimension_count(&cadmpeg_test_support::service_decode_context(), &records, &bound).unwrap(), 1);
+}

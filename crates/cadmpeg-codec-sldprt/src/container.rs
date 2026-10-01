@@ -509,6 +509,9 @@ fn walk_native_markers(
     mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
     mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
 ) -> Result<NativeMarkers, CodecError> {
+    if let ScanAdmission::Decode(ctx) = admission {
+        ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT native markers")?;
+    }
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
@@ -775,6 +778,7 @@ fn block_from_inflated(
     if inflated.len() != index_from_u32(frame.uncomp_sz) {
         return Ok(None);
     }
+    ctx.charge_work(u64_from_index(inflated.len()), "validate SLDPRT block CRC")?;
     if crc32fast::hash(&inflated) != frame.crc {
         return Ok(None);
     }
@@ -1384,6 +1388,7 @@ pub(crate) fn xml_text_charged<'ctx>(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<Option<EnvelopeText<'ctx>>, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), operation)?;
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {
         let utf16 = &bytes[2..];

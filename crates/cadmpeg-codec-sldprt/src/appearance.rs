@@ -63,6 +63,7 @@ pub(crate) fn definitions(
     let mut definitions = Vec::new();
     for section in scan.sections() {
         let bytes = section.payload();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan SLDPRT appearance definitions")?;
         for (offset, token) in bytes.windows(VISUAL_PROPERTIES_CLASS.len()).enumerate() {
             if token != VISUAL_PROPERTIES_CLASS {
                 continue;
@@ -187,6 +188,7 @@ fn inline_definitions(
     let Some(bytes) = section.payload().get(start..end) else {
         return Ok(Vec::new());
     };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan inline SLDPRT appearances")?;
     let mut definitions = Vec::new();
     for (relative, marker) in bytes.windows(inline_visual::MARKER_VALUE.len()).enumerate() {
         if marker != inline_visual::MARKER_VALUE {
@@ -215,6 +217,7 @@ fn display_assignments(
     let classes = crate::tessellation::class_intervals(ctx, section.payload())?;
     let mut assignments = Vec::new();
     for (table_index, face) in faces.iter().enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(classes.len()), "match SLDPRT face appearance classes")?;
         let Some(class) = classes.iter().find(|class| {
             class.name == "uoTempFaceTessData_c"
                 && class.content.start() <= face.table.start()
@@ -251,6 +254,7 @@ fn display_assignments(
         if definitions.len() != 1 {
             continue;
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(class_index), "find SLDPRT appearance body boundary")?;
         let previous_body_end = classes[..class_index]
             .iter()
             .rev()
@@ -258,6 +262,7 @@ fn display_assignments(
             .map_or(0, |previous| previous.content.end());
         let mut face_indexes = Vec::new();
         for (table_index, face) in faces.iter().enumerate() {
+            ctx.charge_work(1, "match SLDPRT body appearance faces")?;
             if previous_body_end <= face.table.start() && face.table.end() <= class.class_offset {
                 ctx.push_vec(
                     &mut face_indexes,
@@ -295,6 +300,7 @@ pub(crate) fn feature_assignments(
     {
         let bytes = section.payload();
         let classes = crate::tessellation::class_intervals(ctx, bytes)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan SLDPRT feature appearance markers")?;
         for marker_offset in bytes
             .windows(feature_visual::MARKER_VALUE.len())
             .enumerate()
@@ -308,6 +314,7 @@ pub(crate) fn feature_assignments(
             let Some(record) = bytes.get(record_offset..record_offset + feature_visual::LEN) else {
                 continue;
             };
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(classes.len()), "match SLDPRT feature appearance classes")?;
             if !classes.iter().any(|class| {
                 class.name == "moCompFeature_c"
                     && class.content.start() <= record_offset
