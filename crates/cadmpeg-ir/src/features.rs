@@ -52,6 +52,7 @@ macro_rules! clone_copy_for_decode {
 
 macro_rules! clone_record_for_decode {
     ($type:ty $(, [$($generic:ident),+])?; { $($field:ident),* }) => {
+        rewrite_record!($type, [$($($generic),+)?]; {$($field),*});
         impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
             crate::features::decode_clone::CloneForDecode for $type {
             fn try_clone_for_decode(
@@ -65,6 +66,7 @@ macro_rules! clone_record_for_decode {
         }
     };
     ($type:ty $(, [$($generic:ident),+])?; ( $($field:ident),* )) => {
+        rewrite_record!($type, [$($($generic),+)?]; ($($field),*));
         impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
             crate::features::decode_clone::CloneForDecode for $type {
             fn try_clone_for_decode(
@@ -83,6 +85,7 @@ macro_rules! clone_enum_for_decode {
     ($type:ty $(, [$($generic:ident),+])?; {
         $($variant:ident $( ( $($tuple:ident),* ) )? $( { $($field:ident),* } )?),* $(,)?
     }) => {
+        rewrite_enum!($type, [$($($generic),+)?]; { $($variant $(($($tuple),*))? $({$($field),*})?),* });
         impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
             crate::features::decode_clone::CloneForDecode for $type {
             fn try_clone_for_decode(
@@ -104,7 +107,7 @@ macro_rules! clone_enum_for_decode {
 
 mod body_selection;
 mod decode_clone;
-mod member_work;
+pub(crate) mod member_work;
 
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
@@ -122,6 +125,7 @@ macro_rules! checked_feature_geometry {
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name($raw);
+        rewrite_scalar!($name);
 
         impl $name {
             /// Admit a value that satisfies the feature geometry bounds.
@@ -644,6 +648,7 @@ macro_rules! checked_feature_plane_frame {
             normal: FeatureDirection3,
             u_axis: FeatureDirection3,
         }
+        rewrite_scalar!($name);
         impl $name {
             /// Admit finite origin and nonzero perpendicular directions without normalizing them.
             pub fn new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
@@ -9931,3 +9936,5 @@ impl Feature {
         })
     }
 }
+
+mod identity_rewrite;

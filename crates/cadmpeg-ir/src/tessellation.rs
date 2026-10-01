@@ -1590,3 +1590,5 @@ cadmpeg_core::named_optional_field!(
     "source_object"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
+
+mod identity_rewrite;

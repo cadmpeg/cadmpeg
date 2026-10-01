@@ -35,6 +35,9 @@
 //! Product prototypes and occurrence trees retain assembly identity and
 //! placement. Joint and mate constraints are reserved.
 
+#[macro_use]
+mod identity_rewrite;
+
 pub mod annotations;
 pub mod appearance;
 pub mod assets;

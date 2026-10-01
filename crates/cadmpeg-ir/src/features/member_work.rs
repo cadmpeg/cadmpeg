@@ -33,7 +33,7 @@ impl Hasher for KeyBytes<'_, '_> {
 }
 
 /// Admit hashing and a full collision chain against the longest admitted key.
-pub(super) fn admit_member_work<T: Hash>(
+pub(crate) fn admit_member_work<T: Hash>(
     ctx: &DecodeContext<'_>,
     member: &T,
     count: usize,

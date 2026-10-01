@@ -1214,3 +1214,5 @@ cadmpeg_core::named_optional_field!(deserialize_class, String, "class");
 cadmpeg_core::named_optional_field!(deserialize_major_diameter, PositiveLength, "major_diameter");
 
 selection_field_deserializer!(deserialize_local_standard, "standard");
+
+mod identity_rewrite;

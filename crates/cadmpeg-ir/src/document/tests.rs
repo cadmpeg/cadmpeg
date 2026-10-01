@@ -14,7 +14,6 @@ use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 use crate::{diff, CadIr};
-use serde::{de::DeserializeOwned, Serialize};
 
 mod append;
 mod feature_parents;
@@ -154,13 +153,14 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     assert_eq!(cached.knots().as_ptr(), original_knot_storage);
 }
 
-struct SerdeIdentity;
+struct TypedIdentity<'a>(&'a cadmpeg_core::decode::DecodeContext<'a>);
 
-impl EntityRewrite for SerdeIdentity {
-    type Error = serde_json::Error;
+impl EntityRewrite for TypedIdentity<'_> {
+    type Error = cadmpeg_core::CodecError;
 
-    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
-        serde_json::from_value(serde_json::to_value(entity)?)
+    fn rewrite<T: crate::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, Self::Error> {
+        let mut map = crate::schema::rewrite::typed::IdentityMap::new(self.0, "test identity rewrite", |source: &str| self.0.copy_retained_text(source, "test identity rewrite"))?;
+        entity.rewrite_identities(self.0, &mut map)
     }
 }
 
@@ -528,8 +528,9 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
 
     let mut rewritten = Model::default();
+    let ctx = cadmpeg_test_support::service_decode_context();
     rewritten
-        .extend_rewritten(ir.model, &mut SerdeIdentity)
+        .extend_rewritten(&ctx, ir.model, &mut TypedIdentity(&ctx), "test rewrite model")
         .unwrap();
     assert!(rewritten.surfaces[0].geometry.solved_cache().is_some());
 }

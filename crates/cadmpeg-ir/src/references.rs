@@ -188,3 +188,5 @@ mod tests {
         assert!(error.contains("zz_bogus"), "{error}");
     }
 }
+
+mod identity_rewrite;

@@ -1329,3 +1329,5 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_range, CurveOffsetRange, "range");
 cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
+
+mod identity_rewrite;
