@@ -19,7 +19,7 @@
 use self::index::scan_carriers;
 use self::spline::patch_nurbs_curve;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -372,66 +372,39 @@ fn decode_carrier_values(
 }
 
 /// Return the typed curve carried by one stream-local attribute.
-pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()).ok()?;
-    scan_carriers(&ctx, body)
-        .ok()?
-        .curve(attr)?
-        .carrier()
-        .geometry
-        .try_clone_for_decode(&ctx, "SLDPRT patch curve geometry copy")
-        .ok()
+pub(crate) fn curve_by_attr(ctx: &DecodeContext<'_>, body: &[u8], attr: u16) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    let carriers = scan_carriers(ctx, body)?;
+    carriers.curve(attr).map(|indexed| indexed.carrier().geometry
+        .try_clone_for_decode(ctx, "SLDPRT patch curve geometry copy")).transpose()
 }
 
 /// Replace the scalar run of one compact analytic carrier.
-pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -> bool {
-    let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service())
-    else {
-        return false;
-    };
-    let Ok(carriers) = scan_carriers(&ctx, body) else {
-        return false;
-    };
-    let Some(indexed) = carriers.curve(attr) else {
-        return false;
-    };
+pub(crate) fn patch_compact_values(ctx: &DecodeContext<'_>, body: &mut [u8], attr: u16, values: &[f64]) -> Result<bool, cadmpeg_core::CodecError> {
+    let carriers = scan_carriers(ctx, body)?;
+    let Some(indexed) = carriers.curve(attr) else { return Ok(false); };
     let carrier = indexed.carrier();
-    let Some(start) = carrier.end.checked_sub(values.len() * 8) else {
-        return false;
-    };
-    let Some(bytes) = body.get_mut(start..carrier.end) else {
-        return false;
-    };
+    let Some(size) = values.len().checked_mul(8) else { return Ok(false); };
+    let Some(start) = carrier.end.checked_sub(size) else { return Ok(false); };
+    let Some(bytes) = body.get_mut(start..carrier.end) else { return Ok(false); };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(size), "patch SLDPRT compact values")?;
     for (slot, value) in bytes.chunks_exact_mut(8).zip(values) {
         slot.copy_from_slice(&value.to_be_bytes());
     }
-    true
+    Ok(true)
 }
 
 /// Patch one stream-local NURBS curve without changing its storage shape.
 pub(crate) fn patch_nurbs_by_attr(
+    ctx: &DecodeContext<'_>,
     body: &mut [u8],
     attr: u16,
     new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> bool {
-    let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service())
-    else {
-        return false;
-    };
-    let Ok(carriers) = scan_carriers(&ctx, body) else {
-        return false;
-    };
-    let Some(indexed) = carriers.curve(attr) else {
-        return false;
-    };
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let carriers = scan_carriers(ctx, body)?;
+    let Some(indexed) = carriers.curve(attr) else { return Ok(false); };
     let carrier = indexed.carrier();
-    let Some(SolvedCurveGeometry::Nurbs(old)) = carrier.geometry.solved() else {
-        return false;
-    };
-    patch_nurbs_curve(body, carrier.offset, old, new, 0.001).is_some()
+    let Some(SolvedCurveGeometry::Nurbs(old)) = carrier.geometry.solved() else { return Ok(false); };
+    Ok(patch_nurbs_curve(ctx, body, carrier.offset, old, new, 0.001)?.is_some())
 }
 
 #[cfg(test)]
@@ -840,3 +813,6 @@ mod tests {
         assert!(parse_carrier(&bytes, 0).is_none());
     }
 }
+
+#[cfg(test)]
+mod patch_tests;
