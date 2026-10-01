@@ -571,3 +571,14 @@ fn b2_nurbs_curve_parser_rejects_nonfinite_knots_poles_and_weights() {
     infinite_weight[121..129].copy_from_slice(&f64::INFINITY.to_le_bytes());
     assert!(parsed_b2_nurbs_curves(&infinite_weight).is_empty());
 }
+
+#[test]
+fn cylinder_circumference_tolerance_is_an_absolute_length() {
+    let large_radius = 1.0e9;
+    let outside = [0.0, std::f64::consts::TAU * large_radius + 0.25];
+    assert!(!crate::families::b2::records::circle_range_is_full_turn(large_radius, outside));
+    assert!(!crate::families::b2::records::circle_range_is_within_full_turn(large_radius, outside));
+    let small_radius = 0.001;
+    let inside = [0.0, std::f64::consts::TAU * small_radius + 0.000_000_5];
+    assert!(crate::families::b2::records::circle_range_is_full_turn(small_radius, inside));
+}

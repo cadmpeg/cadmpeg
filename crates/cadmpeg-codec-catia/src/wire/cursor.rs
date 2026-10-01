@@ -1,6 +1,5 @@
 //! Bounded byte cursor for CATIA record payloads.
 //!
-//! The cursor is the shared reader the per-family scan loops migrate onto.
 //! It backs the compact-int and reference-token readers (`object_ref`,
 //! `compact_uint`) and the finite-checked scalar and compound reads (`f64`,
 //! `point3`, `vector3`, `unit3`, `skip`) that drive the analytic surface

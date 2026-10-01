@@ -197,8 +197,7 @@ enum CatiaOwnerPacketPayload {
         /// Persistent identities in serialization order.
         references: Vec<u32>,
         /// Complete nonempty class-specific tail.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        tail: Vec<u8>,
+        tail: crate::families::b2::counted_owner_tail::CountedOwnerTail,
     },
 }
 
@@ -347,8 +346,14 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
                 references,
                 identity_encodings,
                 numeric_tail,
-                ..
-            } => CatiaOwnerPacketPayload::FixedNine {
+                identity_targets,
+                owner_chart,
+                boundary_cycle,
+            } => {
+                if !identity_targets.is_empty() || owner_chart.is_some() || boundary_cycle.is_some() {
+                    return Err("fixed-nine metadata must occur only at the packet level".to_owned());
+                }
+                CatiaOwnerPacketPayload::FixedNine {
                 reference_encoding,
                 references,
                 identity_encodings,
@@ -356,6 +361,7 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
                 identity_targets: wire.identity_targets,
                 owner_chart: wire.owner_chart.map(Box::new),
                 boundary_cycle: wire.boundary_cycle.map(Box::new),
+            }
             },
             counted @ CatiaOwnerPacketPayload::Counted { .. } => {
                 if !wire.identity_targets.is_empty()
@@ -618,6 +624,25 @@ impl CatiaConsolidatedCylinderPayload {
             Self::RangeOrigin { .. } => 0x62,
         }
     }
+
+    fn resolved_5a(
+        radius: cadmpeg_ir::scalar::PositiveLength,
+        u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+        frame_token: u8,
+        axis: crate::checked::RelaxedHypotUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
+    ) -> Result<Self, String> {
+        let direction = axis.get();
+        if !matches!(frame_token, 0x19 | 0x1c)
+            || direction[2] != 0.0
+            || reference_direction.get() != [-direction[1], direction[0], 0.0]
+            || !crate::families::b2::records::circle_range_is_full_turn(radius.get(), u_range.endpoints())
+        {
+            return Err("invalid layout-0x5a cylinder chart".to_owned());
+        }
+        Ok(Self::Layout5a { frame_token, axis, reference_direction })
+    }
+
 }
 
 /// One structurally complete consolidated `B:28` cylinder chart.
@@ -724,10 +749,14 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     axis,
                     reference_direction,
                 },
-            ) => CatiaConsolidatedCylinderPayload::Layout52 {
-                frame_token,
-                axis,
-                reference_direction,
+            ) => {
+                if frame_token != 0x1d || axis.get() != [1.0, 0.0, 0.0]
+                    || reference_direction.get() != [0.0, 1.0, 0.0]
+                    || !crate::families::b2::records::circle_range_is_full_turn(wire.radius.get(), wire.u_range.endpoints())
+                {
+                    return Err("invalid layout-0x52 cylinder chart".to_owned());
+                }
+                CatiaConsolidatedCylinderPayload::Layout52 { frame_token, axis, reference_direction }
             },
             (
                 0x5a,
@@ -736,11 +765,8 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     axis,
                     reference_direction,
                 },
-            ) => CatiaConsolidatedCylinderPayload::Layout5a {
-                frame_token,
-                axis,
-                reference_direction,
-            },
+            ) => CatiaConsolidatedCylinderPayload::resolved_5a(
+                wire.radius, wire.u_range, frame_token, axis, reference_direction)?,
             (
                 0x62,
                 CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
@@ -749,11 +775,17 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     reference_direction,
                     range_origin,
                 },
-            ) => CatiaConsolidatedCylinderPayload::RangeOrigin {
-                stored_vector,
-                axis,
-                reference_direction,
-                range_origin,
+            ) => {
+                let vector = stored_vector.get();
+                if axis.get() != [0.0, 1.0, 0.0]
+                    || reference_direction.get() != [vector[0], 0.0, vector[1]]
+                    || !crate::families::b2::records::circle_range_is_within_full_turn(wire.radius.get(), wire.u_range.endpoints())
+                    || !range_origin.is_finite()
+                    || range_origin.to_bits() != crate::families::b2::records::cylinder_range_origin(wire.radius.get(), wire.u_range.endpoints()).to_bits()
+                {
+                    return Err("invalid layout-0x62 cylinder chart".to_owned());
+                }
+                CatiaConsolidatedCylinderPayload::RangeOrigin { stored_vector, axis, reference_direction, range_origin }
             },
             (layout, _) => {
                 return Err(format!(
@@ -775,6 +807,7 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
 
 /// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedEmbeddedCylinderWire")]
 pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
     /// Stable native-record identity.
     id: String,
@@ -798,6 +831,42 @@ pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
     axis: crate::checked::RelaxedHypotUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
     reference_direction: crate::checked::RelaxedHypotUnitVector3,
+}
+
+#[derive(Deserialize)]
+struct CatiaConsolidatedEmbeddedCylinderWire {
+    id: String,
+    byte_offset: u64,
+    group: String,
+    object_id: u32,
+    origin: FiniteVector<3>,
+    radius: cadmpeg_ir::scalar::PositiveLength,
+    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    frame_token: u8,
+    axis: crate::checked::RelaxedHypotUnitVector3,
+    reference_direction: crate::checked::RelaxedHypotUnitVector3,
+}
+
+impl TryFrom<CatiaConsolidatedEmbeddedCylinderWire> for CatiaConsolidatedEmbeddedCylinder {
+    type Error = String;
+    fn try_from(wire: CatiaConsolidatedEmbeddedCylinderWire) -> Result<Self, Self::Error> {
+        CatiaConsolidatedCylinderPayload::resolved_5a(
+            wire.radius, wire.u_range, wire.frame_token, wire.axis, wire.reference_direction)?;
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            group: wire.group,
+            object_id: wire.object_id,
+            origin: wire.origin,
+            radius: wire.radius,
+            u_range: wire.u_range,
+            v_range: wire.v_range,
+            frame_token: wire.frame_token,
+            axis: wire.axis,
+            reference_direction: wire.reference_direction,
+        })
+    }
 }
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
@@ -8439,7 +8508,7 @@ mod consolidated_class_record_limit_tests {
         let payload_bytes = u64::try_from(
             records
                 .iter()
-                .filter(|record| matches!(record.class, 0x5b | 0x5c))
+                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
                 .map(|record| record.payload().expect("class payload").len())
                 .sum::<usize>(),
         )
@@ -8447,7 +8516,7 @@ mod consolidated_class_record_limit_tests {
         let record_count = u64::try_from(
             records
                 .iter()
-                .filter(|record| matches!(record.class, 0x5b | 0x5c))
+                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
                 .count(),
         )
         .expect("fixture records fit u64");
@@ -8541,7 +8610,7 @@ fn consolidated_cone_faces(
     }
     let mut class18_ends = HashMap::new();
     for record in records.iter().filter(|record| {
-        record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
+        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x18
     }) {
         if let Some(range) = record.range() {
             ctx.insert_hash_map(

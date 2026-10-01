@@ -134,7 +134,6 @@ impl<Tolerance: DeviationTolerance> UnitVector2<Tolerance> {
     }
 
     /// Returns the direction components.
-    #[cfg(test)]
     pub(crate) fn get(self) -> [f64; 2] {
         self.0.get()
     }

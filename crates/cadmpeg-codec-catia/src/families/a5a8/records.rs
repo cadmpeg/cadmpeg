@@ -708,7 +708,7 @@ pub(in crate::families) fn a5_nurbs_curves_from_records(
     let mut curves = Vec::new();
     for record in records
         .iter()
-        .filter(|record| record.family == ConsolidatedFamily::A && record.class == 0x16)
+        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x16)
     {
         let (Some(payload), Some(end)) = (record.payload(), record.range()) else {
             continue;
@@ -717,7 +717,7 @@ pub(in crate::families) fn a5_nurbs_curves_from_records(
             pos: record.byte_offset(),
             payload: payload.start,
             end: end.end,
-            header_token: record.header_token,
+            header_token: record.header_token(),
         };
         if let Some(curve) = parse_a5_nurbs_curve(ctx, data, frame, refusal)? {
             ctx.push_vec(&mut curves, curve, "catia_a5_nurbs_curves")?;
@@ -871,7 +871,7 @@ pub(in crate::families) fn a5_guide_curves_from_records(
     let mut curves = Vec::new();
     for record in records
         .iter()
-        .filter(|record| record.family == ConsolidatedFamily::A && record.class == 0x39)
+        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x39)
     {
         let (Some(payload), Some(end)) = (record.payload(), record.range()) else {
             continue;
@@ -880,7 +880,7 @@ pub(in crate::families) fn a5_guide_curves_from_records(
             pos: record.byte_offset(),
             payload: payload.start,
             end: end.end,
-            header_token: record.header_token,
+            header_token: record.header_token(),
         };
         if let Some(curve) = parse_a5_guide_curve(ctx, data, frame)? {
             ctx.push_vec(&mut curves, curve, "catia_a5_guide_curves")?;
@@ -1239,7 +1239,7 @@ pub(in crate::families) fn a5_freeform_curves_from_records(
     let mut curves = Vec::new();
     for record in records
         .iter()
-        .filter(|record| record.family == ConsolidatedFamily::A && record.class == 0x32)
+        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x32)
     {
         let (Some(payload), Some(end)) = (record.payload(), record.range()) else {
             continue;
@@ -1248,7 +1248,7 @@ pub(in crate::families) fn a5_freeform_curves_from_records(
             pos: record.byte_offset(),
             payload: payload.start,
             end: end.end,
-            header_token: record.header_token,
+            header_token: record.header_token(),
         };
         if let Some(curve) = parse_a5_curve(ctx, data, frame)? {
             ctx.push_vec(&mut curves, curve, "catia_a5_freeform_curves")?;
@@ -1889,7 +1889,7 @@ pub(in crate::families) fn a5_surfaces_from_records(
     let mut surfaces = Vec::new();
     for record in records
         .iter()
-        .filter(|record| record.family == ConsolidatedFamily::A && record.class == 0x34)
+        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x34)
     {
         let (Some(payload), Some(end)) = (record.payload(), record.range()) else {
             continue;
@@ -1898,7 +1898,7 @@ pub(in crate::families) fn a5_surfaces_from_records(
             pos: record.byte_offset(),
             payload: payload.start,
             end: end.end,
-            header_token: record.header_token,
+            header_token: record.header_token(),
         };
         if let Some(surface) = a5_surface(ctx, data, frame, refusal)? {
             ctx.push_vec(&mut surfaces, surface, "catia_a5_surfaces")?;
@@ -2108,7 +2108,11 @@ fn scan_a8_lane(
     let multiplicity_start = *at;
     let mut total = 0u32;
     for _ in 0..count {
-        total = total.checked_add(compact_int(data, at)?)?;
+        let multiplicity = compact_int(data, at)?;
+        if multiplicity == 0 {
+            return None;
+        }
+        total = total.checked_add(multiplicity)?;
     }
     let poles = total.checked_sub(degree.checked_add(1)?)?;
     Some((
@@ -2194,7 +2198,7 @@ fn materialize_a8_lane(
         };
         multiplicities.push(value);
     }
-    Ok(A8KnotLane::try_new(distinct, multiplicities))
+    A8KnotLane::try_new(ctx, distinct, multiplicities)
 }
 
 fn parse_a8_surface_header(
