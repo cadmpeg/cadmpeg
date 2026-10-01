@@ -816,10 +816,9 @@ pub(in super::super) fn transfer_sketches(
                 segment.offset,
             )?;
         }
-        for (relation_index, (mut constraint, offset)) in
+        for (mut constraint, offset, relation_index) in
             section_dimension_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
-                .enumerate()
         {
             let Some(relation) = definition
                 .relations

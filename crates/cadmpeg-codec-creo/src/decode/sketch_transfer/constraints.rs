@@ -2301,7 +2301,7 @@ pub(in super::super) fn section_dimension_constraints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+) -> Result<Vec<(SketchConstraint, usize, usize)>, cadmpeg_core::CodecError> {
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
     };
@@ -2323,7 +2323,7 @@ pub(in super::super) fn section_dimension_constraints(
     let saved_coordinate_witnesses =
         saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
     let mut constraints = Vec::new();
-    for relation in &relations.rows {
+    for (relation_index, relation) in relations.rows.iter().enumerate() {
         let mut coordinate_refusal = None;
         let locus_refusal = Cell::new(None);
         let candidate = (|| {
@@ -2729,6 +2729,7 @@ pub(in super::super) fn section_dimension_constraints(
                         )?),
                     },
                     relation.offset,
+                    relation_index,
                 )
             })
         })();
@@ -3756,5 +3757,63 @@ mod tests {
             admitted[0].0.id.as_str(),
             "creo:featdefs:sketch_constraint#5:relation:7"
         );
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use cadmpeg_ir::sketches::SketchId;
+    #[test]
+    fn dimension_constraints_preserve_original_row_after_skipped_candidates() {
+        let relation = crate::feature::definitions::FeatureRelation {
+            relation_id: 7,
+            used: 1,
+            operands: Vec::new(),
+            operand_vectors: None,
+            sign: 1,
+            dimension_id: 0,
+            relation_type: 0,
+            body: Vec::new(),
+            offset: 11,
+        };
+        let mut definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(crate::feature::definitions::FeatureRelationTable {
+                declared_count: 5,
+                entity_ref: None,
+                rows: vec![relation],
+                skamps: None,
+                triples: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        };
+        let table = definition.relations.as_mut().expect("relations");
+        let mut skipped = table.rows[0].clone();
+        skipped.offset = 12;
+        let mut retained = skipped.clone();
+        retained.relation_id = 8;
+        retained.offset = 13;
+        table.rows.extend([skipped, retained]);
+        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+        let constraints = crate::decode::with_test_decode_ctx(|ctx| super::section_dimension_constraints(ctx, &definition, &sketch)).expect("constraints");
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].1, 13);
+        assert_eq!(constraints[0].2, 2);
+        assert_eq!(constraints[0].0.id.as_str(), "creo:featdefs:sketch_constraint#5:relation:8");
     }
 }

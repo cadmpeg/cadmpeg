@@ -4030,7 +4030,7 @@ offset: 30,
         &duplicate_relation_id,
         &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
     )).expect("test section solve");
-    assert!(duplicate_constraints.iter().all(|(constraint, _)| matches!(
+    assert!(duplicate_constraints.iter().all(|(constraint, _, _)| matches!(
         constraint.definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
     )));
@@ -4042,7 +4042,7 @@ offset: 30,
         duplicate_constraints[1].0.id.as_str(),
         "creo:featdefs:sketch_constraint#917:relation:offset:500"
     );
-    for (constraint, _) in &duplicate_constraints {
+    for (constraint, _, _) in &duplicate_constraints {
         let SketchConstraintDefinitionInput::Native {
             native_properties,
             operands,
