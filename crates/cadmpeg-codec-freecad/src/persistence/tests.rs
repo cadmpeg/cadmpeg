@@ -1250,3 +1250,30 @@ fn duplicate_property_name_comparisons_admit_lookup_and_prefix_bytes() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "FCStd duplicate property names" && Some(limit) == ctx.resource_refusal()));
 }
+
+#[test]
+fn object_ceiling_is_resource_refusal() {
+    let document = r#"<Document><Objects Count="2"><Object name="A"/><Object name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#;
+    let xml = roxmltree::Document::parse(document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
+    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx).err().expect("object ceiling");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd object count" && limit.limit == 1
+            && limit.used + limit.additional == 2 && Some(limit) == ctx.resource_refusal()));
+}
+
+#[test]
+fn retained_property_xml_ceiling_is_resource_refusal() {
+    let payload = "a".repeat(6 * 1024 * 1024);
+    let document = format!(r#"<Properties Count="1"><Property name="P" type="App::PropertyString"><Outer><Middle><Leaf>{payload}</Leaf></Middle></Outer></Property></Properties>"#);
+    let xml = roxmltree::Document::parse(&document).expect("XML");
+    crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        let error = super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), ctx).expect_err("cumulative descendant XML ceiling");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "FCStd property retained value XML"
+                && limit.limit == 16 * 1024 * 1024 && Some(limit) == ctx.resource_refusal()));
+    });
+}

@@ -109,11 +109,10 @@ fn parse_document(
             "FCStd persistence diagnostic",
         ));
     }
-    let object_limit = usize::try_from(ctx.policy().limits.max_entities)
-        .ok()
-        .map_or(MAX_OBJECTS, |policy| policy.min(MAX_OBJECTS));
-    if declared_count > object_limit {
-        return Err(CodecError::Malformed("object count limit exceeded".into()));
+    let object_limit = ctx.policy().limits.max_entities.min(cadmpeg_core::decode::u64_from_index(MAX_OBJECTS));
+    let requested_objects = cadmpeg_core::decode::u64_from_index(declared_count);
+    if requested_objects > object_limit {
+        return Err(ctx.refuse_codec_limit("FCStd object count", object_limit, requested_objects));
     }
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(declared_count),
@@ -753,16 +752,17 @@ fn parse_properties(
             .enumerate()
         {
             let len = value.range().len();
-            retained_value_bytes = retained_value_bytes
-                .checked_add(len)
-                .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
-                .ok_or_else(|| {
-                    crate::resource::malformed_charged(
-                        ctx,
-                        format_args!("property {name} retained value XML limit exceeded"),
-                        "FCStd persistence diagnostic",
-                    )
-                })?;
+            let total = retained_value_bytes.checked_add(len).ok_or_else(|| {
+                ctx.refuse_codec_limit("FCStd property retained value XML", cadmpeg_core::decode::u64_from_index(MAX_PROPERTY_VALUE_XML_BYTES), u64::MAX)
+            })?;
+            if total > MAX_PROPERTY_VALUE_XML_BYTES {
+                return Err(ctx.refuse_codec_limit(
+                    "FCStd property retained value XML",
+                    cadmpeg_core::decode::u64_from_index(MAX_PROPERTY_VALUE_XML_BYTES),
+                    cadmpeg_core::decode::u64_from_index(total),
+                ));
+            }
+            retained_value_bytes = total;
             values.push(ValueRecord {
                 tag: ctx.copy_retained_text(value.tag_name().name(), "FCStd value tag")?,
                 order: value_order,

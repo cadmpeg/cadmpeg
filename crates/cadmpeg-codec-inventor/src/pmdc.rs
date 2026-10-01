@@ -484,9 +484,10 @@ impl<'a> Cursor<'a> {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
         })?;
         if units > 1_048_576 {
-            return Err(CodecError::malformed(format_args!(
-                "Inventor PmDc {field} exceeds 1048576 code units"
-            )));
+            if self.source.counted(cadmpeg_core::decode::u64_from_index(units), 2).is_none() {
+                return Err(CodecError::malformed(format_args!("Inventor PmDc {field} UTF-16 payload is truncated")));
+            }
+            return Err(ctx.refuse_codec_limit("Inventor PmDc UTF-16 code units", 1_048_576, cadmpeg_core::decode::u64_from_index(units)));
         }
         crate::reader::utf16_text(
             ctx,
@@ -700,6 +701,22 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn pmdc_utf16_local_ceiling_refuses_resources_for_complete_payload() {
+        let units = 1_048_577_u32;
+        let mut bytes = units.to_le_bytes().to_vec();
+        bytes.extend(std::iter::repeat_n(0_u8, usize::try_from(units).expect("length") * 2));
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        let error = Cursor::new(root).utf16(&ctx, "name").expect_err("local string ceiling");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == "Inventor PmDc UTF-16 code units"
+                && limit.limit == 1_048_576 && Some(limit) == ctx.resource_refusal()));
+        let truncated = units.to_le_bytes();
+        let (ctx, root) = DecodeContext::from_root_bytes(&truncated, &arena, &DecodePolicy::service()).expect("root");
+        assert!(matches!(Cursor::new(root).utf16(&ctx, "name"), Err(CodecError::Malformed(_))));
+    }
 
     #[test]
     fn typed_lists_reject_marker_metadata_width_disagreement() {
