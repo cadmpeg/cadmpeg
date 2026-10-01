@@ -1467,10 +1467,13 @@ fn branching_instance_member_limit_propagates_resource_refusal() {
         let mut context =
             crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.set_expansion_limits([16, 1, 128]);
-        let error = context.decode_geometry().expect_err("wide reference exceeds one member");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance member limit" && refusal.limit == 1 && refusal.additional == 1));
-
+        let error = context
+            .decode_geometry()
+            .expect_err("wide reference exceeds one member");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance member limit" && refusal.limit == 1 && refusal.additional == 1)
+        );
     });
 }
 
@@ -1691,7 +1694,9 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
 fn instance_reference_limit_propagates_resource_refusal() {
     let archive = ArchiveVersion::V5;
     let reference = object_record_with_payload(
-        archive, 0x1000, INSTANCE_REFERENCE_CLASS,
+        archive,
+        0x1000,
+        INSTANCE_REFERENCE_CLASS,
         &instance_reference_payload([0x41; 16], transform(1.0, [0.0; 3])),
     );
     let scan = scan_with_objects(&[reference]);
@@ -1699,32 +1704,57 @@ fn instance_reference_limit_propagates_resource_refusal() {
         let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
         context.set_expansion_limits([0, 16, 128]);
         let error = context.decode_geometry().expect_err("zero reference limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance reference limit" && refusal.limit == 0 && refusal.additional == 1));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance reference limit" && refusal.limit == 0 && refusal.additional == 1)
+        );
     });
 }
 
 #[test]
 fn instance_local_depth_limit_propagates_resource_refusal() {
     let archive = ArchiveVersion::V5;
-    let definitions: Vec<_> = (1u8..=65).map(|index| {
-        let members = if index == 65 { Vec::new() } else { vec![[index + 1; 16]] };
-        static_definition([index; 16], &members)
-    }).collect();
-    let objects: Vec<_> = (1u8..=65).map(|index| {
-        object_record_with_payload(archive, 0x1000, INSTANCE_REFERENCE_CLASS,
-            &instance_reference_payload([index; 16], transform(1.0, [0.0; 3])))
-    }).collect();
+    let definitions: Vec<_> = (1u8..=65)
+        .map(|index| {
+            let members = if index == 65 {
+                Vec::new()
+            } else {
+                vec![[index + 1; 16]]
+            };
+            static_definition([index; 16], &members)
+        })
+        .collect();
+    let objects: Vec<_> = (1u8..=65)
+        .map(|index| {
+            object_record_with_payload(
+                archive,
+                0x1000,
+                INSTANCE_REFERENCE_CLASS,
+                &instance_reference_payload([index; 16], transform(1.0, [0.0; 3])),
+            )
+        })
+        .collect();
     let mut scan = scan_with_objects(&objects);
     set_test_units(&mut scan, 1.0);
     for index in 1u8..=65 {
-        set_identity(&mut scan, usize::from(index - 1), [index; 16], "reference", None, true);
+        set_identity(
+            &mut scan,
+            usize::from(index - 1),
+            [index; 16],
+            "reference",
+            None,
+            true,
+        );
     }
     install_definitions(&mut scan, definitions);
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
-        let error = context.decode_geometry().expect_err("65 reference levels exceed the local slice");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance depth limit" && refusal.limit == 64 && refusal.additional == 1));
+        let error = context
+            .decode_geometry()
+            .expect_err("65 reference levels exceed the local slice");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance depth limit" && refusal.limit == 64 && refusal.additional == 1)
+        );
     });
 }

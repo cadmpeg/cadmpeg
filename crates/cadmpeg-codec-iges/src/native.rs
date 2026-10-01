@@ -2135,10 +2135,10 @@ impl OccurrenceExpansion<'_, '_> {
             if occurrences.len() >= self.output_limit {
                 path.pop();
                 return Err(self.ctx.refuse_codec_limit(
-                "iges_product_occurrence_output",
-                cadmpeg_core::decode::u64_from_index(self.output_limit),
-                cadmpeg_core::decode::u64_from_index(occurrences.len()) + 1,
-            ));
+                    "iges_product_occurrence_output",
+                    cadmpeg_core::decode::u64_from_index(self.output_limit),
+                    cadmpeg_core::decode::u64_from_index(occurrences.len()) + 1,
+                ));
             }
             if self
                 .entries

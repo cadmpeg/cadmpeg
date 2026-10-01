@@ -167,8 +167,9 @@ impl IgesLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::OccurrenceRootInferenceBlocked
-            | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
+            Self::OccurrenceRootInferenceBlocked | Self::OccurrencePlacementMalformed => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
@@ -247,8 +248,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "occurrence.expansion-output-truncated",
-                "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
                 "entity.retained-unprojected",

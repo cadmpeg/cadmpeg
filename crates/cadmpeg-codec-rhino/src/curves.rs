@@ -450,11 +450,13 @@ pub(crate) fn decode_inner(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx.refuse_codec_limit(
-            "Rhino curve depth limit",
-            cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-            cadmpeg_core::decode::u64_from_index(depth),
-        ).into());
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     if class_uuid == CURVE_ON_SURFACE {
         let construction =
@@ -553,11 +555,13 @@ pub(crate) fn decode_embedded_curve(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx.refuse_codec_limit(
-            "Rhino embedded curve depth limit",
-            cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-            cadmpeg_core::decode::u64_from_index(depth),
-        ).into());
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino embedded curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -614,11 +618,13 @@ pub(crate) fn decode_embedded_curve_2d(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx.refuse_codec_limit(
-            "Rhino embedded C2 curve depth limit",
-            cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-            cadmpeg_core::decode::u64_from_index(depth),
-        ).into());
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino embedded C2 curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1309,11 +1315,13 @@ pub(crate) fn decode_inner_2d(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino C2 curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx.refuse_codec_limit(
-            "Rhino C2 curve depth limit",
-            cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-            cadmpeg_core::decode::u64_from_index(depth),
-        ).into());
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino C2 curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
@@ -2754,8 +2762,10 @@ mod tests {
             MAX_CURVE_DEPTH + 1,
         )
         .expect_err("excessive cross-family recursion must stop before payload parsing");
-        assert!(matches!(error, GeometryError::Codec(CodecError::ResourceLimit(refusal))
-            if refusal.operation == "Rhino curve depth limit" && refusal.limit == 32 && refusal.additional == 1));
+        assert!(
+            matches!(error, GeometryError::Codec(CodecError::ResourceLimit(refusal))
+            if refusal.operation == "Rhino curve depth limit" && refusal.limit == 32 && refusal.additional == 1)
+        );
     }
     #[test]
     fn curve_depth_gates_preserve_context_refusal() {
@@ -2764,12 +2774,40 @@ mod tests {
                 let mut reader = BoundedReader::new(&[], 0, 0).expect("empty reader");
                 let depth = MAX_CURVE_DEPTH + 1;
                 let error = match gate {
-                    0 => super::decode_inner(ctx, &[], LINE, 0..0, MillimeterScale::IDENTITY, ArchiveVersion::V8, depth).expect_err("depth"),
-                    1 => super::decode_inner_2d(ctx, &[], LINE, 0..0, ArchiveVersion::V8, depth).expect_err("depth"),
-                    2 => super::decode_embedded_curve(ctx, &[], &mut reader, MillimeterScale::IDENTITY, ArchiveVersion::V8, depth).expect_err("depth"),
-                    _ => super::decode_embedded_curve_2d(ctx, &[], &mut reader, MillimeterScale::IDENTITY, ArchiveVersion::V8, depth).expect_err("depth"),
+                    0 => super::decode_inner(
+                        ctx,
+                        &[],
+                        LINE,
+                        0..0,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                    1 => super::decode_inner_2d(ctx, &[], LINE, 0..0, ArchiveVersion::V8, depth)
+                        .expect_err("depth"),
+                    2 => super::decode_embedded_curve(
+                        ctx,
+                        &[],
+                        &mut reader,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                    _ => super::decode_embedded_curve_2d(
+                        ctx,
+                        &[],
+                        &mut reader,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
                 };
-                let GeometryError::Codec(CodecError::ResourceLimit(refusal)) = error else { panic!("depth must be a resource refusal"); };
+                let GeometryError::Codec(CodecError::ResourceLimit(refusal)) = error else {
+                    panic!("depth must be a resource refusal");
+                };
                 assert_eq!(refusal.limit, 32);
                 assert_eq!(refusal.additional, 1);
                 assert_eq!(ctx.resource_refusal(), Some(refusal));
