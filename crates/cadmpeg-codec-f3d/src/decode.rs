@@ -5493,8 +5493,8 @@ fn try_decode_brep(
     // `End-of-ASM-data` record ends at EOF without the `0x11` terminator, so
     // it needs the EOF-tolerant framer used for the history partition.
     let framed = match *solved_record_limit {
-        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
-        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(ctx, bytes, start, limit, width, None),
+        None => sab::frame_history(ctx, bytes, start, bytes.len(), width, None),
     };
     let records = match framed {
         Ok(r) if !r.is_empty() => r,

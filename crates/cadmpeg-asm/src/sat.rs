@@ -581,11 +581,13 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
         )?;
-        ctx.admit_entities(
-            cadmpeg_core::decode::u64_from_index(records.len() + 1),
-            &mut admitted_entities,
-            "admit SAT native records",
-        )?;
+        let population = records.len().checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("SAT record population", u64::MAX, u64::MAX)
+        })?;
+        let population = cadmpeg_core::decode::u64_from_index(population);
+        if population > admitted_entities {
+            ctx.admit_entities(population, &mut admitted_entities, "admit SAT native records")?;
+        }
 
         ctx.reserve_vec(&mut records, 1, "frame SAT record")?;
         records.push(Record {
