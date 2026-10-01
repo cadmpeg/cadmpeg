@@ -107,6 +107,15 @@ pub(super) fn model_root(
     let bytes = u64::try_from(manifest_bytes.len())
         .map_err(|_| ctx.refuse_codec_limit("parse F3Z manifest JSON", 0, u64::MAX))?;
     let _reservation = ctx.reserve_scoped(bytes, "parse F3Z manifest JSON")?;
+    if !crate::json_budget::preflight(
+        ctx,
+        manifest_bytes,
+        "preflight F3Z manifest JSON",
+        "scan F3Z manifest JSON",
+        "admit F3Z manifest JSON nodes",
+    )? {
+        return Err(CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON")));
+    }
     let manifest = serde_json::from_slice::<ManifestJson>(manifest_bytes).map_err(|error| {
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
     })?;
@@ -330,6 +339,33 @@ fn model_root_member(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn manifest_extensions_preserve_work_and_depth_refusals() {
+        let bytes = crate::test_support::assembly_test::f3z_archive(
+            r#"model.f3d","extension":[[[0]]],"spare":"unused"#,
+            &[("model.f3d", b"model")],
+        );
+        crate::test_support::with_decode_context(|scan_ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+            let scan = crate::container::scan(scan_ctx, root).unwrap();
+            for dimension in [cadmpeg_core::decode::ResourceDimension::WorkUnits, cadmpeg_core::decode::ResourceDimension::RecursionDepth] {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                    cadmpeg_core::decode::ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 1,
+                    _ => unreachable!(),
+                }
+                crate::test_support::with_decode_policy(&policy, |ctx| {
+                    let error = super::model_root(ctx, &scan).unwrap_err();
+                    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("manifest scan must refuse"); };
+                    assert_eq!(limit.dimension, dimension);
+                    assert_eq!(limit.operation, "scan F3Z manifest JSON");
+                    assert_eq!(Some(limit), ctx.resource_refusal());
+                });
+            }
+        });
+    }
+
     #[test]
     fn f3z_member_index_refuses_collection_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
