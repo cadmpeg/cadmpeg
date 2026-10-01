@@ -193,9 +193,11 @@ impl FieldReader<'_> {
                 reason: "field is not valid UTF-8".to_string(),
             })?;
         let word = if retained {
-            ctx.copy_retained_text(word, "retain SAT record name")?
+            ctx.copy_retained_text(word, "retain SAT record name")
+                .map_err(StreamFailure::from_operation)?
         } else {
-            ctx.copy_scoped_text(word, scratch, "SAT field")?
+            ctx.copy_scoped_text(word, scratch, "SAT field")
+                .map_err(StreamFailure::from_operation)?
         };
         Ok(Some((start, word)))
     }
@@ -228,7 +230,9 @@ impl FieldReader<'_> {
                 offset: self.pos + error.valid_up_to(),
                 reason: format!("@{len} string is not valid UTF-8"),
             })?;
-        let payload = ctx.copy_scoped_text(payload, scratch, "SAT string payload")?;
+        let payload = ctx
+            .copy_scoped_text(payload, scratch, "SAT string payload")
+            .map_err(StreamFailure::from_operation)?;
         self.pos = end;
         Ok(payload)
     }
@@ -315,7 +319,9 @@ fn counted_string(
         offset: at + *pos + error.valid_up_to(),
         reason: format!("header {what} string is not valid UTF-8"),
     })?;
-    let value = ctx.copy_retained_text(value, "retain SAT header string")?;
+    let value = ctx
+        .copy_retained_text(value, "retain SAT header string")
+        .map_err(StreamFailure::from_operation)?;
     *pos = end;
     Ok(value)
 }
@@ -380,20 +386,24 @@ fn parse_header(
         }
         .into());
     }
-    let float = |field: Option<&[u8]>, what: &str| -> Result<f64, StreamError> {
+    let float = |field: Option<&[u8]>, what: &str| -> Result<f64, StreamFailure> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
             .and_then(|field| field.parse().ok())
-            .ok_or_else(|| StreamError {
-                format: StreamFormat::Text,
-                offset: at,
-                reason: format!("header line has no {what} field"),
+            .ok_or_else(|| {
+                StreamFailure::Malformed(StreamError {
+                    format: StreamFormat::Text,
+                    offset: at,
+                    reason: format!("header line has no valid {what} value"),
+                })
             })
     };
-    let scale = PositiveReal::new(float(line3[0], "scale")?).ok_or_else(|| StreamError {
-        format: StreamFormat::Text,
-        offset: at,
-        reason: "header scale must be finite and positive".to_string(),
+    let scale = PositiveReal::new(float(line3[0], "scale")?).ok_or_else(|| {
+        StreamFailure::Malformed(StreamError {
+            format: StreamFormat::Text,
+            offset: at,
+            reason: "header scale must be finite and positive".to_string(),
+        })
     })?;
     let raw_resabs = float(line3[1], "resabs")?;
     let raw_resnor = float(line3[2], "resnor")?;
@@ -401,28 +411,27 @@ fn parse_header(
         NonNegativeReal::new(raw_resabs),
         NonNegativeReal::new(raw_resnor),
     ) else {
-        return Err(StreamError {
+        return Err(StreamFailure::Malformed(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header tolerances must be finite and nonnegative".to_string(),
-        }
-        .into());
+        }));
     };
     let normalized_resabs = resabs_cm(scale, resabs);
     if resabs.get() > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
-        return Err(StreamError {
+        return Err(StreamFailure::NotImplemented(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header resabs cannot be represented in centimetres".to_string(),
-        }
-        .into());
+        }));
     }
-    let normalized_resabs_cm =
-        NonNegativeReal::new(normalized_resabs).ok_or_else(|| StreamError {
+    let normalized_resabs_cm = NonNegativeReal::new(normalized_resabs).ok_or_else(|| {
+        StreamFailure::NotImplemented(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header resabs cannot be represented in centimetres".to_string(),
-        })?;
+        })
+    })?;
     Ok(TextHeader {
         save_format_version,
         entity_count,
@@ -450,7 +459,39 @@ fn record_error_reason(
         format_args!("record `{name}` {description}"),
         "SAT record error text",
     )
-    .map_err(StreamFailure::Resource)
+    .map_err(StreamFailure::from_operation)
+}
+
+/// Read the header and final branch marker without framing entity records.
+pub fn parse_container(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(TextHeader, Terminator), StreamFailure> {
+    // Header field scans and the final marker search share this admission.
+    for _ in 0..3 {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "SAT container framing",
+        )
+        .map_err(StreamFailure::from_operation)?;
+    }
+    let mut position = 0;
+    let header = parse_header(ctx, bytes, &mut position)?;
+    let tail = bytes.trim_ascii_end();
+    let marker = tail.rsplit(|byte| is_ws(*byte)).next();
+    let branch = match marker {
+        Some(b"End-of-ASM-data") => Terminator::Asm,
+        Some(b"End-of-ACIS-data") => Terminator::Acis,
+        _ => {
+            return Err(StreamError {
+                format: StreamFormat::Text,
+                offset: position,
+                reason: "text container has no final branch marker".to_string(),
+            }
+            .into())
+        }
+    };
+    Ok((header, branch))
 }
 
 /// Parse a complete text stream into its header and typed record table.
@@ -469,10 +510,13 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         header.entity_count,
         &mut admitted_entities,
         "preflight SAT header entities",
-    )?;
+    )
+    .map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
     'stream: loop {
-        let mut scratch = ctx.reserve_scoped(0, "frame SAT record")?;
+        let mut scratch = ctx
+            .reserve_scoped(0, "frame SAT record")
+            .map_err(StreamFailure::from_operation)?;
         let Some((rec_start, name)) = reader.next_field(ctx, &mut scratch, true)? else {
             break;
         };
@@ -532,39 +576,32 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 Prim::Close => subtype_depth -= 1,
                 _ => {}
             }
-            ctx.charge_work(1, "lex SAT primitive")?;
-            ctx.push_scoped_vec(&mut scratch, &mut prims, prim, "frame SAT primitive")?;
+            ctx.charge_work(1, "lex SAT primitive")
+                .map_err(StreamFailure::from_operation)?;
+            ctx.push_scoped_vec(&mut scratch, &mut prims, prim, "frame SAT primitive")
+                .map_err(StreamFailure::from_operation)?;
         }
         let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
         let candidates = head_shapes(head).len() + 1;
         let possible_tokens = prims
             .len()
             .checked_mul(candidates)
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))
+            .map_err(StreamFailure::from_operation)?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(possible_tokens),
             "type SAT tokens",
-        )?;
+        )
+        .map_err(StreamFailure::from_operation)?;
         let token_bytes = possible_tokens
             .checked_mul(std::mem::size_of::<Token>())
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))?;
-        scratch.grow(cadmpeg_core::decode::u64_from_index(token_bytes))?;
-        let string_bytes = prims
-            .iter()
-            .try_fold(0usize, |used, prim| {
-                let extra = match prim {
-                    Prim::Str(value) | Prim::Word(value) => value.len(),
-                    _ => 0,
-                };
-                used.checked_add(extra)
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(string_bytes),
-            "retain SAT typed strings",
-        )?;
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))
+            .map_err(StreamFailure::from_operation)?;
+        scratch
+            .grow(cadmpeg_core::decode::u64_from_index(token_bytes))
+            .map_err(StreamFailure::from_operation)?;
         let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
-            TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
+            TypedRecordFailure::Resource(error) => StreamFailure::from_operation(error),
             TypedRecordFailure::Type(failure) => {
                 let error = StreamError {
                     format: StreamFormat::Text,
@@ -580,21 +617,25 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
-        )?;
+        )
+        .map_err(StreamFailure::from_operation)?;
         let population = records
             .len()
             .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT record population", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT record population", u64::MAX, u64::MAX))
+            .map_err(StreamFailure::from_operation)?;
         let population = cadmpeg_core::decode::u64_from_index(population);
         if population > admitted_entities {
             ctx.admit_entities(
                 population,
                 &mut admitted_entities,
                 "admit SAT native records",
-            )?;
+            )
+            .map_err(StreamFailure::from_operation)?;
         }
 
-        ctx.reserve_vec(&mut records, 1, "frame SAT record")?;
+        ctx.reserve_vec(&mut records, 1, "frame SAT record")
+            .map_err(StreamFailure::from_operation)?;
         records.push(Record {
             index: records.len(),
             name,
@@ -1600,6 +1641,9 @@ fn type_subtype(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if type_subtype_tabled(cur, out).is_some() {
         return Some(());
     }
+    if cur.resource.is_some() {
+        return None;
+    }
     cur.pos = scope_start;
     out.truncate(out_mark);
     fallback_scope(cur, out)
@@ -1611,9 +1655,20 @@ fn type_subtype(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
 /// record with an untypable interior falls back as a whole instead of
 /// decoding around a degraded nested construction.
 fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+    if cur.resource.is_some() {
+        return None;
+    }
     if !matches!(cur.peek(), Some(Prim::Open)) {
         return None;
     }
+    let ctx = cur.ctx;
+    let _depth = match ctx.enter_nested("SAT subtype typing") {
+        Ok(depth) => depth,
+        Err(error) => {
+            cur.resource = Some(error);
+            return None;
+        }
+    };
     let scope_start = cur.pos;
     let out_mark = out.len();
     cur.bump();
@@ -1822,6 +1877,61 @@ fn type_record(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn sat_container_framing_admits_work_before_header_scan() {
+        let source = asm_stream("");
+        crate::test_support::with_service_context(&source, |service| {
+            let mut policy = *service.policy();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error =
+                super::parse_container(&ctx, &source).expect_err("scan work must refuse first");
+            let StreamFailure::Resource(refusal) = error else {
+                panic!("resource refusal: {error:?}");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(refusal.operation, "SAT container framing");
+            assert_eq!(refusal.used, 0);
+            assert_eq!(
+                refusal.additional,
+                cadmpeg_core::decode::u64_from_index(source.len())
+            );
+        })
+        .expect("service test context");
+    }
+
+    #[test]
+    fn sat_subtype_typing_refuses_depth_before_recursive_descent() {
+        let prefix = "{ cyl_spl_sur 0 intcurve forward { int_int_cur 0 full nubs 1 open 2 0 2 1 2 0 0 0 1 0 0 2 0 0 3 0 0 0 spline forward ";
+        for (repetitions, limit) in [(1, 0), (4096, 2)] {
+            let source = asm_stream(&format!(
+                "spline $-1 -1 $-1 forward {}{} #\n",
+                prefix.repeat(repetitions),
+                "} } ".repeat(repetitions),
+            ));
+            crate::test_support::with_service_context(&source, |service| {
+                let mut policy = *service.policy();
+                policy.limits.max_recursion_depth = limit;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                    .expect("source fits input limit");
+                let error = super::parse(&ctx, &source).expect_err("depth must refuse");
+                let StreamFailure::Resource(refusal) = error else {
+                    panic!("expected resource refusal, got {error:?}");
+                };
+                assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+                assert_eq!(refusal.operation, "SAT subtype typing");
+                assert_eq!(refusal.limit, limit);
+                assert_eq!(refusal.used, limit);
+                assert_eq!(refusal.additional, 1);
+            })
+            .expect("fixture fits service profile");
+        }
+    }
+
+    #[test]
     fn sat_float_array_values_refuse_collection_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let arena = DecodeArena::new();
@@ -1871,7 +1981,7 @@ mod tests {
         policy.limits.max_collection_items = max_items;
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
         let error = super::parse(&ctx, &source).expect_err("collection refusal");
-        let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+        let StreamFailure::Resource(limit) = error else {
             panic!("expected resource refusal: {error:?}")
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -1970,7 +2080,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("resource limit must refuse");
-            let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+            let StreamFailure::Resource(limit) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(limit.dimension, expected);
@@ -2013,7 +2123,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("string limit must refuse");
-            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+            let StreamFailure::Resource(refusal) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(refusal.dimension, dimension);
@@ -2024,8 +2134,8 @@ mod tests {
     #[test]
     fn sat_typed_string_copies_refuse_retained_limit() {
         for (body, limit) in [
-            ("mystery @3 abc #\n", 73),
-            ("asmheader $-1 -1 @3 abc #\n", 75),
+            ("mystery @3 abc #\n", 70),
+            ("asmheader $-1 -1 @3 abc #\n", 72),
         ] {
             let source = asm_stream(body);
             let arena = DecodeArena::new();
@@ -2034,11 +2144,52 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("typed string limit must refuse");
-            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+            let StreamFailure::Resource(refusal) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(refusal.operation, "retain SAT typed string");
+        }
+    }
+
+    #[test]
+    fn sat_typed_text_charges_only_its_retained_copy() {
+        for (body, name, payload, token_count) in [
+            ("mystery @4 test #\n", "mystery", 4, 1),
+            (
+                "face $-1 -1 $-1 $-1 $-1 $-1 $-1 $-1 forward single #\n",
+                "face",
+                0,
+                10,
+            ),
+        ] {
+            let source = asm_stream(body);
+            crate::test_support::with_service_context(&source, |service| {
+                let mut policy = *service.policy();
+                // Header strings, record and terminator names, typed payload,
+                // and retained tokens are the surviving allocations.
+                policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                    61 + name.len()
+                        + "End-of-ASM-data".len()
+                        + payload
+                        + token_count * std::mem::size_of::<Token>(),
+                );
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                    .expect("source fits input limit");
+                let stream = super::parse(&ctx, &source).expect("one retained text copy fits");
+                assert_eq!(stream.records.len(), 1);
+                assert_eq!(stream.records[0].tokens.len(), token_count);
+                if payload != 0 {
+                    assert_eq!(stream.records[0].tokens[0], Token::Str("test".into()));
+                } else {
+                    assert_eq!(
+                        &stream.records[0].tokens[8..],
+                        &[Token::False, Token::False]
+                    );
+                }
+            })
+            .expect("service test context");
         }
     }
 
@@ -2078,7 +2229,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("error text exceeds retained limit");
-            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+            let StreamFailure::Resource(refusal) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
@@ -2097,8 +2248,14 @@ mod tests {
                 | StreamFailure::Malformed(error)
                 | StreamFailure::NotImplemented(error),
             ) => Err(error),
+            Err(StreamFailure::Operation(error)) => {
+                panic!("test context operation failed: {error}")
+            }
             Err(StreamFailure::Resource(error)) => {
-                panic!("test stream exhausted a resource: {error}")
+                panic!(
+                    "test stream exhausted a resource: {}",
+                    StreamFailure::Resource(error)
+                )
             }
         }
     }

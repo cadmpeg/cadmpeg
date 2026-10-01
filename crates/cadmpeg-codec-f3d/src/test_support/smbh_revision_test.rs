@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
 use crate::test_support::smbh_blocks_test::{
     generated_curve_block, generated_pcurve_block, generated_surface_block,
@@ -54,7 +55,9 @@ pub(crate) fn synthetic_revision_surface_smbh(
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -204,7 +207,9 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
 /// The subtype span of the synthetic stream's revision-gated surface record.
 pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(smbh).unwrap();
-    let limit = asm_header::solved_record_limit(smbh).unwrap();
+    let limit = asm_header::solved_record_limit(&service_decode_context(), smbh)
+        .expect("history scan")
+        .unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         smbh,
         start,

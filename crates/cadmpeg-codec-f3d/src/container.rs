@@ -439,10 +439,15 @@ pub(crate) fn scan<'a>(
         let buf = view.window();
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
-                asm_header::parse(ctx, buf)?.map(|header| KernelFraming::Asm {
-                    solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
-                    header,
-                })
+                match asm_header::parse(ctx, buf)? {
+                    Some(header) => Some(KernelFraming::Asm {
+                        solved_record_limit: asm_header::solved_record_limit_with_header(
+                            ctx, buf, &header,
+                        )?,
+                        header,
+                    }),
+                    None => None,
+                }
             } else {
                 acis_header::parse(ctx, buf)?.map(KernelFraming::Acis)
             };
@@ -706,7 +711,12 @@ pub(crate) fn scan<'a>(
             Err(cadmpeg_asm::stream_error::StreamFailure::NotImplemented(error)) => {
                 TextBrepFraming::UnsupportedLength(error)
             }
-            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
+                return Err(error.into())
+            }
+            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+                return Err(error.into_codec_error())
+            }
         };
         ctx.reserve_map(&mut scan.text_breps, 1, "retain F3D text B-rep framing")?;
         let name = ctx.copy_retained_text(&entry.name, "retain F3D text B-rep name")?;
