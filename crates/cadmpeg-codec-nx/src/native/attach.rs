@@ -1391,17 +1391,6 @@ fn resolve_rm_face_color_bindings(
             source_offset,
         });
     }
-    let sort_work = bindings.len().checked_mul(bindings.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX RM face color binding order",
-            0,
-            cadmpeg_core::decode::u64_from_index(bindings.len()),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "NX RM face color binding order",
-    )?;
     ctx.stable_sort_by(
         &mut bindings,
         |left, right| left.face_id.cmp(&right.face_id),
@@ -1937,17 +1926,6 @@ fn attach_initial_segment_bodies(
         return Ok(None);
     }
 
-    let sorting_work = body_count.checked_mul(body_count).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX retained-history body order",
-            0,
-            cadmpeg_core::decode::u64_from_index(body_count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sorting_work),
-        "NX retained-history body order",
-    )?;
     let (mut sorted_bodies, _sorting) =
         ctx.temporary_vec(body_count, "NX retained-history body order")?;
     sorted_bodies.extend(&ir.model.bodies);
@@ -6450,17 +6428,6 @@ fn attach_sketch_graph(
         )? {
             return Ok(None);
         }
-        let sort_work = entities.len().checked_mul(entities.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sketch entity order",
-                0,
-                cadmpeg_core::decode::u64_from_index(entities.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
-            "NX sketch entity order",
-        )?;
         ctx.stable_sort_by(
             &mut entities,
             |(first_offset, first), (second_offset, second)| {
@@ -6645,17 +6612,6 @@ fn attach_sketch_graph(
     )? {
         return Ok(None);
     }
-    let sort_work = entities.len().checked_mul(entities.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX sketch entity order",
-            0,
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "NX sketch entity order",
-    )?;
     ctx.stable_sort_by(
         &mut entities,
         |(first_offset, first), (second_offset, second)| {
@@ -7338,7 +7294,6 @@ fn attach_parasolid_topology_string_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid string attribute lookups")?;
     let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .strings
@@ -7354,20 +7309,6 @@ fn attach_parasolid_topology_string_attributes(
         "NX Parasolid attribute use groups",
     )?;
     for uses in uses_by_entity.values_mut() {
-        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid string attribute ordering",
-                0,
-                cadmpeg_core::decode::u64_from_index(uses.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "NX Parasolid string attribute ordering",
-        )?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-            uses.as_slice(),
-        )))?;
         ctx.stable_sort_by(
             uses,
             |left, right| left.position.cmp(&right.position),
@@ -8300,7 +8241,6 @@ fn attach_parasolid_topology_numeric_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid numeric attribute lookups")?;
     let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .integers
@@ -8323,20 +8263,6 @@ fn attach_parasolid_topology_numeric_attributes(
         "NX Parasolid attribute use groups",
     )?;
     for uses in uses_by_entity.values_mut() {
-        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid numeric attribute ordering",
-                0,
-                cadmpeg_core::decode::u64_from_index(uses.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "NX Parasolid numeric attribute ordering",
-        )?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-            uses.as_slice(),
-        )))?;
         ctx.stable_sort_by(
             uses,
             |left, right| left.position.cmp(&right.position),
@@ -8438,7 +8364,6 @@ fn attach_parasolid_topology_structured_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid structured attribute lookups")?;
     let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .vectors
@@ -8475,20 +8400,6 @@ fn attach_parasolid_topology_structured_attributes(
         "NX Parasolid attribute use groups",
     )?;
     for uses in uses_by_entity.values_mut() {
-        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid structured attribute ordering",
-                0,
-                cadmpeg_core::decode::u64_from_index(uses.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "NX Parasolid structured attribute ordering",
-        )?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-            uses.as_slice(),
-        )))?;
         ctx.stable_sort_by(
             uses,
             |left, right| left.position.cmp(&right.position),

@@ -632,11 +632,6 @@ pub(super) fn resolve_slot_marker_arcs(
             curves.push(*marker);
         }
     }
-    let curve_count = cadmpeg_core::decode::u64_from_index(curves.len());
-    let curve_sort_work = curve_count
-        .checked_mul(u64::from(usize::BITS - curves.len().leading_zeros()))
-        .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT slot curves", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(curve_sort_work, "sort SLDPRT slot curves")?;
     ctx.sort_unstable_by(
         &mut curves,
         |left, right| left.offset().cmp(&right.offset()),
@@ -671,11 +666,6 @@ pub(super) fn resolve_slot_marker_arcs(
             points.push(*marker);
         }
     }
-    let point_count = cadmpeg_core::decode::u64_from_index(points.len());
-    let point_sort_work = point_count
-        .checked_mul(u64::from(usize::BITS - points.len().leading_zeros()))
-        .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT slot points", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(point_sort_work, "sort SLDPRT slot points")?;
     ctx.sort_unstable_by(
         &mut points,
         |left, right| left.offset().cmp(&right.offset()),
@@ -1185,17 +1175,6 @@ pub(super) fn resolve_connected_marker_arcs(
                 endpoint_refs.push(reference);
             }
         }
-        let endpoint_count = cadmpeg_core::decode::u64_from_index(endpoint_refs.len());
-        let endpoint_sort_work = endpoint_count
-            .checked_mul(u64::from(usize::BITS - endpoint_refs.len().leading_zeros()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "sort SLDPRT connected arc endpoints",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        ctx.charge_work(endpoint_sort_work, "sort SLDPRT connected arc endpoints")?;
         ctx.sort_unstable_by(
             &mut endpoint_refs,
             Ord::cmp,

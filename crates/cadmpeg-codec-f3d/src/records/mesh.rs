@@ -320,19 +320,8 @@ impl DesignMeshTextureTable {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<&DesignMeshTextureResource>, CodecError> {
         let operation = "order F3D mesh texture resources";
-        let count = u64::try_from(self.resources.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
         let mut resources = ctx.collection_vec(self.resources.len(), operation)?;
         resources.extend(&self.resources);
-        let passes = if self.resources.len() < 2 {
-            0
-        } else {
-            u64::from(usize::BITS - (self.resources.len() - 1).leading_zeros())
-        };
-        let work = count
-            .checked_mul(passes)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-        ctx.charge_work(work, operation)?;
         ctx.stable_sort_by(
             &mut resources,
             |a, b| a.ordinal.cmp(&b.ordinal),

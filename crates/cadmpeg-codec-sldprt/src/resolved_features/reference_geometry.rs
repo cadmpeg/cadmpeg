@@ -1795,10 +1795,6 @@ pub(crate) fn enrich_history_sketch_block_references(
                 ctx.reserve_collection_vec(&mut names, 1, "collect SLDPRT sketch block names")?;
                 names.push(name);
             }
-            ctx.charge_work(
-                u64_from_index(names.len()),
-                "sort SLDPRT sketch block names",
-            )?;
             ctx.stable_sort_by(
                 &mut names,
                 |left, right| left.offset.cmp(&right.offset),

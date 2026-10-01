@@ -303,7 +303,7 @@ pub(crate) fn bind_history_classes(
         |startup| {
             startup
                 .iter()
-                .fold(0usize, |bytes, class| bytes.saturating_add(class.len()))
+                .fold(0usize, |bytes, class| bytes + class.len())
         },
         "sort SLDPRT native startup classes",
     )?;

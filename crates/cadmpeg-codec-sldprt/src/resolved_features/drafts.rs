@@ -469,13 +469,6 @@ pub(super) fn draft_operand_candidates(
             objects.push((name.offset, feature));
         }
     }
-    let count = u64::try_from(objects.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let comparisons_per_item = u64::from(objects.len().checked_ilog2().unwrap_or(0)) + 1;
-    let sort_work = count
-        .checked_mul(comparisons_per_item)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(sort_work, OPERATION)?;
     ctx.sort_unstable_by(
         &mut objects,
         |(left, _), (right, _)| left.cmp(right),

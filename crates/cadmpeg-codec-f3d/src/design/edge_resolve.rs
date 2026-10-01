@@ -2803,9 +2803,11 @@ pub(super) fn project_fixed_fillet_with_corners(
     }) {
         ctx.push_vec(&mut scope_groups, group, "f3d fixed fillet scope group")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut scope_groups[..], |group| {
+    ctx.stable_sort_by(&mut scope_groups[..], |left, right| { let left_key = { let group = left; {
         group.scope_reference_ordinal
-    })?;
+    } }; let right_key = { let group = right; {
+        group.scope_reference_ordinal
+    } }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design edge_resolve 1")?;
     let mut complete_edge_groups = Vec::new();
     for group in scope_groups.iter().copied().filter(|group| {
         group

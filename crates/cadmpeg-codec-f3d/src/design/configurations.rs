@@ -384,7 +384,7 @@ pub(crate) fn project_configurations(
             "f3d configuration activation rule property",
         )?;
     }
-    super::sort::sort_by(ctx, &mut projected, |left, right| left.id.cmp(&right.id))?;
+    ctx.stable_sort_by(&mut projected, |left, right| left.id.cmp(&right.id), |value| value.id.as_str().len(), "sort f3d configuration variants")?;
     Ok(projected)
 }
 

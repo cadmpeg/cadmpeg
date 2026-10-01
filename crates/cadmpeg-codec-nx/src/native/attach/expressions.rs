@@ -72,25 +72,6 @@ pub(in crate::native) fn attach_expression_parameters(
         uses.push(parameter_use);
     }
     for uses in uses_by_expression.values_mut() {
-        let count = uses.len();
-        let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX expression use sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        let work = count.checked_mul(passes).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX expression use sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "NX expression use sort",
-        )?;
         ctx.stable_sort_by(
             uses,
             |first, second| {
@@ -116,25 +97,6 @@ pub(in crate::native) fn attach_expression_parameters(
         ordered_tables.push(entry);
     }
     for (_, expressions) in &mut ordered_tables {
-        let count = expressions.len();
-        let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX expression table sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        let work = count.checked_mul(passes).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX expression table sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "NX expression table sort",
-        )?;
         ctx.stable_sort_by(
             expressions,
             |first, second| {
@@ -147,25 +109,6 @@ pub(in crate::native) fn attach_expression_parameters(
             "NX expression table sort",
         )?;
     }
-    let count = ordered_tables.len();
-    let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX ordered table sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    let work = count.checked_mul(passes).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX ordered table sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX ordered table sort",
-    )?;
     ctx.stable_sort_by(
         &mut ordered_tables,
         |(first_table, first), (second_table, second)| {

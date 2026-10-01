@@ -2222,7 +2222,6 @@ fn sort_handle_markers(
     ctx: &DecodeContext<'_>,
     markers: &mut [&SketchInputEntity],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    charge_handle_sort_work(ctx, markers.len())?;
     ctx.sort_unstable_by(
         markers,
         |left, right| left.offset().cmp(&right.offset()),
@@ -3345,27 +3344,6 @@ pub(crate) fn project_relation_bindings(
                     entities.push(entity);
                 }
             }
-            let count = cadmpeg_core::decode::u64_from_index(entities.len());
-            ctx.charge_work(count, ENTITY_SORT)?;
-            let max_bytes = entities
-                .iter()
-                .map(|identity| identity.as_str().len())
-                .max()
-                .unwrap_or(0);
-            let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-            ctx.charge_work(
-                count
-                    .checked_mul(levels)
-                    .and_then(|work| work.checked_mul(64))
-                    .and_then(|work| {
-                        cadmpeg_core::decode::u64_from_index(max_bytes)
-                            .checked_mul(2)
-                            .and_then(|bytes| bytes.checked_add(1))
-                            .and_then(|bytes| work.checked_mul(bytes))
-                    })
-                    .ok_or_else(|| ctx.refuse_codec_limit(ENTITY_SORT, u64::MAX - 1, u64::MAX))?,
-                ENTITY_SORT,
-            )?;
             ctx.sort_unstable_by(
                 &mut entities,
                 |left, right| left.as_str().cmp(right.as_str()),

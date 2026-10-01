@@ -135,17 +135,6 @@ pub(crate) fn bind_sketch_profiles(
             ctx.reserve_collection_vec(&mut starts, 1, OPERATION)?;
             starts.push((name.offset, ordinal, feature));
         }
-        let levels = if starts.len() > 1 {
-            starts.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(starts.len())
-                .checked_mul(u64::from(levels))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
         ctx.sort_unstable_by(
             &mut starts,
             |left, right| (left.0, left.1).cmp(&(right.0, right.1)),
@@ -466,17 +455,6 @@ pub(crate) fn project_compact_sketch_profiles(
                 })
                 .enumerate()
                 .map(|(ordinal, (offset, feature))| (offset, ordinal, feature)),
-            OPERATION,
-        )?;
-        let levels = if objects.len() > 1 {
-            objects.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(objects.len())
-                .checked_mul(u64::from(levels))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
         ctx.sort_unstable_by(
@@ -2732,21 +2710,6 @@ pub(crate) fn project_sketch_block_profiles(
                     }
                 }
             }
-            let levels = if objects.len() > 1 {
-                objects.len().ilog2() + 1
-            } else {
-                1
-            };
-            let work = u64_from_index(objects.len())
-                .checked_mul(u64::from(levels))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "sort SLDPRT sketch block objects",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            ctx.charge_work(work, "sort SLDPRT sketch block objects")?;
             ctx.sort_unstable_by(
                 &mut objects,
                 |(left_offset, _, left_ordinal), (right_offset, _, right_ordinal)| {
@@ -3579,20 +3542,11 @@ fn project_detached_legacy_config_sketches(
                     .filter_map(|feature| feature_frames.get(feature).copied()),
                 OPERATION,
             )?;
-            let levels = if frames.len() > 1 {
-                frames.len().ilog2() + 1
-            } else {
-                1
-            };
-            ctx.charge_work(
-                u64_from_index(frames.len())
-                    .checked_mul(u64::from(levels))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
             ctx.sort_unstable_by(
                 &mut frames,
-                |left, right| reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right)),
+                |left, right| {
+                    reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right))
+                },
                 |_| 0,
                 "sort SLDPRT legacy config sketch frames",
             )?;
@@ -3749,17 +3703,6 @@ fn legacy_config_hex_sketch(
         markers.iter().copied().filter(|marker| {
             marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle
         }),
-        OPERATION,
-    )?;
-    let levels = if curves.len() > 1 {
-        curves.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(curves.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
     ctx.sort_unstable_by(
@@ -4046,17 +3989,6 @@ fn legacy_config_collinear_sketch(
         }),
         OPERATION,
     )?;
-    let levels = if curves.len() > 1 {
-        curves.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(curves.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut curves,
         |left, right| left.offset().cmp(&right.offset()),
@@ -4114,17 +4046,6 @@ fn legacy_config_collinear_sketch(
     let ordinal = chain.len();
     ctx.reserve_collection_vec(&mut chain, 1, OPERATION)?;
     chain.push((origin.0, origin.1, ordinal));
-    let levels = if chain.len() > 1 {
-        chain.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(chain.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut chain,
         |left, right| {
@@ -4204,17 +4125,6 @@ fn legacy_config_collinear_sketch(
             .chain(std::iter::once((None, negative)))
             .enumerate()
             .map(|(ordinal, (marker, point))| (marker, point, ordinal)),
-        OPERATION,
-    )?;
-    let levels = if points.len() > 1 {
-        points.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(points.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
     ctx.sort_unstable_by(

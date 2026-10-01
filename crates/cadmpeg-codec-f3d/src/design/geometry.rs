@@ -459,7 +459,7 @@ fn sketch_arrangement_faces(
         return Ok(None);
     }
     for uses in &mut outgoing {
-        crate::design::sort::sort_by(ctx, &mut uses[..], |left, right| left.2.total_cmp(&right.2))?;
+        ctx.stable_sort_by(&mut uses[..], |left, right| left.2.total_cmp(&right.2), |_| 0, "sort f3d design geometry 1")?;
     }
     let mut visited = ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?;
     let mut faces = Vec::new();
@@ -980,10 +980,10 @@ fn arrangement_split_parameters(
         }
         _ => {}
     }
-    crate::design::sort::sort_by(ctx, &mut parameters[..], |left, right| {
+    ctx.stable_sort_by(&mut parameters[..], |left, right| {
         ((left - range[0]) / (range[1] - range[0]))
             .total_cmp(&((right - range[0]) / (range[1] - range[0])))
-    })?;
+    }, |_| 0, "sort f3d design geometry 2")?;
     let parameter_tolerance =
         tolerance / geometric!(sketch_geometry_speed_bound(geometry, range)).max(tolerance);
     parameters.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
@@ -1007,7 +1007,7 @@ fn arrangement_circle_angles(
             .rem_euclid(std::f64::consts::TAU);
         ctx.push_vec(&mut angles, angle, "f3d arrangement circle angle")?;
     }
-    crate::design::sort::sort_by(ctx, &mut angles[..], f64::total_cmp)?;
+    ctx.stable_sort_by(&mut angles[..], f64::total_cmp, |_| 0, "sort f3d arrangement circle angles")?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
     Ok(angles)
 }
@@ -3122,7 +3122,7 @@ pub(super) fn closed_sketch_profiles(
         }
     }
     if edges.is_empty() {
-        crate::design::sort::sort_by(ctx, &mut profiles[..], |a, b| a[0].entity.cmp(&b[0].entity))?;
+        ctx.stable_sort_by(&mut profiles[..], |a, b| a[0].entity.cmp(&b[0].entity), |_| 0, "sort f3d design geometry 4")?;
         return Ok(profiles);
     }
 
@@ -3194,9 +3194,9 @@ pub(super) fn closed_sketch_profiles(
         )?;
     }
     for incident in adjacency.values_mut() {
-        crate::design::sort::sort_by(ctx, &mut incident[..], |a, b| {
+        ctx.stable_sort_by(&mut incident[..], |a, b| {
             edges[*a].0.id().cmp(edges[*b].0.id())
-        })?;
+        }, |_| 0, "sort f3d design geometry 5")?;
     }
 
     let mut visited = ctx.alloc_filled(edges.len(), false, "f3d edge component marks")?;
@@ -3204,9 +3204,9 @@ pub(super) fn closed_sketch_profiles(
     for edge in 0..edges.len() {
         ctx.push_vec(&mut order, edge, "f3d closed sketch edge order")?;
     }
-    crate::design::sort::sort_by(ctx, &mut order[..], |a, b| {
+    ctx.stable_sort_by(&mut order[..], |a, b| {
         edges[*a].0.id().cmp(edges[*b].0.id())
-    })?;
+    }, |_| 0, "sort f3d design geometry 6")?;
     for first_edge in order {
         if visited[first_edge] {
             continue;
@@ -3266,9 +3266,9 @@ pub(super) fn closed_sketch_profiles(
             continue;
         }
 
-        crate::design::sort::sort_by(ctx, &mut component[..], |a, b| {
+        ctx.stable_sort_by(&mut component[..], |a, b| {
             edges[*a].0.id().cmp(edges[*b].0.id())
-        })?;
+        }, |_| 0, "sort f3d design geometry 7")?;
         let first_edge = component[0];
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
@@ -3316,7 +3316,7 @@ pub(super) fn closed_sketch_profiles(
             )?;
         }
     }
-    crate::design::sort::sort_by(ctx, &mut profiles[..], |a, b| a[0].entity.cmp(&b[0].entity))?;
+    ctx.stable_sort_by(&mut profiles[..], |a, b| a[0].entity.cmp(&b[0].entity), |_| 0, "sort f3d design geometry 8")?;
     Ok(profiles)
 }
 
@@ -3358,7 +3358,7 @@ fn branched_line_profiles(
         )?;
     }
     for half_edges in outgoing.values_mut() {
-        crate::design::sort::sort_by(ctx, &mut half_edges[..], |first, second| {
+        ctx.stable_sort_by(&mut half_edges[..], |first, second| {
             let angle = |half_edge: usize| {
                 let edge = half_edge / 2;
                 let [start, end] = edges[edge].1;
@@ -3373,7 +3373,7 @@ fn branched_line_profiles(
                 .total_cmp(&angle(*second))
                 .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
                 .then_with(|| first.cmp(second))
-        })?;
+        }, |_| 0, "sort f3d design geometry 9")?;
     }
 
     let mut next = HashMap::new();
@@ -3404,9 +3404,9 @@ fn branched_line_profiles(
             "f3d branched profile start half-edge",
         )?;
     }
-    crate::design::sort::sort_by(ctx, &mut starts[..], |a, b| {
+    ctx.stable_sort_by(&mut starts[..], |a, b| {
         (edges[*a / 2].0.id(), *a % 2).cmp(&(edges[*b / 2].0.id(), *b % 2))
-    })?;
+    }, |_| 0, "sort f3d design geometry 10")?;
     for start in starts {
         if visited.contains(&start) {
             continue;

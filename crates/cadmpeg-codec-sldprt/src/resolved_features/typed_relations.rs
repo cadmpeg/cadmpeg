@@ -1926,27 +1926,6 @@ fn sort_axis_relation_point_loci(
     loci: &mut Vec<SketchLocus>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "sort SLDPRT axis relation point loci";
-    let count = u64_from_index(loci.len());
-    ctx.charge_work(count, OPERATION)?;
-    let max_bytes = loci
-        .iter()
-        .map(|locus| locus_entity(locus).as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         loci.as_mut_slice(),
         |left, right| locus_key(left).cmp(&locus_key(right)),
@@ -2175,15 +2154,6 @@ pub(super) fn relation_owner_markers<'a>(
             break;
         }
     }
-    let count = u64_from_index(owners.len());
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     ctx.sort_unstable_by(
         &mut owners,
         |left, right| left.offset().cmp(&right.offset()),

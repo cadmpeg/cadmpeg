@@ -465,23 +465,6 @@ pub(super) fn blend_feature_definition(
     if surfaces.is_empty() {
         return Ok(None);
     }
-    let sort_work = surfaces
-        .len()
-        .checked_mul(
-            usize::try_from(usize::BITS - surfaces.len().leading_zeros())
-                .map_err(|_| ctx.refuse_codec_limit("NX blend result sort", 0, 1))?,
-        )
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX blend result sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(surfaces.len()),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "NX blend result sort",
-    )?;
     ctx.stable_sort_by(
         &mut surfaces,
         Ord::cmp,
@@ -768,23 +751,6 @@ pub(super) fn unique_carrier_supports(
         ctx.reserve_vec(&mut supports, 1, "NX offset support output")?;
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
-    let sort_work = supports
-        .len()
-        .checked_mul(
-            usize::try_from(usize::BITS - supports.len().leading_zeros())
-                .map_err(|_| ctx.refuse_codec_limit("NX offset support sort", 0, 1))?,
-        )
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX offset support sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(supports.len()),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "NX offset support sort",
-    )?;
     ctx.stable_sort_by(
         &mut supports,
         Ord::cmp,
@@ -1071,25 +1037,6 @@ pub(in crate::native) fn feature_source_content(
         )?;
         sorted.push(value);
     }
-    let count = sorted.len();
-    let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX feature source text sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    let work = count.checked_mul(passes).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX feature source text sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX feature source text sort",
-    )?;
     ctx.stable_sort_by(
         &mut sorted,
         |first, second| first.source_offset.cmp(&second.source_offset),
@@ -1244,25 +1191,6 @@ pub(super) fn block_placement(
         band: &mut PlaneBand,
         linear_tolerance: f64,
     ) -> Result<Option<PlaneExtent>, CodecError> {
-        let count = band.offsets.len();
-        let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX block plane sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        let work = count.checked_mul(passes).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX block plane sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "NX block plane sort",
-        )?;
         ctx.stable_sort_by(
             &mut band.offsets,
             f64::total_cmp,
@@ -2268,23 +2196,6 @@ pub(super) fn primary_hole_outputs(
     Ok(outputs)
 }
 
-pub(super) fn charge_hole_sort_work(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-) -> Result<(), CodecError> {
-    let work = count.checked_mul(count).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX hole operation sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX hole operation sort",
-    )
-}
-
 pub(super) fn simple_hole_operations(
     ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
@@ -2324,7 +2235,6 @@ pub(super) fn simple_hole_operations(
     if ordered_templates.is_empty() {
         return Ok(None);
     }
-    charge_hole_sort_work(ctx, ordered_templates.len())?;
     ctx.stable_sort_by(
         &mut ordered_templates,
         |first, second| {
@@ -2447,7 +2357,6 @@ pub(super) fn selected_hole_operations(
     {
         return Ok(None);
     }
-    charge_hole_sort_work(ctx, operations.len())?;
     ctx.stable_sort_by(
         &mut operations,
         |first, second| {
@@ -4079,7 +3988,6 @@ pub(super) fn simple_hole_chamfers(
     if operations.is_empty() {
         return Ok(BTreeMap::new());
     }
-    charge_hole_sort_work(ctx, operations.len())?;
     ctx.stable_sort_by(
         &mut operations,
         Ord::cmp,
@@ -4271,8 +4179,6 @@ pub(super) fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
-        charge_hole_sort_work(ctx, outer_radii.len())?;
-        charge_hole_sort_work(ctx, included_angles.len())?;
         ctx.stable_sort_by(
             &mut outer_radii,
             f64::total_cmp,
