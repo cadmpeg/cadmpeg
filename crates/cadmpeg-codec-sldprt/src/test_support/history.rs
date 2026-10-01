@@ -37,9 +37,18 @@ pub(crate) fn resolved_feature_classes_with_ids(entries: &[(&str, &str, u32)]) -
     let mut payload = Vec::new();
     for (class, name, object_id) in entries {
         payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-        payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+        payload.extend_from_slice(
+            &(u16::try_from(class.len()).expect("length fits u16")).to_le_bytes(),
+        );
         payload.extend_from_slice(class.as_bytes());
-        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        payload.extend_from_slice(&[
+            0x04,
+            0x80,
+            0xff,
+            0xfe,
+            0xff,
+            u8::try_from(name.len()).expect("length fits u8"),
+        ]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
@@ -66,17 +75,28 @@ pub(crate) fn resolved_features_payload_with_names_relation_and_scalar(
     let mut payload = Vec::new();
     for name in ["sgPointHandle", "sgLineHandle", "sgArcHandle"] {
         payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-        payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        payload.extend_from_slice(
+            &(u16::try_from(name.len()).expect("length fits u16")).to_le_bytes(),
+        );
         payload.extend_from_slice(name.as_bytes());
     }
     for name in names {
         if *name == "D1" {
             let class = relation_class;
             payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-            payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+            payload.extend_from_slice(
+                &(u16::try_from(class.len()).expect("length fits u16")).to_le_bytes(),
+            );
             payload.extend_from_slice(class.as_bytes());
         }
-        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        payload.extend_from_slice(&[
+            0x04,
+            0x80,
+            0xff,
+            0xfe,
+            0xff,
+            u8::try_from(name.len()).expect("length fits u8"),
+        ]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
@@ -120,12 +140,19 @@ pub(crate) fn resolved_features_payload_with_names_relation_and_scalar(
         // o+31..39: -1.0f32 sentinel followed by the marker state descriptor.
         record[26..34].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         // o+48..56: state value.
-        record[43..51].copy_from_slice(&(ordinal as f64 + 1.0).to_le_bytes());
+        record[43..51].copy_from_slice(
+            &(cadmpeg_core::convert::f64_from_index(ordinal).expect("ordinal is exact") + 1.0)
+                .to_le_bytes(),
+        );
         // o+70..80: local-link sentinel (zero selector padding, -1.0f64 marker).
         record[65..67].copy_from_slice(&[0, 0]);
         record[67..75].copy_from_slice(&(-1.0f64).to_le_bytes());
         // o+88..92: trailing local id.
-        record[83..87].copy_from_slice(&((ordinal + 1) as u32).to_le_bytes());
+        record[83..87].copy_from_slice(
+            &u32::try_from(ordinal + 1)
+                .expect("ordinal fits u32")
+                .to_le_bytes(),
+        );
         payload.extend_from_slice(&record);
     }
     payload

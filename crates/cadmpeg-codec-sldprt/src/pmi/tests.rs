@@ -57,7 +57,8 @@ fn pmi_limit_refusal(
 #[test]
 fn pmi_payload_reports_work_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = pmi_semantic_payload().len() as u64 - 1;
+    policy.limits.max_work_units =
+        cadmpeg_core::decode::u64_from_index(pmi_semantic_payload().len()) - 1;
     let limit = pmi_limit_refusal(policy);
     assert_eq!(
         limit.dimension,
@@ -81,7 +82,8 @@ fn pmi_payload_reports_scoped_limit() {
 #[test]
 fn pmi_payload_reports_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = ("sldprt:pmi:dimension#".len() + 35) as u64;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("sldprt:pmi:dimension#".len() + 35);
     let limit = pmi_limit_refusal(policy);
     assert_eq!(
         limit.dimension,
@@ -116,10 +118,10 @@ fn pmi_payload_reports_nesting_limit() {
 
 #[test]
 fn exact_count_refuses_the_i64_boundary_before_a_saturating_cast() {
-    let boundary = (1_u64 << 63) as f64;
+    let boundary = 9_223_372_036_854_775_808.0_f64;
     assert_eq!(exact_count(boundary), None);
     let below = f64::from_bits(boundary.to_bits() - 1);
-    assert_eq!(exact_count(below), Some(below as i64));
+    assert_eq!(exact_count(below), Some(9_223_372_036_854_774_784_i64));
 }
 use crate::records::PmiDimension;
 use crate::test_support::container::make_block;
@@ -386,7 +388,7 @@ fn conflicting_pmi_metadata_do_not_enrich_history() {
 }
 
 fn push_map_header(bytes: &mut Vec<u8>, len: usize) {
-    bytes.push(0x80 | len as u8);
+    bytes.push(0x80 | u8::try_from(len).unwrap());
 }
 
 fn dim_sem_item(bytes: &mut Vec<u8>, subtype: &str, value: f64) {
@@ -564,7 +566,8 @@ fn key_like_string_inside_value_does_not_steal_field_spans() {
     };
     assert_eq!(record.display_text(), Some("cadText"));
     assert_eq!(record.cad_text, "D1@Sketch1");
-    let text_off = record.display_text_offset().expect("display text offset") as usize;
+    let text_off =
+        usize::try_from(record.display_text_offset().expect("display text offset")).unwrap();
     assert_eq!(&payload[text_off..text_off + 7], b"cadText");
 }
 
@@ -662,14 +665,14 @@ fn patch_payload_offsets_round_trip_through_reparse() {
         panic!("one record");
     };
     let mut patched = payload.clone();
-    let start = record.value_offset as usize;
+    let start = usize::try_from(record.value_offset).unwrap();
     let edited = 0.05_f64;
     patched[start..start + 8].copy_from_slice(&edited.to_be_bytes());
-    patched[record.precision_offset as usize] = 4;
-    patched[record.basic_offset as usize] = 0xc2;
-    patched[record.inspection_offset as usize] = 0xc3;
-    patched[record.reference_only_offset as usize] = 0xc2;
-    let text_off = record.display_text_offset().expect("display text") as usize;
+    patched[usize::try_from(record.precision_offset).unwrap()] = 4;
+    patched[usize::try_from(record.basic_offset).unwrap()] = 0xc2;
+    patched[usize::try_from(record.inspection_offset).unwrap()] = 0xc3;
+    patched[usize::try_from(record.reference_only_offset).unwrap()] = 0xc2;
+    let text_off = usize::try_from(record.display_text_offset().expect("display text")).unwrap();
     patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
     let mut again_losses = Vec::new();
     let again = parse_payload(&patched, &mut again_losses);
@@ -1279,7 +1282,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
 fn u16_precision_survives_plain_patch_round_trip() {
     let mut payload = pmi_semantic_payload();
     let record = parse_payload(&payload, &mut Vec::new()).remove(0);
-    let offset = record.precision_offset as usize;
+    let offset = usize::try_from(record.precision_offset).unwrap();
     payload.splice(offset..=offset, [0xcd, 0x00, 0x03]);
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1304,4 +1307,71 @@ fn u16_precision_survives_plain_patch_round_trip() {
     patch_payload(decoded.ir(), &record.parent, &mut payload).unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
     assert_eq!(payload, original);
+}
+
+#[test]
+fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
+    let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
+    let mut parameters = vec![DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#other-parameter").expect("identity grammar"),
+        owner: Some(owner),
+        ordinal: u32::MAX,
+        name: "D9".into(),
+        expression: "12mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: Some("other-dimension".into()),
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let error = super::apply_to_parameters(
+        &ctx,
+        &mut parameters,
+        &[feature],
+        &[dimension("Linear", 0.034)],
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert_eq!(parameters.len(), 1);
+}
+
+#[test]
+fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
+    let payload = crate::test_support::pmi::pmi_semantic_payload_record(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        "",
+        2.0,
+        "2",
+    );
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parent = sldprt_native(decoded.ir()).pmi_dimensions[0].parent.clone();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = &mut ir.model.parameters[0];
+        parameter.value = Some(ParameterValue::Integer((1_i64 << 53) + 1));
+        parameter.pmi.as_mut().unwrap().subtype = PmiDimensionSubtype::Count;
+    }
+    let mut patched = payload;
+    let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }

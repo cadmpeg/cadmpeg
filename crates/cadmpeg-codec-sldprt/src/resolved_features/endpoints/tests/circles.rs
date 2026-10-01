@@ -5,6 +5,7 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
+use cadmpeg_core::decode::u64_from_index;
 use crate::resolved_features::endpoints::coordinate_circle_radius;
 use crate::resolved_features::endpoints::coordinate_roster_full_circle;
 use crate::resolved_features::endpoints::equal_index_coordinate_roster_full_circle;
@@ -53,8 +54,8 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
     .map(|(index, point)| {
         entity(
             &format!("point-{index}"),
-            index as u32 + 1,
-            index as u64 + 143,
+            u32::try_from(index).unwrap() + 1,
+            u64_from_index(index) + 143,
             SketchInputKind::Point,
             Some(point),
         )
@@ -586,7 +587,7 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
         ),
         entity(
             "circle",
-            circle_offset as u64,
+            u64_from_index(circle_offset),
             SketchInputKind::LineOrCircle,
             None,
         ),
@@ -717,7 +718,7 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
         entity("radial", 516, SketchInputKind::Point, Some([0.03, -0.0048])),
         entity(
             "circle",
-            circle_offset as u64,
+            u64_from_index(circle_offset),
             SketchInputKind::LineOrCircle,
             None,
         ),
@@ -1309,8 +1310,8 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
     .map(|(index, point)| {
         entity(
             &format!("point-{index}"),
-            index as u32 + 1,
-            index as u64 + 134,
+            u32::try_from(index).unwrap() + 1,
+            u64_from_index(index) + 134,
             SketchInputKind::Point,
             Some(point),
         )

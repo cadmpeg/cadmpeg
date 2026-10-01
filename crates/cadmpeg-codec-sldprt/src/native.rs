@@ -57,11 +57,14 @@ impl Serialize for HistoryArenaView<'_> {
         if !self.0.content.is_empty() {
             map.serialize_entry("content", &self.0.content)?;
         }
-        map.serialize_entry("configurations", &[] as &[()])?;
-        map.serialize_entry("features", &[] as &[()])?;
+        map.serialize_entry("configurations", NO_ENTRIES)?;
+        map.serialize_entry("features", NO_ENTRIES)?;
         map.end()
     }
 }
+
+/// An empty array for the native sections this view leaves unpopulated.
+const NO_ENTRIES: &[()] = &[];
 
 struct LanePayload<'a>(&'a [u8]);
 
@@ -94,7 +97,7 @@ impl Serialize for LaneArenaView<'_> {
             "references",
             "sketch_entities",
         ] {
-            map.serialize_entry(field, &[] as &[()])?;
+            map.serialize_entry(field, NO_ENTRIES)?;
         }
         map.end()
     }

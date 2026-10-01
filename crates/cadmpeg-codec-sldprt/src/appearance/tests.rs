@@ -4,6 +4,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::convert::{f32_from_f64, f64_from_index, truncate_f64_to_u8};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
@@ -60,7 +61,7 @@ fn display_table(x: f32) -> Vec<u8> {
 
 fn display_class(out: &mut Vec<u8>, name: &str) {
     out.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-    out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    out.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
     out.extend_from_slice(name.as_bytes());
 }
 
@@ -123,7 +124,9 @@ fn display_fixture(
     display.extend(1_u32.to_le_bytes());
     display.extend(1_u32.to_le_bytes());
     for (index, references) in faces.iter().enumerate() {
-        display.extend(display_table(index as f32 * 10.0));
+        display.extend(display_table(
+            f32_from_f64(f64_from_index(index).unwrap()).unwrap() * 10.0,
+        ));
         for (class, source, local) in references {
             display.extend(framed_surface_reference(class, *source, *local));
         }
@@ -190,7 +193,8 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .unwrap();
             (
                 table_index,
-                [color.r(), color.g(), color.b()].map(|value| (value * 255.0).round() as u8),
+                [color.r(), color.g(), color.b()]
+                    .map(|value| truncate_f64_to_u8(f64::from((value * 255.0).round())).unwrap()),
             )
         })
         .collect::<Vec<_>>();
@@ -270,7 +274,11 @@ fn persistent_surface_sources_bind_feature_appearances() {
                 6..=9 => 44,
                 _ => 51,
             };
-            vec![(classes[index % classes.len()], source, index as u32 + 1)]
+            vec![(
+                classes[index % classes.len()],
+                source,
+                u32::try_from(index).unwrap() + 1,
+            )]
         })
         .collect::<Vec<_>>();
     let features = [

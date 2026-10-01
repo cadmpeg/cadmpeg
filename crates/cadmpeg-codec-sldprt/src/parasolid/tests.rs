@@ -27,13 +27,13 @@ fn chained_payload(sections: &[Vec<Vec<u8>>]) -> (Vec<u8>, Vec<usize>) {
         let mut section = WRAPPED_MAGIC.to_vec();
         for frame in frames {
             let member = zlib_member(frame);
-            section.extend_from_slice(&(frame.len() as u32).to_le_bytes());
-            section.extend_from_slice(&(member.len() as u32).to_le_bytes());
+            section.extend_from_slice(&u32::try_from(frame.len()).unwrap().to_le_bytes());
+            section.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
             section.extend_from_slice(&member);
         }
         section.extend_from_slice(&[0; 8]);
         offsets.push(payload.len());
-        payload.extend_from_slice(&(section.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&u32::try_from(section.len()).unwrap().to_le_bytes());
         payload.extend_from_slice(&section);
     }
     (payload, offsets)
@@ -48,20 +48,20 @@ fn inner_parasolid_frame_refuses_before_expansion_exceeds_per_expand_limit() {
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let member = zlib_member(&stream);
     let mut payload = WRAPPED_MAGIC.to_vec();
-    payload.extend_from_slice(&(stream.len() as u32).to_le_bytes());
-    payload.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(stream.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&member);
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_per_expand = stream.len() as u64 - 1;
+    policy.limits.max_decompressed_bytes_per_expand = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected per-expansion resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert_eq!(limit.limit, stream.len() as u64 - 1);
+    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
     assert_eq!(limit.used, 0);
 
     let arena = DecodeArena::new();
@@ -77,12 +77,12 @@ fn inner_parasolid_frame_retention_refuses_before_exposing_output() {
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let member = zlib_member(&stream);
     let mut payload = WRAPPED_MAGIC.to_vec();
-    payload.extend_from_slice(&(stream.len() as u32).to_le_bytes());
-    payload.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(stream.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&member);
 
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = stream.len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
@@ -105,7 +105,7 @@ fn declared_frame_above_local_cap_still_reports_session_expand_limit() {
     let declared = 512_u32 * 1024 * 1024 + 1;
     let mut payload = WRAPPED_MAGIC.to_vec();
     payload.extend_from_slice(&declared.to_le_bytes());
-    payload.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&member);
 
     let arena = DecodeArena::new();
@@ -125,7 +125,7 @@ fn chained_parasolid_frames_refuse_cumulative_expansion_limit() {
     let split = stream.len() / 2;
     let (payload, _) = chained_payload(&[vec![stream[..split].to_vec(), stream[split..].to_vec()]]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_total = stream.len() as u64 - 1;
+    policy.limits.max_decompressed_bytes_total = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
@@ -133,7 +133,7 @@ fn chained_parasolid_frames_refuse_cumulative_expansion_limit() {
         panic!("expected cumulative expansion refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert_eq!(limit.limit, stream.len() as u64 - 1);
+    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
     assert!(limit.used > 0);
 }
 
@@ -143,7 +143,7 @@ fn chained_parasolid_concatenation_refuses_materialized_limit() {
     let split = stream.len() / 2;
     let (payload, _) = chained_payload(&[vec![stream[..split].to_vec(), stream[split..].to_vec()]]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = stream.len() as u64 - 1;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
@@ -151,7 +151,7 @@ fn chained_parasolid_concatenation_refuses_materialized_limit() {
         panic!("expected concatenation refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.limit, stream.len() as u64 - 1);
+    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
 
     let arena = DecodeArena::new();
     let (ctx, _) =
@@ -166,7 +166,7 @@ fn chained_parasolid_concatenation_refuses_retained_limit() {
     let split = stream.len() / 2;
     let (payload, _) = chained_payload(&[vec![stream[..split].to_vec(), stream[split..].to_vec()]]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = stream.len() as u64 * 2 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(stream.len()) * 2 - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
@@ -192,7 +192,7 @@ fn legacy_zlib_candidate_refuses_probe_work_limit() {
     payload.extend_from_slice(&member);
     assert!(!payload.windows(4).any(|window| window == b"PS\0\0"));
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = member.len() as u64 - 1;
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(member.len()) - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
@@ -200,7 +200,7 @@ fn legacy_zlib_candidate_refuses_probe_work_limit() {
         panic!("expected candidate work refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.limit, member.len() as u64 - 1);
+    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(member.len()) - 1);
 
     let arena = DecodeArena::new();
     let (ctx, _) =
@@ -219,7 +219,7 @@ fn legacy_zlib_candidate_refuses_expansion_limit() {
     payload.extend_from_slice(&member);
     assert!(!payload.windows(4).any(|window| window == b"PS\0\0"));
     let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_per_expand = stream.len() as u64 - 1;
+    policy.limits.max_decompressed_bytes_per_expand = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
@@ -227,7 +227,7 @@ fn legacy_zlib_candidate_refuses_expansion_limit() {
         panic!("expected candidate expansion refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert_eq!(limit.limit, stream.len() as u64 - 1);
+    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
 }
 
 #[test]
@@ -307,8 +307,8 @@ fn parasolid_reassembles_the_degenerate_one_frame_wrapper() {
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let member = zlib_member(&stream);
     let mut payload = WRAPPED_MAGIC.to_vec();
-    payload.extend_from_slice(&(stream.len() as u32).to_le_bytes());
-    payload.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(stream.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&member);
     payload.extend_from_slice(b"trailer!");
 
@@ -326,8 +326,8 @@ fn wrapped_member_requires_the_parasolid_header_at_byte_zero() {
     stream.extend(parasolid_payload("partition body", "SCH_SW_33103_11000"));
     let member = zlib_member(&stream);
     let mut payload = WRAPPED_MAGIC.to_vec();
-    payload.extend_from_slice(&(stream.len() as u32).to_le_bytes());
-    payload.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(stream.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&member);
 
     assert!(
@@ -344,11 +344,11 @@ fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let member = zlib_member(&stream);
     let mut section = WRAPPED_MAGIC.to_vec();
-    section.extend_from_slice(&(stream.len() as u32).to_le_bytes());
-    section.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    section.extend_from_slice(&u32::try_from(stream.len()).unwrap().to_le_bytes());
+    section.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
     section.extend_from_slice(&member);
     section.extend_from_slice(b"bad");
-    let mut payload = (section.len() as u32).to_le_bytes().to_vec();
+    let mut payload = u32::try_from(section.len()).unwrap().to_le_bytes().to_vec();
     payload.extend_from_slice(&section);
 
     assert!(
@@ -392,9 +392,9 @@ fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
     let description = b"boundary_polyline mesh";
     let schema = b"SCH_3201255_32001_13006";
     let mut stream = b"PS\0\0".to_vec();
-    stream.extend((description.len() as u16).to_be_bytes());
+    stream.extend(u16::try_from(description.len()).unwrap().to_be_bytes());
     stream.extend(description);
-    stream.push(schema.len() as u8);
+    stream.push(u8::try_from(schema.len()).unwrap());
     stream.extend(schema);
     stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
     stream.extend(6u32.to_be_bytes());

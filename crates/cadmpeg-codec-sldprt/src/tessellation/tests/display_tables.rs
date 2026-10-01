@@ -50,7 +50,8 @@ fn anonymous_scene_object_counts_do_not_create_source_bindings() {
     let mut payload = Vec::new();
     payload.extend_from_slice(CLASS_MARKER);
     let class = b"moDirectionLight_c";
-    payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    payload
+        .extend_from_slice(&(u16::try_from(class.len()).expect("length fits u16")).to_le_bytes());
     payload.extend_from_slice(class);
     for name in ["UnNamed", "Another"] {
         payload.extend_from_slice(&1_u32.to_le_bytes());

@@ -126,7 +126,12 @@ fn slot_cycle_fixture() -> (
         input("bottom", 210, SketchInputKind::LineOrCircle, None),
         input("right", 220, SketchInputKind::Arc, None),
         input("left", 230, SketchInputKind::Arc, None),
-        input("slot", slot_offset as u64, SketchInputKind::Point, None),
+        input(
+            "slot",
+            cadmpeg_core::decode::u64_from_index(slot_offset),
+            SketchInputKind::Point,
+            None,
+        ),
     ];
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {

@@ -112,7 +112,6 @@ mod history;
 /// Byte-offset constants generated from `docs/layouts/sldprt.toml`.
 mod lane_refusal;
 mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
 mod loss;
 mod metadata;
 mod native;

@@ -13,17 +13,10 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_datum_principal_plane(
         &self,
-        plane: &PrincipalPlane,
+        plane: PrincipalPlane,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -35,7 +28,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if principal_planes_by_record.get(&record.id) != Some(plane) {
+            if principal_planes_by_record.get(&record.id) != Some(&plane) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes its principal-plane role",
                     feature.id
@@ -99,8 +92,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_datum_offset_plane(
         &self,
-        reference: &Option<DatumPlaneReference>,
-        distance: &Length,
+        reference: Option<&DatumPlaneReference>,
+        distance: Length,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -155,7 +148,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D1"),
                 format_length_like(
-                    *distance,
+                    distance,
                     existing
                         .and_then(|record| record.parameters.get("D1"))
                         .map(String::as_str),

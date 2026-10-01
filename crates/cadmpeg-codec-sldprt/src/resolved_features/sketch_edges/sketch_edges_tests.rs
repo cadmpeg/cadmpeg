@@ -160,12 +160,14 @@ fn shared_endpoint_constraints(
     let mut constraints = Vec::new();
     super::project_endpoint_constraints(
         &ctx,
-        &sketch,
-        &entities,
-        0,
-        0,
-        0,
-        &cadmpeg_ir::stream_name!("test:shared-endpoint"),
+        super::EndpointConstraintSource {
+            sketch: &sketch,
+            entities: &entities,
+            block_offset: 0,
+            stream_ordinal: 0,
+            face_ordinal: 0,
+            stream: &cadmpeg_ir::stream_name!("test:shared-endpoint"),
+        },
         &mut annotations,
         &mut constraints,
     )?;

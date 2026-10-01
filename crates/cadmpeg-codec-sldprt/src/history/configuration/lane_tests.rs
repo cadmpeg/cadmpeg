@@ -1378,10 +1378,16 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         .parameter_values
         .contains_key(&count_id));
     for (real, expected) in [
-        (-(i64::MIN as f64), None),
-        (i64::MIN as f64, Some(i64::MIN)),
         (
-            f64::from_bits((i64::MAX as f64).to_bits() - 1),
+            -cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap(),
+            None,
+        ),
+        (
+            cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap(),
+            Some(i64::MIN),
+        ),
+        (
+            f64::from_bits((-cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap()).to_bits() - 1),
             Some(i64::MAX - 1023),
         ),
     ] {
@@ -1424,12 +1430,19 @@ fn integer_parameter_refuses_real_override_outside_i64_or_fractional() {
     ir.model
         .configurations
         .push(design_configuration("default", 0, Some(0), None));
-    let below_minimum = f64::from_bits((i64::MIN as f64).to_bits() + 1);
-    assert!(below_minimum < i64::MIN as f64);
+    let below_minimum =
+        f64::from_bits((cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap()).to_bits() + 1);
+    assert!(below_minimum < cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap());
     for (real, expected) in [
         (below_minimum, None),
-        (i64::MIN as f64, Some(i64::MIN)),
-        (-(i64::MIN as f64), None),
+        (
+            cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap(),
+            Some(i64::MIN),
+        ),
+        (
+            -cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap(),
+            None,
+        ),
         (-2.5, None),
         (2.5, None),
         (-2.0, Some(-2)),

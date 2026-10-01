@@ -7,7 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
@@ -143,7 +143,7 @@ fn container_scan_refuses_xml_materialization_limit() {
     source.extend(make_block(0x43, "Contents/SolidWorks", &payload));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = payload.len() as u64;
+    policy.limits.max_materialized_bytes = u64_from_index(payload.len());
     let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let Err(CodecError::ResourceLimit(limit)) = container::scan(&ctx, root) else {
         panic!("expected XML materialization refusal");
@@ -254,7 +254,7 @@ fn write_compound_directory_entry(
     for (offset, unit) in name.iter().enumerate() {
         entry[offset * 2..offset * 2 + 2].copy_from_slice(&unit.to_le_bytes());
     }
-    entry[64..66].copy_from_slice(&((name.len() as u16 + 1) * 2).to_le_bytes());
+    entry[64..66].copy_from_slice(&((u16::try_from(name.len()).unwrap() + 1) * 2).to_le_bytes());
     entry[66] = object_type;
     entry[67] = 1;
     entry[68..72].copy_from_slice(&NO_STREAM.to_le_bytes());

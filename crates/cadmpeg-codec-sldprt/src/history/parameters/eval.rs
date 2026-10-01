@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-expression parser and arithmetic.
 
+use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i64, truncate_f64_to_u32};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
     features::{ParameterId, ParameterValue},
@@ -96,7 +97,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         self.take('=');
         self.skip_space()?;
         self.ctx.charge_work(
-            (self.input.len() - self.offset) as u64,
+            cadmpeg_core::decode::u64_from_index(self.input.len() - self.offset),
             "parse SLDPRT parameter literal",
         )?;
         if let Some(value) = parse_parameter_literal(&self.input[self.offset..]) {
@@ -265,8 +266,10 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                         u64::MAX,
                     )
                 })?;
-            self.ctx
-                .charge_work(bytes as u64, "normalize SLDPRT parameter token")?;
+            self.ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "normalize SLDPRT parameter token",
+            )?;
             let (mut text, reservation) = crate::text_admission::reserve_scoped_string(
                 self.ctx,
                 bytes,
@@ -310,8 +313,10 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 end - start,
                 "retain SLDPRT quoted parameter token",
             )?;
-            self.ctx
-                .charge_work((end - start) as u64, "copy SLDPRT quoted parameter token")?;
+            self.ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(end - start),
+                "copy SLDPRT quoted parameter token",
+            )?;
             let mut cursor = start;
             while cursor < end {
                 let rest = &self.input[cursor..end];
@@ -466,14 +471,15 @@ fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::Ordering> {
     if real.is_nan() {
         return None;
     }
-    if real < i64::MIN as f64 {
-        return Some(std::cmp::Ordering::Greater);
-    }
-    if real >= -(i64::MIN as f64) {
-        return Some(std::cmp::Ordering::Less);
-    }
-
-    let truncated = real as i64;
+    let Some(truncated) = truncate_f64_to_i64(real) else {
+        // The truncation lies outside the `i64` range: below it for a negative
+        // real, above it for a non-negative one.
+        return Some(if real < 0.0 {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        });
+    };
     match integer.cmp(&truncated) {
         std::cmp::Ordering::Equal => 0.0f64.partial_cmp(&real.fract()),
         ordering => Some(ordering),
@@ -575,7 +581,7 @@ pub(super) fn exponentiate_parameter_value(
         }
         return Some(ParameterValue::Real(FiniteReal::new(integer_power_real(
             *base, *exponent,
-        ))?));
+        )?)?));
     }
 
     let exponent = real_parameter_value(exponent)?;
@@ -589,10 +595,15 @@ pub(super) fn exponentiate_parameter_value(
             ParameterValue::Real(FiniteReal::new(base.get().powf(exponent))?)
         }
         ParameterValue::Integer(base) => {
-            if exponent.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&exponent) {
-                ParameterValue::Integer(base.checked_pow(exponent as u32)?)
+            let integer_exponent = if exponent.fract() == 0.0 {
+                truncate_f64_to_u32(exponent)
             } else {
-                ParameterValue::Real(FiniteReal::new((*base as f64).powf(exponent))?)
+                None
+            };
+            if let Some(power) = integer_exponent {
+                ParameterValue::Integer(base.checked_pow(power)?)
+            } else {
+                ParameterValue::Real(FiniteReal::new(exact_integer_f64(*base)?.powf(exponent))?)
             }
         }
         ParameterValue::Length(_)
@@ -604,9 +615,9 @@ pub(super) fn exponentiate_parameter_value(
     })
 }
 
-fn integer_power_real(base: i64, exponent: i64) -> f64 {
+fn integer_power_real(base: i64, exponent: i64) -> Option<f64> {
     let mut exponent = exponent.unsigned_abs();
-    let mut factor = base as f64;
+    let mut factor = exact_integer_f64(base)?;
     let mut value = 1.0;
     while exponent != 0 {
         if exponent & 1 != 0 {
@@ -615,7 +626,7 @@ fn integer_power_real(base: i64, exponent: i64) -> f64 {
         exponent >>= 1;
         factor *= factor;
     }
-    value.recip()
+    Some(value.recip())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -738,10 +749,7 @@ impl ParameterFunction {
                 ParameterValue::Integer(value) => ParameterValue::Integer(*value),
                 ParameterValue::Real(value) => {
                     let value = value.get().trunc();
-                    if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
-                        return None;
-                    }
-                    ParameterValue::Integer(value as i64)
+                    ParameterValue::Integer(truncate_f64_to_i64(value)?)
                 }
                 ParameterValue::Length(_)
                 | ParameterValue::Angle(_)
@@ -765,7 +773,7 @@ impl ParameterFunction {
 fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
     match value {
         ParameterValue::Real(value) => Some(value.get()),
-        ParameterValue::Integer(value) => Some(*value as f64),
+        ParameterValue::Integer(value) => exact_integer_f64(*value),
         _ => None,
     }
 }
@@ -775,15 +783,14 @@ fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
         ParameterValue::Length(value) => Some(value.get()),
         ParameterValue::Angle(value) => Some(value.get()),
         ParameterValue::Real(value) => Some(value.get()),
-        ParameterValue::Integer(value) => Some(*value as f64),
+        ParameterValue::Integer(value) => exact_integer_f64(*value),
         ParameterValue::Boolean(_) | ParameterValue::String(_) => None,
     }
 }
 
 /// Convert a discrete integer to a native scalar without changing its value.
 pub(crate) fn exact_integer_f64(value: i64) -> Option<f64> {
-    let encoded = value as f64;
-    ((encoded as i128) == i128::from(value)).then_some(encoded)
+    f64_from_i64(value)
 }
 
 #[cfg(test)]

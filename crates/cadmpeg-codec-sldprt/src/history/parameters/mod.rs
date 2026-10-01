@@ -49,7 +49,7 @@ pub(crate) fn project_parameters(
     for history in histories {
         for feature in &history.features {
             ctx.charge_work(
-                history.features.len() as u64,
+                cadmpeg_core::decode::u64_from_index(history.features.len()),
                 "classify SLDPRT parameter owners",
             )?;
             if is_history_metadata_record(feature, &history.features) {
@@ -58,31 +58,20 @@ pub(crate) fn project_parameters(
             if !feature.name.is_empty() {
                 let id = neutral_feature_id_charged(ctx, &feature.id)?;
                 let name = copy_projected_feature_text(ctx, &feature.name)?;
-                if !feature_names.contains_key(&id) {
-                    ctx.charge_collection_items(1, "index SLDPRT parameter owner names")?;
-                    feature_names.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT parameter owner names",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                }
-                feature_names.insert(id, name);
+                ctx.insert_hash_map(
+                    &mut feature_names,
+                    id,
+                    name,
+                    "index SLDPRT parameter owner names",
+                )?;
             }
             if feature.kind.eq_ignore_ascii_case("EquationDriven") {
                 let owner = neutral_feature_id_charged(ctx, &feature.id)?;
-                if !global_owners.contains(&owner) {
-                    ctx.charge_collection_items(1, "index SLDPRT global parameter owners")?;
-                    global_owners.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT global parameter owners",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                    global_owners.insert(owner);
-                }
+                ctx.insert_hash_set(
+                    &mut global_owners,
+                    owner,
+                    "index SLDPRT global parameter owners",
+                )?;
             }
             for (ordinal, name) in projected_parameter_names(ctx, feature)?
                 .into_iter()
@@ -116,7 +105,7 @@ pub(crate) fn project_parameters(
                     ctx.refuse_codec_limit(
                         "index SLDPRT parameter ordinal",
                         u64::from(u32::MAX),
-                        ordinal as u64,
+                        cadmpeg_core::decode::u64_from_index(ordinal),
                     )
                 })?;
                 let parameter = DesignParameter {
@@ -173,7 +162,7 @@ fn bare_text_parameter_literal(
     expression: &str,
 ) -> Result<Option<ParameterValue>, CodecError> {
     ctx.charge_work(
-        expression.len() as u64,
+        cadmpeg_core::decode::u64_from_index(expression.len()),
         "parse SLDPRT text parameter literal",
     )?;
     let expression = expression.trim();
@@ -207,9 +196,12 @@ fn formatted_text_dimension_literal(
     name: &str,
     expression: &str,
 ) -> Result<Option<ParameterValue>, CodecError> {
-    ctx.charge_work(name.len() as u64, "parse SLDPRT formatted parameter name")?;
     ctx.charge_work(
-        expression.len() as u64,
+        cadmpeg_core::decode::u64_from_index(name.len()),
+        "parse SLDPRT formatted parameter name",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(expression.len()),
         "parse SLDPRT formatted parameter literal",
     )?;
     formatted_text_dimension_value(name, expression)
@@ -298,7 +290,7 @@ pub(super) fn apply_evaluated_parameters(
                 continue;
             }
             ctx.charge_work(
-                evaluated.len() as u64,
+                cadmpeg_core::decode::u64_from_index(evaluated.len()),
                 "find SLDPRT evaluated parameter replacement",
             )?;
             let value = evaluated
@@ -498,11 +490,17 @@ fn project_parameter_dependencies(
         let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else {
             continue;
         };
-        ctx.charge_work(dependencies.as_slice().len() as u64, OPERATION)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(dependencies.as_slice().len()),
+            OPERATION,
+        )?;
         if dependency == &parameter.id || dependencies.contains(dependency) {
             continue;
         }
-        ctx.charge_work(dependencies.as_slice().len() as u64, OPERATION)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(dependencies.as_slice().len()),
+            OPERATION,
+        )?;
         dependencies.try_insert_charged(copy_parameter_id(ctx, dependency)?, ctx, OPERATION)?;
     }
     Ok(dependencies)
@@ -536,22 +534,11 @@ fn order_parameters_by_dependencies(
     for parameter in parameters.iter() {
         ctx.charge_work(1, OPERATION)?;
         let owner = parameter.owner.as_ref();
-        if !seen_owners.contains(&owner) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            seen_owners
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            seen_owners.insert(owner);
+        if ctx.insert_hash_set(&mut seen_owners, owner, OPERATION)? {
             ctx.reserve_collection_vec(&mut owner_order, 1, OPERATION)?;
             owner_order.push(owner);
         }
-        if !parameter_owners.contains_key(&parameter.id) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            parameter_owners
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        parameter_owners.insert(&parameter.id, owner);
+        ctx.insert_hash_map(&mut parameter_owners, &parameter.id, owner, OPERATION)?;
     }
     let mut updates = Vec::new();
     for owner in owner_order {
@@ -570,7 +557,9 @@ fn order_parameters_by_dependencies(
             for (position, index) in remaining.iter().enumerate() {
                 ctx.charge_work(1, OPERATION)?;
                 ctx.charge_work(
-                    parameters[*index].dependencies.as_slice().len() as u64,
+                    cadmpeg_core::decode::u64_from_index(
+                        parameters[*index].dependencies.as_slice().len(),
+                    ),
                     OPERATION,
                 )?;
                 if parameters[*index].dependencies.iter().all(|dependency| {
@@ -587,16 +576,13 @@ fn order_parameters_by_dependencies(
                 ordered.clear();
                 break;
             };
-            ctx.charge_work(remaining.len() as u64, OPERATION)?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(remaining.len()),
+                OPERATION,
+            )?;
             let index = remaining.remove(position);
             let id = &parameters[index].id;
-            if !ordered_ids.contains(id) {
-                ctx.charge_collection_items(1, OPERATION)?;
-                ordered_ids
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ordered_ids.insert(id);
-            }
+            ctx.insert_hash_set(&mut ordered_ids, id, OPERATION)?;
             ctx.reserve_collection_vec(&mut ordered, 1, OPERATION)?;
             ordered.push(index);
         }
@@ -605,7 +591,7 @@ fn order_parameters_by_dependencies(
                 ctx.refuse_codec_limit(
                     "index SLDPRT ordered parameter ordinal",
                     u64::from(u32::MAX),
-                    ordinal as u64,
+                    cadmpeg_core::decode::u64_from_index(ordinal),
                 )
             })?;
             ctx.reserve_collection_vec(&mut updates, 1, OPERATION)?;
@@ -652,11 +638,7 @@ fn insert_parameter_alias(
         }
     } else {
         let parameter = copy_parameter_id(ctx, parameter)?;
-        ctx.charge_collection_items(1, OPERATION)?;
-        aliases
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        aliases.insert(alias, Some(parameter));
+        ctx.insert_hash_map(aliases, alias, Some(parameter), OPERATION)?;
     }
     Ok(())
 }
@@ -737,15 +719,12 @@ impl ParameterAliases {
             let local = if let Some(owner) = parameter.owner.as_ref() {
                 if !aliases.feature_local.contains_key(owner) {
                     let id = copy_projected_feature_id(ctx, owner)?;
-                    ctx.charge_collection_items(1, "index SLDPRT local parameter alias owners")?;
-                    aliases.feature_local.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT local parameter alias owners",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                    aliases.feature_local.insert(id, HashMap::new());
+                    ctx.insert_hash_map(
+                        &mut aliases.feature_local,
+                        id,
+                        HashMap::new(),
+                        "index SLDPRT local parameter alias owners",
+                    )?;
                 }
                 aliases.feature_local.get_mut(owner).ok_or_else(|| {
                     CodecError::malformed("missing SLDPRT local parameter alias owner")
@@ -853,13 +832,7 @@ fn insert_parameter_value(
     ctx.charge_work(1, OPERATION)?;
     let id = copy_parameter_id(ctx, id)?;
     let value = copy_parameter_value(ctx, value)?;
-    if !values.contains_key(&id) {
-        ctx.charge_collection_items(1, OPERATION)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    }
-    values.insert(id, value);
+    ctx.insert_hash_map(values, id, value, OPERATION)?;
     Ok(())
 }
 
@@ -920,13 +893,11 @@ pub(crate) fn parameters_with_unevaluable_expressions(
                     None => text_parameter_literal(ctx, &parameter.name, &parameter.expression)?,
                 };
             if let Some((id, value)) = own {
-                values.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "restore SLDPRT parameter evaluation value",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
+                DecodeContext::reserve_admitted_map(
+                    values,
+                    1,
+                    "restore SLDPRT parameter evaluation value",
+                )?;
                 values.insert(id, value);
             }
             if evaluated.is_none() {
@@ -991,13 +962,11 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
                         !equivalent_parameter_values(actual, evaluated)
                     });
             if let Some((id, value)) = own {
-                values.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "restore SLDPRT parameter coherence value",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
+                DecodeContext::reserve_admitted_map(
+                    values,
+                    1,
+                    "restore SLDPRT parameter coherence value",
+                )?;
                 values.insert(id, value);
             }
             if incoherent {
@@ -1130,7 +1099,10 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
         else {
             return Ok(None);
         };
-        ctx.charge_work(inner.len() as u64, "unescape SLDPRT parameter identifier")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(inner.len()),
+            "unescape SLDPRT parameter identifier",
+        )?;
         let value = if inner.contains("\"\"") {
             let (mut value, reservation) = crate::text_admission::reserve_scoped_string(
                 ctx,
@@ -1220,7 +1192,10 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     expression: &'a str,
 ) -> Result<Option<Vec<ExpressionIdentifier<'a, 'ctx>>>, CodecError> {
-    ctx.charge_work(expression.len() as u64, "scan SLDPRT parameter identifiers")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(expression.len()),
+        "scan SLDPRT parameter identifiers",
+    )?;
     let mut identifiers = Vec::new();
     let mut at = 0;
     while let Some(character) = expression[at..].chars().next() {

@@ -33,7 +33,7 @@ fn sketch_block_error(policy: DecodePolicy) -> CodecError {
     let name = |id: &str, source: u32, offset: u64| super::FeatureInputName {
         id: id.into(),
         parent: "lane".into(),
-        ordinal: offset as u32,
+        ordinal: u32::try_from(offset).unwrap(),
         offset,
         object_id: super::ObjectId::from_value(source),
         value: id.into(),

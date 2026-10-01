@@ -341,21 +341,10 @@ pub(super) fn dimensioned_circle_surface_transforms(
             delta.x * v_axis.x + delta.y * v_axis.y + delta.z * v_axis.z,
         );
         ctx.charge_work(64, OPERATION)?;
-        if !targets_by_radius.contains_key(&radius_key) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            targets_by_radius
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
+        ctx.admit_hash_map_entry(&mut targets_by_radius, &radius_key, OPERATION)?;
         let targets = targets_by_radius.entry(radius_key).or_default();
         let point = quantize(center, quantum);
-        if !targets.contains(&point) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            targets
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        targets.insert(point);
+        ctx.insert_hash_set(targets, point, OPERATION)?;
     }
     let mut compatible = HashMap::new();
     for (center, radius) in circles {
@@ -364,13 +353,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
             continue;
         };
         let center = (*center).into();
-        if !compatible.contains_key(&center) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            compatible
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        compatible.insert(center, targets);
+        ctx.insert_hash_map(&mut compatible, center, targets, OPERATION)?;
     }
     if compatible.len() != circles.len() {
         return Ok(Vec::new());
@@ -397,10 +380,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
                 complete = false;
                 break;
             }
-            ctx.charge_collection_items(1, OPERATION)?;
-            used.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            used.insert((*radius, center));
+            ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)?;
         }
         if complete {
             ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
@@ -610,12 +590,7 @@ where
                     else {
                         continue;
                     };
-                    if !translations.contains_key(&translation) {
-                        ctx.charge_collection_items(1, OPERATION)?;
-                        translations.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                        })?;
-                    }
+                    ctx.admit_hash_map_entry(&mut translations, &translation, OPERATION)?;
                     let count = translations.entry(translation).or_default();
                     *count = count
                         .checked_add(1)
@@ -1269,15 +1244,7 @@ where
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
         operation,
     )?;
-    if identities.contains(identity) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, operation)?;
-    identities
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    identities.insert(identity);
-    Ok(true)
+    ctx.insert_hash_set(identities, identity, operation)
 }
 
 pub(super) fn charge_profile_marker_lookup(

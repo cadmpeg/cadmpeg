@@ -141,8 +141,8 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             let mut constructed_marker = SketchInputEntity::new(
                 marker_id,
                 marker_parent,
-                ordinal as u32,
-                ordinal as u64,
+                u32::try_from(ordinal).expect("ordinal fits u32"),
+                cadmpeg_core::decode::u64_from_index(ordinal),
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some("position".into());
@@ -302,13 +302,15 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
             let mut constructed_marker = SketchInputEntity::new(
                 marker_id,
                 marker_parent,
-                ordinal as u32,
-                ordinal as u64,
+                u32::try_from(ordinal).expect("ordinal fits u32"),
+                cadmpeg_core::decode::u64_from_index(ordinal),
                 SketchInputKind::Arc,
             );
             constructed_marker.feature_ref = Some("position".into());
-            constructed_marker =
-                constructed_marker.with_test_identity(Some((ordinal + 1) as u32), None);
+            constructed_marker = constructed_marker.with_test_identity(
+                Some(u32::try_from(ordinal + 1).expect("ordinal fits u32")),
+                None,
+            );
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
             constructed_marker.links = None;
@@ -554,7 +556,7 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
         id: "position-name".into(),
         parent: "lane".into(),
         ordinal: 1,
-        offset: child_offset as u64,
+        offset: cadmpeg_core::decode::u64_from_index(child_offset),
         value: "Position".into(),
         object_id: ObjectId::from_value(6),
     });
@@ -603,7 +605,7 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         id: "position-name".into(),
         parent: "lane".into(),
         ordinal: 1,
-        offset: child_offset as u64,
+        offset: cadmpeg_core::decode::u64_from_index(child_offset),
         value: "Position".into(),
         object_id: ObjectId::from_value(6),
     });

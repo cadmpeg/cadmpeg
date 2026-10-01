@@ -82,18 +82,31 @@ impl EdgeProjectionTolerance {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The sketch and the source position whose shared endpoints become constraints.
+#[derive(Clone, Copy)]
+pub(super) struct EndpointConstraintSource<'a> {
+    pub(super) sketch: &'a SketchId,
+    pub(super) entities: &'a [SketchEntity],
+    pub(super) block_offset: usize,
+    pub(super) stream_ordinal: usize,
+    pub(super) face_ordinal: usize,
+    pub(super) stream: &'a cadmpeg_ir::StreamName,
+}
+
 pub(super) fn project_endpoint_constraints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    sketch: &SketchId,
-    entities: &[SketchEntity],
-    block_offset: usize,
-    stream_ordinal: usize,
-    face_ordinal: usize,
-    stream: &cadmpeg_ir::StreamName,
+    source: EndpointConstraintSource<'_>,
     annotations: &mut Annotations,
     constraints: &mut Vec<SketchConstraint>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let EndpointConstraintSource {
+        sketch,
+        entities,
+        block_offset,
+        stream_ordinal,
+        face_ordinal,
+        stream,
+    } = source;
     let mut loci_by_endpoint =
         BTreeMap::<&str, Vec<(bool, &cadmpeg_ir::sketches::SketchEntityId)>>::new();
     for entity in entities {
@@ -101,9 +114,11 @@ pub(super) fn project_endpoint_constraints(
             continue;
         }
         for (index, endpoint) in entity.endpoint_refs.iter().enumerate() {
-            if !loci_by_endpoint.contains_key(endpoint.as_str()) {
-                ctx.charge_collection_items(1, "index SLDPRT shared sketch endpoints")?;
-            }
+            ctx.admit_btree_entry(
+                &loci_by_endpoint,
+                &endpoint.as_str(),
+                "index SLDPRT shared sketch endpoints",
+            )?;
             let loci = loci_by_endpoint.entry(endpoint).or_default();
             ctx.reserve_collection_vec(loci, 1, "collect SLDPRT shared sketch endpoint loci")?;
             loci.push((index == 0, entity.id()));
@@ -130,7 +145,7 @@ pub(super) fn project_endpoint_constraints(
             if value == 0 {
                 1
             } else {
-                value.ilog10() as usize + 1
+                cadmpeg_core::decode::index_from_u32(value.ilog10()) + 1
             }
         };
         let id_length = "sldprt:model:sketch-constraint#:::".len()

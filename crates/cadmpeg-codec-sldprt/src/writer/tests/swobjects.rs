@@ -134,9 +134,9 @@ fn semantic_writer_emits_face_records_deterministically() {
     for (index, face) in ir.model.faces.iter_mut().enumerate() {
         face.color = Some(
             Color::new(
-                index as f32 / 10.0,
-                (index + 1) as f32 / 10.0,
-                (index + 2) as f32 / 10.0,
+                f32::from(u16::try_from(index).expect("index fits u16")) / 10.0,
+                f32::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
+                f32::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
                 1.0,
             )
             .expect("valid color"),
@@ -455,7 +455,7 @@ fn encoder_writes_source_less_line_sketches() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#profile-op-{index}"))
                 .expect("identity grammar"),
-            ordinal: index as u64 + 2,
+            ordinal: cadmpeg_core::decode::u64_from_index(index) + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),

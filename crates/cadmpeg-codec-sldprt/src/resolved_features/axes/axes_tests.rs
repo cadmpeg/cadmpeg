@@ -1046,7 +1046,12 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
             marker("first", 0, Some(1), Some([0.0, 0.0])),
             marker("second", 100, Some(2), Some([0.0, 0.02])),
             marker("profile-point", 200, Some(3), Some([-0.01, 0.01])),
-            marker("axis-chord", curve as u64, None, None),
+            marker(
+                "axis-chord",
+                cadmpeg_core::decode::u64_from_index(curve),
+                None,
+                None,
+            ),
         ],
     };
     lane.sketch_entities[3].reclassify(SketchInputKind::Arc);
@@ -1262,7 +1267,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         let mut constructed_marker = SketchInputEntity::new(
             marker_id,
             marker_parent,
-            offset as u32,
+            u32::try_from(offset).unwrap(),
             offset,
             SketchInputKind::Point,
         );

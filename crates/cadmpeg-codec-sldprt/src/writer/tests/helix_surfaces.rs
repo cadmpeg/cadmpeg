@@ -517,9 +517,10 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
             let description = b"boundary_polyline mesh";
             let schema = b"SCH_3201255_32001_13006";
             let mut stream = b"PS\0\0".to_vec();
-            stream.extend((description.len() as u16).to_be_bytes());
+            stream
+                .extend((u16::try_from(description.len()).expect("length fits u16")).to_be_bytes());
             stream.extend(description);
-            stream.push(schema.len() as u8);
+            stream.push(u8::try_from(schema.len()).expect("length fits u8"));
             stream.extend(schema);
             stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
             stream.extend((65u32 * 3).to_be_bytes());

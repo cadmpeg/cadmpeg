@@ -49,7 +49,7 @@ pub(super) fn project_cosmetic_thread(
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
     ctx.charge_work(
-        feature.parameters.len() as u64,
+        cadmpeg_core::decode::u64_from_index(feature.parameters.len()),
         "scan SLDPRT cosmetic thread dimensions",
     )?;
     let diameter = feature

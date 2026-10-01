@@ -73,10 +73,10 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .into_iter()
             .enumerate()
             .map(|(index, marker)| FeatureInputOperand {
-                offset: index as u64,
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
-                entity_index: index as u16,
+                entity_index: u16::try_from(index).expect("test index fits u16"),
                 entity_ref: Some(marker.into()),
             })
             .collect(),

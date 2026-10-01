@@ -216,7 +216,10 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     };
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
     assert_eq!(scalar.operands.len(), 1);
-    assert_eq!(scalar.operands[0].offset, (trailer + 36) as u64);
+    assert_eq!(
+        scalar.operands[0].offset,
+        cadmpeg_core::decode::u64_from_index(trailer + 36)
+    );
     assert_eq!(
         scalar.operands[0].kind,
         crate::records::FeatureInputOperandKind::Native(NativeOperandTag::TAG_80CC)
@@ -260,7 +263,10 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
-    assert_eq!(scalar.offset, value_offset as u64);
+    assert_eq!(
+        scalar.offset,
+        cadmpeg_core::decode::u64_from_index(value_offset)
+    );
     assert_eq!(scalar.object_id, 70);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
     assert!(scalar.entity_indices().is_empty());

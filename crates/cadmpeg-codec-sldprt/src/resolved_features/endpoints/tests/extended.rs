@@ -9,6 +9,7 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind};
+use cadmpeg_core::decode::u64_from_index;
 use crate::resolved_features::endpoints::compact_indexed_curve_endpoint_indices;
 use crate::resolved_features::endpoints::coordinate_roster_arc_center;
 use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
@@ -1286,7 +1287,7 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
             marker_id,
             marker_parent,
             0,
-            curve_offset as u64,
+            u64_from_index(curve_offset),
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
@@ -1393,7 +1394,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
             marker_id,
             marker_parent,
             0,
-            curve_offset as u64,
+            u64_from_index(curve_offset),
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
@@ -1447,9 +1448,10 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[offset + 23..offset + 29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
         payload[offset + 56..offset + 58].copy_from_slice(&[0x1e, 0x00]);
-        payload[offset + 58..offset + 66].copy_from_slice(&(f64::from(index as u32)).to_le_bytes());
+        payload[offset + 58..offset + 66]
+            .copy_from_slice(&(f64::from(u32::try_from(index).unwrap())).to_le_bytes());
         payload[offset + 66..offset + 74]
-            .copy_from_slice(&(f64::from((index + 1) as u32)).to_le_bytes());
+            .copy_from_slice(&(f64::from(u32::try_from(index + 1).unwrap())).to_le_bytes());
     }
     payload[curve_offset..curve_offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -1487,7 +1489,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
             marker_id,
             marker_parent,
             0,
-            curve_offset as u64,
+            u64_from_index(curve_offset),
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
@@ -1501,7 +1503,10 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
             point(
                 &format!("point{index}"),
                 index * 134,
-                Some([f64::from(index as u32), f64::from((index + 1) as u32)]),
+                Some([
+                    f64::from(u32::try_from(index).unwrap()),
+                    f64::from(u32::try_from(index + 1).unwrap()),
+                ]),
             )
         })
         .collect::<Vec<_>>();

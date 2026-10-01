@@ -1518,11 +1518,13 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         lane.scalars[0].role,
         crate::records::FeatureInputScalarRole::Driving
     );
-    assert!(lane
-        .classes
-        .iter()
-        .enumerate()
-        .all(|(ordinal, class)| class.ordinal == ordinal as u32));
+    assert!(
+        lane.classes
+            .iter()
+            .enumerate()
+            .all(|(ordinal, class)| class.ordinal
+                == u32::try_from(ordinal).expect("ordinal fits u32"))
+    );
     assert!(lane
         .sketch_entities
         .windows(2)
@@ -1531,19 +1533,23 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .sketch_entities
         .iter()
         .enumerate()
-        .all(|(ordinal, entity)| entity.ordinal() == ordinal as u32));
+        .all(|(ordinal, entity)| entity.ordinal()
+            == u32::try_from(ordinal).expect("ordinal fits u32")));
     assert!(lane
         .sketch_entities
         .iter()
         .enumerate()
-        .all(|(ordinal, entity)| entity.local_id() == Some(ordinal as u32 + 1)));
+        .all(|(ordinal, entity)| entity.local_id()
+            == Some(u32::try_from(ordinal).expect("ordinal fits u32") + 1)));
     assert!(lane
         .sketch_entities
         .iter()
         .enumerate()
         .all(
             |(ordinal, entity)| entity.state_value.map(cadmpeg_ir::scalar::FiniteReal::get)
-                == Some(ordinal as f64 + 1.0)
+                == Some(
+                    cadmpeg_core::convert::f64_from_index(ordinal).expect("ordinal is exact") + 1.0
+                )
         ));
     let by_ordinal = |ordinal| {
         lane.sketch_entities

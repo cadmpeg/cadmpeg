@@ -16,7 +16,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface},
@@ -122,16 +122,14 @@ pub(super) fn scan_sweep_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<HashMap<u16, SweepCarrier>, cadmpeg_core::CodecError> {
-    ctx.charge_work(bytes.len() as u64, "scan SLDPRT sweep carriers")?;
+    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT sweep carriers")?;
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(20) {
+    let Some(last_offset) = bytes.len().checked_sub(20) else {
+        return Ok(out);
+    };
+    for off in 0..last_offset {
         if let Some(carrier) = parse_sweep(bytes, off) {
-            if !out.contains_key(&carrier.attr) {
-                ctx.charge_collection_items(1, "index SLDPRT sweep carriers")?;
-                out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT sweep carriers", u64::MAX - 1, u64::MAX)
-                })?;
-            }
+            ctx.admit_hash_map_entry(&mut out, &carrier.attr, "index SLDPRT sweep carriers")?;
             out.entry(carrier.attr).or_insert(carrier);
         }
     }
@@ -175,8 +173,8 @@ pub(super) fn profile_nurbs<'a>(
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control_points = Vec::with_capacity(9);
     let mut weights = Vec::with_capacity(9);
-    for index in 0..9 {
-        let angle = index as f64 * std::f64::consts::FRAC_PI_4;
+    for index in 0_i32..9 {
+        let angle = f64::from(index) * std::f64::consts::FRAC_PI_4;
         let (sin, cos) = angle.sin_cos();
         let tangent_scale = if index % 2 == 0 {
             1.0
@@ -222,20 +220,6 @@ pub(super) fn profile_nurbs<'a>(
     }
 }
 
-fn reserve_curve_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = u64::try_from(additional)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(count, operation)?;
-    values
-        .try_reserve(additional)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
-}
-
 fn curve_rows<T: Copy>(
     ctx: &DecodeContext<'_>,
     values: &[T],
@@ -243,10 +227,10 @@ fn curve_rows<T: Copy>(
     operation: &'static str,
 ) -> Result<Vec<Vec<T>>, CodecError> {
     let mut rows = Vec::new();
-    reserve_curve_vec(ctx, &mut rows, values.len() / width, operation)?;
+    ctx.reserve_vec(&mut rows, values.len() / width, operation)?;
     for values in values.chunks(width) {
         let mut row = Vec::new();
-        reserve_curve_vec(ctx, &mut row, values.len(), operation)?;
+        ctx.reserve_vec(&mut row, values.len(), operation)?;
         row.extend_from_slice(values);
         rows.push(row);
     }
@@ -256,7 +240,7 @@ fn curve_rows<T: Copy>(
 fn profile_knots(ctx: &DecodeContext<'_>, profile: &NurbsCurve) -> Result<Vec<f64>, CodecError> {
     let source = profile.knots().as_slice();
     let mut knots = Vec::new();
-    reserve_curve_vec(ctx, &mut knots, source.len(), "copy sweep profile knots")?;
+    ctx.reserve_vec(&mut knots, source.len(), "copy sweep profile knots")?;
     knots.extend_from_slice(source);
     Ok(knots)
 }
@@ -305,10 +289,10 @@ pub(super) fn swept_nurbs(
         "solve swept surface poles",
     )?;
     let mut control = Vec::new();
-    reserve_curve_vec(ctx, &mut control, count, "construct swept surface poles")?;
+    ctx.reserve_vec(&mut control, count, "construct swept surface poles")?;
     let mut weights = matches!(profile.pole_rows(), NurbsPoles3::Rational { .. }).then(Vec::new);
     if let Some(weights) = &mut weights {
-        reserve_curve_vec(ctx, weights, count, "construct swept surface weights")?;
+        ctx.reserve_vec(weights, count, "construct swept surface weights")?;
     }
     for i in 0..n {
         let (pole, weight) = match profile.pole_rows() {
@@ -393,9 +377,9 @@ pub(super) fn spun_nurbs(
     )?;
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control = Vec::new();
-    reserve_curve_vec(ctx, &mut control, count, "construct spun surface poles")?;
+    ctx.reserve_vec(&mut control, count, "construct spun surface poles")?;
     let mut weights = Vec::new();
-    reserve_curve_vec(ctx, &mut weights, count, "construct spun surface weights")?;
+    ctx.reserve_vec(&mut weights, count, "construct spun surface weights")?;
     for i in 0..n {
         let (pole, pole_weight) = match profile.pole_rows() {
             NurbsPoles3::Polynomial { points } => (points[i].get(), 1.0),
@@ -500,6 +484,7 @@ pub(super) fn spun_nurbs(
 mod tests {
     use std::f64::consts::{FRAC_PI_2, SQRT_2};
 
+    use cadmpeg_core::decode::index_from_u32;
     use cadmpeg_ir::eval::nurbs_curve_point_at;
 
     use super::{profile_nurbs, spun_nurbs, swept_nurbs, SweepCarrier, SweepKind};
@@ -741,13 +726,13 @@ mod tests {
         }
         let u_basis = basis(
             surface.u_knots(),
-            surface.u_degree() as usize,
+            index_from_u32(surface.u_degree()),
             surface.u_count(),
             u_parameter,
         );
         let v_basis = basis(
             surface.v_knots(),
-            surface.v_degree() as usize,
+            index_from_u32(surface.v_degree()),
             surface.v_count(),
             v_parameter,
         );

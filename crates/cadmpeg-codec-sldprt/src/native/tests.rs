@@ -1139,14 +1139,14 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     );
     let lane = &mut native.feature_input_lanes[0];
     for (index, local_id) in [(1, 7u32), (2, 8u32)] {
-        let offset = lane.sketch_entities[index].offset() as usize + 88;
+        let offset = usize::try_from(lane.sketch_entities[index].offset()).unwrap() + 88;
         lane.native_payload[offset..offset + 4].copy_from_slice(&local_id.to_le_bytes());
     }
     for entity in &mut lane.sketch_entities {
         *entity = entity.with_test_identity(
             crate::resolved_features::markers::marker_object_index(
                 &lane.native_payload,
-                entity.offset() as usize,
+                usize::try_from(entity.offset()).unwrap(),
             ),
             entity.local_id(),
         );
@@ -1710,7 +1710,10 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         .expect("a lane states its payload");
     assert!(payload_length > 0);
 
-    for forged in [u64::MAX, payload_length as u64 + 1] {
+    for forged in [
+        u64::MAX,
+        cadmpeg_core::decode::u64_from_index(payload_length) + 1,
+    ] {
         let mut edit = original.clone();
         edit["feature_input_names"][0]["offset"] = serde_json::json!(forged);
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(edit).unwrap();

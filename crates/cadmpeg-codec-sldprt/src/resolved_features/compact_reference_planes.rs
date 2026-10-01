@@ -94,7 +94,9 @@ impl CompactReferencePlaneIndex {
             .iter()
             .filter(|offset| {
                 **offset >= start
-                    && offset.saturating_add(COMPACT_REFERENCE_PLANE_CLASS.len()) <= end
+                    && offset
+                        .checked_add(COMPACT_REFERENCE_PLANE_CLASS.len())
+                        .is_some_and(|stop| stop <= end)
             })
             .count();
         if class_count != 1 {
@@ -105,7 +107,9 @@ impl CompactReferencePlaneIndex {
                 .iter()
                 .filter(|(offset, _)| {
                     *offset >= start
-                        && offset.saturating_add(COMPACT_REFERENCE_PLANE_RECORD_LEN) <= end
+                        && offset
+                            .checked_add(COMPACT_REFERENCE_PLANE_RECORD_LEN)
+                            .is_some_and(|stop| stop <= end)
                 })
                 .map(|(_, source)| *source),
         )
@@ -121,7 +125,9 @@ impl CompactReferencePlaneIndex {
                     .iter()
                     .filter(|(offset, _)| {
                         *offset >= start
-                            && offset.saturating_add(COMPACT_COMPONENT_PLANE_RECORD_LEN) <= end
+                            && offset
+                                .checked_add(COMPACT_COMPONENT_PLANE_RECORD_LEN)
+                                .is_some_and(|stop| stop <= end)
                     })
                     .map(|(_, source)| *source),
             ),

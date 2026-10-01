@@ -1591,10 +1591,10 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
             .into_iter()
             .enumerate()
             .map(|(index, marker)| FeatureInputOperand {
-                offset: index as u64,
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::D6,
-                entity_index: index as u16,
+                entity_index: u16::try_from(index).expect("test index fits u16"),
                 entity_ref: Some(marker.id().to_string()),
             })
             .collect(),

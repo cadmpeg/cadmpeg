@@ -60,16 +60,12 @@ pub(crate) fn enrich_history_parameters<'a>(
             })?,
             "scan SLDPRT parameter candidates",
         )?;
-        ctx.charge_collection_items(
-            u64::try_from(lane.names.len()).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT parameter names", u64::MAX - 1, u64::MAX)
-            })?,
+        let mut names_by_id = HashMap::new();
+        ctx.reserve_map(
+            &mut names_by_id,
+            lane.names.len(),
             "index SLDPRT parameter names",
         )?;
-        let mut names_by_id = HashMap::new();
-        names_by_id.try_reserve(lane.names.len()).map_err(|_| {
-            ctx.refuse_codec_limit("index SLDPRT parameter names", u64::MAX - 1, u64::MAX)
-        })?;
         for name in &lane.names {
             names_by_id.insert(name.id.as_str(), name);
         }
@@ -111,24 +107,17 @@ pub(crate) fn enrich_history_parameters<'a>(
             );
         let mut scalar_units = HashMap::new();
         for (scalar, unit) in units {
-            if !scalar_units.contains_key(scalar) {
-                ctx.charge_collection_items(1, "index SLDPRT scalar units")?;
-                scalar_units.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT scalar units", u64::MAX - 1, u64::MAX)
-                })?;
-            }
-            scalar_units.insert(scalar, unit);
+            ctx.insert_hash_map(&mut scalar_units, scalar, unit, "index SLDPRT scalar units")?;
         }
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
             for scalar in relation.scalar_refs() {
-                if !scalar_units.contains_key(scalar.as_str()) {
-                    ctx.charge_collection_items(1, "index SLDPRT scalar units")?;
-                    scalar_units.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("index SLDPRT scalar units", u64::MAX - 1, u64::MAX)
-                    })?;
-                }
-                scalar_units.insert(scalar.as_str(), unit);
+                ctx.insert_hash_map(
+                    &mut scalar_units,
+                    scalar.as_str(),
+                    unit,
+                    "index SLDPRT scalar units",
+                )?;
             }
         }
         let mut starts = Vec::<(u64, usize, usize)>::new();
@@ -163,14 +152,13 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
                 };
-                if !owned.contains_key(name.value.as_str()) {
-                    ctx.charge_collection_items(1, "index SLDPRT owned scalar names")?;
-                    owned.insert(name.value.as_str(), Vec::new());
-                }
-                if let Some(group) = owned.get_mut(name.value.as_str()) {
-                    ctx.reserve_collection_vec(group, 1, "collect SLDPRT owned scalars")?;
-                    group.push(scalar);
-                }
+                ctx.push_btree_group(
+                    &mut owned,
+                    name.value.as_str(),
+                    scalar,
+                    "index SLDPRT owned scalar names",
+                    "collect SLDPRT owned scalars",
+                )?;
             }
             for (name, scalars) in owned {
                 let mut driving = Vec::new();
@@ -217,27 +205,13 @@ pub(crate) fn enrich_history_parameters<'a>(
                         "retain SLDPRT parameter candidate name",
                     )?;
                     let key = (history_index, feature_index, name);
-                    match candidates.entry(key) {
-                        std::collections::btree_map::Entry::Occupied(mut entry) => {
-                            ctx.reserve_collection_vec(
-                                entry.get_mut(),
-                                1,
-                                "collect SLDPRT parameter candidates",
-                            )?;
-                            entry.get_mut().push((scalar.value.get(), unit));
-                        }
-                        std::collections::btree_map::Entry::Vacant(entry) => {
-                            ctx.charge_collection_items(1, "index SLDPRT parameter candidates")?;
-                            let mut values = Vec::new();
-                            ctx.reserve_collection_vec(
-                                &mut values,
-                                1,
-                                "collect SLDPRT parameter candidates",
-                            )?;
-                            values.push((scalar.value.get(), unit));
-                            entry.insert(values);
-                        }
-                    }
+                    ctx.push_btree_group(
+                        &mut candidates,
+                        key,
+                        (scalar.value.get(), unit),
+                        "index SLDPRT parameter candidates",
+                        "collect SLDPRT parameter candidates",
+                    )?;
                 }
             }
         }
@@ -305,12 +279,19 @@ pub(crate) fn enrich_history_parameters<'a>(
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
             continue;
         };
-        if !feature.parameters.contains_key(name.as_str()) {
-            ctx.charge_collection_items(1, "insert SLDPRT enriched parameter")?;
-        }
         if replace_existing {
-            feature.parameters.insert(name, expression);
+            ctx.insert_btree_map(
+                &mut feature.parameters,
+                name,
+                expression,
+                "insert SLDPRT enriched parameter",
+            )?;
         } else {
+            ctx.admit_btree_entry(
+                &feature.parameters,
+                &name,
+                "insert SLDPRT enriched parameter",
+            )?;
             feature.parameters.entry(name).or_insert(expression);
         }
     }

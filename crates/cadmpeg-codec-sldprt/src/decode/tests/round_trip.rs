@@ -25,23 +25,29 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::transform::Transform;
 
+    /// An affine motion and the point map it must induce.
+    struct Motion {
+        rows: [[f64; 4]; 3],
+        apply: fn(Point3) -> Point3,
+    }
+
     let motions = [
-        (
-            [
+        Motion {
+            rows: [
                 [0.0, -1.0, 0.0, 10.0],
                 [1.0, 0.0, 0.0, 20.0],
                 [0.0, 0.0, 1.0, 30.0],
             ],
-            (|p: Point3| Point3::new(-p.y + 10.0, p.x + 20.0, p.z + 30.0)) as fn(Point3) -> Point3,
-        ),
-        (
-            [
+            apply: |p| Point3::new(-p.y + 10.0, p.x + 20.0, p.z + 30.0),
+        },
+        Motion {
+            rows: [
                 [1.0, 0.0, 0.0, -5.0],
                 [0.0, 0.0, -1.0, 7.0],
                 [0.0, 1.0, 0.0, 3.0],
             ],
-            |p: Point3| Point3::new(p.x - 5.0, -p.z + 7.0, p.y + 3.0),
-        ),
+            apply: |p| Point3::new(p.x - 5.0, -p.z + 7.0, p.y + 3.0),
+        },
     ];
 
     // The `.sldprt` semantic writer refuses a body or face name without a
@@ -74,7 +80,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         .map(|point| point.position().get())
         .collect();
 
-    for (rows, apply) in motions {
+    for Motion { rows, apply } in motions {
         let mut moved = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         prepare(&mut moved);
         moved.model.bodies[0].transform = Some(Transform::affine(rows).expect("affine transform"));

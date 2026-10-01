@@ -93,7 +93,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     let entities = sketch_input_entities(&payload, "lane");
     let first_entity = entities
         .iter()
-        .find(|entity| entity.offset() == first as u64)
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(first))
         .expect("first linked profile point");
     assert_eq!(first_entity.kind(), SketchInputKind::Point);
     assert_eq!(
@@ -111,7 +111,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
             marker_id,
             marker_parent,
             0,
-            line as u64,
+            cadmpeg_core::decode::u64_from_index(line),
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("profile".into());
@@ -134,8 +134,8 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     };
     let markers = [
         curve.clone(),
-        point("first", first as u64),
-        point("second", second as u64),
+        point("first", cadmpeg_core::decode::u64_from_index(first)),
+        point("second", cadmpeg_core::decode::u64_from_index(second)),
     ];
     let marker_refs = markers.iter().collect::<Vec<_>>();
     assert_eq!(
@@ -146,7 +146,10 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
             &marker_refs
         )
         .unwrap(),
-        Some([first as u64, second as u64])
+        Some([
+            cadmpeg_core::decode::u64_from_index(first),
+            cadmpeg_core::decode::u64_from_index(second)
+        ])
     );
 
     payload[first + 76..first + 78].copy_from_slice(&5u16.to_le_bytes());

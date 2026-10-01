@@ -874,7 +874,11 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
     assert!(matches!(transform.axes, Axes::Affine(_)));
     assert_eq!(
         transform.apply((1_100_000_000, 1_900_000_000)),
-        Some(((std::f64::consts::SQRT_2 / 1.0e-8).round() as i64, 0))
+        Some((
+            cadmpeg_core::convert::truncate_f64_to_i64((std::f64::consts::SQRT_2 / 1.0e-8).round())
+                .expect("rounded coordinate fits i64"),
+            0
+        ))
     );
 }
 
@@ -1541,13 +1545,15 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     bind_sketch_profiles(
         &ctx,
         &mut features,
-        &mut sketches,
-        &mut entities,
-        &mut constraints,
+        crate::resolved_features::profiles::SketchArenas {
+            sketches: &mut sketches,
+            sketch_entities: &mut entities,
+            sketch_constraints: &mut constraints,
+            annotations: &mut annotations,
+        },
         &[parameter],
         &[history],
         &[lane],
-        &mut annotations,
     )
     .unwrap();
 

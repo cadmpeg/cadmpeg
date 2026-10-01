@@ -614,8 +614,13 @@ fn append_generated_scalar(
             "SLDPRT generated parameter name must contain 1 to 128 UTF-16 code units".into(),
         ));
     }
+    let class_length = u16::try_from(class.len()).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed(
+            "SLDPRT generated parameter class name exceeds 65535 bytes".into(),
+        )
+    })?;
     payload.extend_from_slice(CLASS_MARKER);
-    payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    payload.extend_from_slice(&class_length.to_le_bytes());
     payload.extend_from_slice(class.as_bytes());
     payload.extend_from_slice(NAME_MARKER);
     payload.push(length);
@@ -817,7 +822,12 @@ pub(super) fn append_coordinate_marker_link(
     bytes[2..4].copy_from_slice(&relation_local_id.to_le_bytes());
     bytes[4..8].fill(0xff);
     bytes[14..18].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
-    payload[*offset + 84..*offset + 86].copy_from_slice(&((count + 1) as u16).to_le_bytes());
+    let relation_count = u16::try_from(count + 1).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed(
+            "source-less SLDPRT coordinate marker reverse relation count exceeds 65535".into(),
+        )
+    })?;
+    payload[*offset + 84..*offset + 86].copy_from_slice(&relation_count.to_le_bytes());
     Ok(())
 }
 

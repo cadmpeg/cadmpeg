@@ -5,7 +5,7 @@ use crate::records::charged_clone::CloneCharged;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 
 pub(super) fn admit(
     native: &SldprtNative,
@@ -87,7 +87,7 @@ pub(super) fn admit(
                     ),
                 )?);
             }
-            if entity.offset() != position as u64 {
+            if entity.offset() != u64_from_index(position) {
                 return Err(invalid_owner(
                     ctx,
                     format_args!(

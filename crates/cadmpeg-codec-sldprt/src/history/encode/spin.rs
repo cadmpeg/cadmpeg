@@ -18,18 +18,55 @@ use cadmpeg_ir::{
     scalar::Angle,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
+/// The decoded fields of one `Sweep` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct SweepDefinition<'a> {
+    pub(super) shape: &'a cadmpeg_ir::features::SweepShape,
+    pub(super) path: Option<&'a PathRef>,
+    pub(super) orientation: Option<&'a SweepOrientation>,
+    pub(super) transition: Option<&'a SweepTransition>,
+    pub(super) transformation: Option<&'a SweepTransformation>,
+    pub(super) path_tangent: bool,
+    pub(super) linearize: bool,
+    pub(super) twist: Option<&'a Angle>,
+    pub(super) path_extent: Option<&'a SweepPathExtent>,
+    pub(super) guide_rail: Option<&'a SweepGuideRail>,
+    pub(super) taper: Option<&'a Angle>,
+    pub(super) scale: Option<&'a cadmpeg_ir::scalar::PositiveReal>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
+/// The closed and solid flags of a loft.
+#[derive(Clone, Copy)]
+pub(super) struct LoftForm {
+    pub(super) closed: bool,
+    pub(super) solid: bool,
+}
+
+/// The ruled and linearize flags of a loft.
+#[derive(Clone, Copy)]
+pub(super) struct LoftInterpolation {
+    pub(super) ruled: bool,
+    pub(super) linearize: bool,
+}
+
+/// The decoded fields of one `Loft` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct LoftDefinition<'a> {
+    pub(super) sections: &'a [LoftSection],
+    pub(super) guidance: &'a cadmpeg_ir::features::LoftGuidance,
+    pub(super) op: &'a BooleanOp,
+    pub(super) form: LoftForm,
+    pub(super) interpolation: LoftInterpolation,
+    pub(super) max_degree: Option<&'a std::num::NonZeroU32>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_revolve(
         &self,
         construction: &RevolveConstruction,
-        op: &BooleanOp,
+        op: BooleanOp,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -56,7 +93,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (!construction.is_resolved() || *op == BooleanOp::Unresolved) {
+            if existing.is_none() && (!construction.is_resolved() || op == BooleanOp::Unresolved) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved revolution construction",
                     feature.id
@@ -135,10 +172,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     format_vector3(axis.direction.into()),
                 );
             }
-            if *op != BooleanOp::Unresolved {
+            if op != BooleanOp::Unresolved {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Operation"),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
+                    resolved_boolean_op(op, &feature.id)?.into(),
                 );
             }
             if let Some(profile) = construction.profile() {
@@ -162,20 +199,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_sweep(
         &self,
-        shape: &cadmpeg_ir::features::SweepShape,
-        path: &Option<PathRef>,
-        orientation: &Option<SweepOrientation>,
-        transition: &Option<SweepTransition>,
-        transformation: &Option<SweepTransformation>,
-        path_tangent: &bool,
-        linearize: &bool,
-        twist: &Option<Angle>,
-        path_extent: &Option<SweepPathExtent>,
-        guide_rail: &Option<SweepGuideRail>,
-        taper: &Option<Angle>,
-        scale: &Option<cadmpeg_ir::scalar::PositiveReal>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: SweepDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let SweepDefinition {
+            shape,
+            path,
+            orientation,
+            transition,
+            transformation,
+            path_tangent,
+            linearize,
+            twist,
+            path_extent,
+            guide_rail,
+            taper,
+            scale,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -186,8 +226,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || orientation.is_some()
                 || transition.is_some()
                 || transformation.is_some()
-                || *path_tangent
-                || *linearize
+                || path_tangent
+                || linearize
                 || path_extent.is_some()
                 || guide_rail.is_some()
                 || taper.is_some()
@@ -333,16 +373,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_loft(
         &self,
-        sections: &Vec<LoftSection>,
-        guidance: &cadmpeg_ir::features::LoftGuidance,
-        op: &BooleanOp,
-        closed: &bool,
-        solid: &bool,
-        ruled: &bool,
-        linearize: &bool,
-        max_degree: &Option<std::num::NonZeroU32>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: LoftDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let LoftDefinition {
+            sections,
+            guidance,
+            op,
+            form: LoftForm { closed, solid },
+            interpolation: LoftInterpolation { ruled, linearize },
+            max_degree,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -356,8 +397,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         };
         Ok({
             if !solid
-                || *ruled
-                || *linearize
+                || ruled
+                || linearize
                 || max_degree.is_some()
                 || allow_multi_profile_faces.is_some()
             {
@@ -434,7 +475,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            if *closed || existing.is_none() || properties.contains_key("Closed") {
+            if closed || existing.is_none() || properties.contains_key("Closed") {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Closed"),
                     closed.to_string(),
