@@ -63,15 +63,15 @@ fn class_end_checksum_children_refuse_collection_limit() {
 
 #[test]
 fn detects_existing_magic_forms() {
-    assert_eq!(RhinoCodec.detect(MAGIC), Confidence::High);
-    assert_eq!(RhinoCodec.detect(&MAGIC[..MAGIC.len() - 1]), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&RhinoCodec, MAGIC), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&RhinoCodec, &MAGIC[..MAGIC.len() - 1]), Confidence::No);
     let mut incorrect = MAGIC.to_vec();
     incorrect[3] = b'X';
-    assert_eq!(RhinoCodec.detect(&incorrect), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&RhinoCodec, &incorrect), Confidence::No);
     let mut prefix = vec![0x00, 0x01, 0x02, 0x03];
     prefix.extend_from_slice(MAGIC);
     prefix.extend_from_slice(&[0x04, 0x05]);
-    assert_eq!(RhinoCodec.detect(&prefix), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&RhinoCodec, &prefix), Confidence::High);
 }
 
 #[test]

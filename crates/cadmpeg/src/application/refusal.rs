@@ -20,6 +20,8 @@ use serde::Serialize;
 /// operationally.
 #[derive(Debug)]
 pub(crate) enum ApplicationError {
+    /// Original decode resource refusal, including detection and input acquisition.
+    Resource(cadmpeg_core::CodecError),
     /// A modeled conversion policy or capability refusal.
     Refusal(Box<ConversionRefusal>),
     /// Filesystem, I/O, malformed implementation, or artifact failure.
@@ -32,7 +34,7 @@ impl ApplicationError {
     pub(crate) fn refusal(&self) -> Option<&ConversionRefusal> {
         match self {
             Self::Refusal(refusal) => Some(refusal.as_ref()),
-            Self::Operational(_) => None,
+            Self::Operational(_) | Self::Resource(_) => None,
         }
     }
 
@@ -75,7 +77,10 @@ impl From<serde_json::Error> for ApplicationError {
 
 impl From<cadmpeg_core::CodecError> for ApplicationError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
-        Self::Operational(error.into())
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)),
+            error => Self::Operational(error.into()),
+        }
     }
 }
 
@@ -83,6 +88,7 @@ impl fmt::Display for ApplicationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refusal(refusal) => fmt::Display::fmt(refusal.as_ref(), f),
+            Self::Resource(limit) => fmt::Display::fmt(limit, f),
             Self::Operational(error) if f.alternate() => write!(f, "{error:#}"),
             Self::Operational(error) => fmt::Display::fmt(error, f),
         }
@@ -104,6 +110,7 @@ impl ApplicationError {
         failure: DecodeFailure,
     ) -> Self {
         match failure {
+            DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)),
             DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)) => Self::Operational(
                 anyhow::Error::new(DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)))
                     .context(format!("decoding {} as {format_id}", path.display())),

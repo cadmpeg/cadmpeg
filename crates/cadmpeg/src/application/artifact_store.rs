@@ -7,11 +7,12 @@
 //! the next load is what saves the caller, not a transactional pair.
 
 use std::fs::File;
-use std::io::{self, BufWriter, Read, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_container::compound::read_detection_prefix;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::ExportPlan;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::ExportReport;
@@ -19,6 +20,7 @@ use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
 use sha2::{Digest, Sha256};
 
 use super::document::LoadOrigin;
+use super::refusal::ApplicationError;
 
 /// File output path and its overwrite policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,51 +127,18 @@ impl clap::FromArgMatches for OutputDestinations {
     }
 }
 
-/// Read the bytes used for native-format detection.
-///
-/// Most codecs need only the leading prefix. A Compound File Binary
-/// directory may be physically remote from the header, so its codec
-/// evidence cannot be established from a short prefix. Extend such inputs
-/// until the bounded CFB probe reaches the directory or the configured
-/// input ceiling.
-pub(crate) fn read_detection_input(
-    path: &Path,
-    prefix_len: usize,
-    max_bytes: u64,
-) -> Result<Vec<u8>> {
-    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    read_detection_prefix(&mut file, prefix_len, max_bytes).map_err(|error| {
-        if error.kind() == io::ErrorKind::FileTooLarge {
-            anyhow!(
-                "{} exceeds the configured {}-byte input limit",
-                path.display(),
-                max_bytes
-            )
-        } else {
-            error.into()
-        }
-    })
-}
-
-/// Read a UTF-8 text file, refusing payloads above `max_bytes`.
-pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
-    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let mut text = String::new();
-    if let Some(cap) = max_bytes.checked_add(1) {
-        file.take(cap)
-            .read_to_string(&mut text)
-            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
-    } else {
-        file.read_to_string(&mut text)
-            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
-    }
-    if cadmpeg_core::decode::u64_from_index(text.len()) > max_bytes {
-        return Err(anyhow!(
-            "{} exceeds the configured {}-byte input limit",
-            path.display(),
-            max_bytes
-        ));
-    }
+/// Reads UTF-8 input under a typed input-byte limit.
+pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, CodecError> {
+    let mut file = File::open(path)?;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_input_bytes = max_bytes;
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    let mut bytes = Vec::new();
+    ctx.complete_input(&mut file, &mut bytes)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "validate text input UTF-8")?;
+    let text = String::from_utf8(bytes).map_err(|_| CodecError::Malformed("input is not UTF-8".into()))?;
+    ctx.finish_session()?;
     Ok(text)
 }
 
@@ -180,18 +149,17 @@ pub(crate) fn load_matching_sidecar(
     cadir_path: &Path,
     cadir_bytes: &[u8],
     max_bytes: u64,
-) -> Result<Option<DecodeSidecar>> {
+) -> Result<Option<DecodeSidecar>, ApplicationError> {
     let Some(path) = decode_sidecar_path(cadir_path) else {
         return Err(anyhow!(
             "{} names no file, so it has no decode sidecar",
             cadir_path.display()
-        ));
+        ).into());
     };
     if !path.exists() {
         return Ok(None);
     }
-    let text = read_bounded_text(&path, max_bytes)
-        .with_context(|| format!("reading decode sidecar {}", path.display()))?;
+    let text = read_bounded_text(&path, max_bytes)?;
     let sidecar = DecodeSidecar::from_json(&text)
         .with_context(|| format!("parsing decode sidecar {}", path.display()))?;
     if !sidecar.matches(cadir_bytes) {
@@ -199,7 +167,7 @@ pub(crate) fn load_matching_sidecar(
             "decode sidecar {} does not match {}",
             path.display(),
             cadir_path.display()
-        ));
+        ).into());
     }
     Ok(Some(sidecar))
 }
@@ -321,7 +289,7 @@ pub(super) fn persist_decode_sidecar(
         return Err(anyhow!(
             "{} names no file, so it has no decode sidecar",
             cadir_path.display()
-        ));
+        ).into());
     };
     match origin {
         LoadOrigin::Decoded {
@@ -384,11 +352,15 @@ impl Write for TempFileWriter<'_> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::default_trait_access)]
 mod tests {
+    use std::fs::File;
+    use std::path::Path;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     #[cfg(feature = "nx")]
     use std::io::Cursor;
 
     use super::{
-        check_output_path, load_matching_sidecar, read_bounded_text, read_detection_input,
+        check_output_path, load_matching_sidecar, read_bounded_text,
         FileDestination, OptionalFileDestination, OutputDestinations,
     };
     #[cfg(feature = "nx")]
@@ -403,6 +375,17 @@ mod tests {
     };
     #[cfg(feature = "nx")]
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
+
+    fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_input_bytes = max_bytes;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let mut file = File::open(path)?;
+        let result = cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, prefix_len);
+        ctx.finish_session()?;
+        result
+    }
 
     #[test]
     fn clap_pairs_each_output_with_the_shared_force_flag() {
@@ -536,7 +519,7 @@ mod tests {
         let path = directory.path().join("large.json");
         std::fs::write(&path, "12345").unwrap();
         let error = read_bounded_text(&path, 4).unwrap_err();
-        assert!(error.to_string().contains("4-byte input limit"));
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4));
     }
 
     #[test]
@@ -580,9 +563,11 @@ mod tests {
         .unwrap();
         assert_eq!(cli_prefix, bytes);
 
-        let cli_candidates = InputCatalog::with_builtins()
-            .candidates(&cli_prefix)
-            .into_iter()
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&cli_prefix, &arena, &DecodePolicy::default()).expect("root");
+        let catalog = InputCatalog::with_builtins();
+        let (candidates, _storage) = catalog.candidates(&ctx, root).expect("candidates");
+        let cli_candidates = candidates.into_iter()
             .map(|(codec, confidence)| (codec.id(), confidence))
             .collect::<Vec<_>>();
         let mut source = Cursor::new(bytes);

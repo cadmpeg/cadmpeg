@@ -4,14 +4,13 @@
 use std::io::Read;
 
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ExpandWriter, View,
+    DecodeContext, ExpandSpec, ExpandWriter, View,
 };
 use cadmpeg_core::CodecError;
-use flate2::read::{DeflateDecoder, ZlibDecoder};
+use flate2::read::DeflateDecoder;
 use flate2::{Decompress, FlushDecompress, Status};
 
 const INFLATE_CHUNK: usize = 8192;
-const PROBE_CHUNK: usize = 1024;
 
 /// Inflates one zlib member that starts at `source`.
 ///
@@ -154,51 +153,6 @@ fn inflate_deflate_writer<'ctx, 'a>(
     Ok(writer)
 }
 
-/// Inflates at most `cap` raw-DEFLATE output bytes for format detection.
-///
-/// Detection uses a default decode budget. Output beyond the cap or budget is
-/// discarded and reported as failure.
-pub fn inflate_bounded_probe(bytes: &[u8], cap: usize) -> Option<Vec<u8>> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
-    let mut decoder = DeflateDecoder::new(bytes);
-    probe_decoder(&ctx, |chunk| decoder.read(chunk).ok(), cap)
-}
-
-/// Inflates at most `cap` zlib output bytes under a default decode budget.
-///
-/// The walk stops at stream end. Leftover input after the member is allowed.
-/// Output beyond the cap, or any decode error, is reported as failure.
-pub fn inflate_zlib_probe(bytes: &[u8], cap: usize) -> Option<Vec<u8>> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
-    let mut decoder = ZlibDecoder::new(bytes);
-    probe_decoder(&ctx, |chunk| decoder.read(chunk).ok(), cap)
-}
-
-fn probe_decoder(
-    ctx: &DecodeContext<'_>,
-    mut read_chunk: impl FnMut(&mut [u8]) -> Option<usize>,
-    cap: usize,
-) -> Option<Vec<u8>> {
-    let mut output = Vec::new();
-    let mut chunk = [0_u8; PROBE_CHUNK];
-    loop {
-        let read = read_chunk(&mut chunk)?;
-        if read == 0 {
-            return Some(output);
-        }
-        if cap
-            .checked_sub(output.len())
-            .is_none_or(|remaining| read > remaining)
-        {
-            return None;
-        }
-        ctx.extend_retained_bytes(&mut output, &chunk[..read], "retain format probe output")
-            .ok()?;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::Write as _;
@@ -210,8 +164,8 @@ mod tests {
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
     use super::{
-        inflate_bounded_probe, inflate_deflate, inflate_deflate_owned, inflate_zlib_exact,
-        inflate_zlib_member, inflate_zlib_member_owned, inflate_zlib_probe,
+        inflate_deflate, inflate_deflate_owned, inflate_zlib_exact,
+        inflate_zlib_member, inflate_zlib_member_owned,
     };
 
     #[test]
@@ -391,11 +345,13 @@ mod tests {
         let compressed = encoder
             .finish()
             .expect("finishing an in-memory deflate encoder succeeds");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default()).expect("root");
         assert_eq!(
-            inflate_bounded_probe(&compressed, 12).as_deref(),
+            ctx.inflate_probe(root, 12, false).expect("probe").as_ref().map(|(bytes, _storage)| bytes.as_slice()),
             Some(b"Document.xml".as_slice())
         );
-        assert!(inflate_bounded_probe(&compressed, 11).is_none());
+        assert!(ctx.inflate_probe(root, 11, false).expect("probe").is_none());
     }
 
     #[test]
@@ -407,10 +363,12 @@ mod tests {
         let compressed = encoder
             .finish()
             .expect("finishing an in-memory zlib encoder succeeds");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default()).expect("root");
         assert_eq!(
-            inflate_zlib_probe(&compressed, 12).as_deref(),
+            ctx.inflate_probe(root, 12, true).expect("probe").as_ref().map(|(bytes, _storage)| bytes.as_slice()),
             Some(b"Document.xml".as_slice())
         );
-        assert!(inflate_zlib_probe(&compressed, 11).is_none());
+        assert!(ctx.inflate_probe(root, 11, true).expect("probe").is_none());
     }
 }

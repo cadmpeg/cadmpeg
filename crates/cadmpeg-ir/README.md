@@ -55,8 +55,10 @@ then decode the selected source:
 ```rust
 use cadmpeg_ir::{Codec, Confidence};
 
-fn accepts(codec: &dyn Codec, prefix: &[u8]) -> bool {
-    codec.detect(prefix) >= Confidence::Medium
+use cadmpeg_core::{CodecError, decode::{DecodeContext, View}};
+
+fn accepts(codec: &dyn Codec, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<bool, CodecError> {
+    Ok(codec.detect(ctx, prefix)? >= Confidence::Medium)
 }
 ```
 

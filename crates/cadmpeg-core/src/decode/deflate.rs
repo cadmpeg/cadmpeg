@@ -46,7 +46,7 @@ impl DecodeContext<'_> {
                 return Ok(Some((output, storage)));
             }
             if consumed == 0 && produced == 0 {
-                return Ok(None);
+                return Ok(Some((output, storage)));
             }
         }
     }

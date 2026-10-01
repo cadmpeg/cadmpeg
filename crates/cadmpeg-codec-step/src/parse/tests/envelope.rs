@@ -741,7 +741,7 @@ fn part28_configuration_witnesses_are_refused_before_schema_admission() {
             root.attribute("schema") == Some(EXPRESS_SCHEMA),
             schema_matches_ap238
         );
-        assert_eq!(codec.detect(bytes), Confidence::Medium);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&codec, bytes), Confidence::Medium);
         let error = codec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect_err("Part 28 refusal");
@@ -865,7 +865,7 @@ fn part28_schema_mapping_witnesses_stop_at_the_caller_boundary() {
         include_bytes!("data/ce04_part28_ap238_duplicate_id.xml").as_slice(),
         include_bytes!("data/ce04_part28_ap238_unbound_schema.xml").as_slice(),
     ] {
-        assert_eq!(codec.detect(bytes), Confidence::Medium);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&codec, bytes), Confidence::Medium);
         let error = codec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect_err("Part 28 refusal");
@@ -915,16 +915,16 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         assert_unsupported_dialect(error, dialect, reason);
     }
     assert_eq!(
-        codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
+        cadmpeg_test_support::detection::confidence(&codec, b"<?xml version='1.0'?><iso_10303_28/>"),
         Confidence::Medium
     );
     assert_eq!(
-        codec.detect(b"\x89HDF\r\n\x1a\ncontent"),
+        cadmpeg_test_support::detection::confidence(&codec, b"\x89HDF\r\n\x1a\ncontent"),
         Confidence::Medium
     );
     let mut hdf5_user_block = vec![0u8; 512];
     hdf5_user_block.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
-    assert_eq!(codec.detect(&hdf5_user_block), Confidence::Medium);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &hdf5_user_block), Confidence::Medium);
     let error = codec
         .decode(&mut Cursor::new(hdf5_user_block), &DecodeOptions::default())
         .expect_err("Part 26 refusal");
@@ -935,7 +935,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     );
     let mut invalid_hdf5_offset = vec![0u8; 256];
     invalid_hdf5_offset.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
-    assert_eq!(codec.detect(&invalid_hdf5_offset), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &invalid_hdf5_offset), Confidence::No);
     assert!(matches!(
         codec.decode(
             &mut Cursor::new(invalid_hdf5_offset),
@@ -947,22 +947,22 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             if message == "missing ISO-10303-21 magic"
     ));
     assert_eq!(
-        codec.detect(include_bytes!("data/ce03_part28_ap242.xml")),
+        cadmpeg_test_support::detection::confidence(&codec, include_bytes!("data/ce03_part28_ap242.xml")),
         Confidence::Medium
     );
     assert_eq!(
-        codec.detect(include_bytes!("data/ce03_part28_ap238_step_tools.xml")),
+        cadmpeg_test_support::detection::confidence(&codec, include_bytes!("data/ce03_part28_ap238_step_tools.xml")),
         Confidence::Medium
     );
     assert_eq!(
-        codec.detect(include_bytes!("data/ce03_part28_configured_uos.xml")),
+        cadmpeg_test_support::detection::confidence(&codec, include_bytes!("data/ce03_part28_configured_uos.xml")),
         Confidence::Medium
     );
     let canonical = include_bytes!("data/bm01_ap242_bo_model_ed2.stpx");
-    assert_eq!(codec.detect(canonical), Confidence::Medium);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, canonical), Confidence::Medium);
 
     let lookalike = include_bytes!("data/bm01_ap242_bo_model_wrong_namespace.stpx");
-    assert_eq!(codec.detect(lookalike), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, lookalike), Confidence::No);
     assert!(matches!(
         codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
         Err(cadmpeg_ir::DecodeFailure::Codec(
@@ -975,7 +975,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
 fn bo_model_detection_requires_root_namespace_binding() {
     let codec = StepCodec::default();
     assert_eq!(
-        codec.detect(include_bytes!("data/bm01_ap242_bo_model_ed2.stpx")),
+        cadmpeg_test_support::detection::confidence(&codec, include_bytes!("data/bm01_ap242_bo_model_ed2.stpx")),
         Confidence::Medium
     );
 
@@ -986,7 +986,7 @@ fn bo_model_detection_requires_root_namespace_binding() {
         b"<?xml version='1.0'?><note><child xmlns:n0='http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model'/></note>",
     ];
     for xml in false_positives {
-        assert_eq!(codec.detect(xml), Confidence::No);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&codec, xml), Confidence::No);
         assert!(matches!(
             codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
             Err(cadmpeg_ir::DecodeFailure::Codec(
@@ -1028,7 +1028,7 @@ fn codec_refuses_schema_marked_part26_hdf5_population() {
     }
 
     let codec = StepCodec::default();
-    assert_eq!(codec.detect(&bytes), Confidence::Medium);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &bytes), Confidence::Medium);
     let error = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect_err("Part 26 refusal");
@@ -1190,7 +1190,7 @@ fn bo_model_does_not_compose_with_explicit_part21_file_reference() {
             "XML override",
         ),
     ] {
-        assert_eq!(codec.detect(xml), Confidence::Medium);
+        assert_eq!(cadmpeg_test_support::detection::confidence(&codec, xml), Confidence::Medium);
         assert!(xml
             .windows(b"ExternalItem".len())
             .any(|window| { window == b"ExternalItem" }));

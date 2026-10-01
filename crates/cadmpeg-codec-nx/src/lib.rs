@@ -165,11 +165,13 @@ impl CodecBackend for NxCodec {
         })
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
-        if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(prefix) {
-            Confidence::High
+    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect input")?;
+        if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(ctx, prefix)? {
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 

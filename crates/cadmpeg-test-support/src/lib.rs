@@ -15,6 +15,7 @@ pub mod assembly;
 pub mod bytes;
 pub mod compound;
 pub mod edit;
+pub mod detection;
 pub mod golden;
 pub mod native_serialization;
 pub mod refusal;

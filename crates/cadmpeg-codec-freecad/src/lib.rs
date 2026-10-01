@@ -831,16 +831,18 @@ impl CodecBackend for FcstdCodec {
         crate::validate_native(ctx, ir)
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect input")?;
         if !prefix.starts_with(b"PK\x03\x04") {
-            return Confidence::No;
+            return Ok(Confidence::No);
         }
-        if container::has_document_markers(prefix) {
-            Confidence::High
+        if container::has_document_markers(ctx, prefix)? {
+            Ok(Confidence::High)
         } else if contains(prefix, b"Document.xml") {
-            Confidence::Medium
+            Ok(Confidence::Medium)
         } else {
-            Confidence::Low
+            Ok(Confidence::Low)
         }
     }
 

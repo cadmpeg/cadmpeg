@@ -384,8 +384,8 @@ fn inspect_summary_preserves_invalid_legacy_storage_note() {
 #[test]
 fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
     let bytes = legacy_cfb_with_ug_part();
-    assert_eq!(NxCodec.detect(&bytes), Confidence::High);
-    assert_eq!(NxCodec.detect(&bytes[..8]), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, &bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, &bytes[..8]), Confidence::No);
 
     let summary = NxCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
@@ -475,13 +475,13 @@ fn legacy_cfb_detection_rejects_the_compound_signature_without_ug_part_path() {
     }
     put_u16(directory_entry, 64, 12);
 
-    assert_eq!(NxCodec.detect(&bytes), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, &bytes), Confidence::No);
 }
 
 #[test]
 fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() {
     let bytes = single_part_prt();
-    assert_eq!(NxCodec.detect(&bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, &bytes), Confidence::High);
     let summary = NxCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("NX inspection");
@@ -870,9 +870,9 @@ fn container_identity_reaches_only_the_dialect_declaration() {
 
 #[test]
 fn detect_high_on_magic() {
-    assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
-    assert_eq!(NxCodec.detect(&single_part_prt()), Confidence::High);
-    assert_eq!(NxCodec.detect(b"PK\x03\x04 not nx"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, MAGIC), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, &single_part_prt()), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, b"PK\x03\x04 not nx"), Confidence::No);
     // A Creo/Granite .prt shares the extension but not the magic.
-    assert_eq!(NxCodec.detect(b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&NxCodec, b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
 }

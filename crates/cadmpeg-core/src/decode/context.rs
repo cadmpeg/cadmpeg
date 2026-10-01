@@ -34,6 +34,11 @@ pub struct DecodeContext<'a> {
 }
 
 impl<'a> DecodeContext<'a> {
+    /// Creates one session before input acquisition and detection.
+    pub fn new(arena: &'a DecodeArena, policy: &DecodePolicy, container_only: bool) -> Self {
+        Self { arena, container_only, budget: DecodeBudget::new(*policy, 0), derived_spaces: Cell::new(0) }
+    }
+
     /// Reads the root input under `max_input_bytes`, copies it into the arena,
     /// registers the root space, establishes input-proportional allowances,
     /// and returns the context and root view.
@@ -43,108 +48,12 @@ impl<'a> DecodeContext<'a> {
         policy: &DecodePolicy,
         container_only: bool,
     ) -> Result<(Self, View<'a>), CodecError> {
-        let max = policy.limits.max_input_bytes;
-        let cap = max.checked_add(1);
-        let size = match reader.seek(SeekFrom::End(0)) {
-            Ok(size) => {
-                reader.rewind().map_err(CodecError::Io)?;
-                Some(size)
-            }
-            Err(_) => None,
-        };
-        let buffer = if let Some(size) = size {
-            let reserve = match cap {
-                Some(cap) => size.min(cap),
-                None => size,
-            };
-            let reserve = usize::try_from(reserve)
-                .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve))?;
-            let mut buffer = Vec::new();
-            buffer.try_reserve(reserve).map_err(|_| {
-                root_error(
-                    ResourceFailure::AllocationFailed,
-                    max,
-                    u64_from_index(reserve),
-                )
-            })?;
-            let mut chunk = [0_u8; 8192];
-            loop {
-                let remaining = if let Some(cap) = cap {
-                    let Some(remaining) = cap.checked_sub(u64_from_index(buffer.len())) else {
-                        break;
-                    };
-                    if remaining == 0 {
-                        break;
-                    }
-                    remaining
-                } else {
-                    u64_from_index(chunk.len())
-                };
-                // The chunk length is already the bound: `remaining` above the
-                // chunk means this read takes the whole chunk, so the chunk
-                // length is the answer rather than a default standing in for
-                // a conversion that could not be made.
-                let want = match usize::try_from(remaining) {
-                    Ok(remaining) if remaining < chunk.len() => remaining,
-                    _ => chunk.len(),
-                };
-                let read = reader.read(&mut chunk[..want]).map_err(CodecError::Io)?;
-                if read == 0 {
-                    break;
-                }
-                buffer.try_reserve(read).map_err(|_| {
-                    root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read))
-                })?;
-                buffer.extend_from_slice(&chunk[..read]);
-            }
-            buffer
-        } else {
-            let mut buffer = Vec::new();
-            let mut chunk = [0u8; 8192];
-            loop {
-                let remaining = if let Some(cap) = cap {
-                    let Some(remaining) = cap.checked_sub(u64_from_index(buffer.len())) else {
-                        break;
-                    };
-                    if remaining == 0 {
-                        break;
-                    }
-                    remaining
-                } else {
-                    u64_from_index(chunk.len())
-                };
-                // The chunk length is already the bound: `remaining` above the
-                // chunk means this read takes the whole chunk, so the chunk
-                // length is the answer rather than a default standing in for
-                // a conversion that could not be made.
-                let want = match usize::try_from(remaining) {
-                    Ok(remaining) if remaining < chunk.len() => remaining,
-                    _ => chunk.len(),
-                };
-                let read = reader.read(&mut chunk[..want]).map_err(CodecError::Io)?;
-                if read == 0 {
-                    break;
-                }
-                buffer.try_reserve(read).map_err(|_| {
-                    root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read))
-                })?;
-                buffer.extend_from_slice(&chunk[..read]);
-            }
-            buffer
-        };
-        if u64_from_index(buffer.len()) > max {
-            return Err(root_error(
-                ResourceFailure::BudgetExceeded,
-                max,
-                u64_from_index(buffer.len()),
-            ));
+        if reader.seek(SeekFrom::End(0)).is_ok() {
+            reader.rewind().map_err(CodecError::Io)?;
         }
-        let ctx = DecodeContext {
-            arena,
-            container_only,
-            budget: DecodeBudget::new(*policy, u64_from_index(buffer.len())),
-            derived_spaces: Cell::new(0),
-        };
+        let ctx = Self::new(arena, policy, container_only);
+        let mut buffer = Vec::new();
+        ctx.complete_input(reader, &mut buffer)?;
         let bytes = arena.alloc(&ctx, buffer.into_boxed_slice())?;
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
@@ -858,11 +767,6 @@ impl<'a> DecodeContext<'a> {
         }
         Ok(())
     }
-}
-
-/// Builds the root-input resource error before a context exists.
-fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
-    root_limit(reason, limit, used).into()
 }
 
 fn root_limit(reason: ResourceFailure, limit: u64, used: u64) -> ResourceLimit {

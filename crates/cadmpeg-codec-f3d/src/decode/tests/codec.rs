@@ -500,7 +500,7 @@ use crate::container::classify;
 fn detect_high_on_f3d_zip_low_on_bare_zip() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
-    assert_eq!(codec.detect(&f3d), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &f3d), Confidence::High);
 
     // A ZIP whose visible prefix has no f3d markers.
     let mut bare = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -511,9 +511,9 @@ fn detect_high_on_f3d_zip_low_on_bare_zip() {
     .unwrap();
     bare.write_all(b"hello").unwrap();
     let bare = bare.finish().unwrap().into_inner();
-    assert_eq!(codec.detect(&bare), Confidence::Low);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &bare), Confidence::Low);
 
-    assert_eq!(codec.detect(b"\x00\x01\x02\x03 not a zip"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, b"\x00\x01\x02\x03 not a zip"), Confidence::No);
 }
 
 #[test]

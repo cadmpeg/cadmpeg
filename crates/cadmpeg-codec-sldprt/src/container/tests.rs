@@ -208,7 +208,9 @@ fn generic_compound_prefix_is_a_weak_container_signal() {
     let prefix = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0];
 
     assert!(prefix.starts_with(&COMPOUND_FILE_MAGIC));
-    assert!(!looks_like_sldprt(&prefix));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&prefix, &arena, &cadmpeg_core::decode::DecodePolicy::default()).expect("root");
+    assert!(!looks_like_sldprt(&ctx, &prefix).expect("probe"));
 }
 
 fn synthetic_compound_with_storage(name: &str) -> Vec<u8> {
@@ -273,9 +275,9 @@ fn write_compound_directory_entry(
 #[test]
 fn detect_high_on_marker_after_header() {
     let f = synthetic_sldprt();
-    assert_eq!(SldprtCodec.detect(&f), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&SldprtCodec, &f), Confidence::High);
     assert_eq!(
-        SldprtCodec.detect(b"\x00\x01\x02\x03 no marker here"),
+        cadmpeg_test_support::detection::confidence(&SldprtCodec, b"\x00\x01\x02\x03 no marker here"),
         Confidence::No
     );
 }
@@ -283,11 +285,11 @@ fn detect_high_on_marker_after_header() {
 #[test]
 fn compound_detection_distinguishes_solidworks_and_generic_signals() {
     let file = synthetic_compound_with_storage("ISolidWorksInformation");
-    assert_eq!(SldprtCodec.detect(&file), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&SldprtCodec, &file), Confidence::High);
 
     let generic_compound_document = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     assert_eq!(
-        SldprtCodec.detect(&generic_compound_document),
+        cadmpeg_test_support::detection::confidence(&SldprtCodec, &generic_compound_document),
         Confidence::No
     );
 }

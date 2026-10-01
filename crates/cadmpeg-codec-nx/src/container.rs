@@ -1293,13 +1293,11 @@ pub(crate) fn looks_like_nx(prefix: &[u8]) -> bool {
 /// The CFB signature alone is not sufficient: Inventor and other CAD formats
 /// use the same envelope. Requiring the canonical `UG_PART/UG_PART` path keeps
 /// detection tied to the NX payload namespace.
-pub(crate) fn looks_like_legacy_nx(prefix: &[u8]) -> bool {
-    let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix) else {
-        return false;
-    };
-    paths
-        .iter()
-        .any(|path| path.eq_ignore_ascii_case("UG_PART/UG_PART"))
+pub(crate) fn looks_like_legacy_nx(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
+    let (probe, _storage) = CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+    let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else { return Ok(false); };
+    ctx.charge_work(u64_from_index(prefix.len()), "compare NX directory evidence")?;
+    Ok(paths.iter().any(|path| path.eq_ignore_ascii_case("UG_PART/UG_PART")))
 }
 
 fn u24_le(d: &[u8], at: usize) -> u32 {

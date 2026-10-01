@@ -45,7 +45,7 @@ fn assert_valid(result: &EditableDecodeResult) {
 #[test]
 fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
     let bytes = standard_catpart();
-    assert_eq!(CatiaCodec.detect(&bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&CatiaCodec, &bytes), Confidence::High);
 
     let summary = CatiaCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
@@ -487,7 +487,7 @@ fn every_decode_path_populates_v1_annotations() {
 #[test]
 fn fuzz_crash_container_bytes_do_not_panic() {
     let bytes: &[u8] = include_bytes!("test_support/fuzz_catia_container_crash.bin");
-    let _ = CatiaCodec.detect(bytes);
+    let _ = cadmpeg_test_support::detection::confidence(&CatiaCodec, bytes);
     let _probe = CatiaCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
     let _probe = CatiaCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }

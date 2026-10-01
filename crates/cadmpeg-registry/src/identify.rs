@@ -4,7 +4,7 @@
 use std::io::SeekFrom;
 
 use cadmpeg_container::compound::read_detection_prefix;
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions, View};
 use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_ir::codec::FormatId;
 use cadmpeg_ir::ContainerSummary;
@@ -33,6 +33,9 @@ pub struct Inspected {
 /// Why [`resolve_and_inspect_with`] produced no summary.
 #[derive(Debug, thiserror::Error)]
 pub enum InspectError {
+    /// Typed failure acquiring or probing input before codec selection.
+    #[error(transparent)]
+    Detection(#[from] CodecError),
     /// Reading or repositioning the source failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -69,8 +72,13 @@ pub fn resolve_and_inspect_with(
     forced: Option<ForcedInput>,
     options: &InspectOptions,
 ) -> Result<Inspected, InspectError> {
-    let prefix = read_prefix(source, options)?;
-    match catalog.resolve_source(&prefix, forced)? {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy { limits: options.limits, ..DecodePolicy::default() };
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let prefix = read_prefix(&ctx, source)?;
+    let resolved = catalog.resolve_source(&ctx, View::over_retained(&prefix), forced);
+    ctx.finish_session()?;
+    match resolved? {
         ResolvedSource::Native { codec, selection } => {
             match inspect_codec(codec, source, options)? {
                 Ok(summary) => Ok(Inspected {
@@ -103,10 +111,10 @@ fn inspect_codec(
 ///
 /// Bounded by the inspection's own input limit as well as the window: a
 /// caller that capped the input has capped what detection may look at too.
-fn read_prefix(source: &mut dyn ReadSeek, options: &InspectOptions) -> std::io::Result<Vec<u8>> {
+fn read_prefix(ctx: &DecodeContext<'_>, source: &mut dyn ReadSeek) -> Result<Vec<u8>, CodecError> {
     source.seek(SeekFrom::Start(0))?;
     let prefix =
-        read_detection_prefix(source, DETECTION_PREFIX_LEN, options.limits.max_input_bytes)?;
+        read_detection_prefix(ctx, source, DETECTION_PREFIX_LEN)?;
     source.seek(SeekFrom::Start(0))?;
     Ok(prefix)
 }
@@ -340,8 +348,10 @@ mod tests {
                 };
                 assert_eq!(format.as_str(), case.format, "{found:?}");
                 let catalog = InputCatalog::with_builtins();
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(case.bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default()).expect("root");
                 let resolved = catalog
-                    .resolve_source(case.bytes, None)
+                    .resolve_source(&ctx, root, None)
                     .unwrap_or_else(|error| panic!("{}: {error}", case.format));
                 let crate::ResolvedSource::Native { codec, selection } = resolved else {
                     panic!("{}: resolver did not select a native codec", case.format);

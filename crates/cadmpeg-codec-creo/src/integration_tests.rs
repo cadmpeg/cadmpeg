@@ -76,7 +76,7 @@ fn psb_pipeline_aligns_detection_inspection_layout_and_section_roles() {
             ("THMB_IMG_MAIN", jpeg_payload()),
         ],
     );
-    assert_eq!(CreoCodec.detect(&bytes), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&CreoCodec, &bytes), Confidence::High);
     let summary = CreoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("Creo inspection");

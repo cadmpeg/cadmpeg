@@ -771,7 +771,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
 #[test]
 fn detects_marker_but_not_arbitrary_zip() {
     assert_eq!(
-        FcstdCodec.detect(&archive(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, &archive(
             "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>"
         )),
         Confidence::High
@@ -780,9 +780,9 @@ fn detects_marker_but_not_arbitrary_zip() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
     ));
-    assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
-    assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
-    assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&FcstdCodec, &public[..512]), Confidence::High);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&FcstdCodec, b"PK\x03\x04 unrelated"), Confidence::Low);
+    assert_eq!(cadmpeg_test_support::detection::confidence(&FcstdCodec, b"not zip"), Confidence::No);
 }
 
 #[test]

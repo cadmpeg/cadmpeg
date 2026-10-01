@@ -327,24 +327,16 @@ pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> b
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
-pub(crate) fn looks_like_sldprt(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_sldprt(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
     if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
-        return CompoundPrefixProbe::inspect(prefix)
-            .paths()
-            .is_some_and(|paths| {
-                paths.iter().any(|path| {
-                    path.rsplit('/')
-                        .next()
-                        .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
-                })
-            });
+        let (probe, _storage) = CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        ctx.charge_work(u64_from_index(prefix.len()), "compare SolidWorks directory evidence")?;
+        return Ok(probe.paths().is_some_and(|paths| paths.iter().any(|path| {
+            path.rsplit('/').next().is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
+        })));
     }
-    if prefix.len() < outer_hdr::LEN + MARKER.len() {
-        return false;
-    }
-    prefix[outer_hdr::LEN..]
-        .windows(MARKER.len())
-        .any(|w| w == MARKER)
+    if prefix.len() < outer_hdr::LEN + MARKER.len() { return Ok(false); }
+    Ok(prefix[outer_hdr::LEN..].windows(MARKER.len()).any(|w| w == MARKER))
 }
 
 fn completed_scan_charged<'a>(
