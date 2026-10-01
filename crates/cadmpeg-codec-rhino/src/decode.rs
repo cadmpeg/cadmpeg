@@ -449,11 +449,52 @@ impl ExpansionBudget {
 
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct InstanceSelection {
     source_order: usize,
-    key: String,
+    key: IdentityKey,
     path: Vec<String>,
+}
+
+struct InstanceKey<'a> {
+    path: &'a [String],
+    member: crate::wire::Uuid,
+}
+
+impl std::fmt::Display for InstanceKey<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, segment) in self.path.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str(".")?;
+            }
+            formatter.write_str(segment)?;
+        }
+        write!(formatter, ".{}", self.member)
+    }
+}
+
+impl InstanceSelection {
+    fn new<'ctx>(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+        source_order: usize,
+        path: &[String],
+        member: crate::wire::Uuid,
+    ) -> Result<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
+        ctx.charge_work(u64_from_index(path.len()), "Rhino instance selection path scan")?;
+        for segment in path {
+            ctx.charge_work(u64_from_index(segment.len()), "Rhino instance selection path copy")?;
+        }
+        let (path, mut bytes) = ctx.collect_scoped_texts(
+            path.iter().map(String::as_str), "Rhino instance selection scratch",
+        )?;
+        let key = ctx.format_scoped_text_with_work(&mut bytes,
+            format_args!("{}", InstanceKey { path: &path, member }),
+            "Rhino instance selection key",
+        )?;
+        ctx.charge_work(u64_from_index(key.len()), "Rhino instance key validation")?;
+        let key = IdentityKey::try_new(key).map_err(cadmpeg_core::CodecError::malformed)?;
+        Ok((Self { source_order, key, path }, bytes))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2009,18 +2050,6 @@ impl<'a> DecodeContext<'a> {
         self.scan.definitions.contains_member(identity.object_id)
     }
 
-    fn object_key(&self, identity: &crate::objects::SourceIdentity, source_order: usize) -> String {
-        self.instance_selection.as_ref().map_or_else(
-            || {
-                identity
-                    .source_id
-                    .rsplit_once('#')
-                    .map_or_else(|| source_order.to_string(), |(_, key)| key.to_string())
-            },
-            |selected| selected.key.clone(),
-        )
-    }
-
     /// Admit the source-derived object key before composing any typed identity.
     ///
     /// Object and instance keys are source data. A malformed key rejects the
@@ -2031,7 +2060,14 @@ impl<'a> DecodeContext<'a> {
         identity: &crate::objects::SourceIdentity,
         source_order: usize,
     ) -> Result<Option<IdentityKey>, cadmpeg_core::CodecError> {
-        let value = self.object_key(identity, source_order);
+        let ctx = self.expand.ctx();
+        let value = if let Some(selected) = &self.instance_selection {
+            ctx.format_retained_with_work(format_args!("{}", selected.key.as_str()), "Rhino object key copy")?
+        } else if let Some((_, key)) = identity.source_id.rsplit_once('#') {
+            ctx.format_retained_with_work(format_args!("{key}"), "Rhino object key copy")?
+        } else {
+            ctx.format_retained_with_work(format_args!("{source_order}"), "Rhino object key copy")?
+        };
         match IdentityKey::try_new(value) {
             Ok(key) => Ok(Some(key)),
             Err(error) => {
@@ -2049,16 +2085,19 @@ impl<'a> DecodeContext<'a> {
         &self,
         source_order: usize,
         identity: &crate::objects::SourceIdentity,
-    ) -> String {
+        scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ) -> Result<String, cadmpeg_core::CodecError> {
         if !identity.object_id.is_nil()
             && self.resolve_object(identity.object_id) == ObjectReference::Resolved(source_order)
         {
-            identity.object_id.to_string()
+            self.expand.ctx().format_scoped_text_with_work(scratch,
+                format_args!("{}", identity.object_id), "Rhino instance path segment")
         } else {
-            format!(
-                "record-{source_order:06}-offset-{}",
-                self.scan.objects[source_order].range().start
-            )
+            let object = self.scan.objects.get(source_order).ok_or_else(||
+                cadmpeg_core::CodecError::malformed("Rhino reference object is missing"))?;
+            self.expand.ctx().format_scoped_text_with_work(scratch,
+                format_args!("record-{source_order:06}-offset-{}", object.range().start),
+                "Rhino instance path segment")
         }
     }
 
@@ -2086,16 +2125,21 @@ impl<'a> DecodeContext<'a> {
             snapshot_instance_statuses(session, &self.statuses)?;
         let original_geometry_transferred = self.geometry_transferred;
         let report_checkpoint = self.report.checkpoint();
-        let original_selection = self.instance_selection.clone();
+        let original_selection = self.instance_selection.take();
         let original_display = self.instance_display;
         let original_expansion_budget = self.expansion_budget;
         let mut stack = Vec::new();
-        let mut path = self
-            .instance_selection
-            .as_ref()
-            .map_or_else(Vec::new, |selected| selected.path.clone());
+        let initial_path = original_selection.as_ref().map_or(&[][..], |selected| selected.path.as_slice());
+        session.charge_work(u64_from_index(initial_path.len()), "Rhino initial instance path scan")?;
+        for segment in initial_path {
+            session.charge_work(u64_from_index(segment.len()), "Rhino initial instance path copy")?;
+        }
+        let (mut path, mut scratch) = session.collect_scoped_texts(
+            initial_path.iter().map(String::as_str), "Rhino instance traversal scratch",
+        )?;
         let parent = Transform::identity();
-        let outcome = self.expand_reference_inner(source_order, parent, &mut path, &mut stack);
+        let outcome = self.expand_reference_inner(source_order, parent, &mut path, &mut stack, &mut scratch);
+        self.instance_selection = original_selection;
         // Mesh buffers stay charged in the session arena even on rollback.
         let rejection_warning = match outcome {
             Ok(links) => {
@@ -2131,7 +2175,6 @@ impl<'a> DecodeContext<'a> {
         self.statuses = original_statuses;
         self.geometry_transferred = original_geometry_transferred;
         self.report.rollback(report_checkpoint);
-        self.instance_selection = original_selection;
         self.instance_display = original_display;
         self.expansion_budget = original_expansion_budget;
         self.scan_warning(source_order, format_args!("{rejection_warning}"))?;
@@ -2144,6 +2187,7 @@ impl<'a> DecodeContext<'a> {
         parent: Transform,
         path: &mut Vec<String>,
         stack: &mut Vec<crate::wire::Uuid>,
+        scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<Vec<String>, ReferenceFailure> {
         const MAX_INSTANCE_DEPTH: usize = 64;
         let _nested = self.expand.ctx().enter_nested("rhino_instance_nesting")?;
@@ -2220,8 +2264,10 @@ impl<'a> DecodeContext<'a> {
         let transform = parent.compose(local).map_err(|error| error.to_string())?;
         let definition_id = definition.id();
         let definition_members = &definition.members;
+        self.expand.ctx().reserve_scoped_vec(scratch, stack, 1, "Rhino instance stack slots")?;
         stack.push(definition_id);
-        path.push(self.reference_segment(source_order, identity));
+        self.expand.ctx().reserve_scoped_vec(scratch, path, 1, "Rhino instance path slots")?;
+        path.push(self.reference_segment(source_order, identity, scratch)?);
         let previous_display = self.instance_display;
         self.instance_display = Some(InstanceDisplay {
             color: identity
@@ -2249,20 +2295,20 @@ impl<'a> DecodeContext<'a> {
                 .class_uuid()
                 .is_some_and(crate::instances::is_reference_class)
             {
-                let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
+                let nested = self.expand_reference_inner(member_order, transform, path, stack, scratch)?;
                 self.append_links(member_order, &nested)?;
                 self.mark_decoded(member_order);
                 links.extend(nested);
                 continue;
             }
             let before = ModelCheckpoint::capture(&self.ir.model);
-            let previous_selection = self.instance_selection.replace(InstanceSelection {
-                source_order: member_order,
-                key: format!("{}.{}", path.join("."), member_id),
-                path: path.clone(),
-            });
-            self.decode_geometry()?;
+            let (selection, _selection_bytes) = InstanceSelection::new(
+                self.expand.ctx(), member_order, path, member_id,
+            )?;
+            let previous_selection = self.instance_selection.replace(selection);
+            let decoded = self.decode_geometry();
             self.instance_selection = previous_selection;
+            decoded?;
             let after = ModelCheckpoint::capture(&self.ir.model);
             if before == after {
                 return Err(format!("definition member {member_id} did not decode").into());

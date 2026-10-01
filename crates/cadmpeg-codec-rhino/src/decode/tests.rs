@@ -81,6 +81,7 @@ fn with_transaction_limits<R>(
     scan: &crate::container::Scan<'_>,
     collection_limit: u64,
     retained_limit: Option<u64>,
+    materialized_limit: Option<u64>,
     f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
 ) -> R {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -88,6 +89,9 @@ fn with_transaction_limits<R>(
     policy.limits.max_collection_items = collection_limit;
     if let Some(retained_limit) = retained_limit {
         policy.limits.max_retained_bytes = retained_limit;
+    }
+    if let Some(limit) = materialized_limit {
+        policy.limits.max_materialized_bytes = limit;
     }
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
@@ -182,7 +186,7 @@ fn point_cloud_vertices_refuse_collection_limit() {
             warnings: Diagnostics::new(),
         })
     };
-    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+    let refusal = with_transaction_limits(&scan, 4, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .commit_geometry(0, cloud())
@@ -193,7 +197,7 @@ fn point_cloud_vertices_refuse_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino point-cloud vertices"
     ));
-    let refusal = with_transaction_limits(&scan, 5, None, |expand| {
+    let refusal = with_transaction_limits(&scan, 5, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .commit_geometry(0, cloud())
@@ -204,7 +208,7 @@ fn point_cloud_vertices_refuse_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino unknown record links"
     ));
-    with_transaction_limits(&scan, 6, None, |expand| {
+    with_transaction_limits(&scan, 6, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         assert!(context
             .commit_geometry(0, cloud())
@@ -254,7 +258,7 @@ fn assert_transaction_refusal(
     retained_limit: Option<u64>,
     operation: &str,
 ) {
-    let error = with_transaction_limits(scan, collection_limit, retained_limit, |expand| {
+    let error = with_transaction_limits(scan, collection_limit, retained_limit, None, |expand| {
         DecodeContext::new(scan, expand)
             .err()
             .expect("transaction exceeds the configured resource limit")
@@ -1211,7 +1215,7 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
 fn committed_extrusion_boundaries_refuse_collection_limit() {
     let object = object_record(ArchiveVersion::V5, 8, [0; 16]);
     let scan = scan_with_objects(&[object]);
-    let error = with_transaction_limits(&scan, 5, None, |expand| {
+    let error = with_transaction_limits(&scan, 5, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .commit_extrusion(0, cap_extrusion([false, false]))
