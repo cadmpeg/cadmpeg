@@ -686,14 +686,14 @@ fn attach_rm_face_colors(
 ) -> Result<(), CodecError> {
     let (face_ids, _face_ids_reservation) =
         collect_rm_face_ids(ctx, ir.model.faces.iter().map(|face| face.id.as_str()))?;
-    let bindings = resolve_rm_face_colors(
+    let (bindings, _bindings_storage) = ctx.with_scoped_storage("NX RM color projection storage", || resolve_rm_face_colors(
         ctx,
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.deltas_records,
         &super::substrate::paired_delta_streams(ctx, scan)?,
-    )?;
+    ))?;
     for (face_id, color) in bindings {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(ir.model.faces.len()),
@@ -735,17 +735,9 @@ fn collect_rm_face_ids<'a, 'b>(
         if ids.contains(id) {
             continue;
         }
-        let bytes = std::mem::size_of::<String>()
-            .checked_add(id.len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX RM face identity lookup",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(id.len()),
-                )
-            })?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        ctx.insert_btree_set(&mut ids, id.to_owned(), "NX RM face identity lookup")?;
+
+        let id = reservation.with_storage(|| ctx.copy_retained_text(id, "NX RM face identity lookup"))?;
+        reservation.with_storage(|| ctx.insert_btree_set(&mut ids, id, "NX RM face identity lookup"))?;
     }
     Ok((ids, reservation))
 }
@@ -771,18 +763,17 @@ fn attach_rm_appearances(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let source_bindings =
-        resolve_rm_source_color_bindings(ctx, &model.om.rm_display_color_assignments)?;
+    let (source_bindings, _source_bindings_storage) = ctx.with_scoped_storage("NX RM color projection storage", || resolve_rm_source_color_bindings(ctx, &model.om.rm_display_color_assignments))?;
     let (face_ids, _face_ids_reservation) =
         collect_rm_face_ids(ctx, ir.model.faces.iter().map(|face| face.id.as_str()))?;
-    let face_bindings = resolve_rm_face_color_bindings(
+    let (face_bindings, _face_bindings_storage) = ctx.with_scoped_storage("NX RM color projection storage", || resolve_rm_face_color_bindings(
         ctx,
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.deltas_records,
         &super::substrate::paired_delta_streams(ctx, scan)?,
-    )?;
+    ))?;
     if source_bindings.is_empty() && face_bindings.is_empty() {
         return Ok(());
     }
@@ -1082,24 +1073,15 @@ fn ensure_rm_color_appearance(
         properties: BTreeMap::new(),
         textures: Vec::new(),
     });
-    let lookup_bytes = std::mem::size_of::<(String, AppearanceId)>()
-        .checked_add(definition.id.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX RM appearance identity lookup",
-                0,
-                cadmpeg_core::decode::u64_from_index(definition.id.len()),
-            )
-        })?;
-    appearances_reservation.grow(cadmpeg_core::decode::u64_from_index(lookup_bytes))?;
+
     let lookup_id = appearances_reservation
         .with_storage(|| id.try_clone_for_decode(ctx, "NX RM appearance identity lookup"))?;
-    ctx.insert_btree_map(
-        appearances,
-        definition.id.clone(),
+    appearances_reservation.with_storage(|| ctx.admit_btree_entry(appearances, &definition.id, "NX RM appearance identity lookup"))?;
+    let lookup_key = appearances_reservation.with_storage(|| ctx.copy_retained_text(&definition.id, "NX RM appearance identity lookup"))?;
+    appearances.insert(
+        lookup_key,
         lookup_id,
-        "NX RM appearance identity lookup",
-    )?;
+    );
     Ok(id)
 }
 
@@ -1150,10 +1132,8 @@ fn resolve_rm_source_color_bindings(
             continue;
         };
         if !choices.contains_key(source_id) {
-            ctx.charge_collection_items(1, "NX RM source color choices")?;
-            choices_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, RmColorChoice<'_>)>(),
-            ))?;
+            choices_reservation.with_storage(|| ctx.admit_btree_entry(&choices, &source_id, "NX RM source color choices"))?;
+
         }
         choices
             .entry(source_id)
@@ -1204,14 +1184,14 @@ fn resolve_rm_face_colors(
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
 ) -> Result<Vec<(String, Color)>, CodecError> {
-    let bindings = resolve_rm_face_color_bindings(
+    let (bindings, _bindings_storage) = ctx.with_scoped_storage("NX RM color projection storage", || resolve_rm_face_color_bindings(
         ctx,
         face_ids,
         assignments,
         definitions,
         records,
         delta_pairs,
-    )?;
+    ))?;
     let mut colors = Vec::new();
     for binding in bindings {
         ctx.charge_work(
@@ -1233,7 +1213,8 @@ fn resolve_rm_face_colors(
         )
         .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
         ctx.reserve_vec(&mut colors, 1, "NX resolved RM face colors")?;
-        colors.push((binding.face_id, color));
+        let face_id = ctx.copy_retained_text(&binding.face_id, "NX resolved RM face identity")?;
+        colors.push((face_id, color));
     }
     Ok(colors)
 }
@@ -2261,8 +2242,7 @@ fn attach_feature_operations(
             "NX feature operation group index",
         )?;
     }
-    let body_writer_references_by_operation =
-        crate::native::features::unique_feature_body_references(ctx, body_references)?;
+    let (body_writer_references_by_operation, _body_writer_references_by_operation_storage) = ctx.with_scoped_storage("NX local body_writer_references_by_operation storage", || crate::native::features::unique_feature_body_references(ctx, body_references))?;
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
     for body_use in body_data_block_uses {
         let Some(reference) = body_references_by_id.get(body_use.feature_body_reference.as_str())
@@ -2304,7 +2284,7 @@ fn attach_feature_operations(
             &feature.id,
         )?;
     }
-    let body_alias_roots = crate::native::segments::body_alias_roots(ctx, body_bindings)?;
+    let (body_alias_roots, _body_alias_roots_storage) = ctx.with_scoped_storage("NX local body_alias_roots storage", || crate::native::segments::body_alias_roots(ctx, body_bindings))?;
     let canonical_body =
         |identity: u32| body_alias_roots.get(&identity).copied().unwrap_or(identity);
     let mut input_blocks_by_operation =
@@ -2454,8 +2434,7 @@ fn attach_feature_operations(
             "NX feature operation group index",
         )?;
     }
-    let chronological_labels =
-        crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
+    let (chronological_labels, _chronological_labels_storage) = ctx.with_scoped_storage("NX local chronological_labels storage", || crate::native::features::feature_operation_chronological_labels(ctx, labels))?;
     let (operation_positions, _operation_positions_reservation) = ctx.collect_scoped_btree_map(
         chronological_labels
             .iter()
@@ -5554,17 +5533,15 @@ fn attach_feature_operations(
             &id,
         )?;
         for write in operation_body_writes {
-            body_identity_writer_storage.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(u8, FeatureId)>(),
-            ))?;
+
             let writer = body_identity_writer_storage
                 .with_storage(|| id.try_clone_for_decode(ctx, "NX body identity writer"))?;
-            ctx.insert_btree_map(
+            body_identity_writer_storage.with_storage(|| ctx.insert_btree_map(
                 &mut body_identity_writers,
                 write.frame.body_identity(),
                 writer,
                 "NX body identity writers",
-            )?;
+            ))?;
         }
         if let Some(operation) = (!deletes_body)
             .then(|| booleans.get(label.id.as_str()))
@@ -6124,33 +6101,27 @@ fn native_primary_body_references<'a>(
     inputs: &[crate::native::features::FeatureInputBlock],
     data_blocks: &[crate::native::om::DataBlock],
 ) -> Result<BTreeMap<&'a str, u32>, CodecError> {
-    let unique_references =
-        crate::native::features::unique_feature_body_references(ctx, references)?;
+    let (unique_references, _unique_references_storage) = ctx.with_scoped_storage("NX local unique_references storage", || crate::native::features::unique_feature_body_references(ctx, references))?;
     let mut offset_reservation = ctx.reserve_scoped(0, "NX primary offset-store references")?;
     let mut offset_store_references = BTreeSet::new();
     for use_ in data_block_uses {
-        offset_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
+
+        offset_reservation.with_storage(|| ctx.insert_btree_set(
             &mut offset_store_references,
             use_.feature_body_reference.as_str(),
             "NX primary offset-store references",
-        )?;
+        ))?;
     }
-    let offset_store_operations =
-        crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)?;
+    let (offset_store_operations, _offset_store_operations_storage) = ctx.with_scoped_storage("NX local offset_store_operations storage", || crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks))?;
     let mut bridge_reservation = ctx.reserve_scoped(0, "NX primary bridged references")?;
     let mut bridged_segment_references = BTreeSet::new();
     for use_ in segment_uses {
-        bridge_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
+
+        bridge_reservation.with_storage(|| ctx.insert_btree_set(
             &mut bridged_segment_references,
             use_.feature_body_reference.as_str(),
             "NX primary bridged references",
-        )?;
+        ))?;
     }
     let mut output = BTreeMap::new();
     for (operation, reference) in unique_references {
@@ -6891,7 +6862,7 @@ fn segment_binding_body_indexes<'a, 'ctx>(
                 {
                     continue;
                 }
-                let body = body.try_clone_for_decode(ctx, "NX feature operation group body")?;
+                let body = reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX feature operation group body"))?;
                 ctx.push_scoped_btree_group(
                     &mut reservation,
                     &mut by_object,
@@ -6904,11 +6875,8 @@ fn segment_binding_body_indexes<'a, 'ctx>(
         }
         ctx.charge_work(1, "NX segment binding identity index")?;
         if !by_binding.contains_key(binding.id.as_str()) {
-            ctx.charge_collection_items(1, "NX segment binding identity index")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                &str,
-                Vec<BodyId>,
-            )>()))?;
+            reservation.with_storage(|| ctx.admit_btree_entry(&by_binding, &binding.id.as_str(), "NX segment binding identity index"))?;
+
         }
         by_binding.insert(binding.id.as_str(), stream_bodies);
     }
@@ -7493,12 +7461,10 @@ fn insert_sole<'a, K: Ord, V>(
         cadmpeg_core::decode::u64_from_index(values.len()),
         "NX Parasolid attribute name lookup",
     )?;
-    ctx.admit_btree_entry(values, &key, "NX Parasolid attribute name index")?;
+    reservation.with_storage(|| ctx.admit_btree_entry(values, &key, "NX Parasolid attribute name index"))?;
     match values.entry(key) {
         Entry::Vacant(entry) => {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(K, Option<&V>)>() * 4,
-            ))?;
+
             entry.insert(Some(value));
         }
         Entry::Occupied(mut entry) => {
@@ -7530,12 +7496,10 @@ fn parasolid_topology_attribute_class_names<'a>(
                 cadmpeg_core::decode::u64_from_index(classes_by_reference.len()),
                 "NX Parasolid class name index",
             )?;
-            ctx.admit_btree_entry(&classes_by_reference, &key, "NX Parasolid class names")?;
+            reservation.with_storage(|| ctx.admit_btree_entry(&classes_by_reference, &key, "NX Parasolid class names"))?;
             match classes_by_reference.entry(key) {
                 Entry::Vacant(entry) => {
-                    reservation.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<(&str, Option<&str>)>() * 4,
-                    ))?;
+
                     entry.insert(Some(name));
                 }
                 Entry::Occupied(mut entry) => {
@@ -9102,13 +9066,10 @@ fn operation_body_image_outputs_by_write<'a, 'ctx>(
     for use_ in uses {
         ctx.charge_work(1, "NX body image unique-use index")?;
         let write_key = use_.operation_body_write.as_str();
-        ctx.admit_btree_entry(&unique_uses, &write_key, "NX body image unique-use index")?;
+        reservation.with_storage(|| ctx.admit_btree_entry(&unique_uses, &write_key, "NX body image unique-use index"))?;
         match unique_uses.entry(write_key) {
             Entry::Vacant(entry) => {
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                    &str,
-                    Option<&crate::native::features::FeatureOperationBodyImageSegmentUse>,
-                )>()))?;
+
                 entry.insert(Some(use_));
             }
             Entry::Occupied(mut entry) => {
@@ -9130,14 +9091,9 @@ fn operation_body_image_outputs_by_write<'a, 'ctx>(
         ctx.charge_work(1, "NX body image outputs")?;
         let entry = (
             write,
-            body.try_clone_for_decode(ctx, "NX body image outputs")?,
+            reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX body image outputs"))?,
         );
-        if !outputs.contains_key(&entry.0) {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-                &entry,
-            )))?;
-        }
-        ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX body image outputs")?;
+        reservation.with_storage(|| ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX body image outputs"))?;
     }
     Ok((outputs, reservation))
 }
@@ -9154,11 +9110,10 @@ fn merge_operation_body_outputs<'a>(
         if conflicts.contains(write) {
             continue;
         }
-        ctx.admit_btree_entry(outputs, &write, "NX merged body output")?;
+        reservation.with_storage(|| ctx.admit_btree_entry(outputs, &write, "NX merged body output"))?;
         match outputs.entry(write) {
             Entry::Vacant(entry) => {
-                let bytes = std::mem::size_of::<(&str, BodyId)>();
-                reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+
                 entry
                     .insert(reservation.with_storage(|| {
                         body.try_clone_for_decode(ctx, "NX merged body output")
@@ -9167,10 +9122,8 @@ fn merge_operation_body_outputs<'a>(
             Entry::Occupied(entry) if entry.get() == body => {}
             Entry::Occupied(entry) => {
                 entry.remove();
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    &str,
-                >()))?;
-                ctx.insert_btree_set(conflicts, write, "NX conflicting body output")?;
+
+                reservation.with_storage(|| ctx.insert_btree_set(conflicts, write, "NX conflicting body output"))?;
             }
         }
     }
@@ -9199,11 +9152,10 @@ fn operation_body_identity_outputs_by_write<'a, 'ctx>(
             continue;
         };
         let write_key = use_.operation_body_write.as_str();
-        ctx.admit_btree_entry(&outputs, &write_key, "NX body identity output index")?;
+        reservation.with_storage(|| ctx.admit_btree_entry(&outputs, &write_key, "NX body identity output index"))?;
         match outputs.entry(write_key) {
             Entry::Vacant(entry) => {
-                let bytes = std::mem::size_of::<(&str, BodyId)>();
-                reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+
                 entry.insert(reservation.with_storage(|| {
                     body.try_clone_for_decode(ctx, "NX body identity output index")
                 })?);
@@ -9233,17 +9185,14 @@ fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
     let mut reservation = ctx.reserve_scoped(0, "NX body partition output indexes")?;
     for use_ in uses {
         ctx.charge_work(1, "NX body partition identity index")?;
-        ctx.admit_btree_entry(
+        reservation.with_storage(|| ctx.admit_btree_entry(
             &partitions_by_identity,
             &use_.body_identity,
             "NX body partition identity index",
-        )?;
+        ))?;
         match partitions_by_identity.entry(use_.body_identity) {
             Entry::Vacant(entry) => {
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                    u8,
-                    Option<u32>,
-                )>()))?;
+
                 entry.insert(Some(use_.partition_stream_ordinal));
             }
             Entry::Occupied(mut entry)
@@ -9281,20 +9230,15 @@ fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
         ctx.charge_work(1, "NX unique partition body")?;
         let entry = (
             identity,
-            body.id
-                .try_clone_for_decode(ctx, "NX unique partition body")?,
+            reservation.with_storage(|| body.id
+                .try_clone_for_decode(ctx, "NX unique partition body"))?,
         );
-        if !unique_bodies.contains_key(&entry.0) {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-                &entry,
-            )))?;
-        }
-        ctx.insert_btree_map(
+        reservation.with_storage(|| ctx.insert_btree_map(
             &mut unique_bodies,
             entry.0,
             entry.1,
             "NX unique partition body",
-        )?;
+        ))?;
     }
     let mut outputs = BTreeMap::new();
     for write in writes {
@@ -9303,14 +9247,9 @@ fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
             ctx.charge_work(1, "NX partition body output")?;
             let entry = (
                 write.id.as_str(),
-                body.try_clone_for_decode(ctx, "NX partition body output")?,
+                reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX partition body output"))?,
             );
-            if !outputs.contains_key(&entry.0) {
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
-                    &entry,
-                )))?;
-            }
-            ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX partition body output")?;
+            reservation.with_storage(|| ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX partition body output"))?;
         }
     }
     Ok((outputs, reservation))
