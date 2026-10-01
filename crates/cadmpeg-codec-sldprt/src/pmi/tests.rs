@@ -1392,36 +1392,62 @@ fn pmi_alias_comparison_refuses_long_semantic_strings() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::unbound_dimension_count(&ctx, &records, &bound).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare SLDPRT PMI aliases"));
-    assert_eq!(super::unbound_dimension_count(&cadmpeg_test_support::service_decode_context(), &records, &bound).unwrap(), 1);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare SLDPRT PMI aliases")
+    );
+    assert_eq!(
+        super::unbound_dimension_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &records,
+            &bound
+        )
+        .unwrap(),
+        1
+    );
 }
 
 #[test]
 fn pmi_nested_messagepack_refuses_instead_of_malformed_map() {
-    let mut bytes = vec![0x91; 18]; bytes.push(0xc0);
+    let mut bytes = vec![0x91; 18];
+    bytes.push(0xc0);
     let ctx = cadmpeg_test_support::service_decode_context();
     let error = super::parse_value(&ctx, &bytes, &mut 0, 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "parse SLDPRT PMI MessagePack depth"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "parse SLDPRT PMI MessagePack depth")
+    );
 }
 
 #[test]
 fn pmi_patch_preserves_native_load_depth_refusal() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut nested = serde_json::Value::Null;
-    for _ in 0..256 { nested = serde_json::Value::Array(vec![nested]); }
+    for _ in 0..256 {
+        nested = serde_json::Value::Array(vec![nested]);
+    }
     let mut fields = serde_json::Map::new();
     fields.insert("extra".into(), nested);
     let record = cadmpeg_ir::NativeRecord::new(
-        cadmpeg_ir::ids::Identity::new("sldprt:pmi:dimension#0").unwrap(), fields,
-    ).unwrap();
+        cadmpeg_ir::ids::Identity::new("sldprt:pmi:dimension#0").unwrap(),
+        fields,
+    )
+    .unwrap();
     let namespace = ir.native.namespace_mut("sldprt");
-    namespace.arenas_mut().insert("pmi_dimensions".into(), vec![record]);
-    let expected = cadmpeg_core::CodecError::from(crate::native::SldprtNative::load(namespace).unwrap_err());
+    namespace
+        .arenas_mut()
+        .insert("pmi_dimensions".into(), vec![record]);
+    let expected =
+        cadmpeg_core::CodecError::from(crate::native::SldprtNative::load(namespace).unwrap_err());
     let actual = patch_payload(&ir, "block", &mut []).unwrap_err();
     match (expected, actual) {
-        (cadmpeg_core::CodecError::ResourceLimit(expected), cadmpeg_core::CodecError::ResourceLimit(actual)) => {
+        (
+            cadmpeg_core::CodecError::ResourceLimit(expected),
+            cadmpeg_core::CodecError::ResourceLimit(actual),
+        ) => {
             assert_eq!(actual, expected);
-            assert_eq!(actual.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+            assert_eq!(
+                actual.dimension,
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            );
         }
         errors => panic!("{errors:?}"),
     }

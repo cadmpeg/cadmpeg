@@ -26,7 +26,9 @@ impl<T> DigestPartition<T> {
         mut keep: impl FnMut(&T) -> bool,
         operation: &'static str,
     ) -> Result<PreparedDigestPartition<'source, 'ctx, T>, CodecError> {
-        let work = source.len().checked_mul(3)
+        let work = source
+            .len()
+            .checked_mul(3)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
         let (mut decisions, reservation) = ctx.temporary_vec(source.len(), operation)?;
@@ -35,7 +37,8 @@ impl<T> DigestPartition<T> {
             let decision = keep(item);
             decisions.push(decision);
             if decision {
-                kept_count = kept_count.checked_add(1)
+                kept_count = kept_count
+                    .checked_add(1)
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
             }
         }
@@ -44,8 +47,16 @@ impl<T> DigestPartition<T> {
         let excluded = ctx.collection_vec(excluded_count, operation)?;
         let kept_positions = ctx.collection_vec(kept_count, operation)?;
         Ok(PreparedDigestPartition {
-            partition: Self { original_len: source.len(), original: Vec::new(), kept, excluded, kept_positions },
-            source, decisions, _decisions: reservation,
+            partition: Self {
+                original_len: source.len(),
+                original: Vec::new(),
+                kept,
+                excluded,
+                kept_positions,
+            },
+            source,
+            decisions,
+            _decisions: reservation,
         })
     }
 
@@ -84,7 +95,13 @@ impl<T> DigestPartition<T> {
 impl<T> PreparedDigestPartition<'_, '_, T> {
     pub(super) fn move_from(mut self) -> DigestPartition<T> {
         self.partition.original = std::mem::take(self.source);
-        for ((position, item), keep) in self.partition.original.drain(..).enumerate().zip(self.decisions) {
+        for ((position, item), keep) in self
+            .partition
+            .original
+            .drain(..)
+            .enumerate()
+            .zip(self.decisions)
+        {
             if keep {
                 self.partition.kept_positions.push(position);
                 self.partition.kept.push(item);
@@ -108,7 +125,16 @@ mod tests {
         let mut source = (0..100).collect::<Vec<_>>();
         let original = source.clone();
         let mut calls = 0;
-        let prepared = DigestPartition::prepare(&ctx, &mut source, |_| { calls += 1; calls == 1 }, "prepare digest test").unwrap();
+        let prepared = DigestPartition::prepare(
+            &ctx,
+            &mut source,
+            |_| {
+                calls += 1;
+                calls == 1
+            },
+            "prepare digest test",
+        )
+        .unwrap();
         let mut partition = prepared.move_from();
         let kept = partition.take_kept();
         assert_eq!(calls, original.len());
@@ -130,7 +156,10 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut source = (0..100).collect::<Vec<_>>();
             let original = source.clone();
-            let error = DigestPartition::prepare(&ctx, &mut source, |_| true, "prepare digest refusal").err().unwrap();
+            let error =
+                DigestPartition::prepare(&ctx, &mut source, |_| true, "prepare digest refusal")
+                    .err()
+                    .unwrap();
             assert!(matches!(error, CodecError::ResourceLimit(_)));
             assert_eq!(source, original);
         }

@@ -425,12 +425,26 @@ fn malformed_reference_identity_returns_decode_loss() {
 
 #[test]
 fn swift_serialized_entity_depth_refuses_instead_of_unresolved_root() {
-    let mut nested = Entity { class: "Leaf".into(), ..Default::default() };
+    let mut nested = Entity {
+        class: "Leaf".into(),
+        ..Default::default()
+    };
     for _ in 0..crate::swift::MAX_DEPTH {
-        nested = Entity { class: crate::swift::ROOT_CLASS.into(), related: vec![crate::swift::RelatedObject { name: "Child".into(), class: nested.class.clone(), entity: nested }], ..Default::default() };
+        nested = Entity {
+            class: crate::swift::ROOT_CLASS.into(),
+            related: vec![crate::swift::RelatedObject {
+                name: "Child".into(),
+                class: nested.class.clone(),
+                entity: nested,
+            }],
+            ..Default::default()
+        };
     }
-    let mut payload = Vec::new(); encode_entity(&nested, &mut payload);
+    let mut payload = Vec::new();
+    encode_entity(&nested, &mut payload);
     let ctx = cadmpeg_test_support::service_decode_context();
     let error = parse_unique_root(&ctx, &payload).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "parse SWIFT entity"));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "parse SWIFT entity")
+    );
 }

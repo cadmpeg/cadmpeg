@@ -116,9 +116,9 @@ fn agreed_dimension_records<'a>(
             continue;
         };
         if canonical.item_count.get() == 1
-            && group
-                .iter()
-                .all(|record| record.item_count.get() == 1 && equivalent_dimensions(canonical, record))
+            && group.iter().all(|record| {
+                record.item_count.get() == 1 && equivalent_dimensions(canonical, record)
+            })
         {
             ctx.reserve_collection_vec(
                 &mut representatives,
@@ -141,7 +141,10 @@ pub(crate) fn unbound_dimension_count(
 ) -> Result<usize, CodecError> {
     let mut bound = Vec::new();
     for record in records {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.id.len()), "find SLDPRT bound PMI dimension")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(record.id.len()),
+            "find SLDPRT bound PMI dimension",
+        )?;
         if bound_ids.contains(record.id.as_str()) {
             ctx.reserve_collection_vec(&mut bound, 1, "collect SLDPRT bound PMI dimensions")?;
             bound.push(record);
@@ -149,18 +152,41 @@ pub(crate) fn unbound_dimension_count(
     }
     let mut count = 0usize;
     for record in records {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.id.len()), "find SLDPRT bound PMI dimension")?;
-        if bound_ids.contains(record.id.as_str()) { continue; }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(record.id.len()),
+            "find SLDPRT bound PMI dimension",
+        )?;
+        if bound_ids.contains(record.id.as_str()) {
+            continue;
+        }
         let mut equivalent = false;
         for candidate in &bound {
-            let work = [record.cad_text.len(), candidate.cad_text.len(), record.subtype.len(), candidate.subtype.len(), record.display_text().map_or(0, str::len), candidate.display_text().map_or(0, str::len)]
-                .into_iter().try_fold(11usize, usize::checked_add)
-                .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT PMI aliases", u64::MAX, u64::MAX))?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "compare SLDPRT PMI aliases")?;
-            if equivalent_dimensions(record, candidate) { equivalent = true; break; }
+            let work = [
+                record.cad_text.len(),
+                candidate.cad_text.len(),
+                record.subtype.len(),
+                candidate.subtype.len(),
+                record.display_text().map_or(0, str::len),
+                candidate.display_text().map_or(0, str::len),
+            ]
+            .into_iter()
+            .try_fold(11usize, usize::checked_add)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("compare SLDPRT PMI aliases", u64::MAX, u64::MAX)
+            })?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(work),
+                "compare SLDPRT PMI aliases",
+            )?;
+            if equivalent_dimensions(record, candidate) {
+                equivalent = true;
+                break;
+            }
         }
         if !equivalent {
-            count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("count SLDPRT unbound PMI dimensions", u64::MAX, u64::MAX))?;
+            count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("count SLDPRT unbound PMI dimensions", u64::MAX, u64::MAX)
+            })?;
         }
     }
     Ok(count)
@@ -271,7 +297,8 @@ pub(crate) fn patch_payload(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(());
     };
-    let native = crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
+    let native =
+        crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
         .iter()
@@ -997,7 +1024,11 @@ fn parse_value<'a>(
     let _depth = ctx.enter_nested("parse SLDPRT PMI MessagePack")?;
     ctx.charge_work(1, "parse SLDPRT PMI MessagePack")?;
     if depth > 16 {
-        return Err(ctx.refuse_codec_limit("parse SLDPRT PMI MessagePack depth", 16, cadmpeg_core::decode::u64_from_index(depth)));
+        return Err(ctx.refuse_codec_limit(
+            "parse SLDPRT PMI MessagePack depth",
+            16,
+            cadmpeg_core::decode::u64_from_index(depth),
+        ));
     }
     let start = *cursor;
     let Some(marker) = take_u8(bytes, cursor).map(Marker::from_u8) else {
@@ -1223,7 +1254,9 @@ fn parse_map<'a>(
         return Ok(None);
     };
     let mut values = BTreeMap::new();
-    let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SLDPRT PMI depth", 16, u64::MAX))?;
+    let next_depth = depth
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("advance SLDPRT PMI depth", 16, u64::MAX))?;
     for _ in 0..len {
         let Some(key_value) = parse_value(ctx, bytes, cursor, next_depth)? else {
             return Ok(None);
@@ -1260,7 +1293,9 @@ fn parse_array<'a>(
         return Ok(None);
     };
     let mut values = ctx.collection_vec(len, "collect SLDPRT PMI array items")?;
-    let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SLDPRT PMI depth", 16, u64::MAX))?;
+    let next_depth = depth
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("advance SLDPRT PMI depth", 16, u64::MAX))?;
     for _ in 0..len {
         let Some(value) = parse_value(ctx, bytes, cursor, next_depth)? else {
             return Ok(None);

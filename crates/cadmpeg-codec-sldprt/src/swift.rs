@@ -632,10 +632,15 @@ fn parse_unique_root(
     Ok(parsed)
 }
 
-fn admit_swift_depth(ctx: &DecodeContext<'_>, depth: usize, operation: &'static str) -> Result<(), CodecError> {
+fn admit_swift_depth(
+    ctx: &DecodeContext<'_>,
+    depth: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     if depth >= MAX_DEPTH {
-        let requested = u64_from_index(depth).checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let requested = u64_from_index(depth).checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), u64::MAX)
+        })?;
         return Err(ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), requested));
     }
     Ok(())
@@ -875,7 +880,13 @@ fn read_objects(
         if entities.len() >= references.len() {
             return Ok(None);
         }
-        let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SWIFT recursion depth", u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
             return Ok(None);
         };
@@ -934,7 +945,13 @@ fn read_related(
     }
     let mut related = Vec::new();
     for (name, class) in descriptors {
-        let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SWIFT recursion depth", u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
             return Ok(None);
         };
@@ -1615,7 +1632,13 @@ fn feature_reaches(
         let Some(feature) = feature_index.get(id) else {
             return Ok(false);
         };
-        let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SWIFT recursion depth", u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             if child == target
                 || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?
@@ -1750,7 +1773,13 @@ fn collect_rotational_projections(
             projections.push(projection);
             return Ok(());
         }
-        let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SWIFT recursion depth", u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             collect_rotational_projections(
                 ctx,
@@ -1952,7 +1981,13 @@ fn collect_diameter_contributors(
             values.push(diameter);
             return Ok(());
         }
-        let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SWIFT recursion depth", u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             collect_diameter_contributors(ctx, child, feature_index, visited, next_depth, values)?;
         }
@@ -2559,7 +2594,13 @@ fn measurement_for_feature(
         if let Some(measurement) = direct_measurement(feature) {
             return Ok(Some(measurement));
         }
-        let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SWIFT recursion depth", u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let mut first: Option<PositiveReal> = None;
         for child in child_feature_ids(feature) {
             let Some(value) = measurement_for_feature(
@@ -2973,7 +3014,13 @@ fn visit_expanded_feature_ids<'a>(
         return visit(id);
     };
     for subfeature in subfeatures {
-        let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SWIFT recursion depth", u64_from_index(MAX_DEPTH), u64::MAX))?;
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         if !visit_expanded_feature_ids(ctx, subfeature, feature_index, next_depth, visit)? {
             return Ok(false);
         }

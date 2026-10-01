@@ -120,8 +120,8 @@ fn default_pmi_item_count() -> NonZeroU32 {
 }
 
 // Serde's `skip_serializing_if` contract passes the field by reference.
-fn is_one(value: &NonZeroU32) -> bool {
-    value.get() == 1
+fn is_one(value: impl std::borrow::Borrow<NonZeroU32>) -> bool {
+    value.borrow().get() == 1
 }
 
 /// A named parametric-model variant (e.g. CAD "configuration") with its own
@@ -595,15 +595,39 @@ pub(crate) struct FeatureInputLaneWire {
 }
 
 impl FeatureInputLaneWire {
-    pub(crate) fn admit(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
-        let relations = ctx.try_collect_vec(self.relation_instances.into_iter().map(|relation| relation.admit(ctx)), "admit SLDPRT inline relations")?;
-        let entities = ctx.try_collect_vec(self.sketch_entities.into_iter().map(|entity| { ctx.charge_work(1, "admit SLDPRT inline sketch marker")?; SketchInputEntity::try_from_wire(entity, &self.native_payload).map_err(cadmpeg_core::CodecError::malformed) }), "admit SLDPRT inline sketch entities")?;
+    pub(crate) fn admit(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+        let relations = ctx.try_collect_vec(
+            self.relation_instances
+                .into_iter()
+                .map(|relation| relation.admit(ctx)),
+            "admit SLDPRT inline relations",
+        )?;
+        let entities = ctx.try_collect_vec(
+            self.sketch_entities.into_iter().map(|entity| {
+                ctx.charge_work(1, "admit SLDPRT inline sketch marker")?;
+                SketchInputEntity::try_from_wire(entity, &self.native_payload)
+                    .map_err(cadmpeg_core::CodecError::malformed)
+            }),
+            "admit SLDPRT inline sketch entities",
+        )?;
         Ok(FeatureInputLane {
-            id: self.id, configuration: self.configuration, native_payload: self.native_payload,
-            classes: self.classes, names: self.names, scalars: self.scalars, relation_bindings: self.relation_bindings,
-            relation_instances: relations, body_selections: self.body_selections, edge_selections: self.edge_selections,
-            surface_selections: self.surface_selections, generated_surface_identities: self.generated_surface_identities,
-            references: self.references, sketch_entities: entities,
+            id: self.id,
+            configuration: self.configuration,
+            native_payload: self.native_payload,
+            classes: self.classes,
+            names: self.names,
+            scalars: self.scalars,
+            relation_bindings: self.relation_bindings,
+            relation_instances: relations,
+            body_selections: self.body_selections,
+            edge_selections: self.edge_selections,
+            surface_selections: self.surface_selections,
+            generated_surface_identities: self.generated_surface_identities,
+            references: self.references,
+            sketch_entities: entities,
         })
     }
 }
@@ -611,16 +635,31 @@ impl FeatureInputLaneWire {
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
-        let sketch_entities = wire.sketch_entities.into_iter()
+        let sketch_entities = wire
+            .sketch_entities
+            .into_iter()
             .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
             .collect::<Result<Vec<_>, _>>()?;
-        let relation_instances = wire.relation_instances.into_iter().map(FeatureInputRelationInstance::try_from).collect::<Result<Vec<_>, _>>()?;
+        let relation_instances = wire
+            .relation_instances
+            .into_iter()
+            .map(FeatureInputRelationInstance::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
-            id: wire.id, configuration: wire.configuration, native_payload: wire.native_payload,
-            classes: wire.classes, names: wire.names, scalars: wire.scalars, relation_bindings: wire.relation_bindings,
-            relation_instances, body_selections: wire.body_selections, edge_selections: wire.edge_selections,
-            surface_selections: wire.surface_selections, generated_surface_identities: wire.generated_surface_identities,
-            references: wire.references, sketch_entities,
+            id: wire.id,
+            configuration: wire.configuration,
+            native_payload: wire.native_payload,
+            classes: wire.classes,
+            names: wire.names,
+            scalars: wire.scalars,
+            relation_bindings: wire.relation_bindings,
+            relation_instances,
+            body_selections: wire.body_selections,
+            edge_selections: wire.edge_selections,
+            surface_selections: wire.surface_selections,
+            generated_surface_identities: wire.generated_surface_identities,
+            references: wire.references,
+            sketch_entities,
         })
     }
 }
@@ -893,11 +932,20 @@ pub(crate) struct FeatureInputRelationInstanceWire {
 }
 
 impl FeatureInputRelationInstanceWire {
-    pub(crate) fn admit(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<FeatureInputRelationInstance, cadmpeg_core::CodecError> {
+    pub(crate) fn admit(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<FeatureInputRelationInstance, cadmpeg_core::CodecError> {
         Ok(FeatureInputRelationInstance {
-            id: self.id, parent: self.parent, ordinal: self.ordinal, offset: self.offset,
-            family: self.family, class_ref: self.class_ref, feature_ref: self.feature_ref,
-            scalars: self.scalars.admit(ctx)?, operands: self.operands,
+            id: self.id,
+            parent: self.parent,
+            ordinal: self.ordinal,
+            offset: self.offset,
+            family: self.family,
+            class_ref: self.class_ref,
+            feature_ref: self.feature_ref,
+            scalars: self.scalars.admit(ctx)?,
+            operands: self.operands,
         })
     }
 }
@@ -906,9 +954,15 @@ impl TryFrom<FeatureInputRelationInstanceWire> for FeatureInputRelationInstance 
     type Error = String;
     fn try_from(wire: FeatureInputRelationInstanceWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: wire.id, parent: wire.parent, ordinal: wire.ordinal, offset: wire.offset,
-            family: wire.family, class_ref: wire.class_ref, feature_ref: wire.feature_ref,
-            scalars: wire.scalars.into_checked()?, operands: wire.operands,
+            id: wire.id,
+            parent: wire.parent,
+            ordinal: wire.ordinal,
+            offset: wire.offset,
+            family: wire.family,
+            class_ref: wire.class_ref,
+            feature_ref: wire.feature_ref,
+            scalars: wire.scalars.into_checked()?,
+            operands: wire.operands,
         })
     }
 }
@@ -2694,12 +2748,24 @@ mod tests {
     #[test]
     fn pmi_dimension_count_refuses_zero_and_keeps_the_default_wire() {
         let dimension = PmiDimension {
-            id: "dimension".into(), parent: "block".into(), offset: 0, guid: "guid".into(), cad_text: "D1@Pattern1".into(),
-            item_count: std::num::NonZeroU32::MIN, subtype: "".into(),
+            id: "dimension".into(),
+            parent: "block".into(),
+            offset: 0,
+            guid: "guid".into(),
+            cad_text: "D1@Pattern1".into(),
+            item_count: std::num::NonZeroU32::MIN,
+            subtype: String::new(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test dimension"),
-            value_offset: 0, precision: 0, precision_offset: 0, display_text: None,
-            basic: false, basic_offset: 0, inspection: false, inspection_offset: 0,
-            reference_only: false, reference_only_offset: 0,
+            value_offset: 0,
+            precision: 0,
+            precision_offset: 0,
+            display_text: None,
+            basic: false,
+            basic_offset: 0,
+            inspection: false,
+            inspection_offset: 0,
+            reference_only: false,
+            reference_only_offset: 0,
         };
         let wire = serde_json::to_value(&dimension).unwrap();
         assert!(wire.get("item_count").is_none());

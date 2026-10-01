@@ -12,10 +12,10 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT, VERIFIED_KERNELS};
-use crate::test_support::container::scan;
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
+use crate::test_support::container::scan;
 use crate::test_support::container::sldprt_with_colliding_sites;
 use crate::test_support::container::synthetic_sldprt;
 use crate::SldprtCodec;

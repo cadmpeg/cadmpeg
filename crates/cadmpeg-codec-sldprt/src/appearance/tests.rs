@@ -234,7 +234,8 @@ fn visual_states_feature_assignment_decodes_identity_and_color() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let assignments = super::feature_assignments(&ctx, &crate::test_support::container::scan(&source)).unwrap();
+    let assignments =
+        super::feature_assignments(&ctx, &crate::test_support::container::scan(&source)).unwrap();
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].feature_source_id.value(), 36);
     assert_eq!(assignments[0].feature_timestamp, 0x6a81_f0f4);
@@ -589,8 +590,13 @@ fn appearance_searches_refuse_marker_free_ranges() {
     source.extend(make_block(0x43, "ThirdPtyStore/VisualStates", &[0; 64]));
     let scan = crate::test_support::container::scan(&source);
     let section = scan.sections().next().unwrap();
-    for (work, operation, route) in [(0, "scan SLDPRT appearance definitions", 0), (0, "scan inline SLDPRT appearances", 1), (64, "scan SLDPRT feature appearance markers", 2)] {
-        let mut policy = DecodePolicy::service(); policy.limits.max_work_units = work;
+    for (work, operation, route) in [
+        (0, "scan SLDPRT appearance definitions", 0),
+        (0, "scan inline SLDPRT appearances", 1),
+        (64, "scan SLDPRT feature appearance markers", 2),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = match route {
@@ -610,13 +616,25 @@ fn appearance_face_class_search_refuses_without_assignments() {
     source.extend(make_block(0x43, "DisplayLists", &payload));
     let scan = crate::test_support::container::scan(&source);
     let mut display_source = outer_header();
-    display_source.extend(make_block(0x43, "DisplayLists", &crate::test_support::tessellation::display_list_payload()));
+    display_source.extend(make_block(
+        0x43,
+        "DisplayLists",
+        &crate::test_support::tessellation::display_list_payload(),
+    ));
     let display_scan = crate::test_support::container::scan(&display_source);
-    let faces = crate::tessellation::section_display_faces(&cadmpeg_test_support::service_decode_context(), display_scan.sections().next().unwrap()).unwrap();
+    let faces = crate::tessellation::section_display_faces(
+        &cadmpeg_test_support::service_decode_context(),
+        display_scan.sections().next().unwrap(),
+    )
+    .unwrap();
 
-    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = u64::try_from(payload.len() + 64).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(payload.len() + 64).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::display_assignments(&ctx, scan.sections().next().unwrap(), &faces).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "match SLDPRT face appearance classes"));
+    let error =
+        super::display_assignments(&ctx, scan.sections().next().unwrap(), &faces).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "match SLDPRT face appearance classes")
+    );
 }

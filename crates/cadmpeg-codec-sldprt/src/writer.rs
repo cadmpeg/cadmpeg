@@ -78,8 +78,10 @@ pub(crate) fn write_semantic_with_records(
     let source_context = source_image(retained_records)
         .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
         .transpose()?;
-    let source_scan = source_context.as_ref()
-        .map(|(ctx, root)| crate::container::scan(ctx, *root)).transpose()?;
+    let source_scan = source_context
+        .as_ref()
+        .map(|(ctx, root)| crate::container::scan(ctx, *root))
+        .transpose()?;
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_name_changes =

@@ -251,14 +251,22 @@ impl SldprtCodec {
             .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
         let source_arena = cadmpeg_core::decode::DecodeArena::new();
-        let source_context = records.iter()
+        let source_context = records
+            .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data)
-            .map(|bytes| cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                bytes, &source_arena, &cadmpeg_core::decode::DecodePolicy::desktop(),
-            )).transpose()?;
-        let source_scan = source_context.as_ref()
-            .map(|(ctx, root)| container::scan(ctx, *root)).transpose()?;
+            .map(|bytes| {
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    bytes,
+                    &source_arena,
+                    &cadmpeg_core::decode::DecodePolicy::desktop(),
+                )
+            })
+            .transpose()?;
+        let source_scan = source_context
+            .as_ref()
+            .map(|(ctx, root)| container::scan(ctx, *root))
+            .transpose()?;
         history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
@@ -392,7 +400,8 @@ impl CodecBackend for SldprtCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
         let classification = dialect::classify_layers(ctx, &scan)?;
-        let mut summary = container::summarize(ctx, &scan, classification.layers().clone_charged(ctx)?)?;
+        let mut summary =
+            container::summarize(ctx, &scan, classification.layers().clone_charged(ctx)?)?;
         classification.append_losses(ctx, &mut summary.losses)?;
         Ok(summary)
     }

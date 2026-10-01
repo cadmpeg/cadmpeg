@@ -1729,7 +1729,9 @@ mod binary_relation_operand_tests {
             class_ref: "class#0".to_string(),
             feature_ref: "feature#0".to_string(),
             scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                vec!["scalar#0".into()], None, None,
+                vec!["scalar#0".into()],
+                None,
+                None,
             )
             .unwrap(),
             operands,
