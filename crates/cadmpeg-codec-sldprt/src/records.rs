@@ -542,9 +542,9 @@ impl Clone for FeatureInputLane {
     }
 }
 
-/// Deserialization mirror admitting every sketch-entity marker against this lane's payload.
+/// Partial lane wire record; relation membership and sketch markers require admission.
 #[derive(Deserialize)]
-struct FeatureInputLaneWire {
+pub(crate) struct FeatureInputLaneWire {
     /// Stable source-derived identifier for this feature-input record.
     id: String,
     /// Configuration this input lane applies to, when the source scoped inputs
@@ -573,7 +573,7 @@ struct FeatureInputLaneWire {
     relation_bindings: Vec<FeatureInputRelationBinding>,
     /// Compact relation instances grouped by feature and operand identity.
     #[serde(default)]
-    relation_instances: Vec<FeatureInputRelationInstance>,
+    relation_instances: Vec<FeatureInputRelationInstanceWire>,
     /// Compact body-selection vectors owned by feature objects in this lane.
     #[serde(default)]
     body_selections: Vec<FeatureInputBodySelection>,
@@ -594,29 +594,33 @@ struct FeatureInputLaneWire {
     sketch_entities: Vec<SketchInputEntityWire>,
 }
 
+impl FeatureInputLaneWire {
+    pub(crate) fn admit(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+        let relations = ctx.try_collect_vec(self.relation_instances.into_iter().map(|relation| relation.admit(ctx)), "admit SLDPRT inline relations")?;
+        let entities = ctx.try_collect_vec(self.sketch_entities.into_iter().map(|entity| { ctx.charge_work(1, "admit SLDPRT inline sketch marker")?; SketchInputEntity::try_from_wire(entity, &self.native_payload).map_err(cadmpeg_core::CodecError::malformed) }), "admit SLDPRT inline sketch entities")?;
+        Ok(FeatureInputLane {
+            id: self.id, configuration: self.configuration, native_payload: self.native_payload,
+            classes: self.classes, names: self.names, scalars: self.scalars, relation_bindings: self.relation_bindings,
+            relation_instances: relations, body_selections: self.body_selections, edge_selections: self.edge_selections,
+            surface_selections: self.surface_selections, generated_surface_identities: self.generated_surface_identities,
+            references: self.references, sketch_entities: entities,
+        })
+    }
+}
+
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
-        let sketch_entities = wire
-            .sketch_entities
-            .into_iter()
+        let sketch_entities = wire.sketch_entities.into_iter()
             .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
             .collect::<Result<Vec<_>, _>>()?;
+        let relation_instances = wire.relation_instances.into_iter().map(FeatureInputRelationInstance::try_from).collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
-            id: wire.id,
-            configuration: wire.configuration,
-            native_payload: wire.native_payload,
-            classes: wire.classes,
-            names: wire.names,
-            scalars: wire.scalars,
-            relation_bindings: wire.relation_bindings,
-            relation_instances: wire.relation_instances,
-            body_selections: wire.body_selections,
-            edge_selections: wire.edge_selections,
-            surface_selections: wire.surface_selections,
-            generated_surface_identities: wire.generated_surface_identities,
-            references: wire.references,
-            sketch_entities,
+            id: wire.id, configuration: wire.configuration, native_payload: wire.native_payload,
+            classes: wire.classes, names: wire.names, scalars: wire.scalars, relation_bindings: wire.relation_bindings,
+            relation_instances, body_selections: wire.body_selections, edge_selections: wire.edge_selections,
+            surface_selections: wire.surface_selections, generated_surface_identities: wire.generated_surface_identities,
+            references: wire.references, sketch_entities,
         })
     }
 }
@@ -850,6 +854,7 @@ pub(crate) struct FeatureInputRelationBinding {
 
 /// One compact sketch-relation instance represented by related scalar records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureInputRelationInstanceWire")]
 pub(crate) struct FeatureInputRelationInstance {
     /// Globally unique deterministic identifier for this relation instance.
     pub(crate) id: String,
@@ -870,6 +875,42 @@ pub(crate) struct FeatureInputRelationInstance {
     pub(crate) scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
     pub(crate) operands: Vec<FeatureInputOperand>,
+}
+
+/// Partial wire record; membership is admitted before it becomes a relation.
+#[derive(Deserialize)]
+pub(crate) struct FeatureInputRelationInstanceWire {
+    id: String,
+    parent: String,
+    ordinal: u32,
+    offset: u64,
+    family: FeatureInputRelationFamily,
+    class_ref: String,
+    feature_ref: String,
+    #[serde(flatten)]
+    scalars: relation_scalars::RelationScalarsWire,
+    operands: Vec<FeatureInputOperand>,
+}
+
+impl FeatureInputRelationInstanceWire {
+    pub(crate) fn admit(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<FeatureInputRelationInstance, cadmpeg_core::CodecError> {
+        Ok(FeatureInputRelationInstance {
+            id: self.id, parent: self.parent, ordinal: self.ordinal, offset: self.offset,
+            family: self.family, class_ref: self.class_ref, feature_ref: self.feature_ref,
+            scalars: self.scalars.admit(ctx)?, operands: self.operands,
+        })
+    }
+}
+
+impl TryFrom<FeatureInputRelationInstanceWire> for FeatureInputRelationInstance {
+    type Error = String;
+    fn try_from(wire: FeatureInputRelationInstanceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id, parent: wire.parent, ordinal: wire.ordinal, offset: wire.offset,
+            family: wire.family, class_ref: wire.class_ref, feature_ref: wire.feature_ref,
+            scalars: wire.scalars.into_checked()?, operands: wire.operands,
+        })
+    }
 }
 
 impl FeatureInputRelationInstance {
