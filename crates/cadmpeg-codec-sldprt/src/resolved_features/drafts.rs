@@ -469,14 +469,12 @@ pub(super) fn draft_operand_candidates(
             objects.push((name.offset, feature));
         }
     }
-    let count = u64::try_from(objects.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let comparisons_per_item = u64::from(objects.len().checked_ilog2().unwrap_or(0)) + 1;
-    let sort_work = count
-        .checked_mul(comparisons_per_item)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(sort_work, OPERATION)?;
-    objects.sort_unstable_by_key(|(offset, _)| *offset);
+    ctx.sort_unstable_by(
+        &mut objects,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        OPERATION,
+    )?;
     let mut candidates = Vec::new();
     for (index, (start, feature)) in objects.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;

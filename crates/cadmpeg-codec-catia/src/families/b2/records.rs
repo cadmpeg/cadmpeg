@@ -3537,7 +3537,12 @@ pub(in crate::families) fn b2_offset_supports_from_records(
     let extra = b2_construction_offset_supports_from_records(ctx, data, records)?;
     ctx.reserve_vec(&mut offsets, extra.len(), "catia_b2_offset_supports")?;
     offsets.extend(extra);
-    offsets.sort_unstable_by_key(|offset| offset.pos);
+    ctx.sort_unstable_by(
+        &mut offsets,
+        |left, right| left.pos.cmp(&right.pos),
+        |_| 0,
+        "catia_b2_offset_supports_sort",
+    )?;
     Ok(offsets)
 }
 

@@ -248,9 +248,26 @@ fn authored_scope_ordinals_for_stream<'a>(
             "f3d authored stream timeline",
         )?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut stream_timelines[..], |timeline| {
-        timeline.source_ordinal
-    })?;
+    ctx.stable_sort_by(
+        &mut stream_timelines[..],
+        |left, right| {
+            let left_key = {
+                let timeline = left;
+                {
+                    timeline.source_ordinal
+                }
+            };
+            let right_key = {
+                let timeline = right;
+                {
+                    timeline.source_ordinal
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 1",
+    )?;
     if stream_timelines.is_empty() {
         let first_family = design_feature_family(&first_scope.kind());
         let homogeneous = scopes.iter().all(|scope| {
@@ -263,7 +280,22 @@ fn authored_scope_ordinals_for_stream<'a>(
         for &scope in scopes {
             ctx.push_vec(&mut ordered, scope, "f3d authored scope order")?;
         }
-        crate::design::sort::sort_by_key(ctx, &mut ordered[..], |scope| scope.feature_ordinal)?;
+        ctx.stable_sort_by(
+            &mut ordered[..],
+            |left, right| {
+                let left_key = {
+                    let scope = left;
+                    scope.feature_ordinal
+                };
+                let right_key = {
+                    let scope = right;
+                    scope.feature_ordinal
+                };
+                left_key.cmp(&right_key)
+            },
+            |_| 0,
+            "sort f3d design feature_project 2",
+        )?;
         let complete_ordinals = ordered.iter().enumerate().all(|(ordinal, scope)| {
             u32::try_from(ordinal)
                 .ok()
@@ -1485,7 +1517,12 @@ face_operands,
             }
         }
     }
-    crate::design::sort::sort_by(ctx, &mut features[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut features[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design feature_project 3",
+    )?;
 
     let mut parameters = native
         .iter()
@@ -1786,7 +1823,12 @@ face_operands,
         }
     }
     ensure_feature_dependencies_precede(ctx, &features)?;
-    crate::design::sort::sort_by(ctx, &mut parameters[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut parameters[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design feature_project 4",
+    )?;
     Ok((features, parameters))
 }
 
@@ -2360,9 +2402,26 @@ fn project_fillet_arm(
             ctx.push_vec(&mut assignments, assignment, "f3d Fillet scope assignment")?;
         }
     }
-    crate::design::sort::sort_by_key(ctx, &mut assignments[..], |assignment| {
-        assignment.group_ordinal
-    })?;
+    ctx.stable_sort_by(
+        &mut assignments[..],
+        |left, right| {
+            let left_key = {
+                let assignment = left;
+                {
+                    assignment.group_ordinal
+                }
+            };
+            let right_key = {
+                let assignment = right;
+                {
+                    assignment.group_ordinal
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 5",
+    )?;
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(ctx, &assignments, parameters)? else {
             return native_scope_definition(ctx, scope, parameters);
@@ -2490,7 +2549,12 @@ fn resolved_fillet_assignments<'a>(
             ctx.push_vec(&mut assigned, record, "f3d Fillet assigned parameter")?;
         }
     }
-    assigned.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut assigned,
+        Ord::cmp,
+        |_| 0,
+        "f3d Fillet assigned parameter sort",
+    )?;
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
         return Ok(None);
     }
@@ -4542,9 +4606,26 @@ pub(super) fn project_surface_stitch(
     }) {
         ctx.push_vec(&mut matching, group, "f3d SurfaceStitch group")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut matching[..], |group| {
-        group.scope_reference_ordinal
-    })?;
+    ctx.stable_sort_by(
+        &mut matching[..],
+        |left, right| {
+            let left_key = {
+                let group = left;
+                {
+                    group.scope_reference_ordinal
+                }
+            };
+            let right_key = {
+                let group = right;
+                {
+                    group.scope_reference_ordinal
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 6",
+    )?;
     if or_none!(matching.len().checked_mul(2)) != input_end
         || matching
             .iter()
@@ -4866,9 +4947,26 @@ pub(crate) fn direct_face_selection(
     }) {
         ctx.push_vec(&mut matching, operand, "f3d direct face operand")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut matching[..], |operand| {
-        operand.scope_reference_ordinal
-    })?;
+    ctx.stable_sort_by(
+        &mut matching[..],
+        |left, right| {
+            let left_key = {
+                let operand = left;
+                {
+                    operand.scope_reference_ordinal
+                }
+            };
+            let right_key = {
+                let operand = right;
+                {
+                    operand.scope_reference_ordinal
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 7",
+    )?;
     if matching.is_empty() {
         return Ok(None);
     }
@@ -4986,7 +5084,12 @@ fn normalize_parameter_ordinals(
                 "f3d parameter group ordinal",
             )?;
         }
-        ordinals.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut ordinals,
+            Ord::cmp,
+            |_| 0,
+            "f3d parameter group ordinal sort",
+        )?;
         let mut unresolved = HashSet::new();
         for index in indices {
             // discarded-value: each parameter index occurs once in its owner group.
@@ -5007,11 +5110,16 @@ fn normalize_parameter_ordinals(
                     ctx.push_vec(&mut ready, *index, "f3d parameter ready index")?;
                 }
             }
-            crate::design::sort::sort_by(ctx, &mut ready[..], |a, b| {
-                let pa = &parameters[*a];
-                let pb = &parameters[*b];
-                pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
-            })?;
+            ctx.stable_sort_by(
+                &mut ready[..],
+                |a, b| {
+                    let pa = &parameters[*a];
+                    let pb = &parameters[*b];
+                    pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
+                },
+                |_| 0,
+                "sort f3d design feature_project 8",
+            )?;
             if ready.is_empty() {
                 // Every blocked parameter has an unresolved dependency, so the
                 // remaining graph contains a cycle. Break its lowest-ordinal
@@ -5356,8 +5464,38 @@ fn variable_fillet_law(
             _ => {}
         }
     }
-    crate::design::sort::sort_by_key(ctx, &mut middle_radii[..], |(ordinal, _)| *ordinal)?;
-    crate::design::sort::sort_by_key(ctx, &mut middle_parameters[..], |(ordinal, _)| *ordinal)?;
+    ctx.stable_sort_by(
+        &mut middle_radii[..],
+        |left, right| {
+            let left_key = {
+                let (ordinal, _) = left;
+                *ordinal
+            };
+            let right_key = {
+                let (ordinal, _) = right;
+                *ordinal
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 9",
+    )?;
+    ctx.stable_sort_by(
+        &mut middle_parameters[..],
+        |left, right| {
+            let left_key = {
+                let (ordinal, _) = left;
+                *ordinal
+            };
+            let right_key = {
+                let (ordinal, _) = right;
+                *ordinal
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 10",
+    )?;
     if middle_radii.len() != middle_parameters.len()
         || parameters.iter().any(|(_, parameter)| {
             !matches!(
@@ -5490,9 +5628,26 @@ fn project_chamfer(
     }) {
         ctx.push_vec(&mut edge_groups, group, "f3d chamfer edge groups")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut edge_groups[..], |group| {
-        group.scope_reference_ordinal
-    })?;
+    ctx.stable_sort_by(
+        &mut edge_groups[..],
+        |left, right| {
+            let left_key = {
+                let group = left;
+                {
+                    group.scope_reference_ordinal
+                }
+            };
+            let right_key = {
+                let group = right;
+                {
+                    group.scope_reference_ordinal
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 11",
+    )?;
     let group_count = edge_groups.len();
     let ordered_parameters =
         |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
@@ -5508,7 +5663,22 @@ fn project_chamfer(
                     "f3d chamfer ordered parameter entries",
                 )?;
             }
-            crate::design::sort::sort_by_key(ctx, &mut matches[..], |(ordinal, _)| *ordinal)?;
+            ctx.stable_sort_by(
+                &mut matches[..],
+                |left, right| {
+                    let left_key = {
+                        let (ordinal, _) = left;
+                        *ordinal
+                    };
+                    let right_key = {
+                        let (ordinal, _) = right;
+                        *ordinal
+                    };
+                    left_key.cmp(&right_key)
+                },
+                |_| 0,
+                "sort f3d design feature_project 12",
+            )?;
             let mut out = Vec::new();
             for (_, parameter) in matches {
                 ctx.push_vec(&mut out, parameter, "f3d chamfer ordered parameter output")?;
@@ -6104,7 +6274,22 @@ pub(super) fn project_fixed_loft(
     }) {
         ctx.push_vec(&mut groups, group, "f3d Loft scope group")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut groups[..], |group| group.scope_reference_ordinal)?;
+    ctx.stable_sort_by(
+        &mut groups[..],
+        |left, right| {
+            let left_key = {
+                let group = left;
+                group.scope_reference_ordinal
+            };
+            let right_key = {
+                let group = right;
+                group.scope_reference_ordinal
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 13",
+    )?;
     let mut matching_legacy_carriers = legacy_body_carriers.iter().filter(|carrier| {
         native_stream(&carrier.id) == Some(stream)
             && carrier.scope_record_index == scope.record_index
@@ -6904,9 +7089,26 @@ pub(super) fn project_fixed_sweep(
                     _ => {}
                 }
             }
-            crate::design::sort::sort_by_key(ctx, &mut paths[..], |group| {
-                group.scope_reference_ordinal
-            })?;
+            ctx.stable_sort_by(
+                &mut paths[..],
+                |left, right| {
+                    let left_key = {
+                        let group = left;
+                        {
+                            group.scope_reference_ordinal
+                        }
+                    };
+                    let right_key = {
+                        let group = right;
+                        {
+                            group.scope_reference_ordinal
+                        }
+                    };
+                    left_key.cmp(&right_key)
+                },
+                |_| 0,
+                "sort f3d design feature_project 14",
+            )?;
             let guide_surface_form = match guide_surfaces.as_slice() {
                 [] => false,
                 [_] => true,
@@ -7337,7 +7539,22 @@ fn project_surface_patch(
     }) {
         ctx.push_vec(&mut groups, group, "f3d surface-patch groups")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut groups[..], |group| group.scope_reference_ordinal)?;
+    ctx.stable_sort_by(
+        &mut groups[..],
+        |left, right| {
+            let left_key = {
+                let group = left;
+                group.scope_reference_ordinal
+            };
+            let right_key = {
+                let group = right;
+                group.scope_reference_ordinal
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 15",
+    )?;
 
     // The single-group path form stores the group, all of its ordered edge
     // members, and the tool body. It has no per-component settings records.
@@ -7546,7 +7763,22 @@ fn project_boundary_fill(
     }) {
         ctx.push_vec(&mut groups, group, "f3d BoundaryFill group")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut groups[..], |group| group.scope_reference_ordinal)?;
+    ctx.stable_sort_by(
+        &mut groups[..],
+        |left, right| {
+            let left_key = {
+                let group = left;
+                group.scope_reference_ordinal
+            };
+            let right_key = {
+                let group = right;
+                group.scope_reference_ordinal
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design feature_project 16",
+    )?;
     let (tools, cells) = or_none!(groups.split_first());
     if tools.scope_reference_ordinal != 0
         || tools.record_index != *or_none!(scope.reference_members().values().next())
@@ -9030,9 +9262,12 @@ pub(super) fn closed_spatial_sketch_profiles(
             ctx.push_vec(&mut profiles, profile, "f3d spatial profile")?;
         }
     }
-    crate::design::sort::sort_by(ctx, &mut profiles[..], |a, b| {
-        a.boundary()[0].entity.cmp(&b.boundary()[0].entity)
-    })?;
+    ctx.stable_sort_by(
+        &mut profiles[..],
+        |a, b| a.boundary()[0].entity.cmp(&b.boundary()[0].entity),
+        |_| 0,
+        "sort f3d design feature_project 17",
+    )?;
     Ok(profiles)
 }
 

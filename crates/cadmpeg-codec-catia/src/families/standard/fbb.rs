@@ -300,19 +300,16 @@ pub(super) fn parse_standard_motif(
         };
         ctx.push_vec(&mut edge_points, [*first, *last], "catia_motif_edge_points")?;
     }
-    let anchors_match = edge_points
-        .iter()
-        .zip(circle_anchors)
-        .all(|(points, anchor)| {
-            anchor.is_none_or(|mut anchor| {
-                anchor.sort_unstable();
-                let mut points = *points;
-                points.sort_unstable();
-                points == anchor
-            })
-        });
-    if !anchors_match {
-        return Ok(None);
+    for (points, anchor) in edge_points.iter().zip(circle_anchors) {
+        let Some(mut anchor) = anchor else {
+            continue;
+        };
+        ctx.sort_unstable_by(&mut anchor, Ord::cmp, |_| 0, "catia_motif_anchor_sort")?;
+        let mut points = *points;
+        ctx.sort_unstable_by(&mut points, Ord::cmp, |_| 0, "catia_motif_edge_points_sort")?;
+        if points != anchor {
+            return Ok(None);
+        }
     }
     reconstruct_incidence(
         ctx,
@@ -2173,7 +2170,12 @@ pub(crate) fn boundary_cycles(
         cycle.rotate_left(minimum);
         ctx.push_vec(&mut cycles, cycle, "catia_boundary_cycles")?;
     }
-    cycles.sort();
+    ctx.stable_sort_by(
+        &mut cycles,
+        Ord::cmp,
+        |item| std::mem::size_of_val(item.as_slice()),
+        "catia_boundary_cycles_sort",
+    )?;
     Ok((!cycles.is_empty()).then_some(cycles))
 }
 
@@ -2244,7 +2246,12 @@ fn cover_cycle_by_rows(
     if coverage.iter().any(|count| *count != 1) {
         return Ok(None);
     }
-    matches.sort_by_key(|entry| entry.0 % length);
+    ctx.stable_sort_by(
+        &mut matches,
+        |left, right| (left.0 % length).cmp(&(right.0 % length)),
+        |_| 0,
+        "catia_cover_cycle_rows_sort",
+    )?;
     let mut corner_nodes = HashMap::new();
     for &(start, edge_count, _, _) in &matches {
         let end = (start + edge_count) % length;

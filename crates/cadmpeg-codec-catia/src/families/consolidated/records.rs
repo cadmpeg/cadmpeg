@@ -1427,7 +1427,12 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
             "catia_compact_endpoint_bindings",
         )?;
     }
-    endpoints.sort_by_key(|binding| binding.node.pos);
+    ctx.stable_sort_by(
+        &mut endpoints,
+        |left, right| left.node.pos.cmp(&right.node.pos),
+        |_| 0,
+        "catia_compact_endpoint_bindings_sort",
+    )?;
     Ok(endpoints)
 }
 
@@ -2219,7 +2224,12 @@ fn object_stream_vertex_row_ranges_from_records(
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
-    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    ctx.sort_unstable_by(
+        &mut ranges,
+        |left, right| (left.start, left.end).cmp(&(right.start, right.end)),
+        |_| 0,
+        "catia_object_stream_frame_ranges_sort",
+    )?;
     let mut rows = Vec::new();
     let mut region_start = 0usize;
     for range in ranges {

@@ -1186,18 +1186,12 @@ fn history_object_offsets(
         ctx.reserve_collection_vec(&mut objects, 1, operation)?;
         objects.push((name.offset, id));
     }
-    let levels = if objects.len() > 1 {
-        objects.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(objects.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        &mut objects,
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
         operation,
     )?;
-    objects.sort_unstable_by_key(|object| object.0);
     Ok(objects)
 }
 
@@ -1330,18 +1324,12 @@ pub(crate) fn project_surface_sweep_profiles(
                 objects.push((name.offset, *feature));
             }
         }
-        let levels = if objects.len() > 1 {
-            objects.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(objects.len())
-                .checked_mul(u64::from(levels))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
             OPERATION,
         )?;
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, &(start, feature)) in objects.iter().enumerate() {
             ctx.charge_work(
                 u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
@@ -1803,7 +1791,14 @@ pub(crate) fn project_compact_combine_paths(
             ctx.reserve_collection_vec(&mut ordered, 1, OPERATION)?;
             ordered.push((order, ordinal, dependency));
         }
-        ordered.sort_unstable_by_key(|(order, ordinal, _)| (*order, *ordinal));
+        ctx.sort_unstable_by(
+            &mut ordered,
+            |(left_order, left_ordinal, _), (right_order, right_ordinal, _)| {
+                (left_order, left_ordinal).cmp(&(right_order, right_ordinal))
+            },
+            |_| 0,
+            OPERATION,
+        )?;
         let mut dependencies = Vec::<cadmpeg_ir::features::FeatureId>::new();
         for (_, _, dependency) in ordered {
             if let Some(previous) = dependencies.last() {

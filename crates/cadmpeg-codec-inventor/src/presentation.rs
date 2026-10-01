@@ -213,16 +213,21 @@ fn project_default_bindings(
             selected.push(matches[0]);
         }
     }
-    selected.sort_by(|left, right| {
-        left.identity
-            .segment_token
-            .cmp(&right.identity.segment_token)
-            .then_with(|| {
-                left.identity
-                    .record_ordinal
-                    .cmp(&right.identity.record_ordinal)
-            })
-    });
+    ctx.stable_sort_by(
+        &mut selected,
+        |left, right| {
+            left.identity
+                .segment_token
+                .cmp(&right.identity.segment_token)
+                .then_with(|| {
+                    left.identity
+                        .record_ordinal
+                        .cmp(&right.identity.record_ordinal)
+                })
+        },
+        |style| style.identity.segment_token.as_str().len(),
+        "Inventor default rendering styles sort",
+    )?;
     selected.dedup_by(|left, right| {
         left.identity.segment_token == right.identity.segment_token
             && left.identity.record_ordinal == right.identity.record_ordinal
@@ -385,7 +390,12 @@ fn project_face_bindings(
         "order Inventor presentation faces",
     )?;
     let mut ordered_face_keys = face_keys.iter().collect::<Vec<_>>();
-    ordered_face_keys.sort_unstable_by_key(|(left, _)| *left);
+    ctx.sort_unstable_by(
+        &mut ordered_face_keys,
+        |(left, _), (right, _)| left.cmp(right),
+        |(face_id, _)| face_id.as_str().len(),
+        "Inventor presentation face keys sort",
+    )?;
     for (face_id, key) in ordered_face_keys {
         let mut matching_faces = Vec::new();
         ctx.charge_work(
@@ -2073,7 +2083,9 @@ mod tests {
         let face_keys = std::collections::HashMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        // The one-key face sort takes its count plus a sixteen-byte pair and twice the
+        // twenty-byte face id over two levels at eight units each, leaving nothing for the scan.
+        policy.limits.max_work_units = 1 + (16 + 2 * 20) * 2 * 8;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(

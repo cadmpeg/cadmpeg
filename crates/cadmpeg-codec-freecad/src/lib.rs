@@ -704,7 +704,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     for (name, mut spans) in logical_by_entry {
-        spans.sort_by_key(|span| span.span.start());
+        ctx.stable_sort_by(
+            &mut spans,
+            |left, right| left.span.start().cmp(&right.span.start()),
+            |_| 0,
+            "fcstd logical spans sort",
+        )?;
         let expected = entry_lengths.get(name).copied();
         validate_logical_chain(name, &spans, expected, &mut findings);
     }

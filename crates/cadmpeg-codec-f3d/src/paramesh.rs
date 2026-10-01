@@ -1753,7 +1753,12 @@ pub(crate) fn decode_mesh_container(
         require_version_2_descriptor(stream)?;
     }
     // The kind-4 chunks follow the name table in ascending stream-id order.
-    name_table.sort_by_key(|(_, id)| *id);
+    ctx.stable_sort_by(
+        &mut name_table,
+        |(_, left), (_, right)| left.cmp(right),
+        |_| 0,
+        "sort paramesh name table",
+    )?;
     let named = |name: &str| {
         name_table
             .iter()

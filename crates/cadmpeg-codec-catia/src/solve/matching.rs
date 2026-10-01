@@ -408,7 +408,7 @@ pub(crate) fn unique_coordinate_bijection(
         let mut order = Vec::new();
         ctx.reserve_vec(&mut order, domains.len(), "catia_bijection_order")?;
         order.extend(0..domains.len());
-        order.sort_unstable_by_key(|vertex| {
+        let order_key = |vertex: &usize| -> (usize, usize) {
             let count = forced
                 .filter(|(forced_vertex, _)| forced_vertex == vertex)
                 .map_or_else(
@@ -421,7 +421,13 @@ pub(crate) fn unique_coordinate_bijection(
                     |(_, class)| slots_by_class[class].len(),
                 );
             (count, *vertex)
-        });
+        };
+        ctx.sort_unstable_by(
+            &mut order,
+            |left, right| order_key(left).cmp(&order_key(right)),
+            |_| 0,
+            "catia_bijection_order_sort",
+        )?;
         let mut seen_vertices =
             ctx.alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices")?;
         let mut seen_slots =
@@ -564,7 +570,12 @@ pub(crate) fn unique_coordinate_bijection(
                 "catia_bijection_domain_classes",
             )?;
         }
-        classes.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut classes,
+            Ord::cmp,
+            |_| 0,
+            "catia_bijection_domain_classes_sort",
+        )?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(classes.len()),
             "catia_bijection_class_deduplication",
@@ -640,7 +651,7 @@ mod tests {
     #[test]
     fn coordinate_bijection_refuses_unadmitted_matching_visits() {
         let domains = [HashSet::from([0_usize])];
-        crate::test_support::with_work_limit(4, |ctx| {
+        crate::test_support::with_work_limit(262, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
                     .expect_err("matching visit must be admitted")

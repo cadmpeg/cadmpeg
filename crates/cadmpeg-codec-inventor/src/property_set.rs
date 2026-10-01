@@ -250,7 +250,12 @@ pub(crate) fn parse_property_set_stream<'a>(
         directories.push((fmtid, cursor.offset("section offset")?));
     }
     let header_end = cursor.position();
-    directories.sort_by_key(|(_, offset)| *offset);
+    ctx.stable_sort_by(
+        &mut directories,
+        |left, right| left.1.cmp(&right.1),
+        |_| 0,
+        "OLE section directories sort",
+    )?;
     let mut previous_end = header_end;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(section_count),
@@ -344,7 +349,7 @@ fn parse_section<'a>(
         directory.push((offset, id));
     }
     let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
-    directory.sort_unstable();
+    ctx.sort_unstable_by(&mut directory, Ord::cmp, |_| 0, "OLE property directory sort")?;
     for pair in directory.windows(2) {
         if pair[0].0 == pair[1].0 {
             return Err(CodecError::Malformed(
@@ -421,7 +426,12 @@ fn parse_section<'a>(
             raw,
         });
     }
-    properties.sort_by_key(|property| property.id);
+    ctx.stable_sort_by(
+        &mut properties,
+        |left, right| left.id.cmp(&right.id),
+        |_| 0,
+        "OLE properties sort",
+    )?;
     Ok(PropertySection {
         fmtid,
         code_page,

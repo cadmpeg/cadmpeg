@@ -896,16 +896,28 @@ fn profiled_hole_construction_with_evidence(
             add_expression(value)?;
         }
     }
-    charge_hole_sort_work(ctx, diameters.len(), OPERATION)?;
-    diameters.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.sort_unstable_by(
+        &mut diameters,
+        |left, right| left.get().total_cmp(&right.get()),
+        |_| 0,
+        OPERATION,
+    )?;
     ctx.charge_work(u64_from_index(diameters.len()), OPERATION)?;
     diameters.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
-    charge_hole_sort_work(ctx, angles.len(), OPERATION)?;
-    angles.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.sort_unstable_by(
+        &mut angles,
+        |left, right| left.get().total_cmp(&right.get()),
+        |_| 0,
+        OPERATION,
+    )?;
     ctx.charge_work(u64_from_index(angles.len()), OPERATION)?;
     angles.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_EXACT_GEOMETRY);
-    charge_hole_sort_work(ctx, lengths.len(), OPERATION)?;
-    lengths.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.sort_unstable_by(
+        &mut lengths,
+        |left, right| left.get().total_cmp(&right.get()),
+        |_| 0,
+        OPERATION,
+    )?;
     ctx.charge_work(u64_from_index(lengths.len()), OPERATION)?;
     lengths.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
     let dimension_only = if crate::history::project::solid::is_hole_profile_construction(profile) {
@@ -1526,12 +1538,21 @@ pub(crate) fn project_profiled_hole_constructions(
             ctx.reserve_collection_vec(&mut profiles, 1, OPERATION)?;
             profiles.push((profile.ordinal, index, construction));
         }
-        charge_hole_sort_work(ctx, holes.len(), OPERATION)?;
-        holes
-            .sort_unstable_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(right.0)));
-        charge_hole_sort_work(ctx, profiles.len(), OPERATION)?;
+        ctx.sort_unstable_by(
+            holes,
+            |left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(right.0)),
+            |hole| hole.0.len(),
+            OPERATION,
+        )?;
         // The input index preserves history order for equal ordinals.
-        profiles.sort_unstable_by_key(|(ordinal, index, _)| (*ordinal, *index));
+        ctx.sort_unstable_by(
+            &mut profiles,
+            |(left_ordinal, left_index, _), (right_ordinal, right_index, _)| {
+                (*left_ordinal, *left_index).cmp(&(*right_ordinal, *right_index))
+            },
+            |_| 0,
+            OPERATION,
+        )?;
         if holes.len() != profiles.len() {
             continue;
         }
@@ -2231,10 +2252,18 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         support_axes.push(canonical_axis(axis));
                     }
                 }
-                charge_hole_sort_work(ctx, support_axes.len(), "sort SLDPRT spatial support axes")?;
-                support_axes.sort_unstable_by_key(|axis| {
-                    [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]
-                });
+                ctx.sort_unstable_by(
+                    &mut support_axes,
+                    |left, right| {
+                        [left.x.to_bits(), left.y.to_bits(), left.z.to_bits()].cmp(&[
+                            right.x.to_bits(),
+                            right.y.to_bits(),
+                            right.z.to_bits(),
+                        ])
+                    },
+                    |_| 0,
+                    "sort SLDPRT spatial support axes",
+                )?;
                 ctx.charge_work(
                     u64_from_index(support_axes.len()),
                     "deduplicate SLDPRT spatial support axes",
@@ -2279,8 +2308,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 resolved = inferred;
             }
         }
-        charge_hole_sort_work(ctx, resolved.len(), "sort SLDPRT spatial hole placements")?;
-        resolved.sort_unstable_by_key(|placement| match placement {
+        let placement_key = |placement: &HolePlacement| match placement {
             HolePlacement::Axis { origin, axis } => [
                 origin.x.to_bits(),
                 origin.y.to_bits(),
@@ -2290,7 +2318,13 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 axis.z.to_bits(),
             ],
             HolePlacement::Directed { .. } => [0; 6],
-        });
+        };
+        ctx.sort_unstable_by(
+            &mut resolved,
+            |left, right| placement_key(left).cmp(&placement_key(right)),
+            |_| 0,
+            "sort SLDPRT spatial hole placements",
+        )?;
         ctx.charge_work(
             u64_from_index(resolved.len()),
             "deduplicate SLDPRT spatial hole placements",
@@ -2325,8 +2359,18 @@ fn coplanar_spatial_position_placements(
     )?;
     sorted_points.extend_from_slice(points);
     let mut points = sorted_points;
-    charge_hole_sort_work(ctx, points.len(), "sort SLDPRT spatial position points")?;
-    points.sort_unstable_by_key(|point| [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]);
+    ctx.sort_unstable_by(
+        &mut points,
+        |left, right| {
+            [left.x.to_bits(), left.y.to_bits(), left.z.to_bits()].cmp(&[
+                right.x.to_bits(),
+                right.y.to_bits(),
+                right.z.to_bits(),
+            ])
+        },
+        |_| 0,
+        "sort SLDPRT spatial position points",
+    )?;
     ctx.charge_work(
         u64_from_index(points.len()),
         "deduplicate SLDPRT spatial position points",
@@ -2569,8 +2613,12 @@ pub(crate) fn project_generated_hole_axes(
                     "sort SLDPRT generated hole axes",
                 )?;
                 solution.extend(axes);
-                charge_hole_sort_work(ctx, solution.len(), "sort SLDPRT generated hole axes")?;
-                solution.sort_unstable_by_key(|(key, _)| *key);
+                ctx.sort_unstable_by(
+                    &mut solution,
+                    |(left, _), (right, _)| left.cmp(right),
+                    |_| 0,
+                    "sort SLDPRT generated hole axes",
+                )?;
                 let mut placements = Vec::new();
                 ctx.reserve_collection_vec(
                     &mut placements,
@@ -2604,23 +2652,17 @@ pub(crate) fn project_generated_hole_axes(
                 .max()
                 .unwrap_or(0);
             let count = u64_from_index(lane_solutions.len());
-            let levels = if lane_solutions.len() > 1 {
-                lane_solutions.len().ilog2() + 1
-            } else {
-                1
-            };
-            let comparison_work = count
-                .checked_mul(u64::from(levels))
-                .and_then(|count| count.checked_mul(u64_from_index(maximum_length).checked_add(1)?))
-                .and_then(|count| count.checked_mul(2))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(comparison_work, OPERATION)?;
-            lane_solutions.sort_unstable_by(|(left_index, left), (right_index, right)| {
-                left.iter()
-                    .map(placement_key)
-                    .cmp(right.iter().map(placement_key))
-                    .then_with(|| left_index.cmp(right_index))
-            });
+            ctx.sort_unstable_by(
+                &mut lane_solutions,
+                |(left_index, left), (right_index, right)| {
+                    left.iter()
+                        .map(placement_key)
+                        .cmp(right.iter().map(placement_key))
+                        .then_with(|| left_index.cmp(right_index))
+                },
+                |(_, placements)| std::mem::size_of_val(placements.as_slice()),
+                OPERATION,
+            )?;
             ctx.charge_work(
                 count
                     .checked_mul(
@@ -3820,18 +3862,6 @@ pub(crate) fn project_hole_axes(
                 "sort SLDPRT hole position solutions",
             )?;
             let maximum = solutions.iter().map(Vec::len).max().unwrap_or(0);
-            let levels = u64::from(usize::BITS - solutions.len().leading_zeros());
-            let work = u64_from_index(solutions.len())
-                .checked_mul(levels)
-                .and_then(|work| work.checked_mul(u64_from_index(maximum)))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "sort SLDPRT hole position solutions",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            ctx.charge_work(work, "sort SLDPRT hole position solutions")?;
             let placement_key = |placement: &HolePlacement| match placement {
                 HolePlacement::Axis { origin, axis } => [
                     origin.x.to_bits(),
@@ -3843,11 +3873,16 @@ pub(crate) fn project_hole_axes(
                 ],
                 HolePlacement::Directed { .. } => [0; 6],
             };
-            solutions.sort_unstable_by(|left, right| {
-                left.iter()
-                    .map(placement_key)
-                    .cmp(right.iter().map(placement_key))
-            });
+            ctx.sort_unstable_by(
+                &mut solutions,
+                |left, right| {
+                    left.iter()
+                        .map(placement_key)
+                        .cmp(right.iter().map(placement_key))
+                },
+                |solution| std::mem::size_of_val(solution.as_slice()),
+                "sort SLDPRT hole position solutions",
+            )?;
             ctx.charge_work(
                 u64_from_index(solutions.len())
                     .checked_mul(u64_from_index(maximum))
@@ -3909,17 +3944,29 @@ fn cylindrical_bore_axes(
             axes.push((origin, axis));
         }
     }
-    charge_hole_sort_work(ctx, axes.len(), "sort SLDPRT bore carrier axes")?;
-    axes.sort_unstable_by_key(|(origin, axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            axis.x.to_bits(),
-            axis.y.to_bits(),
-            axis.z.to_bits(),
-        ]
-    });
+    ctx.sort_unstable_by(
+        &mut axes,
+        |(left_origin, left_axis), (right_origin, right_axis)| {
+            [
+                left_origin.x.to_bits(),
+                left_origin.y.to_bits(),
+                left_origin.z.to_bits(),
+                left_axis.x.to_bits(),
+                left_axis.y.to_bits(),
+                left_axis.z.to_bits(),
+            ]
+            .cmp(&[
+                right_origin.x.to_bits(),
+                right_origin.y.to_bits(),
+                right_origin.z.to_bits(),
+                right_axis.x.to_bits(),
+                right_axis.y.to_bits(),
+                right_axis.z.to_bits(),
+            ])
+        },
+        |_| 0,
+        "sort SLDPRT bore carrier axes",
+    )?;
     axes.dedup();
     Ok(axes)
 }
@@ -3965,8 +4012,12 @@ fn plane_owned_bore_placements(
     let mut placements = Vec::new();
     ctx.reserve_collection_vec(&mut placements, by_position.len(), OPERATION)?;
     placements.extend(by_position);
-    charge_hole_sort_work(ctx, placements.len(), "sort SLDPRT plane-owned bore axes")?;
-    placements.sort_unstable_by_key(|(key, _)| *key);
+    ctx.sort_unstable_by(
+        &mut placements,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT plane-owned bore axes",
+    )?;
     let mut axes = Vec::new();
     ctx.reserve_collection_vec(&mut axes, placements.len(), OPERATION)?;
     axes.extend(
@@ -4044,8 +4095,12 @@ fn carrier_placements(
     let mut carriers = Vec::new();
     ctx.reserve_collection_vec(&mut carriers, by_axis.len(), OPERATION)?;
     carriers.extend(by_axis);
-    charge_hole_sort_work(ctx, carriers.len(), "sort SLDPRT hole carrier axes")?;
-    carriers.sort_unstable_by_key(|(key, _)| *key);
+    ctx.sort_unstable_by(
+        &mut carriers,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT hole carrier axes",
+    )?;
     let mut placements = Vec::new();
     ctx.reserve_collection_vec(&mut placements, carriers.len(), OPERATION)?;
     placements.extend(carriers.into_iter().map(|(_, placement)| placement));
@@ -4217,16 +4272,16 @@ pub(crate) fn project_topological_hole_constructions(
                             candidates.push((*radius, *span));
                         }
                     }
-                    charge_hole_sort_work(
-                        ctx,
-                        candidates.len(),
+                    ctx.sort_unstable_by(
+                        &mut candidates,
+                        |left, right| {
+                            left.0
+                                .total_cmp(&right.0)
+                                .then_with(|| left.1.total_cmp(&right.1))
+                        },
+                        |_| 0,
                         "sort SLDPRT matching hole bores",
                     )?;
-                    candidates.sort_unstable_by(|left, right| {
-                        left.0
-                            .total_cmp(&right.0)
-                            .then_with(|| left.1.total_cmp(&right.1))
-                    });
                     ctx.charge_work(
                         u64_from_index(candidates.len()),
                         "deduplicate SLDPRT matching hole bores",
@@ -4611,12 +4666,16 @@ fn marker_pattern_bore_axes(
             ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
             loci.push(Point2::new(u * 1000.0, v * 1000.0));
         }
-        charge_hole_sort_work(ctx, loci.len(), OPERATION)?;
-        loci.sort_unstable_by(|left, right| {
-            left.u
-                .total_cmp(&right.u)
-                .then_with(|| left.v.total_cmp(&right.v))
-        });
+        ctx.sort_unstable_by(
+            &mut loci,
+            |left, right| {
+                left.u
+                    .total_cmp(&right.u)
+                    .then_with(|| left.v.total_cmp(&right.v))
+            },
+            |_| 0,
+            OPERATION,
+        )?;
         ctx.charge_work(u64_from_index(loci.len()), OPERATION)?;
         loci.dedup_by(|left, right| {
             same_dimension_length(left.u, right.u) && same_dimension_length(left.v, right.v)
@@ -4644,19 +4703,6 @@ fn marker_pattern_bore_axes(
         return Ok(None);
     }
     match_marker_loci_to_bore_axes(ctx, &reduced_loci, radius, surfaces, direction)
-}
-
-fn charge_hole_sort_work(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_work(
-        u64_from_index(count)
-            .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )
 }
 
 fn match_marker_loci_to_bore_axes(
@@ -4744,8 +4790,12 @@ fn match_marker_loci_to_bore_axes(
             ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((point, *origin, axis));
         }
-        charge_hole_sort_work(ctx, candidates.len(), OPERATION)?;
-        candidates.sort_unstable_by_key(|(point, _, _)| *point);
+        ctx.sort_unstable_by(
+            &mut candidates,
+            |(left, _, _), (right, _, _)| left.cmp(right),
+            |_| 0,
+            OPERATION,
+        )?;
         let mut candidate_loci = Vec::new();
         ctx.reserve_collection_vec(&mut candidate_loci, candidates.len(), OPERATION)?;
         for ([x, y, z], ..) in &candidates {
@@ -4875,8 +4925,8 @@ impl BoreSubsetSearch<'_, '_> {
             self.ctx
                 .reserve_collection_vec(&mut subset, assigned.len(), OPERATION)?;
             subset.extend_from_slice(assigned);
-            charge_hole_sort_work(self.ctx, subset.len(), OPERATION)?;
-            subset.sort_unstable();
+            self.ctx
+                .sort_unstable_by(&mut subset, Ord::cmp, |_| 0, OPERATION)?;
             self.ctx
                 .charge_work(u64_from_index(subset.len()), OPERATION)?;
             self.ctx.insert_hash_set(subsets, subset, OPERATION)?;
@@ -4977,20 +5027,14 @@ pub(super) fn feature_object_byte_ranges<'a>(
         ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
         objects.push((name.offset, input_index, feature));
     }
-    let count = u64::try_from(objects.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let levels = if objects.len() > 1 {
-        objects.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        count
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        &mut objects,
+        |(left_offset, left_index, _), (right_offset, right_index, _)| {
+            (*left_offset, *left_index).cmp(&(*right_offset, *right_index))
+        },
+        |_| 0,
         OPERATION,
     )?;
-    objects.sort_unstable_by_key(|(offset, input_index, _)| (*offset, *input_index));
     let mut ranges = HashMap::new();
     for (index, (offset, _, feature)) in objects.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
@@ -5322,14 +5366,7 @@ fn constrained_bore_axes(
             QUANTUM,
         ));
     }
-    let axis_count = u64_from_index(axes.len());
-    ctx.charge_work(
-        axis_count
-            .checked_mul(u64::from(usize::BITS - axes.len().leading_zeros()))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    axes.sort_unstable();
+    ctx.sort_unstable_by(&mut axes, Ord::cmp, |_| 0, OPERATION)?;
     axes.dedup();
     if axes.is_empty() {
         return Ok(None);
@@ -5388,14 +5425,7 @@ fn compact_position_loci(
         ctx.reserve_collection_vec(&mut nodes, 2, OPERATION)?;
         nodes.extend([*first, *second]);
     }
-    let node_count = u64_from_index(nodes.len());
-    ctx.charge_work(
-        node_count
-            .checked_mul(u64::from(usize::BITS - nodes.len().leading_zeros()))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    nodes.sort_unstable();
+    ctx.sort_unstable_by(&mut nodes, Ord::cmp, |_| 0, OPERATION)?;
     nodes.dedup();
     if nodes.is_empty() || nodes.len() > loci.len() {
         return Ok(None);
@@ -5455,17 +5485,8 @@ impl CompactPositionSearch<'_, '_> {
             if solution.is_empty() {
                 return Ok(());
             }
-            let count = u64_from_index(solution.len());
-            self.ctx.charge_work(
-                count
-                    .checked_mul(u64::from(usize::BITS - solution.len().leading_zeros()))
-                    .ok_or_else(|| {
-                        self.ctx
-                            .refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                    })?,
-                OPERATION,
-            )?;
-            solution.sort_unstable();
+            self.ctx
+                .sort_unstable_by(&mut solution, Ord::cmp, |_| 0, OPERATION)?;
             self.ctx.insert_hash_set(solutions, solution, OPERATION)?;
             return Ok(());
         }

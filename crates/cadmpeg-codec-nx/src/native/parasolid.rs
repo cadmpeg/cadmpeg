@@ -258,28 +258,15 @@ pub(super) fn parasolid_group_records(
             "NX GROUP records",
         )?;
     }
-    let scratch = groups
-        .len()
-        .checked_mul(std::mem::size_of::<ParasolidGroupRecord>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record sort scratch", 0, 1))?;
-    let _sorting = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(scratch),
-        "NX GROUP record sort scratch",
+    ctx.stable_sort_by(
+        &mut groups,
+        |first, second| {
+            (first.origin.stream_ordinal(), first.inflated_offset)
+                .cmp(&(second.origin.stream_ordinal(), second.inflated_offset))
+        },
+        |_| 0,
+        "sort NX GROUP records",
     )?;
-    let work = groups
-        .len()
-        .checked_mul(
-            groups
-                .len()
-                .checked_ilog2()
-                .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX GROUP record sort work",
-    )?;
-    groups.sort_by_key(|group| (group.origin.stream_ordinal(), group.inflated_offset));
     Ok(groups)
 }
 
@@ -493,18 +480,12 @@ fn apply_group_state_events(
     for tombstone in census.tombstones {
         events.push((tombstone.offset, Event::Tombstone(tombstone.xmt)));
     }
-    let work = count
-        .checked_mul(
-            count
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state event sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX GROUP state event sort work",
+    ctx.stable_sort_by(
+        &mut events,
+        |(first, _), (second, _)| first.cmp(second),
+        |_| 0,
+        "sort NX GROUP state events",
     )?;
-    events.sort_by_key(|(offset, _)| *offset);
     for (_, event) in events {
         match event {
             Event::Record(record) => {
@@ -1306,26 +1287,12 @@ fn sort_deltas_events<T>(
     events: &mut [T],
     id: impl Fn(&T) -> &str,
 ) -> Result<(), CodecError> {
-    let count = events.len();
-    let scratch = count
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event sort scratch", 0, 1))?;
-    let _sorting = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(scratch),
-        "NX deltas event sort scratch",
+    ctx.stable_sort_by(
+        events,
+        |left, right| id(left).cmp(id(right)),
+        |event| id(event).len(),
+        "sort NX deltas events",
     )?;
-    let work = count
-        .checked_mul(
-            count
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX deltas event sort work",
-    )?;
-    events.sort_by(|left, right| id(left).cmp(id(right)));
     Ok(())
 }
 
@@ -1844,22 +1811,12 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
             records.push(P::record(id, ordinal, row));
         }
     }
-    let sort_factor = if records.len() < 2 {
-        1
-    } else {
-        usize::try_from(records.len().ilog2())
-            .map_err(|_| ctx.refuse_codec_limit("sort NX Parasolid cached records", 0, 1))?
-            + 1
-    };
-    let sort_units = records
-        .len()
-        .checked_mul(sort_factor)
-        .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid cached records", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_units),
-        "sort NX Parasolid cached records",
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| P::id(left).cmp(P::id(right)),
+        |record| P::id(record).len(),
+        "sort NX Parasolid records",
     )?;
-    records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
     Ok(records)
 }
 
@@ -1903,22 +1860,12 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
             records.push(P::record(id, ordinal, row));
         }
     }
-    let sort_factor = if records.len() < 2 {
-        1
-    } else {
-        usize::try_from(records.len().ilog2())
-            .map_err(|_| ctx.refuse_codec_limit("sort NX Parasolid scanned records", 0, 1))?
-            + 1
-    };
-    let sort_units = records
-        .len()
-        .checked_mul(sort_factor)
-        .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid scanned records", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_units),
-        "sort NX Parasolid scanned records",
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| P::id(left).cmp(P::id(right)),
+        |record| P::id(record).len(),
+        "sort NX Parasolid records",
     )?;
-    records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
     Ok(records)
 }
 
@@ -2383,20 +2330,12 @@ pub(super) fn parasolid_chart_records(
             });
         }
     }
-    let work = records
-        .len()
-        .checked_mul(
-            records
-                .len()
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid chart record sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX Parasolid chart record sort work",
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| left.id.cmp(&right.id),
+        |item| item.id.len(),
+        "sort NX Parasolid records",
     )?;
-    records.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(records)
 }
 
@@ -3425,11 +3364,12 @@ pub(super) fn parasolid_field_names_records(
             });
         }
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(records.len()),
-        "sort NX field names records",
+    ctx.stable_sort_by(
+        &mut records,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid records",
     )?;
-    records.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(records)
 }
 
@@ -3539,22 +3479,12 @@ pub(super) fn parasolid_attribute_field_names(
             fields: resolved,
         });
     }
-    let work = relations
-        .len()
-        .checked_mul(
-            relations
-                .len()
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX attribute field name relation sort work", 0, 1)
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX attribute field name relation sort work",
+    ctx.stable_sort_by(
+        &mut relations,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX attribute field name relations",
     )?;
-    relations.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(relations)
 }
 
@@ -3742,11 +3672,12 @@ pub(super) fn parasolid_entity_51_records(
             });
         }
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(records.len()),
-        "sort NX entity 51 records",
+    ctx.stable_sort_by(
+        &mut records,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid records",
     )?;
-    records.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(records)
 }
 
@@ -3980,50 +3911,48 @@ pub(super) fn parasolid_entity_value_records(
             });
         }
     }
-    let sort_units = [
-        records.integers.len(),
-        records.doubles.len(),
-        records.strings.len(),
-        records.vectors.len(),
-        records.axes.len(),
-        records.tags.len(),
-        records.unicode.len(),
-    ]
-    .into_iter()
-    .try_fold(0usize, |total, count| {
-        let factor = if count < 2 {
-            1
-        } else {
-            usize::try_from(count.ilog2()).ok()?.checked_add(1)?
-        };
-        total.checked_add(count.checked_mul(factor)?)
-    })
-    .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid value records", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_units),
-        "sort NX Parasolid value records",
+    ctx.stable_sort_by(
+        &mut records.integers,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value integers",
     )?;
-    records
-        .integers
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .doubles
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .strings
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .vectors
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .axes
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .tags
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .unicode
-        .sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut records.doubles,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value doubles",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.strings,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value strings",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.vectors,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value vectors",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.axes,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value axes",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.tags,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value tags",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.unicode,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value unicode",
+    )?;
     Ok(records)
 }
 
@@ -4084,19 +4013,12 @@ fn sort_entity_51_uses<T>(
     uses: &mut [T],
     id: impl Fn(&T) -> &str,
 ) -> Result<(), CodecError> {
-    let work = uses
-        .len()
-        .checked_mul(
-            uses.len()
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX entity 51 value use sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX entity 51 value use sort work",
+    ctx.stable_sort_by(
+        uses,
+        |left, right| id(left).cmp(id(right)),
+        |value_use| id(value_use).len(),
+        "sort NX entity 51 value uses",
     )?;
-    uses.sort_by(|left, right| id(left).cmp(id(right)));
     Ok(())
 }
 
@@ -4498,19 +4420,12 @@ pub(super) fn parasolid_topology_attribute_class_uses(
             });
         }
     }
-    let work = uses
-        .len()
-        .checked_mul(
-            uses.len()
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX topology attribute class sort work",
+    ctx.stable_sort_by(
+        &mut uses,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid uses",
     )?;
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(uses)
 }
 
@@ -4571,19 +4486,12 @@ pub(super) fn parasolid_attribute_class_uses(
                 .copy_retained_text(&definition.id, "NX entity 51 value use text")?,
         });
     }
-    let work = uses
-        .len()
-        .checked_mul(
-            uses.len()
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute class use sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX attribute class use sort work",
+    ctx.stable_sort_by(
+        &mut uses,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid uses",
     )?;
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(uses)
 }
 
@@ -4810,19 +4718,12 @@ pub(super) fn parasolid_attribute_field_uses(
             inflated_offset,
         });
     }
-    let sort_work = uses
-        .len()
-        .checked_mul(
-            uses.len()
-                .checked_ilog2()
-                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field use sort work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "NX attribute field use sort work",
+    ctx.stable_sort_by(
+        &mut uses,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid uses",
     )?;
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(uses)
 }
 

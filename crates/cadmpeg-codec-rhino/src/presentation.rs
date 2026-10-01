@@ -5704,7 +5704,12 @@ pub(crate) fn install(
         } else {
             Vec::new()
         };
-        group.links.sort();
+        ctx.stable_sort_by(
+            &mut group.links,
+            Ord::cmp,
+            std::string::String::len,
+            "Rhino group link sort",
+        )?;
     }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "groups", &groups)?;

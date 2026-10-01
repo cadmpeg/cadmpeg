@@ -343,7 +343,7 @@ fn shape_representation_relationships(
         )?;
     }
     for representations in related.values_mut() {
-        representations.sort_unstable();
+        ctx.sort_unstable_by(representations, Ord::cmp, |_| 0, "step_shape_relationship_sort")?;
         representations.dedup();
     }
     Ok(related)
@@ -2627,13 +2627,21 @@ fn root_shell_steps(
         }
         // `voids` is a STEP SET. CADIR keeps the outer shell at index zero
         // and canonicalizes the void suffix by resolved shell identity.
-        ids[1..].sort_unstable_by_key(|reference| {
-            shell_definitions
-                .get(reference)
-                .map_or((u64::MAX, true, *reference), |definition| {
-                    (definition.base, definition.forward, *reference)
-                })
-        });
+        ctx.sort_unstable_by(
+            &mut ids[1..],
+            |left, right| {
+                let key = |reference: &u64| {
+                    shell_definitions
+                        .get(reference)
+                        .map_or((u64::MAX, true, *reference), |definition| {
+                            (definition.base, definition.forward, *reference)
+                        })
+                };
+                key(left).cmp(&key(right))
+            },
+            |_| 0,
+            "step_root_shell_steps_sort",
+        )?;
         return Ok(Some(ids));
     }
     Ok(None)
@@ -2682,7 +2690,7 @@ fn root_key(
     if resolved == 0 {
         return Ok(None);
     }
-    shell_keys.sort_unstable();
+    ctx.sort_unstable_by(&mut shell_keys, Ord::cmp, |_| 0, "step_root_shell_keys_sort")?;
     Ok(Some(RootKey {
         root_kind,
         shell_keys,
@@ -4050,7 +4058,12 @@ fn connected_face_components(
                 }
             }
         }
-        component.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut component,
+            Ord::cmp,
+            |_| 0,
+            "STEP connected-face component sort",
+        )?;
         ctx.push_vec(&mut components, component, "STEP connected-face components")?;
     }
     Ok(components)
@@ -4305,12 +4318,17 @@ fn implicit_face_plane(
     for point in loops.iter().flatten().copied() {
         ctx.push_vec(&mut points, point, "step_implicit_face_plane_points")?;
     }
-    points.sort_by(|left, right| {
-        left.x
-            .total_cmp(&right.x)
-            .then_with(|| left.y.total_cmp(&right.y))
-            .then_with(|| left.z.total_cmp(&right.z))
-    });
+    ctx.stable_sort_by(
+        &mut points,
+        |left, right| {
+            left.x
+                .total_cmp(&right.x)
+                .then_with(|| left.y.total_cmp(&right.y))
+                .then_with(|| left.z.total_cmp(&right.z))
+        },
+        |_| 0,
+        "step_implicit_face_plane_sort",
+    )?;
     let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
         return Ok(None);
     };
@@ -4694,7 +4712,7 @@ fn pcurve_locus_witness(
         &mut break_fractions,
         "step_pcurve_locus_fractions",
     )?;
-    fractions.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut fractions, f64::total_cmp, |_| 0, "step_pcurve_locus_fractions_sort")?;
     fractions.dedup_by(|left, right| *left == *right);
     for fraction in fractions {
         let pcurve_parameter = endpoint
@@ -5171,7 +5189,12 @@ fn pcurve_selection_seeds(
             ctx.push_vec(&mut fractions, fraction, "step_pcurve_selection_fractions")?;
         }
         pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx)?;
-        fractions.sort_by(f64::total_cmp);
+        ctx.stable_sort_by(
+            &mut fractions,
+            f64::total_cmp,
+            |_| 0,
+            "step_pcurve_selection_fractions_sort",
+        )?;
         fractions.dedup_by(|left, right| *left == *right);
         for seed in fractions
             .iter()

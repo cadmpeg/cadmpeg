@@ -131,8 +131,18 @@ pub(crate) fn validate_native(
             .difference(&expected_arenas)
             .copied()
             .collect::<Vec<_>>();
-        missing.sort_unstable();
-        unexpected.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut missing,
+            Ord::cmp,
+            |item| item.len(),
+            "Inventor missing arena sort",
+        )?;
+        ctx.sort_unstable_by(
+            &mut unexpected,
+            Ord::cmp,
+            |item| item.len(),
+            "Inventor unexpected arena sort",
+        )?;
         return Ok(vec![finding(
             Check::NativeLinks,
             format!(
@@ -2106,9 +2116,12 @@ fn validate_assembly(
         &data.assembly_occurrences,
         &data.assembly_placements,
     )?;
-    projected
-        .occurrences
-        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut projected.occurrences,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "Inventor projected occurrence sort",
+    )?;
     if ir.model.occurrences != projected.occurrences {
         findings.push(finding(
             Check::NativeLinks,

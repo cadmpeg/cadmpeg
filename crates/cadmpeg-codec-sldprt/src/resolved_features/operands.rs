@@ -159,7 +159,12 @@ fn resolve_operand_marker_excluding<'a>(
                     .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
             }),
         )?;
-        points.sort_unstable_by_key(|entity| entity.offset());
+        ctx.sort_unstable_by(
+            &mut points,
+            |left, right| left.offset().cmp(&right.offset()),
+            |_| 0,
+            "sort SLDPRT scalar operand points",
+        )?;
         return Ok(points
             .get(usize::from(address))
             .copied()
@@ -347,7 +352,12 @@ fn resolve_operand_marker_excluding<'a>(
             .copied()
             .filter(|entity| operand_accepts_marker(kind, entity.kind())),
     )?;
-    compatible.sort_unstable_by_key(|entity| entity.offset());
+    ctx.sort_unstable_by(
+        &mut compatible,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort SLDPRT compatible operand markers",
+    )?;
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
         if let Some(entity) = compatible
@@ -408,7 +418,12 @@ fn resolve_operand_marker_excluding<'a>(
             } else {
                 Vec::new()
             };
-            indirect.sort_unstable_by_key(|entity| entity.id());
+            ctx.sort_unstable_by(
+                &mut indirect,
+                |left, right| left.id().cmp(right.id()),
+                |entity| entity.id().len(),
+                "sort SLDPRT indirect operand markers",
+            )?;
             indirect.dedup_by_key(|entity| entity.id());
             match indirect.as_slice() {
                 [entity] => Some(*entity),

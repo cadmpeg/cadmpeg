@@ -4,6 +4,7 @@ Run `python3 scripts/check-source-policy.py` to check the current source tree.
 The check needs no Git history, baseline, ledger, or update step. Exit status
 is 0 for clean source and 1 for violations. Text and `--json` output identify
 each violation by rule, file, line, and explanation.
+Use repeatable `--crate NAME` arguments to restrict reported findings to named crates.
 
 ## Rules
 
@@ -16,6 +17,11 @@ each violation by rule, file, line, and explanation.
   arm. The rule discovers evaluator names from production return signatures,
   resolves function paths and imports, and tracks bound results. Common method
   names require a receiver type or constructor that identifies the evaluator.
+- Slice sort calls in functions with a borrowed `DecodeContext` use
+  `ctx.stable_sort_by` or `ctx.sort_unstable_by`. This includes typed context
+  locals and context fields accessed through `self`. The two core sort
+  implementations and test code are exempt. Functions without a context stay
+  outside this rule.
 - Loss notes use the owning loss code's `note` method.
 - Formatted malformed errors use structured codec errors.
 - Tolerances from `1e-6` through `1e-12` use named constants or statics.
