@@ -1594,13 +1594,10 @@ fn fastload_native_copies_refuse_retained_limit_before_creation() {
         .map(|value| format!("{table_id}:value#{value}").len())
         .sum::<usize>();
     let directory_bytes =
-        std::mem::size_of::<crate::container::DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
+        4 * std::mem::size_of::<crate::container::DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
     let parsed_id_bytes = 50 * std::mem::size_of::<u32>();
     let native_bytes = 50
-        * (std::mem::size_of::<super::super::RmFastLoadObjectId>()
-            + std::mem::size_of::<String>()
-            + 2 * member_id_len
-            + table_id.len())
+        * (2 * member_id_len + table_id.len())
         + table_id.len()
         + std::mem::size_of::<super::super::RmFastLoadObjectIdTable>()
         + "/Root/FastLoad/RMFastLoad".len()
