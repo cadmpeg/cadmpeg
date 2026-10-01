@@ -59,6 +59,43 @@ pub struct FeatureBoundary {
     pub ordinal: u64,
 }
 
+/// Body identities in strictly increasing canonical order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalBodyCensus(Vec<BodyId>);
+
+impl CanonicalBodyCensus {
+    fn new(bodies: Vec<BodyId>) -> Result<Self, &'static str> {
+        if bodies.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err("body census: identities must be unique and in canonical order");
+        }
+        Ok(Self(bodies))
+    }
+
+    /// Ordered body identities.
+    pub fn as_slice(&self) -> &[BodyId] {
+        &self.0
+    }
+}
+
+/// Two canonical body censuses that differ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyCensusDifference {
+    rederived: CanonicalBodyCensus,
+    saved: CanonicalBodyCensus,
+}
+
+impl BodyCensusDifference {
+    /// Re-derived canonical body identities.
+    pub fn rederived(&self) -> &[BodyId] {
+        self.rederived.as_slice()
+    }
+
+    /// Saved canonical body identities.
+    pub fn saved(&self) -> &[BodyId] {
+        self.saved.as_slice()
+    }
+}
+
 /// Result of evaluating neutral history against the saved current-body census.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -69,7 +106,7 @@ pub enum BodyCensusEvaluation {
     /// Neutral evaluation produced exactly the saved body identities.
     Verified {
         /// Re-derived body identities in canonical order.
-        bodies: Vec<BodyId>,
+        bodies: CanonicalBodyCensus,
     },
     /// Exact evaluation stopped at an unsupported semantic boundary.
     Unsupported {
@@ -82,11 +119,26 @@ pub enum BodyCensusEvaluation {
     ConfigurationEvaluation,
     /// Evaluation completed, but its body identities differ from the saved model.
     Mismatch {
-        /// Re-derived body identities in canonical order.
-        rederived: Vec<BodyId>,
-        /// Saved body identities in canonical order.
-        saved: Vec<BodyId>,
+        /// Distinct re-derived and saved canonical censuses.
+        evidence: BodyCensusDifference,
     },
+}
+
+impl BodyCensusEvaluation {
+    /// Admit a verified census with unique identities in canonical order.
+    pub fn verified(bodies: Vec<BodyId>) -> Result<Self, &'static str> {
+        Ok(Self::Verified { bodies: CanonicalBodyCensus::new(bodies)? })
+    }
+
+    /// Admit unequal canonical censuses as mismatch evidence.
+    pub fn mismatch(rederived: Vec<BodyId>, saved: Vec<BodyId>) -> Result<Self, &'static str> {
+        let rederived = CanonicalBodyCensus::new(rederived)?;
+        let saved = CanonicalBodyCensus::new(saved)?;
+        if rederived == saved {
+            return Err("body census: mismatch requires different censuses");
+        }
+        Ok(Self::Mismatch { evidence: BodyCensusDifference { rederived, saved } })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,9 +162,9 @@ impl TryFrom<BodyCensusEvaluationWire> for BodyCensusEvaluation {
 
     fn try_from(wire: BodyCensusEvaluationWire) -> Result<Self, Self::Error> {
         Ok(match wire {
-            BodyCensusEvaluationWire::Verified { bodies } => Self::Verified { bodies },
+            BodyCensusEvaluationWire::Verified { bodies } => Self::verified(bodies).map_err(str::to_owned)?,
             BodyCensusEvaluationWire::Mismatch { rederived, saved } => {
-                Self::Mismatch { rederived, saved }
+                Self::mismatch(rederived, saved).map_err(str::to_owned)?
             }
             BodyCensusEvaluationWire::Unsupported { feature, reason } => {
                 if reason == "configuration_evaluation" {
@@ -142,9 +194,9 @@ impl TryFrom<BodyCensusEvaluationWire> for BodyCensusEvaluation {
 impl From<BodyCensusEvaluation> for BodyCensusEvaluationWire {
     fn from(value: BodyCensusEvaluation) -> Self {
         match value {
-            BodyCensusEvaluation::Verified { bodies } => Self::Verified { bodies },
-            BodyCensusEvaluation::Mismatch { rederived, saved } => {
-                Self::Mismatch { rederived, saved }
+            BodyCensusEvaluation::Verified { bodies } => Self::Verified { bodies: bodies.0 },
+            BodyCensusEvaluation::Mismatch { evidence } => {
+                Self::Mismatch { rederived: evidence.rederived.0, saved: evidence.saved.0 }
             }
             BodyCensusEvaluation::Unsupported { feature, reason } => Self::Unsupported {
                 feature: Some(feature),
@@ -177,10 +229,12 @@ pub(crate) fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
         .iter()
         .map(|body| body.id.clone())
         .collect::<BTreeSet<_>>();
-    if saved.len() != ir.model.bodies.len() || rederived != saved {
+    if rederived != saved {
         return BodyCensusEvaluation::Mismatch {
-            rederived: rederived.into_iter().collect(),
-            saved: saved.into_iter().collect(),
+            evidence: BodyCensusDifference {
+                rederived: CanonicalBodyCensus(rederived.into_iter().collect()),
+                saved: CanonicalBodyCensus(saved.into_iter().collect()),
+            },
         };
     }
 
@@ -188,7 +242,7 @@ pub(crate) fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
         return BodyCensusEvaluation::ConfigurationEvaluation;
     }
     BodyCensusEvaluation::Verified {
-        bodies: rederived.into_iter().collect(),
+        bodies: CanonicalBodyCensus(rederived.into_iter().collect()),
     }
 }
 

@@ -413,10 +413,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     );
     assert_eq!(
         crate::evaluation::evaluate_saved_body_census(&ir),
-        crate::evaluation::BodyCensusEvaluation::Mismatch {
-            rederived: vec![bound],
-            saved: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
-        }
+        crate::evaluation::BodyCensusEvaluation::mismatch(vec![bound], ir.model.bodies.iter().map(|body| body.id.clone()).collect()).unwrap()
     );
 }
 
