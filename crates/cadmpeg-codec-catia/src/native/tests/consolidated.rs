@@ -1816,3 +1816,24 @@ fn width_coded_forward_endpoints_merge_by_class18_record_identity() {
 }
 
 mod vertex_identity;
+
+#[test]
+fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() {
+    let native = crate::native::CatiaNative::decode(&b2_cone_stream());
+    let cone = &native.consolidated_cones[0];
+    let valid = serde_json::to_value(cone).expect("cone wire");
+    assert_eq!(serde_json::from_value::<crate::native::CatiaConsolidatedCone>(valid.clone()).expect("admitted cone"), *cone);
+    for (field, value) in [
+        ("direction_y", serde_json::json!([1.0, 0.0, 0.0])),
+        ("axis", serde_json::json!([0.0, 0.0, -1.0])),
+        ("half_angle", serde_json::json!(0.0)),
+        ("half_angle", serde_json::json!(std::f64::consts::FRAC_PI_2)),
+        ("angular_range", serde_json::json!([-10.0, -9.0])),
+        ("angular_domain", serde_json::json!([0.0, 1.0])),
+        ("slant_range", serde_json::json!([-1.0, 1.0])),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[field] = value;
+        assert!(serde_json::from_value::<crate::native::CatiaConsolidatedCone>(invalid).is_err(), "{field}");
+    }
+}
