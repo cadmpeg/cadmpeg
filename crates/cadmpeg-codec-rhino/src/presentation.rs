@@ -1688,11 +1688,11 @@ fn parse_uuid_text(value: &str) -> Option<Uuid> {
     (index == bytes.len() && nibble.is_none()).then_some(Uuid::from_canonical(bytes))
 }
 
-fn parse_legacy_rdk_material_instance_id(
+fn parse_legacy_rdk_material_instance_id(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     payload_range: Range<usize>,
 ) -> Result<Option<Uuid>, FramingError> {
-    match classify_rdk_material_payload(data, payload_range)? {
+    match classify_rdk_material_payload(ctx, data, payload_range)? {
         RdkMaterialPayload::Compatibility(instance_id) => Ok(instance_id),
         RdkMaterialPayload::CallbackOwned => Ok(None),
     }
@@ -1704,7 +1704,7 @@ enum RdkMaterialPayload {
     CallbackOwned,
 }
 
-fn classify_rdk_material_payload(
+fn classify_rdk_material_payload(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     payload_range: Range<usize>,
 ) -> Result<RdkMaterialPayload, FramingError> {
@@ -1740,12 +1740,14 @@ fn classify_rdk_material_payload(
     let xml = std::str::from_utf8(xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
+    let admitted_document = ctx.parse_xml(xml, "Rhino legacy RDK XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error.into(); }
         FramingError::structural(
             payload_range.start,
             format!("legacy RDK XML is malformed: {error}"),
         )
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "xml" {
         return Err(FramingError::structural(
@@ -1788,40 +1790,36 @@ fn classify_rdk_material_payload(
     ))
 }
 
-fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor]) -> Option<Uuid> {
-    userdata
-        .iter()
-        .filter_map(UserdataDescriptor::known)
-        .filter(|value| {
-            value.class_uuid == RDK_CLASS
-                && value.item_uuid == RDK_USERDATA
-                && (value.application_uuid.is_none()
-                    || value.application_uuid == Some(RDK_APPLICATION))
-        })
-        .filter_map(|value| {
-            parse_legacy_rdk_material_instance_id(data, value.payload_range.clone())
-                .ok()
-                .flatten()
-        })
-        .next_back()
+fn legacy_rdk_material_instance_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8], userdata: &[UserdataDescriptor],
+) -> Result<Option<Uuid>, CodecError> {
+    for value in userdata.iter().filter_map(UserdataDescriptor::known).rev() {
+        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) { continue; }
+        match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
+            Ok(Some(instance)) => return Ok(Some(instance)),
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Ok(None) | Err(_) => {}
+        }
+    }
+    Ok(None)
 }
 
-fn rdk_material_userdata_requires_opaque(data: &[u8], userdata: &[UserdataDescriptor]) -> bool {
-    userdata
-        .iter()
-        .filter_map(UserdataDescriptor::known)
-        .filter(|value| {
-            value.class_uuid == RDK_CLASS
-                && value.item_uuid == RDK_USERDATA
-                && (value.application_uuid.is_none()
-                    || value.application_uuid == Some(RDK_APPLICATION))
-        })
-        .any(|value| {
-            !matches!(
-                classify_rdk_material_payload(data, value.payload_range.clone()),
-                Ok(RdkMaterialPayload::Compatibility(_))
-            )
-        })
+fn rdk_material_userdata_requires_opaque(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8], userdata: &[UserdataDescriptor],
+) -> Result<bool, CodecError> {
+    for value in userdata.iter().filter_map(UserdataDescriptor::known) {
+        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) { continue; }
+        match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
+            Ok(RdkMaterialPayload::Compatibility(_)) => {},
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => return Ok(true),
+        }
+    }
+    Ok(false)
 }
 
 fn wide_string(
@@ -5023,8 +5021,8 @@ pub(crate) fn install(
                 ))? {
                     let mut material_requires_opaque = false;
                     let legacy_rdk_instance_id =
-                        legacy_rdk_material_instance_id(scan.data, &userdata);
-                    if rdk_material_userdata_requires_opaque(scan.data, &userdata) {
+                        legacy_rdk_material_instance_id(ctx, scan.data, &userdata)?;
+                    if rdk_material_userdata_requires_opaque(ctx, scan.data, &userdata)? {
                         material_requires_opaque = true;
                         push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                             "RDK material userdata at offset {} could not be transferred: callback-owned or unsupported payload",
