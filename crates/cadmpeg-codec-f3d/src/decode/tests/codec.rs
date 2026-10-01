@@ -884,3 +884,16 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
         assert!((result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs() <= EPS_HEADER_LINEAR_TOLERANCE);
     }
 }
+
+#[test]
+fn kernel_tolerance_below_precision_floor_is_unsupported() {
+    let error = super::super::admit_kernel_tolerances(BELOW_FLOOR_RESABS_CM, HEADER_NORMAL_TOLERANCE_RADIANS).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("tolerance floor")));
+}
+
+#[test]
+fn kernel_tolerance_invalid_values_remain_malformed() {
+    for value in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+        assert!(matches!(super::super::admit_kernel_tolerances(value, HEADER_NORMAL_TOLERANCE_RADIANS), Err(cadmpeg_core::CodecError::Malformed(_))));
+    }
+}
