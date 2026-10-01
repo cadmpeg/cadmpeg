@@ -1027,3 +1027,38 @@ fn jt_arithmetic_output_copy_refuses_work_before_formation() {
         },
     );
 }
+
+#[test]
+fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
+    let mut bits = vec![1_u8];
+    bits.extend([0; 32]);
+    bits.extend([0, 1, 0, 0, 0, 1]); // delta width 2, run width 1
+    for _ in 0..128 {
+        bits.extend([0, 1, 0, 1, 1, 0]); // +1, +1, -2
+    }
+    bits.extend([0, 0, 1]); // zero delta, run one
+    let bit_len = u32::try_from(bits.len()).unwrap();
+    let mut packet = 1_u32.to_le_bytes().to_vec();
+    packet.push(1);
+    packet.extend_from_slice(&bit_len.to_le_bytes());
+    for chunk in bits.chunks(32) {
+        let mut word = 0_u32;
+        for bit in chunk {
+            word = (word << 1) | u32::from(*bit);
+        }
+        word <<= 32 - chunk.len();
+        packet.extend_from_slice(&word.to_le_bytes());
+    }
+    crate::test_support::with_decode_context_over(
+        &packet,
+        |policy| policy.limits.max_work_units = u64::from(bit_len),
+        |ctx| {
+            let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "decode JT bitlength code bits"
+                    && limit.additional == u64::from(bit_len)));
+        },
+    );
+    assert_eq!(decode_int32_cdp2(&packet, 0), Some((vec![0], packet.len())));
+}
