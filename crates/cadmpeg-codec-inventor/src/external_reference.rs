@@ -938,31 +938,9 @@ impl<'a> Cursor<'a> {
         field: &'static str,
         count: usize,
     ) -> Result<String, CodecError> {
-        let len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
-        })?;
-        if self.view.remaining() < len {
-            return Err(CodecError::truncated(self.view.location(), field));
-        }
-        let utf8_len = crate::reader::utf16_utf8_len(self.view, count)
-            .ok_or_else(|| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16")))?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(len),
-            "decode UFRxDoc UTF-16 units",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_len),
-            "retain UFRxDoc string",
-        )?;
-        // `utf16_le` proves the byte count before it reads a code unit, so a
-        // short window is refused with the view still at the read's start.
-        self.view.utf16_le(count).ok_or_else(|| {
-            if self.view.remaining() < len {
-                CodecError::truncated(self.view.location(), field)
-            } else {
-                CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16"))
-            }
-        })
+        crate::reader::utf16_text(
+            ctx, &mut self.view, count, field, "retain UFRxDoc string",
+        )
     }
 
     fn utf8(

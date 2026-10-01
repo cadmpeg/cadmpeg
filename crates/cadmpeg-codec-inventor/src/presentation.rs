@@ -1169,18 +1169,15 @@ impl<'a> Cursor<'a> {
                 "Inventor presentation {field} byte length overflows"
             ))
         })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(byte_len),
-            "retain Inventor PmApp UTF-16 string",
-        )?;
-        self.source
-            .utf16_le(units)
-            .map(|value| value.trim_end_matches('\0').to_owned())
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "Inventor presentation {field} is invalid UTF-16"
-                ))
-            })
+        let bytes = crate::reader::take(&mut self.source, byte_len, field)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(units), "trim Inventor PmApp UTF-16 string")?;
+        let mut length = bytes.len();
+        while length >= 2 && bytes.get(length - 2..length) == Some(&[0, 0]) {
+            length -= 2;
+        }
+        ctx.utf16le_text(
+            &bytes[..length], length / 2, false, "retain Inventor PmApp UTF-16 string",
+        )
     }
 
     fn guid(&mut self, field: &'static str) -> Result<String, CodecError> {
@@ -1252,6 +1249,26 @@ mod tests {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+    #[test]
+    fn presentation_utf16_text_charges_trimmed_utf8_size_and_keeps_interior_nul() {
+        let mut bytes = Vec::new();
+        utf16(&mut bytes, "ࠀ\0A\0\0");
+        for retained in [4, 5] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let result = Cursor::new(root).utf16(&ctx, "label");
+            if retained == 4 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 5));
+            } else {
+                assert_eq!(result.unwrap(), "ࠀ\0A");
+                assert!(ctx.charge_retained(1, "after presentation text").is_err());
+            }
+        }
+    }
 
     #[test]
     fn graphics_reference_lists_use_bounded_retained_grammar() {

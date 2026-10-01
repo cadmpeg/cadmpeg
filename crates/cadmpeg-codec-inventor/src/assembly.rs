@@ -543,16 +543,9 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        let len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor {field} length overflows"))
-        })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(len),
-            "retain Inventor assembly string",
-        )?;
-        self.source
-            .utf16_le(count)
-            .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))
+        crate::reader::utf16_text(
+            ctx, &mut self.source, count, field, "retain Inventor assembly string",
+        )
     }
 
     fn transform(&mut self) -> Result<(bool, CompactMatrix), CodecError> {
@@ -611,6 +604,28 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
     use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
+
+    #[test]
+    fn assembly_utf16_text_charges_utf8_size_and_preserves_refusal() {
+        let bytes = [1, 0, 0, 0, 0, 8];
+        for retained in [2, 3] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let mut cursor = super::Cursor::new(root);
+            let result = cursor.utf16(&ctx, "label", 256);
+            if retained == 2 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
+                assert_eq!(cursor.source.position(), 4);
+            } else {
+                assert_eq!(result.unwrap(), "ࠀ");
+                assert_eq!(cursor.source.position(), bytes.len());
+                assert!(ctx.charge_retained(1, "after assembly text").is_err());
+            }
+        }
+    }
 
     fn project_under_service(
         ufrx_occurrences: &[UfrxOccurrenceRecord],

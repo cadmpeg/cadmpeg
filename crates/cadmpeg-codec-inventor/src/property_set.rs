@@ -794,20 +794,9 @@ fn decode_code_page(
                 "OLE Unicode code-page string has an odd byte length".into(),
             ));
         }
-        let mut view = View::over_retained(bytes);
-        let utf8_len = crate::reader::utf16_utf8_len(view, bytes.len() / 2)
-            .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "decode OLE code-page UTF-16 units",
+        let value = ctx.utf16le_text(
+            bytes, bytes.len() / 2, false, "retain OLE property string",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_len),
-            "retain OLE property string",
-        )?;
-        let value = view
-            .utf16_le(bytes.len() / 2)
-            .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
         return require_and_remove_null(value, "OLE Unicode code-page string");
     }
     let (content, had_null) = bytes
@@ -1012,32 +1001,9 @@ impl<'a> Cursor<'a> {
         count: usize,
         field: &'static str,
     ) -> Result<String, CodecError> {
-        let byte_len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
-        })?;
-        if self.view.remaining() < byte_len {
-            return Err(CodecError::truncated(self.view.location(), field));
-        }
-        let utf8_len = crate::reader::utf16_utf8_len(self.view, count).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
-        })?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(byte_len),
-            "decode OLE Unicode property units",
+        let value = crate::reader::utf16_text(
+            ctx, &mut self.view, count, field, "retain OLE Unicode property string",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_len),
-            "retain OLE Unicode property string",
-        )?;
-        // `utf16_le` proves the byte count before it reads a code unit, so a
-        // short window is refused with the view still at the read's start.
-        let value = self.view.utf16_le(count).ok_or_else(|| {
-            if self.view.remaining() < byte_len {
-                CodecError::truncated(self.view.location(), field)
-            } else {
-                CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
-            }
-        })?;
         require_and_remove_null(value, field)
     }
 
