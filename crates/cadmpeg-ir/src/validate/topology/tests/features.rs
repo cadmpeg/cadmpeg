@@ -539,7 +539,29 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let index = crate::index::ModelIndex::new(&ir);
+    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::super::check_feature_references(&ctx, &ir, &index, &mut Vec::new()).unwrap_err();
+        assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        assert_eq!(ctx.finish_session().unwrap_err().to_string(), error.to_string());
+    }
 }
+
 
 #[test]
 fn generated_termination_vertices_require_declared_feature_dependencies() {

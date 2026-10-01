@@ -145,9 +145,9 @@ fn validate_model_with_index(
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
     check_tolerances(ir, &mut findings);
-    check_references(ir, ids, &mut findings);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    check_references(&ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(&ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
