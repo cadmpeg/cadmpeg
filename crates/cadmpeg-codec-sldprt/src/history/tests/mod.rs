@@ -17,7 +17,7 @@ fn history_from_nameless_block_keeps_annotation_owner() {
     let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/><Feature id="1" Name="Boss"/></Keywords>"#;
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &source,
@@ -158,7 +158,7 @@ fn history_identity_refuses_before_retained_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut source = outer_header();
     source.extend(make_block(0x43, "Keywords", b"<Keywords/>"));
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

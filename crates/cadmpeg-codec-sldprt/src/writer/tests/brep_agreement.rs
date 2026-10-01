@@ -239,7 +239,7 @@ fn native_extrusion_edit_without_source_image_is_refused() {
 #[test]
 fn parameter_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
-    let source_partition = container::select_active_parasolid_site(&container::scan_bytes(&source))
+    let source_partition = container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
         .unwrap()
         .section
         .payload()
@@ -252,7 +252,7 @@ fn parameter_name_edit_keeps_retained_brep() {
     let mut output = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
-    let output_scan = container::scan_bytes(&output);
+    let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
         .section
@@ -263,7 +263,7 @@ fn parameter_name_edit_keeps_retained_brep() {
 #[test]
 fn feature_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
-    let source_partition = container::select_active_parasolid_site(&container::scan_bytes(&source))
+    let source_partition = container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
         .unwrap()
         .section
         .payload()
@@ -276,7 +276,7 @@ fn feature_name_edit_keeps_retained_brep() {
     let mut output = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
-    let output_scan = container::scan_bytes(&output);
+    let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
         .section
@@ -287,7 +287,7 @@ fn feature_name_edit_keeps_retained_brep() {
 #[test]
 fn native_feature_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
-    let source_partition = container::select_active_parasolid_site(&container::scan_bytes(&source))
+    let source_partition = container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
         .unwrap()
         .section
         .payload()
@@ -302,7 +302,7 @@ fn native_feature_name_edit_keeps_retained_brep() {
     let mut output = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
-    let output_scan = container::scan_bytes(&output);
+    let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
         .section

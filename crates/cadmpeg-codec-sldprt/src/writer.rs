@@ -9,7 +9,7 @@ pub(crate) mod target;
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
-use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
@@ -74,7 +74,12 @@ pub(crate) fn write_semantic_with_records(
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
-    let source_scan = source_image(retained_records).map(crate::container::scan_bytes);
+    let source_arena = DecodeArena::new();
+    let source_context = source_image(retained_records)
+        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
+        .transpose()?;
+    let source_scan = source_context.as_ref()
+        .map(|(ctx, root)| crate::container::scan(ctx, *root)).transpose()?;
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_name_changes =

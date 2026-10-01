@@ -6,7 +6,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::resolved_feature_classes_with_ids;
@@ -1591,7 +1590,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         &mut encoded,
     )
     .unwrap();
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert_eq!(
         scan.blocks
             .iter()

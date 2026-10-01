@@ -6,7 +6,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::appearance::sldprt_with_body_and_material;
 use crate::test_support::container::add_solidworks_version;
 use crate::test_support::container::make_block;
@@ -323,7 +322,7 @@ fn metadata_history_xml_refuses_scoped_limit() {
     let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let classification =
         crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
             .unwrap();
@@ -515,7 +514,7 @@ fn geometry_history_xml_refuses_scoped_limit() {
     let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
-    let mut scan = container::scan_bytes(&source);
+    let mut scan = crate::test_support::container::scan(&source);
     let classification =
         crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
             .unwrap();
@@ -744,7 +743,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
-    let scan = container::scan_bytes(&fixture);
+    let scan = crate::test_support::container::scan(&fixture);
     let container_entities = scan.blocks.len()
         + scan.compound_streams.len()
         + scan.directory.len()

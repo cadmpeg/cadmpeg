@@ -8,7 +8,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
 use crate::test_support::container::sldprt_with_body;
@@ -316,7 +315,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             &untyped_triangle(10.0),
         ),
     ));
-    let expected_records = container::scan_bytes(&source)
+    let expected_records = crate::test_support::container::scan(&source)
         .blocks
         .iter()
         .map(|block| {
