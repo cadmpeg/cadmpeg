@@ -53,7 +53,7 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
     )
     .expect("linear NURBS fixture");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01))
+        crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01).map(|line| line.map(|line| line.points)))
             .expect("service profile resources"),
         Some(vec![[0.0, 0.0], [1.0, 0.0]])
     );
@@ -80,7 +80,7 @@ fn linear_profile_polyline_with_policy(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    super::nurbs_profile_polyline(&ctx, &curve, 0.01)
+    super::nurbs_profile_polyline(&ctx, &curve, 0.01).map(|line| line.map(|line| line.points))
 }
 
 #[test]
@@ -1050,4 +1050,37 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
             matches!(profiles[0][0].geometry(), super::ProfileGeometry::Nurbs { curve: copied, .. } if copied == &curve)
         );
     }
+}
+
+#[test]
+fn nurbs_profile_local_depth_ceiling_refuses() {
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(2, vec![0.0,0.0,0.0,1.0,1.0,1.0], vec![cadmpeg_ir::math::Point3::new(0.0,0.0,0.0),cadmpeg_ir::math::Point3::new(0.0,1.0,0.0),cadmpeg_ir::math::Point3::new(1.0,1.0,0.0)], None, false).expect("curved fixture");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let mut evaluator = cadmpeg_ir::eval::admitted::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
+        let mut points = Vec::new();
+        let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
+        let error = super::append_nurbs_profile_span(ctx, &mut evaluator, &curve, &super::NurbsProfileSpan {start:0.0,end:1.0,start_point:[0.0,0.0],end_point:[1.0,1.0],tolerance: f64::MIN_POSITIVE,depth:24}, &mut points, &mut storage).expect_err("local depth must refuse");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile sampling ceiling"));
+    });
+}
+
+#[test]
+fn nurbs_profile_local_point_ceiling_refuses() {
+    let curve = linear_profile_curve();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let mut evaluator = cadmpeg_ir::eval::admitted::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
+        let mut points = vec![[0.0,0.0];262_145];
+        let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
+        let error = super::append_nurbs_profile_span(ctx, &mut evaluator, &curve, &super::NurbsProfileSpan {start:0.0,end:1.0,start_point:[0.0,0.0],end_point:[1.0,0.0],tolerance:0.01,depth:0}, &mut points, &mut storage).expect_err("local points must refuse");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile point ceiling"));
+        assert_eq!(points.len(),262_145);
+    });
+}
+
+#[test]
+fn nurbs_profile_polyline_refuses_temporary_bytes() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 15;
+    let error = linear_profile_polyline_with_policy(policy).expect_err("one planar point needs sixteen bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile polyline points"));
 }
