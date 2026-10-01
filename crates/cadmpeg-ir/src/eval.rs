@@ -3980,7 +3980,6 @@ pub fn model_curve_point_by_id_with_budget(
     parameter: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let _guard = budget.recursion_guard().map_err(EvaluationFailure::ResourceLimit)?;
     let point = model_curve_point_by_id_inner(index, curve_id, parameter, Some(budget));
     ModelEvaluationDepthGuard::finish_budgeted(budget, point)
 }
@@ -4089,7 +4088,7 @@ fn model_curve_differential_by_id_inner(
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
     default_scratch_evaluation(|scratch| {
         let depth_guard =
-            ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+            ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
         if !parameter.is_finite() {
             return Err(EvaluationFailure::NoValue);
         }
@@ -4763,7 +4762,7 @@ fn model_curve_point_by_id_inner(
     parameter: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let depth_guard = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    let depth_guard = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     let curve = index
         .curves(curve_id.as_str())
         .ok_or(EvaluationFailure::NoValue)?;
@@ -4926,9 +4925,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     seed: f64,
     tolerance: NonNegativeLength,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let Some(_depth) = ModelEvaluationDepthGuard::enter(None) else {
-        return Ok(None);
-    };
+    let _depth = ModelEvaluationDepthGuard::enter(None)?;
     let Some(curve) = index.curves(curve_id.as_str()) else {
         return Ok(None);
     };
@@ -6401,7 +6398,7 @@ fn model_surface_point_inner(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    let _depth = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     if let Some(cache) = geometry.solved_cache() {
         return surface_point_solved(cache, u, v);
     }
@@ -8477,7 +8474,6 @@ pub fn model_surface_point_by_id_with_budget(
     v: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let _guard = budget.recursion_guard().map_err(EvaluationFailure::ResourceLimit)?;
     let point =
         model_surface_point::model_surface_point_by_id_inner(index, surface, u, v, Some(budget));
     ModelEvaluationDepthGuard::finish_budgeted(budget, point)
@@ -8518,7 +8514,7 @@ fn model_surface_first_order_by_id(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    let _depth = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     let cacheless = match index
         .procedural_surface_for_surface(surface.as_str())
         .map(crate::geometry::ProceduralSurface::definition)
@@ -8600,7 +8596,6 @@ pub fn model_surface_partials_by_id_with_budget(
     v: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    let _guard = budget.recursion_guard().map_err(EvaluationFailure::ResourceLimit)?;
     let partials = model_surface_first_order_by_id(index, surface, u, v, Some(budget))
         .and_then(SurfaceFirstOrder::partials);
     ModelEvaluationDepthGuard::finish_budgeted(budget, partials)
@@ -8676,7 +8671,7 @@ fn model_surface_mapping(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceMapping, EvaluationFailure<Point3>> {
-    let depth_guard = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    let depth_guard = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     let no_value = EvaluationFailure::NoValue;
     if budget.is_some_and(|budget| !budget.charge()) {
         return Err(no_value);

@@ -297,7 +297,10 @@ pub(super) fn model_surface_point_by_id_inner(
         budget: Option<&WorkBudget<'_>>,
         normal: bool,
     ) -> Option<SurfaceEvaluation> {
-        let depth_guard = ModelEvaluationDepthGuard::enter(budget)?;
+        let depth_guard = match ModelEvaluationDepthGuard::enter(budget) {
+            Ok(guard) => guard,
+            Err(limit) => return Some(resource(limit)),
+        };
         if let Some(budget) = budget {
             budget.charge().then_some(())?;
         }
