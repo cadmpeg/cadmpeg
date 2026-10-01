@@ -43,7 +43,7 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("input admitted");
     let (mut model, owner, procedural) = build();
-    let refused = model.add_procedural_curve_charged(&ctx, &owner, procedural);
+    let refused = model.add_procedural_curve_for_decode(&ctx, &owner, procedural);
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "ir_procedural_curve_construction_id")
@@ -57,7 +57,7 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
         .expect("input admitted");
     let (mut model, owner, procedural) = build();
     assert!(model
-        .add_procedural_curve_charged(&ctx, &owner, procedural)
+        .add_procedural_curve_for_decode(&ctx, &owner, procedural)
         .expect("service budget admits construction copy")
         .is_ok());
     assert!(matches!(
@@ -562,7 +562,7 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
     let mut refused = base.clone();
     let error = refused
         .model
-        .add_procedural_surface_charged(&ctx, &owner, procedural.clone())
+        .add_procedural_surface_for_decode(&ctx, &owner, procedural.clone())
         .expect_err("owner identity exceeds retained limit");
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
@@ -575,12 +575,12 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
         record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
     });
     let mut cache_policy = DecodePolicy::service();
-    cache_policy.limits.max_retained_bytes = procedural.id.as_str().len() as u64;
+    cache_policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(procedural.id.as_str().len()) + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&procedural));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
     let solved = cached.model.surfaces[0].geometry.clone();
     cached
         .model
-        .add_procedural_surface_charged(&ctx, &owner, procedural.clone())
+        .add_procedural_surface_for_decode(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     assert_eq!(cached.model.procedural_surfaces.len(), 1);
@@ -592,7 +592,7 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     refused
         .model
-        .add_procedural_surface_charged(&ctx, &owner, procedural.clone())
+        .add_procedural_surface_for_decode(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     base.model
@@ -627,7 +627,7 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     let mut refused = base.clone();
     let error = refused
         .model
-        .add_procedural_curve_charged(&ctx, &owner, procedural.clone())
+        .add_procedural_curve_for_decode(&ctx, &owner, procedural.clone())
         .expect_err("owner identity exceeds retained limit");
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
@@ -641,12 +641,12 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
             record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
         });
     let mut cache_policy = DecodePolicy::service();
-    cache_policy.limits.max_retained_bytes = procedural.id.as_str().len() as u64;
+    cache_policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(procedural.id.as_str().len()) + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&procedural));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
     let solved = cached.model.curves[0].geometry.clone();
     cached
         .model
-        .add_procedural_curve_charged(&ctx, &owner, procedural.clone())
+        .add_procedural_curve_for_decode(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     assert_eq!(cached.model.procedural_curves.len(), 1);
@@ -658,7 +658,7 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     refused
         .model
-        .add_procedural_curve_charged(&ctx, &owner, procedural.clone())
+        .add_procedural_curve_for_decode(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     base.model.add_procedural_curve(&owner, procedural).unwrap();

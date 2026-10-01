@@ -524,14 +524,8 @@ pub(super) fn emit_topology(
                     },
                     source_object: None,
                 });
-                ctx.reserve_vec(
-                    &mut ir.model.procedural_curves,
-                    1,
-                    "nx parametric edge constructions",
-                )?;
-                let _attached = ir.model.add_procedural_curve(
-                    &carrier.try_clone_for_decode(ctx, "nx parametric construction owner")?,
-                    ProceduralCurve::new(
+
+                let _attached = ir.model.add_procedural_curve_for_decode(ctx, &carrier.try_clone_for_decode(ctx, "nx parametric construction owner")?, ProceduralCurve::new(
                         construction,
                         ProceduralCurveDefinition::SurfaceCurve {
                             family: SurfaceCurveFamily::Parametric {
@@ -553,8 +547,7 @@ pub(super) fn emit_topology(
                                 tail: None,
                             },
                         },
-                    ),
-                );
+                    ))?;
                 curve = Some(carrier);
                 param_range = None;
             }
@@ -839,7 +832,7 @@ pub(super) fn emit_topology(
         }
     }
     let (valid_pcurve_fins, fallback_pcurves) = {
-        let index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
         let valid_pcurve_fins = fin_ids
             .keys()
             .map(|fin_xmt| -> Result<Option<u32>, CodecError> {

@@ -10,7 +10,7 @@ use cadmpeg_ir::topology::Color;
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
 use crate::decode::{
-    admit_assembly_placement, admit_coverage_entries, admit_kernel_annotation,
+    admit_assembly_placement, admit_kernel_annotation,
     admit_kernel_unknown_fidelity, admit_untransferred_carrier, admitted_kernel_attribute,
     admitted_loss, decode_container, index_asm_face_keys, index_face_colors,
     index_projected_colors, insert_source_attribute, project_preview_asset,
@@ -468,24 +468,24 @@ fn coverage_map_refuses_before_key_creation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_coverage_entries(&ctx, [crate::coverage::RSE_DATABASES]),
+        cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(&ctx, [(crate::coverage::RSE_DATABASES, 0)]),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect Inventor coverage measure"
+                && limit.operation == "decode coverage nodes"
     ));
     policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
         u64::try_from(crate::coverage::RSE_DATABASES.as_str().len() - 1).expect("key fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_coverage_entries(&ctx, [crate::coverage::RSE_DATABASES]),
+        cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(&ctx, [(crate::coverage::RSE_DATABASES, 0)]),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor coverage key"
+                && limit.operation == "decode coverage names"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_coverage_entries(&ctx, [crate::coverage::RSE_DATABASES]).expect("admitted coverage key");
+    cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(&ctx, [(crate::coverage::RSE_DATABASES, 0)]).expect("admitted coverage key");
 }
 
 #[test]

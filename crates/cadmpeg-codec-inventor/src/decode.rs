@@ -279,14 +279,6 @@ fn decode_container<'a>(
                             cadmpeg_core::decode::u64_from_index(32),
                             "retain Inventor property value FMTID",
                         )?;
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index(64),
-                            "retain Inventor property raw digest",
-                        )?;
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(property.raw.window().len()),
-                            "hash Inventor property raw bytes",
-                        )?;
                         properties.push(PropertyRecord {
                             id: native_id,
                             set_path: ctx.copy_retained_text(
@@ -306,9 +298,7 @@ fn decode_container<'a>(
                             raw_len: cadmpeg_core::decode::u64_from_index(
                                 property.raw.window().len(),
                             ),
-                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
-                                property.raw.window(),
-                            ),
+                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, property.raw.window(), "retain Inventor property raw digest")?,
                         });
                     }
                 }
@@ -1285,14 +1275,14 @@ fn decode_container<'a>(
             kernel_stats.unknown_surface_faces(),
         ),
     ];
-    admit_coverage_entries(ctx, coverage_entries.iter().map(|(key, _)| *key))?;
+    let coverage = cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(ctx, coverage_entries)?;
     let body = DecodeBody {
         transfer: if ctx.container_only() {
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
         } else {
             cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
         },
-        coverage: coverage_entries.into_iter().collect(),
+        coverage,
         losses,
         notes: Vec::new(),
         transfer_ledger: TransferLedger::default(),
@@ -1339,32 +1329,6 @@ fn retained_hex(
         push_hex(&mut output, *byte);
     }
     Ok(output)
-}
-
-fn retained_sha256(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(64, operation)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "hash Inventor native bytes",
-    )?;
-    Ok(sha256_hex(bytes))
-}
-
-fn retained_native_sha256(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<cadmpeg_ir::hash::digest::Sha256Digest, CodecError> {
-    ctx.charge_retained(64, operation)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "hash Inventor native bytes",
-    )?;
-    Ok(cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes))
 }
 
 fn admitted_loss(
@@ -1473,20 +1437,6 @@ fn insert_source_attribute(
     let key = ctx.copy_retained_text(key, "retain Inventor source attribute key")?;
     let value = ctx.format_retained(value, "retain Inventor source attribute value")?;
     attributes.insert(key, value);
-    Ok(())
-}
-
-fn admit_coverage_entries(
-    ctx: &DecodeContext<'_>,
-    keys: impl IntoIterator<Item = cadmpeg_ir::report::decode::CoverageKey>,
-) -> Result<(), CodecError> {
-    for key in keys {
-        ctx.charge_collection_items(1, "collect Inventor coverage measure")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(key.as_str().len()),
-            "retain Inventor coverage key",
-        )?;
-    }
     Ok(())
 }
 
@@ -1813,11 +1763,7 @@ fn project_ufrx_state(
                 schema: *schema,
                 section_versions: section_versions.clone(),
                 tail_len: cadmpeg_core::decode::u64_from_index(source.window().len()),
-                tail_sha256: retained_native_sha256(
-                    ctx,
-                    source.window(),
-                    "retain Inventor UFRx unsupported tail digest",
-                )?,
+                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, source.window(), "retain Inventor UFRx unsupported tail digest")?,
                 detail: ctx.copy_retained_text(detail, "retain Inventor UFRx state detail")?,
             }
         }
@@ -1884,11 +1830,7 @@ fn project_ufrx_state(
                 tail_len: cadmpeg_core::decode::u64_from_index(
                     document.unparsed_tail.window().len(),
                 ),
-                tail_sha256: retained_native_sha256(
-                    ctx,
-                    document.unparsed_tail.window(),
-                    "retain Inventor UFRx tail digest",
-                )?,
+                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, document.unparsed_tail.window(), "retain Inventor UFRx tail digest")?,
             }))
         }
     })
@@ -1940,11 +1882,7 @@ fn project_ufrx_model_state(
         prefix_count: state.prefix_count,
         parameters,
         suffix_len: cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
-        suffix_sha256: retained_sha256(
-            ctx,
-            state.suffix.window(),
-            "retain Inventor UFRx model-state digest",
-        )?,
+        suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, state.suffix.window(), "retain Inventor UFRx model-state digest").map(String::from)?,
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index("ufrx-model-state-".len() + decimal_digits(ordinal)?),
@@ -2058,11 +1996,7 @@ fn project_ufrx_embedded_reference(
         )?,
         state_values: reference.state_values,
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
-        record_sha256: retained_sha256(
-            ctx,
-            reference.source.window(),
-            "retain Inventor UFRx embedded digest",
-        )?,
+        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, reference.source.window(), "retain Inventor UFRx embedded digest").map(String::from)?,
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(
@@ -2107,11 +2041,7 @@ fn project_ufrx_occurrence(
             .transpose()?,
         header_padding_words: occurrence.header_padding_words,
         record_len: cadmpeg_core::decode::u64_from_index(occurrence.source.window().len()),
-        record_sha256: retained_sha256(
-            ctx,
-            occurrence.source.window(),
-            "retain Inventor UFRx occurrence digest",
-        )?,
+        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, occurrence.source.window(), "retain Inventor UFRx occurrence digest").map(String::from)?,
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index("ufrx-occurrence-".len() + decimal_digits(ordinal)?),

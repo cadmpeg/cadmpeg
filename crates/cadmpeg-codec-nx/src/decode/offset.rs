@@ -1191,7 +1191,7 @@ pub(super) fn offset_surface_parameters_with_tolerance(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
     offset_surface_parameters_with_tolerance_with_index(
         ctx,
         &index,
@@ -1942,7 +1942,7 @@ fn continue_surface_intersection_parameters_with_seeds(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
     );
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
         &index,
         surfaces,

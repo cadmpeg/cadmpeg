@@ -259,10 +259,7 @@ impl TransferLedger {
 
     /// Records one source disposition.
     pub fn record(&mut self, source: impl Into<String>, outcome: TransferOutcome) {
-        self.entries.push(TransferRecord {
-            source: source.into(),
-            outcome,
-        });
+        self.entries.push(TransferRecord { source: source.into(), outcome });
     }
 
     /// Verifies every produced target against a finalized model index.
@@ -318,9 +315,6 @@ impl IndexedCoverageKey {
         Self { prefix, suffix }
     }
 
-    fn wire_name(self, index: u32) -> String {
-        format!("{}{index}{}", self.prefix, self.suffix)
-    }
 }
 
 impl HexByteCoverageKey {
@@ -331,9 +325,6 @@ impl HexByteCoverageKey {
         Self { prefix, suffix }
     }
 
-    fn wire_name(self, value: u8) -> String {
-        format!("{}{:02x}{}", self.prefix, value, self.suffix)
-    }
 }
 
 /// Decode coverage whose entries can be written only through declared keys.
@@ -344,24 +335,23 @@ pub struct Coverage {
 
 impl Coverage {
     /// Records a static key after admitting its new map node and retained name.
-    pub fn record_admitted(
+    pub fn record(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: CoverageKey,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "decode coverage lookup")?;
         if let Some(value) = self.entries.get_mut(key.0) {
             *value = count;
             return Ok(());
         }
-        ctx.charge_collection_items(1, "decode coverage nodes")?;
         let name = ctx.copy_retained_text(key.0, "decode coverage names")?;
-        self.entries.insert(name, count);
-        Ok(())
+        self.insert_name(ctx, name, count)
     }
 
     /// Records a decimal-indexed key after admitting its temporary and retained name.
-    pub fn record_indexed_admitted(
+    pub fn record_indexed(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: IndexedCoverageKey,
@@ -372,18 +362,17 @@ impl Coverage {
             format_args!("{}{index}{}", key.prefix, key.suffix),
             "decode indexed coverage name",
         )?;
+        ctx.charge_work(1, "decode coverage lookup")?;
         if let Some(value) = self.entries.get_mut(&name) {
             *value = count;
             return Ok(());
         }
-        ctx.charge_collection_items(1, "decode coverage nodes")?;
         bytes.commit()?;
-        self.entries.insert(name, count);
-        Ok(())
+        self.insert_name(ctx, name, count)
     }
 
     /// Records a hexadecimal-byte key after admitting its temporary and retained name.
-    pub fn record_hex_byte_admitted(
+    pub fn record_hex_byte(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: HexByteCoverageKey,
@@ -394,19 +383,13 @@ impl Coverage {
             format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
             "decode hexadecimal coverage name",
         )?;
+        ctx.charge_work(1, "decode coverage lookup")?;
         if let Some(existing) = self.entries.get_mut(&name) {
             *existing = count;
             return Ok(());
         }
-        ctx.charge_collection_items(1, "decode coverage nodes")?;
         bytes.commit()?;
-        self.entries.insert(name, count);
-        Ok(())
-    }
-
-    /// Records an observed count. A repeated key replaces its prior value.
-    pub fn record(&mut self, key: CoverageKey, count: usize) {
-        self.entries.insert(key.0.to_owned(), count);
+        self.insert_name(ctx, name, count)
     }
 
     /// Records an already-copied declared key without allocating another key.
@@ -414,27 +397,45 @@ impl Coverage {
     /// The caller can reserve and charge the copy before calling this method.
     pub fn record_owned(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: CoverageKey,
         name: String,
         count: usize,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "decode coverage name admission")?;
         if name != key.0 {
-            return Err("coverage name does not match its declared key");
+            return Err(cadmpeg_core::CodecError::malformed("coverage name does not match its declared key"));
         }
+        self.insert_name(ctx, name, count)
+    }
+
+    fn insert_name(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: String,
+        count: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "decode coverage lookup")?;
+        if let Some(value) = self.entries.get_mut(&name) {
+            *value = count;
+            return Ok(());
+        }
+        ctx.charge_collection_items(1, "decode coverage nodes")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, usize)>()), "decode coverage nodes")?;
         self.entries.insert(name, count);
         Ok(())
     }
 
-    /// Records an observed count under a declared numeric key template.
-    pub fn record_indexed(&mut self, key: IndexedCoverageKey, index: u32, count: usize) {
-        self.entries.insert(key.wire_name(index), count);
+    /// Build a coverage map through the charged insertion operation.
+    pub fn from_iter_for_decode(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        entries: impl IntoIterator<Item = (CoverageKey, usize)>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut coverage = Self::default();
+        for (key, count) in entries { coverage.record(ctx, key, count)?; }
+        Ok(coverage)
     }
 
-    /// Records an observed count under a declared hexadecimal-byte key
-    /// template.
-    pub fn record_hex_byte(&mut self, key: HexByteCoverageKey, value: u8, count: usize) {
-        self.entries.insert(key.wire_name(value), count);
-    }
 
     /// Returns all recorded counts by their wire names.
     #[must_use]
@@ -454,7 +455,7 @@ impl Coverage {
 impl Extend<(CoverageKey, usize)> for Coverage {
     fn extend<T: IntoIterator<Item = (CoverageKey, usize)>>(&mut self, iter: T) {
         for (key, count) in iter {
-            self.record(key, count);
+            self.entries.insert(key.0.to_owned(), count);
         }
     }
 }

@@ -522,22 +522,13 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     );
     assert_eq!(coverage.native_by_kind, BTreeMap::from([(9, 1)]));
     assert_eq!(coverage.active_native_by_kind, BTreeMap::from([(9, 1)]));
+    let report_coverage = crate::decode::with_test_decode_ctx(|ctx| {
     let mut report_coverage = cadmpeg_ir::report::decode::Coverage::default();
-    report_coverage.record_indexed(
-        crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
-        1,
-        2,
-    );
-    report_coverage.record_indexed(
-        crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
-        9,
-        1,
-    );
-    report_coverage.record_indexed(
-        crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
-        9,
-        4,
-    );
+    report_coverage.record_indexed(ctx, crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT, 1, 2).expect("coverage entry");
+    report_coverage.record_indexed(ctx, crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT, 9, 1).expect("coverage entry");
+    report_coverage.record_indexed(ctx, crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT, 9, 4).expect("coverage entry");
+        report_coverage
+    });
     assert_eq!(
         constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",)
             .to_string(),

@@ -68,7 +68,7 @@ fn sectioned_area_curves_coplanar(
     if !resolution.is_finite() || resolution < 0.0 {
         return Ok(false);
     }
-    let index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let index = ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
     for sequence in sequences {

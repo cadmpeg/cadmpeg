@@ -3452,16 +3452,10 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ] {
-        resource::record_coverage(ctx, &mut report.coverage, key, count, "catia_decode_coverage")?;
+        (&mut report.coverage).record(ctx, key, count)?;
     }
     if transferred_pmi_dimension_count != 0 {
-        resource::record_coverage(
-            ctx,
-            &mut report.coverage,
-            crate::coverage::TRANSFERRED_PMI_DIMENSION_COUNT,
-            transferred_pmi_dimension_count,
-            "catia_decode_coverage",
-        )?;
+        (&mut report.coverage).record(ctx, crate::coverage::TRANSFERRED_PMI_DIMENSION_COUNT, transferred_pmi_dimension_count)?;
     }
     let untransferred_line_profile_count = native
         .consolidated_line_profiles

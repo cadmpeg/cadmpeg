@@ -2062,7 +2062,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn expand_reference(&mut self, source_order: usize) -> Result<bool, cadmpeg_core::CodecError> {
-        let original_model = ModelCheckpoint::capture(&self.ir.model);
+        let (original_model, _original_model_storage) = ModelCheckpoint::capture_for_decode(&self.ir.model, self.expand.ctx())?;
         let annotation_checkpoint = self.annotations.try_clone_for_decode(self.expand.ctx(), "Rhino annotation checkpoint")?;
         let session = self.expand.ctx();
         let original_links = snapshot_instance_links(session, &self.unknowns)?;
@@ -2107,7 +2107,7 @@ impl<'a> DecodeContext<'a> {
             Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),
         };
 
-        original_model.discard_appended(&mut self.ir.model);
+        original_model.discard_appended_for_decode(&mut self.ir.model, self.expand.ctx())?;
         self.annotations = annotation_checkpoint;
         for (record, links) in self.unknowns.iter_mut().zip(original_links.links) {
             *record.links_mut() = links;
@@ -2234,7 +2234,7 @@ impl<'a> DecodeContext<'a> {
                 links.extend(nested);
                 continue;
             }
-            let before = ModelCheckpoint::capture(&self.ir.model);
+            let (before, _before_storage) = ModelCheckpoint::capture_for_decode(&self.ir.model, self.expand.ctx())?;
             let previous_selection = self.instance_selection.replace(InstanceSelection {
                 source_order: member_order,
                 key: format!("{}.{}", path.join("."), member_id),
@@ -2242,7 +2242,7 @@ impl<'a> DecodeContext<'a> {
             });
             self.decode_geometry()?;
             self.instance_selection = previous_selection;
-            let after = ModelCheckpoint::capture(&self.ir.model);
+            let (after, _after_storage) = ModelCheckpoint::capture_for_decode(&self.ir.model, self.expand.ctx())?;
             if before == after {
                 return Err(format!("definition member {member_id} did not decode").into());
             }
@@ -2581,7 +2581,7 @@ impl<'a> DecodeContext<'a> {
             )?;
             self.report
                 .phase_losses
-                .push(loss.clone_admitted(ctx, "Rhino phase decode loss copy")?);
+                .push(loss.try_clone_for_decode(ctx, "Rhino phase decode loss copy")?);
         }
         append_report_losses(
             ctx,
@@ -3370,14 +3370,11 @@ impl<'a> DecodeContext<'a> {
             );
             candidate
                 .model
-                .add_procedural_surface(
-                    &surface_id,
-                    ProceduralSurface::new(
+                .add_procedural_surface_for_decode(ctx, &surface_id, ProceduralSurface::new(
                         procedural_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         ir_definition,
                         None,
-                    ),
-                )
+                    ))?
                 .map_err(|error| error.to_string())?;
             for id in [surface_id.to_string(), procedural_id.to_string()] {
                 set_exactness(ctx, candidate_annotations, id, Exactness::Derived)?;
@@ -3477,9 +3474,7 @@ impl<'a> DecodeContext<'a> {
                 });
                 candidate
                     .model
-                    .add_procedural_surface(
-                        &surface_id,
-                        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    .add_procedural_surface_for_decode(ctx, &surface_id, cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                             boundary.directrix.try_clone_for_decode(ctx, "Rhino extrusion directrix identity copy")?,
                             None,
                             extrusion.direction,
@@ -3494,8 +3489,7 @@ impl<'a> DecodeContext<'a> {
                                 None,
                             ))
                         })
-                        ?,
-                    )
+                        ?)?
                     .map_err(|error| error.to_string())?;
                 annotate_derived(ctx, candidate_annotations, &surface_id.to_string())?;
                 annotate_derived(ctx, candidate_annotations, &procedure_id.to_string())?;
@@ -3752,7 +3746,7 @@ impl<'a> DecodeContext<'a> {
                 "Rhino phase decode losses",
             )?;
             let mut copied =
-                loss.clone_admitted(self.expand.ctx(), "Rhino phase decode loss copy")?;
+                loss.try_clone_for_decode(self.expand.ctx(), "Rhino phase decode loss copy")?;
             copied.message = self.expand.ctx().format_retained(
                 format_args!("{}: {}", object.class_uuid, loss.message),
                 "Rhino phase decode loss message",
@@ -3815,14 +3809,16 @@ impl<'a> DecodeContext<'a> {
                     !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
-                let committed = budget.entities(entity_count).and_then(|()| {
-                    with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
-                        draft
-                            .commit(ir, &mut self.annotations)
-                            .map_err(|error| error.to_string())
-                    })
-                    .map_err(|error| error.to_string())?
-                });
+                let committed = match budget.entities(entity_count) {
+                    Err(error) => Err(error),
+                    Ok(()) => {
+                        let result = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| draft.commit_for_decode(ir, &mut self.annotations, self.expand.ctx()));
+                        match result {
+                            Ok(result) => result?.map_err(|error| error.to_string()),
+                            Err(error) => Err(error.to_string()),
+                        }
+                    }
+                };
                 if let Err(error) = committed {
                     self.scan_warning(
                         source_order,
@@ -5500,14 +5496,11 @@ fn stage_brep_procedural_surface(
     staged
         .draft
         .model_mut()
-        .add_procedural_surface(
-            &surface_id,
-            ProceduralSurface::new(
+        .add_procedural_surface_for_decode(context.ctx, &surface_id, ProceduralSurface::new(
                 procedural_id.try_clone_for_decode(context.ctx, "Rhino typed identity copy")?,
                 definition,
                 None,
-            ),
-        )
+            ))?
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     staged
         .draft
@@ -5618,7 +5611,7 @@ fn stage_curve_tree(
         staged
             .draft
             .model_mut()
-            .add_procedural_curve(&id, ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve_for_decode(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
             .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     }
     Ok(id)
@@ -6210,7 +6203,7 @@ fn commit_curve_tree(
             curve_key,
         );
         ir.model
-            .add_procedural_curve(&id, ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve_for_decode(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
             .map_err(|error| error.to_string())?;
     }
     Ok(id)

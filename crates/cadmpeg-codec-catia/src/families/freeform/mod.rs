@@ -996,85 +996,85 @@ pub(super) fn try_decode_freeform_surfaces(
         }
         let annotations = annotations.build();
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-        coverage.record(
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::DECODED_OBJECT_STREAM_RUN_COUNT,
             object_stream_run_count,
-        );
-        coverage.record(
+        ) { return Some(Err(error)); }
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::SELECTED_OBJECT_STREAM_RUN_COUNT,
             selected_object_stream_run_count,
-        );
-        coverage.record(
+        ) { return Some(Err(error)); }
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::UNSELECTED_OBJECT_STREAM_RUN_COUNT,
             object_stream_run_count - selected_object_stream_run_count,
-        );
-        coverage.record(
+        ) { return Some(Err(error)); }
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
             usize::from(object_stream_selection_exhausted),
-        );
-        coverage.record(
+        ) { return Some(Err(error)); }
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::DECODED_B2_NURBS_CURVE_COUNT,
             b2_nurbs_curve_count,
-        );
-        coverage.record(
+        ) { return Some(Err(error)); }
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::DECODED_A5_NURBS_CURVE_COUNT,
             a5_nurbs_curve_count,
-        );
-        coverage.record(
+        ) { return Some(Err(error)); }
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::DECODED_B2_SPATIAL_CIRCLE_COUNT,
             b2_spatial_circle_count,
-        );
-        coverage.record(
+        ) { return Some(Err(error)); }
+        if let Err(error) = coverage.record(ctx,
             crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
             usize::from(wire_topology_transferred) * standalone_wires.len(),
-        );
+        ) { return Some(Err(error)); }
         if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
                 control_03,
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
                 control_05,
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
                 uncounted,
-            );
+            ) { return Some(Err(error)); }
         }
         if topology_transferred {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
                 ir.model.faces.len(),
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
                 ir.model.loops.len(),
-            );
+            ) { return Some(Err(error)); }
         }
         if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
                 control_03,
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
                 control_05,
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
                 uncounted,
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
                 unresolved,
-            );
+            ) { return Some(Err(error)); }
         }
         if typed_multi_surface_face_count != 0 {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT,
                 typed_multi_surface_face_count,
-            );
+            ) { return Some(Err(error)); }
         }
         if let Some(counts) = edge_terminal_controls {
             for (key, count) in [
@@ -1090,18 +1090,18 @@ pub(super) fn try_decode_freeform_surfaces(
             .into_iter()
             .zip(counts)
             {
-                coverage.record(key, count);
+                if let Err(error) = coverage.record(ctx, key, count) { return Some(Err(error)); }
             }
         }
         if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
                 control_00,
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
                 control_04,
-            );
+            ) { return Some(Err(error)); }
         }
         if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
             resolved_loop_metadata_counts
@@ -1124,12 +1124,12 @@ pub(super) fn try_decode_freeform_surfaces(
                     controls_05_05,
                 ),
             ] {
-                coverage.record(key, count);
+                if let Err(error) = coverage.record(ctx, key, count) { return Some(Err(error)); }
             }
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
                 extended,
-            );
+            ) { return Some(Err(error)); }
         }
         if let Some((counts, unresolved)) = typed_loop_metadata_counts {
             for (key, count) in [
@@ -1141,48 +1141,48 @@ pub(super) fn try_decode_freeform_surfaces(
             .into_iter()
             .zip(counts[..4].iter().copied())
             {
-                coverage.record(key, count);
+                if let Err(error) = coverage.record(ctx, key, count) { return Some(Err(error)); }
             }
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
                 counts[4],
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
                 unresolved,
-            );
+            ) { return Some(Err(error)); }
         }
         if let Some(count) = class_21_suffix_scalar_count {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
                 count,
-            );
+            ) { return Some(Err(error)); }
         }
         if typed_class_21_pcurve_count != 0 {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
                 typed_class_21_pcurve_count,
-            );
+            ) { return Some(Err(error)); }
         }
         if !typed_parameter_incidences.is_empty() {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
                 typed_parameter_incidences.len(),
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT,
                 typed_parameter_incidence_member_count,
-            );
+            ) { return Some(Err(error)); }
         }
         if !typed_vertex_incidence_rosters.is_empty() {
-            coverage.record(
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
                 typed_vertex_incidence_rosters.len(),
-            );
-            coverage.record(
+            ) { return Some(Err(error)); }
+            if let Err(error) = coverage.record(ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT,
                 typed_vertex_incidence_roster_member_count,
-            );
+            ) { return Some(Err(error)); }
         }
         Some(Ok(FamilyOutput {
             ir,
@@ -1839,13 +1839,8 @@ pub(super) fn append_freeform_surface_pools(
             format_args!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         )?;
-        admission.reserve_entity(
-            &mut ir.model.procedural_surfaces,
-            "catia_family_emit_procedural_surfaces",
-        )?;
-        let _attached = ir.model.add_procedural_surface(
-            &surface_id,
-            ProceduralSurface::new(
+        admission.charge()?;
+        let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &surface_id, ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -1862,8 +1857,7 @@ pub(super) fn append_freeform_surface_pools(
                     ),
                 ),
                 Some(RecordBounds::from_corners(offset.u_range, offset.v_range)),
-            ),
-        );
+            ))?;
     }
 
     append_consolidated_line_profiles(
@@ -2046,17 +2040,11 @@ pub(super) fn append_freeform_surface_pools(
             format_args!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         )?;
-        admission.reserve_entity(
-            &mut ir.model.procedural_surfaces,
-            "catia_family_emit_procedural_surfaces",
-        )?;
+        admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
-                cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
-                    crate::families::a5a8::records::A5FreeformCurve::DEGREE,
-                    stations,
-                )
+                cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(crate::families::a5a8::records::A5FreeformCurve::DEGREE, stations, admission.context())?
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             None,
@@ -2607,17 +2595,12 @@ fn append_resolved_consolidated_surface_curves(
                             "resolved_pcurve_support",
                             Exactness::Derived,
                         )?;
-                        admission.reserve_entity(
-                            &mut ir.model.procedural_surfaces,
-                            "catia_freeform_offset_procedural_surfaces",
-                        )?;
+                        admission.charge()?;
                         let procedural_owner_id = id.try_clone_for_decode(
                             admission.context(),
                             "catia_freeform_offset_procedural_owner_id",
                         )?;
-                        let _attached = ir.model.add_procedural_surface(
-                            &procedural_owner_id,
-                            ProceduralSurface::new(
+                        let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &procedural_owner_id, ProceduralSurface::new(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(
                                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -2631,8 +2614,7 @@ fn append_resolved_consolidated_surface_curves(
                                     ),
                                 ),
                                 None,
-                            ),
-                        );
+                            ))?;
                         let stored_id = id.try_clone_for_decode(
                             admission.context(),
                             "catia_freeform_offset_surface_index_id",
@@ -3467,11 +3449,8 @@ fn append_resolved_consolidated_surface_curves(
                 "definition",
                 "catia_annotation_field",
             )?;
-            admission.reserve_entity(
-                &mut ir.model.procedural_curves,
-                "catia_freeform_resolved_procedural_curves",
-            )?;
-            let _attached = ir.model.add_procedural_curve_charged(
+            admission.charge()?;
+            let _attached = ir.model.add_procedural_curve_for_decode(
                 admission.context(),
                 &curve_id,
                 ProceduralCurve::new(procedural_id, definition),

@@ -296,8 +296,8 @@ fn resolve_pcurve_uses<'a>(
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
-    ctx: &DecodeContext<'_>,
-    model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
+    ctx: &'a DecodeContext<'_>,
+    model_index: &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
@@ -309,7 +309,7 @@ fn resolve_pcurve_uses<'a>(
     }
     if model_index.is_none() {
         *model_index =
-            Some(cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(source, ctx)?);
+            Some(cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(source, ctx)?);
     }
     let Some(index) = model_index.as_ref() else {
         return Ok(None);
@@ -1057,7 +1057,7 @@ pub(super) fn project(
 
     // The session holds the document's exclusive borrow. Its identity index
     // remains unbuilt until the first body reaches commit admission.
-    let mut commit_session = CommitSession::new(ir);
+    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
     for definition in body_definitions {
         let ir = commit_session.document();
         let entry = definition.entry;
@@ -1740,8 +1740,9 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
+        drop(model_index);
         if commit_session
-            .commit_model_admitted(candidate, ctx)?
+            .commit_model_for_decode(candidate, ctx)?
             .is_err()
         {
             super::push_entity_loss(

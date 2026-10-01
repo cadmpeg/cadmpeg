@@ -14,14 +14,15 @@ use super::analytic::{
 };
 use super::nurbs::NurbsError;
 use super::sampled::GeometryLayoutError;
-use super::{PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use super::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use crate::features::FinitePoint3;
-use crate::math::Point3;
 use crate::scalar::{NonZeroLength, PositiveLength, PositiveReal};
 
 /// A unit scaling that a solved carrier refuses.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScaleRefusal {
+    /// Storage or work exceeded the operation limit.
+    Resource(cadmpeg_core::decode::ResourceLimit),
     /// A scaled analytic field is refused; the text names the field and its
     /// condition.
     Field(&'static str),
@@ -32,6 +33,25 @@ pub enum ScaleRefusal {
     Samples(GeometryLayoutError),
     /// A scaled placement translation is not finite.
     Translation,
+}
+
+enum ScalingError {
+    Geometry(ScaleRefusal),
+    Resource(cadmpeg_core::CodecError),
+}
+impl From<ScaleRefusal> for ScalingError {
+    fn from(error: ScaleRefusal) -> Self { Self::Geometry(error) }
+}
+impl From<cadmpeg_core::CodecError> for ScalingError {
+    fn from(error: cadmpeg_core::CodecError) -> Self { Self::Resource(error) }
+}
+impl ScaleRefusal {
+    fn from_codec(error: cadmpeg_core::CodecError) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            error => Self::ControlPoints(NurbsError::Structure(error.to_string())),
+        }
+    }
 }
 
 /// `point` times `scale`, refused with `field` when a coordinate overflows.
@@ -63,13 +83,6 @@ fn scaled_nonzero(
     NonZeroLength::new(length.get() * scale.get()).ok_or(ScaleRefusal::Field(field))
 }
 
-/// Multiply one raw control point by `scale`; the carrier admits the result.
-fn scale_control_point(point: &mut Point3, scale: PositiveReal) {
-    point.x *= scale.get();
-    point.y *= scale.get();
-    point.z *= scale.get();
-}
-
 impl SolvedSurfaceGeometry {
     /// The carrier with every length times `scale`.
     ///
@@ -78,95 +91,15 @@ impl SolvedSurfaceGeometry {
     /// translation and keeps its nesting depth, because the scaled basis has
     /// the variant chain of the basis.
     pub fn scaled(&self, scale: PositiveReal) -> Result<Self, ScaleRefusal> {
-        Ok(match self {
-            Self::Plane(plane) => Self::Plane(PlaneSurface::new(
-                scaled_point(plane.origin(), scale, "PlaneSurface.origin must be finite")?,
-                *plane.frame(),
-            )),
-            Self::Cylinder(cylinder) => {
-                let origin = scaled_point(
-                    cylinder.origin(),
-                    scale,
-                    "CylinderSurface.origin must be finite",
-                )?;
-                let radius = scaled_positive(
-                    cylinder.radius(),
-                    scale,
-                    "CylinderSurface.radius must be positive and finite",
-                )?;
-                Self::Cylinder(CylinderSurface::new(origin, *cylinder.frame(), radius))
-            }
-            Self::Cone(cone) => {
-                let origin =
-                    scaled_point(cone.origin(), scale, "ConeSurface.origin must be finite")?;
-                let radius = cone.radius().scaled(scale).ok_or(ScaleRefusal::Field(
-                    "ConeSurface.radius must be nonnegative and finite",
-                ))?;
-                Self::Cone(ConeSurface::new(
-                    origin,
-                    *cone.frame(),
-                    radius,
-                    cone.ratio(),
-                    cone.half_angle(),
-                ))
-            }
-            Self::Sphere(sphere) => {
-                let center = scaled_point(
-                    sphere.center(),
-                    scale,
-                    "SphereSurface.center must be finite",
-                )?;
-                let radius = scaled_nonzero(
-                    sphere.radius(),
-                    scale,
-                    "SphereSurface.radius must be finite and nonzero",
-                )?;
-                Self::Sphere(SphereSurface::new(center, *sphere.frame(), radius))
-            }
-            Self::Torus(torus) => {
-                let center =
-                    scaled_point(torus.center(), scale, "TorusSurface.center must be finite")?;
-                let major_radius = scaled_positive(
-                    torus.major_radius(),
-                    scale,
-                    "TorusSurface.major_radius must be positive and finite",
-                )?;
-                let minor_radius = scaled_nonzero(
-                    torus.minor_radius(),
-                    scale,
-                    "TorusSurface.minor_radius must be finite and nonzero",
-                )?;
-                Self::Torus(TorusSurface::new(
-                    center,
-                    *torus.frame(),
-                    major_radius,
-                    minor_radius,
-                ))
-            }
-            Self::Nurbs(surface) => {
-                let mut surface = surface.clone();
-                surface
-                    .try_map_control_points(|_, point| {
-                        let mut scaled = point.get();
-                        scale_control_point(&mut scaled, scale);
-                        FinitePoint3::new(scaled).ok_or_else(super::nurbs::non_finite_control_point)
-                    })
-                    .map_err(ScaleRefusal::ControlPoints)?;
-                Self::Nurbs(surface)
-            }
-            Self::Polygonal(surface) => {
-                Self::Polygonal(surface.scaled(scale).map_err(ScaleRefusal::Samples)?)
-            }
-            Self::Transformed(placed) => Self::Transformed(PlacedSurface {
-                basis: Box::new(placed.basis.scaled(scale)?),
-                transform: placed
-                    .transform
-                    .scaled_translation(scale)
-                    .ok_or(ScaleRefusal::Translation)?,
-                depth: placed.depth,
-            }),
-            Self::Unknown { .. } => self.clone(),
-        })
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(ScaleRefusal::from_codec)?;
+        Self::scaled_for_decode(self, &ctx, scale).map_err(ScaleRefusal::from_codec)?
+    }
+
+    /// Copy and scale a borrowed carrier through the caller's context.
+    pub fn scaled_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
+        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?.scaled_owned(ctx, scale)
     }
 }
 
@@ -179,7 +112,36 @@ impl SolvedCurveGeometry {
     /// the scaled basis has the variant chain of the basis. A composite curve
     /// holds references to other curves and no length of its own.
     pub fn scaled(&self, scale: PositiveReal) -> Result<Self, ScaleRefusal> {
-        Ok(match self {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(ScaleRefusal::from_codec)?;
+        Self::scaled_for_decode(self, &ctx, scale).map_err(ScaleRefusal::from_codec)?
+    }
+
+    /// Copy and scale a borrowed carrier through the caller's context.
+    pub fn scaled_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
+        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?.scaled_owned(ctx, scale)
+    }
+}
+
+impl SolvedCurveGeometry {
+    /// Scale an owned carrier without copying its retained text, rows or placement boxes.
+    /// Resource refusal is separate from the geometric refusal. Refused candidates are consumed.
+    pub fn scaled_owned(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
+        match self.scale_in_place(ctx, scale) {
+            Ok(()) => Ok(Ok(self)),
+            Err(ScalingError::Geometry(error)) => Ok(Err(error)),
+            Err(ScalingError::Resource(error)) => Err(error),
+        }
+    }
+
+    fn scale_in_place(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<(), ScalingError> {
+        ctx.charge_work(1, "IR geometry unit scaling work")?;
+        let scaled = match self {
             Self::Line(line) => Self::Line(LineCurve::new(
                 scaled_point(
                     line.origin(),
@@ -246,130 +208,129 @@ impl SolvedCurveGeometry {
                 scale,
                 "DegenerateCurve.point must be finite",
             )?)),
-            Self::Nurbs(curve) => {
-                let mut curve = curve.clone();
-                curve
-                    .try_map_control_points(|_, point| {
-                        let mut scaled = point.get();
-                        scale_control_point(&mut scaled, scale);
-                        FinitePoint3::new(scaled).ok_or_else(super::nurbs::non_finite_control_point)
-                    })
-                    .map_err(ScaleRefusal::ControlPoints)?;
-                Self::Nurbs(curve)
-            }
-            Self::Polyline(polyline) => {
-                Self::Polyline(polyline.scaled(scale).map_err(ScaleRefusal::Samples)?)
-            }
-            Self::Transformed(placed) => Self::Transformed(PlacedCurve {
-                basis: Box::new(placed.basis.scaled(scale)?),
-                transform: placed
-                    .transform
-                    .scaled_translation(scale)
-                    .ok_or(ScaleRefusal::Translation)?,
-                depth: placed.depth,
-            }),
-            Self::Composite { .. } | Self::Unknown { .. } => self.clone(),
-        })
-    }
-}
 
-impl SolvedCurveGeometry {
-    /// Scale an owned carrier without copying its retained text, rows or placement boxes.
-    /// Resource refusal is separate from the geometric refusal. Refused candidates are consumed.
-    pub fn scaled_owned_admitted(
-        mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
-        match self.scale_in_place_admitted(ctx, scale)? {
-            Ok(()) => Ok(Ok(self)),
-            Err(error) => Ok(Err(error)),
-        }
-    }
-
-    fn scale_in_place_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<(), ScaleRefusal>, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "IR geometry unit scaling work")?;
-        match self {
-            Self::Nurbs(value) => Ok(value
-                .scale_points_admitted(ctx, scale)?
-                .map_err(ScaleRefusal::ControlPoints)),
-            Self::Polyline(value) => Ok(value
-                .scale_points_admitted(ctx, scale)?
-                .map_err(ScaleRefusal::Samples)),
+            Self::Nurbs(value) => {
+                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::ControlPoints)?;
+                return Ok(());
+            }
+            Self::Polyline(value) => {
+                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::Samples)?;
+                return Ok(());
+            }
             Self::Transformed(placed) => {
                 let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
-                if let Err(error) = placed.basis.scale_in_place_admitted(ctx, scale)? {
-                    return Ok(Err(error));
-                }
-                let Some(transform) = placed.transform.scaled_translation(scale) else {
-                    return Ok(Err(ScaleRefusal::Translation));
-                };
-                placed.transform = transform;
-                Ok(Ok(()))
+                placed.basis.scale_in_place(ctx, scale)?;
+                placed.transform = placed.transform.scaled_translation(scale).ok_or(ScaleRefusal::Translation)?;
+                return Ok(());
             }
-            Self::Composite { .. } | Self::Unknown { .. } => Ok(Ok(())),
-            analytic => match analytic.scaled(scale) {
-                Ok(scaled) => {
-                    *analytic = scaled;
-                    Ok(Ok(()))
-                }
-                Err(error) => Ok(Err(error)),
-            },
-        }
+            Self::Composite { .. } | Self::Unknown { .. } => return Ok(()),
+        };
+        *self = scaled;
+        Ok(())
     }
 }
 
 impl SolvedSurfaceGeometry {
     /// Scale an owned carrier without copying its retained text, rows or placement boxes.
     /// Resource refusal is separate from the geometric refusal. Refused candidates are consumed.
-    pub fn scaled_owned_admitted(
+    pub fn scaled_owned(
         mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
-        match self.scale_in_place_admitted(ctx, scale)? {
+        match self.scale_in_place(ctx, scale) {
             Ok(()) => Ok(Ok(self)),
-            Err(error) => Ok(Err(error)),
+            Err(ScalingError::Geometry(error)) => Ok(Err(error)),
+            Err(ScalingError::Resource(error)) => Err(error),
         }
     }
 
-    fn scale_in_place_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<(), ScaleRefusal>, cadmpeg_core::CodecError> {
+    fn scale_in_place(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<(), ScalingError> {
         ctx.charge_work(1, "IR geometry unit scaling work")?;
-        match self {
-            Self::Nurbs(value) => Ok(value
-                .scale_points_admitted(ctx, scale)?
-                .map_err(ScaleRefusal::ControlPoints)),
-            Self::Polygonal(value) => Ok(value
-                .scale_points_admitted(ctx, scale)?
-                .map_err(ScaleRefusal::Samples)),
+        let scaled = match self {
+            Self::Plane(plane) => Self::Plane(PlaneSurface::new(
+                scaled_point(plane.origin(), scale, "PlaneSurface.origin must be finite")?,
+                *plane.frame(),
+            )),
+            Self::Cylinder(cylinder) => {
+                let origin = scaled_point(
+                    cylinder.origin(),
+                    scale,
+                    "CylinderSurface.origin must be finite",
+                )?;
+                let radius = scaled_positive(
+                    cylinder.radius(),
+                    scale,
+                    "CylinderSurface.radius must be positive and finite",
+                )?;
+                Self::Cylinder(CylinderSurface::new(origin, *cylinder.frame(), radius))
+            }
+            Self::Cone(cone) => {
+                let origin =
+                    scaled_point(cone.origin(), scale, "ConeSurface.origin must be finite")?;
+                let radius = cone.radius().scaled(scale).ok_or(ScaleRefusal::Field(
+                    "ConeSurface.radius must be nonnegative and finite",
+                ))?;
+                Self::Cone(ConeSurface::new(
+                    origin,
+                    *cone.frame(),
+                    radius,
+                    cone.ratio(),
+                    cone.half_angle(),
+                ))
+            }
+            Self::Sphere(sphere) => {
+                let center = scaled_point(
+                    sphere.center(),
+                    scale,
+                    "SphereSurface.center must be finite",
+                )?;
+                let radius = scaled_nonzero(
+                    sphere.radius(),
+                    scale,
+                    "SphereSurface.radius must be finite and nonzero",
+                )?;
+                Self::Sphere(SphereSurface::new(center, *sphere.frame(), radius))
+            }
+            Self::Torus(torus) => {
+                let center =
+                    scaled_point(torus.center(), scale, "TorusSurface.center must be finite")?;
+                let major_radius = scaled_positive(
+                    torus.major_radius(),
+                    scale,
+                    "TorusSurface.major_radius must be positive and finite",
+                )?;
+                let minor_radius = scaled_nonzero(
+                    torus.minor_radius(),
+                    scale,
+                    "TorusSurface.minor_radius must be finite and nonzero",
+                )?;
+                Self::Torus(TorusSurface::new(
+                    center,
+                    *torus.frame(),
+                    major_radius,
+                    minor_radius,
+                ))
+            }
+
+            Self::Nurbs(value) => {
+                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::ControlPoints)?;
+                return Ok(());
+            }
+            Self::Polygonal(value) => {
+                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::Samples)?;
+                return Ok(());
+            }
             Self::Transformed(placed) => {
                 let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
-                if let Err(error) = placed.basis.scale_in_place_admitted(ctx, scale)? {
-                    return Ok(Err(error));
-                }
-                let Some(transform) = placed.transform.scaled_translation(scale) else {
-                    return Ok(Err(ScaleRefusal::Translation));
-                };
-                placed.transform = transform;
-                Ok(Ok(()))
+                placed.basis.scale_in_place(ctx, scale)?;
+                placed.transform = placed.transform.scaled_translation(scale).ok_or(ScaleRefusal::Translation)?;
+                return Ok(());
             }
-            Self::Unknown { .. } => Ok(Ok(())),
-            analytic => match analytic.scaled(scale) {
-                Ok(scaled) => {
-                    *analytic = scaled;
-                    Ok(Ok(()))
-                }
-                Err(error) => Ok(Err(error)),
-            },
-        }
+            Self::Unknown { .. } => return Ok(()),
+        };
+        *self = scaled;
+        Ok(())
     }
 }
 

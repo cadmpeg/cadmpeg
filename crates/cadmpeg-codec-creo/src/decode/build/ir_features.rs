@@ -80,12 +80,10 @@ fn commit_regeneration_edges(
     edges: Vec<(IrFeatureId, IrFeatureId)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (child, parent) in edges {
-        if ir.model.feature_parent(&child).is_none() {
-            ctx.charge_collection_items(1, "creo regeneration parent nodes")?;
-        }
+
         ir.model
-            .set_feature_regeneration_parent(child, parent)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .set_feature_regeneration_parent_for_decode(ctx, &child, &parent)
+            ?;
     }
     Ok(())
 }
@@ -821,82 +819,82 @@ pub(super) fn finish_feature_transfers(
                 .filter(|assignment| assignment.activation == activation)
                 .count()
         };
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             decoded_curve_expression_assignment_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT,
             transferred_curve_expression_parameter_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT,
             decoded_curve_expression_table_cell_assignment_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_scoped_symbol_assignment_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_system_symbol_assignment_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT,
             decoded_curve_expression_function_write_assignment_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             evaluated_curve_expression_assignment_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             decoded_curve_expression_solve_block_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT,
             decoded_curve_expression_simultaneous_equation_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT,
             decoded_curve_expression_solve_assignment_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             decoded_curve_expression_solve_variable_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             evaluated_curve_expression_solve_block_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             evaluated_curve_expression_solve_variable_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT,
             unresolved_curve_expression_solve_control_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT,
             prohibited_curve_expression_record_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT,
             prohibited_curve_expression_kind_count,
@@ -915,7 +913,7 @@ pub(super) fn finish_feature_transfers(
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            coverage.record_admitted(ctx, key, activation_count(activation))?;
+            coverage.record(ctx, key, activation_count(activation))?;
         }
         let (decoded_dimension_count, resolved_dimension_count) = scan
             .features
@@ -929,22 +927,22 @@ pub(super) fn finish_feature_transfers(
                     resolved + usize::from(dimension.value.resolved().is_some()),
                 )
             });
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
             decoded_dimension_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT,
             transferred_feature_dimension_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             resolved_dimension_count,
         )?;
-        coverage.record_admitted(
+        coverage.record(
             ctx,
             crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             decoded_dimension_count

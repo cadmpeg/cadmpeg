@@ -294,14 +294,14 @@ fn loss_clone_admitted_refuses_retained_limit_and_preserves_provenance() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is admitted");
     let refusal = original
-        .clone_admitted(&ctx, "loss copy")
+        .try_clone_for_decode(&ctx, "loss copy")
         .expect_err("copied loss text exceeds zero retained bytes");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "loss copy"
     ));
     let copied = original
-        .clone_admitted(&cadmpeg_test_support::service_decode_context(), "loss copy")
+        .try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "loss copy")
         .expect("service profile admits all copied fields");
     assert_eq!(copied, original);
 }

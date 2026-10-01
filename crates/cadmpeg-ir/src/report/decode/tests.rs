@@ -33,7 +33,7 @@ fn admitted_coverage_refuses_new_node_and_static_name_limits() {
         policy.limits.max_retained_bytes = bytes;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let error = Coverage::default()
-            .record_admitted(&ctx, key, 7)
+            .record(&ctx, key, 7)
             .expect_err("below-need coverage cap");
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == dimension && resource.operation == operation));
@@ -43,10 +43,10 @@ fn admitted_coverage_refuses_new_node_and_static_name_limits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut coverage = Coverage::default();
     coverage
-        .record_admitted(&ctx, key, 7)
+        .record(&ctx, key, 7)
         .expect("service node");
     coverage
-        .record_admitted(&ctx, key, 8)
+        .record(&ctx, key, 8)
         .expect("existing node");
     assert_eq!(coverage.get("one_count"), Some(&8));
 }
@@ -77,7 +77,7 @@ fn admitted_indexed_coverage_refuses_temporary_name_and_new_node() {
         policy.limits.max_collection_items = items;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let error = Coverage::default()
-            .record_indexed_admitted(&ctx, key, 4, 7)
+            .record_indexed(&ctx, key, 4, 7)
             .expect_err("below-need coverage cap");
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == dimension && resource.operation == operation));
@@ -87,7 +87,7 @@ fn admitted_indexed_coverage_refuses_temporary_name_and_new_node() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut coverage = Coverage::default();
     coverage
-        .record_indexed_admitted(&ctx, key, 4, 7)
+        .record_indexed(&ctx, key, 4, 7)
         .expect("service node");
     assert_eq!(coverage.get("type_4_count"), Some(&7));
 }
@@ -103,7 +103,7 @@ fn admitted_hex_coverage_refuses_retained_name_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = Coverage::default()
-        .record_hex_byte_admitted(&ctx, key, 0x0a, 7)
+        .record_hex_byte(&ctx, key, 0x0a, 7)
         .expect_err("retained name exceeds cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -113,7 +113,7 @@ fn admitted_hex_coverage_refuses_retained_name_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut coverage = Coverage::default();
     coverage
-        .record_hex_byte_admitted(&ctx, key, 0x0a, 7)
+        .record_hex_byte(&ctx, key, 0x0a, 7)
         .expect("service node");
     assert_eq!(coverage.get("type_0a_count"), Some(&7));
 }
@@ -122,12 +122,15 @@ fn admitted_hex_coverage_refuses_retained_name_limit() {
 fn owned_coverage_record_preserves_declared_key() {
     let key = crate::report::decode::CoverageKey::new("decoded_entities");
     let mut coverage = crate::report::decode::Coverage::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("service context");
     assert!(coverage
-        .record_owned(key, "other_entities".to_owned(), 3)
+        .record_owned(&ctx, key, "other_entities".to_owned(), 3)
         .is_err());
     assert!(coverage.is_empty());
     coverage
-        .record_owned(key, "decoded_entities".to_owned(), 3)
+        .record_owned(&ctx, key, "decoded_entities".to_owned(), 3)
         .expect("declared key is admitted");
     assert_eq!(coverage.get("decoded_entities"), Some(&3));
 }
@@ -330,4 +333,38 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
         error.to_string().contains("geometry_transferred"),
         "{error}"
     );
+}
+
+#[test]
+fn coverage_entry_refuses_retained_map_storage() {
+    use crate::report::decode::{Coverage, CoverageKey};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let key = CoverageKey::new("one_count");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(key.as_str().len() + std::mem::size_of::<(String, usize)>() - 1);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut coverage = Coverage::default();
+    assert!(matches!(coverage.record(&ctx, key, 7), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "decode coverage nodes"));
+    assert!(coverage.is_empty());
+    policy.limits.max_retained_bytes += 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    coverage.record(&ctx, key, 7).expect("one admitted entry");
+    coverage.record(&ctx, key, 8).expect("replacement makes no allocation");
+    assert_eq!(coverage.get(key.as_str()), Some(&8));
+}
+
+#[test]
+fn coverage_entry_refuses_lookup_work() {
+    use crate::report::decode::{Coverage, CoverageKey};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut coverage = Coverage::default();
+    assert!(matches!(coverage.record(&ctx, CoverageKey::new("one_count"), 7), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "decode coverage lookup"));
+    assert!(coverage.is_empty());
 }

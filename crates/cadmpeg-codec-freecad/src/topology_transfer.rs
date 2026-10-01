@@ -1889,12 +1889,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             });
             if has_procedural_construction {
                 ir.model
-                    .add_procedural_surface(
-                        &id.try_clone_for_decode(
+                    .add_procedural_surface_for_decode(self.ctx, &id.try_clone_for_decode(
                             self.ctx,
                             "FreeCAD procedural surface owner identity",
-                        )?,
-                        ProceduralSurface::new(
+                        )?, ProceduralSurface::new(
                             ProceduralSurfaceId::compose(
                                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
                                 id.key().colon(cadmpeg_ir::identity_key!("construction")),
@@ -1904,8 +1902,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                                 transform,
                             },
                             None,
-                        ),
-                    )
+                        ))?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
         }

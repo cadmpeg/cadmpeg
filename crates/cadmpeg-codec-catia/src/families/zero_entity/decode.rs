@@ -1079,13 +1079,7 @@ fn zero_entity_coverage(
             wire_counts.points,
         ),
     ] {
-        crate::resource::record_coverage(
-            ctx,
-            &mut coverage,
-            key,
-            count,
-            "catia_zero_entity_coverage",
-        )?;
+        (&mut coverage).record(ctx, key, count)?;
     }
     if let Some(counts) = topology_counts {
         for (key, count) in [
@@ -1122,13 +1116,7 @@ fn zero_entity_coverage(
                 counts.pcurves,
             ),
         ] {
-            crate::resource::record_coverage(
-                ctx,
-                &mut coverage,
-                key,
-                count,
-                "catia_zero_entity_coverage",
-            )?;
+            (&mut coverage).record(ctx, key, count)?;
         }
     }
     Ok(coverage)

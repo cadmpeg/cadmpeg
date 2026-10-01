@@ -4670,14 +4670,10 @@ pub(super) fn display_jt_compressed_element_sequences(
                 let string_bytes = id_len
                     .checked_mul(2)
                     .and_then(|len| len.checked_add(segment.id.len()))
-                    .and_then(|len| len.checked_add(64))
                     .and_then(|len| u64::try_from(len).ok())
                     .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT element fields", 0, 1))?;
                 ctx.charge_retained(string_bytes, "retain DisplayJT compressed element fields")?;
-                let body_work = u64::try_from(element.body.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("size DisplayJT compressed element body", 0, u64::MAX)
-                })?;
-                ctx.charge_work(body_work, "hash DisplayJT compressed element body")?;
+
             }
             let id = format!("{}-inflated-element-{ordinal}", segment.id);
             element_ids.push(id.clone());
@@ -4693,7 +4689,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                     object_base_type: element.object_base_type,
                     body_byte_len: u32::try_from(element.body.len())
                         .map_err(|_| display_jt_framing_error("body_byte_len exceeds u32"))?,
-                    body_sha256: Sha256Digest::digest(element.body),
+                    body_sha256: Sha256Digest::digest_for_decode(budget.0, element.body, "hash DisplayJT compressed element body")?,
                     inflated_offset: u32::try_from(element.offset)
                         .map_err(|_| display_jt_framing_error("inflated_offset exceeds u32"))?,
                     source_offset: segment.source_offset + 24,
@@ -4716,13 +4712,10 @@ pub(super) fn display_jt_compressed_element_sequences(
                 .len()
                 .checked_mul(2)
                 .and_then(|len| len.checked_add("-inflated-sequence".len()))
-                .and_then(|len| len.checked_add(64))
                 .and_then(|len| u64::try_from(len).ok())
                 .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT sequence fields", 0, 1))?;
             ctx.charge_retained(string_bytes, "retain DisplayJT compressed sequence fields")?;
-            let tail_work = u64::try_from(tail.len())
-                .map_err(|_| ctx.refuse_codec_limit("size DisplayJT sequence tail", 0, u64::MAX))?;
-            ctx.charge_work(tail_work, "hash DisplayJT compressed sequence tail")?;
+
         }
         let ctx = budget.0;
         cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
@@ -4732,7 +4725,7 @@ pub(super) fn display_jt_compressed_element_sequences(
         )?;
         let retained_tail = ctx.copy_retained(tail, "retain DisplayJT compressed sequence tail")?;
         let tail_work = cadmpeg_core::decode::u64_from_index(tail.len());
-        ctx.charge_work(tail_work, "check DisplayJT compressed sequence tail hash")?;
+        ctx.charge_work(tail_work.checked_add(64).ok_or_else(|| ctx.refuse_codec_limit("check DisplayJT compressed sequence tail hash", 0, u64::MAX))?, "check DisplayJT compressed sequence tail hash")?;
         let _digest_check = ctx.reserve_scoped(64, "check DisplayJT sequence tail hash")?;
         sequences.push(
             DisplayJtCompressedElementSequence::try_from(DisplayJtCompressedElementSequenceWire {
@@ -4743,7 +4736,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                 framed_byte_len: u32::try_from(framed_end)
                     .map_err(|_| display_jt_framing_error("framed_byte_len exceeds u32"))?,
                 tail: retained_tail,
-                tail_sha256: Sha256Digest::digest(tail),
+                tail_sha256: Sha256Digest::digest_for_decode(ctx, tail, "hash DisplayJT compressed sequence tail")?,
                 source_offset: segment.source_offset + 24,
             })
             .map_err(display_jt_framing_error)?,

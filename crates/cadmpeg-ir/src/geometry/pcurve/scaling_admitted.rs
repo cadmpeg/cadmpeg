@@ -29,7 +29,7 @@ impl From<&'static str> for ScalingError {
 impl PcurveGeometry {
     /// Scale owned chart coordinates without copying basis boxes or pole rows.
     /// Resource refusals stay separate from geometric refusals. Refused candidates are consumed.
-    pub fn scaled_coordinates_owned_admitted(
+    pub fn scaled_coordinates_owned(
         mut self,
         ctx: &DecodeContext<'_>,
         scales: [f64; 2],

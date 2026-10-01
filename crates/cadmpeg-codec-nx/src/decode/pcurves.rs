@@ -578,7 +578,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 )
                 .or_insert(index);
         }
-        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
         let mut replacements = Vec::new();
         for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
             let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
@@ -777,7 +777,7 @@ pub(super) fn orient_tolerant_intersection_pcurve(
     endpoints: [Point3; 2],
     tolerance: f64,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -1324,7 +1324,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             .and_modify(|current| *current = current.min(tolerance))
             .or_insert(tolerance);
     }
-    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let mut blend_contacts = BTreeMap::new();
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     let mut candidates = Vec::new();
@@ -1486,6 +1486,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             replacements.push(replacement);
         }
     }
+    drop(model_index);
     for (procedural_index, side, pcurve, tolerance, cache_backed) in replacements {
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
@@ -1604,7 +1605,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let vertex_points = vertex_point_positions(ctx, ir)?;
     let edges_by_curve = edge_indices_by_curve(ctx, ir)?;
     let mut procedural_indices = BTreeMap::<ProceduralCurveId, usize>::new();
@@ -1829,6 +1830,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             range,
         ));
     }
+    drop(model_index);
     let mut bounded_tolerant_curves = Vec::new();
     for (procedural_id, pcurves, tolerance, cache_backed, curve, range) in replacements {
         let Some(procedural_index) = procedural_indices.get(&procedural_id).copied() else {
@@ -1913,7 +1915,7 @@ pub(super) fn exact_boundary_pcurve(
     range: [f64; 2],
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -2428,7 +2430,7 @@ pub(super) fn exact_analytic_isocurve_pcurve(
     range: [f64; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -2636,7 +2638,7 @@ pub(super) fn coincident_pcurve_pair(
     range: [f64; 2],
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -3724,7 +3726,7 @@ pub(super) fn blend_boundary_parameter_from_support_spine(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     blend_boundary_parameter_from_support_spine_with_index(
         ctx, &index, blend, support, point, seed, tolerance,
     )
@@ -4296,7 +4298,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let candidates = {
-        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
         let mut endpoint_surface_fits = BTreeMap::<(&SurfaceId, [u64; 3], u64), bool>::new();
         let mut nurbs_surface_bounds = BTreeMap::<&SurfaceId, Option<([f64; 3], [f64; 3])>>::new();
         let mut blend_parameter_grids = BlendParameterGridCache::new();
@@ -4513,12 +4515,8 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             },
             source_object: None,
         });
-        ctx.reserve_vec(
-            &mut ir.model.procedural_curves,
-            1,
-            "nx tolerant procedural curves",
-        )?;
-        let _attached = ir.model.add_procedural_curve(&curve_id, procedural);
+
+        let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve_id, procedural)?;
     }
     Ok(())
 }
@@ -4545,7 +4543,7 @@ fn pcurve_matches_edge_range(
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
 ) -> bool {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),

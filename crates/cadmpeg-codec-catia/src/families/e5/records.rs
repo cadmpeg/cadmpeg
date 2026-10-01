@@ -90,7 +90,7 @@ impl E5RollingBallJet {
         let stations =
             ctx.copy_retained_slice(&self.stations, "catia_e5_rolling_ball_definition_stations")?;
         Ok(
-            cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(Self::DEGREE, stations)
+            cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(Self::DEGREE, stations, ctx)?
                 .ok()
                 .map(ProceduralSurfaceDefinition::RollingBallJet),
         )

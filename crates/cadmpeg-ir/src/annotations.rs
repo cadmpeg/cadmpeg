@@ -451,12 +451,20 @@ impl AnnotationBuilder {
         let mut scratch = ctx.reserve_scoped(0, "source exactness lookup")?;
         let id = ctx.format_scoped_text(&mut scratch, format_args!("{id}"), "source exactness lookup")?;
         admit_identity_work(ctx, self.annotations.exactness.len(), id.len(), "collect source exactness entities")?;
-        let fields = self.annotations.exactness.get(&id).map_or(0, |note| note.fields().len());
-        ctx.charge_work(u64_from_index(fields), "retain source exactness fields")?;
         let id = if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
-            admit_annotation_record::<String, ExactnessNote>(ctx, "collect source exactness entities")?;
             ctx.copy_retained_text(&id, "retain source exactness identity")?
         } else { id };
+        self.exactness_owned_for_decode(ctx, id, exactness)
+    }
+
+    /// Move an admitted identity into an exactness entry after destination admission.
+    pub fn exactness_owned_for_decode(&mut self, ctx: &DecodeContext<'_>, id: String, exactness: Exactness) -> Result<&mut Self, CodecError> {
+        admit_identity_work(ctx, self.annotations.exactness.len(), id.len(), "collect source exactness entities")?;
+        let fields = self.annotations.exactness.get(&id).map_or(0, |note| note.fields().len());
+        ctx.charge_work(u64_from_index(fields), "retain source exactness fields")?;
+        if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
+            admit_annotation_record::<String, ExactnessNote>(ctx, "collect source exactness entities")?;
+        }
         Ok(self.exactness_owned(id, exactness))
     }
 

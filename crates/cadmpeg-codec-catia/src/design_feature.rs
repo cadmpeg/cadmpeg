@@ -159,10 +159,10 @@ impl DesignFeatureTransfer {
             });
         }
         for (child, parent) in parents {
-            ctx.charge_collection_items(1, "catia_feature_regeneration_parents")?;
+
             ir.model
-                .set_feature_regeneration_parent(child, parent)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                .set_feature_regeneration_parent_for_decode(ctx, &child, &parent)
+                ?;
         }
         Ok(())
     }

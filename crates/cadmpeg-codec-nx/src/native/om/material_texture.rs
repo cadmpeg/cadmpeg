@@ -251,17 +251,12 @@ pub(in crate::native) fn material_texture_assets(
         let mut source_entry =
             ctx.retained_string(entry.name.len(), "retain NX material texture source entry")?;
         source_entry.push_str(&entry.name);
-        ctx.charge_retained(64, "retain NX material texture digest")?;
-        ctx.charge_work(
-            u64_from_index(payload.len()),
-            "hash NX material texture payload",
-        )?;
         let asset = MaterialTextureAsset::new(
             id,
             byte_order,
             first_ifd_offset,
             u64_from_index(size),
-            cadmpeg_ir::hash::digest::Sha256Digest::digest(payload),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, payload, "retain NX material texture digest")?,
             source_entry,
             offset,
         )

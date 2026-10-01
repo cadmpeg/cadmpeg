@@ -1707,7 +1707,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
             let stations =
                 ctx.copy_retained_slice(jet.stations(), "catia_b5_copied_rolling_ball_stations")?;
             let jet =
-                cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(jet.degree(), stations)
+                cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(jet.degree(), stations, ctx)?
                     .map_err(CodecError::malformed)?;
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,

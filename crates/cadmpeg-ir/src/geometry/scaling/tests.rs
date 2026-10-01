@@ -381,7 +381,7 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
     for rational in [false, true] {
         for cap in [1, 2] {
             let result = with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
-                scaling_curve(1.0, rational).scaled_owned_admitted(ctx, scale(2.0))
+                scaling_curve(1.0, rational).scaled_owned(ctx, scale(2.0))
             });
             assert!(
                 matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
@@ -390,13 +390,13 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
         }
         assert_eq!(
             with_scaling_limits(3, 0, u64::MAX, |ctx| scaling_curve(1.0, rational)
-                .scaled_owned_admitted(ctx, scale(2.0)))
+                .scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
             scaling_curve(1.0, rational).scaled(scale(2.0))
         );
         for cap in 1..5 {
             let result = with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
-                scaling_surface(1.0, rational).scaled_owned_admitted(ctx, scale(2.0))
+                scaling_surface(1.0, rational).scaled_owned(ctx, scale(2.0))
             });
             assert!(
                 matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
@@ -405,13 +405,13 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
         }
         assert_eq!(
             with_scaling_limits(5, 0, u64::MAX, |ctx| scaling_surface(1.0, rational)
-                .scaled_owned_admitted(ctx, scale(2.0)))
+                .scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
             scaling_surface(1.0, rational).scaled(scale(2.0))
         );
         for retained in [0, 40] {
             assert!(matches!(with_scaling_limits(u64::MAX, retained, u64::MAX,
-                |ctx| scaling_curve(f64::MAX, rational).scaled_owned_admitted(ctx, scale(2.0))),
+                |ctx| scaling_curve(f64::MAX, rational).scaled_owned(ctx, scale(2.0))),
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS refusal text"));
         }
         assert_eq!(
@@ -419,7 +419,7 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
                 f64::MAX,
                 rational
             )
-            .scaled_owned_admitted(ctx, scale(2.0)))
+            .scaled_owned(ctx, scale(2.0)))
             .expect("admitted refusal"),
             scaling_surface(f64::MAX, rational).scaled(scale(2.0))
         );
@@ -461,22 +461,22 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
         };
         for cap in [1, 2] {
             assert!(matches!(with_scaling_limits(cap, 0, u64::MAX,
-                |ctx| curve(1.0, 0.0).scaled_owned_admitted(ctx, scale(2.0))),
+                |ctx| curve(1.0, 0.0).scaled_owned(ctx, scale(2.0))),
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled unit scaling work"));
         }
         assert_eq!(
             with_scaling_limits(3, 0, u64::MAX, |ctx| curve(1.0, 0.0)
-                .scaled_owned_admitted(ctx, scale(2.0)))
+                .scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
             curve(1.0, 0.0).scaled(scale(2.0))
         );
         for (x, deflection) in [(f64::MAX, f64::MAX), (1.0, f64::MAX)] {
             assert!(matches!(with_scaling_limits(u64::MAX, 0, u64::MAX,
-                |ctx| curve(x, deflection).scaled_owned_admitted(ctx, scale(2.0))),
+                |ctx| curve(x, deflection).scaled_owned(ctx, scale(2.0))),
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled refusal text"));
             assert_eq!(
                 with_scaling_limits(u64::MAX, u64::MAX, u64::MAX, |ctx| curve(x, deflection)
-                    .scaled_owned_admitted(ctx, scale(2.0)))
+                    .scaled_owned(ctx, scale(2.0)))
                 .expect("admitted refusal"),
                 curve(x, deflection).scaled(scale(2.0))
             );
@@ -498,22 +498,22 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
     };
     for cap in 1..4 {
         assert!(matches!(with_scaling_limits(cap, 0, u64::MAX,
-            |ctx| surface(1.0, 0.0).scaled_owned_admitted(ctx, scale(2.0))),
+            |ctx| surface(1.0, 0.0).scaled_owned(ctx, scale(2.0))),
             Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled unit scaling work"));
     }
     assert_eq!(
         with_scaling_limits(4, 0, u64::MAX, |ctx| surface(1.0, 0.0)
-            .scaled_owned_admitted(ctx, scale(2.0)))
+            .scaled_owned(ctx, scale(2.0)))
         .expect("admitted"),
         surface(1.0, 0.0).scaled(scale(2.0))
     );
     for (x, deflection) in [(f64::MAX, f64::MAX), (1.0, f64::MAX)] {
         assert!(matches!(with_scaling_limits(u64::MAX, 0, u64::MAX,
-            |ctx| surface(x, deflection).scaled_owned_admitted(ctx, scale(2.0))),
+            |ctx| surface(x, deflection).scaled_owned(ctx, scale(2.0))),
             Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled refusal text"));
         assert_eq!(
             with_scaling_limits(u64::MAX, u64::MAX, u64::MAX, |ctx| surface(x, deflection)
-                .scaled_owned_admitted(ctx, scale(2.0)))
+                .scaled_owned(ctx, scale(2.0)))
             .expect("admitted refusal"),
             surface(x, deflection).scaled(scale(2.0))
         );
@@ -528,14 +528,14 @@ fn owned_placement_scaling_refuses_nesting_and_geometry_work() {
         )
     };
     assert!(matches!(with_scaling_limits(u64::MAX, 0, 0,
-        |ctx| surface().scaled_owned_admitted(ctx, scale(2.0))),
+        |ctx| surface().scaled_owned(ctx, scale(2.0))),
         Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR geometry unit scaling nesting"));
     assert!(matches!(with_scaling_limits(0, 0, 1,
-        |ctx| surface().scaled_owned_admitted(ctx, scale(2.0))),
+        |ctx| surface().scaled_owned(ctx, scale(2.0))),
         Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR geometry unit scaling work"));
     assert_eq!(
         with_scaling_limits(2, 0, 1, |ctx| surface()
-            .scaled_owned_admitted(ctx, scale(2.0)))
+            .scaled_owned(ctx, scale(2.0)))
         .expect("admitted"),
         surface().scaled(scale(2.0))
     );

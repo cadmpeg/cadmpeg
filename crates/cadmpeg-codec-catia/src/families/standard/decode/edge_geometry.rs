@@ -1618,7 +1618,7 @@ pub(super) fn build_standard_edge_curve(
                         cache: None,
                     },
                 );
-                let _attached = ir.model.add_procedural_curve_charged(
+                let _attached = ir.model.add_procedural_curve_for_decode(
                     ctx,
                     &id.try_clone_for_decode(ctx, "catia_standard_edge_procedural_owner_id")?,
                     procedural,

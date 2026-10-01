@@ -536,15 +536,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            ctx.reserve_vec(
-                &mut ir.model.procedural_surfaces,
-                1,
-                "nx offset constructions",
-            )?;
-            let _attached = ir.model.add_procedural_surface(
-                &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
-                procedural,
-            );
+
+            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?, procedural)?;
 
             ctx.charge_collection_items(1, "nx surface node index")?;
             surfaces_by_xmt.insert(offset.xmt, surface_id);
@@ -585,14 +578,8 @@ pub(super) fn try_decode_geometry(
             annotations.note_for_decode(ctx, procedural_id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(blend.pos), Some("BLEND_SURF"))?;
             annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
             let procedural_index = ir.model.procedural_surfaces.len();
-            ctx.reserve_vec(
-                &mut ir.model.procedural_surfaces,
-                1,
-                "nx blend constructions",
-            )?;
-            let attached = ir.model.add_procedural_surface(
-                &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
-                ProceduralSurface::new(
+
+            let attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?, ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Blend(
                         cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -609,8 +596,7 @@ pub(super) fn try_decode_geometry(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                     None,
-                ),
-            );
+                ))?;
             if attached.is_ok() {
                 ctx.reserve_vec(&mut pending_blend_supports, 1, "nx pending blend supports")?;
                 pending_blend_supports.push((
@@ -743,7 +729,7 @@ pub(super) fn try_decode_geometry(
         }
         let intersection_support_uv = {
             let model_index =
-                cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(&ir, ctx)?;
+                cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(&ir, ctx)?;
             intersection_constructions
                 .iter()
                 .map(
@@ -1041,15 +1027,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            ctx.reserve_vec(
-                &mut ir.model.procedural_curves,
-                1,
-                "nx intersection constructions",
-            )?;
-            let _attached = ir.model.add_procedural_curve(
-                &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
-                procedural,
-            );
+
+            let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?, procedural)?;
 
             ctx.charge_collection_items(1, "nx curve node index")?;
             curves_by_xmt.insert(construction.xmt, curve_id);

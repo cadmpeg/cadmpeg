@@ -232,7 +232,7 @@ impl MergeSession<'_, '_> {
             };
             parent_ir
                 .model
-                .extend_rewritten(component_ir.model, &mut scope)?;
+                .extend_rewritten_for_decode(self.ctx, component_ir.model, &mut scope, "F3Z rewritten model arenas")?;
             reparent_component_roots(
                 self.ctx,
                 &mut parent_ir.model.occurrences[occurrence_start..],
@@ -247,7 +247,7 @@ impl MergeSession<'_, '_> {
                 component_ir.native,
                 &occurrence,
             )?;
-            parent_fidelity.append_charged(
+            parent_fidelity.append(
                 self.ctx,
                 rescope_fidelity(self.ctx, component_fidelity, &occurrence)?,
             )?;

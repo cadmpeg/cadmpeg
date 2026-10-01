@@ -248,10 +248,7 @@ fn pcurve_coordinate_scale_uses_no_collection_items() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let ctx = context_with_limit(&arena, &policy);
-    assert!(matches!(
-        geometry.try_scale_coordinates_for_decode([2.0, 3.0], &ctx, "step_pcurve_coordinate_scale"),
-        Ok(true)
-    ));
+    geometry = geometry.scaled_coordinates_owned(&ctx, [2.0, 3.0]).expect("work admitted").expect("finite coordinates");
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
         panic!("the pcurve form stays NURBS");
     };

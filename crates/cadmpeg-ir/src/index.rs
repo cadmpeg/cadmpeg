@@ -2,12 +2,11 @@
 //! Borrowed identity index over a complete CAD model.
 
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 
 use crate::appearance::Appearance;
 use crate::document::CadIr;
@@ -32,119 +31,79 @@ enum IdentityEntry {
 
 type IdentityIndex = HashMap<u64, IdentityEntry>;
 
-fn admitted_map<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<HashMap<K, V>, CodecError> {
-    let requested = u64_from_index(count);
-    ctx.charge_collection_items(requested, operation)?;
-    let mut values = HashMap::new();
-    values.try_reserve(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                requested,
-                requested,
-                operation,
-            ),
-        )
-    })?;
-    Ok(values)
+/// Allocation policy for infallible public indexes and fallible decode indexes.
+pub(crate) trait IndexStorage {
+    type Error;
+    fn map<K: Eq + Hash, V>(&self, count: usize, operation: &'static str) -> Result<HashMap<K, V>, Self::Error>;
+    fn temporary_map<K: Eq + Hash, V>(&self, count: usize, operation: &'static str) -> Result<TemporaryIndexMap<'_, K, V>, Self::Error>;
+    fn entry<K: Eq + Hash, V>(&self, values: &mut HashMap<K, V>, key: &K, operation: &'static str) -> Result<(), Self::Error>;
+    fn push<T>(&self, values: &mut Vec<T>, value: T, operation: &'static str) -> Result<(), Self::Error>;
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error>;
 }
 
-fn admitted_vec<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let requested = u64_from_index(count);
-    ctx.charge_collection_items(requested, operation)?;
-    let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                requested,
-                requested,
-                operation,
-            ),
-        )
-    })?;
-    Ok(values)
+pub(crate) struct TemporaryIndexMap<'a, K, V> {
+    values: HashMap<K, V>,
+    _reservation: Option<ScopedReservation<'a>>,
 }
 
-fn grow_admitted_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                1,
-                1,
-                operation,
-            ),
-        )
-    })
+impl<K, V> std::ops::Deref for TemporaryIndexMap<'_, K, V> {
+    type Target = HashMap<K, V>;
+    fn deref(&self) -> &Self::Target { &self.values }
 }
 
-fn build_admitted_identity_index<T: EntitySchema>(
-    entities: &[T],
-    ctx: &DecodeContext<'_>,
-) -> Result<IdentityIndex, CodecError> {
-    let mut index = admitted_map(ctx, entities.len(), "model identity index slots")?;
-    for (slot, entity) in entities.iter().enumerate() {
-        match index.entry(identity_hash(entity.identity())) {
-            Entry::Vacant(entry) => {
-                entry.insert(IdentityEntry::One(slot));
-            }
-            Entry::Occupied(entry) => {
-                let value = entry.into_mut();
-                match value {
-                    IdentityEntry::One(previous) => {
-                        let mut slots = admitted_vec(ctx, 2, "model identity collision slots")?;
-                        slots.extend([*previous, slot]);
-                        *value = IdentityEntry::Many(slots);
-                    }
-                    IdentityEntry::Many(slots) => {
-                        grow_admitted_vec(ctx, slots, "model identity collision slots")?;
-                        slots.push(slot);
-                    }
-                }
-            }
+impl<K, V> std::ops::DerefMut for TemporaryIndexMap<'_, K, V> {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.values }
+}
+
+pub(crate) struct PublicStorage;
+
+impl IndexStorage for PublicStorage {
+    type Error = std::convert::Infallible;
+    fn map<K: Eq + Hash, V>(&self, count: usize, _operation: &'static str) -> Result<HashMap<K, V>, Self::Error> { Ok(HashMap::with_capacity(count)) }
+    fn temporary_map<K: Eq + Hash, V>(&self, count: usize, operation: &'static str) -> Result<TemporaryIndexMap<'_, K, V>, Self::Error> { Ok(TemporaryIndexMap { values: public_result(self.map(count, operation)), _reservation: None }) }
+    fn entry<K: Eq + Hash, V>(&self, _values: &mut HashMap<K, V>, _key: &K, _operation: &'static str) -> Result<(), Self::Error> { Ok(()) }
+    fn push<T>(&self, values: &mut Vec<T>, value: T, _operation: &'static str) -> Result<(), Self::Error> { values.push(value); Ok(()) }
+    fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Self::Error> { Ok(()) }
+}
+
+pub(crate) struct DecodeStorage<'ctx, 'arena>(pub(crate) &'ctx DecodeContext<'arena>);
+
+impl IndexStorage for DecodeStorage<'_, '_> {
+    type Error = ResourceLimit;
+    fn map<K: Eq + Hash, V>(&self, count: usize, operation: &'static str) -> Result<HashMap<K, V>, Self::Error> {
+        self.0.charge_collection_items_limit(u64_from_index(count), operation)?;
+        let capacity = match count { 0 => 0, 1..=3 => 3, 4..=7 => 7, count => count.checked_mul(8).and_then(|value| value.checked_div(7)).and_then(usize::checked_next_power_of_two).and_then(|buckets| (buckets / 8).checked_mul(7)).ok_or_else(|| ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64::MAX, operation))? };
+        let bytes = capacity.checked_mul(std::mem::size_of::<(K, V)>()).ok_or_else(|| ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64::MAX, operation))?;
+        self.0.charge_retained_limit(u64_from_index(bytes), operation)?;
+        let mut values = HashMap::new();
+        values.try_reserve(count).map_err(|_| ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64_from_index(count), u64_from_index(count), operation))?;
+        Ok(values)
+    }
+    fn temporary_map<K: Eq + Hash, V>(&self, count: usize, operation: &'static str) -> Result<TemporaryIndexMap<'_, K, V>, Self::Error> {
+        let mut reservation = self.0.reserve_scoped_limit(0, operation)?;
+        let values = reservation.with_storage_limit(|| self.map(count, operation))?;
+        Ok(TemporaryIndexMap { values, _reservation: Some(reservation) })
+    }
+    fn entry<K: Eq + Hash, V>(&self, values: &mut HashMap<K, V>, key: &K, operation: &'static str) -> Result<(), Self::Error> {
+        if values.contains_key(key) { return Ok(()); }
+        if values.len() == values.capacity() {
+            let capacity = match values.capacity() { 0 => 3, 3 => 7, capacity => capacity.checked_mul(2).ok_or_else(|| ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64::MAX, operation))? };
+            let bytes = (capacity - values.capacity()).checked_mul(std::mem::size_of::<(K, V)>()).ok_or_else(|| ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64::MAX, operation))?;
+            self.0.charge_retained_limit(u64_from_index(bytes), operation)?;
         }
+        self.0.charge_collection_items_limit(1, operation)?;
+        values.try_reserve(1).map_err(|_| ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 1, 1, operation))
     }
-    Ok(index)
+    fn push<T>(&self, values: &mut Vec<T>, value: T, operation: &'static str) -> Result<(), Self::Error> {
+        self.0.reserve_retained_vec_limit(values, 1, operation)?;
+        values.push(value);
+        Ok(())
+    }
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error> { self.0.charge_work_limit(u64_from_index(count), operation) }
 }
 
-fn insert_admitted_identity(
-    identities: &mut HashSet<String>,
-    identity: &str,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    if identities.contains(identity) {
-        return Ok(());
-    }
-    let count = u64_from_index(identity.len());
-    ctx.charge_retained(count, "model identity universe text")?;
-    let mut copied = String::new();
-    copied.try_reserve_exact(identity.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("model identity universe text"),
-                count,
-                count,
-                "model identity universe text",
-            ),
-        )
-    })?;
-    copied.push_str(identity);
-    identities.insert(copied);
-    Ok(())
+pub(crate) fn public_result<T>(value: Result<T, std::convert::Infallible>) -> T {
+    match value { Ok(value) => value, Err(never) => match never {} }
 }
 
 pub(crate) fn identity_hash(identity: &str) -> u64 {
@@ -153,26 +112,27 @@ pub(crate) fn identity_hash(identity: &str) -> u64 {
     hasher.finish()
 }
 
-fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex {
-    let mut index = HashMap::with_capacity(entities.len());
+fn build_identity_index<T: EntitySchema, S: IndexStorage>(entities: &[T], storage: &S) -> Result<IdentityIndex, S::Error> {
+    let mut index = storage.map(entities.len(), "model identity index slots")?;
     for (slot, entity) in entities.iter().enumerate() {
+        storage.work(entity.identity().len(), "model identity hash")?;
         match index.entry(identity_hash(entity.identity())) {
-            Entry::Vacant(entry) => {
-                entry.insert(IdentityEntry::One(slot));
-            }
+            Entry::Vacant(entry) => { entry.insert(IdentityEntry::One(slot)); }
             Entry::Occupied(entry) => {
                 let value = entry.into_mut();
                 match value {
                     IdentityEntry::One(previous) => {
-                        let previous = *previous;
-                        *value = IdentityEntry::Many(vec![previous, slot]);
+                        let mut slots = Vec::new();
+                        storage.push(&mut slots, *previous, "model identity collision slots")?;
+                        storage.push(&mut slots, slot, "model identity collision slots")?;
+                        *value = IdentityEntry::Many(slots);
                     }
-                    IdentityEntry::Many(slots) => slots.push(slot),
+                    IdentityEntry::Many(slots) => storage.push(slots, slot, "model identity collision slots")?,
                 }
             }
         }
     }
-    index
+    Ok(index)
 }
 
 fn lookup_identity<'a, T: EntitySchema>(
@@ -181,7 +141,7 @@ fn lookup_identity<'a, T: EntitySchema>(
     identity: &str,
 ) -> Option<&'a T> {
     let entry = index
-        .get_or_init(|| build_identity_index(entities))
+        .get_or_init(|| public_result(build_identity_index(entities, &PublicStorage)))
         .get(&identity_hash(identity))?;
     match entry {
         IdentityEntry::One(slot) => entities
@@ -193,6 +153,17 @@ fn lookup_identity<'a, T: EntitySchema>(
                 .filter(|entity| entity.identity() == identity)
         }),
     }
+}
+
+/// Borrowed model lookups and the reservation for their temporary storage.
+pub struct DecodeModelIndex<'ctx, 'ir> {
+    index: ModelIndex<'ir>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'ir> std::ops::Deref for DecodeModelIndex<'_, 'ir> {
+    type Target = ModelIndex<'ir>;
+    fn deref(&self) -> &Self::Target { &self.index }
 }
 
 macro_rules! define_model_index {
@@ -226,113 +197,37 @@ macro_rules! define_model_index {
             ir: &'a CadIr,
             $($lookup: OnceLock<IdentityIndex>,)*
             procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
-            procedural_surface_for_carrier: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_curves_by_curve: HashMap<&'a str, Vec<&'a ProceduralCurve>>,
-            identities: OnceLock<HashSet<String>>,
+            identities: HashMap<&'a str, ()>,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
         }
 
         impl<'a> ModelIndex<'a> {
-            /// Build an index for a decoder, admitting every eager and lazy lookup allocation.
-            pub fn try_new_for_decode(
-                ir: &'a CadIr,
-                ctx: &DecodeContext<'_>,
-            ) -> Result<Self, CodecError> {
-                Self::try_with_context(ir, true, ctx)
+            /// Build all decode lookups under a live temporary reservation.
+            pub fn new_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+                Self::new_with_sources_for_decode(ir, true, ctx)
             }
 
-            /// Build model-only lookups for a decoder without native identities.
-            pub fn try_new_model_only_for_decode(
-                ir: &'a CadIr,
-                ctx: &DecodeContext<'_>,
-            ) -> Result<Self, CodecError> {
-                Self::try_with_context(ir, false, ctx)
+            /// Build model-only decode lookups under a live temporary reservation.
+            pub fn new_model_only_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+                Self::new_with_sources_for_decode(ir, false, ctx)
             }
 
-            fn try_with_context(
-                ir: &'a CadIr,
-                include_native: bool,
-                ctx: &DecodeContext<'_>,
-            ) -> Result<Self, CodecError> {
-                let mut procedural_surface_by_surface = admitted_map(
-                    ctx, ir.model.surfaces.len(), "model procedural surface carriers",
-                )?;
-                let mut procedural_curves_by_curve = admitted_map::<&str, Vec<&ProceduralCurve>>(
-                    ctx, ir.model.curves.len(), "model procedural curve carriers",
-                )?;
-                let mut procedural_surfaces_by_id = admitted_map(
-                    ctx, ir.model.procedural_surfaces.len(), "model procedural surface IDs",
-                )?;
-                for procedural in &ir.model.procedural_surfaces {
-                    procedural_surfaces_by_id.entry(procedural.id.as_str()).or_insert(procedural);
-                }
-                let mut procedural_curves_by_id = admitted_map(
-                    ctx, ir.model.procedural_curves.len(), "model procedural curve IDs",
-                )?;
-                for procedural in &ir.model.procedural_curves {
-                    procedural_curves_by_id.entry(procedural.id.as_str()).or_insert(procedural);
-                }
-                for carrier in &ir.model.surfaces {
-                    if let Some(procedural) = carrier.geometry.procedural_construction()
-                        .and_then(|construction| procedural_surfaces_by_id.get(construction.as_str()))
-                        .copied()
-                    {
-                        procedural_surface_by_surface.insert(carrier.id.as_str(), procedural);
-                    }
-                }
-                for carrier in &ir.model.curves {
-                    if let Some(procedural) = carrier.geometry.procedural_construction()
-                        .and_then(|construction| procedural_curves_by_id.get(construction.as_str()))
-                        .copied()
-                    {
-                        let group = procedural_curves_by_curve.entry(carrier.id.as_str()).or_default();
-                        grow_admitted_vec(ctx, group, "model procedural curve carrier members")?;
-                        group.push(procedural);
-                    }
-                }
-                let mut procedural_surface_for_carrier = admitted_map(
-                    ctx, procedural_surface_by_surface.len(), "model procedural surface lookup",
-                )?;
-                procedural_surface_for_carrier.extend(
-                    procedural_surface_by_surface.iter().map(|(surface, procedural)| (*surface, *procedural)),
-                );
-
-                let native_count = if include_native {
-                    ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten())
-                        .try_fold(0_usize, |count, _| count.checked_add(1).ok_or_else(|| refuse_local_limit("model identity universe slots", u64::MAX, 1)))?
-                } else {
-                    0
-                };
-                let identity_count = ir.model.entity_count().checked_add(native_count)
-                    .ok_or_else(|| refuse_local_limit("model identity universe slots", u64::MAX, 1))?;
-                let requested = u64_from_index(identity_count);
-                ctx.charge_collection_items(requested, "model identity universe slots")?;
-                let mut identities = HashSet::new();
-                identities.try_reserve(identity_count).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("model identity universe slots"), requested, requested, "model identity universe slots")))?;
-                $(for entity in &ir.model.$field {
-                    insert_admitted_identity(&mut identities, entity.identity(), ctx)?;
-                })*
-                if include_native {
-                    for record in ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten()) {
-                        insert_admitted_identity(&mut identities, record.id(), ctx)?;
-                    }
-                }
-                Ok(Self {
-                    ir,
-                    $($lookup: OnceLock::from(build_admitted_identity_index(&ir.model.$lookup, ctx)?),)*
-                    procedural_surface_by_surface,
-                    procedural_surface_for_carrier,
-                    procedural_curves_by_curve,
-                    identities: OnceLock::from(identities),
-                    include_native,
-                    additional_native_identities: Vec::new(),
-                })
+            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+                let mut reservation = ctx.reserve_scoped_limit(0, "model lookup storage")?;
+                let index = reservation.with_storage_limit(|| {
+                    let storage = DecodeStorage(ctx);
+                    let mut index = Self::with_identity_sources(ir, include_native, std::iter::empty(), &storage)?;
+                    $(index.$lookup = OnceLock::from(build_identity_index(&ir.model.$lookup, &storage)?);)*
+                    Ok::<_, ResourceLimit>(index)
+                })?;
+                Ok(DecodeModelIndex { index, _storage: reservation })
             }
 
-            /// Builds lazy typed lookups and lazily materializes the identity universe.
+            /// Builds lazy typed lookups and a borrowed identity universe.
             pub fn new(ir: &'a CadIr) -> Self {
-                Self::with_identity_sources(ir, true, std::iter::empty())
+                public_result(Self::with_identity_sources(ir, true, std::iter::empty(), &PublicStorage))
             }
 
             /// Builds typed model lookups without indexing the native namespaces.
@@ -342,7 +237,7 @@ macro_rules! define_model_index {
             /// adds work without changing any lookup result and is especially
             /// costly for codecs that retain a large native namespace.
             pub fn new_model_only(ir: &'a CadIr) -> Self {
-                Self::with_identity_sources(ir, false, std::iter::empty())
+                public_result(Self::with_identity_sources(ir, false, std::iter::empty(), &PublicStorage))
             }
 
             /// Builds the index with native identities staged outside the document.
@@ -350,35 +245,37 @@ macro_rules! define_model_index {
                 ir: &'a CadIr,
                 additional: impl IntoIterator<Item = &'a str>,
             ) -> Self {
-                Self::with_identity_sources(ir, true, additional)
+                public_result(Self::with_identity_sources(ir, true, additional, &PublicStorage))
             }
 
-            fn with_identity_sources(
+            fn with_identity_sources<S: IndexStorage>(
                 ir: &'a CadIr,
                 include_native: bool,
                 additional: impl IntoIterator<Item = &'a str>,
-            ) -> Self {
+                storage: &S,
+            ) -> Result<Self, S::Error> {
                 let mut procedural_surface_by_surface =
-                    HashMap::with_capacity(ir.model.procedural_surfaces.len());
+                    storage.map(ir.model.surfaces.len(), "model procedural surface carriers")?;
                 let mut procedural_curves_by_curve =
-                    HashMap::<&'a str, Vec<&'a ProceduralCurve>>::with_capacity(
-                        ir.model.procedural_curves.len(),
-                    );
+                    storage.map::<&'a str, Vec<&'a ProceduralCurve>>(ir.model.curves.len(), "model procedural curve carriers")?;
                 let mut procedural_surfaces_by_id =
-                    HashMap::with_capacity(ir.model.procedural_surfaces.len());
+                    storage.temporary_map(ir.model.procedural_surfaces.len(), "model procedural surface IDs")?;
                 for procedural in &ir.model.procedural_surfaces {
+                    storage.work(1, "model procedural surface scan")?;
                     procedural_surfaces_by_id
                         .entry(procedural.id.as_str())
                         .or_insert(procedural);
                 }
                 let mut procedural_curves_by_id =
-                    HashMap::with_capacity(ir.model.procedural_curves.len());
+                    storage.temporary_map(ir.model.procedural_curves.len(), "model procedural curve IDs")?;
                 for procedural in &ir.model.procedural_curves {
+                    storage.work(1, "model procedural curve scan")?;
                     procedural_curves_by_id
                         .entry(procedural.id.as_str())
                         .or_insert(procedural);
                 }
                 for carrier in &ir.model.surfaces {
+                    storage.work(1, "model surface carrier scan")?;
                     if let Some(procedural) = carrier
                         .geometry
                         .procedural_construction()
@@ -392,6 +289,7 @@ macro_rules! define_model_index {
                     }
                 }
                 for carrier in &ir.model.curves {
+                    storage.work(1, "model curve carrier scan")?;
                     if let Some(procedural) = carrier
                         .geometry
                         .procedural_construction()
@@ -400,56 +298,41 @@ macro_rules! define_model_index {
                         })
                         .copied()
                     {
-                        procedural_curves_by_curve
-                            .entry(carrier.id.as_str())
-                            .or_default()
-                            .push(procedural);
+                        storage.push(procedural_curves_by_curve.entry(carrier.id.as_str()).or_default(), procedural, "model procedural curve carrier members")?;
                     }
                 }
-                let mut procedural_surface_for_carrier =
-                    HashMap::with_capacity(ir.model.surfaces.len());
-                procedural_surface_for_carrier.extend(
-                    procedural_surface_by_surface
-                        .iter()
-                        .map(|(surface, procedural)| (*surface, *procedural)),
-                );
-                Self {
+                let mut additional_native_identities = Vec::new();
+                for identity in additional { storage.push(&mut additional_native_identities, identity, "model additional identities")?; }
+                let mut index = Self {
                     ir,
                     $($lookup: OnceLock::new(),)*
                     procedural_surface_by_surface,
-                    procedural_surface_for_carrier,
                     procedural_curves_by_curve,
-                    identities: OnceLock::new(),
+                    identities: HashMap::new(),
                     include_native,
-                    additional_native_identities: additional.into_iter().collect(),
-                }
+                    additional_native_identities,
+                };
+                index.identities = index.build_identity_set(storage)?;
+                Ok(index)
             }
 
-            fn identity_set(&self) -> &HashSet<String> {
-                self.identities.get_or_init(|| {
-                    self.borrowed_identity_set()
-                        .into_iter()
-                        .map(str::to_owned)
-                        .collect()
-                })
+            fn identity_set(&self) -> &HashMap<&'a str, ()> {
+                &self.identities
             }
 
-            fn borrowed_identity_set(&self) -> HashSet<&'a str> {
-                let mut identities = HashSet::with_capacity(self.ir.model.entity_count());
-                $(identities.extend(self.ir.model.$field.iter().map(EntitySchema::identity));)*
+            fn build_identity_set<S: IndexStorage>(&self, storage: &S) -> Result<HashMap<&'a str, ()>, S::Error> {
+                let native_count = if self.include_native { self.ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten()).count() } else { 0 };
+                let count = self.ir.model.entity_count() + native_count + self.additional_native_identities.len();
+                let mut identities = storage.map(count, "model identity universe slots")?;
+                $(for entity in &self.ir.model.$field { storage.work(entity.identity().len(), "model identity universe scan")?; identities.insert(entity.identity(), ()); })*
                 if self.include_native {
-                    identities.extend(
-                        self.ir
-                            .native
-                            .0
-                            .values()
-                            .flat_map(|namespace| {
-                                namespace.arenas().values().flatten().map(|record| record.id())
-                            }),
-                    );
-                    identities.extend(self.additional_native_identities.iter().copied());
+                    for record in self.ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten()) {
+                        storage.work(record.id().len(), "model native identity scan")?;
+                        identities.insert(record.id(), ());
+                    }
+                    for identity in &self.additional_native_identities { storage.work(identity.len(), "model additional identity scan")?; identities.insert(*identity, ()); }
                 }
-                identities
+                Ok(identities)
             }
 
             /// Returns the indexed document.
@@ -459,12 +342,12 @@ macro_rules! define_model_index {
 
             /// Returns whether any neutral or native entity owns `identity`.
             pub fn contains(&self, identity: &str) -> bool {
-                self.identity_set().contains(identity)
+                self.identity_set().contains_key(identity)
             }
 
             /// Iterates every neutral and native identity.
             pub fn identities(&self) -> impl Iterator<Item = &'a str> + '_ {
-                self.borrowed_identity_set().into_iter()
+                self.identity_set().keys().copied()
             }
 
             /// Looks up the procedural construction that owns a surface.
@@ -492,7 +375,7 @@ macro_rules! define_model_index {
                 &self,
                 surface: &str,
             ) -> Option<&'a ProceduralSurface> {
-                self.procedural_surface_for_carrier.get(surface).copied()
+                self.procedural_surface_by_surface.get(surface).copied()
             }
 
             $(
@@ -536,25 +419,25 @@ mod tests {
             (
                 u64::MAX,
                 0,
-                "model identity universe text",
-                ResourceDimension::RetainedBytes,
+                "model identity universe slots",
+                ResourceDimension::MaterializedBytes,
             ),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = collection_cap;
-            policy.limits.max_retained_bytes = retained_cap;
+            policy.limits.max_materialized_bytes = retained_cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = ModelIndex::try_new_model_only_for_decode(&ir, &ctx);
+            let result = ModelIndex::new_model_only_for_decode(&ir, &ctx);
             assert!(
-                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                matches!(result, Err(limit)
                 if limit.dimension == dimension && limit.operation == operation)
             );
         }
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let index = ModelIndex::try_new_model_only_for_decode(&ir, &ctx).unwrap();
+        let index = ModelIndex::new_model_only_for_decode(&ir, &ctx).unwrap();
         assert_eq!(
             index.points(point_id.as_str()).map(|point| &point.id),
             Some(&point_id)

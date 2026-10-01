@@ -2008,7 +2008,7 @@ impl PcurveNurbs {
     ///
     /// A non-finite result refuses with the poles scaled so far left in place,
     /// so the caller discards the curve on refusal.
-    pub(crate) fn scale_points_admitted(
+    pub(crate) fn scale_points(
         &mut self,
         ctx: &DecodeContext<'_>,
         scale: PositiveReal,
@@ -2376,73 +2376,27 @@ impl TryFrom<PlacedPcurveWire> for PlacedPcurve {
     }
 }
 
-impl PcurveGeometry {
-    /// Scale a decoded pcurve while propagating allocation refusal separately
-    /// from invalid scaled geometry.
-    pub fn try_scale_coordinates_for_decode(
-        &mut self,
-        scales: [f64; 2],
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        match self {
-            Self::Nurbs { nurbs } => Ok(nurbs
-                .try_map_control_points(|_, point| {
-                    let point = point.get();
-                    FinitePoint2::new(Point2::new(point.u * scales[0], point.v * scales[1]))
-                        .ok_or(())
-                })
-                .is_ok()),
-            Self::Trimmed(trimmed) => {
-                let mut basis = trimmed.basis.try_clone_for_decode(ctx, operation)?;
-                if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
-                    return Ok(false);
-                }
-                *trimmed.basis = basis;
-                Ok(true)
-            }
-            Self::Offset(offset) => {
-                if scales[0] != scales[1] {
-                    return Ok(false);
-                }
-                let Some(distance) = FiniteReal::new(offset.distance.get() * scales[0]) else {
-                    return Ok(false);
-                };
-                let mut basis = offset.basis.try_clone_for_decode(ctx, operation)?;
-                if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
-                    return Ok(false);
-                }
-                *offset.basis = basis;
-                offset.distance = distance;
-                Ok(true)
-            }
-            Self::Transformed(placed) => {
-                let Some(u_scale) = NonZeroReal::new(scales[0]) else {
-                    return Ok(false);
-                };
-                let Some(v_scale) = NonZeroReal::new(scales[1]) else {
-                    return Ok(false);
-                };
-                let mut rows = placed.transform.affine_rows();
-                rows[0][1] *= u_scale.get() / v_scale.get();
-                rows[0][2] *= u_scale.get();
-                rows[1][0] *= v_scale.get() / u_scale.get();
-                rows[1][2] *= v_scale.get();
-                let Some(transform) = Transform2::affine(rows) else {
-                    return Ok(false);
-                };
-                let mut basis = placed.basis.try_clone_for_decode(ctx, operation)?;
-                if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
-                    return Ok(false);
-                }
-                *placed.basis = basis;
-                placed.transform = transform;
-                Ok(true)
-            }
-            _ => Ok(self.try_scale_coordinates(scales).is_ok()),
+/// Refusal while staging or scaling chart coordinates.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PcurveCoordinateScaleError {
+    /// A changed coordinate failed the carrier invariant.
+    #[error("{0}")]
+    Invalid(String),
+    /// Storage or work exceeded the operation limit.
+    #[error("resource refusal: {0:?}")]
+    Resource(cadmpeg_core::decode::ResourceLimit),
+}
+impl From<CodecError> for PcurveCoordinateScaleError {
+    fn from(error: CodecError) -> Self {
+        match error {
+            CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            CodecError::Malformed(message) => Self::Invalid(message),
+            error => Self::Invalid(error.to_string()),
         }
     }
+}
 
+impl PcurveGeometry {
     /// Copy a decoded parameter curve through the caller's collection budget.
     pub fn try_clone_for_decode(
         &self,
@@ -2519,138 +2473,17 @@ impl PcurveGeometry {
     }
 
     /// Scale chart coordinates atomically without changing the curve parameterization.
-    pub fn try_scale_coordinates(&mut self, scales: [f64; 2]) -> Result<(), String> {
-        let [u_scale, v_scale] = scales;
-        let scale = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
-        let isotropic = u_scale == v_scale;
-        let scaled = match self {
-            Self::Line(line) => Self::Line(LinePcurve::try_new(
-                scale(*line.origin().as_raw()),
-                scale(*line.direction().as_raw()),
-            )?),
-            Self::Circle(circle) if isotropic => Self::Circle(circle.scaled_isotropic(u_scale)?),
-            Self::Circle(circle) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(circle.center().get()),
-                scale(Point2::new(
-                    circle.radius().get() * circle.x_axis().u,
-                    circle.radius().get() * circle.x_axis().v,
-                )),
-                scale(Point2::new(
-                    circle.radius().get() * circle.y_axis().u,
-                    circle.radius().get() * circle.y_axis().v,
-                )),
-            )?),
-            Self::Ellipse(ellipse) if isotropic => {
-                Self::Ellipse(ellipse.scaled_isotropic(u_scale)?)
-            }
-            Self::Ellipse(ellipse) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(ellipse.center().get()),
-                scale(Point2::new(
-                    ellipse.major_radius().get() * ellipse.x_axis().u,
-                    ellipse.major_radius().get() * ellipse.x_axis().v,
-                )),
-                scale(Point2::new(
-                    ellipse.minor_radius().get() * ellipse.y_axis().u,
-                    ellipse.minor_radius().get() * ellipse.y_axis().v,
-                )),
-            )?),
-            Self::Parabola(parabola) => Self::Parabola(ParabolaPcurve::try_new(
-                scale(parabola.vertex().get()),
-                scale(parabola.x_axis().get()),
-                scale(parabola.y_axis().get()),
-                parabola.focal_distance().get(),
-            )?),
-            Self::Hyperbola(hyperbola) if isotropic => {
-                Self::Hyperbola(hyperbola.scaled_isotropic(u_scale)?)
-            }
-            Self::Hyperbola(hyperbola) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(hyperbola.center().get()),
-                scale(Point2::new(
-                    hyperbola.major_radius().get() * hyperbola.x_axis().u,
-                    hyperbola.major_radius().get() * hyperbola.x_axis().v,
-                )),
-                scale(Point2::new(
-                    hyperbola.minor_radius().get() * hyperbola.y_axis().u,
-                    hyperbola.minor_radius().get() * hyperbola.y_axis().v,
-                )),
-            )?),
-            Self::Harmonic(harmonic) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(harmonic.center().get()),
-                scale(harmonic.cosine().get()),
-                scale(harmonic.sine().get()),
-            )?),
-            Self::Hyperbolic(hyperbolic) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(hyperbolic.center().get()),
-                scale(hyperbolic.cosine().get()),
-                scale(hyperbolic.sine().get()),
-            )?),
-            Self::Nurbs { nurbs } => {
-                return nurbs
-                    .try_map_control_points(|_, point| {
-                        FinitePoint2::new(scale(point.get())).ok_or_else(non_finite_control_point)
-                    })
-                    .map_err(|error| error.to_string());
-            }
-            Self::Trimmed(trimmed) => {
-                let mut basis = trimmed.basis.clone();
-                basis.try_scale_coordinates(scales)?;
-                // Scaling keeps every trimmed, offset and placed layer of the
-                // basis, so its nesting depth and the held parameter range
-                // stay admitted.
-                Self::Trimmed(TrimmedPcurve {
-                    parameter_range: trimmed.parameter_range,
-                    same_sense: trimmed.same_sense,
-                    basis,
-                    depth: trimmed.depth,
-                })
-            }
-            Self::Offset(offset) => {
-                if !isotropic {
-                    return Err("offset coordinate scaling must be isotropic".into());
-                }
-                let mut basis = offset.basis.clone();
-                basis.try_scale_coordinates(scales)?;
-                let distance = FiniteReal::new(offset.distance().get() * u_scale)
-                    .ok_or("OffsetPcurve.distance must be finite")?;
-                // Scaling keeps every layer of the basis, so its nesting
-                // depth stays admitted.
-                Self::Offset(OffsetPcurve {
-                    distance,
-                    basis,
-                    depth: offset.depth,
-                })
-            }
-            Self::Transformed(placed) => {
-                let u_scale = NonZeroReal::new(u_scale)
-                    .ok_or("transformed pcurve coordinate scales must be finite and nonzero")?;
-                let v_scale = NonZeroReal::new(v_scale)
-                    .ok_or("transformed pcurve coordinate scales must be finite and nonzero")?;
-                let mut rows = placed.transform.affine_rows();
-                rows[0][1] *= u_scale.get() / v_scale.get();
-                rows[0][2] *= u_scale.get();
-                rows[1][0] *= v_scale.get() / u_scale.get();
-                rows[1][2] *= v_scale.get();
-                let transform =
-                    Transform2::affine(rows).ok_or("scaled pcurve transform is invalid")?;
-                let mut basis = placed.basis.clone();
-                basis.try_scale_coordinates(scales)?;
-                // Scaling keeps every layer of the basis, so its nesting
-                // depth stays admitted.
-                Self::Transformed(PlacedPcurve {
-                    basis,
-                    transform,
-                    depth: placed.depth,
-                })
-            }
-            Self::PolarHarmonic(_) | Self::PolarNurbs { .. } | Self::SphericalGreatCircle(_) => {
-                return if isotropic && u_scale == 1.0 {
-                    Ok(())
-                } else {
-                    Err("polar pcurve coordinate scaling must be identity".into())
-                };
-            }
+    pub fn try_scale_coordinates(&mut self, scales: [f64; 2]) -> Result<(), PcurveCoordinateScaleError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(PcurveCoordinateScaleError::from)?;
+        let (candidate, storage) = ctx.with_scoped_storage("stage pcurve coordinate scale", || self.try_clone_for_decode(&ctx, "stage pcurve coordinate scale")).map_err(PcurveCoordinateScaleError::from)?;
+        let candidate = match candidate.scaled_coordinates_owned(&ctx, scales).map_err(PcurveCoordinateScaleError::from)? {
+            Ok(candidate) => candidate,
+            Err(message) => return Err(PcurveCoordinateScaleError::Invalid(ctx.copy_retained_text(message, "pcurve coordinate scale refusal").map_err(PcurveCoordinateScaleError::from)?)),
         };
-        *self = scaled;
+        storage.commit().map_err(PcurveCoordinateScaleError::from)?;
+        *self = candidate;
         Ok(())
     }
 

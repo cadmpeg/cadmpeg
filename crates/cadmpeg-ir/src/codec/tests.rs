@@ -305,8 +305,9 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
 fn a_decode_result_keeps_the_body_it_was_given() {
     let mut body = DecodeBody::new(crate::report::decode::DecodeTransfer::full(false));
     body.notes.push("kept".into());
-    body.coverage
-        .record(crate::report::decode::CoverageKey::new("entities"), 3);
+    crate::test_support::with_service_decode_context(|ctx| {
+        body.coverage.record(ctx, crate::report::decode::CoverageKey::new("entities"), 3)
+    }).expect("coverage entry");
     let result = DecodeResult::new(
         Decoded {
             ir: unit_cube().expect("valid unit cube fixture"),

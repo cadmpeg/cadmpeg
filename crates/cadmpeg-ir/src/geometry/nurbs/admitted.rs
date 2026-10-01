@@ -303,6 +303,16 @@ impl NurbsCurve {
     }
 }
 
+impl super::BsplineSurface {
+    pub(crate) fn scale_points(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<Result<(), NurbsError>, CodecError> {
+        scale_points(ctx, self.control_points.iter_mut().flatten(), scale)
+    }
+}
+
 impl NurbsSurface {
     /// Construct raw grids with caller admission before every outer and inner allocation.
     /// Resource refusal is separate from the geometry refusal, whose order is unchanged.
@@ -368,7 +378,7 @@ fn scale_points<'a>(
 }
 
 impl NurbsCurve {
-    pub(crate) fn scale_points_admitted(
+    pub(crate) fn scale_points(
         &mut self,
         ctx: &DecodeContext<'_>,
         scale: crate::scalar::PositiveReal,
@@ -383,7 +393,7 @@ impl NurbsCurve {
 }
 
 impl NurbsSurface {
-    pub(crate) fn scale_points_admitted(
+    pub(crate) fn scale_points(
         &mut self,
         ctx: &DecodeContext<'_>,
         scale: crate::scalar::PositiveReal,

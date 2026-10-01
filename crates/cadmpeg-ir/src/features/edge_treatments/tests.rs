@@ -175,7 +175,7 @@ fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
-            matches!(law().try_map_radii_owned_admitted(&ctx, Ok::<_, ()>),
+            matches!(law().try_map_radii_owned(&ctx, Ok::<_, ()>),
             Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR variable radii scaling work")
         );
     }
@@ -187,7 +187,7 @@ fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let multiplier = crate::scalar::PositiveReal::new(2.0).expect("scale");
     let actual = law()
-        .try_map_radii_owned_admitted(&ctx, |radius| radius.scaled(multiplier).ok_or("overflow"))
+        .try_map_radii_owned(&ctx, |radius| radius.scaled(multiplier).ok_or("overflow"))
         .expect("admitted");
     assert_eq!(
         actual,
@@ -198,7 +198,7 @@ fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
     assert_eq!(
         law()
-            .try_map_radii_owned_admitted(&ctx, |_| Ok::<_, ()>(
+            .try_map_radii_owned(&ctx, |_| Ok::<_, ()>(
                 crate::scalar::NonNegativeLength::ZERO
             ))
             .expect("admitted refusal"),

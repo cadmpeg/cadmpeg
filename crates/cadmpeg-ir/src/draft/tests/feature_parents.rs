@@ -10,7 +10,7 @@ use crate::features::{
     Feature, FeatureDefinition, FeatureOperation, FeatureTreeNodeRole, TreeChildren,
 };
 
-fn parent_draft() -> ModelDraft {
+pub(super) fn parent_draft() -> ModelDraft {
     let mut draft = ModelDraft::new();
     for (key, ordinal) in [("0-parent", 0), ("1-child", 1)] {
         draft
