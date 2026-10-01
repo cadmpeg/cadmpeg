@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::eval::admitted::curve_point;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
@@ -326,12 +326,13 @@ pub(super) fn transfer_closed_face_topology(
             } else {
                 match source_range {
                     Some(range) => match curve_orientation(
+                        admission.context(),
                         &curve_geometry,
                         range,
                         occurrence.raw_endpoints.map(FinitePoint3::get),
                     ) {
                         Ok(orientation) => orientation.map(|reversed| (range, reversed)),
-                        Err(limit) => return Some(Err(limit.into())),
+                        Err(error) => return Some(Err(error)),
                     },
                     None => None,
                 }
@@ -1402,16 +1403,17 @@ fn pcurve_parameter_range(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
 }
 
 fn curve_orientation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &cadmpeg_ir::geometry::CurveGeometry,
     parameter_range: [f64; 2],
     endpoints: [Point3; 2],
-) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<bool>, cadmpeg_core::CodecError> {
     let Some(start) =
-        cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[0]))?
+        cadmpeg_ir::eval::finite_or_refusal(curve_point(ctx, geometry, parameter_range[0])?)?
     else {
         return Ok(None);
     };
-    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[1]))?
+    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(curve_point(ctx, geometry, parameter_range[1])?)?
     else {
         return Ok(None);
     };
@@ -1924,5 +1926,26 @@ mod tests {
         ));
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
             .expect("resource allocation did not fail"));
+    }
+}
+
+#[cfg(test)]
+mod orientation_admission_tests {
+    #[test]
+    fn zero_entity_curve_orientation_propagates_caller_depth_refusal() {
+        use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+        use cadmpeg_ir::math::{Point3, Vector3};
+        let curve = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0).unit().expect("unit direction"))
+                .expect("line")));
+        crate::test_support::with_depth_limit(0, |ctx| {
+            let error = super::curve_orientation(ctx, &curve, [0.0, 1.0],
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)])
+                .expect_err("caller depth refuses curve evaluation");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
     }
 }
