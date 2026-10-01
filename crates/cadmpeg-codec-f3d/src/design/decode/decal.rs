@@ -94,7 +94,12 @@ pub(crate) fn project_decal_images(
             ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
             faces.push(copied);
         }
-        ctx.stable_sort_by(&mut faces[..], |a, b| a.as_str().cmp(b.as_str()), |_| 0, "sort f3d design decal 1")?;
+        ctx.stable_sort_by(
+            &mut faces[..],
+            |a, b| a.as_str().cmp(b.as_str()),
+            |_| 0,
+            "sort f3d design decal 1",
+        )?;
         faces.dedup();
         if faces.is_empty() {
             continue;
@@ -128,7 +133,12 @@ pub(crate) fn project_decal_images(
         ctx.reserve_vec(&mut assets, 1, "f3d Decal assets")?;
         assets.push(asset);
     }
-    ctx.stable_sort_by(&mut assets[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design decal 2")?;
+    ctx.stable_sort_by(
+        &mut assets[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design decal 2",
+    )?;
     assets.dedup_by(|a, b| a.id == b.id);
     Ok(assets)
 }

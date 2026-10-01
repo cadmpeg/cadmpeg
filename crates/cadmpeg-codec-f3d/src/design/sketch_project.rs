@@ -293,7 +293,12 @@ pub(crate) fn project_sketch_design(
             "f3d planar sketch",
         )?;
     }
-    ctx.stable_sort_by(&mut sketches[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design sketch_project 1")?;
+    ctx.stable_sort_by(
+        &mut sketches[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch_project 1",
+    )?;
 
     let mut entities = Vec::new();
     for point in points {
@@ -531,7 +536,12 @@ pub(crate) fn project_sketch_design(
             "f3d planar sketch text entity",
         )?;
     }
-    ctx.stable_sort_by(&mut entities[..], |a, b| a.id().cmp(b.id()), |_| 0, "sort f3d design sketch_project 2")?;
+    ctx.stable_sort_by(
+        &mut entities[..],
+        |a, b| a.id().cmp(b.id()),
+        |_| 0,
+        "sort f3d design sketch_project 2",
+    )?;
     for sketch in &mut sketches {
         let inferred = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(inferred) else {
@@ -977,7 +987,12 @@ pub(crate) fn project_spatial_sketch_design(
             "f3d spatial sketch surface entity",
         )?;
     }
-    ctx.stable_sort_by(&mut entities[..], |a, b| a.id().cmp(b.id()), |_| 0, "sort f3d design sketch_project 3")?;
+    ctx.stable_sort_by(
+        &mut entities[..],
+        |a, b| a.id().cmp(b.id()),
+        |_| 0,
+        "sort f3d design sketch_project 3",
+    )?;
     let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
     for entity in &entities {
         if !spatial_ids.contains(&entity.sketch) {
@@ -1016,7 +1031,12 @@ pub(crate) fn project_spatial_sketch_design(
             "f3d spatial sketch",
         )?;
     }
-    ctx.stable_sort_by(&mut sketches[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design sketch_project 4")?;
+    ctx.stable_sort_by(
+        &mut sketches[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch_project 4",
+    )?;
     Ok((sketches, entities))
 }
 
@@ -1341,7 +1361,12 @@ pub(crate) fn project_spatial_sketch_constraints(
             "f3d spatial constraint output",
         )?;
     }
-    ctx.stable_sort_by(&mut constraints[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design sketch_project 5")?;
+    ctx.stable_sort_by(
+        &mut constraints[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch_project 5",
+    )?;
     Ok(constraints)
 }
 

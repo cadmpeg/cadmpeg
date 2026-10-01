@@ -1783,7 +1783,12 @@ fn merged_event_spans(
                 .map(|state| (state.offset, state.end)),
         );
     }
-    ctx.sort_unstable_by(&mut covered, Ord::cmp, |_| 0, "sort NX deltas covered spans")?;
+    ctx.sort_unstable_by(
+        &mut covered,
+        Ord::cmp,
+        |_| 0,
+        "sort NX deltas covered spans",
+    )?;
     let mut merged = Vec::<(usize, usize)>::new();
     for (start, end) in covered {
         if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {

@@ -306,7 +306,12 @@ fn bind_snapshot_revision_ids(
         ctx.reserve_vec(&mut old_references, 1, "collect F3D ASM old references")?;
         old_references.push(old_reference);
     }
-    ctx.sort_unstable_by(&mut old_references, Ord::cmp, |_| 0, "sort F3D ASM old references")?;
+    ctx.sort_unstable_by(
+        &mut old_references,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D ASM old references",
+    )?;
     let Some(&first) = old_references.first() else {
         return Ok(());
     };
@@ -357,7 +362,12 @@ fn archived_active_record_count(
         ctx.reserve_vec(&mut archived, 1, "collect F3D archived revisions")?;
         archived.push(revision_id);
     }
-    ctx.sort_unstable_by(&mut archived, Ord::cmp, |_| 0, "sort F3D archived revisions")?;
+    ctx.sort_unstable_by(
+        &mut archived,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D archived revisions",
+    )?;
     let Some(&active_count) = archived.first() else {
         return Ok(None);
     };
@@ -428,7 +438,12 @@ fn bind_historical_entity_versions(
         ctx.reserve_vec(&mut archived_ids, 1, "index F3D archived revision IDs")?;
         archived_ids.push(revision_id);
     }
-    ctx.sort_unstable_by(&mut archived_ids, Ord::cmp, |_| 0, "sort F3D archived revision IDs")?;
+    ctx.sort_unstable_by(
+        &mut archived_ids,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D archived revision IDs",
+    )?;
     let active_count = match archived_active_record_count(ctx, states)? {
         Some(count) => Some(count),
         None => insert_only_active_record_count(ctx, states)?,
@@ -3308,10 +3323,7 @@ fn bind_surface_stitch_face_selection(
     )?;
     ctx.stable_sort_by(
         &mut matching_groups,
-        |a, b| {
-            a.scope_reference_ordinal
-                .cmp(&b.scope_reference_ordinal)
-        },
+        |a, b| a.scope_reference_ordinal.cmp(&b.scope_reference_ordinal),
         |_| 0,
         "sort F3D Stitch face groups",
     )?;
@@ -4046,7 +4058,12 @@ fn vertex_recipe_candidate(
                 .filter(|face| topology.faces.contains(face)),
             "collect F3D vertex recipe candidate faces",
         )?;
-        ctx.sort_unstable_by(&mut slots, Ord::cmp, |_| 0, "sort F3D vertex recipe candidate faces")?;
+        ctx.sort_unstable_by(
+            &mut slots,
+            Ord::cmp,
+            |_| 0,
+            "sort F3D vertex recipe candidate faces",
+        )?;
         slots.dedup();
         let [slot] = slots.as_slice() else {
             return Ok(None);
@@ -5952,7 +5969,12 @@ fn resolve_bounded_face_recipe_target(
             matches.push(candidate);
         }
     }
-    decode.sort_unstable_by(&mut matches, Ord::cmp, |_| 0, "sort F3D bounded face matches")?;
+    decode.sort_unstable_by(
+        &mut matches,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D bounded face matches",
+    )?;
     matches.dedup();
     let [face] = matches.as_slice() else {
         return Ok(None);
@@ -6336,7 +6358,12 @@ fn complete_body_face_slots(
         }
     }
     let mut faces = decode.collect_vec(seen_faces, "collect F3D complete body face slots")?;
-    decode.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort F3D complete body face slots")?;
+    decode.sort_unstable_by(
+        &mut faces,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D complete body face slots",
+    )?;
     Ok((!faces.is_empty()).then_some(faces))
 }
 
@@ -6599,7 +6626,12 @@ fn bind_profile_face_group_cardinality(
                             transition.topology.faces.deleted.iter().copied(),
                             "copy F3D profile deleted faces",
                         )?;
-                        decode.sort_unstable_by(&mut deleted, Ord::cmp, |_| 0, "sort F3D profile deleted faces")?;
+                        decode.sort_unstable_by(
+                            &mut deleted,
+                            Ord::cmp,
+                            |_| 0,
+                            "sort F3D profile deleted faces",
+                        )?;
                         deleted.dedup();
                         (deleted.len() == group.members().len()
                             && deleted.len() == transition.topology.faces.deleted.len()
@@ -6690,7 +6722,12 @@ fn profile_face_group_cardinality_candidates(
     if candidates.next().is_some() {
         return Ok(None);
     }
-    decode.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort F3D profile carrier faces")?;
+    decode.sort_unstable_by(
+        &mut faces,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D profile carrier faces",
+    )?;
     faces.dedup();
     Ok((faces.len() == member_count).then_some(faces))
 }
@@ -6847,7 +6884,12 @@ fn historical_face_support_contexts(
                 .map(|binding| binding.entity),
             "collect F3D historical support face slots",
         )?;
-        decode.sort_unstable_by(&mut preceding_face_slots, Ord::cmp, |_| 0, "sort F3D historical support face slots")?;
+        decode.sort_unstable_by(
+            &mut preceding_face_slots,
+            Ord::cmp,
+            |_| 0,
+            "sort F3D historical support face slots",
+        )?;
         preceding_face_slots.dedup();
         if preceding_face_slots.is_empty() {
             continue;
@@ -7235,7 +7277,12 @@ fn edge_recipe_reference_context(
             .filter(|edge| changed_edges.contains(edge)),
         "collect F3D changed reference edges",
     )?;
-    decode.sort_unstable_by(&mut changed_reference_edge_slots, Ord::cmp, |_| 0, "sort F3D changed reference edges")?;
+    decode.sort_unstable_by(
+        &mut changed_reference_edge_slots,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D changed reference edges",
+    )?;
     changed_reference_edge_slots.dedup();
     Ok(
         crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
@@ -7281,7 +7328,12 @@ fn side_one_recipe_edge(
         decode.reserve_vec(&mut ordinals, 1, "collect F3D recipe side ordinals")?;
         ordinals.push(ordinal);
     }
-    decode.sort_unstable_by(&mut ordinals, Ord::cmp, |_| 0, "sort F3D recipe side ordinals")?;
+    decode.sort_unstable_by(
+        &mut ordinals,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D recipe side ordinals",
+    )?;
     ordinals.dedup();
     let mut edge_sets = Vec::new();
     for ordinal in ordinals {
@@ -7306,7 +7358,12 @@ fn side_one_recipe_edge(
         candidates.retain(|candidate| edges.contains(candidate));
     }
     candidates.retain(|candidate| candidate_edges.contains(candidate));
-    decode.sort_unstable_by(&mut candidates, Ord::cmp, |_| 0, "sort F3D recipe side edges")?;
+    decode.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D recipe side edges",
+    )?;
     candidates.dedup();
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
@@ -7848,7 +7905,12 @@ fn surface_patch_edge_operand_slot(
             .filter(|edge| face_boundary_edges.contains(edge)),
         "collect F3D surface patch edge candidates",
     )?;
-    decode.sort_unstable_by(&mut candidates, Ord::cmp, |_| 0, "sort F3D surface patch edge candidates")?;
+    decode.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D surface patch edge candidates",
+    )?;
     candidates.dedup();
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
@@ -8129,7 +8191,12 @@ fn treatment_edge_candidates(
     )?;
     radii_out
         .dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
-    decode.sort_unstable_by(&mut transitions_out, Ord::cmp, |_| 0, "sort F3D treatment edge transitions")?;
+    decode.sort_unstable_by(
+        &mut transitions_out,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D treatment edge transitions",
+    )?;
     transitions_out.dedup();
     Ok((radii_out, transitions_out))
 }
@@ -8193,7 +8260,12 @@ fn treatment_face_supports(
                 .filter_map(|carrier| preceding_carrier_faces.get(&carrier).copied().flatten()),
             "collect F3D treatment support faces",
         )?;
-        decode.sort_unstable_by(&mut supports, Ord::cmp, |_| 0, "sort F3D treatment support faces")?;
+        decode.sort_unstable_by(
+            &mut supports,
+            Ord::cmp,
+            |_| 0,
+            "sort F3D treatment support faces",
+        )?;
         supports.dedup();
 
         decode.reserve_vec(&mut selected, 1, "collect F3D treatment face supports")?;
