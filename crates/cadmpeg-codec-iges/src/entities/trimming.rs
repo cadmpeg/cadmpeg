@@ -176,15 +176,14 @@ fn cluster_boundary_positions(
         0
     } else {
         count.checked_mul(count - 1).ok_or_else(|| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "iges boundary clustering comparisons",
-                u64::MAX,
-                1,
-            )
+            ctx.refuse_codec_limit("iges boundary clustering comparisons", u64::MAX, u64::MAX)
         })? / 2
     };
     ctx.charge_work(pair_count, "iges boundary clustering comparisons")?;
     let mut parents = ctx.collection_vec(positions.len(), "iges boundary cluster parents")?;
+    let initialization_work = count.checked_mul(2).ok_or_else(||
+        ctx.refuse_codec_limit("iges boundary cluster initialization", u64::MAX, u64::MAX))?;
+    ctx.charge_work(initialization_work, "iges boundary cluster initialization")?;
     parents.extend(0..positions.len());
     let mut sizes = ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes")?;
     for (left_index, left) in positions.iter().enumerate() {
@@ -223,6 +222,9 @@ fn cluster_boundary_positions(
         }) {
             return Err(BoundaryVertexClusterError::NonTransitive.into());
         }
+        let representative_comparisons = members.len().checked_sub(1)
+            .ok_or(BoundaryVertexClusterError::NonTransitive)?;
+        ctx.charge_work(u64_from_index(representative_comparisons), "iges boundary cluster representative comparisons")?;
         let representative = members
             .iter()
             .copied()

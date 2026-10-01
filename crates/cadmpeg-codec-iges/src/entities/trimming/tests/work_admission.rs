@@ -66,3 +66,39 @@ fn trim_containment_proof_refuses_work() {
             "iges planar point containment comparisons");
     });
 }
+
+#[test]
+fn implicit_outer_ring_relationship_propagates_pair_work_refusal() {
+    let rings = crate::test_support::with_service_context(&[], |ctx| {
+        vec![SimpleRing::new(square(), ctx).unwrap().unwrap(),
+            SimpleRing::new(square().into_iter().map(|[x,y]| [x+5.0,y]).collect(), ctx).unwrap().unwrap()]
+    });
+    let plane = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0,0.0,0.0),
+                cadmpeg_ir::math::Vector3::new(0.0,0.0,1.0),
+                cadmpeg_ir::math::Vector3::new(1.0,0.0,0.0)).unwrap()));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        assert_work_refusal(super::super::linear_boundary_relationship_is_valid(
+            Ok(&rings), BoundarySurfaceKind::Trimmed, false, &plane, None, [false,false], ctx),
+            "iges planar ring intersection comparisons");
+    });
+}
+
+#[test]
+fn boundary_clustering_propagates_root_work_refusal() {
+    let points = [cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0,0.0,0.0)).unwrap()];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        let result = super::super::cluster_boundary_positions(&points,
+            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),ctx);
+        assert!(matches!(result,
+            Err(super::super::BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(limit)))
+                if limit.operation == "iges boundary cluster root traversal"
+                    && ctx.resource_refusal() == Some(limit)));
+    });
+}
