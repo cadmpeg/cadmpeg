@@ -198,7 +198,7 @@ fn malformed(ctx: &DecodeContext<'_>, name: &str, message: impl std::fmt::Displa
         format_args!("T-spline cage {name}: {message}"),
         "describe malformed T-spline cage",
     ) {
-        Ok(text) => crate::error::malformed(text),
+        Ok(text) => CodecError::Malformed(text),
         Err(refusal) => refusal,
     }
 }

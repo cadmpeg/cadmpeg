@@ -630,7 +630,7 @@ fn snapshot_body_map_records(
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
         {
-            return Err(crate::error::malformed(
+            return Err(CodecError::malformed(
                 "F3D Design snapshot body-map carrier has incompatible registration metadata",
             ));
         }
@@ -639,7 +639,7 @@ fn snapshot_body_map_records(
             .and_then(|ordinal| ordinal.checked_add(256))
             .filter(|tag| *tag <= 999)
             .ok_or_else(|| {
-                crate::error::malformed(
+                CodecError::malformed(
                     "F3D Design snapshot body-map class tag is not three digits",
                 )
             })?
@@ -713,7 +713,7 @@ fn parse_snapshot_body_map_frame(
             continue;
         };
         let count = usize::try_from(pair_count)
-            .map_err(|_| crate::error::malformed("F3D snapshot body-map count exceeds usize"))?;
+            .map_err(|_| CodecError::malformed("F3D snapshot body-map count exceeds usize"))?;
         let Some(pairs_start) = count_at.checked_add(4) else {
             continue;
         };
@@ -1053,7 +1053,7 @@ pub(crate) fn design_model_blob_names(
         return Ok(names);
     }
     if carrier_counts != archive_counts {
-        return Err(crate::error::malformed(
+        return Err(CodecError::malformed(
             "Design body-map carriers do not classify every binary BREP entry exactly once",
         ));
     }
@@ -1144,7 +1144,7 @@ fn parse_body_map_frame(
         }
         if let Some(name) = decode_name(reference.end)? {
             if typed_name.replace(name).is_some() {
-                return Err(crate::error::malformed(
+                return Err(CodecError::malformed(
                     "F3D Design body-map frame has ambiguous typed reference tails",
                 ));
             }

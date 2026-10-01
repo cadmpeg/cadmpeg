@@ -20,7 +20,6 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::UnitVector3;
 
-use crate::error::malformed;
 use crate::records::mesh::DesignMeshUuid;
 use cadmpeg_core::decode::index_from_u32;
 
@@ -378,17 +377,17 @@ fn take_varint(message: &[u8], at: &mut usize) -> Result<u64, CodecError> {
     for ordinal in 0..10u32 {
         let byte = *message
             .get(*at)
-            .ok_or_else(|| malformed("paramesh protobuf varint is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh protobuf varint is truncated"))?;
         *at += 1;
         if ordinal == 9 && byte > 1 {
-            return Err(malformed("paramesh protobuf varint exceeds u64"));
+            return Err(CodecError::malformed("paramesh protobuf varint exceeds u64"));
         }
         value |= u64::from(byte & 0x7f) << (ordinal * 7);
         if byte < 0x80 {
             return Ok(value);
         }
     }
-    Err(malformed("paramesh protobuf varint exceeds ten bytes"))
+    Err(CodecError::malformed("paramesh protobuf varint exceeds ten bytes"))
 }
 
 /// One protobuf field value; fixed32 and fixed64 wire values are skipped.
@@ -408,7 +407,7 @@ fn protobuf_fields<'a>(
     while at < message.len() {
         let key = take_varint(message, &mut at)?;
         if key >> 3 == 0 {
-            return Err(malformed("paramesh protobuf field number is zero"));
+            return Err(CodecError::malformed("paramesh protobuf field number is zero"));
         }
         match key & 0x07 {
             0 => {
@@ -423,7 +422,7 @@ fn protobuf_fields<'a>(
                 at = at
                     .checked_add(8)
                     .filter(|end| *end <= message.len())
-                    .ok_or_else(|| malformed("paramesh protobuf fixed64 field is truncated"))?;
+                    .ok_or_else(|| CodecError::malformed("paramesh protobuf fixed64 field is truncated"))?;
                 ctx.push_vec(
                     &mut fields,
                     (key >> 3, ProtobufValue::Skipped),
@@ -432,11 +431,11 @@ fn protobuf_fields<'a>(
             }
             2 => {
                 let count = usize::try_from(take_varint(message, &mut at)?)
-                    .map_err(|_| malformed("paramesh protobuf byte count is out of range"))?;
+                    .map_err(|_| CodecError::malformed("paramesh protobuf byte count is out of range"))?;
                 let bytes = at
                     .checked_add(count)
                     .and_then(|end| message.get(at..end))
-                    .ok_or_else(|| malformed("paramesh protobuf byte field is truncated"))?;
+                    .ok_or_else(|| CodecError::malformed("paramesh protobuf byte field is truncated"))?;
                 at += count;
                 ctx.push_vec(
                     &mut fields,
@@ -448,7 +447,7 @@ fn protobuf_fields<'a>(
                 at = at
                     .checked_add(4)
                     .filter(|end| *end <= message.len())
-                    .ok_or_else(|| malformed("paramesh protobuf fixed32 field is truncated"))?;
+                    .ok_or_else(|| CodecError::malformed("paramesh protobuf fixed32 field is truncated"))?;
                 ctx.push_vec(
                     &mut fields,
                     (key >> 3, ProtobufValue::Skipped),
@@ -456,7 +455,7 @@ fn protobuf_fields<'a>(
                 )?;
             }
             _ => {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh protobuf message uses an unsupported group wire type",
                 ));
             }
@@ -493,14 +492,14 @@ impl UniqueFaceGroups {
             ctx.charge_work(2, "hash paramesh group key")?;
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(guid.len()).checked_mul(3).and_then(|count| count.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit("hash paramesh group GUID", 0, u64::MAX))?, "hash paramesh group GUID")?;
             if !crate::bytes::is_guid_hyphenated(guid) {
-                return Err(malformed("paramesh face-group identity is not a GUID"));
+                return Err(CodecError::malformed("paramesh face-group identity is not a GUID"));
             }
             let mut canonical = [0; 36];
             for (target, source) in canonical.iter_mut().zip(guid.bytes()) {
                 *target = source.to_ascii_lowercase();
             }
             if !keys.insert(*key) || !guids.insert(canonical) {
-                return Err(malformed("paramesh channel repeats a face-group key or GUID"));
+                return Err(CodecError::malformed("paramesh channel repeats a face-group key or GUID"));
             }
         }
         Ok(Self(groups))
@@ -529,15 +528,15 @@ impl UniqueStreamNames {
         let (mut ids, _id_storage) = ctx.temporary_set(entries.len(), "index paramesh stream IDs")?;
         for (name, id) in &entries {
             if name.is_empty() {
-                return Err(malformed("paramesh name table has an empty stream name"));
+                return Err(CodecError::malformed("paramesh name table has an empty stream name"));
             }
             ctx.charge_work(2, "hash paramesh stream ID")?;
             if !ids.insert(*id) {
-                return Err(malformed("paramesh name table repeats a stream name or id"));
+                return Err(CodecError::malformed("paramesh name table repeats a stream name or id"));
             }
         }
         if names.len() != entries.len() {
-            return Err(malformed("paramesh name table repeats a stream name or id"));
+            return Err(CodecError::malformed("paramesh name table repeats a stream name or id"));
         }
         drop(names);
         Ok(Self { entries })
@@ -574,18 +573,18 @@ struct MeshRegistry {
 
 fn guid(ctx: &DecodeContext<'_>, bytes: &[u8], context: &str) -> Result<String, CodecError> {
     let value = std::str::from_utf8(bytes)
-        .map_err(|_| malformed(format!("paramesh {context} is not ASCII")))?;
+        .map_err(|_| CodecError::malformed(format_args!("paramesh {context} is not ASCII")))?;
     if !crate::bytes::is_guid_hyphenated(value) {
-        return Err(malformed(format!("paramesh {context} is not a GUID")));
+        return Err(CodecError::malformed(format_args!("paramesh {context} is not a GUID")));
     }
     ctx.copy_retained_text(value, "retain paramesh GUID")
 }
 
 fn utf8(ctx: &DecodeContext<'_>, bytes: &[u8], context: &str) -> Result<String, CodecError> {
     let value = std::str::from_utf8(bytes)
-        .map_err(|_| malformed(format!("paramesh {context} is not UTF-8")))?;
+        .map_err(|_| CodecError::malformed(format_args!("paramesh {context} is not UTF-8")))?;
     if value.is_empty() {
-        return Err(malformed(format!("paramesh {context} is empty")));
+        return Err(CodecError::malformed(format_args!("paramesh {context} is empty")));
     }
     ctx.copy_retained_text(value, "retain paramesh UTF-8 text")
 }
@@ -602,35 +601,35 @@ fn channel_streams<'a>(
         match (field, value) {
             (STREAM_ELEMENT_CODE, ProtobufValue::Varint(code)) => {
                 if element_code.replace(code).is_some() {
-                    return Err(malformed("paramesh channel repeats its element code"));
+                    return Err(CodecError::malformed("paramesh channel repeats its element code"));
                 }
             }
             (STREAM_VALUES, ProtobufValue::Bytes(name)) => {
                 let name = std::str::from_utf8(name)
-                    .map_err(|_| malformed("paramesh channel value-stream name is not UTF-8"))?;
+                    .map_err(|_| CodecError::malformed("paramesh channel value-stream name is not UTF-8"))?;
                 if values.replace(name).is_some() {
-                    return Err(malformed("paramesh channel repeats its value-stream name"));
+                    return Err(CodecError::malformed("paramesh channel repeats its value-stream name"));
                 }
             }
             (STREAM_INDEX, ProtobufValue::Bytes(name)) => {
                 let name = std::str::from_utf8(name)
-                    .map_err(|_| malformed("paramesh channel index-stream name is not UTF-8"))?;
+                    .map_err(|_| CodecError::malformed("paramesh channel index-stream name is not UTF-8"))?;
                 if index.replace(name).is_some() {
-                    return Err(malformed("paramesh channel repeats its index-stream name"));
+                    return Err(CodecError::malformed("paramesh channel repeats its index-stream name"));
                 }
             }
             (STREAM_ELEMENT_CODE | STREAM_VALUES | STREAM_INDEX, _) => {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh channel stream field has the wrong wire type",
                 ));
             }
-            _ => return Err(malformed("paramesh channel stream has an undefined field")),
+            _ => return Err(CodecError::malformed("paramesh channel stream has an undefined field")),
         }
     }
     Ok(ChannelStreams {
         element_code: element_code
-            .ok_or_else(|| malformed("paramesh channel has no element code"))?,
-        values: values.ok_or_else(|| malformed("paramesh channel has no value-stream name"))?,
+            .ok_or_else(|| CodecError::malformed("paramesh channel has no element code"))?,
+        values: values.ok_or_else(|| CodecError::malformed("paramesh channel has no value-stream name"))?,
         index,
     })
 }
@@ -643,32 +642,32 @@ fn channel_group(ctx: &DecodeContext<'_>, entry: &[u8]) -> Result<(u32, String),
         match (field, value) {
             (GROUP_KEY, ProtobufValue::Varint(value)) => {
                 let value = u32::try_from(value)
-                    .map_err(|_| malformed("paramesh face-group key is out of range"))?;
+                    .map_err(|_| CodecError::malformed("paramesh face-group key is out of range"))?;
                 if key.replace(value).is_some() {
-                    return Err(malformed("paramesh face-group entry repeats its key"));
+                    return Err(CodecError::malformed("paramesh face-group entry repeats its key"));
                 }
             }
             (GROUP_GUID, ProtobufValue::Bytes(value)) => {
                 let value = guid(ctx, value, "face-group identity")?;
                 if group_guid.replace(value).is_some() {
-                    return Err(malformed("paramesh face-group entry repeats its GUID"));
+                    return Err(CodecError::malformed("paramesh face-group entry repeats its GUID"));
                 }
             }
             (GROUP_KEY | GROUP_GUID, _) => {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh face-group field has the wrong wire type",
                 ));
             }
             _ => {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh face-group entry has an undefined field",
                 ))
             }
         }
     }
     Ok((
-        key.ok_or_else(|| malformed("paramesh face-group entry has no key"))?,
-        group_guid.ok_or_else(|| malformed("paramesh face-group entry has no GUID"))?,
+        key.ok_or_else(|| CodecError::malformed("paramesh face-group entry has no key"))?,
+        group_guid.ok_or_else(|| CodecError::malformed("paramesh face-group entry has no GUID"))?,
     ))
 }
 
@@ -687,21 +686,21 @@ fn registry_channel<'a>(
         match (field, value) {
             (CHANNEL_ROLE, ProtobufValue::Varint(value)) => {
                 if has_role {
-                    return Err(malformed("paramesh channel repeats its role"));
+                    return Err(CodecError::malformed("paramesh channel repeats its role"));
                 }
                 has_role = true;
                 role = u32::try_from(value)
-                    .map_err(|_| malformed("paramesh channel role is out of range"))?;
+                    .map_err(|_| CodecError::malformed("paramesh channel role is out of range"))?;
             }
             (CHANNEL_RESOURCE, ProtobufValue::Bytes(value)) => {
                 let value = guid(ctx, value, "channel resource identity")?;
                 if resource_guid.replace(value).is_some() {
-                    return Err(malformed("paramesh channel repeats its resource GUID"));
+                    return Err(CodecError::malformed("paramesh channel repeats its resource GUID"));
                 }
             }
             (CHANNEL_STREAMS, ProtobufValue::Bytes(nested)) => {
                 if streams.replace(channel_streams(ctx, nested)?).is_some() {
-                    return Err(malformed("paramesh channel repeats its stream entry"));
+                    return Err(CodecError::malformed("paramesh channel repeats its stream entry"));
                 }
             }
             (CHANNEL_GROUP, ProtobufValue::Bytes(nested)) => {
@@ -709,12 +708,12 @@ fn registry_channel<'a>(
                 ctx.push_vec(&mut groups, group, "collect paramesh channel groups")?;
             }
             (CHANNEL_ROLE | CHANNEL_RESOURCE | CHANNEL_STREAMS | CHANNEL_GROUP, _) => {
-                return Err(malformed("paramesh channel field has the wrong wire type"));
+                return Err(CodecError::malformed("paramesh channel field has the wrong wire type"));
             }
-            _ => return Err(malformed("paramesh channel has an undefined field")),
+            _ => return Err(CodecError::malformed("paramesh channel has an undefined field")),
         }
     }
-    let streams = streams.ok_or_else(|| malformed("paramesh channel has no stream entry"))?;
+    let streams = streams.ok_or_else(|| CodecError::malformed("paramesh channel has no stream entry"))?;
     // A vertex-domain channel that carries an index stream addresses triangle
     // corners; without one it stores exactly one value per vertex.
     let domain = match (domain, streams.index) {
@@ -741,30 +740,30 @@ fn registry_property(
             (PROPERTY_KEY, ProtobufValue::Bytes(bytes)) => {
                 let bytes = utf8(ctx, bytes, "property key")?;
                 if key.replace(bytes).is_some() {
-                    return Err(malformed("paramesh property repeats its key"));
+                    return Err(CodecError::malformed("paramesh property repeats its key"));
                 }
             }
             (PROPERTY_TEXT, ProtobufValue::Bytes(bytes)) => {
                 let bytes = utf8(ctx, bytes, "property text")?;
                 if value.replace(RegistryProperty::Text(bytes)).is_some() {
-                    return Err(malformed("paramesh property repeats its value"));
+                    return Err(CodecError::malformed("paramesh property repeats its value"));
                 }
             }
             (PROPERTY_STREAM, ProtobufValue::Bytes(bytes)) => {
                 let bytes = utf8(ctx, bytes, "property stream name")?;
                 if value.replace(RegistryProperty::Stream(bytes)).is_some() {
-                    return Err(malformed("paramesh property repeats its value"));
+                    return Err(CodecError::malformed("paramesh property repeats its value"));
                 }
             }
             (PROPERTY_KEY | PROPERTY_TEXT | PROPERTY_STREAM, _) => {
-                return Err(malformed("paramesh property field has the wrong wire type"));
+                return Err(CodecError::malformed("paramesh property field has the wrong wire type"));
             }
-            _ => return Err(malformed("paramesh property has an undefined field")),
+            _ => return Err(CodecError::malformed("paramesh property has an undefined field")),
         }
     }
     Ok((
-        key.ok_or_else(|| malformed("paramesh property has no key"))?,
-        value.ok_or_else(|| malformed("paramesh property has no value"))?,
+        key.ok_or_else(|| CodecError::malformed("paramesh property has no key"))?,
+        value.ok_or_else(|| CodecError::malformed("paramesh property has no value"))?,
     ))
 }
 
@@ -781,7 +780,7 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
             (REGISTRY_PROPERTY, ProtobufValue::Bytes(entry)) => {
                 let (key, value) = registry_property(ctx, entry)?;
                 if properties.contains_key(&key) {
-                    return Err(malformed("paramesh registry repeats a property key"));
+                    return Err(CodecError::malformed("paramesh registry repeats a property key"));
                 }
                 ctx.insert_btree_map(
                     &mut properties,
@@ -792,24 +791,24 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
             }
             (REGISTRY_FACE_GROUP_COUNT, ProtobufValue::Varint(value)) => {
                 let value = u32::try_from(value)
-                    .map_err(|_| malformed("paramesh face-group count is out of range"))?;
+                    .map_err(|_| CodecError::malformed("paramesh face-group count is out of range"))?;
                 if face_group_count.replace(value).is_some() {
-                    return Err(malformed("paramesh registry repeats its face-group count"));
+                    return Err(CodecError::malformed("paramesh registry repeats its face-group count"));
                 }
             }
             (REGISTRY_MESH_UUID, ProtobufValue::Bytes(value)) => {
                 let value = guid(ctx, value, "mesh UUID")?;
                 let value = DesignMeshUuid::try_from(value).map_err(|_| {
-                    malformed("paramesh mesh UUID is not a lowercase version-4 UUID")
+                    CodecError::malformed("paramesh mesh UUID is not a lowercase version-4 UUID")
                 })?;
                 if mesh_uuid.replace(value).is_some() {
-                    return Err(malformed("paramesh registry repeats its mesh UUID"));
+                    return Err(CodecError::malformed("paramesh registry repeats its mesh UUID"));
                 }
             }
             (REGISTRY_VERTICES, ProtobufValue::Bytes(value)) => {
                 let value = utf8(ctx, value, "vertex-stream name")?;
                 if vertex_stream.replace(value).is_some() {
-                    return Err(malformed(
+                    return Err(CodecError::malformed(
                         "paramesh registry repeats its vertex-stream name",
                     ));
                 }
@@ -817,7 +816,7 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
             (REGISTRY_TRIANGLES, ProtobufValue::Bytes(value)) => {
                 let value = utf8(ctx, value, "triangle-stream name")?;
                 if triangle_stream.replace(value).is_some() {
-                    return Err(malformed(
+                    return Err(CodecError::malformed(
                         "paramesh registry repeats its triangle-stream name",
                     ));
                 }
@@ -829,22 +828,22 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
                 | REGISTRY_VERTICES
                 | REGISTRY_TRIANGLES,
                 _,
-            ) => return Err(malformed("paramesh registry field has the wrong wire type")),
-            _ => return Err(malformed("paramesh registry has an undefined field")),
+            ) => return Err(CodecError::malformed("paramesh registry field has the wrong wire type")),
+            _ => return Err(CodecError::malformed("paramesh registry has an undefined field")),
         }
     }
 
     let fusion_uuid = match properties.remove("fusion_uuid") {
         Some(RegistryProperty::Text(value)) => guid(ctx, value.as_bytes(), "fusion_uuid")?,
         Some(RegistryProperty::Stream(_)) => {
-            return Err(malformed("paramesh fusion_uuid property is not text"));
+            return Err(CodecError::malformed("paramesh fusion_uuid property is not text"));
         }
-        None => return Err(malformed("paramesh registry has no fusion_uuid property")),
+        None => return Err(CodecError::malformed("paramesh registry has no fusion_uuid property")),
     };
     let attribute_name_stream = match properties.remove("attname.amt.autodesk") {
         Some(RegistryProperty::Stream(value)) => Some(value),
         Some(RegistryProperty::Text(_)) => {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh attribute-name property does not name a stream",
             ));
         }
@@ -852,13 +851,13 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
     };
     Ok(MeshRegistry {
         fusion_uuid,
-        mesh_uuid: mesh_uuid.ok_or_else(|| malformed("paramesh registry has no mesh UUID"))?,
+        mesh_uuid: mesh_uuid.ok_or_else(|| CodecError::malformed("paramesh registry has no mesh UUID"))?,
         face_group_count: face_group_count
-            .ok_or_else(|| malformed("paramesh registry has no face-group count"))?,
+            .ok_or_else(|| CodecError::malformed("paramesh registry has no face-group count"))?,
         vertex_stream: vertex_stream
-            .ok_or_else(|| malformed("paramesh registry has no vertex-stream name"))?,
+            .ok_or_else(|| CodecError::malformed("paramesh registry has no vertex-stream name"))?,
         triangle_stream: triangle_stream
-            .ok_or_else(|| malformed("paramesh registry has no triangle-stream name"))?,
+            .ok_or_else(|| CodecError::malformed("paramesh registry has no triangle-stream name"))?,
         attribute_name_stream,
     })
 }
@@ -872,7 +871,7 @@ fn message_pack_name_table(
     fn take_integer(bytes: &[u8], at: &mut usize) -> Result<u64, CodecError> {
         let tag = *bytes
             .get(*at)
-            .ok_or_else(|| malformed("paramesh name table is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += 1;
         let (width, value) = match tag {
             0x00..=0x7f => return Ok(u64::from(tag)),
@@ -881,14 +880,14 @@ fn message_pack_name_table(
             0xce => (4, 0),
             0xcf => (8, 0),
             _ => {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh name table holds a non-integer stream id",
                 ))
             }
         };
         let raw = bytes
             .get(*at..*at + width)
-            .ok_or_else(|| malformed("paramesh name table is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += width;
         // MessagePack integers are big-endian.
         Ok(raw
@@ -903,7 +902,7 @@ fn message_pack_name_table(
     ) -> Result<String, CodecError> {
         let tag = *bytes
             .get(*at)
-            .ok_or_else(|| malformed("paramesh name table is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += 1;
         let count = match tag {
             0xa0..=0xbf => usize::from(tag & 0x1f),
@@ -911,50 +910,50 @@ fn message_pack_name_table(
                 let count = usize::from(
                     *bytes
                         .get(*at)
-                        .ok_or_else(|| malformed("paramesh name table is truncated"))?,
+                        .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?,
                 );
                 *at += 1;
                 count
             }
-            _ => return Err(malformed("paramesh name table holds a non-string key")),
+            _ => return Err(CodecError::malformed("paramesh name table holds a non-string key")),
         };
         let raw = bytes
             .get(*at..*at + count)
-            .ok_or_else(|| malformed("paramesh name table is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += count;
         let value =
-            std::str::from_utf8(raw).map_err(|_| malformed("paramesh stream name is not UTF-8"))?;
+            std::str::from_utf8(raw).map_err(|_| CodecError::malformed("paramesh stream name is not UTF-8"))?;
         ctx.copy_retained_text(value, "retain paramesh stream name")
     }
 
     let mut at = 0usize;
     let tag = *bytes
         .get(at)
-        .ok_or_else(|| malformed("paramesh name table is empty"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh name table is empty"))?;
     at += 1;
     let count = match tag {
         0x80..=0x8f => usize::from(tag & 0x0f),
         0xde => {
             let count = usize::from(
                 View::u16_be_at(bytes, at)
-                    .ok_or_else(|| malformed("paramesh name table is truncated"))?,
+                    .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?,
             );
             at += 2;
             count
         }
-        _ => return Err(malformed("paramesh name table is not a MessagePack map")),
+        _ => return Err(CodecError::malformed("paramesh name table is not a MessagePack map")),
     };
     let mut entries = Vec::new();
     for _ in 0..count {
         let name = take_string(ctx, bytes, &mut at)?;
         if name.is_empty() {
-            return Err(malformed("paramesh name table has an empty stream name"));
+            return Err(CodecError::malformed("paramesh name table has an empty stream name"));
         }
         let id = take_integer(bytes, &mut at)?;
         ctx.push_vec(&mut entries, (name, id), "collect paramesh stream names")?;
     }
     if at != bytes.len() {
-        return Err(malformed("paramesh name table has trailing bytes"));
+        return Err(CodecError::malformed("paramesh name table has trailing bytes"));
     }
     UniqueStreamNames::new(ctx, entries)
 }
@@ -979,7 +978,7 @@ fn stream_descriptor(
     fn value(bytes: &[u8], at: &mut usize) -> Result<StreamDescriptorValue, CodecError> {
         let tag = *bytes
             .get(*at)
-            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
         *at += 1;
         let width = match tag {
             0x00..=0x7f => return Ok(StreamDescriptorValue::Integer(u64::from(tag))),
@@ -990,14 +989,14 @@ fn stream_descriptor(
             0xce => 4,
             0xcf => 8,
             _ => {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh stream descriptor value is not a supported scalar",
                 ))
             }
         };
         let raw = bytes
             .get(*at..*at + width)
-            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
         *at += width;
         Ok(StreamDescriptorValue::Integer(
             raw.iter()
@@ -1008,12 +1007,12 @@ fn stream_descriptor(
     let mut at = 0usize;
     let tag = *bytes
         .get(at)
-        .ok_or_else(|| malformed("paramesh stream descriptor is empty"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is empty"))?;
     at += 1;
     let count = match tag {
         0x80..=0x8f => usize::from(tag & 0x0f),
         _ => {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh stream descriptor is not a MessagePack map",
             ))
         }
@@ -1022,23 +1021,23 @@ fn stream_descriptor(
     for _ in 0..count {
         let tag = *bytes
             .get(at)
-            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
         at += 1;
         let key_count = match tag {
             0xa0..=0xbf => usize::from(tag & 0x1f),
-            _ => return Err(malformed("paramesh stream descriptor key is not a string")),
+            _ => return Err(CodecError::malformed("paramesh stream descriptor key is not a string")),
         };
         let raw = bytes
             .get(at..at + key_count)
-            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
         at += key_count;
         let key = ctx.copy_retained_text(
             std::str::from_utf8(raw)
-                .map_err(|_| malformed("paramesh stream descriptor key is not UTF-8"))?,
+                .map_err(|_| CodecError::malformed("paramesh stream descriptor key is not UTF-8"))?,
             "retain paramesh descriptor key",
         )?;
         if entries.iter().any(|(existing, _)| existing == &key) {
-            return Err(malformed("paramesh stream descriptor repeats a key"));
+            return Err(CodecError::malformed("paramesh stream descriptor repeats a key"));
         }
         let descriptor_value = value(bytes, &mut at)?;
         ctx.push_vec(
@@ -1048,7 +1047,7 @@ fn stream_descriptor(
         )?;
     }
     if at != bytes.len() {
-        return Err(malformed("paramesh stream descriptor has trailing bytes"));
+        return Err(CodecError::malformed("paramesh stream descriptor has trailing bytes"));
     }
     Ok(entries)
 }
@@ -1057,18 +1056,18 @@ fn stream_descriptor(
 /// count, the two LZMA1 property bytes, and the raw LZMA1 stream.
 fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, CodecError> {
     let descriptor_count = usize::from(
-        View::u16_le_at(body, 0).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?,
+        View::u16_le_at(body, 0).ok_or_else(|| CodecError::malformed("paramesh stream chunk is truncated"))?,
     );
     let at = descriptor_count
         .checked_add(2)
-        .ok_or_else(|| malformed("paramesh stream chunk is out of range"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh stream chunk is out of range"))?;
     let descriptor = stream_descriptor(
         ctx,
         body.get(2..at)
-            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?,
+            .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?,
     )?;
     let declared =
-        View::u32_le_at(body, at).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
+        View::u32_le_at(body, at).ok_or_else(|| CodecError::malformed("paramesh stream chunk is truncated"))?;
     if declared > MAX_STREAM_BYTES {
         return Err(ctx.refuse_codec_limit(
             "paramesh stream byte ceiling",
@@ -1078,16 +1077,16 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     }
     let properties = body
         .get(at + 4..at + 6)
-        .ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh stream chunk is truncated"))?;
     let payload = body
         .get(at + 6..)
-        .ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh stream chunk is truncated"))?;
     let declared_len = usize::try_from(declared).map_err(|_| {
         ctx.refuse_codec_limit("retain paramesh stream bytes", 0, u64::from(declared))
     })?;
     if properties == [LZMA_PROPERTIES, RAW_STREAM_MODE] {
         if payload.len() != declared_len {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "raw paramesh stream length differs from its declared byte count",
             ));
         }
@@ -1097,7 +1096,7 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         });
     }
     if properties != [LZMA_PROPERTIES, LZMA_DICTIONARY_LOG] {
-        return Err(malformed("paramesh stream carries an undefined encoding"));
+        return Err(CodecError::malformed("paramesh stream carries an undefined encoding"));
     }
     // LZMA1 uses 8 literal contexts, four 64-entry position trees, a
     // 16-entry alignment tree and two length decoders of 512 probabilities.
@@ -1147,7 +1146,7 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     )
     .map_err(|error| {
         writer.failure.take().unwrap_or_else(|| {
-            malformed(format!("paramesh stream does not decompress: {error}"))
+            CodecError::malformed(format_args!("paramesh stream does not decompress: {error}"))
         })
     })?;
     Ok(MeshStream {
@@ -1225,7 +1224,7 @@ fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), Codec
                 .any(|(name, value)| name == expected_name && value == expected_value)
         })
     {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh stream descriptor does not match its implemented layout",
         ));
     }
@@ -1246,7 +1245,7 @@ fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
             return Ok(());
         }
     }
-    Err(malformed(
+    Err(CodecError::malformed(
         "paramesh stream descriptor is outside the version-2 grammar",
     ))
 }
@@ -1265,10 +1264,10 @@ fn attribute_names(
         "validate paramesh XML UTF-8",
     )?;
     let xml = std::str::from_utf8(&stream.bytes)
-        .map_err(|_| malformed("paramesh attribute-name stream is not UTF-8"))?;
+        .map_err(|_| CodecError::malformed("paramesh attribute-name stream is not UTF-8"))?;
     let body = xml
         .strip_prefix("<?xml version=\"1.0\"?>")
-        .ok_or_else(|| malformed("paramesh attribute-name stream has no XML declaration"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh attribute-name stream has no XML declaration"))?;
     let work = cadmpeg_core::decode::u64_from_index(body.len())
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit("wrap paramesh attribute XML", u64::MAX, u64::MAX))?;
@@ -1284,7 +1283,7 @@ fn attribute_names(
         ctx.parse_xml(&wrapped, "parse paramesh XML tree")
             .map_err(|error| match error {
                 CodecError::ResourceLimit(_) => error,
-                _ => malformed("paramesh attribute-name stream is not XML"),
+                _ => CodecError::malformed("paramesh attribute-name stream is not XML"),
             })?;
     let document = admitted_document.document();
     let root = document.root_element();
@@ -1295,7 +1294,7 @@ fn attribute_names(
                 && (!node.is_text() || node.text().is_some_and(|text| !text.trim().is_empty()))
         })
     {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh attribute-name stream has an invalid fragment envelope",
         ));
     }
@@ -1309,7 +1308,7 @@ fn attribute_names(
                     && (!node.is_text() || node.text().is_some_and(|text| !text.trim().is_empty()))
             })
         {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh attribute-name stream has an undefined element",
             ));
         }
@@ -1317,7 +1316,7 @@ fn attribute_names(
         let (Some(triangle_name), Some(authored_name), None) =
             (children.next(), children.next(), children.next())
         else {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh attribute-name record does not have two members",
             ));
         };
@@ -1326,45 +1325,45 @@ fn attribute_names(
             || triangle_name.attributes().next().is_some()
             || authored_name.attributes().next().is_some()
         {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh attribute-name record has an undefined member",
             ));
         }
         if triangle_name.children().any(|node| !node.is_text())
             || authored_name.children().any(|node| !node.is_text())
         {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh attribute-name record member is not text",
             ));
         }
         let triangle_name = triangle_name
             .text()
-            .ok_or_else(|| malformed("paramesh TriName is empty"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh TriName is empty"))?;
         let authored_name = authored_name
             .text()
             .filter(|name| !name.is_empty())
-            .ok_or_else(|| malformed("paramesh AmtName is empty"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh AmtName is empty"))?;
         if !triangle_name.is_ascii() {
-            return Err(malformed("paramesh TriName is not ASCII"));
+            return Err(CodecError::malformed("paramesh TriName is not ASCII"));
         }
         let guid_at = triangle_name
             .len()
             .checked_sub(36)
-            .ok_or_else(|| malformed("paramesh TriName has no channel GUID"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh TriName has no channel GUID"))?;
         let (prefix, resource_guid) = triangle_name.split_at(guid_at);
         let kind = match prefix {
             "color_tt" => AttributeNameKind::Color,
             "grp_tt" => AttributeNameKind::Group,
             "tco_tt" => AttributeNameKind::TextureCoordinate,
-            _ => return Err(malformed("paramesh TriName has an undefined form")),
+            _ => return Err(CodecError::malformed("paramesh TriName has an undefined form")),
         };
         if !crate::bytes::is_guid_hyphenated(resource_guid) {
-            return Err(malformed("paramesh TriName has an undefined form"));
+            return Err(CodecError::malformed("paramesh TriName has an undefined form"));
         }
         let mut key = ctx.copy_retained_text(resource_guid, "retain paramesh attribute GUID")?;
         key.make_ascii_uppercase();
         if names.contains_key(&key) {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh attribute-name stream repeats a channel GUID",
             ));
         }
@@ -1381,7 +1380,7 @@ fn attribute_names(
         )?;
     }
     if names.is_empty() {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh attribute-name stream has no attribute records",
         ));
     }
@@ -1399,10 +1398,10 @@ fn decode_vertices(
         let mut point = [FiniteReal::ZERO; 3];
         for value in &mut point {
             let component = view.f32_le().ok_or_else(|| {
-                malformed("paramesh vertex stream is not a whole number of coordinate triples")
+                CodecError::malformed("paramesh vertex stream is not a whole number of coordinate triples")
             })?;
             *value = FiniteReal::new(f64::from(component))
-                .ok_or_else(|| malformed("paramesh vertex coordinate is not finite"))?;
+                .ok_or_else(|| CodecError::malformed("paramesh vertex coordinate is not finite"))?;
         }
         vertices.push(FinitePoint3::from_coordinates(point[0], point[1], point[2]));
     }
@@ -1423,17 +1422,17 @@ fn decode_triangles(
     let mut words = ctx.collection_vec(stream.len() / 4, "collect paramesh corner words")?;
     while !view.is_empty() {
         words.push(i64::from(view.i32_le().ok_or_else(|| {
-            malformed("paramesh corner stream is not a whole number of values")
+            CodecError::malformed("paramesh corner stream is not a whole number of values")
         })?));
     }
     let Some((_, deltas)) = words.split_last() else {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh corner stream is not a whole number of values",
         ));
     };
     let values = words.len();
     if !values.is_multiple_of(3) {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh corner count is not a whole number of triangles",
         ));
     }
@@ -1443,22 +1442,22 @@ fn decode_triangles(
     for delta in deltas {
         relative = relative
             .checked_add(*delta)
-            .ok_or_else(|| malformed("paramesh corner delta accumulation overflows"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh corner delta accumulation overflows"))?;
         minimum = minimum.min(relative);
         maximum = maximum.max(relative);
     }
     let last_vertex = i64::try_from(vertices)
         .ok()
         .and_then(|count| count.checked_sub(1))
-        .ok_or_else(|| malformed("paramesh corner stream has no vertex domain"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh corner stream has no vertex domain"))?;
     let lowest_start = minimum
         .checked_neg()
-        .ok_or_else(|| malformed("paramesh corner start is out of range"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh corner start is out of range"))?;
     let highest_start = last_vertex
         .checked_sub(maximum)
-        .ok_or_else(|| malformed("paramesh corner start is out of range"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh corner start is out of range"))?;
     if lowest_start != highest_start || lowest_start < 0 {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh corner deltas do not determine one implicit starting index",
         ));
     }
@@ -1466,14 +1465,14 @@ fn decode_triangles(
     let mut current = lowest_start;
     let mut corners = ctx.collection_vec(values, "collect paramesh corner indices")?;
     corners.push(
-        u32::try_from(current).map_err(|_| malformed("paramesh corner index is out of range"))?,
+        u32::try_from(current).map_err(|_| CodecError::malformed("paramesh corner index is out of range"))?,
     );
     for delta in deltas {
         current += *delta;
         let index = u32::try_from(current)
-            .map_err(|_| malformed("paramesh corner index is out of range"))?;
+            .map_err(|_| CodecError::malformed("paramesh corner index is out of range"))?;
         if index_from_u32(index) >= vertices {
-            return Err(malformed("paramesh corner index names no vertex"));
+            return Err(CodecError::malformed("paramesh corner index names no vertex"));
         }
         corners.push(index);
     }
@@ -1498,7 +1497,7 @@ fn decode_terminal_delta_values(
         ctx.collection_vec(stream.len() / 4, "collect paramesh terminal delta words")?;
     while !view.is_empty() {
         words.push(view.u32_le().ok_or_else(|| {
-            malformed("paramesh terminal-delta stream is not a whole number of values")
+            CodecError::malformed("paramesh terminal-delta stream is not a whole number of values")
         })?);
     }
     let Some((terminal, deltas)) = words.split_last_mut() else {
@@ -1510,21 +1509,21 @@ fn decode_terminal_delta_values(
         let delta = i64::from(word.cast_signed());
         delta_total = delta_total
             .checked_add(delta)
-            .ok_or_else(|| malformed("paramesh terminal-delta accumulation overflows"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh terminal-delta accumulation overflows"))?;
     }
     let mut current = i64::from(*terminal)
         .checked_sub(delta_total)
-        .ok_or_else(|| malformed("paramesh terminal-delta start overflows"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh terminal-delta start overflows"))?;
     for word in deltas {
         let delta = i64::from(word.cast_signed());
         *word = u32::try_from(current)
-            .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?;
+            .map_err(|_| CodecError::malformed("paramesh terminal-delta value is out of range"))?;
         current = current
             .checked_add(delta)
-            .ok_or_else(|| malformed("paramesh terminal-delta value overflows"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh terminal-delta value overflows"))?;
     }
     *terminal = u32::try_from(current)
-        .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?;
+        .map_err(|_| CodecError::malformed("paramesh terminal-delta value is out of range"))?;
     Ok(words)
 }
 
@@ -1543,22 +1542,22 @@ fn decode_index_positions(
     corners: usize,
 ) -> Result<Vec<u32>, CodecError> {
     if !stream.len().is_multiple_of(4) {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh channel index stream is not a whole number of values",
         ));
     }
     let vertex_count = u32::try_from(vertices)
-        .map_err(|_| malformed("paramesh channel vertex count is out of range"))?;
+        .map_err(|_| CodecError::malformed("paramesh channel vertex count is out of range"))?;
     let override_count = value_count
         .checked_sub(vertex_count)
-        .ok_or_else(|| malformed("paramesh indexed channel has fewer values than vertices"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh indexed channel has fewer values than vertices"))?;
     let override_count_usize = usize::try_from(override_count)
-        .map_err(|_| malformed("paramesh channel override count is out of range"))?;
+        .map_err(|_| CodecError::malformed("paramesh channel override count is out of range"))?;
     let expected_bytes = override_count_usize
         .checked_mul(4)
-        .ok_or_else(|| malformed("paramesh channel index stream is too large"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh channel index stream is too large"))?;
     if stream.len() != expected_bytes {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh channel index count does not match its value count",
         ));
     }
@@ -1574,12 +1573,12 @@ fn decode_index_positions(
             .ok()
             .is_none_or(|position| position >= corners)
         {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh channel index position names no triangle corner",
             ));
         }
         if previous.is_some_and(|previous| position <= previous) {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh channel index positions are not strictly increasing",
             ));
         }
@@ -1597,7 +1596,7 @@ fn decode_packed_direction(packed: [f32; 2]) -> Result<UnitVector3, CodecError> 
         || !(-1.0..=1.0).contains(&encoded_x)
         || !(-1.0..=1.0).contains(&encoded_y)
     {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh packed direction is outside the octahedral domain",
         ));
     }
@@ -1612,10 +1611,10 @@ fn decode_packed_direction(packed: [f32; 2]) -> Result<UnitVector3, CodecError> 
     }
     let length = (normal_x * normal_x + normal_y * normal_y + normal_z * normal_z).sqrt();
     if !length.is_finite() || length <= f64::EPSILON {
-        return Err(malformed("paramesh packed direction is degenerate"));
+        return Err(CodecError::malformed("paramesh packed direction is degenerate"));
     }
     UnitVector3::normalized(Vector3::new(normal_x, normal_y, normal_z))
-        .ok_or_else(|| malformed("paramesh packed direction is degenerate"))
+        .ok_or_else(|| CodecError::malformed("paramesh packed direction is degenerate"))
 }
 
 /// Expand the role-0 packed-direction channel to one normal per triangle
@@ -1643,7 +1642,7 @@ fn decode_corner_normals(
         return Ok(None);
     };
     if channels.next().is_some() {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh registry declares more than one corner-normal channel",
         ));
     }
@@ -1654,28 +1653,28 @@ fn decode_corner_normals(
     )?;
     while !view.is_empty() {
         let pair = view.f32_le().zip(view.f32_le()).ok_or_else(|| {
-            malformed("paramesh corner-normal channel has no complete packed-direction table")
+            CodecError::malformed("paramesh corner-normal channel has no complete packed-direction table")
         })?;
         table.push(decode_packed_direction([pair.0, pair.1])?);
     }
 
     if attribute.addressing.domain() == MeshAttributeDomain::Triangle {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh role-0 packed directions do not address triangles",
         ));
     }
     let selectors = attribute
         .corner_selectors(ctx, vertices, triangles)?
-        .ok_or_else(|| malformed("paramesh corner-normal addressing is inconsistent"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh corner-normal addressing is inconsistent"))?;
     let mut normals = ctx.collection_vec(selectors.len(), "collect paramesh corner normals")?;
     for selector in selectors {
         let normal = table
             .get(
                 usize::try_from(selector)
-                    .map_err(|_| malformed("paramesh corner-normal selector is out of range"))?,
+                    .map_err(|_| CodecError::malformed("paramesh corner-normal selector is out of range"))?,
             )
             .copied()
-            .ok_or_else(|| malformed("paramesh corner-normal selector is out of range"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh corner-normal selector is out of range"))?;
         normals.push(normal);
     }
     Ok(Some(normals))
@@ -1696,12 +1695,12 @@ fn registry_feature_edges(
             continue;
         }
         let ProtobufValue::Bytes(entry) = value else {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh feature-edge declaration is not a message",
             ));
         };
         if declaration.replace(entry).is_some() {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh registry repeats its feature-edge declaration",
             ));
         }
@@ -1713,29 +1712,29 @@ fn registry_feature_edges(
     let mut stream_name = None;
     for (field, value) in protobuf_fields(ctx, entry)? {
         let (FEATURE_EDGE_STREAM, ProtobufValue::Bytes(name)) = (field, value) else {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh feature-edge declaration has an undefined field",
             ));
         };
         let name = std::str::from_utf8(name)
-            .map_err(|_| malformed("paramesh feature-edge stream name is not UTF-8"))?;
+            .map_err(|_| CodecError::malformed("paramesh feature-edge stream name is not UTF-8"))?;
         if stream_name.replace(name).is_some() {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh feature-edge declaration repeats its stream name",
             ));
         }
     }
     let stream_name = stream_name
-        .ok_or_else(|| malformed("paramesh feature-edge declaration has no stream name"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh feature-edge declaration has no stream name"))?;
     let stream = name_table
         .iter()
         .position(|(name, _)| name == stream_name)
         .and_then(|position| streams.get(position))
-        .ok_or_else(|| malformed("paramesh feature-edge declaration names no stream"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh feature-edge declaration names no stream"))?;
     require_layout(stream, StreamLayout::TerminalDelta)?;
     let endpoints = decode_terminal_delta_values(ctx, &stream.bytes)?;
     if !endpoints.len().is_multiple_of(2) {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh feature-edge stream has an unmatched endpoint",
         ));
     }
@@ -1762,17 +1761,17 @@ fn registry_feature_edges(
         let edge = [pair[0], pair[1]];
         let high_in_domain = index_from_u32(edge[1]) < vertices;
         if edge[0] >= edge[1] || !high_in_domain {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh feature-edge endpoints are not an ascending vertex pair",
             ));
         }
         if !topology_edges.contains(&edge) {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh feature-edge pair is not an edge of any triangle",
             ));
         }
         if seen.contains(&edge) {
-            return Err(malformed("paramesh feature-edge stream repeats an edge"));
+            return Err(CodecError::malformed("paramesh feature-edge stream repeats an edge"));
         }
         ctx.insert_btree_set(&mut seen, edge, "index paramesh feature edges")?;
         feature_edges.push(edge);
@@ -1795,26 +1794,26 @@ impl ParamMeshHeader {
     fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Self, CodecError> {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(PROTOBUF_AT), "validate paramesh header")?;
         if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
-            return Err(malformed("paramesh container has no magic"));
+            return Err(CodecError::malformed("paramesh container has no magic"));
         }
         if View::u32_le_at(bytes, MAGIC.len()) != Some(VERSION) {
-            return Err(malformed("paramesh container declares an unknown version"));
+            return Err(CodecError::malformed("paramesh container declares an unknown version"));
         }
         let reserved = bytes.get(MAGIC.len() + 4..PROTOBUF_COUNT_AT)
-            .ok_or_else(|| malformed("paramesh container is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh container is truncated"))?;
         if reserved.iter().any(|byte| *byte != 0) {
-            return Err(malformed("paramesh reserved header bytes are not zero"));
+            return Err(CodecError::malformed("paramesh reserved header bytes are not zero"));
         }
         if View::u32_le_at(bytes, PROTOBUF_AT - 4) != Some(1) {
-            return Err(malformed("paramesh fixed header word is not one"));
+            return Err(CodecError::malformed("paramesh fixed header word is not one"));
         }
         let count = usize::try_from(View::u64_le_at(bytes, PROTOBUF_COUNT_AT)
-            .ok_or_else(|| malformed("paramesh container is truncated"))?)
-            .map_err(|_| malformed("paramesh protobuf message is out of range"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh container is truncated"))?)
+            .map_err(|_| CodecError::malformed("paramesh protobuf message is out of range"))?;
         let end = PROTOBUF_AT.checked_add(count)
-            .ok_or_else(|| malformed("paramesh protobuf message is out of range"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh protobuf message is out of range"))?;
         if end > bytes.len() {
-            return Err(malformed("paramesh protobuf message is truncated"));
+            return Err(CodecError::malformed("paramesh protobuf message is truncated"));
         }
         Ok(Self { protobuf: PROTOBUF_AT..end })
     }
@@ -1839,51 +1838,51 @@ pub(crate) fn decode_mesh_container(
     while at < bytes.len() {
         let body_count = usize::try_from(
             View::u64_le_at(bytes, at)
-                .ok_or_else(|| malformed("paramesh chunk header is truncated"))?,
+                .ok_or_else(|| CodecError::malformed("paramesh chunk header is truncated"))?,
         )
-        .map_err(|_| malformed("paramesh chunk is out of range"))?;
+        .map_err(|_| CodecError::malformed("paramesh chunk is out of range"))?;
         let kind = View::u32_le_at(bytes, at + 8)
-            .ok_or_else(|| malformed("paramesh chunk header is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh chunk header is truncated"))?;
         let body_at = at
             .checked_add(12)
-            .ok_or_else(|| malformed("paramesh chunk is out of range"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh chunk is out of range"))?;
         let body_end = body_at
             .checked_add(body_count)
-            .ok_or_else(|| malformed("paramesh chunk is out of range"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh chunk is out of range"))?;
         let body = bytes
             .get(body_at..body_end)
-            .ok_or_else(|| malformed("paramesh chunk body is truncated"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh chunk body is truncated"))?;
         at = body_end;
         match kind {
             CHUNK_NAME_TABLE => {
                 if matches!(state, MeshChunkState::Streams(_)) {
-                    return Err(malformed("paramesh container repeats its name table"));
+                    return Err(CodecError::malformed("paramesh container repeats its name table"));
                 }
                 state = MeshChunkState::Streams(message_pack_name_table(ctx, body)?);
             }
             CHUNK_STREAM => {
                 let MeshChunkState::Streams(names) = &state else {
-                    return Err(malformed("paramesh stream precedes its name table"));
+                    return Err(CodecError::malformed("paramesh stream precedes its name table"));
                 };
                 if streams.len() >= names.entries.len() {
-                    return Err(malformed("paramesh has more streams than admitted names"));
+                    return Err(CodecError::malformed("paramesh has more streams than admitted names"));
                 }
                 let stream = inflate_stream(ctx, body)?;
                 ctx.push_vec(&mut streams, stream, "collect paramesh streams")?;
             }
             _ => {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh container holds an undefined chunk kind",
                 ))
             }
         }
     }
     let MeshChunkState::Streams(name_table) = state else {
-        return Err(malformed("paramesh container has no name table"));
+        return Err(CodecError::malformed("paramesh container has no name table"));
     };
     let mut name_table = name_table.entries;
     if name_table.len() != streams.len() {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh name table and stream chunk counts differ",
         ));
     }
@@ -1904,22 +1903,22 @@ pub(crate) fn decode_mesh_container(
             .and_then(|position| streams.get(position))
     };
     let vertex_stream = named(&registry.vertex_stream)
-        .ok_or_else(|| malformed("paramesh registry names no vertex stream"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh registry names no vertex stream"))?;
     require_layout(vertex_stream, StreamLayout::Float3)?;
     let vertices = decode_vertices(ctx, &vertex_stream.bytes)?;
     let corner_stream = named(&registry.triangle_stream)
-        .ok_or_else(|| malformed("paramesh registry names no triangle stream"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh registry names no triangle stream"))?;
     require_layout(corner_stream, StreamLayout::TerminalDelta)?;
     let triangles = decode_triangles(ctx, &corner_stream.bytes, vertices.len())?;
     let corner_count = triangles
         .len()
         .checked_mul(3)
-        .ok_or_else(|| malformed("paramesh triangle corner count is out of range"))?;
+        .ok_or_else(|| CodecError::malformed("paramesh triangle corner count is out of range"))?;
     let attribute_name_stream = registry
         .attribute_name_stream
         .as_deref()
         .map(|name| {
-            named(name).ok_or_else(|| malformed("paramesh attribute-name property names no stream"))
+            named(name).ok_or_else(|| CodecError::malformed("paramesh attribute-name property names no stream"))
         })
         .transpose()?;
     let attribute_names = attribute_names(ctx, attribute_name_stream)?;
@@ -1983,19 +1982,19 @@ fn registry_attributes(
             _ => continue,
         };
         let ProtobufValue::Bytes(entry) = value else {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh registry channel declaration is not a message",
             ));
         };
         let registration = registry_channel(ctx, entry, declared_domain)?;
         if declared_domain == MeshAttributeDomain::Triangle && registration.streams.index.is_some()
         {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh triangle channel declares a corner index stream",
             ));
         }
         let stream = named(registration.streams.values)
-            .ok_or_else(|| malformed("paramesh channel declares an absent value stream"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh channel declares an absent value stream"))?;
         match registration.streams.element_code {
             ELEMENT_PAIR => require_layout(stream, StreamLayout::Float2)?,
             ELEMENT_QUAD => require_layout(stream, StreamLayout::Float4)?,
@@ -2004,7 +2003,7 @@ fn registry_attributes(
             }
             ELEMENT_TRIANGLE_DELTA => {
                 if declared_domain != MeshAttributeDomain::Triangle {
-                    return Err(malformed(
+                    return Err(CodecError::malformed(
                         "paramesh delta-coded triangle elements use a non-triangle channel",
                     ));
                 }
@@ -2017,7 +2016,7 @@ fn registry_attributes(
             .index
             .map(|name| {
                 named(name)
-                    .ok_or_else(|| malformed("paramesh channel declares an absent index stream"))
+                    .ok_or_else(|| CodecError::malformed("paramesh channel declares an absent index stream"))
             })
             .transpose()?;
         if let Some(index_stream) = index_stream {
@@ -2045,7 +2044,7 @@ fn registry_attributes(
                 registration.role == 3 && registration.streams.element_code == ELEMENT_PAIR
             }
         }) {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh attribute-name prefix contradicts its channel declaration",
             ));
         }
@@ -2075,7 +2074,7 @@ fn registry_attributes(
                 )?),
                 code => MeshElements::Opaque {
                     code: u32::try_from(code).map_err(|_| {
-                        malformed("paramesh channel declares an out-of-range element code")
+                        CodecError::malformed("paramesh channel declares an out-of-range element code")
                     })?,
                     values: ctx.copy_retained(&stream.bytes, "copy paramesh channel values")?,
                 },
@@ -2087,7 +2086,7 @@ fn registry_attributes(
             },
         };
         if attribute.item_size().is_some() && attribute.count().is_none() {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh channel value stream ends inside an element",
             ));
         }
@@ -2106,7 +2105,7 @@ fn registry_attributes(
                 .count()
                 .is_none_or(|count| usize::try_from(count) != Ok(vertices))
         {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh vertex-channel element count differs from the vertex count",
             ));
         }
@@ -2116,7 +2115,7 @@ fn registry_attributes(
                 .count()
                 .is_none_or(|count| usize::try_from(count).ok() != corners.checked_div(3))
         {
-            return Err(malformed(
+            return Err(CodecError::malformed(
                 "paramesh triangle-channel element count differs from the triangle count",
             ));
         }
@@ -2129,7 +2128,7 @@ fn registry_attributes(
                 ctx.copy_retained_text(resource_guid, "index paramesh channel resource GUID")?;
             key.make_ascii_uppercase();
             if resources.contains(&key) {
-                return Err(malformed(
+                return Err(CodecError::malformed(
                     "paramesh registry repeats a channel resource GUID",
                 ));
             }
@@ -2140,7 +2139,7 @@ fn registry_attributes(
         .keys()
         .any(|resource_guid| !resources.contains(resource_guid))
     {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh attribute-name stream names no registry channel",
         ));
     }
@@ -2166,17 +2165,17 @@ fn registry_triangle_groups(
         });
     let channel = channels.next();
     if channels.next().is_some() {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh registry declares more than one face-group channel",
         ));
     }
     let declared_count = usize::try_from(declared_count)
-        .map_err(|_| malformed("paramesh face-group count is out of range"))?;
+        .map_err(|_| CodecError::malformed("paramesh face-group count is out of range"))?;
     let Some((channel, values)) = channel else {
         if declared_count == 0 {
             return Ok(Vec::new());
         }
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh registry has face groups but no face-group channel",
         ));
     };
@@ -2185,7 +2184,7 @@ fn registry_triangle_groups(
         || channel.groups.len() != declared_count
         || channel.groups.is_empty()
     {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh face-group channel contradicts its registry declaration",
         ));
     }
@@ -2208,9 +2207,9 @@ fn registry_triangle_groups(
     for (triangle, key) in values.iter().enumerate() {
         let group_index = group_indices
             .get(key)
-            .ok_or_else(|| malformed("paramesh triangle selects no face-group record"))?;
+            .ok_or_else(|| CodecError::malformed("paramesh triangle selects no face-group record"))?;
         let ordinal = u32::try_from(triangle)
-            .map_err(|_| malformed("paramesh triangle ordinal is out of range"))?;
+            .map_err(|_| CodecError::malformed("paramesh triangle ordinal is out of range"))?;
         ctx.push_vec(
             &mut memberships[*group_index].triangles,
             ordinal,
@@ -2218,7 +2217,7 @@ fn registry_triangle_groups(
         )?;
     }
     if memberships.iter().any(|group| group.triangles.is_empty()) {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh face-group record has no triangle membership",
         ));
     }
@@ -2237,7 +2236,7 @@ fn registry_texture_ids(
         return Ok(None);
     };
     if named.next().is_some() {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh registry declares more than one tid channel",
         ));
     }
@@ -2246,7 +2245,7 @@ fn registry_texture_ids(
         || channel.resource_guid.is_none()
         || !channel.groups.is_empty()
     {
-        return Err(malformed(
+        return Err(CodecError::malformed(
             "paramesh tid channel has an invalid registry declaration",
         ));
     }
@@ -2257,7 +2256,7 @@ fn registry_texture_ids(
             values.extend_from_slice(stream.decoded());
             Ok(Some(values))
         }
-        _ => Err(malformed(
+        _ => Err(CodecError::malformed(
             "paramesh tid channel has an invalid registry declaration",
         )),
     }
