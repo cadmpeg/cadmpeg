@@ -148,7 +148,7 @@ fn test_decode_ctx_with_collection_limit<'a>(
 
 #[test]
 fn simple_hole_cylinder_rows_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let entry = |entity_id| crate::feature::entity::dummy_table_entry(entity_id);
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
@@ -233,7 +233,7 @@ fn compact_hole_cylinder_rows_refuse_collection_limit() {
             offset: 0,
             end_offset: 0,
         };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             107,
@@ -304,7 +304,7 @@ fn compact_hole_cylinder_rows_refuse_collection_limit() {
 }
 
 fn circular_sweep_limit_scan(two_cap: bool) -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),

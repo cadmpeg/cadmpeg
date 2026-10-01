@@ -58,7 +58,7 @@ fn tabulated_cylinder_refusals_charge_text_and_loss_rows() {
 }
 
 fn scan_with_tabulated_replay() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.curves
         .tabulated_cylinder_replays
         .push(crate::surface::TabulatedCylinderCurveReplay {
@@ -135,7 +135,7 @@ fn tabulated_replay_counts_refuse_before_node_insertion() {
 }
 
 fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -244,7 +244,7 @@ fn paired_sphere_association_copy_refuses_before_vec_growth() {
 
 #[test]
 fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),

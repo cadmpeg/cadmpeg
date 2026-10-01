@@ -46,7 +46,7 @@ fn one_knit_scan() -> crate::container::ContainerScan<'static> {
         )
         .with_surface_ids([])
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables = vec![
         table(97, 67, entry(103, 200, 11), 10),
         table(97, 100, entry(103, 98, 21), 20),
@@ -400,7 +400,7 @@ fn feature_result_topology_arena_refuses_collection_limit() {
     };
 
     let (tables, rows) = one_result_surface();
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables = tables;
     scan.surfaces.rows = rows;
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -492,7 +492,7 @@ fn feature_result_surface_roster_preserves_order() {
 
 #[test]
 fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             225,
@@ -536,7 +536,7 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
 #[test]
 fn draft_neutral_plane_native_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             225,

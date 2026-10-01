@@ -148,7 +148,7 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
 }
 
 fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.topology.loops.push(crate::test_support::closed_loop(
         std::num::NonZeroU32::new(5),
@@ -244,7 +244,7 @@ fn brep_face_candidate_indexes_preserve_service_selection() {
 }
 
 fn source_index_limit_error(kind: &str) -> CodecError {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let mut carriers = BTreeMap::new();
     let half_edge = crate::topology::HalfEdgeId {
         curve_id: 10,
@@ -312,7 +312,7 @@ fn brep_incidence_index_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_source_indexes_keep_last_duplicate_half_edge_and_incidence() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let id = crate::topology::HalfEdgeId {
         curve_id: 10,
         side: crate::topology::Side::Zero,
@@ -1075,7 +1075,7 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
 
 #[test]
 fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
@@ -1152,7 +1152,7 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
 
 #[test]
 fn admitted_face_component_refs_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.topology.face_components.push(
         crate::decode::with_test_decode_ctx(|ctx| {
             crate::topology::FaceComponent::new(ctx, vec![5], Vec::new())
@@ -1174,7 +1174,7 @@ fn admitted_face_component_refs_refuse_collection_limit() {
 
 #[test]
 fn legacy_brep_admission_excludes_nonvisible_face_references() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
@@ -1565,7 +1565,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
 
 #[test]
 fn native_brep_rejects_ambiguous_model_carriers() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.declared_body_count = Some(1);
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,

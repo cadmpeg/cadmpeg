@@ -2921,6 +2921,11 @@ pub(crate) fn scan_bytes<'a>(
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(MAGIC.len()), "creo container signature")?;
+    if !looks_like_creo(&data) {
+        return Err(CodecError::WrongFormat("missing Creo #UGC:2 signature".into()));
+    }
+
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(data.len()),
         "creo container model-name scan",

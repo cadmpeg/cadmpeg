@@ -749,7 +749,7 @@ mod tests {
             )
         })
         .expect("millimeter admission");
-        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let scan = crate::test_support::empty_container_scan();
         let transform = crate::placement::FeatureSectionTransform::new(
             1,
             Some(1),

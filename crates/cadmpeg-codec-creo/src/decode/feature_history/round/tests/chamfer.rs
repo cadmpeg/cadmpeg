@@ -56,7 +56,7 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
 }
 
 fn chamfer_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 10,
         kind: crate::surface::SurfaceKind::Cone,

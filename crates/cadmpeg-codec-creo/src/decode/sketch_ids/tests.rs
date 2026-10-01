@@ -192,7 +192,7 @@ fn sketch_constraint_identity_and_native_ref_refuse_retained_bytes() {
 
 #[test]
 fn section_owner_feature_identity_refuses_before_formatting() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -219,7 +219,7 @@ fn section_owner_feature_identity_refuses_before_formatting() {
 
 #[test]
 fn model_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let mut source = definition();
     source.offset = 9;
     scan.features.definitions.push(source);
@@ -255,7 +255,7 @@ fn model_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
 
 #[test]
 fn native_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let mut source = definition();
     source.offset = 9;
     scan.features.definitions.push(source);
@@ -292,7 +292,7 @@ fn native_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
 
 #[test]
 fn owning_definition_lookup_keeps_unique_owner_rule() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let mut owned = definition();
     owned.identity = DefinitionIdentity::Parsed {
         schema_id: std::num::NonZeroU32::new(17),

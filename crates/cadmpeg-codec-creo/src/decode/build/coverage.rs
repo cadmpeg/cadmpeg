@@ -1006,7 +1006,7 @@ mod tests {
 
     #[test]
     fn feature_coverage_refuses_before_first_report_node() {
-        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let scan = crate::test_support::empty_container_scan();
         let ir = CadIr::empty();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

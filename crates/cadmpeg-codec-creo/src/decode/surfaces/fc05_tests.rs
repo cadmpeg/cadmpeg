@@ -8,7 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 
 fn one_fc05_cap_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (1, crate::surface::SurfaceKind::Plane),
         (2, crate::surface::SurfaceKind::Cylinder),

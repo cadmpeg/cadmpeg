@@ -263,7 +263,7 @@ mod full_turn_carrier_allocation_tests {
         CadIr,
         RevolveExtent,
     ) {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let mut ir = CadIr::empty();
         let mut add = |id, kind, geometry| {
             scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -651,7 +651,7 @@ mod allocation_tests {
     use std::collections::BTreeSet;
 
     fn generator_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id: 61,
             kind: crate::surface::SurfaceKind::Plane,

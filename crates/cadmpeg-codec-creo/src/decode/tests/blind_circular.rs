@@ -98,7 +98,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(table);
     scan.surfaces.rows.extend([
         row(40, 46, crate::surface::SurfaceKind::Plane),
@@ -222,7 +222,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
 
 #[test]
 fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         kind,
@@ -643,7 +643,7 @@ fn unique_parallel_round_supports_define_constant_radius() {
 
 #[test]
 fn round_support_planes_define_radius_without_generated_surface_rows() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .affected_ids
         .push(crate::feature::rows::FeatureAffectedIds {
@@ -688,7 +688,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
 
 #[test]
 fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
         crate::container::Section::scan("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
@@ -833,7 +833,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
 
 #[test]
 fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),
@@ -882,7 +882,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
 
 #[test]
 fn unequal_round_samples_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, parameter) in [(11, Some(15.0)), (12, Some(1.0)), (13, None)] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -1033,7 +1033,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for id in [11, 12] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -1137,7 +1137,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),

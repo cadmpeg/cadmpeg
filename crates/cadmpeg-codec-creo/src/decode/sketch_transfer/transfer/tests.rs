@@ -12,7 +12,7 @@ use cadmpeg_ir::sketches::{
 use std::collections::BTreeSet;
 
 fn empty_section_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
         .push(crate::feature::definitions::FeatureDefinition {

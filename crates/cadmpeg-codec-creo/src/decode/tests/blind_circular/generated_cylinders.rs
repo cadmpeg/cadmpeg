@@ -173,7 +173,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             next_surface: 0,
             offset: usize::try_from(id).expect("fixture index fits usize"),
         };
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.extend([
             row(31, crate::surface::SurfaceKind::Plane),
             row(32, crate::surface::SurfaceKind::Plane),

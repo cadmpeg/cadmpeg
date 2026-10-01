@@ -33,7 +33,7 @@ fn analytic_curve_plane_service(geometry: &CurveGeometry) -> Option<PlaneEquatio
 }
 
 fn one_positional_plane_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes.positional_frames.push(OutlinePlane {
         surface_id: 7,
         origin: [0.0, 0.0, 1.0],
@@ -72,7 +72,7 @@ fn candidate_limit_error(scan: &crate::container::ContainerScan<'_>, limit: u64)
 }
 
 fn one_held_plane_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes.envelopes.push(PlaneEnvelopeRecord {
         surface_id: 7,
         body: Vec::new(),
@@ -117,7 +117,7 @@ fn agreed_held_plane_node_refuses_collection_limit() {
 
 #[test]
 fn local_plane_chart_id_node_refuses_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 7,
         body: Vec::new(),
@@ -135,7 +135,7 @@ fn local_plane_chart_id_node_refuses_collection_limit() {
 
 #[test]
 fn matrix_plane_frame_id_node_refuses_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 7,
         body: Vec::new(),
@@ -529,7 +529,7 @@ fn distinct_boundary_lines_define_one_plane() {
 
 #[test]
 fn unique_native_conic_loop_places_its_plane_surface() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
         kind: crate::surface::SurfaceKind::Plane,
@@ -623,7 +623,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
 
 #[test]
 fn unique_nurbs_line_loop_places_its_plane_surface() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
         kind: crate::surface::SurfaceKind::Plane,
@@ -850,7 +850,7 @@ fn frame_bound_outline_supplies_the_plane_chart_origin() {
 
 #[test]
 fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 42,
         kind: crate::surface::SurfaceKind::Plane,
@@ -908,7 +908,7 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
 
 #[test]
 fn matrix_frame_owns_conflicting_held_coordinate_plane() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 42,
         kind: crate::surface::SurfaceKind::Plane,
@@ -977,7 +977,7 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
 fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     const EPS_BRANCH_TEST: f64 = 1e-12;
 
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (1, crate::surface::SurfaceKind::Plane),
         (2, crate::surface::SurfaceKind::Plane),
@@ -1083,7 +1083,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
 fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
     const EPS_FC05_FRAME_TEST: f64 = 1e-12;
 
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes.outlines.extend([
         OutlinePlane {
             surface_id: 1,
@@ -1154,7 +1154,7 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
 fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
     const EPS_BRANCH_TEST: f64 = 1e-12;
 
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (1, crate::surface::SurfaceKind::Plane),
         (2, crate::surface::SurfaceKind::Plane),

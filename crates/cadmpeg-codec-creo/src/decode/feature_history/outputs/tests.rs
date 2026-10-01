@@ -55,7 +55,7 @@ fn sweep_output_ir() -> CadIr {
 
 #[test]
 fn feature_output_history_refuses_before_visiting_node() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -71,7 +71,7 @@ fn feature_output_history_refuses_before_visiting_node() {
 
 #[test]
 fn feature_output_history_refuses_before_recursive_step() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
@@ -253,7 +253,7 @@ fn copied_output_body_id_refuses_before_retained_bytes() {
 
 #[test]
 fn generated_input_lookup_refuses_before_scoped_text() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
@@ -270,7 +270,7 @@ fn generated_input_lookup_refuses_before_scoped_text() {
 
 #[test]
 fn generated_surface_body_refuses_before_feature_output_row() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
         kind: crate::surface::SurfaceKind::Plane,
@@ -319,7 +319,7 @@ fn generated_surface_body_refuses_before_feature_output_row() {
 
 #[test]
 fn generated_edge_body_refuses_before_merge_row() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#50:body").expect("identity grammar"),
@@ -350,7 +350,7 @@ fn generated_edge_body_refuses_before_merge_row() {
 
 #[test]
 fn generated_input_body_refuses_before_merge_row() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#50:body").expect("identity grammar"),
@@ -405,7 +405,7 @@ fn generated_input_body_refuses_before_merge_row() {
 
 #[test]
 fn reconciled_output_refuses_before_update_row() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
@@ -439,7 +439,7 @@ fn reconciled_output_refuses_before_update_row() {
 
 #[test]
 fn section_feature_lookups_keep_unique_source_selection() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Section),
@@ -653,7 +653,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         next_edges: [id, id],
         offset: 0,
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .rows
         .extend([feature_row(50), feature_row(70)]);
@@ -695,7 +695,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
 
 #[test]
 fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
@@ -754,7 +754,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
 
 #[test]
 fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
         kind: crate::surface::SurfaceKind::Plane,

@@ -393,7 +393,7 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([row(31), row(32)]);
     scan.planes.outlines.push(plane(31, 2.0));
 
@@ -449,7 +449,7 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     scan.planes
         .outlines
@@ -489,7 +489,7 @@ fn hole_outline_placement_preserves_stored_plane_order() {
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([row(902), row(701)]);
     scan.planes
         .outlines
@@ -1032,7 +1032,7 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
             quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
             offset,
         };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables = vec![
         table(97, 67, vec![entry(103, 200, Some(97), 11)], 10),
         table(97, 100, vec![entry(103, 98, None, 21)], 20),
@@ -1123,7 +1123,7 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
 
 #[test]
 fn mixed_current_and_generated_edges_remain_native() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .affected_ids
         .push(crate::feature::rows::FeatureAffectedIds {
@@ -1192,7 +1192,7 @@ fn mixed_current_and_generated_edges_remain_native() {
 
 #[test]
 fn agreed_empty_edge_selection_is_resolved() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.affected_ids.extend([
         crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
@@ -1216,7 +1216,7 @@ fn agreed_empty_edge_selection_is_resolved() {
         })
     );
 
-    let mut replay_scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut replay_scan = crate::test_support::empty_container_scan();
     replay_scan
         .features
         .replay_affected_ids
@@ -1239,7 +1239,7 @@ fn agreed_empty_edge_selection_is_resolved() {
 
 #[test]
 fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.affected_ids.extend([
         crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
@@ -1263,7 +1263,7 @@ fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
 
 #[test]
 fn geometry_generator_features_join_surface_and_curve_evidence() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 61,
         kind: crate::surface::SurfaceKind::Plane,
@@ -1299,7 +1299,7 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
 
 #[test]
 fn model_feature_ids_include_row_backed_generated_producers() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 50,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),

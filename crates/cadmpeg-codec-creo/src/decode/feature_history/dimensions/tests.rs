@@ -50,7 +50,7 @@ fn dimension_row_identity_refuses_before_formatting() {
 }
 
 fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr) {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
         .push(crate::feature::definitions::FeatureDefinition {
@@ -369,7 +369,7 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
 
 #[test]
 fn planned_dimension_ids_refuse_before_tree_node_and_identity_copy() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
         .push(crate::feature::definitions::FeatureDefinition {
@@ -440,7 +440,7 @@ fn planned_dimension_ids_refuse_before_tree_node_and_identity_copy() {
 
 #[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Section),

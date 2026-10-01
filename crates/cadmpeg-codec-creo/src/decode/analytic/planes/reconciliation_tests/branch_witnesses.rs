@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 fn fc05_witness_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
@@ -280,7 +280,7 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
 }
 
 fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for id in [1, 2] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -779,7 +779,7 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
 }
 
 fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (1, crate::surface::SurfaceKind::Plane),
         (2, crate::surface::SurfaceKind::Cylinder),
