@@ -57,7 +57,7 @@ fn one_carrier_vertex_collection_error(limit: u64) -> CodecError {
     };
     scan.topology.vertices.push(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])
+            crate::topology::TopologicalVertex::new_for_test(ctx, 1, vec![half_edge])
         })
         .expect("vertex admission")
         .expect("valid vertex fixture"),
@@ -196,7 +196,7 @@ fn solve_topological_vertices_refuses_carrier_point_node() {
     }
     scan.topology.vertices.push(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(ctx, 1, half_edges)
+            crate::topology::TopologicalVertex::new_for_test(ctx, 1, half_edges)
         })
         .expect("vertex admission")
         .expect("valid vertex fixture"),
@@ -256,7 +256,7 @@ fn pcurve_vertex_case() -> (
     for (vertex_id, id, face_id, end_vertex_id) in [(1, side_zero, 10, 2), (2, side_one, 11, 1)] {
         scan.topology.vertices.push(
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new(ctx, vertex_id, vec![id])
+                crate::topology::TopologicalVertex::new_for_test(ctx, vertex_id, vec![id])
             })
             .expect("vertex admission")
             .expect("valid vertex fixture"),
@@ -346,7 +346,7 @@ fn analytic_vertex_result(
         let mut members = scan.topology.vertices[0].half_edges().to_vec();
         members.push(id);
         scan.topology.vertices[0] = crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(
+            crate::topology::TopologicalVertex::new_for_test(
                 ctx,
                 scan.topology.vertices[0].id.get(),
                 members,
@@ -423,7 +423,7 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
         let mut members = scan.topology.vertices[vertex_index].half_edges().to_vec();
         members.push(id);
         scan.topology.vertices[vertex_index] = crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(
+            crate::topology::TopologicalVertex::new_for_test(
                 ctx,
                 scan.topology.vertices[vertex_index].id.get(),
                 members,

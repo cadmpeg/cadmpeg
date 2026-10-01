@@ -1088,17 +1088,17 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     });
     scan.topology.face_components = vec![
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new(ctx, vec![1], vec![10])
+            crate::topology::FaceComponent::new_for_test(ctx, vec![1], vec![10])
         })
         .expect("component admission")
         .expect("valid component fixture"),
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new(ctx, vec![5], vec![11])
+            crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![11])
         })
         .expect("component admission")
         .expect("valid component fixture"),
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new(ctx, vec![1, 5], vec![12])
+            crate::topology::FaceComponent::new_for_test(ctx, vec![1, 5], vec![12])
         })
         .expect("component admission")
         .expect("valid component fixture"),
@@ -1113,14 +1113,14 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         .cloned()
         .collect::<Vec<_>>(),
         vec![
-            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(
+            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new_for_test(
                 ctx,
                 vec![5],
                 vec![11]
             ))
             .expect("component admission")
             .expect("valid component fixture"),
-            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(
+            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new_for_test(
                 ctx,
                 vec![1, 5],
                 vec![12]
@@ -1155,7 +1155,7 @@ fn admitted_face_component_refs_refuse_collection_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.topology.face_components.push(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new(ctx, vec![5], Vec::new())
+            crate::topology::FaceComponent::new_for_test(ctx, vec![5], Vec::new())
         })
         .expect("component admission")
         .expect("valid component fixture"),
@@ -1648,7 +1648,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     ));
     scan.topology.face_components.push(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new(ctx, vec![5], vec![10, 11, 12])
+            crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![10, 11, 12])
         })
         .expect("component admission")
         .expect("valid component fixture"),
@@ -1658,7 +1658,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .zip([10_u32, 11, 12])
         .map(|(id, curve_id)| {
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new(
+                crate::topology::TopologicalVertex::new_for_test(
                     ctx,
                     id,
                     vec![crate::topology::HalfEdgeId {

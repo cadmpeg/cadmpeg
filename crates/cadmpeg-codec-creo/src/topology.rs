@@ -155,7 +155,7 @@ pub(crate) struct FaceComponent {
 }
 
 impl FaceComponent {
-    pub(crate) fn new(
+    fn new(
         ctx: &DecodeContext<'_>,
         face_ids: Vec<u32>,
         curve_ids: Vec<u32>,
@@ -187,6 +187,11 @@ impl FaceComponent {
     pub(crate) fn curve_ids(&self) -> &[u32] {
         &self.curve_ids
     }
+    #[cfg(test)]
+    pub(crate) fn new_for_test(ctx: &DecodeContext<'_>, face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Result<Option<Self>, CodecError> {
+        Self::new(ctx, face_ids, curve_ids)
+    }
+
 }
 
 /// One topological vertex represented by its incident half-edge orbit.
@@ -199,7 +204,7 @@ pub(crate) struct TopologicalVertex {
 }
 
 impl TopologicalVertex {
-    pub(crate) fn new(
+    fn new(
         ctx: &DecodeContext<'_>,
         id: u32,
         half_edges: Vec<HalfEdgeId>,
@@ -219,6 +224,11 @@ impl TopologicalVertex {
     pub(crate) fn half_edges(&self) -> &[HalfEdgeId] {
         &self.half_edges
     }
+    #[cfg(test)]
+    pub(crate) fn new_for_test(ctx: &DecodeContext<'_>, id: u32, half_edges: Vec<HalfEdgeId>) -> Result<Option<Self>, CodecError> {
+        Self::new(ctx, id, half_edges)
+    }
+
 }
 
 /// Start/end vertex binding for one oriented half-edge.

@@ -24,3 +24,26 @@ fn vertex_orbits_refuse_before_graph_assembly_and_at_traversal() {
     assert_eq!(orbits.vertices.len(), 1);
     assert_eq!(orbits.vertices[0].half_edges(), ids);
 }
+
+#[test]
+fn face_graph_mints_separate_components_for_disconnected_faces() {
+    let mut rows = [row(1, 1), row(2, 2)];
+    rows[0].faces = [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)];
+    rows[1].faces = [std::num::NonZeroU32::new(3), std::num::NonZeroU32::new(4)];
+    let components = crate::decode::with_test_decode_ctx(|ctx| super::super::face_components(ctx, &rows)).expect("graph admission");
+    assert_eq!(components.len(), 2);
+    assert_eq!(components[0].face_ids(), [1, 2]);
+    assert_eq!(components[0].curve_ids(), [1]);
+    assert_eq!(components[1].face_ids(), [3, 4]);
+    assert_eq!(components[1].curve_ids(), [2]);
+}
+
+#[test]
+fn vertex_graph_mints_separate_orbits_for_unrelated_starts() {
+    let ids = [super::super::HalfEdgeId { curve_id: 1, side: super::super::Side::Zero }, super::super::HalfEdgeId { curve_id: 2, side: super::super::Side::Zero }];
+    let edges = ids.map(|id| super::super::HalfEdge { id, face_id: None, next: None });
+    let orbits = crate::decode::with_test_decode_ctx(|ctx| super::super::vertex_orbits(ctx, &edges)).expect("orbit admission");
+    assert_eq!(orbits.vertices.len(), 2);
+    assert_eq!(orbits.vertices[0].half_edges(), [ids[0]]);
+    assert_eq!(orbits.vertices[1].half_edges(), [ids[1]]);
+}

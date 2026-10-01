@@ -47,13 +47,42 @@ pub(crate) enum ReferenceLineKind {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ReferenceLine {
     /// Native entity family.
-    pub(crate) kind: ReferenceLineKind,
+    kind: ReferenceLineKind,
     /// First endpoint in model coordinates.
-    pub(crate) start: FinitePoint3,
+    start: FinitePoint3,
     /// Second endpoint in model coordinates.
-    pub(crate) end: FinitePoint3,
+    end: FinitePoint3,
     /// Byte offset of the positional row in its section.
     pub(crate) offset: usize,
+}
+
+impl ReferenceLine {
+    pub(crate) fn try_new(kind: ReferenceLineKind, start: FinitePoint3, end: FinitePoint3, offset: usize) -> Option<Self> {
+        if let ReferenceLineKind::Line3d { original_length, .. } = &kind {
+            let first: [f64; 3] = start.get().into();
+            let last: [f64; 3] = end.get().into();
+            let distance = (0..3).fold(0.0_f64, |norm, axis| norm.hypot(last[axis] - first[axis]));
+            let scale = distance.max(original_length.get()).max(1.0);
+            if !distance.is_finite() || distance <= EPS_LINE_NONZERO
+                || (distance - original_length.get()).abs() > EPS_ENDPOINT_AGREEMENT * scale { return None; }
+        }
+        Some(Self { kind, start, end, offset })
+    }
+    pub(crate) fn kind(&self) -> &ReferenceLineKind { &self.kind }
+    pub(crate) fn start(&self) -> FinitePoint3 { self.start }
+    pub(crate) fn end(&self) -> FinitePoint3 { self.end }
+}
+
+/// Source form used to admit a circle center.
+pub(crate) enum ReferenceCircleCenter {
+    Stored(FinitePoint3),
+    Diameter,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CircleCenter {
+    Stored(FinitePoint3),
+    EndpointMidpoint(FinitePoint3),
 }
 
 /// One circular reference entity reconstructed from a positional row.
@@ -62,19 +91,60 @@ pub(crate) struct ReferenceCircle {
     /// Canonical entity identifier repeated across the row boundary.
     pub(crate) entity_id: u32,
     /// Circle center in model coordinates.
-    pub(crate) center: FinitePoint3,
-    /// Whether the center is stored explicitly rather than derived as a midpoint.
-    pub(crate) center_stored: bool,
+    center: CircleCenter,
     /// Circle radius.
-    pub(crate) radius: PositiveLength,
+    radius: PositiveLength,
     /// Unit circle-plane normal.
-    pub(crate) axis: UnitVector3,
+    axis: UnitVector3,
     /// First stored endpoint.
-    pub(crate) start: FinitePoint3,
+    start: FinitePoint3,
     /// Second stored endpoint.
-    pub(crate) end: FinitePoint3,
+    end: FinitePoint3,
     /// Byte offset of the positional row in its section.
     pub(crate) offset: usize,
+}
+
+impl ReferenceCircle {
+    pub(crate) fn try_new(entity_id: u32, center: ReferenceCircleCenter, radius: PositiveLength, axis: UnitVector3, endpoints: [FinitePoint3; 2], offset: usize) -> Option<Self> {
+        let [first, second] = endpoints.map(|point| <[f64; 3]>::from(point.get()));
+        let center = match center {
+            ReferenceCircleCenter::Stored(point) => CircleCenter::Stored(point),
+            ReferenceCircleCenter::Diameter => {
+                let delta = std::array::from_fn::<_, 3, _>(|lane| second[lane] - first[lane]);
+                let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
+                let scale = radius.get().max(diameter).max(1.0);
+                if axis != UnitVector3::Z_AXIS || !diameter.is_finite()
+                    || delta[2].abs() > EPS_DIAMETER_PLANAR * scale
+                    || (diameter - 2.0 * radius.get()).abs() > EPS_RADIUS_AGREEMENT * scale { return None; }
+                let midpoint = std::array::from_fn::<_, 3, _>(|lane| {
+                    let sum = first[lane] + second[lane];
+                    if sum.is_finite() { sum * 0.5 } else { f64::midpoint(first[lane], second[lane]) }
+                });
+                CircleCenter::EndpointMidpoint(FinitePoint3::new(midpoint.into())?)
+            }
+        };
+        let center_point = match center { CircleCenter::Stored(point) | CircleCenter::EndpointMidpoint(point) => point };
+        let origin: [f64; 3] = center_point.get().into();
+        let normal: [f64; 3] = (*axis.as_raw()).into();
+        for endpoint in [first, second] {
+            let delta = std::array::from_fn::<_, 3, _>(|lane| endpoint[lane] - origin[lane]);
+            let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
+            let scale = distance.max(radius.get()).max(1.0);
+            let plane = dot(delta, normal);
+            if !distance.is_finite() || !plane.is_finite()
+                || (distance - radius.get()).abs() > EPS_RADIUS_AGREEMENT * scale
+                || plane.abs() > EPS_DIAMETER_PLANAR * scale { return None; }
+        }
+        Some(Self { entity_id, center, radius, axis, start: endpoints[0], end: endpoints[1], offset })
+    }
+    pub(crate) fn center(&self) -> FinitePoint3 {
+        match self.center { CircleCenter::Stored(point) | CircleCenter::EndpointMidpoint(point) => point }
+    }
+    pub(crate) fn center_stored(&self) -> bool { matches!(self.center, CircleCenter::Stored(_)) }
+    pub(crate) fn radius(&self) -> PositiveLength { self.radius }
+    pub(crate) fn axis(&self) -> UnitVector3 { self.axis }
+    pub(crate) fn start(&self) -> FinitePoint3 { self.start }
+    pub(crate) fn end(&self) -> FinitePoint3 { self.end }
 }
 
 /// Native conic discriminator, with the ellipse code classified explicitly.
@@ -141,17 +211,31 @@ pub(crate) struct ReferenceEllipse {
     /// Canonical identifier of the source conic entity.
     pub(crate) source_entity_id: u32,
     /// Ellipse center.
-    pub(crate) center: FinitePoint3,
+    center: FinitePoint3,
     /// Unit normal of the ellipse plane.
-    pub(crate) axis: UnitVector3,
+    axis: UnitVector3,
     /// Unit direction of the semi-major axis.
-    pub(crate) major_direction: UnitVector3,
+    major_direction: UnitVector3,
     /// Semi-major radius.
-    pub(crate) major_radius: PositiveLength,
+    major_radius: PositiveLength,
     /// Semi-minor radius.
-    pub(crate) minor_radius: PositiveLength,
+    minor_radius: PositiveLength,
     /// Source conic byte offset.
     pub(crate) offset: usize,
+}
+
+impl ReferenceEllipse {
+    pub(crate) fn try_new(source_entity_id: u32, center: FinitePoint3, axis: UnitVector3, major_direction: UnitVector3, radii: [PositiveLength; 2], offset: usize) -> Option<Self> {
+        let normal: [f64; 3] = (*axis.as_raw()).into();
+        let major: [f64; 3] = (*major_direction.as_raw()).into();
+        if dot(normal, major).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL || radii[0].get() < radii[1].get() { return None; }
+        Some(Self { source_entity_id, center, axis, major_direction, major_radius: radii[0], minor_radius: radii[1], offset })
+    }
+    pub(crate) fn center(&self) -> FinitePoint3 { self.center }
+    pub(crate) fn axis(&self) -> UnitVector3 { self.axis }
+    pub(crate) fn major_direction(&self) -> UnitVector3 { self.major_direction }
+    pub(crate) fn major_radius(&self) -> PositiveLength { self.major_radius }
+    pub(crate) fn minor_radius(&self) -> PositiveLength { self.minor_radius }
 }
 
 /// Derive every ellipse whose conic frame, radii, and endpoints independently
@@ -238,15 +322,7 @@ pub(crate) fn ellipse_carriers(
         })();
         if let Some(major_direction) = antipodal_major_direction {
             ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
-            result.push(ReferenceEllipse {
-                source_entity_id: conic.entity_id,
-                center: center_checked,
-                axis: axis_unit,
-                major_direction,
-                major_radius,
-                minor_radius,
-                offset: conic.offset,
-            });
+            if let Some(value) = ReferenceEllipse::try_new(conic.entity_id, center_checked, axis_unit, major_direction, [major_radius, minor_radius], conic.offset) { result.push(value); }
             continue;
         }
         let mapping_is_valid = |first_radius: f64, second_radius: f64| {
@@ -290,15 +366,7 @@ pub(crate) fn ellipse_carriers(
             major_direction = major_direction.reversed();
         }
         ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
-        result.push(ReferenceEllipse {
-            source_entity_id: conic.entity_id,
-            center: center_checked,
-            axis: axis_unit,
-            major_direction,
-            major_radius,
-            minor_radius,
-            offset: conic.offset,
-        });
+        if let Some(value) = ReferenceEllipse::try_new(conic.entity_id, center_checked, axis_unit, major_direction, [major_radius, minor_radius], conic.offset) { result.push(value); }
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
@@ -937,12 +1005,7 @@ pub(crate) fn lines(
                 continue;
             };
             ctx.reserve_vec(&mut result, 1, "creo reference lines")?;
-            result.push(ReferenceLine {
-                kind: ReferenceLineKind::Line,
-                start: first,
-                end: last,
-                offset: start,
-            });
+            if let Some(value) = ReferenceLine::try_new(ReferenceLineKind::Line, first, last, start) { result.push(value); }
         }
         search = block_end.max(instance_search);
     }
@@ -970,16 +1033,11 @@ fn line3d_fields(
         }
         let first = [values[0], values[1], values[2]];
         let second = [values[3], values[4], values[5]];
-        let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
-        let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
         let stored_length = PositiveReal::new(values[6].abs())?;
-        let scale = distance.max(stored_length.get()).max(1.0);
         let first_checked = FinitePoint3::new(first.into())?;
         let second_checked = FinitePoint3::new(second.into())?;
-        (distance.is_finite()
-            && distance > EPS_LINE_NONZERO
-            && (distance - stored_length.get()).abs() <= EPS_ENDPOINT_AGREEMENT * scale)
-            .then_some((start, first_checked, second_checked, stored_length))
+        ReferenceLine::try_new(ReferenceLineKind::Line3d { entity_id: 0, original_length: stored_length }, first_checked, second_checked, 0)?;
+        Some((start, first_checked, second_checked, stored_length))
     });
     let mut candidates = candidates;
     let (_, first, second, stored_length) = candidates.next()?;
@@ -1061,15 +1119,10 @@ pub(crate) fn line3d_lines(
                 continue;
             };
             ctx.reserve_vec(&mut result, 1, "creo line3d reference lines")?;
-            result.push(ReferenceLine {
-                kind: ReferenceLineKind::Line3d {
+            if let Some(value) = ReferenceLine::try_new(ReferenceLineKind::Line3d {
                     entity_id,
                     original_length,
-                },
-                start,
-                end,
-                offset: close + 1,
-            });
+                }, start, end, close + 1) { result.push(value); }
         }
         search = block_end.max(rows_start);
     }
@@ -1144,50 +1197,16 @@ fn arc_z_fields(ctx: &DecodeContext<'_>, body: &[u8], cache: &ScalarCache, entit
         let second = [values[7], values[8], values[9]];
         let center = FinitePoint3::new(center.into())?;
         let (axis, first, second) = explicit_axis(center, radius, first, second)?;
-        Some(ReferenceCircle {
-            entity_id,
-            center,
-            center_stored: true,
-            radius,
-            axis,
-            start: first,
-            end: second,
-            offset: start,
-        })
+        ReferenceCircle::try_new(entity_id, crate::reference::ReferenceCircleCenter::Stored(center), radius, axis, [first, second], start)
     });
     let diametric = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<7>(body, start, cache)?;
         let radius = PositiveLength::new(values[0].abs())?;
         let first = [values[1], values[2], values[3]];
         let second = [values[4], values[5], values[6]];
-        let center = std::array::from_fn(|axis| {
-            let sum = first[axis] + second[axis];
-            if sum.is_finite() {
-                sum * 0.5
-            } else {
-                f64::midpoint(first[axis], second[axis])
-            }
-        });
-        let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
-        let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let scale = radius.get().max(diameter).max(1.0);
-        diameter.is_finite().then_some(())?;
         let first = FinitePoint3::new(first.into())?;
         let second = FinitePoint3::new(second.into())?;
-        let center = FinitePoint3::new(center.into())?;
-        (delta[2].abs() <= EPS_DIAMETER_PLANAR * scale
-            && (diameter - 2.0 * radius.get()).abs() <= EPS_RADIUS_AGREEMENT * scale)
-            .then_some(())?;
-        Some(ReferenceCircle {
-            entity_id,
-            center,
-            center_stored: false,
-            radius,
-            axis: UnitVector3::Z_AXIS,
-            start: first,
-            end: second,
-            offset: start,
-        })
+        ReferenceCircle::try_new(entity_id, crate::reference::ReferenceCircleCenter::Diameter, radius, UnitVector3::Z_AXIS, [first, second], start)
     });
     let mut candidates = explicit.chain(diametric);
     let Some(circle) = candidates.next() else { return Ok(None); };

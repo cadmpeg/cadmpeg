@@ -565,7 +565,7 @@ pub(super) fn reference_line_records(
         let id = ctx.format_retained(
             format_args!(
                 "creo:mdl_ref_info:{}_record#{}",
-                family(&line.kind),
+                family(line.kind()),
                 line.offset
             ),
             "creo native reference line IDs",
@@ -573,9 +573,9 @@ pub(super) fn reference_line_records(
         ctx.reserve_vec(&mut records, 1, "creo native reference line records")?;
         records.push(CreoReferenceLineRecord {
             id,
-            kind: line.kind.clone(),
-            start: line.start.get().into(),
-            end: line.end.get().into(),
+            kind: line.kind().clone(),
+            start: line.start().get().into(),
+            end: line.end().get().into(),
             offset: line.offset,
         });
     }
@@ -596,15 +596,15 @@ pub(super) fn reference_circle_records(
         records.push(CreoReferenceCircleRecord {
             id,
             entity_id: circle.entity_id,
-            center: circle.center.get().into(),
-            center_source: if circle.center_stored {
+            center: circle.center().get().into(),
+            center_source: if circle.center_stored() {
                 "stored"
             } else {
                 "endpoint_midpoint"
             },
-            radius: circle.radius.get(),
-            axis: (*circle.axis.as_raw()).into(),
-            endpoints: [circle.start.get().into(), circle.end.get().into()],
+            radius: circle.radius().get(),
+            axis: (*circle.axis().as_raw()).into(),
+            endpoints: [circle.start().get().into(), circle.end().get().into()],
             offset: circle.offset,
         });
     }
@@ -662,11 +662,11 @@ pub(super) fn reference_ellipse_records(
             id,
             source_conic_id,
             source_entity_id: ellipse.source_entity_id,
-            center: ellipse.center.get().into(),
-            axis: (*ellipse.axis.as_raw()).into(),
-            major_direction: (*ellipse.major_direction.as_raw()).into(),
-            major_radius: ellipse.major_radius.get(),
-            minor_radius: ellipse.minor_radius.get(),
+            center: ellipse.center().get().into(),
+            axis: (*ellipse.axis().as_raw()).into(),
+            major_direction: (*ellipse.major_direction().as_raw()).into(),
+            major_radius: ellipse.major_radius().get(),
+            minor_radius: ellipse.minor_radius().get(),
             offset: ellipse.offset,
         });
     }
@@ -1925,7 +1925,7 @@ mod topology_projection_limit_tests {
         ));
         scan.topology.vertices.push(
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])
+                crate::topology::TopologicalVertex::new_for_test(ctx, 1, vec![half_edge])
             })
             .expect("vertex admission")
             .expect("valid vertex fixture"),
@@ -1939,7 +1939,7 @@ mod topology_projection_limit_tests {
             });
         scan.topology.face_components.push(
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::FaceComponent::new(ctx, vec![1], vec![8])
+                crate::topology::FaceComponent::new_for_test(ctx, vec![1], vec![8])
             })
             .expect("component admission")
             .expect("valid component fixture"),
@@ -5518,24 +5518,10 @@ mod tests {
         let point = |coordinates: [f64; 3]| {
             FinitePoint3::new(coordinates.into()).expect("finite reference point")
         };
-        scan.references.lines.push(crate::reference::ReferenceLine {
-            kind: crate::reference::ReferenceLineKind::Line,
-            start: point([0.0, 0.0, 0.0]),
-            end: point([1.0, 0.0, 0.0]),
-            offset: 0,
-        });
+        scan.references.lines.push(crate::reference::ReferenceLine::try_new(crate::reference::ReferenceLineKind::Line, point([0.0, 0.0, 0.0]), point([1.0, 0.0, 0.0]), 0).expect("checked reference geometry"));
         scan.references
             .circles
-            .push(crate::reference::ReferenceCircle {
-                entity_id: 7,
-                center: point([0.0, 0.0, 0.0]),
-                center_stored: true,
-                radius: PositiveLength::new(1.0).expect("positive radius"),
-                axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
-                start: point([1.0, 0.0, 0.0]),
-                end: point([0.0, 1.0, 0.0]),
-                offset: 0,
-            });
+            .push(crate::reference::ReferenceCircle::try_new(7, crate::reference::ReferenceCircleCenter::Stored(point([0.0, 0.0, 0.0])), PositiveLength::new(1.0).expect("positive radius"), UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"), [point([1.0, 0.0, 0.0]), point([0.0, 1.0, 0.0])], 0).expect("checked reference geometry"));
         scan.references
             .conics
             .push(crate::reference::ReferenceConic {
@@ -5554,15 +5540,7 @@ mod tests {
             });
         scan.references
             .ellipses
-            .push(crate::reference::ReferenceEllipse {
-                source_entity_id: 8,
-                center: point([0.0, 0.0, 0.0]),
-                axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
-                major_direction: UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
-                major_radius: PositiveLength::new(2.0).expect("positive radius"),
-                minor_radius: PositiveLength::new(1.0).expect("positive radius"),
-                offset: 0,
-            });
+            .push(crate::reference::ReferenceEllipse::try_new(8, point([0.0, 0.0, 0.0]), UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"), UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"), [PositiveLength::new(2.0).expect("positive radius"), PositiveLength::new(1.0).expect("positive radius")], 0).expect("checked reference geometry"));
         scan
     }
 
