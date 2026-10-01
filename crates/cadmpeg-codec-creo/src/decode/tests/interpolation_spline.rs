@@ -225,7 +225,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     .expect("service profile resources")
     .expect("valid profile entity");
     assert!(
-        profile_segments_intersect(&ctx, &diagonal, &crossing_line, 1.0e-9)
+        profile_segments_intersect(&ctx, &diagonal, &crossing_line, 1.0e-9, [None, None])
             .expect("service intersection resources")
     );
 
@@ -441,22 +441,22 @@ fn extrusion_profile_intersections_include_analytic_tangency() {
         [[-2.0, 1.0], [2.0, 1.0]],
         full_upper_circle,
         1.0e-9,
-    ));
+     [None, None]));
     assert!(!line_arc_intersect(
         [[-2.0, 1.1], [2.0, 1.1]],
         full_upper_circle,
         1.0e-9,
-    ));
+     [None, None]));
     assert!(arcs_intersect(
         full_upper_circle,
         ([2.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
         1.0e-9,
-    ));
+     [None, None]));
     assert!(!arcs_intersect(
         full_upper_circle,
         ([3.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
         1.0e-9,
-    ));
+     [None, None]));
 }
 
 #[test]
