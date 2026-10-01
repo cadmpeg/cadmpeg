@@ -2179,10 +2179,11 @@ impl<'a> DecodeContext<'a> {
         {
             return Err(format!("definition {} is duplicated", reference.definition_id()).into());
         }
+        let definitions = self.scan.definitions.definitions();
         let definition = self
             .definition_candidates
             .get(&reference.definition_id())
-            .and_then(|index| self.scan.definitions.definitions().get(*index))
+            .and_then(|index| definitions.get(*index))
             .ok_or_else(|| format!("definition {} is missing", reference.definition_id()))?;
         if matches!(definition.kind, crate::instances::DefinitionKind::Linked)
             && definition.members.is_empty()
@@ -2218,7 +2219,7 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
         let transform = parent.compose(local).map_err(|error| error.to_string())?;
         let definition_id = definition.id();
-        let definition_members = definition.members.clone();
+        let definition_members = &definition.members;
         stack.push(definition_id);
         path.push(self.reference_segment(source_order, identity));
         let previous_display = self.instance_display;
@@ -2231,7 +2232,7 @@ impl<'a> DecodeContext<'a> {
                 && identity.effective_visible,
         });
         let mut links = Vec::new();
-        for member_id in definition_members {
+        for &member_id in definition_members {
             self.expansion_budget.member(self.expand.ctx())?;
             self.charge_session_collections(1, "rhino_instance_member")?;
             let member_order = match self.resolve_object(member_id) {
