@@ -1528,17 +1528,19 @@ fn fastload_identity_map_refuses_collection_limit_before_reserve() {
 
 #[test]
 fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
-    let map_entry_bytes = std::mem::size_of::<(u32, usize)>() + 4 * std::mem::size_of::<usize>();
+    // Fifty entries use sixty-four buckets, one control byte per bucket,
+    // sixteen trailing control bytes and at most fifteen alignment bytes.
+    let map_bytes = 64 * std::mem::size_of::<(u32, usize)>() + 64 + 16 + 15;
     let adjust_policy = |policy: &mut DecodePolicy| {
         policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(50 * map_entry_bytes - 1);
+            cadmpeg_core::decode::u64_from_index(map_bytes - 1);
     };
     let error =
         native_fastload_result(adjust_policy).expect_err("identity map needs one more byte");
     assert_fastload_limit(
         &error,
         ResourceDimension::MaterializedBytes,
-        "count NX FastLoad identities",
+        "admit NX FastLoad identity counts",
     );
 }
 

@@ -4452,31 +4452,19 @@ pub(super) fn rmfastload_object_id_table(
     let table_id_text = "nx:rmfastload:object-id-table#0";
     let member_id_len = "nx:rmfastload:object-id#".len() + 10;
 
-    ctx.charge_collection_items(count_u64, "admit NX FastLoad identity counts")?;
-    let map_entry_bytes = std::mem::size_of::<(u32, usize)>()
-        .checked_add(4 * std::mem::size_of::<usize>())
-        .ok_or_else(|| {
-            CodecError::NotImplemented("FastLoad map entry exceeds address space".into())
-        })?;
-    let map_bytes = count.checked_mul(map_entry_bytes).ok_or_else(|| {
-        CodecError::NotImplemented("FastLoad identity map exceeds address space".into())
-    })?;
-    let _map_reservation = ctx.reserve_scoped(
-        u64::try_from(map_bytes)
-            .map_err(|_| CodecError::NotImplemented("FastLoad identity map exceeds u64".into()))?,
-        "count NX FastLoad identities",
-    )?;
     ctx.charge_work(
         count_u64.checked_mul(2).ok_or_else(|| {
             CodecError::NotImplemented("FastLoad identity work exceeds u64".into())
         })?,
         "count NX FastLoad identities",
     )?;
-    let mut counts = HashMap::<u32, usize>::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_map(
-        &mut counts,
-        count,
-        "allocate NX FastLoad identity map",
+    let (mut counts, _map_reservation) = ctx.with_scoped_storage(
+        "count NX FastLoad identities",
+        || {
+            let mut counts = HashMap::<u32, usize>::new();
+            ctx.reserve_map(&mut counts, count, "admit NX FastLoad identity counts")?;
+            Ok::<_, CodecError>(counts)
+        },
     )?;
     for value in values {
         *counts.entry(*value).or_default() += 1;
