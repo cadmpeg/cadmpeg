@@ -624,6 +624,7 @@ pub(crate) fn extract_streams<'a>(
     root: View<'a>,
     container: &Container,
 ) -> Result<Vec<Stream>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(container.entries.len()), "find NX part stream")?;
     let Some((part_offset, part_size)) = container
         .entries
         .iter()
@@ -650,11 +651,13 @@ pub(crate) fn extract_streams<'a>(
     let mut streams = Vec::new();
     if container.segment_index().is_some() {
         let mut seen = BTreeSet::new();
+        let mut seen_guard = ctx.reserve_scoped(0, "NX indexed stream offsets")?;
         for wrapper in container.segment_stream_wrappers() {
+            ctx.charge_work(1, "scan NX indexed stream wrappers")?;
             let Some(offset) = wrapper.zlib_offset.checked_sub(start) else {
                 continue;
             };
-            if !seen.insert(offset)
+            if !ctx.insert_scoped_btree_set(&mut seen_guard, &mut seen, offset, "index NX stream offset", "NX indexed stream offsets")?
                 || offset
                     .checked_add(2)
                     .and_then(|end| part.get(offset..end))
@@ -669,13 +672,15 @@ pub(crate) fn extract_streams<'a>(
                 )));
             };
             let body = classify(&inflated);
-            streams.push(Stream {
+            ctx.charge_entities(1, "admit NX streams")?;
+            ctx.push_retained_vec(&mut streams, Stream {
                 file_offset: start + offset,
                 consumed,
                 inflated,
                 body,
-            });
+            }, "NX embedded stream slots")?;
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(streams.len()), "classify NX stream roster")?;
         if streams.iter().any(|stream| stream.kind().is_parasolid()) {
             return Ok(streams);
         }
@@ -695,26 +700,29 @@ fn append_all_zlib_streams<'a>(
     structural_only: bool,
 ) -> Result<(), CodecError> {
     let part = part_view.window();
-    let mut seen = streams
-        .iter()
-        .map(|stream| stream.file_offset)
-        .collect::<BTreeSet<_>>();
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(part.len()), "scan NX embedded stream bytes")?;
+    let mut seen = BTreeSet::new();
+    let mut seen_guard = ctx.reserve_scoped(0, "NX embedded stream offset index")?;
+    for stream in streams.iter() {
+        ctx.insert_scoped_btree_set(&mut seen_guard, &mut seen, stream.file_offset, "index NX stream offset", "NX embedded stream offset index")?;
+    }
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
             if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
                 let body = classify(&inflated);
                 let file_offset = file_start + i;
-                if seen.insert(file_offset)
+                if ctx.insert_scoped_btree_set(&mut seen_guard, &mut seen, file_offset, "index NX stream offset", "NX embedded stream offset index")?
                     && (!structural_only
                         || structural_stream_candidate(ctx, body.kind(), &inflated)?)
                 {
-                    streams.push(Stream {
+                    ctx.charge_entities(1, "admit NX streams")?;
+                    ctx.push_retained_vec(streams, Stream {
                         file_offset,
                         consumed,
                         inflated,
                         body,
-                    });
+                    }, "NX embedded stream slots")?;
                 }
                 // Resume past the bytes this member consumed, not at the next
                 // byte: a spurious `78 xx` zlib header inside the compressed
@@ -790,10 +798,8 @@ pub(crate) fn extract_legacy_streams<'a>(
     let bytes = part.window();
     let mut streams = Vec::new();
     let mut search = 0;
-    while let Some(start) = legacy_stream_start(bytes, search) {
-        let next = start
-            .checked_add(4)
-            .and_then(|next| legacy_stream_start(bytes, next));
+    while let Some(start) = legacy_stream_start(ctx, bytes, search)? {
+        let next = match start.checked_add(4) { Some(next) => legacy_stream_start(ctx, bytes, next)?, None => None };
         let end = next.unwrap_or(bytes.len());
         let payload = bytes.get(start..end).ok_or_else(|| {
             CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
@@ -806,12 +812,13 @@ pub(crate) fn extract_legacy_streams<'a>(
         let file_offset = part.start().checked_add(start).ok_or_else(|| {
             CodecError::Malformed("legacy Parasolid stream offset overflow".into())
         })?;
-        streams.push(Stream {
+        ctx.charge_entities(1, "admit NX streams")?;
+        ctx.push_retained_vec(&mut streams, Stream {
             file_offset,
             consumed,
             inflated,
             body,
-        });
+        }, "NX embedded stream slots")?;
         let Some(next) = next else {
             break;
         };
@@ -820,40 +827,43 @@ pub(crate) fn extract_legacy_streams<'a>(
     Ok(streams)
 }
 
-fn legacy_stream_start(bytes: &[u8], mut search: usize) -> Option<usize> {
-    while let Some(relative) = find(bytes.get(search..).unwrap_or_default(), b"PS\x00\x00") {
-        let start = search.checked_add(relative)?;
-        if legacy_transmit_header(bytes, start) {
-            return Some(start);
-        }
-        search = start.checked_add(4)?;
+fn legacy_stream_start(ctx: &DecodeContext<'_>, bytes: &[u8], mut search: usize) -> Result<Option<usize>, CodecError> {
+    loop {
+        let Some(window) = bytes.get(search..) else { return Ok(None); };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(window.len()), "scan NX legacy stream headers")?;
+        let Some(relative) = find(window, b"PS\x00\x00") else { return Ok(None); };
+        let Some(start) = search.checked_add(relative) else { return Ok(None); };
+        if legacy_transmit_header(ctx, bytes, start)? { return Ok(Some(start)); }
+        let Some(next) = start.checked_add(4) else { return Ok(None); };
+        search = next;
     }
-    None
 }
 
-fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
+fn legacy_transmit_header(ctx: &DecodeContext<'_>, bytes: &[u8], start: usize) -> Result<bool, CodecError> {
     let Some(description_len) = start
         .checked_add(2)
         .and_then(|offset| View::u32_be_at(bytes, offset))
     else {
-        return false;
+        return Ok(false);
     };
     let Ok(description_len) = usize::try_from(description_len) else {
-        return false;
+        return Ok(false);
     };
     let Some(description_start) = start.checked_add(6) else {
-        return false;
+        return Ok(false);
     };
     let Some(description_end) = description_start.checked_add(description_len) else {
-        return false;
+        return Ok(false);
     };
     let Some(description) = bytes.get(description_start..description_end) else {
-        return false;
+        return Ok(false);
     };
-    description
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(description.len()), "validate NX legacy stream description")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(description.len()), "find NX legacy transmit marker")?;
+    Ok(description
         .iter()
         .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        && contains(description, b"TRANSMIT FILE")
+        && contains(description, b"TRANSMIT FILE"))
 }
 
 /// Inflate one complete zlib member.
