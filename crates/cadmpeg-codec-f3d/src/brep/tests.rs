@@ -1014,3 +1014,5 @@ fn brep_append_refuses_statistic_index_limit() {
         if limit.operation == "merge F3D BREP statistic kinds")
     );
 }
+
+mod work;

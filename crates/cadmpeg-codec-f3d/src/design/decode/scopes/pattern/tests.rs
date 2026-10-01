@@ -1399,45 +1399,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
 fn rectangular_pattern_instance_collections_refuse_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        crate::records::feature::scope::DesignFeatureKind::RPattern,
-        0,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
-                100, 50, 51, 52, 53, 110, 120, 130, 140,
-            ]);
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let mut bytes = Vec::new();
-    append_transform_record(&mut bytes, 100, [0., 0., 0.]);
-    for index in 50..=53 {
-        append_header(&mut bytes, index);
-    }
-    append_header(&mut bytes, 110);
-    append_transform_record(&mut bytes, 120, [0., 0., 5e199]);
-    append_transform_record(&mut bytes, 130, [0., 0., 1e200]);
-    append_header(&mut bytes, 140);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let construction =
-        crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
-            crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
-                u_count: 3,
-                v_count: 1,
-                u_extent: 1e200,
-                v_extent: 0.,
-                owner_record_indices: [50, 51, 52, 53],
-                value_offsets: [501, 502, 503, 504],
-                instances: None,
-            },
-        )
-        .unwrap();
+    let (bytes, records, scope, construction) = rectangular_instance_fixture();
     for (limit, operation) in [
         (2, "f3d rectangular pattern record indices"),
         (11, "f3d rectangular pattern reference starts"),
@@ -1557,5 +1519,92 @@ fn circular_pattern_historical_wrappers_refuse_collection_limit() {
             wrappers, persistent_identity: 503, resolved: None,
         } if wrappers.len() == 2 && wrappers[0] == wrappers[1])
         );
+    });
+}
+
+fn rectangular_instance_fixture() -> (Vec<u8>, crate::design::decode::sketch::IndexedRecordOffsets, DesignParameterScope, crate::records::feature::patterns::DesignRectangularPatternConstruction) {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        crate::records::feature::scope::DesignFeatureKind::RPattern,
+        0,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                100, 50, 51, 52, 53, 110, 120, 130, 140,
+            ]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut bytes = Vec::new();
+    append_transform_record(&mut bytes, 100, [0., 0., 0.]);
+    for index in 50..=53 {
+        append_header(&mut bytes, index);
+    }
+    append_header(&mut bytes, 110);
+    append_transform_record(&mut bytes, 120, [0., 0., 5e199]);
+    append_transform_record(&mut bytes, 130, [0., 0., 1e200]);
+    append_header(&mut bytes, 140);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction =
+        crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
+            crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+                u_count: 3,
+                v_count: 1,
+                u_extent: 1e200,
+                v_extent: 0.,
+                owner_record_indices: [50, 51, 52, 53],
+                value_offsets: [501, 502, 503, 504],
+                instances: None,
+            },
+        )
+        .unwrap();
+    (bytes, records, scope, construction)
+}
+
+#[test]
+fn rectangular_pattern_search_preserves_work_refusals() {
+    let (bytes, records, scope, construction) = rectangular_instance_fixture();
+    let mut scan_work = 0;
+    for index in [100, 120, 130] {
+        let start = records.first_at_or_after(0, index).unwrap();
+        let end = scope.reference_members().values().filter_map(|index| records.first_at_or_after(0, *index)).filter(|offset| *offset > start).min().unwrap();
+        scan_work += 18 + u64_from_index(end - start - 120) + 152;
+    }
+    for (work, operation) in [(0, "index F3D rectangular pattern candidate range"), (18, "scan F3D rectangular pattern matrices"), (scan_work, "match F3D rectangular pattern endpoints"), (scan_work + 24, "match F3D rectangular pattern intermediate")] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = super::exact_rectangular_pattern_instances(ctx, &bytes, &records, &scope, &construction).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("pattern search must refuse"); };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(Some(limit), ctx.resource_refusal());
+        });
+    }
+}
+
+#[test]
+fn rectangular_pattern_local_search_ceilings_refuse() {
+    let (bytes, records, scope, construction) = rectangular_instance_fixture();
+    let mut wire = crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(construction);
+    wire.u_count = 4097;
+    let construction = crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        let error = super::exact_rectangular_pattern_instances(ctx, &bytes, &records, &scope, &construction).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("local count ceiling must refuse"); };
+        assert_eq!(limit.operation, "F3D rectangular pattern search count");
+        assert_eq!(Some(limit), ctx.resource_refusal());
+    });
+    let (mut bytes, _, scope, construction) = rectangular_instance_fixture();
+    bytes.splice(139..139, std::iter::repeat_n(0, 1_048_576));
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    crate::test_support::with_decode_context(|ctx| {
+        let error = super::exact_rectangular_pattern_instances(ctx, &bytes, &records, &scope, &construction).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("local span ceiling must refuse"); };
+        assert_eq!(limit.operation, "F3D rectangular pattern record span");
+        assert_eq!(Some(limit), ctx.resource_refusal());
     });
 }

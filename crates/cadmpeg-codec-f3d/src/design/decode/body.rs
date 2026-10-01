@@ -1191,6 +1191,7 @@ pub(crate) fn decode_design_body_bindings(
             }
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
                 let body = crate::brep::resolve_body_selector(
+                    ctx,
                     source_bodies.iter().copied(),
                     binding.asm_key,
                 )?;
