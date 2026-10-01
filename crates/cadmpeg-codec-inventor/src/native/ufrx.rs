@@ -30,8 +30,40 @@ pub(crate) fn byte_document_id_present(value: &[u8]) -> bool {
     value.iter().any(|byte| *byte != 0)
 }
 
-fn text_document_id_present(value: &str) -> bool {
-    value.chars().any(|character| character != '0') && !is_blank(value)
+/// Hexadecimal text for exactly sixteen identifier bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Identifier16(NonBlankString);
+
+impl Identifier16 {
+    fn try_new(value: String) -> Result<Self, String> {
+        if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("identifier must contain 32 hexadecimal digits".to_owned());
+        }
+        NonBlankString::new(value).map(Self)
+            .ok_or_else(|| "identifier must contain 32 hexadecimal digits".to_owned())
+    }
+
+    fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+/// Nonzero document identity for an external reference with no path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NonzeroDocumentId(Identifier16);
+
+impl NonzeroDocumentId {
+    fn try_new(value: Identifier16) -> Result<Self, String> {
+        if value.as_str().bytes().all(|byte| byte == b'0') {
+            Err("document_id must be nonzero".to_owned())
+        } else {
+            Ok(Self(value))
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 pub(crate) fn embedded_reference_issue(record_len: u64) -> Option<&'static str> {
@@ -546,7 +578,7 @@ impl Serialize for ExternalReferenceRecord {
         let (path, document_id) = match &self.identity {
             ExternalReferenceIdentity::Path { path, document_id } => (
                 path.as_str(),
-                document_id.as_ref().map(NonBlankString::as_str),
+                document_id.as_ref().map(NonzeroDocumentId::as_str),
             ),
             ExternalReferenceIdentity::DocumentId(document_id) => ("", Some(document_id.as_str())),
         };
@@ -600,18 +632,16 @@ pub(crate) struct ExternalReferenceRecordWire {
 impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
     type Error = String;
     fn try_from(wire: ExternalReferenceRecordWire) -> Result<Self, Self::Error> {
-        if let Some(issue) = external_reference_issue(
-            &wire.path,
-            wire.document_id
-                .as_deref()
-                .is_some_and(text_document_id_present),
-        ) {
+        let document_id = wire.document_id
+            .map(Identifier16::try_new)
+            .transpose()
+            .map_err(|error| format!("document_id: {error}"))?
+            .filter(|value| !value.as_str().bytes().all(|byte| byte == b'0'))
+            .map(NonzeroDocumentId::try_new)
+            .transpose()?;
+        if let Some(issue) = external_reference_issue(&wire.path, document_id.is_some()) {
             return Err(issue.into());
         }
-        let document_id = wire
-            .document_id
-            .filter(|value| !value.chars().all(|character| character == '0'))
-            .and_then(NonBlankString::new);
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
@@ -639,9 +669,9 @@ impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
 enum ExternalReferenceIdentity {
     Path {
         path: NonBlankString,
-        document_id: Option<NonBlankString>,
+        document_id: Option<NonzeroDocumentId>,
     },
-    DocumentId(NonBlankString),
+    DocumentId(NonzeroDocumentId),
 }
 
 impl ExternalReferenceRecord {
@@ -659,7 +689,7 @@ impl ExternalReferenceRecord {
                 ExternalDocument::Path { path: path.clone() }
             }
             ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
-                document_id: document_id.clone(),
+                document_id: document_id.0.0.clone(),
             },
         }
     }
@@ -1046,12 +1076,17 @@ mod tests {
             "occurrence_count": 0, "version": 0, "flags": 0
         });
         for (path, document_id, accepted) in [
-            ("part.ipt", "0000", true),
-            ("part.ipt", "", true),
-            ("", "0001", true),
-            ("part.ipt", "0001", true),
+            ("part.ipt", "0000", false),
+            ("part.ipt", "", false),
+            ("", "0001", false),
+            ("part.ipt", "0001", false),
             ("", "0000", false),
             ("", "", false),
+            ("", "garbage", false),
+            ("part.ipt", "00000000000000000000000000000000", true),
+            ("", "00000000000000000000000000000001", true),
+            ("part.ipt", "00000000000000000000000000000001", true),
+            ("", "00000000000000000000000000000000", false),
         ] {
             let mut wire = valid.clone();
             wire["path"] = serde_json::json!(path);
