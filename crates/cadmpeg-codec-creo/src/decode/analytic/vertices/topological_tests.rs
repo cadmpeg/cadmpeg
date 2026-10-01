@@ -50,7 +50,7 @@ fn incident_line_collection_error(limit: u64) -> CodecError {
 }
 
 fn one_carrier_vertex_collection_error(limit: u64) -> CodecError {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let half_edge = crate::topology::HalfEdgeId {
         curve_id: 7,
         side: crate::topology::Side::Zero,
@@ -168,7 +168,7 @@ fn solve_topological_vertices_refuses_sample_collection() {
 
 #[test]
 fn solve_topological_vertices_refuses_carrier_point_node() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let mut carriers = std::collections::BTreeMap::new();
     let mut half_edges = Vec::new();
     for (curve_id, face_id, axis) in [(10, 5, 0), (11, 6, 1), (12, 7, 2)] {
@@ -222,7 +222,7 @@ fn pcurve_vertex_case() -> (
     cadmpeg_ir::document::CadIr,
     std::collections::BTreeMap<u32, crate::decode::analytic::equations::CarrierEquation>,
 ) {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let side_zero = crate::topology::HalfEdgeId {
         curve_id: 7,
         side: crate::topology::Side::Zero,

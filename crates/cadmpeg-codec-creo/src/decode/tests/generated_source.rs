@@ -1067,7 +1067,7 @@ fn drill_tip_cone_points_define_a_clipped_radial_coordinate() {
 
 #[test]
 fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .entity_tables
         .push(simple_drilled_recipe_table(9));
@@ -1207,7 +1207,7 @@ fn counterbore_sources_require_materialized_table_membership() {
         next_surface: 0,
         offset: 0,
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let duplicate_productive_table = table.clone();
     scan.features.entity_tables.push(table);
     scan.features.entity_tables.push(

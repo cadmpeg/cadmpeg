@@ -50,7 +50,7 @@ fn incidence(
 }
 
 fn carrier_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows = [1_u32, 2, 3, 4]
         .into_iter()
         .map(|id| {

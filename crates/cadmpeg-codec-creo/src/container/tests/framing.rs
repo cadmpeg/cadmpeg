@@ -986,3 +986,14 @@ fn legacy_framing_box_refuses_its_retained_slot() {
         matches!(super::super::identify_layout(&ctx, &[], &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box")
     );
 }
+
+#[test]
+fn direct_inspect_and_decode_reject_missing_creo_signature() {
+    for bytes in [b"".as_slice(), b"PK\x03\x04", b"\x0e\x93\x13\x01NX"] {
+        assert!(matches!(CreoCodec.inspect(&mut Cursor::new(bytes), &cadmpeg_core::decode::InspectOptions::default()), Err(cadmpeg_core::CodecError::WrongFormat(_))));
+        for container_only in [false, true] {
+            let options = DecodeOptions { container_only, ..DecodeOptions::default() };
+            assert!(matches!(CreoCodec.decode(&mut Cursor::new(bytes), &options), Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::WrongFormat(_)))));
+        }
+    }
+}

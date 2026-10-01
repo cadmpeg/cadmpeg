@@ -974,7 +974,7 @@ mod feature_entity_table_record_tests {
     use std::collections::BTreeSet;
 
     fn scan_with_table() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.entity_tables.push(FeatureEntityTable::new(
             4,
             29,
@@ -1346,7 +1346,7 @@ mod feature_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.entities.push(FeatureEntity {
             entity_id: 4,
             type_byte: 1,
@@ -1592,7 +1592,7 @@ mod feature_choice_field_record_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let values = [
             FeatureFieldValue::Empty,
             FeatureFieldValue::CompactInt(7),
@@ -1900,7 +1900,7 @@ mod topology_projection_limit_tests {
     use std::num::NonZeroU32;
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let half_edge = HalfEdgeId {
             curve_id: 8,
             side: Side::Zero,
@@ -2422,7 +2422,7 @@ mod curve_plane_projection_limit_tests {
     use cadmpeg_ir::units::UnitVector3;
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves.fc_coordinates.push(FcCurveCoordinates {
             curve_id: 8,
             subtype: 1,
@@ -3163,7 +3163,7 @@ mod surface_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(SurfaceRow {
             id: 7,
             kind: SurfaceKind::Plane,
@@ -3571,7 +3571,7 @@ mod curve_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let scalar = CurveParameterScalar {
             value: 2.0,
             raw: vec![0xf9, 0],
@@ -3863,7 +3863,7 @@ mod surface_parameter_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(SurfaceRow {
             id: 7,
             kind: SurfaceKind::Plane,
@@ -4152,7 +4152,7 @@ mod pcurve_endpoint_projection_limit_tests {
 
     #[test]
     fn positional_pcurve_endpoint_refuses_collection_limit() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
             curve_id: 7,
             faces: [None; 2],
@@ -4178,7 +4178,7 @@ mod pcurve_endpoint_projection_limit_tests {
 
     #[test]
     fn prototype_pcurve_endpoint_refuses_collection_limit() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves
             .bound_prototype_pcurves
             .push(crate::curve::BoundPrototypePcurve {
@@ -4314,7 +4314,7 @@ mod curve_expression_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let assignment = CurveExpressionAssignment {
             target: CurveExpressionTarget::Parameter {
                 name: "p".into(),
@@ -5023,7 +5023,7 @@ mod sketch_projection_limit_tests {
     }
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.definitions.push(definition());
         scan
     }
@@ -5304,7 +5304,7 @@ mod feature_definition_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let mut local_scalars = std::array::from_fn(|_| DecodedField {
             value: None,
             body: Vec::new(),
@@ -5435,7 +5435,7 @@ mod tests {
         max_retained_bytes: u64,
         max_collection_items: u64,
     ) -> Result<Vec<super::CreoExpandedSectionRecord>, cadmpeg_core::CodecError> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.framing
             .expanded_sections
             .push(crate::container::ExpandedSection {
@@ -5513,7 +5513,7 @@ mod tests {
         use cadmpeg_ir::features::FinitePoint3;
         use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
         use cadmpeg_ir::units::UnitVector3;
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let point = |coordinates: [f64; 3]| {
             FinitePoint3::new(coordinates.into()).expect("finite reference point")
         };
@@ -5741,7 +5741,7 @@ mod tests {
     }
 
     fn reference_name_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features
             .reference_names
             .push(crate::feature::operations::FeatureReferenceName {
@@ -5773,7 +5773,7 @@ mod tests {
             FeatureOperation, IdKeyword, OperationKind, OperationName, RecipeResolution,
             RecipeState,
         };
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.operations.push(FeatureOperation {
             feature_id: 40,
             kind: OperationKind::Native,
@@ -5954,7 +5954,7 @@ mod tests {
     #[test]
     fn overlapping_feature_candidates_do_not_expose_short_headers() {
         let payload = [1, 0xe3, 2, 0, 0, 0xe3, 0xf6, 0x83, 0x8f, 0xe1];
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =

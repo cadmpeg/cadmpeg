@@ -473,7 +473,7 @@ mod tests {
             offset: 0,
         };
         let valid_scan = || {
-            let mut scan = crate::container::scan_bytes_ok(Vec::new());
+            let mut scan = crate::test_support::empty_container_scan();
             scan.features.entity_tables.push(table());
             scan.surfaces
                 .rows
@@ -481,7 +481,7 @@ mod tests {
             scan
         };
 
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         assert_eq!(
             surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
             None
