@@ -49,8 +49,7 @@ fn feature_output_bodies_with_history(
     if visiting.contains(&feature_id) {
         return Ok(Vec::new());
     }
-    ctx.charge_collection_items(1, "creo feature output visiting nodes")?;
-    visiting.insert(feature_id);
+    ctx.insert_btree_set(visiting, feature_id, "creo feature output visiting nodes")?;
     let affected_geometry = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
@@ -198,10 +197,7 @@ fn bodies_containing_edges(
 ) -> Result<Vec<BodyId>, CodecError> {
     let mut selected = BTreeSet::new();
     for edge in edges {
-        if !selected.contains(edge) {
-            ctx.charge_collection_items(1, "creo selected edge nodes")?;
-            selected.insert(edge);
-        }
+        ctx.insert_btree_set(&mut selected, edge, "creo selected edge nodes")?;
     }
     let mut shell_ids = BTreeSet::new();
     for coedge in ir
@@ -221,10 +217,7 @@ fn bodies_containing_edges(
         else {
             continue;
         };
-        if !shell_ids.contains(&face.shell) {
-            ctx.charge_collection_items(1, "creo selected shell nodes")?;
-            shell_ids.insert(&face.shell);
-        }
+        ctx.insert_btree_set(&mut shell_ids, &face.shell, "creo selected shell nodes")?;
     }
     for shell in ir.model.shells.iter().filter(|shell| {
         shell
@@ -232,10 +225,7 @@ fn bodies_containing_edges(
             .iter()
             .any(|edge| selected.contains(edge))
     }) {
-        if !shell_ids.contains(&shell.id) {
-            ctx.charge_collection_items(1, "creo selected shell nodes")?;
-            shell_ids.insert(&shell.id);
-        }
+        ctx.insert_btree_set(&mut shell_ids, &shell.id, "creo selected shell nodes")?;
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
@@ -478,8 +468,7 @@ fn insert_feature_parameter(
         cadmpeg_core::decode::u64_from_index(key.len()),
         "creo feature parameter key",
     )?;
-    ctx.charge_collection_items(1, "creo feature parameter nodes")?;
-    parameters.insert(key, value);
+    ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")?;
     drop(key_reservation);
     Ok(())
 }
@@ -494,9 +483,8 @@ fn replace_feature_parameter(
     if let Some(existing) = parameters.get_mut(key) {
         *existing = value;
     } else {
-        ctx.charge_collection_items(1, "creo feature parameter nodes")?;
         let key = ctx.copy_retained_text(key, "creo feature parameter key")?;
-        parameters.insert(key, value);
+        ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")?;
     }
     Ok(())
 }
@@ -858,10 +846,12 @@ pub(in super::super) fn insert_feature_source_property(
         format_args!("{value}"),
         "creo feature source property value",
     )?;
-    if !properties.contains_key(&key) {
-        ctx.charge_collection_items(1, "creo feature source property nodes")?;
-    }
-    properties.insert(key, value);
+    ctx.insert_btree_map(
+        properties,
+        key,
+        value,
+        "creo feature source property nodes",
+    )?;
     Ok(())
 }
 

@@ -829,20 +829,28 @@ fn hole_template_candidates<T>(
     let mut labels_by_id = BTreeMap::<&str, &FeatureOperationLabel>::new();
     for label in labels {
         ctx.charge_work(1, "index NX hole template labels")?;
-        ctx.charge_collection_items(1, "NX hole template label index")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &FeatureOperationLabel)>() * 4,
         ))?;
-        labels_by_id.insert(label.id.as_str(), label);
+        ctx.insert_btree_map(
+            &mut labels_by_id,
+            label.id.as_str(),
+            label,
+            "NX hole template label index",
+        )?;
     }
     let mut records_by_id = BTreeMap::<&str, &FeatureOperationRecord>::new();
     for record in records {
         ctx.charge_work(1, "index NX hole template records")?;
-        ctx.charge_collection_items(1, "NX hole template record index")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &FeatureOperationRecord)>() * 4,
         ))?;
-        records_by_id.insert(record.id.as_str(), record);
+        ctx.insert_btree_map(
+            &mut records_by_id,
+            record.id.as_str(),
+            record,
+            "NX hole template record index",
+        )?;
     }
     let mut candidates =
         BTreeMap::<&str, (usize, &FeaturePayloadString, &FeatureOperationLabel)>::new();
@@ -862,12 +870,16 @@ fn hole_template_candidates<T>(
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("count NX hole template candidates", 0, 1))?;
         } else {
-            ctx.charge_collection_items(1, "NX hole template candidate index")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<(&str, (usize, &FeaturePayloadString, &FeatureOperationLabel))>(
                 ) * 4,
             ))?;
-            candidates.insert(label.id.as_str(), (1, string, label));
+            ctx.insert_btree_map(
+                &mut candidates,
+                label.id.as_str(),
+                (1, string, label),
+                "NX hole template candidate index",
+            )?;
         }
     }
     let mut output = Vec::new();
@@ -1322,11 +1334,14 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         let lane = match (matching_lanes.next(), matching_lanes.next()) {
             (Some(lane), None) => lane,
             (Some(_), Some(_)) => {
-                ctx.charge_collection_items(1, "NX ambiguous simple hole groups")?;
                 grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<([&str; 2], [&str; 2])>() * 4,
                 ))?;
-                ambiguous_groups.insert(key);
+                ctx.insert_btree_set(
+                    &mut ambiguous_groups,
+                    key,
+                    "NX ambiguous simple hole groups",
+                )?;
                 continue;
             }
             _ => continue,

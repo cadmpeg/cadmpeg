@@ -120,8 +120,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         } else {
             archive.open(ctx, &file.name)?
         };
-        ctx.charge_collection_items(1, "FCStd archive entry map")?;
-        data.insert(name, view);
+        ctx.insert_btree_map(&mut data, name, view, "FCStd archive entry map")?;
     }
     let physical_ledger = archive.physical_ledger(ctx)?;
     let mut ledger = ctx.collection_vec(physical_ledger.len(), "FCStd archive ledger records")?;
@@ -297,11 +296,12 @@ pub(crate) fn summarize(
     for entry in &scan.entries {
         let mut attributes = BTreeMap::new();
         for (key, value) in &entry.attributes {
-            ctx.charge_collection_items(1, "FCStd summary entry attributes")?;
-            attributes.insert(
+            ctx.insert_btree_map(
+                &mut attributes,
                 ctx.copy_retained_text(key, "FCStd summary attribute key")?,
                 ctx.copy_retained_text(value, "FCStd summary attribute value")?,
-            );
+                "FCStd summary entry attributes",
+            )?;
         }
         entries.push(ContainerEntry {
             name: ctx.copy_retained_text(&entry.name, "FCStd summary entry name")?,
@@ -571,8 +571,11 @@ pub(crate) fn parse_document(
             .and_then(|name| name.split_once("::"))
         {
             if !domain_set.contains(domain) {
-                ctx.charge_collection_items(1, "FCStd document domains")?;
-                domain_set.insert(ctx.copy_retained_text(domain, "FCStd document domain name")?);
+                ctx.insert_btree_set(
+                    &mut domain_set,
+                    ctx.copy_retained_text(domain, "FCStd document domain name")?,
+                    "FCStd document domains",
+                )?;
             }
         }
     }
@@ -734,11 +737,12 @@ pub(crate) fn byte_coverage(
     for span in logical {
         let classification = span.classification.as_str();
         if !classification_bytes.contains_key(classification) {
-            ctx.charge_collection_items(1, "FCStd coverage classifications")?;
-            classification_bytes.insert(
+            ctx.insert_btree_map(
+                &mut classification_bytes,
                 ctx.copy_retained_text(classification, "FCStd coverage classification name")?,
                 0,
-            );
+                "FCStd coverage classifications",
+            )?;
         }
         if let Some(bytes) = classification_bytes.get_mut(classification) {
             *bytes += span.span.end() - span.span.start();
@@ -748,9 +752,11 @@ pub(crate) fn byte_coverage(
             LogicalClassification::NamedOpaque { .. }
         ) && !named_opaque_entries.contains(&span.entry)
         {
-            ctx.charge_collection_items(1, "FCStd opaque coverage entries")?;
-            named_opaque_entries
-                .insert(ctx.copy_retained_text(&span.entry, "FCStd opaque entry name")?);
+            ctx.insert_btree_set(
+                &mut named_opaque_entries,
+                ctx.copy_retained_text(&span.entry, "FCStd opaque entry name")?,
+                "FCStd opaque coverage entries",
+            )?;
         }
     }
     let mut ordered_physical =

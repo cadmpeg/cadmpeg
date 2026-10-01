@@ -318,9 +318,9 @@ impl ScalarCache {
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
+            ctx.admit_btree_entry(&paired_byte_1_by_tail, &tail, "creo scalar cache paired tails")?;
             match paired_byte_1_by_tail.entry(tail) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo scalar cache paired tails")?;
                     entry.insert(Some(raw[1]));
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {

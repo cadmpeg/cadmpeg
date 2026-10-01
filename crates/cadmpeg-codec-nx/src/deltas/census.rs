@@ -83,9 +83,7 @@ impl Census {
         let mut counts = BTreeMap::new();
         for record in &self.records {
             let family = record.family_name();
-            if !counts.contains_key(family) {
-                ctx.charge_collection_items(1, "NX deltas full count families")?;
-            }
+            ctx.admit_btree_entry(&counts, &family, "NX deltas full count families")?;
             *counts.entry(family).or_default() += 1;
         }
         Ok(counts)
@@ -99,9 +97,7 @@ impl Census {
         let mut counts = BTreeMap::new();
         for tombstone in &self.tombstones {
             let family = tombstone.kind.name();
-            if !counts.contains_key(family) {
-                ctx.charge_collection_items(1, "NX deltas tombstone count families")?;
-            }
+            ctx.admit_btree_entry(&counts, &family, "NX deltas tombstone count families")?;
             *counts.entry(family).or_default() += 1;
         }
         Ok(counts)

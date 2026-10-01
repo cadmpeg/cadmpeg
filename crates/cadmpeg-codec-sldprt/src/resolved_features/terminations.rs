@@ -638,8 +638,7 @@ fn insert_termination_field(
     let name =
         cadmpeg_core::text::NonBlankString::new(copy_termination_text(ctx, name, operation)?)
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
-    ctx.charge_collection_items(1, operation)?;
-    fields.insert(name, value);
+    ctx.insert_btree_map(fields, name, value, operation)?;
     Ok(())
 }
 
@@ -1153,10 +1152,12 @@ pub(crate) fn enrich_history_sweep_paths(
         }
         if agreement {
             let path = copy_termination_text(ctx, first, OPERATION)?;
-            ctx.charge_collection_items(1, OPERATION)?;
-            feature
-                .properties
-                .insert(cadmpeg_core::nonblank_literal!("Path"), path);
+            ctx.insert_btree_map(
+                &mut feature.properties,
+                cadmpeg_core::nonblank_literal!("Path"),
+                path,
+                OPERATION,
+            )?;
         }
     }
     Ok(())

@@ -255,13 +255,17 @@ fn insert_attribute(
     key: &'static str,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "collect Inventor summary attribute")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(key.len()),
         "retain Inventor summary attribute key",
     )?;
     ctx.charge_formatted_retained(value, "retain Inventor summary attribute value")?;
-    entry.attributes.insert(key.into(), value.to_string());
+    ctx.insert_btree_map(
+        &mut entry.attributes,
+        key.into(),
+        value.to_string(),
+        "collect Inventor summary attribute",
+    )?;
     Ok(())
 }
 

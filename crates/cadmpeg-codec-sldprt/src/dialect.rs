@@ -289,8 +289,12 @@ impl SldprtDialect {
                 format_args!("{value}"),
                 "retain SLDPRT dialect declaration",
             )?;
-            ctx.charge_collection_items(1, "index SLDPRT dialect declaration")?;
-            declared.insert(cadmpeg_core::nonblank_const!(DECLARED_SW_VERSION), value);
+            ctx.insert_btree_map(
+                &mut declared,
+                cadmpeg_core::nonblank_const!(DECLARED_SW_VERSION),
+                value,
+                "index SLDPRT dialect declaration",
+            )?;
         }
         Ok(match self {
             Self::SwVersionPre12000 | Self::SwVersion12000Plus => DialectMatch::admitted(self.id()),

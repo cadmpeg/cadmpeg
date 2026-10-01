@@ -295,11 +295,12 @@ pub(crate) fn enrich_history_hole_constructions(
         });
         drop(claimed_profiles);
         for (feature_index, profile_source, _) in additions {
-            ctx.charge_collection_items(1, OPERATION)?;
-            history.features[feature_index].properties.insert(
+            ctx.insert_btree_map(
+                &mut history.features[feature_index].properties,
                 cadmpeg_core::nonblank_literal!("DissectableChildren"),
                 profile_source,
-            );
+                OPERATION,
+            )?;
         }
         let claimed_profiles = claimed_hole_profiles(ctx, &history.features)?;
         let mut interval_additions = Vec::new();
@@ -368,11 +369,12 @@ pub(crate) fn enrich_history_hole_constructions(
             if interval_claim_counts.get(&profile_source) != Some(&1) {
                 continue;
             }
-            ctx.charge_collection_items(1, OPERATION)?;
-            history.features[feature_index].properties.insert(
+            ctx.insert_btree_map(
+                &mut history.features[feature_index].properties,
                 cadmpeg_core::nonblank_literal!("DissectableChildren"),
                 profile_source,
-            );
+                OPERATION,
+            )?;
         }
     }
     Ok(())
@@ -704,10 +706,12 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                 ),
                 OPERATION,
             )?;
-            ctx.charge_collection_items(1, OPERATION)?;
-            feature
-                .parameters
-                .insert(cadmpeg_core::nonblank_literal!("D2"), value);
+            ctx.insert_btree_map(
+                &mut feature.parameters,
+                cadmpeg_core::nonblank_literal!("D2"),
+                value,
+                OPERATION,
+            )?;
         }
     }
     Ok(())
@@ -753,10 +757,12 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
         ctx.charge_work(u64_from_index(diameter.len()), OPERATION)?;
         let value =
             crate::text_admission::format_retained(ctx, format_args!("{diameter}"), OPERATION)?;
-        ctx.charge_collection_items(1, OPERATION)?;
-        feature
-            .parameters
-            .insert(cadmpeg_core::nonblank_literal!("D2"), value);
+        ctx.insert_btree_map(
+            &mut feature.parameters,
+            cadmpeg_core::nonblank_literal!("D2"),
+            value,
+            OPERATION,
+        )?;
     }
     Ok(())
 }

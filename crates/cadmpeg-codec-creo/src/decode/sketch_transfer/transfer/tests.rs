@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    admit_constraint_row, available_parameter_ids, emitted_entity_views, insert_set, insert_tree,
+    admit_constraint_row, available_parameter_ids, emitted_entity_views,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::text::NonBlankString;
@@ -272,7 +272,7 @@ macro_rules! map_node_test {
             policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut values = std::collections::BTreeMap::new();
-            let error = insert_tree(&ctx, &mut values, 7usize, 9u8, $operation)
+            let error = ctx.insert_btree_map(&mut values, 7usize, 9u8, $operation)
                 .expect_err("one tree node exceeds zero items");
             assert!(matches!(error, CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::CollectionItems
@@ -280,7 +280,7 @@ macro_rules! map_node_test {
             assert!(values.is_empty());
             let service = DecodePolicy::service();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-            insert_tree(&ctx, &mut values, 7usize, 9u8, $operation).expect("service node admitted");
+            ctx.insert_btree_map(&mut values, 7usize, 9u8, $operation).expect("service node admitted");
             assert_eq!(values.get(&7), Some(&9));
         }
     };
@@ -295,7 +295,7 @@ macro_rules! set_node_test {
             policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut values = BTreeSet::new();
-            let error = insert_set(&ctx, &mut values, 7usize, $operation)
+            let error = ctx.insert_btree_set(&mut values, 7usize, $operation)
                 .expect_err("one tree node exceeds zero items");
             assert!(matches!(error, CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::CollectionItems
@@ -303,7 +303,7 @@ macro_rules! set_node_test {
             assert!(values.is_empty());
             let service = DecodePolicy::service();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-            insert_set(&ctx, &mut values, 7usize, $operation).expect("service node admitted");
+            ctx.insert_btree_set(&mut values, 7usize, $operation).expect("service node admitted");
             assert_eq!(values, BTreeSet::from([7]));
         }
     };

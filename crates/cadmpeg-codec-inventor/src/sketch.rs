@@ -1111,7 +1111,6 @@ pub(crate) fn project(
     let mut parameter_index = HashMap::new();
     for parameter in parameters {
         if let Some(native) = &parameter.native_ref {
-            ctx.charge_collection_items(1, "index Inventor sketch parameter")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(native.len()),
                 "retain Inventor sketch parameter native id",
@@ -1120,7 +1119,12 @@ pub(crate) fn project(
                 cadmpeg_core::decode::u64_from_index(parameter.id.as_str().len()),
                 "retain Inventor sketch parameter id",
             )?;
-            parameter_index.insert(native.clone(), parameter.id.clone());
+            ctx.insert_hash_map(
+                &mut parameter_index,
+                native.clone(),
+                parameter.id.clone(),
+                "index Inventor sketch parameter",
+            )?;
         }
     }
 
@@ -1376,14 +1380,15 @@ pub(crate) fn project(
             "resolve projected Inventor sketch native id",
         )?;
         if let Some(projected) = projected_by_native.get(raw.id().as_str()) {
-            ctx.charge_collection_items(1, "index projected Inventor sketch entity key")?;
-            projected_entity_by_key.insert(
+            ctx.insert_hash_map(
+                &mut projected_entity_by_key,
                 (
                     raw.identity.segment_token.as_str(),
                     raw.identity.record_ordinal,
                 ),
                 *projected,
-            );
+                "index projected Inventor sketch entity key",
+            )?;
         }
     }
     let mut constraints = Vec::new();
@@ -1398,11 +1403,14 @@ pub(crate) fn project(
                     .transpose()?
             {
                 ctx.charge_collection_items(1, "project Inventor sketch constraint")?;
-                ctx.charge_collection_items(1, "index projected Inventor sketch constraint")?;
-                projected_constraint_keys.insert((
-                    constraint.identity.segment_token.as_str(),
-                    constraint.identity.record_ordinal,
-                ));
+                ctx.insert_hash_set(
+                    &mut projected_constraint_keys,
+                    (
+                        constraint.identity.segment_token.as_str(),
+                        constraint.identity.record_ordinal,
+                    ),
+                    "index projected Inventor sketch constraint",
+                )?;
                 constraints.push(projected);
             }
         }
@@ -1422,7 +1430,6 @@ pub(crate) fn project(
         .collect::<HashSet<_>>();
     let mut raw_sketch_by_native = HashMap::new();
     for sketch in &inventory.sketches {
-        ctx.charge_collection_items(1, "index Inventor raw sketch native refs")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
                 record_id_len(
@@ -1436,7 +1443,12 @@ pub(crate) fn project(
             ),
             "retain Inventor raw sketch native id",
         )?;
-        raw_sketch_by_native.insert(sketch.id(), sketch);
+        ctx.insert_hash_map(
+            &mut raw_sketch_by_native,
+            sketch.id(),
+            sketch,
+            "index Inventor raw sketch native refs",
+        )?;
     }
     let previous_sketch_count = sketches.len();
     for projected in &sketches {
@@ -1520,7 +1532,6 @@ pub(crate) fn project(
     )?;
     let mut raw_constraint_by_native = HashMap::new();
     for constraint in &inventory.constraints {
-        ctx.charge_collection_items(1, "index Inventor raw constraint native refs")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
                 record_id_len(
@@ -1534,7 +1545,12 @@ pub(crate) fn project(
             ),
             "retain Inventor raw constraint native id",
         )?;
-        raw_constraint_by_native.insert(constraint.id(), constraint);
+        ctx.insert_hash_map(
+            &mut raw_constraint_by_native,
+            constraint.id(),
+            constraint,
+            "index Inventor raw constraint native refs",
+        )?;
     }
     let mut raw_sketch_by_id = HashMap::new();
     for sketch in &inventory.sketches {
@@ -1552,8 +1568,12 @@ pub(crate) fn project(
             "retain Inventor raw sketch projected id",
         )?;
         if let Some(id) = sketch_id(sketch) {
-            ctx.charge_collection_items(1, "index Inventor raw sketch projected ids")?;
-            raw_sketch_by_id.insert(id, sketch);
+            ctx.insert_hash_map(
+                &mut raw_sketch_by_id,
+                id,
+                sketch,
+                "index Inventor raw sketch projected ids",
+            )?;
         }
     }
     let previous_constraint_count = constraints.len();

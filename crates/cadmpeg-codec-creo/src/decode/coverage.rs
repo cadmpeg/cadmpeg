@@ -21,27 +21,13 @@ fn charged_map_entry<'a, K: Ord, V: Default>(
     key: K,
     operation: &'static str,
 ) -> Result<&'a mut V, CodecError> {
+    ctx.admit_btree_entry(map, &key, operation)?;
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, operation)?;
-            Ok(entry.insert(V::default()))
-        }
+        std::collections::btree_map::Entry::Vacant(entry) => Ok(entry.insert(V::default())),
     }
 }
 
-fn charged_set_insert<T: Ord>(
-    ctx: &DecodeContext<'_>,
-    set: &mut BTreeSet<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !set.contains(&value) {
-        ctx.charge_collection_items(1, operation)?;
-        set.insert(value);
-    }
-    Ok(())
-}
 
 pub(super) fn source_section(
     ctx: &DecodeContext<'_>,
@@ -483,12 +469,7 @@ pub(super) fn curve_transfer_coverage(
                 .ok()
         })
     {
-        charged_set_insert(
-            ctx,
-            &mut transferred_ids,
-            id,
-            "creo transferred curve ID nodes",
-        )?;
+        ctx.insert_btree_set(&mut transferred_ids, id, "creo transferred curve ID nodes")?;
     }
     let mut unknown_ids = BTreeSet::new();
     for id in curves
@@ -511,7 +492,7 @@ pub(super) fn curve_transfer_coverage(
                 .ok()
         })
     {
-        charged_set_insert(ctx, &mut unknown_ids, id, "creo unknown curve ID nodes")?;
+        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown curve ID nodes")?;
     }
     let mut coverage = CurveTransferCoverage::default();
     coverage.record_ambiguous_rows(
@@ -549,12 +530,7 @@ pub(super) fn surface_transfer_coverage(
         })
         .map(|procedural| &procedural.id)
     {
-        charged_set_insert(
-            ctx,
-            &mut extrusion_constructions,
-            id,
-            "creo extrusion construction nodes",
-        )?;
+        ctx.insert_btree_set(&mut extrusion_constructions, id, "creo extrusion construction nodes")?;
     }
     let mut extrusion_surfaces = BTreeSet::new();
     for id in surfaces
@@ -567,12 +543,7 @@ pub(super) fn surface_transfer_coverage(
         })
         .map(|surface| &surface.id)
     {
-        charged_set_insert(
-            ctx,
-            &mut extrusion_surfaces,
-            id,
-            "creo extrusion surface nodes",
-        )?;
+        ctx.insert_btree_set(&mut extrusion_surfaces, id, "creo extrusion surface nodes")?;
     }
     let mut transferred = Vec::new();
     for surface in surfaces {
@@ -615,7 +586,7 @@ pub(super) fn surface_transfer_coverage(
                 .ok()
         })
     {
-        charged_set_insert(ctx, &mut unknown_ids, id, "creo unknown surface ID nodes")?;
+        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown surface ID nodes")?;
     }
     let mut coverage = SurfaceTransferCoverage::default();
     coverage.record_ambiguous_rows(

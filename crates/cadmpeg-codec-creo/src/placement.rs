@@ -576,8 +576,11 @@ fn generated_planar_table_shape(
         if entry_ids.contains(&entry.entity_id) {
             return Ok(false);
         }
-        ctx.charge_collection_items(1, "creo generated planar table entry nodes")?;
-        entry_ids.insert(entry.entity_id);
+        ctx.insert_btree_set(
+            &mut entry_ids,
+            entry.entity_id,
+            "creo generated planar table entry nodes",
+        )?;
     }
     Ok(true)
 }

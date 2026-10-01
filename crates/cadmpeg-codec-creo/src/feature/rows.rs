@@ -413,22 +413,14 @@ pub(super) fn row_spans(
         let candidate_end = starts
             .get(index + 1)
             .map_or(payload.len(), |&(next, _)| next);
-        let first_for_id = if seen_ids.contains(&id) {
-            false
-        } else {
-            ctx.charge_collection_items(1, "creo feature row seen ids")?;
-            seen_ids.insert(id);
-            true
-        };
+        let first_for_id = ctx.insert_btree_set(&mut seen_ids, id, "creo feature row seen ids")?;
         let has_new_schema_class =
             if let Some(schema_class) = row_root_schema_class(payload, start, candidate_end) {
-                if seen_schema_classes.contains(&(id, schema_class)) {
-                    false
-                } else {
-                    ctx.charge_collection_items(1, "creo feature row schema classes")?;
-                    seen_schema_classes.insert((id, schema_class));
-                    true
-                }
+                ctx.insert_btree_set(
+                    &mut seen_schema_classes,
+                    (id, schema_class),
+                    "creo feature row schema classes",
+                )?
             } else {
                 false
             };
@@ -840,15 +832,12 @@ pub(crate) fn geometry_tables(
                     offset: row.body_offset + offset,
                 });
                 if matches!(kind, FeatureGeometryTableKind::DatumIds(_)) {
-                    match datum_class_by_stream.entry(row.stream_offset) {
-                        std::collections::btree_map::Entry::Vacant(entry) => {
-                            ctx.charge_collection_items(1, "creo datum class by stream")?;
-                            entry.insert(entity_class);
-                        }
-                        std::collections::btree_map::Entry::Occupied(mut entry) => {
-                            *entry.get_mut() = entity_class;
-                        }
-                    }
+                    ctx.insert_btree_map(
+                        &mut datum_class_by_stream,
+                        row.stream_offset,
+                        entity_class,
+                        "creo datum class by stream",
+                    )?;
                 }
             }
         }
@@ -1355,9 +1344,13 @@ pub(crate) fn replay_affected_ids(
                 && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
                 && window.ends_with(ANCHOR_SUFFIX)
         });
+        ctx.admit_btree_entry(
+            &extents,
+            &(row.stream_offset, schema_class),
+            "creo replay extent states",
+        )?;
         let state = match extents.entry((row.stream_offset, schema_class)) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo replay extent states")?;
                 entry.insert([None; 2])
             }
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -1520,9 +1513,9 @@ pub(crate) fn surface_merge_replay_affected_ids(
         if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
+        ctx.admit_btree_entry(&extents, &row.stream_offset, "creo surface merge extent states")?;
         let state = match extents.entry(row.stream_offset) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo surface merge extent states")?;
                 entry.insert([None; 3])
             }
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),

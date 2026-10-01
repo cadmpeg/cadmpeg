@@ -137,12 +137,13 @@ pub(super) fn feature_operation_chronological_labels<'a>(
     let mut sections = BTreeMap::<&str, u64>::new();
     let mut section_reservation = ctx.reserve_scoped(0, "NX feature label sections")?;
     for label in labels {
-        ctx.charge_collection_items(1, "NX feature label sections")?;
+        let section_key = label.section_link.as_str();
+        ctx.admit_btree_entry(&sections, &section_key, "NX feature label sections")?;
         section_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, u64)>() * 4,
         ))?;
         sections
-            .entry(label.section_link.as_str())
+            .entry(section_key)
             .and_modify(|first| *first = (*first).min(label.source_offset))
             .or_insert(label.source_offset);
     }
@@ -3663,9 +3664,13 @@ fn operation_header_block_identities(
     let mut identities = BTreeMap::<u32, Option<String>>::new();
     for block in data_blocks(ctx, container)? {
         if block.role == DataBlockRole::Column {
+            ctx.admit_btree_entry(
+                &identities,
+                &block.block_ordinal,
+                "NX operation block identity ordinals",
+            )?;
             match identities.entry(block.block_ordinal) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "NX operation block identity ordinals")?;
                     ctx.charge_retained(
                         cadmpeg_core::decode::u64_from_index(
                             std::mem::size_of::<(u32, Option<String>)>() * 4,
@@ -3755,7 +3760,6 @@ fn assign_operation_header_identities(
     let mut counts = BTreeMap::<String, usize>::new();
     for key in keys.iter().flatten() {
         if !counts.contains_key(key.as_str()) {
-            ctx.charge_collection_items(1, "NX operation header counts")?;
             counts_guard.grow(cadmpeg_core::decode::u64_from_index(key.len()))?;
             let mut copy = String::new();
             cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
@@ -3764,7 +3768,7 @@ fn assign_operation_header_identities(
                 "allocate NX operation header count key",
             )?;
             copy.push_str(key);
-            counts.insert(copy, 0);
+            ctx.insert_btree_map(&mut counts, copy, 0, "NX operation header counts")?;
         }
         let count = counts
             .get_mut(key.as_str())
@@ -4081,7 +4085,6 @@ pub(super) fn feature_operation_records(
                             .ok_or_else(|| {
                                 ctx.refuse_codec_limit("NX operation record identity counts", 0, 1)
                             })?;
-                        ctx.charge_collection_items(1, "NX operation record identity counts")?;
                         counts_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
                         let mut copy = String::new();
                         cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
@@ -4090,7 +4093,12 @@ pub(super) fn feature_operation_records(
                             "allocate NX operation record identity key",
                         )?;
                         copy.push_str(key);
-                        identity_counts.insert(copy, 1);
+                        ctx.insert_btree_map(
+                            &mut identity_counts,
+                            copy,
+                            1,
+                            "NX operation record identity counts",
+                        )?;
                     }
                 }
                 let ordinal = u32::try_from(operation_ordinal)
@@ -5288,21 +5296,19 @@ pub(super) fn unique_feature_body_references<'a>(
             continue;
         }
         if unique.remove(key).is_some() {
-            ctx.charge_collection_items(1, "NX ambiguous body references")?;
             ambiguous_reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<&str>() * 4,
             ))?;
-            ambiguous.insert(key);
+            ctx.insert_btree_set(&mut ambiguous, key, "NX ambiguous body references")?;
             continue;
         }
-        ctx.charge_collection_items(1, "NX unique body references")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<(&str, &FeatureBodyReference)>() * 4,
             ),
             "NX unique body references",
         )?;
-        unique.insert(key, reference);
+        ctx.insert_btree_map(&mut unique, key, reference, "NX unique body references")?;
     }
     Ok(unique)
 }
@@ -5402,12 +5408,17 @@ pub(super) fn feature_body_segment_uses(
     let mut counts_reservation = ctx.reserve_scoped(0, "NX body offset-store reference counts")?;
     let mut offset_store_reference_counts = BTreeMap::<&str, usize>::new();
     for use_ in data_block_uses {
-        ctx.charge_collection_items(1, "NX body offset-store reference counts")?;
+        let reference_key = use_.feature_body_reference.as_str();
+        ctx.admit_btree_entry(
+            &offset_store_reference_counts,
+            &reference_key,
+            "NX body offset-store reference counts",
+        )?;
         counts_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, usize)>() * 4,
         ))?;
         let count = offset_store_reference_counts
-            .entry(use_.feature_body_reference.as_str())
+            .entry(reference_key)
             .or_default();
         *count = count
             .checked_add(1)
@@ -5523,12 +5534,11 @@ pub(super) fn feature_input_store_operations(
         if sections.is_empty() {
             continue;
         }
-        ctx.charge_collection_items(1, "NX offset-store operations")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>() * 4),
             "NX offset-store operations",
         )?;
-        operations.insert(label);
+        ctx.insert_btree_set(&mut operations, label, "NX offset-store operations")?;
     }
     Ok(operations)
 }
@@ -5542,11 +5552,15 @@ fn feature_input_store_sections(
     let mut block_reservation = ctx.reserve_scoped(0, "NX input-store block index")?;
     let mut blocks_by_id = BTreeMap::new();
     for block in blocks {
-        ctx.charge_collection_items(1, "NX input-store block index")?;
         block_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &crate::native::om::DataBlock)>() * 4,
         ))?;
-        blocks_by_id.insert(block.id.as_str(), block);
+        ctx.insert_btree_map(
+            &mut blocks_by_id,
+            block.id.as_str(),
+            block,
+            "NX input-store block index",
+        )?;
     }
     let work = inputs
         .len()
@@ -5572,7 +5586,6 @@ fn feature_input_store_sections(
             continue;
         }
         let key_len = input.operation_label.len();
-        ctx.charge_collection_items(1, "NX input-store operation groups")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
                 (std::mem::size_of::<(String, BTreeSet<u32>)>() * 4)
@@ -5592,7 +5605,12 @@ fn feature_input_store_sections(
         label.push_str(&input.operation_label);
         let mut sections = BTreeSet::new();
         sections.insert(block.section_ordinal);
-        sections_by_operation.insert(label, sections);
+        ctx.insert_btree_map(
+            &mut sections_by_operation,
+            label,
+            sections,
+            "NX input-store operation groups",
+        )?;
     }
     Ok(sections_by_operation)
 }
@@ -7398,7 +7416,6 @@ fn offset_data_block_bytes_for_section<'a>(
             .checked_add(length)
             .and_then(|bytes| bytes.checked_add(64))
             .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view storage", 0, 1))?;
-        ctx.charge_collection_items(1, "NX offset block view entries")?;
         ctx.charge_work(
             u64::from(usize::BITS - blocks.len().leading_zeros()),
             "index NX offset block view",
@@ -7415,7 +7432,12 @@ fn offset_data_block_bytes_for_section<'a>(
         let offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view source offset", 0, 1))?;
-        blocks.insert(key, (block.bytes, offset));
+        ctx.insert_btree_map(
+            blocks,
+            key,
+            (block.bytes, offset),
+            "NX offset block view entries",
+        )?;
     }
     Ok(())
 }
@@ -7946,11 +7968,10 @@ pub(super) fn feature_sketch_point_groups(
         if grouped.contains(&key) {
             continue;
         }
-        ctx.charge_collection_items(1, "NX sketch point group keys")?;
         grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &str)>() + 64,
         ))?;
-        grouped.insert(key);
+        ctx.insert_btree_set(&mut grouped, key, "NX sketch point group keys")?;
         let matches = |candidate: &&FeatureSketchPoint| {
             candidate.operation_label == point.operation_label && candidate.name == point.name
         };
@@ -8158,12 +8179,17 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             u64::from(usize::BITS - references_by_operation.len().leading_zeros()),
             "index NX preceding named-point references",
         )?;
-        let group = match references_by_operation.entry(reference.operation_label.as_str()) {
+        let operation_key = reference.operation_label.as_str();
+        ctx.admit_btree_entry(
+            &references_by_operation,
+            &operation_key,
+            "NX preceding named-point operation index",
+        )?;
+        let group = match references_by_operation.entry(operation_key) {
             Entry::Vacant(entry) => {
                 index_reservation.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(&str, Vec<&FeatureSketchReference>)>() + 64,
                 ))?;
-                ctx.charge_collection_items(1, "NX preceding named-point operation index")?;
                 entry.insert(Vec::new())
             }
             Entry::Occupied(entry) => entry.into_mut(),
@@ -8415,20 +8441,28 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
     let mut positions = BTreeMap::new();
     let mut position_reservation = ctx.reserve_scoped(0, "NX sketch datum label positions")?;
     for (position, label) in ordered_labels.iter().enumerate() {
-        ctx.charge_collection_items(1, "NX sketch datum label positions")?;
         position_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, usize)>() * 4,
         ))?;
-        positions.insert(label.id.as_str(), position);
+        ctx.insert_btree_map(
+            &mut positions,
+            label.id.as_str(),
+            position,
+            "NX sketch datum label positions",
+        )?;
     }
     let mut points = BTreeMap::new();
     let mut point_reservation = ctx.reserve_scoped(0, "NX sketch datum named points")?;
     for point in named_points {
-        ctx.charge_collection_items(1, "NX sketch datum named points")?;
         point_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &OffsetStoreNamedPoint)>() * 4,
         ))?;
-        points.insert(point.id.as_str(), point);
+        ctx.insert_btree_map(
+            &mut points,
+            point.id.as_str(),
+            point,
+            "NX sketch datum named points",
+        )?;
     }
     let mut dependencies = Vec::new();
     for construction in constructions {

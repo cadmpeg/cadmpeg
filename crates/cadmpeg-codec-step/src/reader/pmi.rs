@@ -1598,10 +1598,7 @@ fn find_annotation_text(
         return Ok(None);
     };
     if candidates.is_empty() {
-        if !used.contains(&text_id) {
-            ctx.charge_collection_items(1, "step_pmi_annotation_text_used")?;
-        }
-        used.insert(text_id);
+        ctx.insert_btree_set(used, text_id, "step_pmi_annotation_text_used")?;
         Ok(Some(text))
     } else {
         let count = candidates.len() + 1;
@@ -1625,8 +1622,7 @@ fn collect_annotation_text(
         return Ok(());
     }
     let _depth_guard = ctx.enter_nested("step_pmi_annotation_text_walk")?;
-    ctx.charge_collection_items(1, "step_pmi_annotation_text_visited")?;
-    visited.insert(id);
+    ctx.insert_btree_set(visited, id, "step_pmi_annotation_text_visited")?;
     let Some(record) = exchange.records().get(&id) else {
         return Ok(());
     };
@@ -1642,8 +1638,7 @@ fn collect_annotation_text(
             StepLossCode::MetadataStringInvalid,
             ctx,
         )? {
-            ctx.charge_collection_items(1, "step_pmi_annotation_text_candidates")?;
-            candidates.insert(id, text);
+            ctx.insert_btree_map(candidates, id, text, "step_pmi_annotation_text_candidates")?;
         }
     }
     for reference in record_values(record).flat_map(|value| references(value, ctx)) {
@@ -1713,9 +1708,7 @@ fn targets(
         if seen.contains(&id) {
             continue;
         }
-        ctx.charge_collection_items(1, "step_pmi_target_ids")?;
-
-        seen.insert(id);
+        ctx.insert_btree_set(&mut seen, id, "step_pmi_target_ids")?;
 
         ctx.reserve_vec(&mut targets, 1, "step_pmi_target_items")?;
         targets.push(PmiTarget::ShapeAspect {
@@ -2145,10 +2138,12 @@ fn characteristic_values(
             None
         };
         if let Some(selected) = selected {
-            if !result.contains_key(&characteristic) {
-                ctx.charge_collection_items(1, "step_pmi_characteristic_values")?;
-            }
-            result.insert(characteristic, selected);
+            ctx.insert_btree_map(
+                &mut result,
+                characteristic,
+                selected,
+                "step_pmi_characteristic_values",
+            )?;
         }
     }
     Ok(result)

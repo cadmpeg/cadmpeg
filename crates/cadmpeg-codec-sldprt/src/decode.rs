@@ -3955,8 +3955,12 @@ fn add_solidworks_xml_metadata(
             let name = cadmpeg_core::text::NonBlankString::new(name)
                 .ok_or_else(|| CodecError::Malformed("invalid SLDPRT configuration key".into()))?;
             let value = copy_retained_string(ctx, value, "retain SLDPRT configuration value")?;
-            ctx.charge_collection_items(1, "copy SLDPRT configuration attribute")?;
-            attributes.insert(name, value);
+            ctx.insert_btree_map(
+                attributes,
+                name,
+                value,
+                "copy SLDPRT configuration attribute",
+            )?;
         }
     }
     Ok(())
@@ -4701,8 +4705,12 @@ fn complete_resolved_configuration_parameter_snapshots(
                 }
                 value => value.clone(),
             };
-            ctx.charge_collection_items(1, "complete SLDPRT configuration parameter snapshot")?;
-            configuration.parameter_values.insert(id, value);
+            ctx.insert_btree_map(
+                &mut configuration.parameter_values,
+                id,
+                value,
+                "complete SLDPRT configuration parameter snapshot",
+            )?;
         }
     }
     Ok(())
@@ -4805,8 +4813,12 @@ fn snapshot_active_configuration(
             "retain SLDPRT configuration parameter ID",
         )?)
         .map_err(CodecError::malformed)?;
-        ctx.charge_collection_items(1, "snapshot SLDPRT configuration parameter")?;
-        parameter_values.insert(id, value);
+        ctx.insert_btree_map(
+            &mut parameter_values,
+            id,
+            value,
+            "snapshot SLDPRT configuration parameter",
+        )?;
     }
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -4839,7 +4851,6 @@ fn snapshot_active_configuration(
                 .ok_or_else(|| ctx.refuse_codec_limit(FEATURE_SNAPSHOT, u64::MAX - 1, u64::MAX))?,
             FEATURE_SNAPSHOT,
         )?;
-        ctx.charge_collection_items(1, FEATURE_SNAPSHOT)?;
         let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
             ctx,
             feature.id.as_str(),
@@ -4847,7 +4858,7 @@ fn snapshot_active_configuration(
         )?)
         .map_err(CodecError::malformed)?;
         let state = feature.configuration_state_charged(ctx, FEATURE_SNAPSHOT)?;
-        feature_states.insert(id, state);
+        ctx.insert_btree_map(&mut feature_states, id, state, FEATURE_SNAPSHOT)?;
     }
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = parameter_values;
@@ -4860,11 +4871,12 @@ fn snapshot_active_configuration(
         "retain SLDPRT snapshot configuration ID",
     )?;
     if let Some(source) = &mut ir.source {
-        ctx.charge_collection_items(1, "mark SLDPRT configuration snapshot")?;
-        source.attributes.insert(
+        ctx.insert_btree_map(
+            &mut source.attributes,
             cadmpeg_core::nonblank_literal!("sldprt_configuration_snapshot_synthesized"),
             id,
-        );
+            "mark SLDPRT configuration snapshot",
+        )?;
     }
     Ok(())
 }

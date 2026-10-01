@@ -358,9 +358,11 @@ impl<'a> CompoundSnapshot<'a> {
                 cadmpeg_core::decode::u64_from_index(key_bytes),
                 "retain CFB path index",
             )?;
-            ctx.charge_collection_items(1, "index CFB path")?;
             let key = path_key(entry.path());
-            if by_path.insert(key, index).is_some() {
+            if ctx
+                .insert_btree_map(&mut by_path, key, index, "index CFB path")?
+                .is_some()
+            {
                 return malformed(format!("duplicate CFB path {}", entry.path()));
             }
             if let CompoundEntry::Stream(stream) = entry {
@@ -371,8 +373,7 @@ impl<'a> CompoundSnapshot<'a> {
                     )>()),
                     "retain CFB stream index",
                 )?;
-                ctx.charge_collection_items(1, "index CFB stream")?;
-                streams_by_id.insert(stream.id(), index);
+                ctx.insert_btree_map(&mut streams_by_id, stream.id(), index, "index CFB stream")?;
             }
         }
         Ok(Self {

@@ -1018,9 +1018,7 @@ fn count_object_typecode(
     counts: &mut BTreeMap<u32, usize>,
     typecode: u32,
 ) -> Result<(), CodecError> {
-    if !counts.contains_key(&typecode) {
-        ctx.charge_collection_items(1, "Rhino object typecode counts")?;
-    }
+    ctx.admit_btree_entry(counts, &typecode, "Rhino object typecode counts")?;
     *counts.entry(typecode).or_insert(0) += 1;
     Ok(())
 }
@@ -1340,10 +1338,9 @@ fn insert_summary_attribute(
     key: std::fmt::Arguments<'_>,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "Rhino container summary attributes")?;
     let key = ctx.format_retained(key, "Rhino container summary attribute key")?;
     let value = ctx.format_retained(value, "Rhino container summary attribute value")?;
-    attributes.insert(key, value);
+    ctx.insert_btree_map(attributes, key, value, "Rhino container summary attributes")?;
     Ok(())
 }
 
@@ -1414,9 +1411,7 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
     for object in &scan.objects {
         // The container report groups degraded records under the nil class UUID.
         let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
-        if !classes.contains_key(&class_uuid) {
-            ctx.charge_collection_items(1, "Rhino container class groups")?;
-        }
+        ctx.admit_btree_entry(&classes, &class_uuid, "Rhino container class groups")?;
         let entry = classes.entry(class_uuid).or_insert((0, 0));
         entry.0 += 1;
         entry.1 += object.range().len();
@@ -1521,12 +1516,11 @@ fn insert_source_meta_attribute(
     key: &'static str,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "Rhino source metadata attributes")?;
     let key = ctx.copy_retained_text(key, "Rhino source metadata key")?;
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("generated Rhino source metadata key is blank"))?;
     let value = ctx.format_retained(value, "Rhino source metadata value")?;
-    attributes.insert(key, value);
+    ctx.insert_btree_map(attributes, key, value, "Rhino source metadata attributes")?;
     Ok(())
 }
 

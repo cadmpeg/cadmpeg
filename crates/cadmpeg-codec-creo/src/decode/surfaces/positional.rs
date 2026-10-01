@@ -169,17 +169,22 @@ pub(in super::super) fn transfer_positional_tori(
     for row in &scan.surfaces.rows {
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
-            && !round_feature_ids.contains(&row.feature_id)
         {
-            ctx.charge_collection_items(1, "creo positional torus round feature ids")?;
-            round_feature_ids.insert(row.feature_id);
+            ctx.insert_btree_set(
+                &mut round_feature_ids,
+                row.feature_id,
+                "creo positional torus round feature ids",
+            )?;
         }
     }
     let mut constant_round_feature_ids = BTreeSet::new();
     for feature_id in round_feature_ids {
         if round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?.is_some() {
-            ctx.charge_collection_items(1, "creo positional torus constant round ids")?;
-            constant_round_feature_ids.insert(feature_id);
+            ctx.insert_btree_set(
+                &mut constant_round_feature_ids,
+                feature_id,
+                "creo positional torus constant round ids",
+            )?;
         }
     }
     let mut transferred = 0;
@@ -293,10 +298,11 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_bound_surfaces = BTreeSet::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
-        if !replay_bound_surfaces.contains(&replay.surface_id) {
-            ctx.charge_collection_items(1, "creo line-extrusion replay surface ids")?;
-            replay_bound_surfaces.insert(replay.surface_id);
-        }
+        ctx.insert_btree_set(
+            &mut replay_bound_surfaces,
+            replay.surface_id,
+            "creo line-extrusion replay surface ids",
+        )?;
     }
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
@@ -517,9 +523,11 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
-        if !replay_counts.contains_key(&replay.surface_id) {
-            ctx.charge_collection_items(1, "creo tabulated-cylinder replay counts")?;
-        }
+        ctx.admit_btree_entry(
+            &replay_counts,
+            &replay.surface_id,
+            "creo tabulated-cylinder replay counts",
+        )?;
         *replay_counts.entry(replay.surface_id).or_default() += 1;
     }
     let mut transferred = 0;

@@ -43,7 +43,9 @@ pub(crate) fn project_catalog(
         .collect::<Vec<_>>();
     let mut guid_counts: HashMap<&str, usize> = HashMap::new();
     for record in &records {
-        match guid_counts.entry(record.guid.as_str()) {
+        let guid = record.guid.as_str();
+        ctx.admit_hash_map_entry(&mut guid_counts, &guid, "Inventor material GUID counts")?;
+        match guid_counts.entry(guid) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = entry
                     .get()
@@ -51,7 +53,6 @@ pub(crate) fn project_catalog(
                     .ok_or_else(|| CodecError::Malformed("Protein GUID count overflows".into()))?;
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "Inventor material GUID counts")?;
                 entry.insert(1_usize);
             }
         }
@@ -89,12 +90,16 @@ pub(crate) fn project_catalog(
             }
             TextureAssetResult::Usable(texture) => texture,
         };
-        ctx.charge_collection_items(1, "Inventor material texture catalog")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(texture.asset_guid.len()),
             "Inventor material texture key",
         )?;
-        textures.insert(texture.asset_guid.clone(), texture);
+        ctx.insert_btree_map(
+            &mut textures,
+            texture.asset_guid.clone(),
+            texture,
+            "Inventor material texture catalog",
+        )?;
     }
     let mut appearances = Vec::new();
     for (instance_ordinal, instance) in instances.iter().enumerate() {
@@ -111,12 +116,16 @@ pub(crate) fn project_catalog(
                 if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
                     property.value()
                 {
-                    ctx.charge_collection_items(1, "Inventor appearance properties")?;
                     ctx.charge_retained(
                         cadmpeg_core::decode::u64_from_index(neutral_property_name(id).len()),
                         "Inventor appearance property name",
                     )?;
-                    properties.insert(neutral_property_name(id).to_owned(), *value);
+                    ctx.insert_btree_map(
+                        &mut properties,
+                        neutral_property_name(id).to_owned(),
+                        *value,
+                        "Inventor appearance properties",
+                    )?;
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {

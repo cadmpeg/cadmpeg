@@ -237,10 +237,11 @@ pub(crate) fn incomplete_expression_parameters(
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let mut parameter_owners = BTreeSet::new();
     for parameter in &ir.model.parameters {
-        if !parameter_owners.contains(&parameter.owner) {
-            ctx.charge_collection_items(1, "nx expression parameter owners")?;
-            parameter_owners.insert(&parameter.owner);
-        }
+        ctx.insert_btree_set(
+            &mut parameter_owners,
+            &parameter.owner,
+            "nx expression parameter owners",
+        )?;
     }
     let mut incomplete = BTreeSet::new();
     for owner in parameter_owners {
@@ -256,15 +257,14 @@ pub(crate) fn incomplete_expression_parameters(
         }
         let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
         for parameter in &parameters {
-            let ids = match ids_by_name.entry((
+            let name_key = (
                 parameter.name.as_str(),
                 parameter.properties.get("unit").map(String::as_str),
-            )) {
+            );
+            ctx.admit_btree_entry(&ids_by_name, &name_key, "nx expression name index")?;
+            let ids = match ids_by_name.entry(name_key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "nx expression name index")?;
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             ctx.reserve_vec(ids, 1, "nx expression name identities")?;
             ids.push(&parameter.id);
@@ -311,8 +311,12 @@ pub(crate) fn incomplete_expression_parameters(
         }
         let mut indices = BTreeMap::new();
         for (index, parameter) in parameters.iter().enumerate() {
-            ctx.charge_collection_items(1, "nx expression parameter index")?;
-            indices.insert(&parameter.id, index);
+            ctx.insert_btree_map(
+                &mut indices,
+                &parameter.id,
+                index,
+                "nx expression parameter index",
+            )?;
         }
         let mut emitted = BTreeSet::new();
         let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
@@ -367,25 +371,29 @@ pub(crate) fn incomplete_expression_parameters(
                         && stored.is_finite()
                         && (canonical_value - stored).abs() <= tolerance
                     {
-                        ctx.charge_collection_items(1, "nx evaluated expression parameters")?;
-                        evaluated.insert(&parameter.id, native_value);
+                        ctx.insert_btree_map(
+                            &mut evaluated,
+                            &parameter.id,
+                            native_value,
+                            "nx evaluated expression parameters",
+                        )?;
                     }
                 }
             }
-            ctx.charge_collection_items(1, "nx emitted expression parameters")?;
-            emitted.insert(index);
+            ctx.insert_btree_set(&mut emitted, index, "nx emitted expression parameters")?;
         }
         for (index, parameter) in parameters.into_iter().enumerate() {
             if expected[index].as_deref() != Some(parameter.dependencies.as_slice())
                 || !emitted.contains(&index)
                 || !evaluated.contains_key(&parameter.id)
             {
-                ctx.charge_collection_items(1, "nx incomplete expression parameters")?;
-                incomplete.insert(
+                ctx.insert_btree_set(
+                    &mut incomplete,
                     parameter
                         .id
                         .try_clone_for_decode(ctx, "nx incomplete expression identity")?,
-                );
+                    "nx incomplete expression parameters",
+                )?;
             }
         }
     }

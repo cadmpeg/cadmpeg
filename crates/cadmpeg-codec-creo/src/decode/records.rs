@@ -1693,15 +1693,12 @@ pub(super) fn half_edge_records<'a>(
 ) -> Result<Vec<CreoHalfEdgeRecord<'a>>, CodecError> {
     let mut topology_rows = BTreeMap::new();
     for row in &scan.curves.topology_rows {
-        match topology_rows.entry(row.id) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(row);
-            }
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo native half edge topology row nodes")?;
-                entry.insert(row);
-            }
-        }
+        ctx.insert_btree_map(
+            &mut topology_rows,
+            row.id,
+            row,
+            "creo native half edge topology row nodes",
+        )?;
     }
     let mut records = Vec::new();
     for edge in &scan.topology.half_edges {
@@ -1755,12 +1752,14 @@ pub(super) fn loop_array_frame_records<'a>(
 ) -> Result<Vec<CreoLoopArrayFrameRecord<'a>>, CodecError> {
     let mut counts = BTreeMap::<usize, usize>::new();
     for record in &scan.loop_arrays.records {
+        ctx.admit_btree_entry(
+            &counts,
+            &record.frame_offset,
+            "creo native loop array frame count nodes",
+        )?;
         let count = match counts.entry(record.frame_offset) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo native loop array frame count nodes")?;
-                entry.insert(0)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
         };
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo native loop array frame counts", u64::MAX, u64::MAX)
@@ -3376,12 +3375,10 @@ fn curve_id_counts(
 ) -> Result<BTreeMap<u32, usize>, CodecError> {
     let mut counts = BTreeMap::<u32, usize>::new();
     for id in ids {
+        ctx.admit_btree_entry(&counts, &id, operation)?;
         let count = match counts.entry(id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, operation)?;
-                entry.insert(0)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
         };
         *count = (*count)
             .checked_add(1)
@@ -3986,22 +3983,26 @@ pub(super) fn feature_operation_state_records<'a>(
 ) -> Result<Vec<CreoFeatureOperationState<'a>>, CodecError> {
     let mut current_offsets = BTreeMap::new();
     for state in &scan.features.operations {
-        if !current_offsets.contains_key(&state.feature_id) {
-            ctx.charge_collection_items(1, "creo native feature current-offset nodes")?;
-        }
-        current_offsets.insert(state.feature_id, state.offset);
+        ctx.insert_btree_map(
+            &mut current_offsets,
+            state.feature_id,
+            state.offset,
+            "creo native feature current-offset nodes",
+        )?;
     }
     let mut ordinals = BTreeMap::<u32, usize>::new();
     let mut records = Vec::new();
     for state in &scan.features.operation_states {
         let state_ordinal = ordinals.get(&state.feature_id).copied().unwrap_or_default();
-        if !ordinals.contains_key(&state.feature_id) {
-            ctx.charge_collection_items(1, "creo native feature ordinal nodes")?;
-        }
         let next_ordinal = state_ordinal.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo native feature state ordinal", u64::MAX, u64::MAX)
         })?;
-        ordinals.insert(state.feature_id, next_ordinal);
+        ctx.insert_btree_map(
+            &mut ordinals,
+            state.feature_id,
+            next_ordinal,
+            "creo native feature ordinal nodes",
+        )?;
         let name = CreoOperationNameRecord {
             display_name_stored: state.name.display_name_stored(),
             stored_name: state
@@ -5208,10 +5209,7 @@ pub(super) fn sketch_section_point_records(
         variables.reconciled_points(ctx)?;
     let mut point_ids = BTreeSet::new();
     for point_id in points.keys().copied().chain(ambiguous.iter().copied()) {
-        if !point_ids.contains(&point_id) {
-            ctx.charge_collection_items(1, "creo sketch section point ID nodes")?;
-            point_ids.insert(point_id);
-        }
+        ctx.insert_btree_set(&mut point_ids, point_id, "creo sketch section point ID nodes")?;
     }
     crate::decode::collect_items(
         ctx,

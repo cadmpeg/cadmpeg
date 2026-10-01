@@ -212,8 +212,7 @@ fn insert_configuration_value<K: Ord, V>(
     let bytes = key_bytes
         .checked_add(key_len)
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(1, OPERATION)?;
-    values.insert(key, value);
+    ctx.insert_btree_map(values, key, value, OPERATION)?;
     *key_bytes = bytes;
     Ok(())
 }

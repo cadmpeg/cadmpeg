@@ -147,8 +147,12 @@ pub(super) fn native_section_segment_verhor_definition(
     let key = ctx.copy_retained_text("verhor", "creo verhor property key")?;
     let value = ctx.format_retained(format_args!("{verhor}"), "creo verhor property value")?;
     let mut native_properties = BTreeMap::new();
-    ctx.charge_collection_items(1, "creo verhor property nodes")?;
-    native_properties.insert(key, value);
+    ctx.insert_btree_map(
+        &mut native_properties,
+        key,
+        value,
+        "creo verhor property nodes",
+    )?;
     let mut entities = Vec::new();
     ctx.reserve_vec(&mut entities, 1, "creo verhor entity references")?;
     entities.push(entity);
@@ -366,12 +370,13 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
     let mut emitted = BTreeSet::new();
     for parameter in &ir.model.parameters {
         if !emitted.contains(&parameter.id) {
-            ctx.charge_collection_items(1, "creo emitted parameter ID nodes")?;
-            emitted.insert(
+            ctx.insert_btree_set(
+                &mut emitted,
                 parameter
                     .id
                     .try_clone_for_decode(ctx, "creo emitted parameter identity")?,
-            );
+                "creo emitted parameter ID nodes",
+            )?;
         }
     }
     ir.model.sketch_constraints.retain_mut(|constraint| {
@@ -643,8 +648,12 @@ fn native_section_segment_radius_definition(
         "creo radius property value",
     )?;
     let mut native_properties = BTreeMap::new();
-    ctx.charge_collection_items(1, "creo radius property nodes")?;
-    native_properties.insert(key, value);
+    ctx.insert_btree_map(
+        &mut native_properties,
+        key,
+        value,
+        "creo radius property nodes",
+    )?;
     let mut entities = Vec::new();
     ctx.reserve_vec(&mut entities, 1, "creo radius entity references")?;
     entities.push(entity);
@@ -957,9 +966,11 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         ) && unique_segment_ids.contains(&segment.external_id)
     }) {
         if let Some(radius) = segment.radius_ref {
-            if !entities_by_radius.contains_key(&radius) {
-                ctx.charge_collection_items(1, "creo equation radius group nodes")?;
-            }
+            ctx.admit_btree_entry(
+                &entities_by_radius,
+                &radius,
+                "creo equation radius group nodes",
+            )?;
             let entities = entities_by_radius.entry(radius).or_default();
             ctx.reserve_vec(entities, 1, "creo equation radius group entities")?;
             entities.push(segment.external_id);
@@ -970,9 +981,11 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         .circles()
         .filter(|segment| unique_segment_ids.contains(&segment.external_id))
     {
-        if !entities_by_radius.contains_key(&segment.radius_ref) {
-            ctx.charge_collection_items(1, "creo equation radius group nodes")?;
-        }
+        ctx.admit_btree_entry(
+            &entities_by_radius,
+            &segment.radius_ref,
+            "creo equation radius group nodes",
+        )?;
         let entities = entities_by_radius.entry(segment.radius_ref).or_default();
         ctx.reserve_vec(entities, 1, "creo equation radius group entities")?;
         entities.push(segment.external_id);
@@ -1155,11 +1168,15 @@ fn section_equation_radius_dimension_parameters(
                     *slot = None;
                 }
             } else {
-                ctx.charge_collection_items(1, "creo equation dimension parameter nodes")?;
                 let copied_parameter = candidate
                     .0
                     .try_clone_for_decode(ctx, "creo equation dimension parameter copy")?;
-                dimension_parameters.insert(variable, Some((copied_parameter, candidate.1)));
+                ctx.insert_btree_map(
+                    &mut dimension_parameters,
+                    variable,
+                    Some((copied_parameter, candidate.1)),
+                    "creo equation dimension parameter nodes",
+                )?;
             }
         }
     }
@@ -1543,15 +1560,17 @@ fn insert_native_equation_property(
     key: &'static str,
     value: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if !properties.contains_key(key) {
-        ctx.charge_collection_items(1, "creo native equation property nodes")?;
-    }
     let key = ctx.copy_retained_text(key, "creo native equation property keys")?;
     let value = ctx.format_retained(
         format_args!("{value}"),
         "creo native equation property values",
     )?;
-    properties.insert(key, value);
+    ctx.insert_btree_map(
+        properties,
+        key,
+        value,
+        "creo native equation property nodes",
+    )?;
     Ok(())
 }
 
@@ -2054,10 +2073,12 @@ fn insert_relation_property(
         "creo native relation property value",
     )?;
     let key = ctx.copy_retained_text(key, "creo native relation property key")?;
-    if !properties.contains_key(key.as_str()) {
-        ctx.charge_collection_items(1, "creo native relation property nodes")?;
-    }
-    properties.insert(key, value);
+    ctx.insert_btree_map(
+        properties,
+        key,
+        value,
+        "creo native relation property nodes",
+    )?;
     Ok(())
 }
 

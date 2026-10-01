@@ -508,40 +508,29 @@ pub(in super::super) fn geometry_generator_features(
 ) -> Result<Vec<GeometryGeneratorFeature>, CodecError> {
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        insert_numeric_feature_id(
-            ctx,
-            &mut operation_feature_ids,
-            operation.feature_id,
-            "creo generator operation feature nodes",
-        )?;
+        ctx.insert_btree_set(&mut operation_feature_ids, operation.feature_id, "creo generator operation feature nodes")?;
     }
     let mut row_feature_ids = BTreeSet::new();
     for row in &scan.features.rows {
-        insert_numeric_feature_id(
-            ctx,
-            &mut row_feature_ids,
-            row.feature_id,
-            "creo generator row feature nodes",
-        )?;
+        ctx.insert_btree_set(&mut row_feature_ids, row.feature_id, "creo generator row feature nodes")?;
     }
     let mut datum_feature_ids = BTreeSet::new();
     for datum in &scan.planes.datums {
-        insert_numeric_feature_id(
-            ctx,
-            &mut datum_feature_ids,
-            datum.feature_id,
-            "creo generator datum feature nodes",
-        )?;
+        ctx.insert_btree_set(&mut datum_feature_ids, datum.feature_id, "creo generator datum feature nodes")?;
     }
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
     for row in &scan.surfaces.rows {
         if row.feature_id == 0 {
             continue;
         }
+        ctx.admit_btree_entry(
+            &generators,
+            &row.feature_id,
+            "creo generator feature map nodes",
+        )?;
         let generator = match generators.entry(row.feature_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo generator feature map nodes")?;
                 entry.insert(GeometryGeneratorFeature {
                     feature_id: row.feature_id,
                     offset: row.offset,
@@ -558,10 +547,14 @@ pub(in super::super) fn geometry_generator_features(
         if row.feature_id == 0 {
             continue;
         }
+        ctx.admit_btree_entry(
+            &generators,
+            &row.feature_id,
+            "creo generator feature map nodes",
+        )?;
         let generator = match generators.entry(row.feature_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo generator feature map nodes")?;
                 entry.insert(GeometryGeneratorFeature {
                     feature_id: row.feature_id,
                     offset: row.offset,
@@ -594,18 +587,6 @@ pub(in super::super) fn geometry_generator_features(
     Ok(output)
 }
 
-fn insert_numeric_feature_id(
-    ctx: &DecodeContext<'_>,
-    ids: &mut BTreeSet<u32>,
-    id: u32,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !ids.contains(&id) {
-        ctx.charge_collection_items(1, operation)?;
-        ids.insert(id);
-    }
-    Ok(())
-}
 
 /// Return the feature identities that the model-transfer pass will emit.
 ///
@@ -636,16 +617,18 @@ pub(in super::super) fn model_feature_ids(
         if numeric_ids.contains(&feature_id) {
             continue;
         }
-        ctx.charge_collection_items(1, "creo model feature numeric identity nodes")?;
-        numeric_ids.insert(feature_id);
+        ctx.insert_btree_set(
+            &mut numeric_ids,
+            feature_id,
+            "creo model feature numeric identity nodes",
+        )?;
         let text = ctx.format_retained(
             format_args!("creo:model:feature#{feature_id}"),
             "creo model feature identity text",
         )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
-        ctx.charge_collection_items(1, "creo model feature identity nodes")?;
-        ids.insert(id);
+        ctx.insert_btree_set(&mut ids, id, "creo model feature identity nodes")?;
     }
     Ok(ids)
 }
@@ -653,7 +636,7 @@ pub(in super::super) fn model_feature_ids(
 #[cfg(test)]
 mod allocation_tests {
     use super::{
-        geometry_generator_features, insert_numeric_feature_id, model_feature_ids,
+        geometry_generator_features, model_feature_ids,
         unresolved_feature_profile_ref,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -712,7 +695,7 @@ mod allocation_tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut ids = BTreeSet::new();
-        let error = insert_numeric_feature_id(&ctx, &mut ids, 50, operation)
+        let error = ctx.insert_btree_set(&mut ids, 50, operation)
             .expect_err("one source feature exceeds the collection limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)

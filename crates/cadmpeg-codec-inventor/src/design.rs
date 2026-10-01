@@ -918,9 +918,11 @@ impl ExpressionRenderPlan<'_, '_> {
         let Some(expression) = self.expressions.get(&(self.token, ordinal)) else {
             return Ok(None);
         };
-        self.ctx
-            .charge_collection_items(1, "track Inventor expression ancestors")?;
-        self.visiting.insert(ordinal);
+        self.ctx.insert_hash_set(
+            &mut self.visiting,
+            ordinal,
+            "track Inventor expression ancestors",
+        )?;
         let measured = match &expression.kind {
             PmDcExpressionKind::Value { value, .. } => {
                 let Some(unit) = resolve_unit(self.token, expression.unit.index(), self.units)

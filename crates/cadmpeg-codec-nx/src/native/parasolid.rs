@@ -313,11 +313,15 @@ fn group_members_from_records(
         if let Some(unique) = records_by_xmt.get_mut(&record.xmt) {
             *unique = None;
         } else {
-            ctx.charge_collection_items(1, "NX GROUP record index")?;
             record_guard.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<(u32, Option<&crate::deltas::Record>)>() * 4,
             ))?;
-            records_by_xmt.insert(record.xmt, Some(record));
+            ctx.insert_btree_map(
+                &mut records_by_xmt,
+                record.xmt,
+                Some(record),
+                "NX GROUP record index",
+            )?;
         }
     }
     let unique_record = |xmt| records_by_xmt.get(&xmt).copied().flatten();
@@ -333,11 +337,15 @@ fn group_members_from_records(
             if let Some(unique) = groups_by_node.get_mut(node_id) {
                 *unique = None;
             } else {
-                ctx.charge_collection_items(1, "NX GROUP node index")?;
                 group_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(u32, Option<(u32, u32)>)>() * 4,
                 ))?;
-                groups_by_node.insert(*node_id, Some((record.xmt, references[4])));
+                ctx.insert_btree_map(
+                    &mut groups_by_node,
+                    *node_id,
+                    Some((record.xmt, references[4])),
+                    "NX GROUP node index",
+                )?;
             }
         }
     }
@@ -358,11 +366,10 @@ fn group_members_from_records(
                 complete = false;
                 break;
             }
-            ctx.charge_collection_items(1, "NX GROUP member seen index")?;
             seen_guard.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<u32>() * 4,
             ))?;
-            seen.insert(current);
+            ctx.insert_btree_set(&mut seen, current, "NX GROUP member seen index")?;
             let Some(list_record) = unique_record(current) else {
                 complete = false;
                 break;
@@ -4028,10 +4035,10 @@ fn insert_unique_value<T: Copy>(
     key: (u32, u32),
     value: T,
 ) -> Result<(), CodecError> {
+    ctx.admit_btree_entry(values, &key, "NX entity 51 value identity index")?;
     match values.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
         std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, "NX entity 51 value identity index")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<((u32, u32), Option<T>)>() * 4,
             ))?;
@@ -4326,10 +4333,15 @@ pub(super) fn parasolid_topology_attribute_class_uses(
     for record in entity_records {
         let owner_xmt = record.leading_references[0];
         if owner_xmt > 1 {
-            let members = match records_by_owner.entry((record.stream_ordinal, owner_xmt)) {
+            let owner_key = (record.stream_ordinal, owner_xmt);
+            ctx.admit_btree_entry(
+                &records_by_owner,
+                &owner_key,
+                "NX topology attribute owner index",
+            )?;
+            let members = match records_by_owner.entry(owner_key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "NX topology attribute owner index")?;
                     owner_guard.grow(cadmpeg_core::decode::u64_from_index(
                         std::mem::size_of::<((u32, u32), Vec<&ParasolidEntity51Record>)>() * 4,
                     ))?;
@@ -4348,10 +4360,15 @@ pub(super) fn parasolid_topology_attribute_class_uses(
     let mut class_uses_by_entity = BTreeMap::<&str, Option<&ParasolidAttributeClassUse>>::new();
     let mut class_guard = ctx.reserve_scoped(0, "NX topology attribute class index")?;
     for class_use in class_uses {
-        match class_uses_by_entity.entry(class_use.entity_51_record.as_str()) {
+        let class_key = class_use.entity_51_record.as_str();
+        ctx.admit_btree_entry(
+            &class_uses_by_entity,
+            &class_key,
+            "NX topology attribute class index",
+        )?;
+        match class_uses_by_entity.entry(class_key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX topology attribute class index")?;
                 class_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(&str, Option<&ParasolidAttributeClassUse>)>() * 4,
                 ))?;
@@ -4382,10 +4399,15 @@ pub(super) fn parasolid_topology_attribute_class_uses(
         let mut member_xmt_counts = BTreeMap::<u32, usize>::new();
         let mut count_guard = ctx.reserve_scoped(0, "NX topology attribute member XMT counts")?;
         for member in members {
-            let count = match member_xmt_counts.entry(u32::from(member.xmt)) {
+            let member_key = u32::from(member.xmt);
+            ctx.admit_btree_entry(
+                &member_xmt_counts,
+                &member_key,
+                "NX topology attribute member XMT counts",
+            )?;
+            let count = match member_xmt_counts.entry(member_key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "NX topology attribute member XMT counts")?;
                     count_guard.grow(cadmpeg_core::decode::u64_from_index(
                         std::mem::size_of::<(u32, usize)>() * 4,
                     ))?;
@@ -4577,10 +4599,11 @@ pub(super) fn parasolid_attribute_field_uses(
     let mut classes = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
     let mut classes_guard = ctx.reserve_scoped(0, "NX attribute field class index")?;
     for class_use in class_uses {
-        let group = match classes.entry(class_use.entity_51_record.as_str()) {
+        let class_key = class_use.entity_51_record.as_str();
+        ctx.admit_btree_entry(&classes, &class_key, "NX attribute field class index")?;
+        let group = match classes.entry(class_key) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX attribute field class index")?;
                 classes_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(&str, Vec<&ParasolidAttributeClassUse>)>() * 4,
                 ))?;
@@ -4598,10 +4621,15 @@ pub(super) fn parasolid_attribute_field_uses(
     let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
     let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute field definition index")?;
     for definition in definitions {
-        let group = match definitions_by_id.entry(definition.id.as_str()) {
+        let definition_key = definition.id.as_str();
+        ctx.admit_btree_entry(
+            &definitions_by_id,
+            &definition_key,
+            "NX attribute field definition index",
+        )?;
+        let group = match definitions_by_id.entry(definition_key) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX attribute field definition index")?;
                 definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(&str, Vec<&ParasolidAttributeDefinition>)>() * 4,
                 ))?;
@@ -4619,10 +4647,10 @@ pub(super) fn parasolid_attribute_field_uses(
     let mut candidates = BTreeMap::<(&str, FieldPosition), Vec<_>>::new();
     let mut candidates_guard = ctx.reserve_scoped(0, "NX attribute field candidates")?;
     let mut push_candidate = |key, candidate| -> Result<(), CodecError> {
+        ctx.admit_btree_entry(&candidates, &key, "NX attribute field candidate index")?;
         let group = match candidates.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX attribute field candidate index")?;
                 candidates_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(
                         (&str, FieldPosition),
@@ -4809,10 +4837,15 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
     let mut definitions_by_id = BTreeMap::<&str, Option<&ParasolidAttributeDefinition>>::new();
     let mut definitions_guard = ctx.reserve_scoped(0, "NX topology attribute definition index")?;
     for definition in definitions {
-        match definitions_by_id.entry(definition.id.as_str()) {
+        let definition_key = definition.id.as_str();
+        ctx.admit_btree_entry(
+            &definitions_by_id,
+            &definition_key,
+            "NX topology attribute definition index",
+        )?;
+        match definitions_by_id.entry(definition_key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX topology attribute definition index")?;
                 definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(&str, Option<&ParasolidAttributeDefinition>)>() * 4,
                 ))?;
@@ -4828,10 +4861,10 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
             field_use.entity_51_record.as_str(),
             field_use.position.field_ordinal(),
         );
+        ctx.admit_btree_entry(&fields_by_identity, &key, "NX topology attribute field index")?;
         match fields_by_identity.entry(key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX topology attribute field index")?;
                 fields_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<((&str, u32), Option<&ParasolidAttributeFieldUse>)>() * 4,
                 ))?;
@@ -4843,10 +4876,15 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
     let mut entities_by_id = BTreeMap::<&str, Option<&ParasolidEntity51Record>>::new();
     let mut entities_guard = ctx.reserve_scoped(0, "NX topology attribute entity index")?;
     for entity in entities {
-        match entities_by_id.entry(entity.id.as_str()) {
+        let entity_key = entity.id.as_str();
+        ctx.admit_btree_entry(
+            &entities_by_id,
+            &entity_key,
+            "NX topology attribute entity index",
+        )?;
+        match entities_by_id.entry(entity_key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX topology attribute entity index")?;
                 entities_guard.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(&str, Option<&ParasolidEntity51Record>)>() * 4,
                 ))?;

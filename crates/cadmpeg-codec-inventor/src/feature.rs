@@ -1169,12 +1169,16 @@ pub(crate) fn project(
             let mut ids = HashMap::new();
             for sketch in sketches {
                 if let Some(native) = sketch.native_ref.as_deref() {
-                    ctx.charge_collection_items(1, "index Inventor feature sketch ids")?;
                     ctx.charge_retained(
                         cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len()),
                         "retain Inventor feature sketch id",
                     )?;
-                    ids.insert(native, sketch.id.clone());
+                    ctx.insert_hash_map(
+                        &mut ids,
+                        native,
+                        sketch.id.clone(),
+                        "index Inventor feature sketch ids",
+                    )?;
                 }
             }
             ids
@@ -2084,7 +2088,6 @@ fn boolean_properties(
     let mut properties = BTreeMap::new();
     for slot in slots {
         if let Some(value) = boolean(source, *slot, index) {
-            ctx.charge_collection_items(1, "project Inventor feature boolean property")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(
                     "property_".len()
@@ -2102,10 +2105,12 @@ fn boolean_properties(
                 if value { 4 } else { 5 },
                 "retain Inventor feature property value",
             )?;
-            properties.insert(
+            ctx.insert_btree_map(
+                &mut properties,
                 cadmpeg_core::nonblank_literal!("property_{slot}_boolean"),
                 value.to_string(),
-            );
+                "project Inventor feature boolean property",
+            )?;
         }
     }
     Ok(properties)

@@ -2890,20 +2890,22 @@ pub(crate) fn placed_outline_planes(
     )?;
     let mut frame_bound_ids = BTreeSet::new();
     for plane in &frame_bound {
-        if !frame_bound_ids.contains(&plane.surface_id) {
-            ctx.charge_collection_items(1, "creo frame-bound outline ID nodes")?;
-            frame_bound_ids.insert(plane.surface_id);
-        }
+        ctx.insert_btree_set(
+            &mut frame_bound_ids,
+            plane.surface_id,
+            "creo frame-bound outline ID nodes",
+        )?;
     }
     let mut matrix_frame_ids = BTreeSet::new();
     for frame in frames
         .iter()
         .filter(|frame| uses_matrix_column_frame(frame))
     {
-        if !matrix_frame_ids.contains(&frame.surface_id) {
-            ctx.charge_collection_items(1, "creo matrix frame ID nodes")?;
-            matrix_frame_ids.insert(frame.surface_id);
-        }
+        ctx.insert_btree_set(
+            &mut matrix_frame_ids,
+            frame.surface_id,
+            "creo matrix frame ID nodes",
+        )?;
     }
     let mut result = outline_planes(ctx, envelopes)?;
     result.retain(|plane| {
@@ -3164,10 +3166,10 @@ fn rows_with_boundaries(
     result.dedup_by_key(|row| row.offset);
     let mut id_counts = std::collections::BTreeMap::<u32, usize>::new();
     for row in &result {
+        ctx.admit_btree_entry(&id_counts, &row.id, "creo surface row ID nodes")?;
         match id_counts.entry(row.id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo surface row ID nodes")?;
                 entry.insert(1);
             }
         }
@@ -6303,8 +6305,12 @@ fn counted_parameter_scalar_slots(
     let mut states = Vec::new();
     ctx.reserve_vec(&mut states, state_count, "creo_counted_parameter_slots")?;
     states.resize_with(state_count, BTreeMap::new);
-    ctx.charge_collection_items(1, "creo counted parameter initial state")?;
-    states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
+    ctx.insert_btree_map(
+        &mut states[0],
+        0,
+        CountedParameterParse::Unique(Vec::new()),
+        "creo counted parameter initial state",
+    )?;
     for cursor in 0..body.len() {
         let current = std::mem::take(&mut states[cursor]);
         for (slots_used, parse) in current {
@@ -6453,9 +6459,9 @@ fn add_counted_parameter_state(
     slots_used: usize,
     candidate: CountedParameterParse,
 ) -> Result<(), CodecError> {
+    ctx.admit_btree_entry(states, &slots_used, "creo counted parameter state entries")?;
     match states.entry(slots_used) {
         std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, "creo counted parameter state entries")?;
             entry.insert(candidate);
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {

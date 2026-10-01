@@ -646,8 +646,12 @@ pub(crate) fn terminal_feature_body_ids(
         if statuses_by_binding.contains_key(status.segment_body_binding.as_str()) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "nx terminal body status index")?;
-        statuses_by_binding.insert(status.segment_body_binding.as_str(), status);
+        ctx.insert_btree_map(
+            &mut statuses_by_binding,
+            status.segment_body_binding.as_str(),
+            status,
+            "nx terminal body status index",
+        )?;
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
@@ -681,20 +685,18 @@ pub(crate) fn terminal_feature_body_ids(
             .filter(|body| body.as_str().starts_with(&prefix))
         {
             if !mapped.contains(body) {
-                ctx.charge_collection_items(1, "nx mapped terminal body")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(body.as_str().len()),
                     "nx mapped terminal body identity",
                 )?;
-                mapped.insert(body.clone());
+                ctx.insert_btree_set(&mut mapped, body.clone(), "nx mapped terminal body")?;
             }
             if status.terminal && !selected.contains(body) {
-                ctx.charge_collection_items(1, "nx selected terminal body")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(body.as_str().len()),
                     "nx selected terminal body identity",
                 )?;
-                selected.insert(body.clone());
+                ctx.insert_btree_set(&mut selected, body.clone(), "nx selected terminal body")?;
             }
         }
     }
@@ -756,8 +758,7 @@ impl NativeModel {
             let ordinal = usize::try_from(link.stream_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("nx linked delta ordinal", 0, u64::MAX))?;
             if !linked_deltas.contains(&ordinal) {
-                ctx.charge_collection_items(1, "nx linked delta index")?;
-                linked_deltas.insert(ordinal);
+                ctx.insert_btree_set(&mut linked_deltas, ordinal, "nx linked delta index")?;
             }
         }
         let delta_pairs = pair_stream_indices(

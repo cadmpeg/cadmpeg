@@ -6660,16 +6660,15 @@ pub(crate) fn store(
                 "iges malformed occurrence definitions",
             )?;
             malformed_definition_sequences.push(entry.sequence);
-            if !all_occurrence_definitions.contains_key(&entry.sequence) {
-                ctx.charge_collection_items(1, "iges occurrence definition map")?;
-            }
-            all_occurrence_definitions.insert(
+            ctx.insert_btree_map(
+                &mut all_occurrence_definitions,
                 entry.sequence,
                 OccurrenceDefinition {
                     members: Vec::new(),
                     transform: Transform::identity(),
                 },
-            );
+                "iges occurrence definition map",
+            )?;
             continue;
         };
         let mut malformed = false;
@@ -6715,11 +6714,12 @@ pub(crate) fn store(
             )?;
             malformed_definition_sequences.push(entry.sequence);
         }
-        if !all_occurrence_definitions.contains_key(&entry.sequence) {
-            ctx.charge_collection_items(1, "iges occurrence definition map")?;
-        }
-        all_occurrence_definitions
-            .insert(entry.sequence, OccurrenceDefinition { members, transform });
+        ctx.insert_btree_map(
+            &mut all_occurrence_definitions,
+            entry.sequence,
+            OccurrenceDefinition { members, transform },
+            "iges occurrence definition map",
+        )?;
     }
     // Keep parseable member lists as containment evidence even when semantic
     // structure admission rejects their definitions. A rejected definition is

@@ -579,10 +579,7 @@ fn extend_replacement_map<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     for (xmt, value) in replacement {
-        if !target.contains_key(&xmt) {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        target.insert(xmt, value);
+        ctx.insert_btree_map(target, xmt, value, operation)?;
     }
     Ok(())
 }
@@ -618,20 +615,26 @@ fn scan_with_auxiliaries(
     let mut result = CurveScan::default();
     let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
     for construction in &constructions {
-        if !forms_by_xmt.contains_key(&construction.xmt) {
-            ctx.charge_collection_items(1, "NX intersection form keys")?;
-        }
+        ctx.admit_btree_entry(
+            &forms_by_xmt,
+            &construction.xmt,
+            "NX intersection form keys",
+        )?;
         let forms = forms_by_xmt.entry(construction.xmt).or_default();
-        if !forms.contains(&construction.delta_twin) {
-            ctx.charge_collection_items(1, "NX intersection form values")?;
-        }
-        forms.insert(construction.delta_twin);
+        ctx.insert_btree_set(
+            forms,
+            construction.delta_twin,
+            "NX intersection form values",
+        )?;
     }
     let mut cross_form_xmts = BTreeSet::new();
     for (xmt, forms) in forms_by_xmt {
         if forms.len() > 1 {
-            ctx.charge_collection_items(1, "NX intersection cross-form identities")?;
-            cross_form_xmts.insert(xmt);
+            ctx.insert_btree_set(
+                &mut cross_form_xmts,
+                xmt,
+                "NX intersection cross-form identities",
+            )?;
         }
     }
     let mut constructions = constructions;
@@ -868,8 +871,12 @@ fn blend_bound_records(
 ) -> Result<BTreeMap<u32, u32>, CodecError> {
     let mut records = BTreeMap::new();
     for bound in blend_bounds(ctx, stream)? {
-        ctx.charge_collection_items(1, "NX blend-bound map keys")?;
-        records.insert(bound.state.xmt(), bound.state.blend_surface());
+        ctx.insert_btree_map(
+            &mut records,
+            bound.state.xmt(),
+            bound.state.blend_surface(),
+            "NX blend-bound map keys",
+        )?;
     }
     Ok(records)
 }
@@ -1046,9 +1053,9 @@ fn chart_records(
             fit_tolerance,
             ext_support_uv,
         };
+        ctx.admit_btree_entry(&out, &source.xmt, "NX chart identity index")?;
         match out.entry(source.xmt) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX chart identity index")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Chart)>()),
                     "NX chart identity index",
@@ -1077,12 +1084,18 @@ fn chart_records(
                         .replace_parameters_from_charged(ctx, &candidate.samples)?;
                 if complements {
                     entry.get_mut().ext_support_uv = candidate.ext_support_uv;
-                    ctx.charge_collection_items(1, "NX complemented chart identities")?;
-                    complemented.insert(source.xmt);
+                    ctx.insert_btree_set(
+                        &mut complemented,
+                        source.xmt,
+                        "NX complemented chart identities",
+                    )?;
                 } else {
                     entry.remove();
-                    ctx.charge_collection_items(1, "NX duplicate chart identities")?;
-                    duplicates.insert(source.xmt);
+                    ctx.insert_btree_set(
+                        &mut duplicates,
+                        source.xmt,
+                        "NX duplicate chart identities",
+                    )?;
                 }
             }
         }
@@ -1296,8 +1309,12 @@ fn term_records(
 ) -> Result<BTreeMap<u32, Point3>, CodecError> {
     let mut records = BTreeMap::new();
     for term in term_use_records(ctx, stream)? {
-        ctx.charge_collection_items(1, "NX term-use map keys")?;
-        records.insert(term.xmt, Point3::from(term.point.get()));
+        ctx.insert_btree_map(
+            &mut records,
+            term.xmt,
+            Point3::from(term.point.get()),
+            "NX term-use map keys",
+        )?;
     }
     Ok(records)
 }
@@ -1399,8 +1416,12 @@ fn uv_records(
 ) -> Result<BTreeMap<u32, SupportUvValues>, CodecError> {
     let mut records = BTreeMap::new();
     for record in support_uv_records(ctx, stream)? {
-        ctx.charge_collection_items(1, "NX support-UV map keys")?;
-        records.insert(record.xmt, record.values);
+        ctx.insert_btree_map(
+            &mut records,
+            record.xmt,
+            record.values,
+            "NX support-UV map keys",
+        )?;
     }
     Ok(records)
 }

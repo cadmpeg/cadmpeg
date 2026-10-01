@@ -853,8 +853,7 @@ impl Parser<'_, '_, '_> {
                     return self.err("duplicate reference name");
                 }
                 self.budget
-                    .charge_collection_items(1, "step_parse_external_reference_ids")?;
-                same_kind.insert(id);
+                    .insert_btree_set(same_kind, id, "step_parse_external_reference_ids")?;
                 if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
                 }
@@ -925,8 +924,7 @@ impl Parser<'_, '_, '_> {
                     return self.err("duplicate instance name");
                 }
                 self.budget
-                    .charge_collection_items(1, "step_parse_record_table_items")?;
-                records.insert(id, record);
+                    .insert_btree_map(&mut records, id, record, "step_parse_record_table_items")?;
                 self.budget
                     .push_vec(&mut ids, id, "step_parse_section_ids")?;
             }
@@ -1638,9 +1636,12 @@ fn validate_header(
             u64_from_index(trimmed.len()),
             "step_schema_identifier_normalized",
         )?;
-        budget.charge_collection_items(1, "step_schema_identifier_names")?;
         let normalized = trimmed.to_ascii_uppercase();
-        if !normalized_identifiers.insert(normalized) {
+        if !budget.insert_btree_set(
+            &mut normalized_identifiers,
+            normalized,
+            "step_schema_identifier_names",
+        )? {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
         let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
@@ -1759,7 +1760,6 @@ fn validate_header_sections(
                         .map_err(|error| {
                             error.with_message("SECTION_LANGUAGE has invalid parameters")
                         })?;
-                budget.charge_collection_items(1, "step_section_language_names")?;
                 let section_copy = section
                     .as_deref()
                     .map(|value| {
@@ -1767,7 +1767,11 @@ fn validate_header_sections(
                     })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
-                if !language_sections.insert(section_copy) {
+                if !budget.insert_btree_set(
+                    &mut language_sections,
+                    section_copy,
+                    "step_section_language_names",
+                )? {
                     return invalid("HEADER contains duplicate SECTION_LANGUAGE section");
                 }
                 if let Some(section) = section {
@@ -1786,13 +1790,16 @@ fn validate_header_sections(
                         .map_err(|error| {
                             error.with_message("SECTION_CONTEXT has invalid parameters")
                         })?;
-                budget.charge_collection_items(1, "step_section_context_names")?;
                 let section_copy = section
                     .as_deref()
                     .map(|value| budget.copy_retained_text(value, "step_section_context_name_copy"))
                     .transpose()
                     .map_err(ValidationError::Resource)?;
-                if !context_sections.insert(section_copy) {
+                if !budget.insert_btree_set(
+                    &mut context_sections,
+                    section_copy,
+                    "step_section_context_names",
+                )? {
                     return invalid("HEADER contains duplicate SECTION_CONTEXT section");
                 }
                 if let Some(section) = section {
@@ -1866,8 +1873,7 @@ fn admit_file_population(
                 let Some(section) = decoded_string(section, implementation_level, budget)? else {
                     return invalid("FILE_POPULATION has invalid parameters");
                 };
-                budget.charge_collection_items(1, "step_file_population_sections")?;
-                if !names.insert(section) {
+                if !budget.insert_btree_set(&mut names, section, "step_file_population_sections")? {
                     return invalid("FILE_POPULATION has invalid parameters");
                 }
             }
@@ -2229,8 +2235,7 @@ fn valid_data_parameters(
     let Some(section_name) = decoded_bytes(section_name, implementation_level, budget)? else {
         return invalid("DATA section parameters contain an invalid string");
     };
-    budget.charge_collection_items(1, "step_data_section_names")?;
-    if !section_names.insert(section_name) {
+    if !budget.insert_btree_set(section_names, section_name, "step_data_section_names")? {
         return invalid("DATA section names must be unique");
     }
     let Some(schema_name) = decoded_bytes(schema_name, implementation_level, budget)? else {
@@ -2457,22 +2462,23 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 self.charge_nodes(nodes)?;
                 self.budget
-                    .charge_collection_items(1, "step_anchor_memo_entry")
-                    .map_err(ResolveError::Resource)?;
-                self.budget
                     .charge_retained(
                         btree_node_storage::<&str, (Value, usize)>()?,
                         "step_anchor_memo_storage",
                     )
                     .map_err(ResolveError::Resource)?;
-                self.memo.insert(
-                    name,
-                    (
-                        try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")
-                            .map_err(ResolveError::Resource)?,
-                        nodes,
-                    ),
-                );
+                self.budget
+                    .insert_btree_map(
+                        &mut self.memo,
+                        name,
+                        (
+                            try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")
+                                .map_err(ResolveError::Resource)?,
+                            nodes,
+                        ),
+                        "step_anchor_memo_entry",
+                    )
+                    .map_err(ResolveError::Resource)?;
                 return Ok((value, nodes, nodes));
             }
         }

@@ -1914,11 +1914,9 @@ fn two_chart_pcurves(
     )?;
     let mut counts = BTreeMap::new();
     for record in &records {
+        ctx.admit_btree_entry(&counts, &record.curve_id, "creo two-chart pcurve counts")?;
         let count = match counts.entry(record.curve_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo two-chart pcurve counts")?;
-                entry.insert(0usize)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         *count += 1;
@@ -2043,10 +2041,7 @@ fn structural_feature_ids(
         .chain(curve_rows.iter().map(|row| row.feature_id))
         .filter(|id| *id != 0)
     {
-        if !ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo structural feature ids")?;
-            ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
     }
     for section in sections
         .iter()
@@ -2066,9 +2061,8 @@ fn structural_feature_ids(
                 if next == cursor {
                     break;
                 }
-                if id != 0 && !ids.contains(&id) {
-                    ctx.charge_collection_items(1, "creo structural feature ids")?;
-                    ids.insert(id);
+                if id != 0 {
+                    ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
                 }
                 cursor = next;
             }
@@ -2084,10 +2078,7 @@ fn topology_face_ids(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut faces = BTreeSet::new();
     for id in ids {
-        if !faces.contains(&id) {
-            ctx.charge_collection_items(1, "creo topology face ids")?;
-            faces.insert(id);
-        }
+        ctx.insert_btree_set(&mut faces, id, "creo topology face ids")?;
     }
     Ok(faces)
 }
@@ -2099,14 +2090,10 @@ fn candidate_feature_ids(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut ids = BTreeSet::new();
     for id in structural {
-        ctx.charge_collection_items(1, "creo candidate structural feature ids")?;
-        ids.insert(*id);
+        ctx.insert_btree_set(&mut ids, *id, "creo candidate structural feature ids")?;
     }
     for id in additions {
-        if !ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo candidate feature ids")?;
-            ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut ids, id, "creo candidate feature ids")?;
     }
     Ok(ids)
 }
@@ -2117,10 +2104,7 @@ fn complete_feature_ids(
     additions: impl IntoIterator<Item = u32>,
 ) -> Result<Vec<u32>, CodecError> {
     for id in additions {
-        if !structural.contains(&id) {
-            ctx.charge_collection_items(1, "creo complete feature ids")?;
-            structural.insert(id);
-        }
+        ctx.insert_btree_set(&mut structural, id, "creo complete feature ids")?;
     }
     let mut ordered = Vec::new();
     ctx.reserve_vec(&mut ordered, structural.len(), "creo ordered feature ids")?;
@@ -2221,17 +2205,11 @@ fn feature_entity_tables(
 ) -> Result<Vec<FeatureEntityTable>, CodecError> {
     let mut feature_ids_set = BTreeSet::new();
     for &feature_id in feature_ids {
-        if !feature_ids_set.contains(&feature_id) {
-            ctx.charge_collection_items(1, "creo feature entity owner ids")?;
-            feature_ids_set.insert(feature_id);
-        }
+        ctx.insert_btree_set(&mut feature_ids_set, feature_id, "creo feature entity owner ids")?;
     }
     let mut surface_ids = BTreeSet::new();
     for row in rows {
-        if !surface_ids.contains(&row.id) {
-            ctx.charge_collection_items(1, "creo feature entity surface ids")?;
-            surface_ids.insert(row.id);
-        }
+        ctx.insert_btree_set(&mut surface_ids, row.id, "creo feature entity surface ids")?;
     }
     collect_section_records_result(
         ctx,
@@ -2488,10 +2466,7 @@ fn claimed_definition_owners(
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
     {
-        if !owners.contains(&id) {
-            ctx.charge_collection_items(1, "creo claimed definition owners")?;
-            owners.insert(id);
-        }
+        ctx.insert_btree_set(&mut owners, id, "creo claimed definition owners")?;
     }
     Ok(owners)
 }
@@ -2626,15 +2601,12 @@ fn feature_operations(
     )?;
     let mut by_feature = BTreeMap::new();
     for record in records {
-        match by_feature.entry(record.feature_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo current feature operation nodes")?;
-                entry.insert(record);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(record);
-            }
-        }
+        ctx.insert_btree_map(
+            &mut by_feature,
+            record.feature_id,
+            record,
+            "creo current feature operation nodes",
+        )?;
     }
     let mut current = Vec::new();
     ctx.reserve_vec(
@@ -3565,28 +3537,31 @@ pub(crate) fn summarize(
     let mut entries = Vec::new();
     for s in &scan.framing.sections {
         let mut attributes = BTreeMap::new();
-        ctx.charge_collection_items(1, "creo summary attribute nodes")?;
-        attributes.insert(
+        ctx.insert_btree_map(
+            &mut attributes,
             ctx.copy_retained_text("offset", "creo summary attribute key")?,
             ctx.format_retained(format_args!("{}", s.offset()), "creo summary offset")?,
-        );
+            "creo summary attribute nodes",
+        )?;
         if s.raw_name != s.name() {
-            ctx.charge_collection_items(1, "creo summary attribute nodes")?;
-            attributes.insert(
+            ctx.insert_btree_map(
+                &mut attributes,
                 ctx.copy_retained_text("raw_name", "creo summary attribute key")?,
                 ctx.copy_retained_text(&s.raw_name, "creo summary raw name")?,
-            );
+                "creo summary attribute nodes",
+            )?;
         }
         let expanded = expanded_section_for(scan, s);
         if let Some(expanded) = expanded {
-            ctx.charge_collection_items(1, "creo summary attribute nodes")?;
-            attributes.insert(
+            ctx.insert_btree_map(
+                &mut attributes,
                 ctx.copy_retained_text("expanded_payload_size", "creo summary attribute key")?,
                 ctx.format_retained(
                     format_args!("{}", expanded.data.len()),
                     "creo summary expanded size",
                 )?,
-            );
+                "creo summary attribute nodes",
+            )?;
         }
         let name = ctx.copy_retained_text(s.name(), "creo summary entry name")?;
         ctx.reserve_vec(&mut entries, 1, "creo summary entries")?;

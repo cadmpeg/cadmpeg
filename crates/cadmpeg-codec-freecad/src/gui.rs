@@ -667,8 +667,12 @@ fn transfer_schema_one(
                     .and_then(|value| value.parse::<f64>().ok())
                     .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                 {
-                    ctx.charge_collection_items(1, "FCStd GUI material properties")?;
-                    material_properties.insert(target, value);
+                    ctx.insert_btree_map(
+                        &mut material_properties,
+                        target,
+                        value,
+                        "FCStd GUI material properties",
+                    )?;
                 }
             }
         }
@@ -829,8 +833,12 @@ fn gui_named_entries<'a>(
                 });
             }
             Some(key) => {
-                ctx.charge_collection_items(1, "FCStd GUI presentation property map")?;
-                kept.insert(key, value);
+                ctx.insert_btree_map(
+                    &mut kept,
+                    key,
+                    value,
+                    "FCStd GUI presentation property map",
+                )?;
             }
             None => {
                 ctx.reserve_vec(&mut refused, 1, "FCStd GUI refused property keys")?;

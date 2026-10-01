@@ -520,8 +520,9 @@ fn decode_exchange_mode(
                 continue;
             }
             let unknown_id = opaque_record_id(id, record, session.ctx)?;
-            session.ctx.charge_collection_items(1, "step_opaque_ids")?;
-            opaque_ids.insert(id, unknown_id);
+            session
+                .ctx
+                .insert_btree_map(&mut opaque_ids, id, unknown_id, "step_opaque_ids")?;
         }
         session
             .ctx
@@ -561,12 +562,9 @@ fn decode_exchange_mode(
             .iter()
             .flat_map(|source| source.links.iter().copied())
         {
-            if !target_ids.contains(&id) {
-                session
-                    .ctx
-                    .charge_collection_items(1, "step_opaque_target_ids_index")?;
-                target_ids.insert(id);
-            }
+            session
+                .ctx
+                .insert_btree_set(&mut target_ids, id, "step_opaque_target_ids_index")?;
         }
         source_targets = record_targets(
             &session.ir,
@@ -642,12 +640,11 @@ fn decode_exchange_mode(
             let bytes = session
                 .ctx
                 .copy_retained(&input[signature.clone()], "step_signature_record")?;
-            if !counts.contains_key("SIGNATURE") {
-                session
-                    .ctx
-                    .charge_collection_items(1, "step_opaque_kind_counts")?;
-            }
-            *counts.entry("SIGNATURE".into()).or_default() += 1;
+            let signature_kind = String::from("SIGNATURE");
+            session
+                .ctx
+                .admit_btree_entry(&counts, &signature_kind, "step_opaque_kind_counts")?;
+            *counts.entry(signature_kind).or_default() += 1;
             opaque.push(UnknownRecord::retained(
                 ids::signature(index),
                 u64_from_index(signature.start),
@@ -800,9 +797,8 @@ fn insert_retained_identity(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if !identities.contains(identity) {
-        ctx.charge_collection_items(1, "step_owned_pcurve_ids")?;
         let copy = ctx.format_retained(format_args!("{identity}"), "step_owned_pcurve_identity")?;
-        identities.insert(copy);
+        ctx.insert_btree_set(identities, copy, "step_owned_pcurve_ids")?;
     }
     Ok(())
 }
@@ -845,8 +841,7 @@ fn retain_unowned_carriers(
             .any(|partial| partial.name == "PCURVE")
             && !owned.contains(ids::data(kind!("pcurve"), id).as_str())
         {
-            ctx.charge_collection_items(1, "step_unowned_pcurves")?;
-            unowned_pcurves.insert(id);
+            ctx.insert_btree_set(&mut unowned_pcurves, id, "step_unowned_pcurves")?;
         }
     }
     let referenced = referenced_record_ids(exchange, ctx)?;
@@ -874,10 +869,11 @@ fn retain_unowned_carriers(
         .filter(|id| exchange.records().contains_key(id) && !referenced.contains(id));
     let mut unowned_direct_carriers = BTreeSet::new();
     for id in direct_carriers {
-        if !unowned_direct_carriers.contains(&id) {
-            ctx.charge_collection_items(1, "step_unowned_direct_carriers")?;
-            unowned_direct_carriers.insert(id);
-        }
+        ctx.insert_btree_set(
+            &mut unowned_direct_carriers,
+            id,
+            "step_unowned_direct_carriers",
+        )?;
     }
     associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
     if unowned_pcurves.is_empty() {
@@ -944,15 +940,11 @@ fn retain_unowned_carriers(
         )
         .filter_map(step_instance_id)
     {
-        if !roots.contains(&identity) {
-            ctx.charge_collection_items(1, "step_unowned_protected_roots")?;
-            roots.insert(identity);
-        }
+        ctx.insert_btree_set(&mut roots, identity, "step_unowned_protected_roots")?;
     }
     let mut protected_roots = BTreeSet::new();
     for id in roots.into_iter().filter(|id| !unowned_pcurves.contains(id)) {
-        ctx.charge_collection_items(1, "step_unowned_protected_root_copy")?;
-        protected_roots.insert(id);
+        ctx.insert_btree_set(&mut protected_roots, id, "step_unowned_protected_root_copy")?;
     }
     let protected = record_closure(&protected_roots, exchange, ctx)?;
     let removed_closure = record_closure(&unowned_pcurves, exchange, ctx)?;
@@ -1095,8 +1087,7 @@ fn record_closure(
         if closure.contains(&id) {
             continue;
         }
-        ctx.charge_collection_items(1, "step_record_closure_ids")?;
-        closure.insert(id);
+        ctx.insert_btree_set(&mut closure, id, "step_record_closure_ids")?;
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
@@ -1145,9 +1136,7 @@ fn count_unknown_kind(
         "+",
         "step_opaque_kind_text",
     )?;
-    if !counts.contains_key(&kind) {
-        ctx.charge_collection_items(1, "step_opaque_kind_counts")?;
-    }
+    ctx.admit_btree_entry(counts, &kind, "step_opaque_kind_counts")?;
     *counts.entry(kind).or_default() += 1;
     Ok(())
 }
@@ -1204,18 +1193,21 @@ fn record_targets(
         if !include_record(record_id) {
             continue;
         }
-        if let std::collections::btree_map::Entry::Vacant(entry) = targets.entry(record_id) {
-            ctx.charge_collection_items(1, "step_opaque_target_records")?;
-            entry.insert(BTreeSet::new());
+        if !targets.contains_key(&record_id) {
+            ctx.insert_btree_map(
+                &mut targets,
+                record_id,
+                BTreeSet::new(),
+                "step_opaque_target_records",
+            )?;
         }
         let values = targets
             .get_mut(&record_id)
             .ok_or_else(|| ctx.refuse_codec_limit("step_opaque_target_records", 0, 1))?;
         if !values.contains(identity) {
-            ctx.charge_collection_items(1, "step_opaque_target_ids")?;
-            values.insert(
-                ctx.format_retained(format_args!("{identity}"), "step_opaque_target_identity")?,
-            );
+            let copy =
+                ctx.format_retained(format_args!("{identity}"), "step_opaque_target_identity")?;
+            ctx.insert_btree_set(values, copy, "step_opaque_target_ids")?;
         }
     }
     Ok(targets)
@@ -1438,10 +1430,7 @@ fn collect_references(
     let _nested = ctx.enter_nested("step_reference_walk")?;
     match value {
         Value::Reference(id) => {
-            if !output.contains(id) {
-                ctx.charge_collection_items(1, "step_reference_walk_ids")?;
-                output.insert(*id);
-            }
+            ctx.insert_btree_set(output, *id, "step_reference_walk_ids")?;
         }
         Value::List(values) => {
             for value in values {
@@ -1569,8 +1558,7 @@ fn inspect_opaque_offsets(
         if typed_records.contains(id) || offsets.contains(&record.span.start) {
             continue;
         }
-        ctx.charge_collection_items(1, "step_inspect_opaque_offsets")?;
-        offsets.insert(record.span.start);
+        ctx.insert_btree_set(&mut offsets, record.span.start, "step_inspect_opaque_offsets")?;
     }
     Ok(offsets)
 }

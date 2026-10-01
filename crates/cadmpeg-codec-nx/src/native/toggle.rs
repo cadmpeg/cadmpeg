@@ -530,8 +530,12 @@ fn assign_stable_toggle_identities(
         if let Some(count) = counts.get_mut(&entry.toggle_id) {
             *count += 1;
         } else {
-            ctx.charge_collection_items(1, "index NX saved toggle identities")?;
-            counts.insert(entry.toggle_id.clone(), 1);
+            ctx.insert_btree_map(
+                &mut counts,
+                entry.toggle_id.clone(),
+                1,
+                "index NX saved toggle identities",
+            )?;
         }
     }
     for entry in entries.iter_mut() {

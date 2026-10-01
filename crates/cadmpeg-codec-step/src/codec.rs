@@ -116,13 +116,12 @@ fn insert_attribute(
     key: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "step_inspect_attributes")?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(key.len()),
         "step_inspect_attribute_key",
     )?;
     let key = ctx.copy_retained_text(key, "step_inspect_attribute_key")?;
-    attributes.insert(key, value);
+    ctx.insert_btree_map(attributes, key, value, "step_inspect_attributes")?;
     Ok(())
 }
 
@@ -238,10 +237,11 @@ fn inspect_parsed_exchange(
                 continue;
             }
             for partial in &exchange.records()[id].partials {
-                match counts.entry(partial.name.as_str()) {
+                let name = partial.name.as_str();
+                ctx.admit_btree_entry(&counts, &name, "step_inspect_unknown_counts")?;
+                match counts.entry(name) {
                     Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                     Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "step_inspect_unknown_counts")?;
                         entry.insert(1);
                     }
                 }

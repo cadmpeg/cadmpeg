@@ -83,9 +83,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         .is_none_or(SolverSubtable::is_complete);
     let mut skamp_id_counts = BTreeMap::<u32, usize>::new();
     for skamp in relations.skamps() {
-        if !skamp_id_counts.contains_key(&skamp.id) {
-            ctx.charge_collection_items(1, "creo skamp ID count nodes")?;
-        }
+        ctx.admit_btree_entry(&skamp_id_counts, &skamp.id, "creo skamp ID count nodes")?;
         *skamp_id_counts.entry(skamp.id).or_default() += 1;
     }
     let available_entities = if let Some(geometry) = geometry {
@@ -99,10 +97,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             if sketch_entity_id_admitted(ctx, sketch, entity_id)?
                 .is_some_and(|id| geometry.contains_key(&id))
             {
-                if !ids.contains(&entity_id) {
-                    ctx.charge_collection_items(1, "creo skamp available entity nodes")?;
-                }
-                ids.insert(entity_id);
+                ctx.insert_btree_set(&mut ids, entity_id, "creo skamp available entity nodes")?;
             }
         }
         ids
@@ -217,23 +212,26 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 }
                 let mut native_properties = BTreeMap::new();
                 if !unique_skamp_id {
-                    defer_resource(
-                        ctx.charge_collection_items(1, "creo skamp native property nodes"),
+                    let key = defer_resource(
+                        ctx.copy_retained_text("id", "creo skamp property key"),
                         resource_error,
                     )?;
-                    native_properties.insert(
-                        defer_resource(
-                            ctx.copy_retained_text("id", "creo skamp property key"),
-                            resource_error,
-                        )?,
-                        defer_resource(
-                            ctx.format_retained(
-                                format_args!("{}", skamp.id),
-                                "creo skamp property value",
-                            ),
-                            resource_error,
-                        )?,
-                    );
+                    let value = defer_resource(
+                        ctx.format_retained(
+                            format_args!("{}", skamp.id),
+                            "creo skamp property value",
+                        ),
+                        resource_error,
+                    )?;
+                    defer_resource(
+                        ctx.insert_btree_map(
+                            &mut native_properties,
+                            key,
+                            value,
+                            "creo skamp native property nodes",
+                        ),
+                        resource_error,
+                    )?;
                 }
                 Some(SketchConstraintDefinitionInput::Native {
                     native_kind: defer_resource(

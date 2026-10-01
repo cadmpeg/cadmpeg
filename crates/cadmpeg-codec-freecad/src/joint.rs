@@ -139,11 +139,12 @@ pub(crate) fn transfer(
             )
         }) {
             if let Some(value) = scalar_parameter(ctx, property)? {
-                ctx.charge_collection_items(1, "fcstd joint parameters")?;
-                parameters.insert(
+                ctx.insert_btree_map(
+                    &mut parameters,
                     ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?,
                     value,
-                );
+                    "fcstd joint parameters",
+                )?;
             }
         }
         ctx.reserve_vec(&mut output, 1, "fcstd joint records")?;

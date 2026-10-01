@@ -362,16 +362,17 @@ pub(crate) fn active_feature_closure_for_decode(
                 },
             ));
         }
-        ctx.charge_collection_items(1, "NX active feature identity index")?;
-        features.insert(&feature.id, (index, feature));
+        ctx.insert_btree_map(
+            &mut features,
+            &feature.id,
+            (index, feature),
+            "NX active feature identity index",
+        )?;
     }
     let mut active_bodies = BTreeSet::new();
     for body in bodies {
         ctx.charge_work(u64_from_index(active_bodies.len()), "NX active body lookup")?;
-        if !active_bodies.contains(body) {
-            ctx.charge_collection_items(1, "NX active bodies")?;
-            active_bodies.insert(body);
-        }
+        ctx.insert_btree_set(&mut active_bodies, body, "NX active bodies")?;
     }
     let mut active_features = BTreeMap::new();
     for (id, &resolved) in &features {
@@ -386,8 +387,12 @@ pub(crate) fn active_feature_closure_for_decode(
             .iter()
             .any(|body| active_bodies.contains(body))
         {
-            ctx.charge_collection_items(1, "NX active feature writers")?;
-            active_features.insert(*id, resolved);
+            ctx.insert_btree_map(
+                &mut active_features,
+                *id,
+                resolved,
+                "NX active feature writers",
+            )?;
         }
     }
     let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
@@ -433,8 +438,12 @@ pub(crate) fn active_feature_closure_for_decode(
                     .is_some_and(|reference| !reference.is_empty())
                 && !active_features.contains_key(id)
             {
-                ctx.charge_collection_items(1, "NX native active feature witnesses")?;
-                active_features.insert(*id, resolved);
+                ctx.insert_btree_map(
+                    &mut active_features,
+                    *id,
+                    resolved,
+                    "NX native active feature witnesses",
+                )?;
             }
         }
     }
@@ -475,8 +484,12 @@ pub(crate) fn active_feature_closure_for_decode(
                 }));
             }
             if !active_features.contains_key(dependency_id) {
-                ctx.charge_collection_items(1, "NX active feature dependencies")?;
-                active_features.insert(dependency_id, (index, dependency_feature));
+                ctx.insert_btree_map(
+                    &mut active_features,
+                    dependency_id,
+                    (index, dependency_feature),
+                    "NX active feature dependencies",
+                )?;
                 ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
                 pending.push((index, dependency_feature));
             }
@@ -494,7 +507,6 @@ pub(crate) fn active_feature_closure_for_decode(
     }
     let mut result = BTreeMap::new();
     for (id, (index, _)) in active_features {
-        ctx.charge_collection_items(1, "NX active feature closure result")?;
         let bytes = std::mem::size_of::<(FeatureId, usize)>()
             .checked_mul(4)
             .ok_or_else(|| {
@@ -505,10 +517,12 @@ pub(crate) fn active_feature_closure_for_decode(
                 )
             })?;
         ctx.charge_retained(u64_from_index(bytes), "NX active feature closure result")?;
-        result.insert(
+        ctx.insert_btree_map(
+            &mut result,
             id.try_clone_for_decode(ctx, "NX active feature closure result")?,
             index,
-        );
+            "NX active feature closure result",
+        )?;
     }
     Ok(Ok(result))
 }

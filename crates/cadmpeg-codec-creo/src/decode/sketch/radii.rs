@@ -45,9 +45,7 @@ fn append_radius_candidate(
     radius_id: u32,
     value: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if !candidates.contains_key(&radius_id) {
-        ctx.charge_collection_items(1, "creo radius candidate nodes")?;
-    }
+    ctx.admit_btree_entry(candidates, &radius_id, "creo radius candidate nodes")?;
     let values = candidates.entry(radius_id).or_default();
     ctx.reserve_vec(values, 1, "creo radius candidate values")?;
     values.push(value);
@@ -61,14 +59,9 @@ fn link_radii(
     second: u32,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (radius_id, neighbor) in [(first, second), (second, first)] {
-        if !adjacency.contains_key(&radius_id) {
-            ctx.charge_collection_items(1, "creo radius adjacency nodes")?;
-        }
+        ctx.admit_btree_entry(adjacency, &radius_id, "creo radius adjacency nodes")?;
         let neighbors = adjacency.entry(radius_id).or_default();
-        if !neighbors.contains(&neighbor) {
-            ctx.charge_collection_items(1, "creo radius adjacency links")?;
-            neighbors.insert(neighbor);
-        }
+        ctx.insert_btree_set(neighbors, neighbor, "creo radius adjacency links")?;
     }
     Ok(())
 }
@@ -283,10 +276,11 @@ pub(in crate::decode) fn resolved_section_radii(
             });
             if invalid {
                 for &(_, radius_id) in &component {
-                    if !invalid_scalar_radius_ids.contains(&radius_id) {
-                        ctx.charge_collection_items(1, "creo invalid radius nodes")?;
-                        invalid_scalar_radius_ids.insert(radius_id);
-                    }
+                    ctx.insert_btree_set(
+                        &mut invalid_scalar_radius_ids,
+                        radius_id,
+                        "creo invalid radius nodes",
+                    )?;
                 }
                 continue;
             }
@@ -325,23 +319,17 @@ pub(in crate::decode) fn resolved_section_radii(
     }
     let mut remaining = BTreeSet::new();
     for radius_id in candidates.keys().chain(adjacency.keys()) {
-        if !remaining.contains(radius_id) {
-            ctx.charge_collection_items(1, "creo remaining radius nodes")?;
-            remaining.insert(*radius_id);
-        }
+        ctx.insert_btree_set(&mut remaining, *radius_id, "creo remaining radius nodes")?;
     }
     let mut radii = BTreeMap::new();
     while let Some(seed) = remaining.first().copied() {
         let mut component = BTreeSet::new();
-        ctx.charge_collection_items(1, "creo radius component nodes")?;
-        component.insert(seed);
+        ctx.insert_btree_set(&mut component, seed, "creo radius component nodes")?;
         let mut pending = std::collections::VecDeque::new();
         ctx.push_back(&mut pending, seed, "creo pending radius nodes")?;
         while let Some(radius_id) = pending.pop_front() {
             for neighbor in adjacency.get(&radius_id).into_iter().flatten() {
-                if !component.contains(neighbor) {
-                    ctx.charge_collection_items(1, "creo radius component nodes")?;
-                    component.insert(*neighbor);
+                if ctx.insert_btree_set(&mut component, *neighbor, "creo radius component nodes")? {
                     ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes")?;
                 }
             }
@@ -367,10 +355,7 @@ pub(in crate::decode) fn resolved_section_radii(
                 continue;
             }
             for radius_id in &component {
-                if !radii.contains_key(radius_id) {
-                    ctx.charge_collection_items(1, "creo resolved radius nodes")?;
-                }
-                radii.insert(*radius_id, value);
+                ctx.insert_btree_map(&mut radii, *radius_id, value, "creo resolved radius nodes")?;
             }
         }
         remaining.retain(|radius_id| !component.contains(radius_id));

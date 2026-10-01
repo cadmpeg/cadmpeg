@@ -102,8 +102,12 @@ where
 {
     let mut copy = BTreeMap::new();
     for (name, value) in properties {
-        ctx.charge_collection_items(1, operation)?;
-        copy.insert(key(ctx, name)?, copy_history_text(ctx, value)?);
+        ctx.insert_btree_map(
+            &mut copy,
+            key(ctx, name)?,
+            copy_history_text(ctx, value)?,
+            operation,
+        )?;
     }
     Ok(copy)
 }
@@ -178,11 +182,12 @@ fn clone_history_feature(
     };
     let mut dimension_properties = BTreeMap::new();
     for (name, properties) in &feature.dimension_properties {
-        ctx.charge_collection_items(1, operation)?;
-        dimension_properties.insert(
+        ctx.insert_btree_map(
+            &mut dimension_properties,
             copy_history_text(ctx, name)?,
             clone_history_properties(ctx, operation, properties, copy_history_key)?,
-        );
+            operation,
+        )?;
     }
     Ok(Feature {
         id: copy_history_text(ctx, &feature.id)?,

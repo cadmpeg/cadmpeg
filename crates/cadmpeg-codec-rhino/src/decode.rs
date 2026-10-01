@@ -64,10 +64,7 @@ fn instance_members_are_unique(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut unique_members = BTreeSet::new();
     for member in members {
-        if !unique_members.contains(member) {
-            ctx.charge_collection_items(1, "Rhino instance unique members")?;
-            unique_members.insert(*member);
-        }
+        ctx.insert_btree_set(&mut unique_members, *member, "Rhino instance unique members")?;
     }
     Ok(unique_members.len() == members.len())
 }
@@ -91,8 +88,7 @@ fn insert_feature_property_owned(
     let key = ctx.format_retained(key, "Rhino feature property key")?;
     let key = cadmpeg_core::text::NonBlankString::new(key)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino property key"))?;
-    ctx.charge_collection_items(1, "Rhino feature property entries")?;
-    properties.insert(key, value);
+    ctx.insert_btree_map(properties, key, value, "Rhino feature property entries")?;
     Ok(())
 }
 
@@ -3010,10 +3006,14 @@ impl<'a> DecodeContext<'a> {
                     (family, detail.trim())
                 });
             if !phase_families.contains_key(family) {
-                ctx.charge_collection_items(1, "Rhino warning family groups")?;
                 let family_key = ctx.copy_retained_text(family, "Rhino warning family key")?;
                 let first_detail = ctx.copy_retained_text(detail, "Rhino warning family detail")?;
-                phase_families.insert(family_key, (0, first_detail));
+                ctx.insert_btree_map(
+                    &mut phase_families,
+                    family_key,
+                    (0, first_detail),
+                    "Rhino warning family groups",
+                )?;
             }
             let entry = phase_families.get_mut(family).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("Rhino warning family group missing")
@@ -4691,8 +4691,11 @@ impl BrepDraft {
             )
         {
             if !emitted.contains(id) {
-                ctx.charge_collection_items(1, "Rhino Brep emitted fallback IDs")?;
-                emitted.insert(ctx.copy_retained_text(id, "Rhino Brep emitted fallback ID text")?);
+                ctx.insert_btree_set(
+                    &mut emitted,
+                    ctx.copy_retained_text(id, "Rhino Brep emitted fallback ID text")?,
+                    "Rhino Brep emitted fallback IDs",
+                )?;
             }
         }
         self.links.retain(|id| emitted.contains(id));
@@ -5641,8 +5644,11 @@ fn scale_plane_pcurves(
         id: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
         if !values.contains(id) {
-            ctx.charge_collection_items(1, "Rhino plane pcurve lookup IDs")?;
-            values.insert(ctx.copy_retained_text(id, "Rhino plane pcurve lookup ID text")?);
+            ctx.insert_btree_set(
+                values,
+                ctx.copy_retained_text(id, "Rhino plane pcurve lookup ID text")?,
+                "Rhino plane pcurve lookup IDs",
+            )?;
         }
         Ok(())
     }
@@ -7078,13 +7084,12 @@ fn insert_full_source_attribute(
     key: std::fmt::Arguments<'_>,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(1, "Rhino full source attributes")?;
     let key = ctx.format_retained(key, "Rhino full source attribute key")?;
     let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("generated Rhino source attribute key is blank")
     })?;
     let value = ctx.format_retained(value, "Rhino full source attribute value")?;
-    attributes.insert(key, value);
+    ctx.insert_btree_map(attributes, key, value, "Rhino full source attributes")?;
     Ok(())
 }
 
@@ -7188,9 +7193,7 @@ fn full_source_attributes(
     }
     let mut layer_index_counts = BTreeMap::<i32, usize>::new();
     for layer in &scan.metadata.layers {
-        if !layer_index_counts.contains_key(&layer.index) {
-            ctx.charge_collection_items(1, "Rhino layer index counts")?;
-        }
+        ctx.admit_btree_entry(&layer_index_counts, &layer.index, "Rhino layer index counts")?;
         *layer_index_counts.entry(layer.index).or_default() += 1;
     }
     let mut layer_index_occurrences = BTreeMap::<i32, usize>::new();
@@ -7198,9 +7201,11 @@ fn full_source_attributes(
         let duplicate = if layer_index_counts.get(&layer.index) == Some(&1) {
             None
         } else {
-            if !layer_index_occurrences.contains_key(&layer.index) {
-                ctx.charge_collection_items(1, "Rhino layer index occurrences")?;
-            }
+            ctx.admit_btree_entry(
+                &layer_index_occurrences,
+                &layer.index,
+                "Rhino layer index occurrences",
+            )?;
             let occurrence = layer_index_occurrences.entry(layer.index).or_default();
             let current = *occurrence;
             *occurrence += 1;

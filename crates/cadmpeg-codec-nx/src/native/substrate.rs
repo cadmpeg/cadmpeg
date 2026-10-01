@@ -66,10 +66,7 @@ fn prepare_topology_streams<'a>(
     )?;
     let mut paired_deltas = BTreeSet::new();
     for delta in pairs.values().flatten().copied() {
-        if !paired_deltas.contains(&delta) {
-            ctx.charge_collection_items(1, "nx paired topology deltas")?;
-            paired_deltas.insert(delta);
-        }
+        ctx.insert_btree_set(&mut paired_deltas, delta, "nx paired topology deltas")?;
     }
     let mut merge =
         |partition: &[u8], deltas: &[u8], census: &Census| -> Result<Vec<u8>, CodecError> {
@@ -145,11 +142,8 @@ pub(super) fn paired_delta_streams(
         }
         if let Some((ordinal, stream)) = matched {
             has_links = true;
-            if stream.kind() == crate::parasolid::StreamKind::Deltas
-                && !linked_deltas.contains(&ordinal)
-            {
-                ctx.charge_collection_items(1, "nx linked delta candidates")?;
-                linked_deltas.insert(ordinal);
+            if stream.kind() == crate::parasolid::StreamKind::Deltas {
+                ctx.insert_btree_set(&mut linked_deltas, ordinal, "nx linked delta candidates")?;
             }
         }
     }
@@ -364,10 +358,7 @@ impl<'a> ParsedStreams<'a> {
         )?;
         let mut paired_deltas = BTreeSet::new();
         for delta in delta_pairs.values().flatten().copied() {
-            if !paired_deltas.contains(&delta) {
-                ctx.charge_collection_items(1, "nx parsed stream paired deltas")?;
-                paired_deltas.insert(delta);
-            }
+            ctx.insert_btree_set(&mut paired_deltas, delta, "nx parsed stream paired deltas")?;
         }
 
         let mut streams = ctx.retained_vec(scan.streams.len(), "nx parsed stream records")?;

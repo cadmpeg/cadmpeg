@@ -43,7 +43,6 @@ impl Annotations {
         draft: AnnotationDraft,
     ) -> Result<AnnotationIndex, CodecError> {
         ctx.reserve_vec(&mut ir.model.pmi, 1, "step_pmi_annotation_arena")?;
-        ctx.charge_collection_items(1, "step_pmi_annotation_index")?;
         let index = AnnotationIndex(ir.model.pmi.len());
         ir.model.pmi.push(PmiAnnotation {
             id: super::pmi_id(id),
@@ -52,7 +51,7 @@ impl Annotations {
             visible: draft.visible,
             definition: draft.definition,
         });
-        self.indices.insert(id, index);
+        ctx.insert_btree_map(&mut self.indices, id, index, "step_pmi_annotation_index")?;
         Ok(index)
     }
 

@@ -541,24 +541,27 @@ fn parse_schema_document(
                 "Protein schema {uid} declares property {id} more than once"
             )));
         }
-        ctx.charge_collection_items(1, "Protein schema property")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(id.len()),
             "Protein schema property name",
         )?;
-        schema.properties.insert(id.to_owned(), property);
+        ctx.insert_btree_map(
+            &mut schema.properties,
+            id.to_owned(),
+            property,
+            "Protein schema property",
+        )?;
     }
     if schemas.contains_key(uid) {
         return Err(CodecError::malformed(format_args!(
             "Protein archive defines schema {uid} more than once"
         )));
     }
-    ctx.charge_collection_items(1, "Protein parsed schema")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(uid.len()),
         "Protein schema UID",
     )?;
-    schemas.insert(uid.to_owned(), schema);
+    ctx.insert_hash_map(schemas, uid.to_owned(), schema, "Protein parsed schema")?;
     Ok(())
 }
 
@@ -692,18 +695,19 @@ fn decode_record(
                 PropertyContent::Value { value, connections }
             }
         };
-        ctx.charge_collection_items(1, "Protein decoded property")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(id.len()),
             "Protein decoded property name",
         )?;
-        values.insert(
+        ctx.insert_btree_map(
+            &mut values,
             id.clone(),
             DecodedProperty {
                 value_offset,
                 content,
             },
-        );
+            "Protein decoded property",
+        )?;
     }
     if at != record.len() {
         return Err(CodecError::malformed(format_args!(

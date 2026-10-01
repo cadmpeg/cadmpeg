@@ -79,9 +79,8 @@ fn topology_ignored_surface_ids(
     }
     let mut ignored = BTreeSet::new();
     for row in rows {
-        if row.kind == crate::surface::SurfaceKind::Spline && !ignored.contains(&row.id) {
-            ctx.charge_collection_items(1, "creo ignored spline surface IDs")?;
-            ignored.insert(row.id);
+        if row.kind == crate::surface::SurfaceKind::Spline {
+            ctx.insert_btree_set(&mut ignored, row.id, "creo ignored spline surface IDs")?;
         }
     }
     Ok(ignored)
@@ -339,10 +338,7 @@ impl PcurvePathActivity {
         for loop_ in &scan.topology.loops {
             for half_edge in loop_.half_edges() {
                 let key = (loop_.face_id(), half_edge.curve_id);
-                if !active_paths.contains(&key) {
-                    ctx.charge_collection_items(1, "creo active pcurve path nodes")?;
-                    active_paths.insert(key);
-                }
+                ctx.insert_btree_set(&mut active_paths, key, "creo active pcurve path nodes")?;
             }
         }
         let mut topology_faces = BTreeMap::new();
@@ -351,15 +347,23 @@ impl PcurvePathActivity {
             &scan.curves.topology_rows,
             |row| row.id,
         )? {
-            ctx.charge_collection_items(1, "creo pcurve topology face nodes")?;
-            topology_faces.insert(row.id, row.faces);
+            ctx.insert_btree_map(
+                &mut topology_faces,
+                row.id,
+                row.faces,
+                "creo pcurve topology face nodes",
+            )?;
         }
         let mut prototype_counts = BTreeMap::<u32, usize>::new();
         for row in &scan.curves.prototype_topology {
+            ctx.admit_btree_entry(
+                &prototype_counts,
+                &row.curve_id,
+                "creo pcurve prototype count nodes",
+            )?;
             match prototype_counts.entry(row.curve_id) {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo pcurve prototype count nodes")?;
                     entry.insert(1);
                 }
             }
@@ -367,8 +371,12 @@ impl PcurvePathActivity {
         let mut prototype_faces = BTreeMap::new();
         for row in &scan.curves.prototype_topology {
             if prototype_counts.get(&row.curve_id) == Some(&1) {
-                ctx.charge_collection_items(1, "creo pcurve prototype face nodes")?;
-                prototype_faces.insert(row.curve_id, row.faces);
+                ctx.insert_btree_map(
+                    &mut prototype_faces,
+                    row.curve_id,
+                    row.faces,
+                    "creo pcurve prototype face nodes",
+                )?;
             }
         }
         Ok(Self {
@@ -637,13 +645,17 @@ fn collect_support_cone_plane_witness(
         let Some(plane) = planes.get(&faces[1 - face_index]).copied() else {
             continue;
         };
+        ctx.admit_btree_entry(
+            witnesses,
+            &faces[face_index],
+            "creo support cone witness nodes",
+        )?;
         match witnesses.entry(faces[face_index]) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 ctx.reserve_vec(entry.get_mut(), 1, "creo support cone plane witnesses")?;
                 entry.get_mut().push((endpoints, plane));
             }
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo support cone witness nodes")?;
                 let mut values = Vec::new();
                 ctx.reserve_vec(&mut values, 1, "creo support cone plane witnesses")?;
                 values.push((endpoints, plane));
@@ -1033,13 +1045,17 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             Some(evidence) => {
                 diagnostics.accepted_records += 1;
                 diagnostics.complete_records += usize::from(evidence.complete);
+                ctx.admit_btree_entry(
+                    &candidates,
+                    &curve_id,
+                    "creo pcurve evidence candidate nodes",
+                )?;
                 match candidates.entry(curve_id) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         ctx.reserve_vec(entry.get_mut(), 1, "creo pcurve evidence candidates")?;
                         entry.get_mut().push(evidence);
                     }
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo pcurve evidence candidate nodes")?;
                         let mut entries = Vec::new();
                         ctx.reserve_vec(&mut entries, 1, "creo pcurve evidence candidates")?;
                         entries.push(evidence);
@@ -1225,15 +1241,16 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                         .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
                 })
         }) {
-            ctx.charge_collection_items(1, "creo pcurve endpoint evidence nodes")?;
-            evidence.insert(
+            ctx.insert_btree_map(
+                &mut evidence,
                 curve_id,
                 PcurveEndpointEvidence {
                     points: first.points,
                     complete: candidates.iter().any(|candidate| candidate.complete),
                     authoritative: candidates.iter().all(|candidate| candidate.authoritative),
                 },
-            );
+                "creo pcurve endpoint evidence nodes",
+            )?;
         } else {
             diagnostics.conflicting_curves += 1;
         }
@@ -1251,8 +1268,12 @@ fn pcurve_edge_endpoints(
 ) -> Result<BTreeMap<u32, [[f64; 3]; 2]>, cadmpeg_core::CodecError> {
     let mut endpoints = BTreeMap::new();
     for (curve_id, evidence) in pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)? {
-        ctx.charge_collection_items(1, "creo pcurve endpoint map nodes")?;
-        endpoints.insert(curve_id, evidence.points);
+        ctx.insert_btree_map(
+            &mut endpoints,
+            curve_id,
+            evidence.points,
+            "creo pcurve endpoint map nodes",
+        )?;
     }
     Ok(endpoints)
 }
@@ -1570,24 +1591,32 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 }
             }
             if evaluable {
+                ctx.admit_btree_entry(
+                    &evaluable_path_counts,
+                    &curve_id,
+                    "creo evaluable pcurve path count nodes",
+                )?;
                 match evaluable_path_counts.entry(curve_id) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         *entry.get_mut() += 1;
                     }
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo evaluable pcurve path count nodes")?;
                         entry.insert(1);
                     }
                 }
             }
             if let Some(carrier) = linear_pcurve_carrier(geometry, endpoints)? {
+                ctx.admit_btree_entry(
+                    &candidates,
+                    &curve_id,
+                    "creo analytic pcurve candidate nodes",
+                )?;
                 match candidates.entry(curve_id) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         ctx.reserve_vec(entry.get_mut(), 1, "creo analytic pcurve candidates")?;
                         entry.get_mut().push((carrier, offset));
                     }
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo analytic pcurve candidate nodes")?;
                         let mut values = Vec::new();
                         ctx.reserve_vec(&mut values, 1, "creo analytic pcurve candidates")?;
                         values.push((carrier, offset));
@@ -1792,9 +1821,9 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
     let mut domains = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for (vertices, points) in constraints {
         if vertices[0] == vertices[1] {
+            ctx.admit_btree_entry(&domains, &vertices[0], "creo pcurve domain nodes")?;
             match domains.entry(vertices[0]) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
                     let mut domain = Vec::new();
                     if agree(points[0], points[1]) {
                         ctx.reserve_vec(&mut domain, 1, "creo pcurve domain points")?;
@@ -1814,10 +1843,10 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             continue;
         }
         for vertex in vertices {
+            ctx.admit_btree_entry(&domains, vertex, "creo pcurve domain nodes")?;
             let domain = match domains.entry(*vertex) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
                     let mut domain = Vec::new();
                     ctx.reserve_vec(&mut domain, points.len(), "creo pcurve domain points")?;
                     domain.extend_from_slice(points);
@@ -1831,9 +1860,9 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         if authoritative_points.contains_key(vertex) {
             continue;
         }
+        ctx.admit_btree_entry(&domains, vertex, "creo pcurve domain nodes")?;
         match domains.entry(*vertex) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
                 let mut domain = Vec::new();
                 ctx.reserve_vec(&mut domain, candidates.len(), "creo analytic domain points")?;
                 domain.extend_from_slice(candidates);
@@ -1847,9 +1876,9 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         }
     }
     for (vertex, point) in fixed_points {
+        ctx.admit_btree_entry(&domains, vertex, "creo pcurve domain nodes")?;
         match domains.entry(*vertex) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
                 let mut domain = Vec::new();
                 ctx.reserve_vec(&mut domain, 1, "creo fixed domain points")?;
                 domain.push(*point);
@@ -1918,14 +1947,18 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 (retained_first, retained_second, first.len(), second.len())
             };
             changed |= retained_first.len() != first_len || retained_second.len() != second_len;
-            if !domains.contains_key(&vertices[0]) {
-                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
-            }
-            domains.insert(vertices[0], retained_first);
-            if !domains.contains_key(&vertices[1]) {
-                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
-            }
-            domains.insert(vertices[1], retained_second);
+            ctx.insert_btree_map(
+                &mut domains,
+                vertices[0],
+                retained_first,
+                "creo pcurve domain nodes",
+            )?;
+            ctx.insert_btree_map(
+                &mut domains,
+                vertices[1],
+                retained_second,
+                "creo pcurve domain nodes",
+            )?;
         }
         if !changed {
             break;
@@ -1937,8 +1970,12 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         let [point] = domain.as_slice() else {
             continue;
         };
-        ctx.charge_collection_items(1, "creo solved pcurve vertex nodes")?;
-        solved.insert(vertex, *point);
+        ctx.insert_btree_map(
+            &mut solved,
+            vertex,
+            *point,
+            "creo solved pcurve vertex nodes",
+        )?;
     }
     Ok(solved)
 }

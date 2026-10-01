@@ -136,10 +136,14 @@ fn split_patch_table_is_counterbore(
             return Ok(false);
         }
         if rowless {
+            ctx.admit_btree_entry(
+                &rowless_counts_by_source,
+                &source_id,
+                "creo split-patch rowless source nodes",
+            )?;
             match rowless_counts_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo split-patch rowless source nodes")?;
                     entry.insert(1);
                 }
             }
@@ -153,23 +157,34 @@ fn split_patch_table_is_counterbore(
         if materialized_surface_ids.contains(&entry.entity_id) {
             return Ok(false);
         }
-        ctx.charge_collection_items(1, "creo split-patch materialized surface ID nodes")?;
-        materialized_surface_ids.insert(entry.entity_id);
+        ctx.insert_btree_set(
+            &mut materialized_surface_ids,
+            entry.entity_id,
+            "creo split-patch materialized surface ID nodes",
+        )?;
         if row.kind == crate::surface::SurfaceKind::Cylinder {
+            ctx.admit_btree_entry(
+                &cylinder_ids_by_source,
+                &source_id,
+                "creo split-patch cylinder source nodes",
+            )?;
             let group = match cylinder_ids_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo split-patch cylinder source nodes")?;
                     entry.insert(Vec::new())
                 }
             };
             ctx.reserve_vec(group, 1, "creo split-patch cylinder IDs")?;
             group.push(entry.entity_id);
         } else if row.kind == crate::surface::SurfaceKind::Plane {
+            ctx.admit_btree_entry(
+                &plane_ids_by_source,
+                &source_id,
+                "creo split-patch plane source nodes",
+            )?;
             let group = match plane_ids_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo split-patch plane source nodes")?;
                     entry.insert(Vec::new())
                 }
             };
@@ -267,8 +282,12 @@ fn paired_hole_replay_surfaces_by_source(
                     if run.contains_key(&source_id) {
                         return Ok(None);
                     }
-                    ctx.charge_collection_items(1, "creo paired-hole run source nodes")?;
-                    run.insert(source_id, kind);
+                    ctx.insert_btree_map(
+                        &mut run,
+                        source_id,
+                        kind,
+                        "creo paired-hole run source nodes",
+                    )?;
                 }
                 None if kind.is_some() => return Ok(None),
                 None => {}
@@ -303,14 +322,15 @@ fn paired_hole_replay_surfaces_by_source(
         let Some(second_kind) = second.get(source_id) else {
             return Ok(None);
         };
-        ctx.charge_collection_items(1, "creo paired-hole result source nodes")?;
-        paired_by_source.insert(
+        ctx.insert_btree_map(
+            &mut paired_by_source,
             *source_id,
             ReplaySurfacePair {
                 first: *first_kind,
                 second: *second_kind,
             },
-        );
+            "creo paired-hole result source nodes",
+        )?;
     }
     Ok(Some(paired_by_source))
 }
@@ -475,10 +495,7 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
-        if !cylinder_ids.contains(&surface_id) {
-            ctx.charge_collection_items(1, "creo drilled cylinder ID nodes")?;
-            cylinder_ids.insert(surface_id);
-        }
+        ctx.insert_btree_set(&mut cylinder_ids, surface_id, "creo drilled cylinder ID nodes")?;
     }
     let Some(frame_records) = unique_available_positional_cylinder_frame_records(
         ctx,

@@ -91,9 +91,13 @@ fn ensure_drawing_relationship_group(
     role: NonBlankString,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let std::collections::btree_map::Entry::Vacant(entry) = relationships.entry(role) {
-        ctx.charge_collection_items(1, "step_drawing_relationship_groups")?;
-        entry.insert(Vec::new());
+    if !relationships.contains_key(&role) {
+        ctx.insert_btree_map(
+            relationships,
+            role,
+            Vec::new(),
+            "step_drawing_relationship_groups",
+        )?;
     }
     Ok(())
 }
@@ -104,8 +108,8 @@ fn clone_drawing_identities(
 ) -> Result<BTreeSet<String>, CodecError> {
     let mut copy = BTreeSet::new();
     for identity in source {
-        ctx.charge_collection_items(1, "step_drawing_ambiguous_identity_copy")?;
-        copy.insert(ctx.copy_retained_text(identity, "step_drawing_ambiguous_identity_text")?);
+        let text = ctx.copy_retained_text(identity, "step_drawing_ambiguous_identity_text")?;
+        ctx.insert_btree_set(&mut copy, text, "step_drawing_ambiguous_identity_copy")?;
     }
     Ok(copy)
 }
@@ -273,13 +277,18 @@ pub(super) fn decode(
             ..
         } = candidate;
         let mut stored_parameters = BTreeMap::new();
-        ctx.charge_collection_items(1, "step_drawing_stored_parameters")?;
-        stored_parameters.insert(
+        ctx.insert_btree_map(
+            &mut stored_parameters,
             cadmpeg_core::nonblank_literal!("source_id"),
             format!("#{id}"),
-        );
-        ctx.charge_collection_items(1, "step_drawing_stored_parameters")?;
-        stored_parameters.insert(cadmpeg_core::nonblank_literal!("source_type"), name.into());
+            "step_drawing_stored_parameters",
+        )?;
+        ctx.insert_btree_map(
+            &mut stored_parameters,
+            cadmpeg_core::nonblank_literal!("source_type"),
+            name.into(),
+            "step_drawing_stored_parameters",
+        )?;
         for (index, value) in parameters.iter().enumerate() {
             if let Some(value) = value_text(
                 exchange,
@@ -479,10 +488,9 @@ fn add_source_typed_targets(
     }
     let namespace = ir.native.namespace_mut("step");
     let arenas = namespace.arenas_mut();
-    if !arenas.contains_key("drawing_targets") {
-        ctx.charge_collection_items(1, "step_drawing_native_arena")?;
-    }
-    let target_arena = arenas.entry("drawing_targets".into()).or_default();
+    let arena_key = String::from("drawing_targets");
+    ctx.admit_btree_entry(arenas, &arena_key, "step_drawing_native_arena")?;
+    let target_arena = arenas.entry(arena_key).or_default();
     ctx.reserve_vec(
         target_arena,
         native_targets.len(),
@@ -1065,10 +1073,9 @@ fn wrapper_target_resolution(
         if let Some(targets) = target_identities.get(&id) {
             for target in targets {
                 if !identities.contains(target) {
-                    ctx.charge_collection_items(1, "step_drawing_wrapper_identities")?;
-                    identities.insert(
-                        ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?,
-                    );
+                    let copy =
+                        ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?;
+                    ctx.insert_btree_set(&mut identities, copy, "step_drawing_wrapper_identities")?;
                 }
             }
             continue;

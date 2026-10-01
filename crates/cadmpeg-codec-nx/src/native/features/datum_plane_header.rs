@@ -128,10 +128,11 @@ pub(in crate::native) fn feature_datum_plane_headers(
                     let Some((prefix, _)) = input.data_block.rsplit_once(":block#") else {
                         continue;
                     };
-                    if !input_prefixes.contains(prefix) {
-                        ctx.charge_collection_items(1, "NX datum-plane input prefixes")?;
-                        input_prefixes.insert(prefix);
-                    }
+                    ctx.insert_btree_set(
+                        &mut input_prefixes,
+                        prefix,
+                        "NX datum-plane input prefixes",
+                    )?;
                 }
                 let branch = branch
                     .map(|branch| -> Result<Construction, cadmpeg_core::CodecError> {
