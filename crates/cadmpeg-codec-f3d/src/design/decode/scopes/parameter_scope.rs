@@ -465,22 +465,24 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_derived_instance_construction(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
                     component_occurrences,
-                );
+                )?;
                 if let scope::DesignScopePayloadMut::DerivedInstance(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_copy_paste_component_operation(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
                     component_occurrences,
-                );
+                )?;
                 if let scope::DesignScopePayloadMut::CopyPaste(slot) = scope.payload_mut() {
                     *slot = construction;
                 }

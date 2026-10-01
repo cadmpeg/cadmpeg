@@ -82,6 +82,21 @@ impl DesignRelaxedGuidText {
         self.0.as_str()
     }
 
+    /// Copy this validated key into the caller's retained storage.
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let work = u64_from_index(self.as_str().len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        let text = ctx.copy_retained_text(self.as_str(), operation)?;
+        cadmpeg_ir::ids::IdentityKey::try_new(text)
+            .map(Self)
+            .map_err(CodecError::malformed)
+    }
+
     /// The admitted GUID with ASCII letters converted to lowercase.
     pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
         self.0.to_ascii_lowercase()

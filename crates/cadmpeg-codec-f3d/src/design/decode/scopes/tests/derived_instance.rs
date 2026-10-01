@@ -19,13 +19,15 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     let (mut bytes, mut scope, occurrence) = fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
+    crate::test_support::with_decode_context(|ctx| {
     let construction = exact_derived_instance_construction(
+        ctx,
         &bytes,
         &records,
         &scope,
         std::slice::from_ref(&occurrence),
     )
-    .expect("exact DerivedInstance construction");
+    .unwrap().expect("exact DerivedInstance construction");
     assert_eq!(construction.reference_record_index, 305);
     assert_eq!(construction.relation_record_index, 383);
     assert_eq!(construction.carrier_record_index, 382);
@@ -43,24 +45,27 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     assert!(exact_derived_instance_construction(
+        ctx,
         &bytes,
         &records,
         &scope,
         std::slice::from_ref(&occurrence),
     )
-    .is_none());
+    .unwrap().is_none());
 
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     bytes[425 + scope_279::TRANSFORM + 6] = 0;
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(exact_derived_instance_construction(
+        ctx,
         &bytes,
         &records,
         &scope,
         std::slice::from_ref(&occurrence),
     )
-    .is_none());
+    .unwrap().is_none());
+    });
 }
 
 fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
@@ -159,4 +164,20 @@ fn header(bytes: &mut [u8], at: usize, class_tag: &[u8; 3], record_index: u32) {
     bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
     bytes[at + 4..at + 7].copy_from_slice(class_tag);
     bytes[at + 7..at + 11].copy_from_slice(&record_index.to_le_bytes());
+}
+
+#[test]
+fn derived_instance_guid_copies_preserve_retained_refusals() {
+    let (bytes, scope, occurrence) = fixture();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    for limit in [0, 36] {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = exact_derived_instance_construction(ctx, &bytes, &records, &scope, std::slice::from_ref(&occurrence)).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "retain F3D construction GUID"));
+        });
+    }
 }
