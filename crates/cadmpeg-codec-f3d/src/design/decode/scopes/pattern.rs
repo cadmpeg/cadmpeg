@@ -342,7 +342,7 @@ fn exact_rigid_transform_candidates(
             if !zero_lanes_valid {
                 continue;
             }
-            let values = f64s_at(bytes, offset, 16)?;
+            let values = f64s_at::<16>(bytes, offset)?;
             let mut transform = [[0.0; 4]; 4];
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;

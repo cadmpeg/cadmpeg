@@ -651,11 +651,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     {
         return None;
     }
-    let profile_normal = f64s_at(
-        bytes,
-        start.checked_add(class_296_two_faces::PROFILE_NORMAL)?,
-        3,
-    )?;
+    let profile_normal = f64s_at::<3>(bytes, start.checked_add(class_296_two_faces::PROFILE_NORMAL)?)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
@@ -802,18 +798,10 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     {
         return None;
     }
-    let profile_scalar_at_54 = f64s_at(
-        bytes,
-        start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
-        1,
-    )?
+    let profile_scalar_at_54 = f64s_at::<1>(bytes, start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?)?
     .into_iter()
     .next()?;
-    let profile_scalar_at_70 = f64s_at(
-        bytes,
-        start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?,
-        1,
-    )?
+    let profile_scalar_at_70 = f64s_at::<1>(bytes, start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?)?
     .into_iter()
     .next()?;
     let scalar_at_54 = profile_scalar_at_54.is_finite()
@@ -1059,7 +1047,7 @@ fn exact_current_extrude_prologue(
     {
         return None;
     }
-    let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
+    let profile_normal = f64s_at::<3>(bytes, profile_normal_offset)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
@@ -1348,7 +1336,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     let start_offset = start.checked_add(shifted_reference_aware::START_SUPPORT)?;
     let start_support = extrude_start_at(bytes, start_offset)?;
     let profile_normal_offset = start.checked_add(shifted_reference_aware::PROFILE_NORMAL)?;
-    let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
+    let profile_normal = f64s_at::<3>(bytes, profile_normal_offset)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
@@ -1806,11 +1794,7 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
     let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(class_338_legacy::START_SUPPORT)?;
     let start_support = extrude_start_at(bytes, start_offset)?;
-    let profile_normal = f64s_at(
-        bytes,
-        start.checked_add(class_338_legacy::PROFILE_NORMAL)?,
-        3,
-    )?;
+    let profile_normal = f64s_at::<3>(bytes, start.checked_add(class_338_legacy::PROFILE_NORMAL)?)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
