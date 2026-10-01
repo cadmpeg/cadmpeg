@@ -84,7 +84,10 @@ impl SupportUvLane {
     }
 
     pub(crate) fn from_present_values(values: Vec<[f64; 2]>) -> Option<Self> {
-        let checked = DecodeContext::admitted_vec(values.len(), "NX chart support-UV lane").ok()?;
+        let checked = {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(values.len()).map(|()| storage)
+        }.ok()?;
         Self::present_with_storage(values, checked)
     }
 

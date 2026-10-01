@@ -350,7 +350,10 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                 "copied_body_entity_suffix_offsets must match body_operand_record_indices".into(),
             );
         }
-        let mut bodies = DecodeContext::admitted_vec(count, "reconstruct F3D copied bodies")
+        let mut bodies = {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(count).map(|()| storage)
+        }
             .map_err(|error| error.to_string())?;
         bodies.extend(
             wire.body_operand_record_indices

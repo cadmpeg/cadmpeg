@@ -346,7 +346,10 @@ impl DesignMeshTextureTable {
             start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(count) + 4)
         });
         let mut resources =
-            DecodeContext::admitted_vec(rows.len(), "reconstruct F3D texture resources")
+            {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(rows.len()).map(|()| storage)
+        }
                 .map_err(|error| error.to_string())?;
         for row in rows {
             let flags_guid = flags_start.and_then(|start| {
@@ -1525,7 +1528,10 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             );
         }
         let mut bodies =
-            DecodeContext::admitted_vec(wire.bodies.len(), "reconstruct F3D mesh bodies")
+            {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(wire.bodies.len()).map(|()| storage)
+        }
                 .map_err(|error| error.to_string())?;
         for body in wire.bodies {
             bodies.push(DesignMeshBody::from_wire(body)?);

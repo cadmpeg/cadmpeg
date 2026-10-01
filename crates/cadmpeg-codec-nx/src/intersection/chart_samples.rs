@@ -319,7 +319,10 @@ impl SourceChartData {
     }
 
     pub(crate) fn xyz3(points: Vec<Point3>) -> Result<Self, &'static str> {
-        let checked = DecodeContext::admitted_vec(points.len(), "NX finite chart points")
+        let checked = {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(points.len()).map(|()| storage)
+        }
             .map_err(|_| "points: storage allocation failed")?;
         Self::xyz3_with_storage(points, checked)
     }
@@ -372,7 +375,10 @@ impl SourceChartData {
             })
             .transpose()
         });
-        let samples = DecodeContext::admitted_vec(points.len(), "NX chart sample pairs")
+        let samples = {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(points.len()).map(|()| storage)
+        }
             .map_err(|_| "points: storage allocation failed")?;
         Self::ext11_with_storage(points, parameters, [first?, second?], samples)
     }
