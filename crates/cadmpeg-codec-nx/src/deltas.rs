@@ -2736,10 +2736,10 @@ fn consume_variable(
     if kind == 91 {
         return consume_type_91(ctx, stream, offset);
     }
-    let parsed = (|| -> Option<_> {
-        Some(match kind {
+    let parsed: Option<Result<_, CodecError>> = (|| {
+        Some(Ok(match kind {
             81 => {
-                let record = crate::parasolid::entity_51_record_at(stream, offset)?;
+                let record = propagate_resource!(crate::parasolid::entity_51_record_at(ctx, stream, offset))?;
                 (
                     record.xmt.into(),
                     record.byte_len,
@@ -2751,9 +2751,9 @@ fn consume_variable(
             }
             82..=89 | 98 => {
                 let (parsed_kind, xmt, byte_len) =
-                    crate::parasolid::value_records::entity_value_record_identity_at(
-                        stream, offset,
-                    )?;
+                    propagate_resource!(crate::parasolid::value_records::entity_value_record_identity_at(
+                        ctx, stream, offset,
+                    ))?;
                 (parsed_kind == kind).then_some(())?;
                 let family = match parsed_kind {
                     82 => RecordFamily::Entity52,
@@ -2770,9 +2770,9 @@ fn consume_variable(
                 (xmt, byte_len, family)
             }
             _ => return None,
-        })
+        }))
     })();
-    let Some((xmt, byte_len, family)) = parsed else {
+    let Some((xmt, byte_len, family)) = parsed.transpose()? else {
         return Ok(None);
     };
     let Some(end) = offset.checked_add(byte_len) else {

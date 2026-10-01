@@ -14,7 +14,7 @@ use std::num::NonZeroU32;
 
 use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::bytes::{contains, find};
-use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
 pub(crate) mod attribute_action;
@@ -263,154 +263,153 @@ pub(crate) struct FieldNamesRecord {
     pub(crate) name_xmts: NameReferences,
 }
 
-/// Locate unique snapshot values owned by typed attribute relations.
-pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
-    let referenced_xmts = referenced_value_xmts(bytes, ValueMultiplicity::UniqueSnapshot);
-    value_records::value_record_candidates(bytes)
-        .into_iter()
-        .filter_map(|(xmt, offsets)| {
-            let [offset] = offsets.as_slice() else {
-                return None;
-            };
-            referenced_xmts.contains(&xmt).then_some(*offset)
-        })
-        .collect()
+/// Locate unique snapshot values with scoped discovery storage.
+pub(crate) fn referenced_value_record_offsets<'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<usize>, ScopedReservation<'ctx>), CodecError> {
+    referenced_value_offsets(ctx, bytes, ValueMultiplicity::UniqueSnapshot)
 }
 
-/// Locate historical value events owned by typed attribute relations.
-pub(crate) fn referenced_value_event_offsets(bytes: &[u8]) -> Vec<usize> {
-    let referenced_xmts = referenced_value_xmts(bytes, ValueMultiplicity::HistoricalEvents);
-    value_records::value_record_candidates(bytes)
-        .into_iter()
-        .filter(|(xmt, _)| referenced_xmts.contains(xmt))
-        .flat_map(|(_, offsets)| offsets)
-        .collect()
+/// Locate historical value events with scoped discovery storage.
+pub(crate) fn referenced_value_event_offsets<'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<usize>, ScopedReservation<'ctx>), CodecError> {
+    referenced_value_offsets(ctx, bytes, ValueMultiplicity::HistoricalEvents)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ValueMultiplicity {
-    UniqueSnapshot,
-    HistoricalEvents,
+enum ValueMultiplicity { UniqueSnapshot, HistoricalEvents }
+
+fn referenced_value_offsets<'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &[u8], multiplicity: ValueMultiplicity) -> Result<(Vec<usize>, ScopedReservation<'ctx>), CodecError> {
+    let (references, _reference_guard) = referenced_value_xmts(ctx, bytes, multiplicity)?;
+    let (candidates, _candidate_guard) = value_records::value_record_candidates(ctx, bytes)?;
+    let mut offsets = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX value owner offsets")?;
+    for (xmt, positions) in candidates {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()), "resolve NX value ownership")?;
+        if !references.contains(&xmt) || (multiplicity == ValueMultiplicity::UniqueSnapshot && positions.len() != 1) { continue; }
+        for offset in positions { ctx.push_scoped_vec(&mut reservation, &mut offsets, offset, "NX value owner offsets")?; }
+    }
+    Ok((offsets, reservation))
 }
 
-fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTreeSet<u32> {
+fn referenced_value_xmts<'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &[u8], multiplicity: ValueMultiplicity) -> Result<(BTreeSet<u32>, ScopedReservation<'ctx>), CodecError> {
     let mut referenced = BTreeSet::new();
+    let mut reference_guard = ctx.reserve_scoped(0, "NX owned value identities")?;
+    let mut groups_guard = ctx.reserve_scoped(0, "NX attribute ownership groups")?;
+    let AttributeScan { records: entity_records, slots: _entity_slots, payloads: _entity_payloads } = entity_51_records(ctx, bytes)?;
     let mut entities = BTreeMap::<u32, Vec<Entity51Record>>::new();
-    for record in entity_51_records(bytes) {
-        entities
-            .entry(u32::from(record.xmt))
-            .or_default()
-            .push(record);
+    for record in entity_records {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entities.len()), "group NX entity-51 identities")?;
+        ctx.push_scoped_btree_group(&mut groups_guard, &mut entities, u32::from(record.xmt), || record, 0, "NX attribute ownership groups")?;
     }
     for records in entities.into_values() {
-        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
-            continue;
-        }
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 { continue; }
         for record in records {
-            referenced.extend(record.leading_references);
-            referenced.extend(record.trailing_references.into_values());
+            for xmt in record.leading_references.into_iter().chain(record.trailing_references.into_values()) {
+                ctx.insert_scoped_btree_set(&mut reference_guard, &mut referenced, xmt, "index NX owned values", "NX owned value identities")?;
+            }
         }
     }
-
-    let mut field_name_lists = BTreeMap::<u32, Vec<FieldNamesRecord>>::new();
-    for record in field_names_records(bytes) {
-        field_name_lists
-            .entry(u32::from(record.xmt))
-            .or_default()
-            .push(record);
+    let AttributeScan { records: name_records, slots: _name_slots, payloads: _name_payloads } = field_names_records(ctx, bytes)?;
+    let mut field_names = BTreeMap::<u32, Vec<FieldNamesRecord>>::new();
+    for record in name_records {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(field_names.len()), "group NX field-name identities")?;
+        ctx.push_scoped_btree_group(&mut groups_guard, &mut field_names, u32::from(record.xmt), || record, 0, "NX attribute ownership groups")?;
     }
+    let AttributeScan { records: definition_records, slots: _definition_slots, payloads: _definition_payloads } = attribute_definitions(ctx, bytes)?;
     let mut definitions = BTreeMap::<u32, Vec<AttributeDefinition<'_>>>::new();
-    for definition in attribute_definitions(bytes) {
-        definitions
-            .entry(u32::from(definition.xmt))
-            .or_default()
-            .push(definition);
+    for record in definition_records {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(definitions.len()), "group NX attribute definitions")?;
+        ctx.push_scoped_btree_group(&mut groups_guard, &mut definitions, u32::from(record.xmt), || record, 0, "NX attribute ownership groups")?;
     }
     let mut referenced_lists = BTreeSet::new();
+    let mut list_guard = ctx.reserve_scoped(0, "NX referenced field-name lists")?;
     for records in definitions.into_values() {
-        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
-            continue;
-        }
-        referenced_lists.extend(
-            records
-                .into_iter()
-                .filter_map(|record| record.field_names_xmt.map(u32::from)),
-        );
-    }
-    for (xmt, records) in field_name_lists {
-        if !referenced_lists.contains(&xmt)
-            || (multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1)
-        {
-            continue;
-        }
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 { continue; }
         for record in records {
-            referenced.extend(record.name_xmts.as_slice().iter().copied().map(u32::from));
+            if let Some(xmt) = record.field_names_xmt {
+                ctx.insert_scoped_btree_set(&mut list_guard, &mut referenced_lists, u32::from(xmt), "index NX field-name ownership", "NX referenced field-name lists")?;
+            }
         }
     }
-    referenced
+    for (xmt, records) in field_names {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(referenced_lists.len()), "resolve NX field-name ownership")?;
+        if !referenced_lists.contains(&xmt) || (multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1) { continue; }
+        for record in records {
+            for xmt in record.name_xmts.as_slice() {
+                ctx.insert_scoped_btree_set(&mut reference_guard, &mut referenced, u32::from(*xmt), "index NX owned values", "NX owned value identities")?;
+            }
+        }
+    }
+    Ok((referenced, reference_guard))
 }
 
-/// Decode counted type-99 attribute field-name records.
-pub(crate) fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
+pub(crate) struct AttributeScan<'ctx, T> {
+    pub(crate) records: Vec<T>,
+    pub(crate) slots: ScopedReservation<'ctx>,
+    pub(crate) payloads: ScopedReservation<'ctx>,
+}
+
+/// Decode counted type-99 attribute field-name records with scoped ownership.
+pub(crate) fn field_names_records<'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &[u8]) -> Result<AttributeScan<'ctx, FieldNamesRecord>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX field names")?;
     let mut records = Vec::new();
+    let mut slots = ctx.reserve_scoped(0, "NX field-name record slots")?;
+    let mut payloads = ctx.reserve_scoped(0, "NX field-name reference lanes")?;
     let mut offset = 0;
     while offset < bytes.len() {
-        if let Some(record) = field_names_record_at(bytes, offset) {
+        if let Some(record) = field_names_record_at(ctx, bytes, offset, &mut payloads)? {
             offset += record.byte_len;
-            records.push(record);
-        } else {
-            offset += 1;
-        }
+            ctx.push_scoped_vec(&mut slots, &mut records, record, "NX field-name record slots")?;
+        } else { offset += 1; }
     }
-    records
+    Ok(AttributeScan { records, slots, payloads })
 }
 
-fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord> {
-    let mut at = offset.checked_add(2)?;
-    (bytes.get(offset..at) == Some(&[0, 0x63])).then_some(())?;
-    if bytes.get(at) == Some(&0xff) {
-        at += 1;
-    }
-    let count = usize::try_from(View::u32_be_at(bytes, at)?).ok()?;
-    at += 4;
-    let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
-    let name_xmts = (0..count)
-        .map(|_| NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok())
-        .collect::<Option<Vec<_>>>()?;
-    Some(FieldNamesRecord {
-        offset,
-        byte_len: at - offset,
-        xmt,
-        name_xmts: NameReferences::try_from(name_xmts).ok()?,
-    })
+fn field_names_record_at(ctx: &DecodeContext<'_>, bytes: &[u8], offset: usize, payloads: &mut ScopedReservation<'_>) -> Result<Option<FieldNamesRecord>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
+        let mut at = offset.checked_add(2)?;
+        (bytes.get(offset..at) == Some(&[0, 0x63])).then_some(())?;
+        if bytes.get(at) == Some(&0xff) { at += 1; }
+        let count = usize::try_from(View::u32_be_at(bytes, at)?).ok()?;
+        at += 4;
+        let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
+        // Each reference requires at least two source bytes.
+        (count <= bytes.len().checked_sub(at)? / 2).then_some(())?;
+        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "read NX field-name references"));
+        let mut probe = at;
+        for _ in 0..count { NonNullXmt::try_from(read_xmt(bytes, &mut probe)?).ok()?; }
+        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "materialize NX field-name references"));
+        let mut name_xmts = Vec::new();
+        propagate_resource!(ctx.reserve_scoped_vec(payloads, &mut name_xmts, count, "NX field-name reference lanes"));
+        for _ in 0..count { name_xmts.push(NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?); }
+        Some(Ok(FieldNamesRecord { offset, byte_len: at - offset, xmt, name_xmts: NameReferences::try_from(name_xmts).ok()? }))
+    })();
+    parsed.transpose()
 }
 
-/// Decode framed type-81 entity/attribute-list records.
-pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
+/// Decode framed type-81 entity/attribute-list records with scoped ownership.
+pub(crate) fn entity_51_records<'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &[u8]) -> Result<AttributeScan<'ctx, Entity51Record>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX entity-51 records")?;
     let mut records = Vec::new();
+    let mut slots = ctx.reserve_scoped(0, "NX entity-51 record slots")?;
+    let mut payloads = ctx.reserve_scoped(0, "NX entity-51 reference lanes")?;
     let mut offset = 0;
     while offset < bytes.len() {
-        let Some(frame) = entity_51_frame_at(bytes, offset) else {
-            offset += 1;
-            continue;
-        };
-        if let Some(record) = entity_51_record_from_frame(bytes, frame) {
-            let Some(next) = frame.next_offset() else {
-                break;
-            };
-            records.push(record);
+        let Some(frame) = entity_51_frame_at(bytes, offset) else { offset += 1; continue; };
+        if let Some(record) = entity_51_record_from_frame(ctx, bytes, frame, &mut payloads)? {
+            let Some(next) = frame.next_offset() else { break; };
+            ctx.push_scoped_vec(&mut slots, &mut records, record, "NX entity-51 record slots")?;
             offset = next;
-        } else {
-            offset += 1;
-        }
+        } else { offset += 1; }
     }
-    records
+    Ok(AttributeScan { records, slots, payloads })
 }
 
-/// Decode one complete type-81 entity/attribute-list record at `offset`.
-pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity51Record> {
-    let frame = entity_51_frame_at(bytes, offset)?;
-    entity_51_record_from_frame(bytes, frame)
+/// Decode and retain one complete type-81 entity/attribute-list record.
+pub(crate) fn entity_51_record_at(ctx: &DecodeContext<'_>, bytes: &[u8], offset: usize) -> Result<Option<Entity51Record>, CodecError> {
+    let Some(frame) = entity_51_frame_at(bytes, offset) else { return Ok(None); };
+    let mut payloads = ctx.reserve_scoped(0, "NX entity-51 reference lanes")?;
+    let record = entity_51_record_from_frame(ctx, bytes, frame, &mut payloads)?;
+    if record.is_some() { payloads.commit()?; }
+    Ok(record)
 }
 
 #[derive(Clone, Copy)]
@@ -463,20 +462,27 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     })
 }
 
-fn entity_51_record_from_frame(bytes: &[u8], frame: Entity51Frame) -> Option<Entity51Record> {
-    let mut at = frame.references_at;
-    let references = entity_51_references(bytes, &mut at, frame.reference_count)?;
-    let leading_references = references.get(..5)?.try_into().ok()?;
-    let trailing_references = EntityReferences::new(references.get(5..)?.to_vec()).ok()?;
-    Some(Entity51Record {
-        offset: frame.offset,
-        byte_len: frame.end - frame.offset,
-        xmt: frame.xmt,
-        sequence: frame.sequence,
-        definition_xmt: frame.definition_xmt,
-        leading_references,
-        trailing_references,
-    })
+fn entity_51_record_from_frame(ctx: &DecodeContext<'_>, bytes: &[u8], frame: Entity51Frame, payloads: &mut ScopedReservation<'_>) -> Result<Option<Entity51Record>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
+        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(frame.reference_count), "materialize NX entity-51 references"));
+        let mut at = frame.references_at;
+        let prefixed = bytes.get(at) == Some(&1);
+        let mut leading_references = [0; 5];
+        for reference in &mut leading_references {
+            if prefixed { matches!(bytes.get(at), Some(0 | 1)).then_some(())?; at += 1; }
+            *reference = read_xmt(bytes, &mut at)?;
+        }
+        let mut trailing = Vec::new();
+        propagate_resource!(ctx.reserve_scoped_vec(payloads, &mut trailing, frame.reference_count.checked_sub(5)?, "NX entity-51 reference lanes"));
+        for _ in 5..frame.reference_count {
+            if prefixed { matches!(bytes.get(at), Some(0 | 1)).then_some(())?; at += 1; }
+            trailing.push(read_xmt(bytes, &mut at)?);
+        }
+        Some(Ok(Entity51Record { offset: frame.offset, byte_len: frame.end - frame.offset,
+            xmt: frame.xmt, sequence: frame.sequence, definition_xmt: frame.definition_xmt,
+            leading_references, trailing_references: EntityReferences::new(trailing).ok()? }))
+    })();
+    parsed.transpose()
 }
 
 fn entity_51_reference_end(bytes: &[u8], at: &mut usize, count: usize) -> Option<(usize, bool)> {
@@ -497,21 +503,6 @@ fn entity_51_reference_end(bytes: &[u8], at: &mut usize, count: usize) -> Option
     Some((*at, false))
 }
 
-fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
-    if bytes.get(*at) == Some(&1) {
-        let mut prefixed_at = *at;
-        let mut references = Vec::new();
-        for _ in 0..count {
-            matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
-            prefixed_at += 1;
-            references.push(read_xmt(bytes, &mut prefixed_at)?);
-        }
-        matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
-        *at = prefixed_at + 1;
-        return Some(references);
-    }
-    (0..count).map(|_| read_xmt(bytes, at)).collect()
-}
 
 #[derive(Debug, Clone, Copy)]
 struct AttributeIdentifier<'a> {
@@ -520,9 +511,12 @@ struct AttributeIdentifier<'a> {
     name: PrintableString<&'a str>,
 }
 
-fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
-    (0..bytes.len())
-        .filter_map(|offset| {
+fn attribute_identifiers<'bytes, 'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &'bytes [u8]) -> Result<(BTreeMap<u32, Option<AttributeIdentifier<'bytes>>>, ScopedReservation<'ctx>), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX attribute identifiers")?;
+    let mut index = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX attribute identifier index")?;
+    for offset in 0..bytes.len() {
+        let candidate: Option<Result<_, CodecError>> = (|| {
             let mut at = offset.checked_add(2)?;
             (bytes.get(offset..at) == Some(&[0x00, 0x4f])).then_some(())?;
             if bytes.get(at) == Some(&0xff) {
@@ -533,20 +527,32 @@ fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
             let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
             let name_end = at.checked_add(name_len)?;
             let name_bytes = bytes.get(at..name_end)?;
-            Some(AttributeIdentifier {
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(name_len), "validate NX attribute name"));
+            Some(Ok(AttributeIdentifier {
                 offset,
                 xmt,
                 name: PrintableString::new(std::str::from_utf8(name_bytes).ok()?).ok()?,
-            })
-        })
-        .collect()
+            }))
+        })();
+        if let Some(identifier) = candidate.transpose()? {
+            let key = u32::from(identifier.xmt);
+            if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut index, key, Some(identifier), "index NX attribute identifiers", "NX attribute identifier index")? {
+                if let Some(value) = index.get_mut(&key) { *value = None; }
+            }
+        }
+    }
+    Ok((index, reservation))
 }
 
 /// Decode complete type-80 attribute definitions and resolve their type-79 identifiers.
-pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
-    let identifiers = attribute_identifiers(bytes);
-    (0..bytes.len())
-        .filter_map(|offset| {
+pub(crate) fn attribute_definitions<'bytes, 'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &'bytes [u8]) -> Result<AttributeScan<'ctx, AttributeDefinition<'bytes>>, CodecError> {
+    let (identifiers, _identifier_reservation) = attribute_identifiers(ctx, bytes)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX attribute definitions")?;
+    let mut records = Vec::new();
+    let mut slots = ctx.reserve_scoped(0, "NX attribute definition slots")?;
+    let mut payloads = ctx.reserve_scoped(0, "NX attribute field lanes")?;
+    for offset in 0..bytes.len() {
+        let candidate: Option<Result<_, CodecError>> = (|| {
             let mut at = offset.checked_add(2)?;
             (bytes.get(offset..at) == Some(&[0x00, 0x50])).then_some(())?;
             if bytes.get(at) == Some(&0xff) {
@@ -565,13 +571,10 @@ pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>
             }
             at += 8;
             let field_names_xmt = XmtTarget::from_wire(read_xmt(bytes, &mut at)?);
-            let mut matches = identifiers
-                .iter()
-                .filter(|identifier| identifier.xmt == identifier_xmt);
-            let identifier = matches.next()?;
-            matches.next().is_none().then_some(())?;
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(identifiers.len()), "resolve NX attribute identifier"));
+            let identifier = identifiers.get(&u32::from(identifier_xmt))?.as_ref()?;
             let field_count_usize = usize::try_from(field_count).ok()?;
-            let (legal_owner_flags, field_codes) =
+            let (legal_owner_flags, field_codes) = propagate_resource!(
                 [16_usize, 14].into_iter().find_map(|flag_count| {
                     let flags = bytes.get(at..at.checked_add(flag_count)?)?;
                     let legal_owner_flags = LegalOwnerFlags::try_from(flags).ok()?;
@@ -581,15 +584,15 @@ pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>
                     if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
                         return None;
                     }
-                    let fields = field_codes
-                        .iter()
-                        .copied()
-                        .map(AttributeField::try_from)
-                        .collect::<Result<Vec<_>, _>>()
-                        .ok()?;
-                    Some((legal_owner_flags, fields))
-                })?;
-            Some(AttributeDefinition {
+                    propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(field_codes.len()), "validate NX attribute fields"));
+                    field_codes.iter().try_for_each(|code| AttributeField::try_from(*code).map(|_| ()).ok())?;
+                    Some(Ok((legal_owner_flags, field_codes)))
+                }).transpose())?;
+            let mut fields = Vec::new();
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(field_codes.len()), "materialize NX attribute fields"));
+            propagate_resource!(ctx.reserve_scoped_vec(&mut payloads, &mut fields, field_codes.len(), "NX attribute field lanes"));
+            for code in field_codes { fields.push(AttributeField::try_from(*code).ok()?); }
+            Some(Ok(AttributeDefinition {
                 offset,
                 xmt,
                 next_definition_xmt,
@@ -600,10 +603,12 @@ pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>
                 action_codes,
                 field_names_xmt,
                 legal_owner_flags,
-                field_codes,
-            })
-        })
-        .collect()
+                field_codes: fields,
+            }))
+        })();
+        if let Some(record) = candidate.transpose()? { ctx.push_scoped_vec(&mut slots, &mut records, record, "NX attribute definition slots")?; }
+    }
+    Ok(AttributeScan { records, slots, payloads })
 }
 
 fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {

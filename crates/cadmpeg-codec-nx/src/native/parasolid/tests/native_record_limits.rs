@@ -135,7 +135,7 @@ fn parasolid_attribute_definitions_refuse_collection_at_caller_limit() {
                         error,
                         cadmpeg_core::CodecError::ResourceLimit(limit)
                             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                                && limit.operation == "NX attribute definitions"
+                                && limit.operation == "NX attribute identifier index"
                     ));
                 },
             );
@@ -179,7 +179,7 @@ fn parasolid_field_names_refuse_collection_at_caller_limit() {
                         error,
                         cadmpeg_core::CodecError::ResourceLimit(limit)
                             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                                && limit.operation == "NX field names records"
+                                && limit.operation == "NX field-name reference lanes"
                     ));
                 },
             );
@@ -221,7 +221,7 @@ fn parasolid_entity_51_refuses_collection_at_caller_limit() {
                         error,
                         cadmpeg_core::CodecError::ResourceLimit(limit)
                             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                                && limit.operation == "NX entity 51 records"
+                                && limit.operation == "NX entity-51 reference lanes"
                     ));
                 },
             );
