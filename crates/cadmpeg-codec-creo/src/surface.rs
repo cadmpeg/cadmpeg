@@ -3301,7 +3301,7 @@ fn named_surface_value(
             crate::scalar::admitted_scalar_body(body, dimensions_end, values_start, slot_count)
                 .is_some()
         }) {
-            grid = arrays::DimensionedScalars::admit_empty(ctx, dimensions, count)?;
+            grid = arrays::DimensionedScalars::extent(dimensions, count);
         }
     }
     if let Some(value) =
@@ -3326,7 +3326,7 @@ fn parsed_named_surface_value(
     body: &[u8],
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
-    grid: Option<arrays::DimensionedScalars>,
+    grid: Option<arrays::ScalarExtent<[u32; 2]>>,
 ) -> Option<Result<SurfaceNamedValue, CodecError>> {
     if body.is_empty() {
         return Some(Ok(SurfaceNamedValue::Empty));
@@ -3406,17 +3406,13 @@ fn parsed_named_surface_value(
                 // value bytes, so the count cannot exceed the remaining bytes.
                 let remaining = body.get(values_start..)?;
                 bounded_len(u64::from(count), 1, remaining.len())?;
-                let mut array = match arrays::CountedScalars::admit_empty(ctx, count) {
-                    Ok(Some(array)) => array,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let extent = arrays::CountedScalars::extent(count)?;
                 let slots = match named_spline_scalar_slots(
                     ctx,
                     family,
                     name,
                     remaining,
-                    array.values().len(),
+                    extent.len(),
                     cache,
                     refusal,
                 ) {
@@ -3424,12 +3420,7 @@ fn parsed_named_surface_value(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                match array.fill_tokens(ctx, slots) {
-                    Ok(Some(())) => {},
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                }
-                return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
+                return arrays::CountedScalars::from_tokens(ctx, extent, slots).map(|array| array.map(SurfaceNamedValue::CountedScalarArray)).transpose();
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -3452,27 +3443,18 @@ fn parsed_named_surface_value(
             }
             if name == "params" {
                 let remaining = admitted_counted_parameter_body(body, values_start, count)?;
-                let mut array = match arrays::CountedScalars::admit_empty(ctx, count) {
-                    Ok(Some(array)) => array,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let extent = arrays::CountedScalars::extent(count)?;
                 let slots = match counted_parameter_scalar_slots(
                     ctx,
                     remaining,
-                    array.values().len(),
+                    extent.len(),
                     cache,
                 ) {
                     Ok(Some(slots)) => slots,
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                match array.fill_tokens(ctx, slots) {
-                    Ok(Some(())) => {},
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                }
-                return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
+                return arrays::CountedScalars::from_tokens(ctx, extent, slots).map(|array| array.map(SurfaceNamedValue::CountedScalarArray)).transpose();
             }
         }
     }
@@ -3487,8 +3469,8 @@ fn parsed_named_surface_value(
         let remaining = slot_count.and_then(|slot_count| {
             crate::scalar::admitted_scalar_body(body, dimensions_end, values_start, slot_count)
         })?;
-        let mut array = grid?;
-        let slot_count = array.values().len();
+        let extent = grid?;
+        let slot_count = extent.len();
         let spline_field = matches!(
             name,
             "i_pnts"
@@ -3499,7 +3481,7 @@ fn parsed_named_surface_value(
                 | "tangts"
                 | "end_tangts"
         );
-        if spline_field {
+        let array = if spline_field {
             let slots = match named_spline_scalar_slots(
                 ctx, family, name, remaining, slot_count, cache, refusal,
             ) {
@@ -3507,11 +3489,11 @@ fn parsed_named_surface_value(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            match array.fill_tokens(ctx, slots) {
-                    Ok(Some(())) => {},
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                }
+            match arrays::DimensionedScalars::from_tokens(ctx, extent, slots) {
+                Ok(Some(array)) => array,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
         } else if name == "local_sys" {
             let values = match sequential_named_local_system_slots(
                 ctx, remaining, slot_count, cache, refusal,
@@ -3520,15 +3502,23 @@ fn parsed_named_surface_value(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            array.fill_values(values)?;
+            match arrays::DimensionedScalars::from_values(ctx, extent, values) {
+                Ok(Some(array)) => array,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             let values = match scalar_slots(ctx, remaining, slot_count, cache, refusal) {
                 Ok(Some(values)) => values,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            array.fill_values(values)?;
-        }
+            match arrays::DimensionedScalars::from_values(ctx, extent, values) {
+                Ok(Some(array)) => array,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
         return Some(Ok(SurfaceNamedValue::ScalarArray(array)));
     }
     if compact_integer_field {
