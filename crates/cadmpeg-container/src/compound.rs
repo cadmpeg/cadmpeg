@@ -886,6 +886,7 @@ impl CompoundState {
         if root == NO_STREAM {
             return Ok(());
         }
+        let _depth = ctx.enter_nested("traverse CFB storage hierarchy")?;
         validate_sibling_tree(ctx, &self.directory, root)?;
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
@@ -1855,7 +1856,7 @@ mod tests {
 
     use super::{
         cfb_name_cmp, cfb_upper_unit, parse_directory, path_key, range_lock_sector,
-        read_detection_prefix, validate_sibling_tree, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot,
+        read_detection_prefix, validate_sibling_tree, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot, CompoundState,
         CompoundVersion, DirectorySlot, DIFAT_SECTOR, END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, MAGIC,
         NO_STREAM, RANGE_LOCK_END,
     };
@@ -1899,6 +1900,30 @@ mod tests {
         policy.limits.max_recursion_depth = 1;
         let error = with_context(&[], &policy, |ctx| validate_sibling_tree(ctx, &entries, 1))
             .expect_err("second black node exceeds active depth");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth));
+    }
+
+    #[test]
+    fn nested_storages_refuse_the_callers_depth_limit() {
+        let file = fixture();
+        let mut state = with_context(&file, &DecodePolicy::service(), |ctx| {
+            CompoundState::parse(ctx, &file).expect("allocation tables parse")
+        });
+        let mut directory = [0_u8; 384];
+        directory_entry(&mut directory, 0, "Root Entry", 5, NO_STREAM, NO_STREAM, 1, END_OF_CHAIN, 0);
+        directory_entry(&mut directory, 1, "A", 1, NO_STREAM, NO_STREAM, 2, END_OF_CHAIN, 0);
+        directory_entry(&mut directory, 2, "B", 1, NO_STREAM, NO_STREAM, NO_STREAM, END_OF_CHAIN, 0);
+        state.directory = with_context(&directory, &DecodePolicy::service(), |ctx| {
+            parse_directory(ctx, &directory, CompoundVersion::V3).expect("directory parses")
+        });
+        with_context(&[], &DecodePolicy::service(), |ctx| {
+            assert_eq!(state.build_entries(ctx, 1).expect("nested storages parse").len(), 2);
+        });
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 2;
+        let error = with_context(&[], &policy, |ctx| state.build_entries(ctx, 1))
+            .expect_err("nested storage traversal exceeds active depth");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth));
     }
