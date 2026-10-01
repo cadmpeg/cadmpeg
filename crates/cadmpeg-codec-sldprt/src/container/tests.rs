@@ -783,3 +783,35 @@ fn xml_utf16_replacement_admits_exact_scoped_bytes() {
         }
     }
 }
+
+#[test]
+fn compound_parasolid_wrapper_expands_once() {
+    use std::io::Write as _;
+    let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    payload.resize(8192, 0xff);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&payload).unwrap();
+    let member = encoder.finish().unwrap();
+    let mut wrapper = super::WRAPPED_PAYLOAD_MAGIC.to_vec();
+    wrapper.extend_from_slice(&u32::try_from(payload.len()).unwrap().to_le_bytes());
+    wrapper.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
+    wrapper.extend_from_slice(&member);
+    wrapper.extend_from_slice(&[0; 8]);
+    assert!(wrapper.len() <= 4096);
+    wrapper.resize(4096, 0);
+    let mut source = cadmpeg_test_support::compound::compound_fixture();
+    source[1024..5120].copy_from_slice(&wrapper);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_total = u64_from_index(payload.len());
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let scan = super::scan(&ctx, root).expect("one expansion fits the allowance");
+    let [stream] = scan.compound_streams.as_slice() else { panic!("one CFB stream"); };
+    assert_eq!(stream.payload, wrapper);
+    assert_eq!(stream.decoded_payload.as_deref(), Some(payload.as_slice()));
+    let [parasolid] = stream.ps_streams.as_slice() else { panic!("one Parasolid stream"); };
+    assert_eq!(parasolid.payload, payload);
+    assert_eq!(parasolid.offset, 0);
+    assert_eq!(parasolid.header.description, "partition body");
+    ctx.finish_session().unwrap();
+}
