@@ -107,8 +107,7 @@ pub(in super::super) fn feature_edge_selection(
         if seen.contains(id) {
             unique = false;
         } else {
-            ctx.charge_collection_items(1, "creo selected edge identity nodes")?;
-            seen.insert(*id);
+            ctx.insert_btree_set(&mut seen, *id, "creo selected edge identity nodes")?;
         }
     }
     if unique
@@ -156,21 +155,26 @@ pub(in super::super) fn generated_curve_edge_refs(
         if unique_curve_ids.contains(&curve_id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo generated curve identity nodes")?;
-        unique_curve_ids.insert(curve_id);
+        ctx.insert_btree_set(
+            &mut unique_curve_ids,
+            curve_id,
+            "creo generated curve identity nodes",
+        )?;
     }
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
-        if !counts.contains_key(&row.id) {
-            ctx.charge_collection_items(1, "creo generated curve count nodes")?;
-        }
+        ctx.admit_btree_entry(&counts, &row.id, "creo generated curve count nodes")?;
         *counts.entry(row.id).or_default() += 1;
     }
     let mut unique_rows = BTreeMap::new();
     for row in rows {
         if counts.get(&row.id) == Some(&1) {
-            ctx.charge_collection_items(1, "creo generated unique curve row nodes")?;
-            unique_rows.insert(row.id, row);
+            ctx.insert_btree_map(
+                &mut unique_rows,
+                row.id,
+                row,
+                "creo generated unique curve row nodes",
+            )?;
         }
     }
     let mut generated = Vec::new();
@@ -216,9 +220,7 @@ pub(in super::super) fn feature_result_edge_ids(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
-        if !counts.contains_key(&row.id) {
-            ctx.charge_collection_items(1, "creo feature result edge count nodes")?;
-        }
+        ctx.admit_btree_entry(&counts, &row.id, "creo feature result edge count nodes")?;
         *counts.entry(row.id).or_default() += 1;
     }
     let mut edge_ids = Vec::new();
@@ -238,16 +240,21 @@ fn feature_result_edge_ids_by_feature(
 ) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
     let mut feature_ids = BTreeSet::new();
     for row in rows {
-        if !feature_ids.contains(&row.feature_id) {
-            ctx.charge_collection_items(1, "creo feature result edge feature nodes")?;
-            feature_ids.insert(row.feature_id);
-        }
+        ctx.insert_btree_set(
+            &mut feature_ids,
+            row.feature_id,
+            "creo feature result edge feature nodes",
+        )?;
     }
     let mut by_feature = BTreeMap::new();
     for feature_id in feature_ids {
         if let Some(edge_ids) = feature_result_edge_ids(ctx, rows, feature_id)? {
-            ctx.charge_collection_items(1, "creo feature result edge map nodes")?;
-            by_feature.insert(feature_id, edge_ids);
+            ctx.insert_btree_map(
+                &mut by_feature,
+                feature_id,
+                edge_ids,
+                "creo feature result edge map nodes",
+            )?;
         }
     }
     Ok(by_feature)

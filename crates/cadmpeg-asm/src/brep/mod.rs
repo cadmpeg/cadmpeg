@@ -453,9 +453,8 @@ fn count_kind(
         *count += 1;
         return Ok(());
     }
-    ctx.charge_collection_items(1, "ASM loss kind")?;
     let key = ctx.copy_retained_text(kind, "ASM loss kind")?;
-    counts.insert(key, 1);
+    ctx.insert_btree_map(counts, key, 1, "ASM loss kind")?;
     Ok(())
 }
 

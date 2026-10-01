@@ -51,8 +51,12 @@ pub(super) fn decode(
             ctx.insert_btree_set(&mut items, item, "step_validation_representation_items")?;
         }
         if !items.is_empty() {
-            ctx.charge_collection_items(1, "step_validation_representations")?;
-            representations.insert(id, items);
+            ctx.insert_btree_map(
+                &mut representations,
+                id,
+                items,
+                "step_validation_representations",
+            )?;
         }
     }
     let mut properties = BTreeMap::new();
@@ -97,8 +101,12 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.charge_collection_items(1, "step_validation_properties")?;
-            properties.insert(id, description);
+            ctx.insert_btree_map(
+                &mut properties,
+                id,
+                description,
+                "step_validation_properties",
+            )?;
         }
     }
     let computed = mesh_properties(ir, ctx)?;
@@ -472,10 +480,11 @@ fn mesh_properties(
                 [triangle[1], triangle[2]],
                 [triangle[2], triangle[0]],
             ] {
-                match edge_uses.entry((first.min(second), first.max(second))) {
+                let edge = (first.min(second), first.max(second));
+                ctx.admit_btree_entry(&edge_uses, &edge, "step_validation_mesh_edges")?;
+                match edge_uses.entry(edge) {
                     Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                     Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "step_validation_mesh_edges")?;
                         entry.insert(1);
                     }
                 }

@@ -242,11 +242,17 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         .flat_map(|table| &table.rows)
     {
         if !seen_vertex_ids.contains(&vertex.vertex_id) {
-            ctx.charge_collection_items(1, "creo sketch seen trim vertex nodes")?;
-            seen_vertex_ids.insert(vertex.vertex_id);
-        } else if !duplicate_vertex_ids.contains(&vertex.vertex_id) {
-            ctx.charge_collection_items(1, "creo sketch duplicate trim vertex nodes")?;
-            duplicate_vertex_ids.insert(vertex.vertex_id);
+            ctx.insert_btree_set(
+                &mut seen_vertex_ids,
+                vertex.vertex_id,
+                "creo sketch seen trim vertex nodes",
+            )?;
+        } else {
+            ctx.insert_btree_set(
+                &mut duplicate_vertex_ids,
+                vertex.vertex_id,
+                "creo sketch duplicate trim vertex nodes",
+            )?;
         }
         if let Some(point) = vertex
             .section_coordinates
@@ -309,9 +315,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             continue;
         };
         for vertex in entity.vertices {
-            if !incident.contains_key(&vertex) {
-                ctx.charge_collection_items(1, "creo sketch incident vertex nodes")?;
-            }
+            ctx.admit_btree_entry(&incident, &vertex, "creo sketch incident vertex nodes")?;
             let entities = incident.entry(vertex).or_default();
             ctx.reserve_vec(entities, 1, "creo sketch incident vertex entities")?;
             entities.push(external_id);
@@ -349,9 +353,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 }
                 resolved.sort_unstable();
                 if resolved.len() == vertex.entities.len() {
-                    if !result.contains_key(&vertex.vertex_id) {
-                        ctx.charge_collection_items(1, "creo sketch explicit incident nodes")?;
-                    }
+                    ctx.admit_btree_entry(
+                        &result,
+                        &vertex.vertex_id,
+                        "creo sketch explicit incident nodes",
+                    )?;
                     let entities = result.entry(vertex.vertex_id).or_default();
                     ctx.reserve_vec(
                         entities,
@@ -389,10 +395,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
     }
     let mut unique_carrier_ids = BTreeSet::new();
     for external_id in incident.values().flatten() {
-        if !unique_carrier_ids.contains(external_id) {
-            ctx.charge_collection_items(1, "creo sketch intersection carrier ID nodes")?;
-            unique_carrier_ids.insert(*external_id);
-        }
+        ctx.insert_btree_set(
+            &mut unique_carrier_ids,
+            *external_id,
+            "creo sketch intersection carrier ID nodes",
+        )?;
     }
     let mut intersection_carriers = BTreeMap::new();
     for external_id in unique_carrier_ids {
@@ -411,8 +418,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         else {
             continue;
         };
-        ctx.charge_collection_items(1, "creo sketch intersection carrier nodes")?;
-        intersection_carriers.insert(external_id, carrier);
+        ctx.insert_btree_map(
+            &mut intersection_carriers,
+            external_id,
+            carrier,
+            "creo sketch intersection carrier nodes",
+        )?;
     }
     for (vertex, mut entities) in incident {
         entities.sort_unstable();
@@ -482,10 +493,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         ambiguous: mut ambiguous_vertices,
     } = reconciled_section_coordinates(ctx, coordinate_candidates)?;
     for vertex in duplicate_vertex_ids {
-        if !ambiguous_vertices.contains(&vertex) {
-            ctx.charge_collection_items(1, "creo sketch ambiguous coordinate nodes")?;
-            ambiguous_vertices.insert(vertex);
-        }
+        ctx.insert_btree_set(
+            &mut ambiguous_vertices,
+            vertex,
+            "creo sketch ambiguous coordinate nodes",
+        )?;
     }
     coordinates.retain(|vertex, _| !ambiguous_vertices.contains(vertex));
     loop {
@@ -547,19 +559,24 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             ambiguous: conflicts,
         } = reconciled_section_coordinates(ctx, additions)?;
         for vertex in conflicts {
-            if !ambiguous_vertices.contains(&vertex) {
-                ctx.charge_collection_items(1, "creo sketch ambiguous coordinate nodes")?;
-                ambiguous_vertices.insert(vertex);
-            }
+            ctx.insert_btree_set(
+                &mut ambiguous_vertices,
+                vertex,
+                "creo sketch ambiguous coordinate nodes",
+            )?;
         }
         let mut changed = false;
         for (vertex, coordinate) in additions {
             if ambiguous_vertices.contains(&vertex) {
                 continue;
             }
-            if let std::collections::btree_map::Entry::Vacant(entry) = coordinates.entry(vertex) {
-                ctx.charge_collection_items(1, "creo sketch propagated coordinate nodes")?;
-                entry.insert(coordinate);
+            if !coordinates.contains_key(&vertex) {
+                ctx.insert_btree_map(
+                    &mut coordinates,
+                    vertex,
+                    coordinate,
+                    "creo sketch propagated coordinate nodes",
+                )?;
                 changed = true;
             }
         }
@@ -576,9 +593,7 @@ fn reconciled_section_coordinates(
 ) -> Result<crate::feature::definitions::ReconciledPoints<[f64; 2]>, cadmpeg_core::CodecError> {
     let mut grouped = BTreeMap::<u32, Vec<[f64; 2]>>::new();
     for (vertex, coordinate) in candidates {
-        if !grouped.contains_key(&vertex) {
-            ctx.charge_collection_items(1, "creo sketch reconciliation group nodes")?;
-        }
+        ctx.admit_btree_entry(&grouped, &vertex, "creo sketch reconciliation group nodes")?;
         let group = grouped.entry(vertex).or_default();
         ctx.reserve_vec(group, 1, "creo sketch reconciliation group values")?;
         group.push(coordinate);
@@ -596,11 +611,18 @@ fn reconciled_section_coordinates(
             (candidate[0] - first[0]).hypot(candidate[1] - first[1])
                 <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
         }) {
-            ctx.charge_collection_items(1, "creo sketch reconciled coordinate nodes")?;
-            coordinates.insert(vertex, first);
+            ctx.insert_btree_map(
+                &mut coordinates,
+                vertex,
+                first,
+                "creo sketch reconciled coordinate nodes",
+            )?;
         } else {
-            ctx.charge_collection_items(1, "creo sketch ambiguous coordinate nodes")?;
-            ambiguous.insert(vertex);
+            ctx.insert_btree_set(
+                &mut ambiguous,
+                vertex,
+                "creo sketch ambiguous coordinate nodes",
+            )?;
         }
     }
     Ok(crate::feature::definitions::ReconciledPoints {

@@ -711,9 +711,7 @@ fn legacy_map_payload(
     let mut groups = BTreeMap::<String, Vec<Vec<ElementMappedName>>>::new();
     for record in records {
         let (indexed_name, index) = split_indexed_name(ctx, &record.indexed_name)?;
-        if !groups.contains_key(&indexed_name) {
-            ctx.charge_collection_items(1, "FreeCAD legacy element groups")?;
-        }
+        ctx.admit_btree_entry(&groups, &indexed_name, "FreeCAD legacy element groups")?;
         let names = groups.entry(indexed_name).or_default();
         if names.len() <= index {
             let additional = index + 1 - names.len();

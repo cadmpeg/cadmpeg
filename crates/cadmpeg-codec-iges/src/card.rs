@@ -218,8 +218,8 @@ impl FramingRecoveries {
         }
         let declared = ctx.format_retained(declared, "iges framing declared text")?;
         let used = ctx.format_retained(used, "iges framing used text")?;
-        ctx.charge_collection_items(1, "iges framing recovery nodes")?;
-        self.0.insert(
+        ctx.insert_btree_map(
+            &mut self.0,
             key,
             FramingRecovery {
                 position,
@@ -228,7 +228,8 @@ impl FramingRecoveries {
                 used,
                 count: 1,
             },
-        );
+            "iges framing recovery nodes",
+        )?;
         Ok(())
     }
 
@@ -247,8 +248,12 @@ impl FramingRecoveries {
                     }
                 }
                 None => {
-                    ctx.charge_collection_items(1, "iges merged framing recovery nodes")?;
-                    self.0.insert(key, recovery);
+                    ctx.insert_btree_map(
+                        &mut self.0,
+                        key,
+                        recovery,
+                        "iges merged framing recovery nodes",
+                    )?;
                 }
             }
         }

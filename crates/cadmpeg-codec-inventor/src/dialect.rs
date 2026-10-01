@@ -265,17 +265,18 @@ impl DialectRecovery {
         };
         let admitted = identity_verified && framing_verified;
         let mut declared = BTreeMap::new();
-        ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_CFB_MAJOR_VERSION),
             ctx.format_retained(
                 format_args!("{}", self.cfb_major_version),
                 "retain Inventor CFB version declaration",
             )?,
-        );
+            "record Inventor dialect declaration",
+        )?;
         if !self.schemas.is_empty() {
-            ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_RSE_DB_SCHEMA),
                 join(
                     ctx,
@@ -287,11 +288,12 @@ impl DialectRecovery {
                     }),
                     "retain Inventor RSe schema declaration",
                 )?,
-            );
+                "record Inventor dialect declaration",
+            )?;
         }
         if !self.meta_streams.is_empty() {
-            ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_META_STREAM_MARKER),
                 join(
                     ctx,
@@ -304,9 +306,10 @@ impl DialectRecovery {
                     }),
                     "retain Inventor metadata marker declaration",
                 )?,
-            );
-            ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
-            declared.insert(
+                "record Inventor dialect declaration",
+            )?;
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_META_STREAM_VERSION),
                 join(
                     ctx,
@@ -318,7 +321,8 @@ impl DialectRecovery {
                     }),
                     "retain Inventor metadata version declaration",
                 )?,
-            );
+                "record Inventor dialect declaration",
+            )?;
         }
         Ok(if admitted {
             DialectMatch::admitted(dialect.id())

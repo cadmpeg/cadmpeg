@@ -924,30 +924,35 @@ pub(crate) fn prototype_topology_rows(
 ) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
     let mut prototype_counts = BTreeMap::<u32, usize>::new();
     for prototype in prototypes {
+        ctx.admit_btree_entry(
+            &prototype_counts,
+            &prototype.id,
+            "creo prototype ID count nodes",
+        )?;
         match prototype_counts.entry(prototype.id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo prototype ID count nodes")?;
                 entry.insert(1);
             }
         }
     }
     let mut topology_counts = BTreeMap::<u32, usize>::new();
     for topology in prototype_topology {
+        ctx.admit_btree_entry(
+            &topology_counts,
+            &topology.curve_id,
+            "creo prototype topology count nodes",
+        )?;
         match topology_counts.entry(topology.curve_id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo prototype topology count nodes")?;
                 entry.insert(1);
             }
         }
     }
     let mut positional_ids = BTreeSet::new();
     for row in positional_rows {
-        if !positional_ids.contains(&row.id) {
-            ctx.charge_collection_items(1, "creo positional topology ID nodes")?;
-            positional_ids.insert(row.id);
-        }
+        ctx.insert_btree_set(&mut positional_ids, row.id, "creo positional topology ID nodes")?;
     }
     let mut referenced_ids = BTreeSet::new();
     for id in positional_rows
@@ -956,10 +961,7 @@ pub(crate) fn prototype_topology_rows(
         .chain(prototype_topology.iter().flat_map(|row| row.next_edges))
         .filter(|id| *id != 0)
     {
-        if !referenced_ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo referenced topology ID nodes")?;
-            referenced_ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut referenced_ids, id, "creo referenced topology ID nodes")?;
     }
     let mut rows = Vec::new();
     for topology in prototype_topology {
@@ -1222,9 +1224,11 @@ fn curve_equation_prohibited_constructs(
         }
         for keyword in ["if", "else", "endif"] {
             if starts_relation_keyword(source, keyword) && !prohibited.contains(keyword) {
-                ctx.charge_collection_items(1, "creo prohibited construct nodes")?;
-                prohibited
-                    .insert(ctx.copy_retained_text(keyword, "creo prohibited construct names")?);
+                ctx.insert_btree_set(
+                    &mut prohibited,
+                    ctx.copy_retained_text(keyword, "creo prohibited construct names")?,
+                    "creo prohibited construct nodes",
+                )?;
             }
         }
         let bytes = source.as_bytes();
@@ -1259,11 +1263,10 @@ fn curve_equation_prohibited_constructs(
                         .iter()
                         .any(|known: &String| known.eq_ignore_ascii_case(name))
                 {
-                    ctx.charge_collection_items(1, "creo prohibited construct nodes")?;
                     let mut name =
                         ctx.copy_retained_text(name, "creo prohibited construct names")?;
                     name.make_ascii_lowercase();
-                    prohibited.insert(name);
+                    ctx.insert_btree_set(&mut prohibited, name, "creo prohibited construct nodes")?;
                 }
                 continue;
             }
@@ -1295,9 +1298,9 @@ impl ExternalRelationSymbols {
         use std::collections::btree_map::Entry;
 
         name.make_ascii_lowercase();
+        ctx.admit_btree_entry(&self.values, &name, "creo external relation symbol nodes")?;
         match self.values.entry(name) {
             Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo external relation symbol nodes")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(entry.key().len()),
                     "creo external relation symbol names",
@@ -1514,23 +1517,32 @@ fn curve_expression_solve_program(
         let source = line.text.trim();
         let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(source, "solve") {
-                ctx.charge_collection_items(1, "creo solve line index nodes")?;
-                program.line_indices.insert(index);
+                ctx.insert_btree_set(
+                    &mut program.line_indices,
+                    index,
+                    "creo solve line index nodes",
+                )?;
                 pending = Some(PendingCurveExpressionSolveBlock {
                     statements: Vec::new(),
                     offset: line.offset,
                     valid: source.eq_ignore_ascii_case("solve"),
                 });
             } else if starts_relation_keyword(source, "for") {
-                ctx.charge_collection_items(1, "creo solve line index nodes")?;
-                program.line_indices.insert(index);
+                ctx.insert_btree_set(
+                    &mut program.line_indices,
+                    index,
+                    "creo solve line index nodes",
+                )?;
                 program.unresolved_control = true;
             }
             continue;
         };
 
-        ctx.charge_collection_items(1, "creo solve line index nodes")?;
-        program.line_indices.insert(index);
+        ctx.insert_btree_set(
+            &mut program.line_indices,
+            index,
+            "creo solve line index nodes",
+        )?;
         if starts_relation_keyword(source, "solve") {
             program.unresolved_control = true;
             block.valid = false;
@@ -1569,10 +1581,11 @@ fn curve_expression_solve_program(
             }
             if let Some(unknowns) = unknowns.filter(|_| block.valid && !equations.is_empty()) {
                 for index in assignment_line_indices {
-                    if !program.executable_line_indices.contains(&index) {
-                        ctx.charge_collection_items(1, "creo executable solve line index nodes")?;
-                        program.executable_line_indices.insert(index);
-                    }
+                    ctx.insert_btree_set(
+                        &mut program.executable_line_indices,
+                        index,
+                        "creo executable solve line index nodes",
+                    )?;
                 }
                 ctx.reserve_vec(&mut program.blocks, 1, "creo solve blocks")?;
                 program.blocks.push(CurveExpressionSolveBlock {
@@ -2116,18 +2129,21 @@ fn evaluate_expression_program_details(
 
     let mut existing_symbols = BTreeSet::new();
     for name in external_symbols.values.keys() {
-        ctx.charge_collection_items(1, "creo existing external symbol nodes")?;
-        existing_symbols
-            .insert(ctx.copy_retained_text(name, "creo existing external symbol names")?);
+        ctx.insert_btree_set(
+            &mut existing_symbols,
+            ctx.copy_retained_text(name, "creo existing external symbol names")?,
+            "creo existing external symbol nodes",
+        )?;
     }
     for assignment in parsed_assignments.iter().flatten() {
         if let Some((name, _)) = assignment.scalar_target() {
             let mut key = ctx.copy_retained_text(name, "creo existing assignment symbol names")?;
             key.make_ascii_lowercase();
-            if !existing_symbols.contains(&key) {
-                ctx.charge_collection_items(1, "creo existing assignment symbol nodes")?;
-                existing_symbols.insert(key);
-            }
+            ctx.insert_btree_set(
+                &mut existing_symbols,
+                key,
+                "creo existing assignment symbol nodes",
+            )?;
         }
     }
     for unknown in solve_program
@@ -2137,10 +2153,11 @@ fn evaluate_expression_program_details(
     {
         let mut key = ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names")?;
         key.make_ascii_lowercase();
-        if !existing_symbols.contains(&key) {
-            ctx.charge_collection_items(1, "creo existing solve symbol nodes")?;
-            existing_symbols.insert(key);
-        }
+        ctx.insert_btree_set(
+            &mut existing_symbols,
+            key,
+            "creo existing solve symbol nodes",
+        )?;
     }
     let context = RelationEvaluationContext {
         model_name,
@@ -2149,14 +2166,18 @@ fn evaluate_expression_program_details(
     let mut values = BTreeMap::new();
     let mut defined_symbols = BTreeSet::new();
     for (name, value) in &external_symbols.values {
-        ctx.charge_collection_items(1, "creo defined external symbol nodes")?;
-        defined_symbols.insert(ctx.copy_retained_text(name, "creo defined external symbol names")?);
+        ctx.insert_btree_set(
+            &mut defined_symbols,
+            ctx.copy_retained_text(name, "creo defined external symbol names")?,
+            "creo defined external symbol nodes",
+        )?;
         if let Some(value) = value {
-            ctx.charge_collection_items(1, "creo external value nodes")?;
-            values.insert(
+            ctx.insert_btree_map(
+                &mut values,
                 ctx.copy_retained_text(name, "creo external value names")?,
                 copy_expression_value(ctx, value, "creo external string values")?,
-            );
+                "creo external value nodes",
+            )?;
         }
     }
     let mut stack = ConditionalStack::default();
@@ -2199,9 +2220,11 @@ fn evaluate_expression_program_details(
                     .transpose()?;
                 values.remove(&key);
                 if !defined_symbols.contains(&key) {
-                    ctx.charge_collection_items(1, "creo defined solve symbol nodes")?;
-                    defined_symbols
-                        .insert(ctx.copy_retained_text(&key, "creo defined solve symbol names")?);
+                    ctx.insert_btree_set(
+                        &mut defined_symbols,
+                        ctx.copy_retained_text(&key, "creo defined solve symbol names")?,
+                        "creo defined solve symbol nodes",
+                    )?;
                 }
                 for assignment in &mut assignments {
                     if assignment
@@ -2212,10 +2235,18 @@ fn evaluate_expression_program_details(
                     }
                 }
             }
-            ctx.charge_collection_items(1, "creo solve dimension snapshot nodes")?;
-            solve_block_dimensions.insert(block.offset, dimensions);
-            ctx.charge_collection_items(1, "creo solve initial snapshot nodes")?;
-            solve_block_initial_values.insert(block.offset, initial_values);
+            ctx.insert_btree_map(
+                &mut solve_block_dimensions,
+                block.offset,
+                dimensions,
+                "creo solve dimension snapshot nodes",
+            )?;
+            ctx.insert_btree_map(
+                &mut solve_block_initial_values,
+                block.offset,
+                initial_values,
+                "creo solve initial snapshot nodes",
+            )?;
         }
         if let Some(block) = solve_program
             .blocks
@@ -2264,9 +2295,6 @@ fn evaluate_expression_program_details(
                 {
                     let mut key = ctx.copy_retained_text(variable, "creo solved value names")?;
                     key.make_ascii_lowercase();
-                    if !values.contains_key(&key) {
-                        ctx.charge_collection_items(1, "creo solved value nodes")?;
-                    }
                     for assignment in &mut assignments {
                         if assignment
                             .scalar_target()
@@ -2279,13 +2307,19 @@ fn evaluate_expression_program_details(
                             )?);
                         }
                     }
-                    values.insert(
+                    ctx.insert_btree_map(
+                        &mut values,
                         key,
                         copy_expression_value(ctx, value, "creo solved string values")?,
-                    );
+                        "creo solved value nodes",
+                    )?;
                 }
-                ctx.charge_collection_items(1, "creo solve solution nodes")?;
-                solve_solutions.insert(block.offset, solution);
+                ctx.insert_btree_map(
+                    &mut solve_solutions,
+                    block.offset,
+                    solution,
+                    "creo solve solution nodes",
+                )?;
             }
         }
         if !solve_line_is_executable(&index) {
@@ -2330,9 +2364,11 @@ fn evaluate_expression_program_details(
         key.make_ascii_lowercase();
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         if !defined_symbols.contains(&key) {
-            ctx.charge_collection_items(1, "creo defined assignment symbol nodes")?;
-            defined_symbols
-                .insert(ctx.copy_retained_text(&key, "creo defined assignment symbol names")?);
+            ctx.insert_btree_set(
+                &mut defined_symbols,
+                ctx.copy_retained_text(&key, "creo defined assignment symbol names")?,
+                "creo defined assignment symbol nodes",
+            )?;
         }
         match activity {
             CurveExpressionActivation::Active => {
@@ -2350,11 +2386,8 @@ fn evaluate_expression_program_details(
                     None
                 };
                 if let Some(value) = assignment.value.as_ref() {
-                    if !values.contains_key(&key) {
-                        ctx.charge_collection_items(1, "creo evaluated value nodes")?;
-                    }
                     let value = copy_expression_value(ctx, value, "creo evaluated string values")?;
-                    values.insert(key, value);
+                    ctx.insert_btree_map(&mut values, key, value, "creo evaluated value nodes")?;
                 } else {
                     values.remove(&key);
                 }
@@ -3272,11 +3305,12 @@ impl ExpressionValue for SimultaneousAffineValue {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut coefficients = BTreeMap::new();
         for (name, value) in &self.coefficients {
-            ctx.charge_collection_items(1, "creo relation affine clone coefficient nodes")?;
-            coefficients.insert(
+            ctx.insert_btree_map(
+                &mut coefficients,
                 ctx.copy_retained_text(name, "creo relation affine clone coefficient names")?,
                 *value,
-            );
+                "creo relation affine clone coefficient nodes",
+            )?;
         }
         Ok(Self {
             dimension: self.dimension,
@@ -3778,8 +3812,12 @@ impl DimensionForm {
                     return Ok(None);
                 };
                 if !value.is_zero() {
-                    ctx.charge_collection_items(1, "creo dimension difference variable nodes")?;
-                    self.variables.insert(name, value);
+                    ctx.insert_btree_map(
+                        &mut self.variables,
+                        name,
+                        value,
+                        "creo dimension difference variable nodes",
+                    )?;
                 }
             }
         }
@@ -3792,11 +3830,12 @@ impl DimensionForm {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut variables = BTreeMap::new();
         for (name, value) in &self.variables {
-            ctx.charge_collection_items(1, "creo relation dimension clone variable nodes")?;
-            variables.insert(
+            ctx.insert_btree_map(
+                &mut variables,
                 ctx.copy_retained_text(name, "creo relation dimension clone variable names")?,
                 *value,
-            );
+                "creo relation dimension clone variable nodes",
+            )?;
         }
         Ok(Self {
             constant: self.constant,
@@ -6599,11 +6638,12 @@ fn infer_solve_variable_dimensions(
                 None => continue,
             },
         };
-        ctx.charge_collection_items(1, "creo dimension known value nodes")?;
-        probe_values.insert(
+        ctx.insert_btree_map(
+            &mut probe_values,
             ctx.copy_retained_text(name, "creo dimension known value names")?,
             probe,
-        );
+            "creo dimension known value nodes",
+        )?;
     }
     for (key, dimension) in variable_keys.iter().zip(known_dimensions) {
         let value = match dimension {
@@ -6614,13 +6654,12 @@ fn infer_solve_variable_dimensions(
             },
             None => DimensionProbeValue::variable(ctx, key)?,
         };
-        if !probe_values.contains_key(key) {
-            ctx.charge_collection_items(1, "creo dimension unknown value nodes")?;
-        }
-        probe_values.insert(
+        ctx.insert_btree_map(
+            &mut probe_values,
             ctx.copy_retained_text(key, "creo dimension unknown value names")?,
             value,
-        );
+            "creo dimension unknown value nodes",
+        )?;
     }
 
     let mut constraints = Vec::new();
@@ -6730,8 +6769,11 @@ fn infer_solve_variable_dimensions(
     let mut required_columns = BTreeSet::new();
     for (index, dimension) in known_dimensions.iter().enumerate() {
         if dimension.is_none() {
-            ctx.charge_collection_items(1, "creo dimension required column nodes")?;
-            required_columns.insert(index);
+            ctx.insert_btree_set(
+                &mut required_columns,
+                index,
+                "creo dimension required column nodes",
+            )?;
         }
     }
     for (axis, rows) in axis_rows.iter_mut().enumerate() {
@@ -6880,30 +6922,31 @@ fn solve_affine_expression_block(
         let Some((value, dimension)) = quantity_parts_ref(value) else {
             continue;
         };
-        ctx.charge_collection_items(1, "creo affine known value nodes")?;
-        affine_values.insert(
+        ctx.insert_btree_map(
+            &mut affine_values,
             ctx.copy_retained_text(name, "creo affine known value names")?,
             SimultaneousAffineValue::constant(value, dimension),
-        );
+            "creo affine known value nodes",
+        )?;
     }
     for (variable, dimension) in variable_keys.iter().zip(variable_dimensions) {
-        ctx.charge_collection_items(1, "creo affine coefficient nodes")?;
         let mut coefficients = BTreeMap::new();
-        coefficients.insert(
+        ctx.insert_btree_map(
+            &mut coefficients,
             ctx.copy_retained_text(variable, "creo affine coefficient names")?,
             1.0,
-        );
-        if !affine_values.contains_key(variable) {
-            ctx.charge_collection_items(1, "creo affine unknown value nodes")?;
-        }
-        affine_values.insert(
+            "creo affine coefficient nodes",
+        )?;
+        ctx.insert_btree_map(
+            &mut affine_values,
             ctx.copy_retained_text(variable, "creo affine unknown value names")?,
             SimultaneousAffineValue {
                 dimension: *dimension,
                 constant: 0.0,
                 coefficients,
             },
-        );
+            "creo affine unknown value nodes",
+        )?;
     }
     let mut rows = Vec::new();
     for equation in &block.equations {
@@ -7368,11 +7411,12 @@ fn evaluate_nonlinear_residuals(
     }
     let mut evaluation_values = BTreeMap::new();
     for (name, value) in values {
-        ctx.charge_collection_items(1, "creo nonlinear known value nodes")?;
-        evaluation_values.insert(
+        ctx.insert_btree_map(
+            &mut evaluation_values,
             ctx.copy_retained_text(name, "creo nonlinear known value names")?,
             copy_expression_value(ctx, value, "creo nonlinear known string values")?,
-        );
+            "creo nonlinear known value nodes",
+        )?;
     }
     for ((variable, dimension), value) in block
         .unknowns
@@ -7386,13 +7430,15 @@ fn evaluate_nonlinear_residuals(
         }
         let mut key = ctx.copy_retained_text(variable, "creo nonlinear unknown value names")?;
         key.make_ascii_lowercase();
-        if !evaluation_values.contains_key(&key) {
-            ctx.charge_collection_items(1, "creo nonlinear unknown value nodes")?;
-        }
         let Some(value) = quantity_value(*value, *dimension) else {
             return Ok(None);
         };
-        evaluation_values.insert(key, value);
+        ctx.insert_btree_map(
+            &mut evaluation_values,
+            key,
+            value,
+            "creo nonlinear unknown value nodes",
+        )?;
     }
     let mut residuals = Vec::new();
     for equation in &block.equations {
@@ -7599,17 +7645,21 @@ fn evaluate_affine_program(
     record: &CurveExpressionRecord,
 ) -> Result<BTreeMap<String, AffineValue>, cadmpeg_core::CodecError> {
     let mut values = BTreeMap::new();
-    ctx.charge_collection_items(1, "creo affine time value node")?;
-    values.insert(
+    ctx.insert_btree_map(
+        &mut values,
         ctx.copy_retained_text("t", "creo affine time value name")?,
         AffineValue {
             constant: 0.0,
             linear: 1.0,
         },
-    );
+        "creo affine time value node",
+    )?;
     let mut defined_symbols = BTreeSet::new();
-    ctx.charge_collection_items(1, "creo affine defined time node")?;
-    defined_symbols.insert(ctx.copy_retained_text("t", "creo affine defined time name")?);
+    ctx.insert_btree_set(
+        &mut defined_symbols,
+        ctx.copy_retained_text("t", "creo affine defined time name")?,
+        "creo affine defined time node",
+    )?;
     for assignment in &record.assignments {
         let Some((name, declared_unit)) = assignment.parameter_target() else {
             continue;
@@ -7618,9 +7668,11 @@ fn evaluate_affine_program(
         key.make_ascii_lowercase();
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         if !defined_symbols.contains(&key) {
-            ctx.charge_collection_items(1, "creo affine defined symbol nodes")?;
-            defined_symbols
-                .insert(ctx.copy_retained_text(&key, "creo affine defined symbol names")?);
+            ctx.insert_btree_set(
+                &mut defined_symbols,
+                ctx.copy_retained_text(&key, "creo affine defined symbol names")?,
+                "creo affine defined symbol nodes",
+            )?;
         }
         match assignment.activation {
             CurveExpressionActivation::Active => {
@@ -7644,10 +7696,7 @@ fn evaluate_affine_program(
                     None
                 };
                 if let Some(value) = value {
-                    if !values.contains_key(&key) {
-                        ctx.charge_collection_items(1, "creo affine value nodes")?;
-                    }
-                    values.insert(key, value);
+                    ctx.insert_btree_map(&mut values, key, value, "creo affine value nodes")?;
                 } else {
                     values.remove(&key);
                 }
@@ -7996,18 +8045,14 @@ fn framed_rows_with_face_ids(
         let known_face_ids = if let Some(face_ids) = face_ids {
             let mut known = BTreeSet::new();
             for id in face_ids {
-                ctx.charge_collection_items(1, "creo known curve face ID nodes")?;
-                known.insert(*id);
+                ctx.insert_btree_set(&mut known, *id, "creo known curve face ID nodes")?;
             }
             for &(start, end, _) in &segments {
                 let Some(suffix) = unique_topology_suffix_in_segment(&payload[start..end]) else {
                     continue;
                 };
                 for id in suffix.faces.into_iter().flatten().map(NonZeroU32::get) {
-                    if !known.contains(&id) {
-                        ctx.charge_collection_items(1, "creo known curve face ID nodes")?;
-                        known.insert(id);
-                    }
+                    ctx.insert_btree_set(&mut known, id, "creo known curve face ID nodes")?;
                 }
             }
             Some(known)
@@ -8472,21 +8517,17 @@ pub(crate) fn two_chart_pcurve_samples(
             && start > 1
             && complete_two_chart_samples(ctx, body, start, count, &cache)?.is_some()
         {
-            let counts = match canonical_counts.entry((
-                row.namespace_start,
-                prefix.feature_id,
-                prefix.type_byte,
-            )) {
+            let group_key = (row.namespace_start, prefix.feature_id, prefix.type_byte);
+            ctx.admit_btree_entry(
+                &canonical_counts,
+                &group_key,
+                "creo two-chart canonical group nodes",
+            )?;
+            let counts = match canonical_counts.entry(group_key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo two-chart canonical group nodes")?;
-                    entry.insert(BTreeSet::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
             };
-            if !counts.contains(&count) {
-                ctx.charge_collection_items(1, "creo two-chart canonical count nodes")?;
-                counts.insert(count);
-            }
+            ctx.insert_btree_set(counts, count, "creo two-chart canonical count nodes")?;
         }
     }
 
@@ -8549,12 +8590,14 @@ pub(crate) fn two_chart_pcurve_samples(
     )?;
     let mut counts = BTreeMap::new();
     for record in &result {
+        ctx.admit_btree_entry(
+            &counts,
+            &record.curve_id,
+            "creo two-chart result count nodes",
+        )?;
         let count = match counts.entry(record.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo two-chart result count nodes")?;
-                entry.insert(0usize)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
         };
         *count += 1;
     }
@@ -8924,15 +8967,18 @@ pub(crate) fn fc05_cylinder_cap_pairs(
 
     let mut faces = BTreeMap::<u32, [Option<NonZeroU32>; 2]>::new();
     for row in crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)? {
-        ctx.charge_collection_items(1, "creo fc05 topology-face nodes")?;
-        faces.insert(row.id, row.faces);
+        ctx.insert_btree_map(&mut faces, row.id, row.faces, "creo fc05 topology-face nodes")?;
     }
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
+        ctx.admit_btree_entry(
+            &circle_counts,
+            &circle.curve_id,
+            "creo fc05 circle-count nodes",
+        )?;
         match circle_counts.entry(circle.curve_id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo fc05 circle-count nodes")?;
                 entry.insert(1);
             }
         }
@@ -8970,12 +9016,10 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         ) else {
             continue;
         };
+        ctx.admit_btree_entry(&groups, &cylinder, "creo fc05 cylinder group nodes")?;
         let group = match groups.entry(cylinder) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo fc05 cylinder group nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         ctx.reserve_vec(group, 1, "creo fc05 cylinder group members")?;
         group.push((circle, plane, ordinate));
@@ -9188,23 +9232,27 @@ pub(crate) fn bind_prototype_pcurves(
 ) -> Result<Vec<BoundPrototypePcurve>, cadmpeg_core::CodecError> {
     let mut pcurve_counts = BTreeMap::new();
     for pcurve in pcurves {
+        ctx.admit_btree_entry(
+            &pcurve_counts,
+            &pcurve.curve_id,
+            "creo prototype pcurve count nodes",
+        )?;
         let count = match pcurve_counts.entry(pcurve.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo prototype pcurve count nodes")?;
-                entry.insert(0usize)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
         };
         *count += 1;
     }
     let mut topology_counts = BTreeMap::new();
     for row in topology {
+        ctx.admit_btree_entry(
+            &topology_counts,
+            &row.curve_id,
+            "creo prototype topology count nodes",
+        )?;
         let count = match topology_counts.entry(row.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo prototype topology count nodes")?;
-                entry.insert(0usize)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
         };
         *count += 1;
     }

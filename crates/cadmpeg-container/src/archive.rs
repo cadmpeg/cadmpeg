@@ -1107,14 +1107,15 @@ fn declared_storage(
     match compression.storage(compressed_size, uncompressed_size) {
         Ok(storage) => Ok(storage),
         Err(message) => {
-            ctx.charge_collection_items(1, "ZIP storage declaration attribute")?;
-            attributes.insert(
+            ctx.insert_btree_map(
+                attributes,
                 ctx.copy_retained_text("storage_declaration", "ZIP storage declaration key")?,
                 ctx.format_retained_with_work(
                     format_args!("{message}: {compressed_size}/{uncompressed_size}"),
                     "ZIP storage declaration value",
                 )?,
-            );
+                "ZIP storage declaration attribute",
+            )?;
             Ok(cadmpeg_core::container::EntryStorage::payload_only(
                 cadmpeg_core::container::VerbatimLabel::Stored,
                 uncompressed_size,

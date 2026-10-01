@@ -363,9 +363,12 @@ pub(super) fn body_surface_ids<'ctx>(
                     cadmpeg_core::decode::u64_from_index(face.surface.as_str().len()),
                 )
             })?;
-        ctx.charge_collection_items(1, "NX body surface identities")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        ids.insert(face.surface.clone());
+        ctx.insert_btree_set(
+            &mut ids,
+            face.surface.clone(),
+            "NX body surface identities",
+        )?;
     }
     Ok(Some(ScopedSurfaceIds {
         ids,
@@ -596,11 +599,10 @@ pub(super) fn blend_support_bipartition<'ctx>(
             }
             let neighbors = adjacent.entry(from).or_default();
             if !neighbors.contains(to) {
-                ctx.charge_collection_items(1, "NX blend support graph edges")?;
                 reservation.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<&SurfaceId>() * 4,
                 ))?;
-                neighbors.insert(to);
+                ctx.insert_btree_set(neighbors, to, "NX blend support graph edges")?;
             }
         }
     }
@@ -614,11 +616,10 @@ pub(super) fn blend_support_bipartition<'ctx>(
         if sides.contains_key(seed) {
             continue;
         }
-        ctx.charge_collection_items(1, "NX blend support sides")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&SurfaceId, bool)>() * 4,
         ))?;
-        sides.insert(*seed, false);
+        ctx.insert_btree_map(&mut sides, *seed, false, "NX blend support sides")?;
         ctx.reserve_scoped_vec(&mut reservation, &mut pending, 1, "NX blend support queue")?;
         pending.push(*seed);
         while let Some(surface) = pending.pop() {
@@ -629,11 +630,15 @@ pub(super) fn blend_support_bipartition<'ctx>(
                     Some(neighbor_side) if *neighbor_side == side => return Ok(None),
                     Some(_) => {}
                     None => {
-                        ctx.charge_collection_items(1, "NX blend support sides")?;
                         reservation.grow(cadmpeg_core::decode::u64_from_index(
                             std::mem::size_of::<(&SurfaceId, bool)>() * 4,
                         ))?;
-                        sides.insert(*neighbor, !side);
+                        ctx.insert_btree_map(
+                            &mut sides,
+                            *neighbor,
+                            !side,
+                            "NX blend support sides",
+                        )?;
                         ctx.reserve_scoped_vec(
                             &mut reservation,
                             &mut pending,
@@ -1139,12 +1144,16 @@ pub(super) fn simple_hole_native_properties(
                     cadmpeg_core::decode::u64_from_index(value.len()),
                 )
             })?;
-        ctx.charge_collection_items(1, "NX simple hole native property")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX simple hole native property",
         )?;
-        properties.insert(key.to_owned(), value.to_owned());
+        ctx.insert_btree_map(
+            properties,
+            key.to_owned(),
+            value.to_owned(),
+            "NX simple hole native property",
+        )?;
         Ok(())
     }
     if let Some(template) = templates
@@ -2197,15 +2206,16 @@ pub(super) fn native_feature_parameters(
                     cadmpeg_core::decode::u64_from_index(expression.expression.len()),
                 )
             })?;
-        ctx.charge_collection_items(1, "NX native feature parameter")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX native feature parameter",
         )?;
-        parameters.insert(
+        ctx.insert_btree_map(
+            &mut parameters,
             expression.name.as_str().to_owned(),
             expression.expression.clone(),
-        );
+            "NX native feature parameter",
+        )?;
     }
     Ok(parameters)
 }
@@ -2640,7 +2650,6 @@ pub(super) fn hole_package_projection(
             {
                 continue;
             }
-            ctx.charge_collection_items(1, "NX hole package internal operations")?;
             let bytes = std::mem::size_of::<String>()
                 .checked_add(member.operation_label.len())
                 .ok_or_else(|| {
@@ -2654,9 +2663,11 @@ pub(super) fn hole_package_projection(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX hole package internal operations",
             )?;
-            projection
-                .internal_operations
-                .insert(member.operation_label.clone());
+            ctx.insert_btree_set(
+                &mut projection.internal_operations,
+                member.operation_label.clone(),
+                "NX hole package internal operations",
+            )?;
         }
         insert_hole_output_body(ctx, &mut projection.outputs, &use_.operation_label, body)?;
         ctx.admit_retained_btree_record::<String, Length>(
@@ -2707,9 +2718,7 @@ pub(super) fn extend_hole_projection_map<V>(
             cadmpeg_core::decode::u64_from_index(target.len()),
             operation,
         )?;
-        if !target.contains_key(&key) {
-            ctx.charge_collection_items(1, operation)?;
-        }
+        ctx.admit_btree_entry(target, &key, operation)?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, V)>()),
             operation,
@@ -2750,7 +2759,6 @@ pub(super) fn insert_hole_output_body(
                 cadmpeg_core::decode::u64_from_index(body.as_str().len()),
             )
         })?;
-    ctx.charge_collection_items(1, "NX hole output body")?;
     ctx.admit_retained_btree_record::<String, Vec<BodyId>>(
         operation
             .len()
@@ -2765,7 +2773,12 @@ pub(super) fn insert_hole_output_body(
         "NX hole output body",
     )?;
     bodies.push(body.clone());
-    outputs.insert(operation.to_owned(), bodies);
+    ctx.insert_btree_map(
+        outputs,
+        operation.to_owned(),
+        bodies,
+        "NX hole output body",
+    )?;
     Ok(())
 }
 
@@ -3875,7 +3888,6 @@ pub(super) fn hole_operations_by_body(
                 return Ok(None);
             };
             if !operations_by_body.contains_key(body) {
-                ctx.charge_collection_items(1, "NX hole operation body groups")?;
                 let bytes = std::mem::size_of::<(BodyId, Vec<String>)>()
                     .checked_add(body.as_str().len())
                     .ok_or_else(|| {
@@ -3889,7 +3901,12 @@ pub(super) fn hole_operations_by_body(
                     cadmpeg_core::decode::u64_from_index(bytes),
                     "NX hole operation body groups",
                 )?;
-                operations_by_body.insert(body.clone(), Vec::new());
+                ctx.insert_btree_map(
+                    &mut operations_by_body,
+                    body.clone(),
+                    Vec::new(),
+                    "NX hole operation body groups",
+                )?;
             }
             let group = operations_by_body
                 .get_mut(body)
@@ -4267,12 +4284,11 @@ pub(super) fn simple_hole_chamfers(
                         cadmpeg_core::decode::u64_from_index(operation.len()),
                     )
                 })?;
-            ctx.charge_collection_items(1, "NX chamfer treatments")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX chamfer treatments",
             )?;
-            treatments.insert(operation, treatment);
+            ctx.insert_btree_map(&mut treatments, operation, treatment, "NX chamfer treatments")?;
         }
     }
     Ok(treatments)

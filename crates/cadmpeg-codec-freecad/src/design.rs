@@ -451,8 +451,11 @@ pub(crate) fn transfer(
                 if seen_dependencies.contains(dependency) {
                     continue;
                 }
-                ctx.charge_collection_items(1, "fcstd design unique dependencies")?;
-                seen_dependencies.insert(dependency);
+                ctx.insert_btree_set(
+                    &mut seen_dependencies,
+                    dependency,
+                    "fcstd design unique dependencies",
+                )?;
                 if let Some(feature) = feature_ids.get(dependency) {
                     if declared
                         || ordinal_by_feature
@@ -516,8 +519,11 @@ pub(crate) fn transfer(
         .iter()
         .filter(|object| cycle_affected.contains(object.id.as_str()))
     {
-        ctx.charge_collection_items(1, "fcstd design cycle feature identities")?;
-        initial_cycle_affected_features.insert(feature_id(ctx, object)?);
+        ctx.insert_btree_set(
+            &mut initial_cycle_affected_features,
+            feature_id(ctx, object)?,
+            "fcstd design cycle feature identities",
+        )?;
     }
     let parameter_cycle_features = bind_parameter_dependencies(
         ctx,
@@ -529,9 +535,11 @@ pub(crate) fn transfer(
         if !parameter_cycle_features.contains(&feature_id(ctx, object)?) {
             continue;
         }
-        ctx.charge_collection_items(1, "fcstd design parameter cycle objects")?;
-        cycle_affected
-            .insert(ctx.copy_retained_text(&object.id, "fcstd design parameter cycle identity")?);
+        ctx.insert_btree_set(
+            &mut cycle_affected,
+            ctx.copy_retained_text(&object.id, "fcstd design parameter cycle identity")?,
+            "fcstd design parameter cycle objects",
+        )?;
         if let Some(feature) = ir
             .model
             .features
@@ -771,9 +779,11 @@ fn feature_ordinals<'a>(
                 .copied()
                 .filter(|object| !emitted.contains(object.id.as_str()))
             {
-                ctx.charge_collection_items(1, "fcstd design cycle affected objects")?;
-                cycle_affected
-                    .insert(ctx.copy_retained_text(&object.id, "fcstd design cycle object")?);
+                ctx.insert_btree_set(
+                    &mut cycle_affected,
+                    ctx.copy_retained_text(&object.id, "fcstd design cycle object")?,
+                    "fcstd design cycle affected objects",
+                )?;
             }
             design_objects
                 .iter()
@@ -787,8 +797,11 @@ fn feature_ordinals<'a>(
                 })?
         };
         let ordinal = source_ordinals[ordinals.len()];
-        ctx.charge_collection_items(1, "fcstd design emitted objects")?;
-        emitted.insert(next.id.as_str());
+        ctx.insert_btree_set(
+            &mut emitted,
+            next.id.as_str(),
+            "fcstd design emitted objects",
+        )?;
         ctx.reserve_map(&mut ordinals, 1, "fcstd design ordinals")?;
         ordinals.insert(next.id.as_str(), ordinal);
     }
@@ -963,11 +976,12 @@ fn append_spreadsheet(
         let content = cell.attribute("content").unwrap_or_default();
         let name = cell.attribute("alias").unwrap_or(address);
         let mut retained = BTreeMap::new();
-        ctx.charge_collection_items(1, "fcstd spreadsheet cell properties")?;
-        retained.insert(
+        ctx.insert_btree_map(
+            &mut retained,
             cadmpeg_core::nonblank_literal!("address"),
             ctx.copy_retained_text(address, "fcstd spreadsheet address")?,
-        );
+            "fcstd spreadsheet cell properties",
+        )?;
         for attribute in [
             cadmpeg_core::nonblank_literal!("alias"),
             cadmpeg_core::nonblank_literal!("alignment"),
@@ -979,11 +993,12 @@ fn append_spreadsheet(
             cadmpeg_core::nonblank_literal!("colSpan"),
         ] {
             if let Some(value) = cell.attribute(attribute.as_str()) {
-                ctx.charge_collection_items(1, "fcstd spreadsheet cell properties")?;
-                retained.insert(
+                ctx.insert_btree_map(
+                    &mut retained,
                     attribute,
                     ctx.copy_retained_text(value, "fcstd spreadsheet cell attribute")?,
-                );
+                    "fcstd spreadsheet cell properties",
+                )?;
             }
         }
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
@@ -1317,11 +1332,12 @@ fn append_operation_parameters(
         let is_angle = property.type_name.contains("Angle");
         let mut retained = BTreeMap::new();
         if let Some((native_ref, _)) = &expression {
-            ctx.charge_collection_items(1, "fcstd operation expression properties")?;
-            retained.insert(
+            ctx.insert_btree_map(
+                &mut retained,
                 cadmpeg_core::nonblank_literal!("expression_native_ref"),
                 ctx.copy_retained_text(native_ref, "fcstd operation expression reference")?,
-            );
+                "fcstd operation expression properties",
+            )?;
         }
         let expression = match expression {
             Some((_, expression)) => expression,
@@ -1603,11 +1619,12 @@ fn sketch_attributes(
     let mut attributes = BTreeMap::new();
     if let Some(carrier) = carrier {
         for attribute in carrier.attributes() {
-            ctx.charge_collection_items(1, "fcstd sketch carrier attributes")?;
-            attributes.insert(
+            ctx.insert_btree_map(
+                &mut attributes,
                 ctx.copy_retained_text(attribute.name(), "fcstd sketch attribute name")?,
                 ctx.copy_retained_text(attribute.value(), "fcstd sketch attribute value")?,
-            );
+                "fcstd sketch carrier attributes",
+            )?;
         }
     }
     Ok(attributes)
@@ -1742,8 +1759,11 @@ fn parse_sketch(
                 }
             }
             if let Some(reference_index) = reference_index {
-                ctx.charge_collection_items(1, "fcstd sketch matched references")?;
-                matched_references.insert(reference_index);
+                ctx.insert_btree_set(
+                    &mut matched_references,
+                    reference_index,
+                    "fcstd sketch matched references",
+                )?;
             }
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
@@ -2316,8 +2336,7 @@ fn feature_state(
                 "fcstd feature state duplicate key error",
             ));
         }
-        ctx.charge_collection_items(1, "fcstd feature state properties")?;
-        state.insert(name, value);
+        ctx.insert_btree_map(&mut state, name, value, "fcstd feature state properties")?;
     }
     Ok(state)
 }
@@ -2514,30 +2533,33 @@ fn parse_constraints(
                     )?;
                     let expression = expression_binding(ctx, properties, &path)?;
                     let mut parameter_properties = BTreeMap::new();
-                    ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
-                    parameter_properties.insert(
+                    ctx.insert_btree_map(
+                        &mut parameter_properties,
                         cadmpeg_core::nonblank_literal!("is_driving"),
                         ctx.copy_retained_text(
                             node.attribute("IsDriving").unwrap_or("1"),
                             "fcstd constraint driving flag",
                         )?,
-                    );
+                        "fcstd constraint parameter properties",
+                    )?;
                     if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
-                        ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
-                        parameter_properties.insert(
+                        ctx.insert_btree_map(
+                            &mut parameter_properties,
                             cadmpeg_core::nonblank_literal!("source_name"),
                             ctx.copy_retained_text(name, "fcstd constraint source name")?,
-                        );
+                            "fcstd constraint parameter properties",
+                        )?;
                     }
                     if let Some((native_ref, _)) = &expression {
-                        ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
-                        parameter_properties.insert(
+                        ctx.insert_btree_map(
+                            &mut parameter_properties,
                             cadmpeg_core::nonblank_literal!("expression_native_ref"),
                             ctx.copy_retained_text(
                                 native_ref,
                                 "fcstd constraint expression reference",
                             )?,
-                        );
+                            "fcstd constraint parameter properties",
+                        )?;
                     }
                     ctx.reserve_vec(&mut parameters, 1, "fcstd constraint parameters")?;
                     let expression = match expression {
@@ -2991,11 +3013,12 @@ fn bind_parameter_dependencies(
             };
             if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
                 if !dependencies.contains(dependency) {
-                    ctx.charge_collection_items(1, "fcstd parameter dependencies")?;
-                    dependencies.insert(
+                    ctx.insert_btree_set(
+                        &mut dependencies,
                         dependency
                             .try_clone_for_decode(ctx, "fcstd parameter dependency identity")?,
-                    );
+                        "fcstd parameter dependencies",
+                    )?;
                 }
             }
         }
@@ -3073,12 +3096,13 @@ fn order_parameters_by_dependencies(
     let mut known = BTreeSet::new();
     for parameter in parameters.iter() {
         if !known.contains(&parameter.id) {
-            ctx.charge_collection_items(1, "fcstd known parameter identities")?;
-            known.insert(
+            ctx.insert_btree_set(
+                &mut known,
                 parameter
                     .id
                     .try_clone_for_decode(ctx, "fcstd known parameter identity")?,
-            );
+                "fcstd known parameter identities",
+            )?;
         }
     }
     let mut remaining = std::mem::take(parameters);
@@ -3100,10 +3124,11 @@ fn order_parameters_by_dependencies(
                 .filter_map(|parameter| parameter.owner.as_ref())
             {
                 if !cycle_features.contains(owner) {
-                    ctx.charge_collection_items(1, "fcstd parameter cycle owners")?;
-                    cycle_features.insert(
+                    ctx.insert_btree_set(
+                        &mut cycle_features,
                         owner.try_clone_for_decode(ctx, "fcstd parameter cycle owner identity")?,
-                    );
+                        "fcstd parameter cycle owners",
+                    )?;
                 }
             }
             ctx.reserve_vec(parameters, remaining.len(), "fcstd reordered parameters")?;
@@ -3111,12 +3136,13 @@ fn order_parameters_by_dependencies(
             break;
         };
         let parameter = remaining.remove(index);
-        ctx.charge_collection_items(1, "fcstd emitted parameter identities")?;
-        emitted.insert(
+        ctx.insert_btree_set(
+            &mut emitted,
             parameter
                 .id
                 .try_clone_for_decode(ctx, "fcstd emitted parameter identity")?,
-        );
+            "fcstd emitted parameter identities",
+        )?;
         ctx.reserve_vec(parameters, 1, "fcstd reordered parameters")?;
         parameters.push(parameter);
     }
@@ -3981,15 +4007,13 @@ fn build_profiles(
                 &index,
             )?;
             if matches.len() > 1 {
-                if !ambiguous.contains(&entity) {
-                    ctx.charge_collection_items(1, "FCStd ambiguous profile ordinals")?;
-                    ambiguous.insert(entity);
-                }
+                ctx.insert_btree_set(&mut ambiguous, entity, "FCStd ambiguous profile ordinals")?;
                 for candidate in matches {
-                    if !ambiguous.contains(&candidate.entity) {
-                        ctx.charge_collection_items(1, "FCStd ambiguous profile ordinals")?;
-                        ambiguous.insert(candidate.entity);
-                    }
+                    ctx.insert_btree_set(
+                        &mut ambiguous,
+                        candidate.entity,
+                        "FCStd ambiguous profile ordinals",
+                    )?;
                 }
             }
         }
@@ -4134,10 +4158,10 @@ impl EndpointIndex {
             if let Some((start, end)) = endpoints(&entities[index]) {
                 for (at_start, point) in [(true, start), (false, end)] {
                     let scale = endpoint_scale_bucket(point);
+                    ctx.admit_btree_entry(&by_scale, &scale, "FCStd profile endpoint buckets")?;
                     let bucket = match by_scale.entry(scale) {
                         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                         std::collections::btree_map::Entry::Vacant(entry) => {
-                            ctx.charge_collection_items(1, "FCStd profile endpoint buckets")?;
                             entry.insert(Vec::new())
                         }
                     };
@@ -4300,10 +4324,7 @@ fn explicit_endpoint_relations(
             {
                 ctx.charge_work(1, "FCStd explicit profile relations")?;
                 let related = relations.entry(first).or_insert_with(BTreeSet::new);
-                if !related.contains(&candidate) {
-                    ctx.charge_collection_items(1, "FCStd explicit profile relations")?;
-                    related.insert(candidate);
-                }
+                ctx.insert_btree_set(related, candidate, "FCStd explicit profile relations")?;
             }
         }
     }
@@ -6250,10 +6271,7 @@ fn native_parameters(
             continue;
         };
         let value = value?;
-        if !parameters.contains_key(&name) {
-            ctx.charge_collection_items(1, "fcstd native parameters")?;
-        }
-        parameters.insert(name, value);
+        ctx.insert_btree_map(&mut parameters, name, value, "fcstd native parameters")?;
     }
     Ok(parameters)
 }

@@ -69,17 +69,18 @@ pub(in super::super) fn feature_plane_equations(
     for row in scan.surfaces.rows.iter().filter(|row| {
         row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
     }) {
-        if !ids.contains(&row.id) {
-            ctx.charge_collection_items(1, "creo feature plane ID nodes")?;
-            ids.insert(row.id);
-        }
+        ctx.insert_btree_set(&mut ids, row.id, "creo feature plane ID nodes")?;
     }
     let mut local_planes = BTreeMap::new();
     for id in &ids {
         match feature_local_plane(scan, *id) {
             Ok(Some(plane)) => {
-                ctx.charge_collection_items(1, "creo feature local plane nodes")?;
-                local_planes.insert(*id, plane);
+                ctx.insert_btree_map(
+                    &mut local_planes,
+                    *id,
+                    plane,
+                    "creo feature local plane nodes",
+                )?;
             }
             Ok(None) => {}
             Err(()) => return Ok(None),
@@ -223,8 +224,11 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         if surface_ids.contains(&row.id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo generated arc cylinder ID nodes")?;
-        surface_ids.insert(row.id);
+        ctx.insert_btree_set(
+            &mut surface_ids,
+            row.id,
+            "creo generated arc cylinder ID nodes",
+        )?;
     }
     let Some(frame_records) = unique_available_positional_cylinder_frame_records(
         ctx,

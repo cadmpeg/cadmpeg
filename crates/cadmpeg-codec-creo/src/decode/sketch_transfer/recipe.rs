@@ -214,10 +214,11 @@ pub(in super::super) fn feature_row_schema_classes(
     {
         if row.feature_id == feature_id {
             if let Some(schema_class) = row.root_schema_class {
-                if !classes.contains(&schema_class) {
-                    ctx.charge_collection_items(1, "creo feature schema class nodes")?;
-                }
-                classes.insert(schema_class);
+                ctx.insert_btree_set(
+                    &mut classes,
+                    schema_class,
+                    "creo feature schema class nodes",
+                )?;
             }
         }
     }
@@ -232,10 +233,7 @@ pub(in super::super) fn row_feature_schema_classes(
     let mut classes = BTreeSet::new();
     for row in rows.iter().filter(|row| row.feature_id == feature_id) {
         if let Some(schema_class) = row.root_schema_class {
-            if !classes.contains(&schema_class) {
-                ctx.charge_collection_items(1, "creo row schema class nodes")?;
-            }
-            classes.insert(schema_class);
+            ctx.insert_btree_set(&mut classes, schema_class, "creo row schema class nodes")?;
         }
     }
     Ok(classes)

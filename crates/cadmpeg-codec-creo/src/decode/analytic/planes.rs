@@ -859,10 +859,12 @@ fn fc05_cylinder_branch_witnesses(
             radius: pair.radius_mm,
         };
         let witness = fc05_cylinder_model_witness(ctx, scan, pair.surface_id, legacy)?;
-        if !cylinder_frames.contains_key(&pair.surface_id) {
-            ctx.charge_collection_items(1, "creo FC05 cylinder frame nodes")?;
-        }
-        cylinder_frames.insert(pair.surface_id, witness);
+        ctx.insert_btree_map(
+            &mut cylinder_frames,
+            pair.surface_id,
+            witness,
+            "creo FC05 cylinder frame nodes",
+        )?;
     }
 
     for circle in &scan.curves.fc05_circles {
@@ -929,8 +931,12 @@ fn fc05_cylinder_branch_witnesses(
             radius: circle.radius_mm,
         };
         let witness = fc05_cylinder_model_witness(ctx, scan, cylinder_id, legacy)?;
-        ctx.charge_collection_items(1, "creo FC05 cylinder frame nodes")?;
-        cylinder_frames.insert(cylinder_id, witness);
+        ctx.insert_btree_map(
+            &mut cylinder_frames,
+            cylinder_id,
+            witness,
+            "creo FC05 cylinder frame nodes",
+        )?;
     }
 
     let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
@@ -958,12 +964,10 @@ fn fc05_cylinder_branch_witnesses(
         let Some(cylinder) = cylinder_frames.get(&cylinder_id).copied() else {
             continue;
         };
+        ctx.admit_btree_entry(&witnesses, &plane_id, "creo FC05 witness plane nodes")?;
         let entries = match witnesses.entry(plane_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo FC05 witness plane nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         if !entries.iter().any(|known| {
             known.origin == cylinder.origin
@@ -998,10 +1002,7 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
             })
             .map(|circle| circle.curve_id)
     {
-        if !curve_ids.contains(&curve_id) {
-            ctx.charge_collection_items(1, "creo FC05 witness curve ID nodes")?;
-            curve_ids.insert(curve_id);
-        }
+        ctx.insert_btree_set(&mut curve_ids, curve_id, "creo FC05 witness curve ID nodes")?;
     }
     let mut circles = Vec::new();
     for curve_id in &curve_ids {
@@ -1108,10 +1109,7 @@ fn fc05_tangent_plane_score(
                 .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
         })
     {
-        if !plane_ids.contains(&plane_id) {
-            ctx.charge_collection_items(1, "creo FC05 tangent plane ID nodes")?;
-            plane_ids.insert(plane_id);
-        }
+        ctx.insert_btree_set(&mut plane_ids, plane_id, "creo FC05 tangent plane ID nodes")?;
     }
     Ok(plane_ids
         .into_iter()
@@ -1177,8 +1175,8 @@ fn native_positional_cylinder_carriers(
         else {
             continue;
         };
-        ctx.charge_collection_items(1, "creo plane branch cylinder carrier nodes")?;
-        carriers.insert(
+        ctx.insert_btree_map(
+            &mut carriers,
             row.id,
             CarrierEquation::Cylinder(super::equations::CylinderEquation {
                 origin: frame.frame().origin(),
@@ -1186,7 +1184,8 @@ fn native_positional_cylinder_carriers(
                 ref_direction: frame.frame().ref_direction(),
                 radius: frame.radius().get(),
             }),
-        );
+            "creo plane branch cylinder carrier nodes",
+        )?;
     }
     Ok(carriers)
 }
@@ -1285,12 +1284,14 @@ fn select_stored_frame_branches(
             if let Some((origin_options, origin_count)) =
                 stored_parameter_normal_candidates_with_origin_branches(frame, true)
             {
+                ctx.admit_btree_entry(
+                    &origin_domains,
+                    &frame.surface_id,
+                    "creo plane origin domain nodes",
+                )?;
                 let known = match origin_domains.entry(frame.surface_id) {
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo plane origin domain nodes")?;
-                        entry.insert(Vec::new())
-                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
                 };
                 for option in origin_options.into_iter().take(origin_count) {
                     if !known
@@ -1303,12 +1304,14 @@ fn select_stored_frame_branches(
                 }
             }
         }
+        ctx.admit_btree_entry(
+            &variable_domains,
+            &frame.surface_id,
+            "creo plane variable domain nodes",
+        )?;
         let known = match variable_domains.entry(frame.surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo plane variable domain nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         for option in options.into_iter().take(option_count) {
             if !known
@@ -1350,8 +1353,7 @@ fn select_stored_frame_branches(
             "creo copied plane domain candidates",
         )?;
         copied.extend_from_slice(options);
-        ctx.charge_collection_items(1, "creo copied plane domain nodes")?;
-        domains.insert(*surface_id, copied);
+        ctx.insert_btree_map(&mut domains, *surface_id, copied, "creo copied plane domain nodes")?;
     }
     select_stored_frame_carrier_pcurve_branches(ctx, scan, &variable_domains, &mut domains)?;
     for (surface_id, options) in &variable_domains {
@@ -1393,8 +1395,12 @@ fn select_stored_frame_branches(
                 let mut selected = Vec::new();
                 ctx.reserve_vec(&mut selected, 1, "creo fixed plane domain candidates")?;
                 selected.push(fixed);
-                ctx.charge_collection_items(1, "creo fixed plane domain nodes")?;
-                domains.insert(*surface_id, selected);
+                ctx.insert_btree_map(
+                    &mut domains,
+                    *surface_id,
+                    selected,
+                    "creo fixed plane domain nodes",
+                )?;
             }
         }
     }
@@ -1461,10 +1467,12 @@ fn select_stored_frame_branches(
         let mut selected = Vec::new();
         ctx.reserve_vec(&mut selected, 1, "creo selected plane branch")?;
         selected.push(*candidate);
-        if !candidates.contains_key(&surface_id) {
-            ctx.charge_collection_items(1, "creo selected plane branch nodes")?;
-        }
-        candidates.insert(surface_id, selected);
+        ctx.insert_btree_map(
+            candidates,
+            surface_id,
+            selected,
+            "creo selected plane branch nodes",
+        )?;
     }
     Ok(())
 }
@@ -1524,8 +1532,7 @@ fn round_edge_envelopes_for_plane(
     for row in
         crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?
     {
-        ctx.charge_collection_items(1, "creo round-edge surface row nodes")?;
-        rows.insert(row.id, row);
+        ctx.insert_btree_map(&mut rows, row.id, row, "creo round-edge surface row nodes")?;
     }
     let mut envelopes = Vec::new();
     for topology in
@@ -1616,10 +1623,7 @@ fn plane_candidates(
         .filter(|frame| crate::surface::uses_matrix_column_frame(frame))
         .map(|frame| frame.surface_id)
     {
-        if !matrix_frame_ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo matrix plane frame ID nodes")?;
-            matrix_frame_ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut matrix_frame_ids, id, "creo matrix plane frame ID nodes")?;
     }
     let mut held_plane_groups = BTreeMap::<u32, Vec<PlaneEquation>>::new();
     for (surface_id, plane) in scan
@@ -1628,12 +1632,10 @@ fn plane_candidates(
         .iter()
         .filter_map(|envelope| Some((envelope.surface_id, held_coordinate_plane(envelope)?)))
     {
+        ctx.admit_btree_entry(&held_plane_groups, &surface_id, "creo held plane group nodes")?;
         let planes = match held_plane_groups.entry(surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo held plane group nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         ctx.reserve_vec(planes, 1, "creo held plane equations")?;
         planes.push(plane);
@@ -1641,20 +1643,26 @@ fn plane_candidates(
     let mut held_planes = BTreeMap::new();
     for (surface_id, planes) in held_plane_groups {
         if let Some(plane) = agreed_plane(&planes) {
-            ctx.charge_collection_items(1, "creo agreed held plane nodes")?;
-            held_planes.insert(surface_id, plane);
+            ctx.insert_btree_map(
+                &mut held_planes,
+                surface_id,
+                plane,
+                "creo agreed held plane nodes",
+            )?;
         }
     }
     let mut frame_bound_outlines = BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new();
     for outline in scan.planes.envelopes.iter().filter_map(|record| {
         crate::surface::frame_bound_outline_plane(record, &scan.planes.local_systems)
     }) {
+        ctx.admit_btree_entry(
+            &frame_bound_outlines,
+            &outline.surface_id,
+            "creo frame-bound outline nodes",
+        )?;
         let outlines = match frame_bound_outlines.entry(outline.surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo frame-bound outline nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         ctx.reserve_vec(outlines, 1, "creo frame-bound outlines")?;
         outlines.push(outline);
@@ -1692,12 +1700,10 @@ fn plane_candidates(
                     .and_then(|held| envelope_reconciled_plane_candidate(frame, *held))
             })
             .unwrap_or(frame_candidate);
+        ctx.admit_btree_entry(&candidates, &frame.surface_id, "creo plane candidate nodes")?;
         let options = match candidates.entry(frame.surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo plane candidate nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
@@ -1715,10 +1721,7 @@ fn plane_candidates(
         })
         .map(|frame| frame.surface_id)
     {
-        if !local_chart_ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo local plane chart ID nodes")?;
-            local_chart_ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut local_chart_ids, id, "creo local plane chart ID nodes")?;
     }
     for outline in &scan.planes.outlines {
         if matrix_frame_ids.contains(&outline.surface_id) {
@@ -1736,12 +1739,10 @@ fn plane_candidates(
             }),
             offset: outline.offset,
         };
+        ctx.admit_btree_entry(&candidates, &outline.surface_id, "creo plane candidate nodes")?;
         let options = match candidates.entry(outline.surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo plane candidate nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
@@ -1758,12 +1759,10 @@ fn plane_candidates(
             chart: None,
             offset: envelope.offset,
         };
+        ctx.admit_btree_entry(&candidates, &envelope.surface_id, "creo plane candidate nodes")?;
         let options = match candidates.entry(envelope.surface_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo plane candidate nodes")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
@@ -1786,8 +1785,12 @@ fn plane_candidates(
             }),
             offset: plane.offset,
         });
-        ctx.charge_collection_items(1, "creo plane candidate nodes")?;
-        candidates.insert(plane.surface_id, options);
+        ctx.insert_btree_map(
+            &mut candidates,
+            plane.surface_id,
+            options,
+            "creo plane candidate nodes",
+        )?;
     }
     select_stored_frame_branches(ctx, scan, &mut candidates)?;
     select_round_edge_origin_branches(ctx, scan, &mut candidates)?;
@@ -1927,8 +1930,7 @@ pub(in crate::decode) fn placed_planes(
         if let Some(plane) =
             agreed_plane_iter(candidates.iter().map(|candidate| candidate.equation))
         {
-            ctx.charge_collection_items(1, "creo placed plane nodes")?;
-            placed.insert(id, plane);
+            ctx.insert_btree_map(&mut placed, id, plane, "creo placed plane nodes")?;
         }
     }
     Ok(placed)
@@ -1948,16 +1950,17 @@ pub(in crate::decode) fn placed_plane_surfaces(
     let mut placed = BTreeMap::new();
     for (id, candidates) in plane_candidates(ctx, scan)? {
         if let Some(surface) = agreed_plane_surface(&candidates) {
-            ctx.charge_collection_items(1, "creo placed plane surface nodes")?;
             let (plane, u_axis, offset) = surface;
-            placed.insert(
+            ctx.insert_btree_map(
+                &mut placed,
                 id,
                 PlacedPlaneSurface {
                     plane,
                     u_axis,
                     offset,
                 },
-            );
+                "creo placed plane surface nodes",
+            )?;
         }
     }
     Ok(placed)

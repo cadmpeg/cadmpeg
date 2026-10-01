@@ -211,19 +211,27 @@ impl<'a> Index<'a> {
                 object.offset,
                 "creo legacy family object index IDs",
             )?;
+            ctx.admit_btree_entry(&object_by_id, &id, "creo legacy family object index nodes")?;
             match object_by_id.entry(id) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo legacy family object index nodes")?;
                     entry.insert(object);
                 }
                 std::collections::btree_map::Entry::Occupied(_) => return Ok(None),
             }
-            ctx.charge_collection_items(1, "creo legacy family object offsets")?;
-            object_by_offset.insert(object.offset, object);
+            ctx.insert_btree_map(
+                &mut object_by_offset,
+                object.offset,
+                object,
+                "creo legacy family object offsets",
+            )?;
             if let Some(parent) = object.parent {
+                ctx.admit_btree_entry(
+                    &objects_by_parent_name,
+                    &(parent, object.name.as_str()),
+                    "creo legacy family child index nodes",
+                )?;
                 match objects_by_parent_name.entry((parent, object.name.as_str())) {
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo legacy family child index nodes")?;
                         let mut rows = Vec::new();
                         ctx.reserve_vec(&mut rows, 1, "creo legacy family child index rows")?;
                         rows.push(object);
@@ -295,9 +303,9 @@ fn add_typed_field_names<'a, K: legacy::LegacyCode>(
             continue;
         }
         if let Some(parent) = record.parent {
+            ctx.admit_btree_entry(&index, &parent, "creo legacy family typed-name nodes")?;
             match index.entry(parent) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo legacy family typed-name nodes")?;
                     let mut names = Vec::new();
                     ctx.reserve_vec(&mut names, 1, "creo legacy family typed names")?;
                     names.push(record.name.as_str());
@@ -602,8 +610,11 @@ fn parse_indexed(
         if text.is_empty() || instance_names.contains(text.as_str()) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo legacy family instance names")?;
-        instance_names.insert(text.as_str());
+        ctx.insert_btree_set(
+            &mut instance_names,
+            text.as_str(),
+            "creo legacy family instance names",
+        )?;
         let name = ctx.copy_retained_text(text, "creo legacy family instance name")?;
         let Some(attributes) = optional_integer(index, instance.offset, "attributes")
             .ok()

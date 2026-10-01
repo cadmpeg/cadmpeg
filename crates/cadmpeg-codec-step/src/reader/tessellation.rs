@@ -39,13 +39,17 @@ pub(super) fn decode(
         }
         let scale = geometry.units.length([id]).get();
         if let Some(vertices) = coordinate_rows(record, scale, ctx)? {
-            ctx.charge_collection_items(1, "step_tessellation_coordinate_lists")?;
             coordinate_map_bytes.grow(bytes_for::<(u64, Vec<FinitePoint3>)>(
                 1,
                 ctx,
                 "step_tessellation_coordinate_lists",
             )?)?;
-            coordinates.insert(id, vertices);
+            ctx.insert_btree_map(
+                &mut coordinates,
+                id,
+                vertices,
+                "step_tessellation_coordinate_lists",
+            )?;
         }
     }
     let mut typed = HashSet::new();
@@ -365,13 +369,16 @@ pub(super) fn decode(
                 ctx.reserve_scoped(0, "step_tessellation_coordinate_indices")?;
             for &index in triangles.iter().flatten() {
                 if !coordinate_indices.contains(&index) {
-                    ctx.charge_collection_items(1, "step_tessellation_coordinate_indices")?;
                     coordinate_index_bytes.grow(bytes_for::<u32>(
                         1,
                         ctx,
                         "step_tessellation_coordinate_indices",
                     )?)?;
-                    coordinate_indices.insert(index);
+                    ctx.insert_btree_set(
+                        &mut coordinate_indices,
+                        index,
+                        "step_tessellation_coordinate_indices",
+                    )?;
                 }
             }
             let _local_index_bytes = ctx.reserve_scoped_collection::<(u32, u32)>(
@@ -851,13 +858,12 @@ impl TessellationItemAssociator<'_, '_, '_> {
         if self.active.contains(&id) {
             return Ok(());
         }
-        self.ctx
-            .charge_collection_items(1, "step_tessellation_active_items")?;
         let _active_bytes = self.ctx.reserve_scoped(
             bytes_for::<u64>(1, self.ctx, "step_tessellation_active_items")?,
             "step_tessellation_active_items",
         )?;
-        self.active.insert(id);
+        self.ctx
+            .insert_btree_set(&mut self.active, id, "step_tessellation_active_items")?;
         let Some(record) = self.exchange.records().get(&id) else {
             self.active.remove(&id);
             return Ok(());
@@ -1032,7 +1038,7 @@ fn associate_bodies(
     bytes: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     if !associations.contains_key(&item) {
-        ctx.charge_collection_items(1, "step_tessellation_item_body_entries")?;
+        ctx.admit_btree_entry(associations, &item, "step_tessellation_item_body_entries")?;
         bytes.grow(bytes_for::<(u64, BTreeSet<BodyId>)>(
             1,
             ctx,
@@ -1042,7 +1048,6 @@ fn associate_bodies(
     let associated = associations.entry(item).or_default();
     for body in bodies {
         if !associated.contains(body) {
-            ctx.charge_collection_items(1, "step_tessellation_item_body_links")?;
             let body_bytes = bytes_for::<BodyId>(1, ctx, "step_tessellation_item_body_links")?
                 .checked_add(u64_from_index(body.as_str().len()))
                 .ok_or_else(|| {
@@ -1053,7 +1058,8 @@ fn associate_bodies(
                     )
                 })?;
             bytes.grow(body_bytes)?;
-            associated.insert(body.try_clone_for_decode(ctx, "step_tessellation_item_body_links")?);
+            let copy = body.try_clone_for_decode(ctx, "step_tessellation_item_body_links")?;
+            ctx.insert_btree_set(associated, copy, "step_tessellation_item_body_links")?;
         }
     }
     Ok(())
@@ -1067,7 +1073,7 @@ fn push_placement(
     bytes: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     if !placements.contains_key(&item) {
-        ctx.charge_collection_items(1, "step_tessellation_placement_entries")?;
+        ctx.admit_btree_entry(placements, &item, "step_tessellation_placement_entries")?;
         bytes.grow(bytes_for::<(u64, Vec<Transform>)>(
             1,
             ctx,
@@ -1090,7 +1096,11 @@ fn insert_relationship(
     bytes: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     if !relationships.contains_key(&source) {
-        ctx.charge_collection_items(1, "step_tessellation_relationship_nodes")?;
+        ctx.admit_btree_entry(
+            relationships,
+            &source,
+            "step_tessellation_relationship_nodes",
+        )?;
         bytes.grow(bytes_for::<(u64, BTreeSet<u64>)>(
             1,
             ctx,

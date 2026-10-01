@@ -129,9 +129,14 @@ fn vertex_point_positions(
 ) -> Result<BTreeMap<VertexId, Point3>, cadmpeg_core::CodecError> {
     let mut point_positions = BTreeMap::new();
     for point in &ir.model.points {
-        ctx.charge_collection_items(1, "nx pcurve point position index")?;
+        let point_key = &point.id;
+        ctx.admit_btree_entry(
+            &point_positions,
+            &point_key,
+            "nx pcurve point position index",
+        )?;
         point_positions
-            .entry(&point.id)
+            .entry(point_key)
             .or_insert(point.position().get());
     }
     let mut vertices = BTreeMap::new();
@@ -139,13 +144,14 @@ fn vertex_point_positions(
         let Some(position) = point_positions.get(&vertex.point).copied() else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx pcurve vertex position index")?;
-        vertices.insert(
+        ctx.insert_btree_map(
+            &mut vertices,
             vertex
                 .id
                 .try_clone_for_decode(ctx, "nx pcurve vertex identity")?,
             position,
-        );
+            "nx pcurve vertex position index",
+        )?;
     }
     Ok(vertices)
 }
@@ -159,10 +165,9 @@ fn edge_indices_by_curve(
         let Some(curve) = edge.curve() else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx pcurve edge curve index")?;
-        let group = indices
-            .entry(curve.try_clone_for_decode(ctx, "nx pcurve edge curve identity")?)
-            .or_insert_with(Vec::new);
+        let curve_key = curve.try_clone_for_decode(ctx, "nx pcurve edge curve identity")?;
+        ctx.admit_btree_entry(&indices, &curve_key, "nx pcurve edge curve index")?;
+        let group = indices.entry(curve_key).or_insert_with(Vec::new);
         ctx.reserve_vec(group, 1, "nx pcurve edge indices")?;
         group.push(index);
     }
@@ -198,35 +203,38 @@ impl IntersectionIncidenceIndex {
         starts: IntersectionEntityStarts,
     ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
         for loop_ in ir.model.loops.iter().skip(starts.loops) {
-            ctx.charge_collection_items(1, "nx incidence loop faces")?;
-            self.loop_faces.insert(
+            ctx.insert_btree_map(
+                &mut self.loop_faces,
                 loop_
                     .id
                     .try_clone_for_decode(ctx, "nx incidence loop identity")?,
                 loop_
                     .face
                     .try_clone_for_decode(ctx, "nx incidence face identity")?,
-            );
+                "nx incidence loop faces",
+            )?;
         }
         for face in ir.model.faces.iter().skip(starts.faces) {
-            ctx.charge_collection_items(1, "nx incidence face surfaces")?;
-            self.face_surfaces.insert(
+            ctx.insert_btree_map(
+                &mut self.face_surfaces,
                 face.id
                     .try_clone_for_decode(ctx, "nx incidence face identity")?,
                 face.surface
                     .try_clone_for_decode(ctx, "nx incidence surface identity")?,
-            );
+                "nx incidence face surfaces",
+            )?;
         }
         for edge in ir.model.edges.iter().skip(starts.edges) {
             let Some(curve) = edge.curve() else {
                 continue;
             };
-            ctx.charge_collection_items(1, "nx incidence edge curves")?;
-            self.edge_curves.insert(
+            ctx.insert_btree_map(
+                &mut self.edge_curves,
                 edge.id
                     .try_clone_for_decode(ctx, "nx incidence edge identity")?,
                 curve.try_clone_for_decode(ctx, "nx incidence curve identity")?,
-            );
+                "nx incidence edge curves",
+            )?;
         }
         self.index_new_pcurves(ctx, ir, starts.pcurves)?;
 
@@ -241,15 +249,20 @@ impl IntersectionIncidenceIndex {
             let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
-            ctx.charge_collection_items(1, "nx incidence procedural owners")?;
-            let indices = self
-                .procedural_by_curve
-                .entry(owner.try_clone_for_decode(ctx, "nx incidence owner identity")?)
-                .or_default();
+            let owner_key = owner.try_clone_for_decode(ctx, "nx incidence owner identity")?;
+            ctx.admit_btree_entry(
+                &self.procedural_by_curve,
+                &owner_key,
+                "nx incidence procedural owners",
+            )?;
+            let indices = self.procedural_by_curve.entry(owner_key).or_default();
             ctx.reserve_vec(indices, 1, "nx incidence procedural indices")?;
             indices.push(index);
-            ctx.charge_collection_items(1, "nx affected incidence curves")?;
-            affected_curves.insert(owner.try_clone_for_decode(ctx, "nx affected curve identity")?);
+            ctx.insert_btree_set(
+                &mut affected_curves,
+                owner.try_clone_for_decode(ctx, "nx affected curve identity")?,
+                "nx affected incidence curves",
+            )?;
         }
         for coedge in ir.model.coedges.iter().skip(starts.coedges) {
             let Some(curve) = self.edge_curves.get(&coedge.edge) else {
@@ -262,23 +275,27 @@ impl IntersectionIncidenceIndex {
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "nx incident surface owners")?;
-            let surfaces = self
-                .incident_surfaces
-                .entry(curve.try_clone_for_decode(ctx, "nx incident curve identity")?)
-                .or_default();
+            let curve_key = curve.try_clone_for_decode(ctx, "nx incident curve identity")?;
+            ctx.admit_btree_entry(
+                &self.incident_surfaces,
+                &curve_key,
+                "nx incident surface owners",
+            )?;
+            let surfaces = self.incident_surfaces.entry(curve_key).or_default();
             if !surfaces.contains(surface) {
                 ctx.reserve_vec(surfaces, 1, "nx incident surfaces")?;
                 surfaces.push(surface.try_clone_for_decode(ctx, "nx incident surface identity")?);
             }
-            ctx.charge_collection_items(1, "nx incident pcurve owners")?;
-            let pcurves = self
-                .incident_pcurves
-                .entry((
-                    curve.try_clone_for_decode(ctx, "nx pcurve curve identity")?,
-                    surface.try_clone_for_decode(ctx, "nx pcurve surface identity")?,
-                ))
-                .or_default();
+            let pair_key = (
+                curve.try_clone_for_decode(ctx, "nx pcurve curve identity")?,
+                surface.try_clone_for_decode(ctx, "nx pcurve surface identity")?,
+            );
+            ctx.admit_btree_entry(
+                &self.incident_pcurves,
+                &pair_key,
+                "nx incident pcurve owners",
+            )?;
+            let pcurves = self.incident_pcurves.entry(pair_key).or_default();
             for pcurve in &coedge.pcurves {
                 if !pcurves.contains(&pcurve.pcurve) {
                     ctx.reserve_vec(pcurves, 1, "nx incident pcurves")?;
@@ -289,8 +306,11 @@ impl IntersectionIncidenceIndex {
                     );
                 }
             }
-            ctx.charge_collection_items(1, "nx affected incidence curves")?;
-            affected_curves.insert(curve.try_clone_for_decode(ctx, "nx affected curve identity")?);
+            ctx.insert_btree_set(
+                &mut affected_curves,
+                curve.try_clone_for_decode(ctx, "nx affected curve identity")?,
+                "nx affected incidence curves",
+            )?;
         }
         Ok(affected_curves)
     }
@@ -302,14 +322,15 @@ impl IntersectionIncidenceIndex {
         start: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
         for (index, pcurve) in ir.model.pcurves.iter().enumerate().skip(start) {
-            ctx.charge_collection_items(1, "nx incidence pcurve index")?;
-            self.pcurves_by_id
-                .entry(
-                    pcurve
-                        .id
-                        .try_clone_for_decode(ctx, "nx incidence pcurve identity")?,
-                )
-                .or_insert(index);
+            let pcurve_key = pcurve
+                .id
+                .try_clone_for_decode(ctx, "nx incidence pcurve identity")?;
+            ctx.admit_btree_entry(
+                &self.pcurves_by_id,
+                &pcurve_key,
+                "nx incidence pcurve index",
+            )?;
+            self.pcurves_by_id.entry(pcurve_key).or_insert(index);
         }
         Ok(())
     }
@@ -539,21 +560,33 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut loop_faces = BTreeMap::new();
     for loop_ in &ir.model.loops {
-        ctx.charge_collection_items(1, "nx serialized branch loop faces")?;
-        loop_faces.insert(&loop_.id, &loop_.face);
+        ctx.insert_btree_map(
+            &mut loop_faces,
+            &loop_.id,
+            &loop_.face,
+            "nx serialized branch loop faces",
+        )?;
     }
     let mut face_surfaces = BTreeMap::new();
     for face in &ir.model.faces {
-        ctx.charge_collection_items(1, "nx serialized branch face surfaces")?;
-        face_surfaces.insert(&face.id, &face.surface);
+        ctx.insert_btree_map(
+            &mut face_surfaces,
+            &face.id,
+            &face.surface,
+            "nx serialized branch face surfaces",
+        )?;
     }
     let mut edge_curves = BTreeMap::new();
     for edge in &ir.model.edges {
         let Some(curve) = edge.curve() else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx serialized branch edge curves")?;
-        edge_curves.insert(&edge.id, curve);
+        ctx.insert_btree_map(
+            &mut edge_curves,
+            &edge.id,
+            curve,
+            "nx serialized branch edge curves",
+        )?;
     }
     let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
     for coedge in ir.model.coedges.iter().skip(coedge_start) {
@@ -576,13 +609,12 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             if !serialized.contains(&key) {
                 continue;
             }
-            ctx.charge_collection_items(1, "nx serialized branch incidence")?;
-            let candidates = incident
-                .entry((
-                    curve.try_clone_for_decode(ctx, "nx branch incidence curve")?,
-                    surface.try_clone_for_decode(ctx, "nx branch incidence surface")?,
-                ))
-                .or_default();
+            let incident_key = (
+                curve.try_clone_for_decode(ctx, "nx branch incidence curve")?,
+                surface.try_clone_for_decode(ctx, "nx branch incidence surface")?,
+            );
+            ctx.admit_btree_entry(&incident, &incident_key, "nx serialized branch incidence")?;
+            let candidates = incident.entry(incident_key).or_default();
             let candidate = (
                 use_.pcurve
                     .try_clone_for_decode(ctx, "nx branch candidate pcurve")?,
@@ -601,14 +633,15 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         let edges_by_curve = edge_indices_by_curve(ctx, ir)?;
         let mut pcurves_by_id = BTreeMap::<PcurveId, usize>::new();
         for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
-            ctx.charge_collection_items(1, "nx serialized branch pcurve index")?;
-            pcurves_by_id
-                .entry(
-                    pcurve
-                        .id
-                        .try_clone_for_decode(ctx, "nx branch pcurve identity")?,
-                )
-                .or_insert(index);
+            let pcurve_key = pcurve
+                .id
+                .try_clone_for_decode(ctx, "nx branch pcurve identity")?;
+            ctx.admit_btree_entry(
+                &pcurves_by_id,
+                &pcurve_key,
+                "nx serialized branch pcurve index",
+            )?;
+            pcurves_by_id.entry(pcurve_key).or_insert(index);
         }
         let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
         let mut replacements = Vec::new();
@@ -1352,9 +1385,10 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         ) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx opposite chart edge tolerances")?;
+        let curve_key = curve.try_clone_for_decode(ctx, "nx opposite chart curve identity")?;
+        ctx.admit_btree_entry(&edge_tolerances, &curve_key, "nx opposite chart edge tolerances")?;
         edge_tolerances
-            .entry(curve.try_clone_for_decode(ctx, "nx opposite chart curve identity")?)
+            .entry(curve_key)
             .and_modify(|current| *current = current.min(tolerance))
             .or_insert(tolerance);
     }
@@ -1460,9 +1494,14 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     target_surface,
                     tolerance,
                 );
-                ctx.charge_collection_items(1, "nx opposite chart blend contacts")?;
+                let contact_key = (source_surface, target_surface);
+                ctx.admit_btree_entry(
+                    &blend_contacts,
+                    &contact_key,
+                    "nx opposite chart blend contacts",
+                )?;
                 let blend_contact = blend_contacts
-                    .entry((source_surface, target_surface))
+                    .entry(contact_key)
                     .or_insert_with(|| {
                         blend_transfer_contact(&model_index, source_surface, target_surface)
                     })
@@ -1643,14 +1682,15 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     let edges_by_curve = edge_indices_by_curve(ctx, ir)?;
     let mut procedural_indices = BTreeMap::<ProceduralCurveId, usize>::new();
     for (index, procedural) in ir.model.procedural_curves.iter().enumerate() {
-        ctx.charge_collection_items(1, "nx exact boundary procedural index")?;
-        procedural_indices
-            .entry(
-                procedural
-                    .id
-                    .try_clone_for_decode(ctx, "nx exact boundary procedural identity")?,
-            )
-            .or_insert(index);
+        let procedural_key = procedural
+            .id
+            .try_clone_for_decode(ctx, "nx exact boundary procedural identity")?;
+        ctx.admit_btree_entry(
+            &procedural_indices,
+            &procedural_key,
+            "nx exact boundary procedural index",
+        )?;
+        procedural_indices.entry(procedural_key).or_insert(index);
     }
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     let mut replacements = Vec::new();
@@ -4427,9 +4467,14 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                             .surfaces(surface.as_str())
                             .and_then(|carrier| carrier.geometry.solved())
                     {
-                        ctx.charge_collection_items(1, "nx tolerant edge NURBS bounds")?;
+                        let bounds_key = *surface;
+                        ctx.admit_btree_entry(
+                            &nurbs_surface_bounds,
+                            &bounds_key,
+                            "nx tolerant edge NURBS bounds",
+                        )?;
                         let bounds = nurbs_surface_bounds
-                            .entry(*surface)
+                            .entry(bounds_key)
                             .or_insert_with(|| nurbs_surface_control_bounds(nurbs));
                         bounds.as_ref().is_some_and(|bounds| {
                             point_outside_nurbs_control_bounds(*point, edge_tolerance, *bounds)
@@ -4466,8 +4511,12 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                             Point3::distance(*point, support_point) <= tolerance
                         })
                     };
-                    ctx.charge_collection_items(1, "nx tolerant edge endpoint fits")?;
-                    endpoint_surface_fits.insert(key, fits);
+                    ctx.insert_btree_map(
+                        &mut endpoint_surface_fits,
+                        key,
+                        fits,
+                        "nx tolerant edge endpoint fits",
+                    )?;
                     if !fits {
                         endpoints_bound_supports = false;
                         break 'supports;

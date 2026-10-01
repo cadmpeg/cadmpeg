@@ -176,10 +176,11 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        if !round_feature_ids.contains(&row.feature_id) {
-            ctx.charge_collection_items(1, "creo constrained round feature ID nodes")?;
-            round_feature_ids.insert(row.feature_id);
-        }
+        ctx.insert_btree_set(
+            &mut round_feature_ids,
+            row.feature_id,
+            "creo constrained round feature ID nodes",
+        )?;
     }
     let mut transferred = 0;
     for feature_id in round_feature_ids {
@@ -310,10 +311,11 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        if !round_feature_ids.contains(&row.feature_id) {
-            ctx.charge_collection_items(1, "creo rowless round feature ID nodes")?;
-            round_feature_ids.insert(row.feature_id);
-        }
+        ctx.insert_btree_set(
+            &mut round_feature_ids,
+            row.feature_id,
+            "creo rowless round feature ID nodes",
+        )?;
     }
     let mut transferred = 0;
     for (rowless_id, sibling_id, offset) in rowless_round_cylinder_pairs(
@@ -399,10 +401,11 @@ pub(in super::super) fn transfer_hole_cylinders(
         .filter(|row| row.root_schema_class == Some(SchemaClass::Hole))
         .map(|row| row.feature_id)
     {
-        if !hole_feature_ids.contains(&feature_id) {
-            ctx.charge_collection_items(1, "creo hole cylinder feature ID nodes")?;
-            hole_feature_ids.insert(feature_id);
-        }
+        ctx.insert_btree_set(
+            &mut hole_feature_ids,
+            feature_id,
+            "creo hole cylinder feature ID nodes",
+        )?;
     }
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
@@ -480,8 +483,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     for row in
         crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?
     {
-        ctx.charge_collection_items(1, "creo split cylinder row nodes")?;
-        rows.insert(row.id, row);
+        ctx.insert_btree_map(&mut rows, row.id, row, "creo split cylinder row nodes")?;
     }
     let local_planes = placed_planes(ctx, scan)?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
@@ -513,17 +515,18 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             _ => None,
         };
         if let Some((plane_and_feature, cylinder)) = pair {
+            ctx.admit_btree_entry(
+                &cylinders_by_plane,
+                &plane_and_feature,
+                "creo split cylinder plane nodes",
+            )?;
             let cylinder_ids = match cylinders_by_plane.entry(plane_and_feature) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo split cylinder plane nodes")?;
                     entry.insert(BTreeSet::new())
                 }
             };
-            if !cylinder_ids.contains(&cylinder) {
-                ctx.charge_collection_items(1, "creo split cylinder ID nodes")?;
-                cylinder_ids.insert(cylinder);
-            }
+            ctx.insert_btree_set(cylinder_ids, cylinder, "creo split cylinder ID nodes")?;
         }
     }
 
@@ -997,16 +1000,21 @@ pub(in super::super) fn transfer_positional_cylinders(
         row.kind == crate::surface::SurfaceKind::Cylinder
             && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
     }) {
-        if !round_feature_ids.contains(&row.feature_id) {
-            ctx.charge_collection_items(1, "creo positional round feature ID nodes")?;
-            round_feature_ids.insert(row.feature_id);
-        }
+        ctx.insert_btree_set(
+            &mut round_feature_ids,
+            row.feature_id,
+            "creo positional round feature ID nodes",
+        )?;
     }
     let mut constant_round_radii = BTreeMap::new();
     for feature_id in round_feature_ids {
         if let Some(radius) = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)? {
-            ctx.charge_collection_items(1, "creo constant round radius nodes")?;
-            constant_round_radii.insert(feature_id, radius);
+            ctx.insert_btree_map(
+                &mut constant_round_radii,
+                feature_id,
+                radius,
+                "creo constant round radius nodes",
+            )?;
         }
     }
     let local_planes = placed_planes(ctx, scan)?;
@@ -1014,8 +1022,12 @@ pub(in super::super) fn transfer_positional_cylinders(
     for row in
         crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?
     {
-        ctx.charge_collection_items(1, "creo positional cylinder row nodes")?;
-        unique_rows.insert(row.id, row);
+        ctx.insert_btree_map(
+            &mut unique_rows,
+            row.id,
+            row,
+            "creo positional cylinder row nodes",
+        )?;
     }
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
     for edge in
@@ -1035,17 +1047,22 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .get(&other_id)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             {
+                ctx.admit_btree_entry(
+                    &adjacent_plane_ids,
+                    &surface_id,
+                    "creo positional adjacent cylinder nodes",
+                )?;
                 let plane_ids = match adjacent_plane_ids.entry(surface_id) {
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo positional adjacent cylinder nodes")?;
                         entry.insert(BTreeSet::new())
                     }
                 };
-                if !plane_ids.contains(&other_id) {
-                    ctx.charge_collection_items(1, "creo positional adjacent plane ID nodes")?;
-                    plane_ids.insert(other_id);
-                }
+                ctx.insert_btree_set(
+                    plane_ids,
+                    other_id,
+                    "creo positional adjacent plane ID nodes",
+                )?;
             }
         }
     }
@@ -1060,8 +1077,12 @@ pub(in super::super) fn transfer_positional_cylinders(
                 planes.push(plane);
             }
         }
-        ctx.charge_collection_items(1, "creo positional support plane nodes")?;
-        round_edge_support_planes.insert(surface_id, planes);
+        ctx.insert_btree_map(
+            &mut round_edge_support_planes,
+            surface_id,
+            planes,
+            "creo positional support plane nodes",
+        )?;
     }
     let mut summary = PositionalCylinderTransferSummary::default();
     for record in &scan.surfaces.parameters {
@@ -1222,10 +1243,11 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .filter(|table| table.feature_id == row.feature_id)
                 .flat_map(|table| table.entries.iter().map(|entry| entry.entity_id))
             {
-                if !entity_ids.contains(&entity_id) {
-                    ctx.charge_collection_items(1, "creo reference cylinder entity ID nodes")?;
-                    entity_ids.insert(entity_id);
-                }
+                ctx.insert_btree_set(
+                    &mut entity_ids,
+                    entity_id,
+                    "creo reference cylinder entity ID nodes",
+                )?;
             }
             let mut circles = Vec::new();
             for circle in scan
@@ -1654,10 +1676,11 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         })
         .map(|row| row.feature_id)
     {
-        if !sweep_feature_ids.contains(&feature_id) {
-            ctx.charge_collection_items(1, "creo circular sweep feature ID nodes")?;
-            sweep_feature_ids.insert(feature_id);
-        }
+        ctx.insert_btree_set(
+            &mut sweep_feature_ids,
+            feature_id,
+            "creo circular sweep feature ID nodes",
+        )?;
     }
     let mut transferred = 0;
     for feature_id in sweep_feature_ids {

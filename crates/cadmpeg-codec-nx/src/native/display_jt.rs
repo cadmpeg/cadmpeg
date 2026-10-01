@@ -5957,11 +5957,10 @@ fn resolve_display_jt_node_paths(
     if visiting.contains(&object_id) {
         return Ok(None);
     }
-    ctx.charge_collection_items(1, "nx JT visiting nodes")?;
     visiting_reservation.grow(cadmpeg_core::decode::u64_from_index(
         std::mem::size_of::<u32>() * 4,
     ))?;
-    visiting.insert(object_id);
+    ctx.insert_btree_set(visiting, object_id, "nx JT visiting nodes")?;
     let mut parent_states = Vec::new();
     let mut parent_states_reservation = ctx.reserve_scoped(0, "nx JT parent path states")?;
     if let Some(ids) = lookup.parents.get(&object_id) {
@@ -6125,11 +6124,10 @@ fn display_jt_node_paths(
         if by_object.contains_key(&base.object_id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "nx JT node index")?;
         by_object_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(u32, &DisplayJtBaseNodeData)>() * 4,
         ))?;
-        by_object.insert(base.object_id, *base);
+        ctx.insert_btree_map(&mut by_object, base.object_id, *base, "nx JT node index")?;
     }
     if !by_object.contains_key(&shape_object_id) {
         return Ok(None);
@@ -6179,12 +6177,11 @@ fn display_jt_node_paths(
         if instance_ids.contains_key(&node.object_id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "nx JT instance index")?;
         instances_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(u32, String)>() * 4,
         ))?;
         let id = ctx.join_retained(&[&node.id], "", "nx JT instance identity")?;
-        instance_ids.insert(node.object_id, id);
+        ctx.insert_btree_map(&mut instance_ids, node.object_id, id, "nx JT instance index")?;
     }
     for (object_id, base) in &by_object {
         let mut group_children = inputs
@@ -6211,7 +6208,7 @@ fn display_jt_node_paths(
                 return Ok(None);
             }
             if !parents.contains_key(&child) {
-                ctx.charge_collection_items(1, "nx JT parent index")?;
+                ctx.admit_btree_entry(&parents, &child, "nx JT parent index")?;
                 parents_reservation.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(u32, Vec<u32>)>() * 4,
                 ))?;

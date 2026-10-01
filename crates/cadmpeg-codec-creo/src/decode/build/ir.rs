@@ -195,9 +195,11 @@ fn transfer_reference_lines(
     let mut line3d_id_counts = BTreeMap::<u32, usize>::new();
     for line in &scan.references.lines {
         if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = &line.kind {
-            if !line3d_id_counts.contains_key(entity_id) {
-                ctx.charge_collection_items(1, "creo reference line3d count nodes")?;
-            }
+            ctx.admit_btree_entry(
+                &line3d_id_counts,
+                entity_id,
+                "creo reference line3d count nodes",
+            )?;
             *line3d_id_counts.entry(*entity_id).or_default() += 1;
         }
     }
@@ -296,9 +298,11 @@ fn transfer_reference_circles(
 ) -> Result<(), CodecError> {
     let mut circle_id_counts = BTreeMap::<u32, usize>::new();
     for circle in &scan.references.circles {
-        if !circle_id_counts.contains_key(&circle.entity_id) {
-            ctx.charge_collection_items(1, "creo reference circle count nodes")?;
-        }
+        ctx.admit_btree_entry(
+            &circle_id_counts,
+            &circle.entity_id,
+            "creo reference circle count nodes",
+        )?;
         *circle_id_counts.entry(circle.entity_id).or_default() += 1;
     }
     for circle in &scan.references.circles {
@@ -389,9 +393,11 @@ fn transfer_reference_ellipses(
 ) -> Result<(), CodecError> {
     let mut ellipse_id_counts = BTreeMap::<u32, usize>::new();
     for ellipse in &scan.references.ellipses {
-        if !ellipse_id_counts.contains_key(&ellipse.source_entity_id) {
-            ctx.charge_collection_items(1, "creo reference ellipse count nodes")?;
-        }
+        ctx.admit_btree_entry(
+            &ellipse_id_counts,
+            &ellipse.source_entity_id,
+            "creo reference ellipse count nodes",
+        )?;
         *ellipse_id_counts
             .entry(ellipse.source_entity_id)
             .or_default() += 1;

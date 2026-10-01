@@ -118,19 +118,6 @@ fn refresh_feature_outputs(
     Ok(())
 }
 
-fn admit_new_feature_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    seen: &mut BTreeSet<u32>,
-    feature_id: u32,
-    operation: &'static str,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    if seen.contains(&feature_id) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, operation)?;
-    seen.insert(feature_id);
-    Ok(true)
-}
 
 fn ordered_row_feature_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -139,12 +126,7 @@ fn ordered_row_feature_ids(
     let mut seen = BTreeSet::new();
     let mut ids = Vec::new();
     for row in rows {
-        if admit_new_feature_id(
-            ctx,
-            &mut seen,
-            row.feature_id,
-            "creo feature row identity nodes",
-        )? {
+        if ctx.insert_btree_set(&mut seen, row.feature_id, "creo feature row identity nodes")? {
             ctx.reserve_vec(&mut ids, 1, "creo feature row IDs")?;
             ids.push(row.feature_id);
         }
@@ -158,10 +140,7 @@ fn merge_feature_source_properties(
     incoming: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (key, value) in incoming {
-        if !target.contains_key(&key) {
-            ctx.charge_collection_items(1, "creo IR Feature source property nodes")?;
-        }
-        target.insert(key, value);
+        ctx.insert_btree_map(target, key, value, "creo IR Feature source property nodes")?;
     }
     Ok(())
 }
@@ -192,12 +171,7 @@ pub(super) fn emit_model_features(
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        admit_new_feature_id(
-            ctx,
-            &mut operation_feature_ids,
-            operation.feature_id,
-            "creo operation feature identity nodes",
-        )?;
+        ctx.insert_btree_set(&mut operation_feature_ids, operation.feature_id, "creo operation feature identity nodes")?;
     }
     for datum in &scan.planes.datums {
         if operation_feature_ids.contains(&datum.feature_id) {

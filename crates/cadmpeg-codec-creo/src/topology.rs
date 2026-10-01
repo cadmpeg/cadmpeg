@@ -243,20 +243,26 @@ pub(crate) fn edge_start_vertex_pairs(
 ) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
     let mut by_curve = BTreeMap::<u32, [SingleSide<NonZeroU32>; 2]>::new();
     for binding in incidence {
+        ctx.admit_btree_entry(
+            &by_curve,
+            &binding.half_edge.curve_id,
+            "creo start-vertex pair group nodes",
+        )?;
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo start-vertex pair group nodes")?;
-                entry.insert([SingleSide::Empty, SingleSide::Empty])
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([SingleSide::Empty, SingleSide::Empty]),
         };
         sides[binding.half_edge.side.index()].push(binding.start_vertex_id);
     }
     let mut pairs = BTreeMap::new();
     for (curve_id, sides) in by_curve {
         if let (Some(first), Some(second)) = (sides[0].sole(), sides[1].sole()) {
-            ctx.charge_collection_items(1, "creo start-vertex pair nodes")?;
-            pairs.insert(curve_id, [*first, *second]);
+            ctx.insert_btree_map(
+                &mut pairs,
+                curve_id,
+                [*first, *second],
+                "creo start-vertex pair nodes",
+            )?;
         }
     }
     Ok(pairs)
@@ -296,15 +302,12 @@ pub(crate) fn vertex_incident_faces(
 ) -> Result<BTreeMap<NonZeroU32, BTreeSet<u32>>, CodecError> {
     let mut by_id = BTreeMap::new();
     for edge in edges {
-        match by_id.entry(edge.id) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(edge.face_id);
-            }
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo incident-face half-edge lookup nodes")?;
-                entry.insert(edge.face_id);
-            }
-        }
+        ctx.insert_btree_map(
+            &mut by_id,
+            edge.id,
+            edge.face_id,
+            "creo incident-face half-edge lookup nodes",
+        )?;
     }
     let mut by_vertex = BTreeMap::new();
     for vertex in vertices {
@@ -318,22 +321,16 @@ pub(crate) fn vertex_incident_faces(
                 },
             ] {
                 if let Some(face) = by_id.get(&side).copied().flatten().map(NonZeroU32::get) {
-                    if !faces.contains(&face) {
-                        ctx.charge_collection_items(1, "creo incident face nodes")?;
-                        faces.insert(face);
-                    }
+                    ctx.insert_btree_set(&mut faces, face, "creo incident face nodes")?;
                 }
             }
         }
-        match by_vertex.entry(vertex.id) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(faces);
-            }
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo incident-face vertex nodes")?;
-                entry.insert(faces);
-            }
-        }
+        ctx.insert_btree_map(
+            &mut by_vertex,
+            vertex.id,
+            faces,
+            "creo incident-face vertex nodes",
+        )?;
     }
     Ok(by_vertex)
 }
@@ -347,12 +344,14 @@ pub(crate) fn edge_vertex_pairs(
 ) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
     let mut by_curve = BTreeMap::<u32, [SingleSide<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
+        ctx.admit_btree_entry(
+            &by_curve,
+            &binding.half_edge.curve_id,
+            "creo edge-vertex pair group nodes",
+        )?;
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo edge-vertex pair group nodes")?;
-                entry.insert([SingleSide::Empty, SingleSide::Empty])
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([SingleSide::Empty, SingleSide::Empty]),
         };
         sides[binding.half_edge.side.index()].push(binding);
     }
@@ -371,8 +370,12 @@ pub(crate) fn edge_vertex_pairs(
         {
             continue;
         }
-        ctx.charge_collection_items(1, "creo edge-vertex pair nodes")?;
-        pairs.insert(curve_id, [forward.start_vertex_id, reverse.start_vertex_id]);
+        ctx.insert_btree_map(
+            &mut pairs,
+            curve_id,
+            [forward.start_vertex_id, reverse.start_vertex_id],
+            "creo edge-vertex pair nodes",
+        )?;
     }
     Ok(pairs)
 }
@@ -407,25 +410,20 @@ pub(crate) fn vertex_orbits(
 ) -> Result<VertexOrbits, CodecError> {
     let mut by_id = BTreeMap::new();
     for edge in edges {
-        match by_id.entry(edge.id) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(edge);
-            }
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo vertex-orbit half-edge lookup nodes")?;
-                entry.insert(edge);
-            }
-        }
+        ctx.insert_btree_map(
+            &mut by_id,
+            edge.id,
+            edge,
+            "creo vertex-orbit half-edge lookup nodes",
+        )?;
     }
     let mut predecessors = BTreeMap::<HalfEdgeId, Vec<HalfEdgeId>>::new();
     for edge in edges {
         if let Some(next) = edge.next {
+            ctx.admit_btree_entry(&predecessors, &next, "creo predecessor group nodes")?;
             let previous = match predecessors.entry(next) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo predecessor group nodes")?;
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             ctx.reserve_vec(previous, 1, "creo predecessor group members")?;
             previous.push(edge.id);
@@ -448,15 +446,9 @@ pub(crate) fn vertex_orbits(
             continue;
         }
         let adjacent = adjacency_for(ctx, &mut vertex_adjacency, half_edge)?;
-        if !adjacent.contains(&twin_previous) {
-            ctx.charge_collection_items(1, "creo vertex adjacency links")?;
-            adjacent.insert(twin_previous);
-        }
+        ctx.insert_btree_set(adjacent, twin_previous, "creo vertex adjacency links")?;
         let adjacent = adjacency_for(ctx, &mut vertex_adjacency, twin_previous)?;
-        if !adjacent.contains(&half_edge) {
-            ctx.charge_collection_items(1, "creo vertex adjacency links")?;
-            adjacent.insert(half_edge);
-        }
+        ctx.insert_btree_set(adjacent, half_edge, "creo vertex adjacency links")?;
     }
     let mut visited = BTreeSet::new();
     let mut vertices = Vec::new();
@@ -473,10 +465,8 @@ pub(crate) fn vertex_orbits(
             if visited.contains(&half_edge) {
                 continue;
             }
-            ctx.charge_collection_items(1, "creo visited vertex-orbit edges")?;
-            visited.insert(half_edge);
-            ctx.charge_collection_items(1, "creo vertex orbit member nodes")?;
-            orbit.insert(half_edge);
+            ctx.insert_btree_set(&mut visited, half_edge, "creo visited vertex-orbit edges")?;
+            ctx.insert_btree_set(&mut orbit, half_edge, "creo vertex orbit member nodes")?;
             for next in vertex_adjacency
                 .get(&half_edge)
                 .into_iter()
@@ -507,15 +497,12 @@ pub(crate) fn vertex_orbits(
     let mut start_vertex = BTreeMap::new();
     for vertex in &vertices {
         for half_edge in &vertex.half_edges {
-            match start_vertex.entry(*half_edge) {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    entry.insert(vertex.id);
-                }
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo start-vertex lookup nodes")?;
-                    entry.insert(vertex.id);
-                }
-            }
+            ctx.insert_btree_map(
+                &mut start_vertex,
+                *half_edge,
+                vertex.id,
+                "creo start-vertex lookup nodes",
+            )?;
         }
     }
     let mut incidence = Vec::new();
@@ -541,12 +528,10 @@ fn adjacency_for<'a>(
     adjacency: &'a mut BTreeMap<HalfEdgeId, BTreeSet<HalfEdgeId>>,
     id: HalfEdgeId,
 ) -> Result<&'a mut BTreeSet<HalfEdgeId>, CodecError> {
+    ctx.admit_btree_entry(adjacency, &id, "creo vertex adjacency nodes")?;
     Ok(match adjacency.entry(id) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, "creo vertex adjacency nodes")?;
-            entry.insert(BTreeSet::new())
-        }
+        std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
     })
 }
 
@@ -566,29 +551,20 @@ pub(crate) fn face_components(
         for face in [left, right].into_iter().flatten().map(NonZeroU32::get) {
             face_set(ctx, &mut adjacency, face, "creo face adjacency nodes")?;
             let curves = face_set(ctx, &mut face_curves, face, "creo face curve group nodes")?;
-            if !curves.contains(&row.id) {
-                ctx.charge_collection_items(1, "creo face curve member nodes")?;
-                curves.insert(row.id);
-            }
+            ctx.insert_btree_set(curves, row.id, "creo face curve member nodes")?;
         }
         if let (Some(left), Some(right)) = (left, right) {
             if left != right {
                 let neighbors =
                     face_set(ctx, &mut adjacency, left.get(), "creo face adjacency nodes")?;
-                if !neighbors.contains(&right.get()) {
-                    ctx.charge_collection_items(1, "creo face adjacency links")?;
-                    neighbors.insert(right.get());
-                }
+                ctx.insert_btree_set(neighbors, right.get(), "creo face adjacency links")?;
                 let neighbors = face_set(
                     ctx,
                     &mut adjacency,
                     right.get(),
                     "creo face adjacency nodes",
                 )?;
-                if !neighbors.contains(&left.get()) {
-                    ctx.charge_collection_items(1, "creo face adjacency links")?;
-                    neighbors.insert(left.get());
-                }
+                ctx.insert_btree_set(neighbors, left.get(), "creo face adjacency links")?;
             }
         }
     }
@@ -598,26 +574,20 @@ pub(crate) fn face_components(
         if seen.contains(&start) {
             continue;
         }
-        ctx.charge_collection_items(1, "creo seen component faces")?;
-        seen.insert(start);
+        ctx.insert_btree_set(&mut seen, start, "creo seen component faces")?;
         let mut pending = Vec::new();
         ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
         pending.push(start);
         let mut faces = BTreeSet::new();
         let mut curves = BTreeSet::new();
         while let Some(face) = pending.pop() {
-            ctx.charge_collection_items(1, "creo component face nodes")?;
-            faces.insert(face);
+            ctx.insert_btree_set(&mut faces, face, "creo component face nodes")?;
             for curve in face_curves.get(&face).into_iter().flatten().copied() {
-                if !curves.contains(&curve) {
-                    ctx.charge_collection_items(1, "creo component curve nodes")?;
-                    curves.insert(curve);
-                }
+                ctx.insert_btree_set(&mut curves, curve, "creo component curve nodes")?;
             }
             for neighbour in adjacency.get(&face).into_iter().flatten().copied() {
                 if !seen.contains(&neighbour) {
-                    ctx.charge_collection_items(1, "creo seen component faces")?;
-                    seen.insert(neighbour);
+                    ctx.insert_btree_set(&mut seen, neighbour, "creo seen component faces")?;
                     ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
                     pending.push(neighbour);
                 }
@@ -643,12 +613,10 @@ fn face_set<'a>(
     id: u32,
     operation: &'static str,
 ) -> Result<&'a mut BTreeSet<u32>, CodecError> {
+    ctx.admit_btree_entry(groups, &id, operation)?;
     Ok(match groups.entry(id) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, operation)?;
-            entry.insert(BTreeSet::new())
-        }
+        std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
     })
 }
 
@@ -683,12 +651,14 @@ pub(crate) fn build(
     let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {
         for side in [Side::Zero, Side::One] {
+            ctx.admit_btree_entry(
+                &face_sides,
+                &row.faces[side.index()],
+                "creo face-side group nodes",
+            )?;
             let sides = match face_sides.entry(row.faces[side.index()]) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo face-side group nodes")?;
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             ctx.reserve_vec(sides, 1, "creo face-side group members")?;
             sides.push(HalfEdgeId {
@@ -777,10 +747,11 @@ pub(crate) fn build(
                             cadmpeg_core::decode::u64_from_index(consumed.len()),
                             "creo topology consumed membership",
                         )?;
-                        if !consumed.contains(&id) {
-                            ctx.charge_collection_items(1, "creo consumed topology half-edges")?;
-                            consumed.insert(id);
-                        }
+                        ctx.insert_btree_set(
+                            &mut consumed,
+                            id,
+                            "creo consumed topology half-edges",
+                        )?;
                     }
                     ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
                     let closed = Loop::new(ctx, edge.face_id, std::mem::take(&mut ring), &edges)?
@@ -791,8 +762,7 @@ pub(crate) fn build(
                 }
                 break;
             }
-            ctx.charge_collection_items(1, "creo topology ring visit nodes")?;
-            seen.insert(current);
+            ctx.insert_btree_set(&mut seen, current, "creo topology ring visit nodes")?;
             ctx.reserve_vec(&mut ring, 1, "creo topology ring half-edges")?;
             ring.push(current);
             ctx.charge_work(

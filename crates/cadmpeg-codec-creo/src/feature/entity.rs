@@ -370,10 +370,7 @@ pub(super) fn generated_class_200_source_entity_ids(
         .iter()
         .filter_map(FeatureEntityTableEntry::source_entity_id)
     {
-        if !ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo generated source entity ID nodes")?;
-            ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut ids, id, "creo generated source entity ID nodes")?;
     }
     Ok(ids)
 }
@@ -598,11 +595,12 @@ pub(crate) fn entity_tables(
         };
         let mut table_surface_ids = BTreeSet::new();
         for entry in &entries {
-            if surface_ids.contains(&entry.entity_id)
-                && !table_surface_ids.contains(&entry.entity_id)
-            {
-                ctx.charge_collection_items(1, "creo feature table surface ids")?;
-                table_surface_ids.insert(entry.entity_id);
+            if surface_ids.contains(&entry.entity_id) {
+                ctx.insert_btree_set(
+                    &mut table_surface_ids,
+                    entry.entity_id,
+                    "creo feature table surface ids",
+                )?;
             }
         }
         ctx.reserve_vec(&mut tables, 1, "creo feature entity tables")?;

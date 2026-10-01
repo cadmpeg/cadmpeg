@@ -297,10 +297,7 @@ impl FeatureVariableTable {
             .iter()
             .filter(|row| matches!(row.variable_type, VariableType::U | VariableType::V))
         {
-            if !point_ids.contains(&row.key) {
-                ctx.charge_collection_items(1, "creo reconciled point ID nodes")?;
-                point_ids.insert(row.key);
-            }
+            ctx.insert_btree_set(&mut point_ids, row.key, "creo reconciled point ID nodes")?;
         }
         let mut points = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
@@ -328,11 +325,9 @@ impl FeatureVariableTable {
                 }
             }
             if conflict {
-                ctx.charge_collection_items(1, "creo ambiguous point nodes")?;
-                ambiguous.insert(point_id);
+                ctx.insert_btree_set(&mut ambiguous, point_id, "creo ambiguous point nodes")?;
             } else {
-                ctx.charge_collection_items(1, "creo reconciled point nodes")?;
-                points.insert(point_id, point);
+                ctx.insert_btree_map(&mut points, point_id, point, "creo reconciled point nodes")?;
             }
         }
         Ok(ReconciledPoints { points, ambiguous })
@@ -2704,10 +2699,7 @@ fn trim_entity_table(
             (external_id, start_vertex, end_vertex)
         {
             if external_id != 0 && payload.get(p) == Some(&0) {
-                if !seen.contains(&external_id) {
-                    ctx.charge_collection_items(1, "creo trim entity ID nodes")?;
-                    seen.insert(external_id);
-                }
+                ctx.insert_btree_set(&mut seen, external_id, "creo trim entity ID nodes")?;
                 ctx.reserve_vec(&mut rows, 1, "creo trim entity rows")?;
                 rows.push(FeatureTrimEntity {
                     external_id,
@@ -2940,19 +2932,15 @@ fn trim_bucket_entry_count(
                     if let Ok((class, row)) = psb::reference_id(payload, offset + 1) {
                         if class == classes.entry
                             && trim_vertex_entry_bounds(payload, row, end).is_some()
-                            && !rows.contains(&row)
                         {
-                            ctx.charge_collection_items(1, "creo trim bucket vertex nodes")?;
-                            rows.insert(row);
+                            ctx.insert_btree_set(&mut rows, row, "creo trim bucket vertex nodes")?;
                         }
                     }
                 }
                 if preceding_byte(payload, offset) == Some(0xe3)
                     && trim_vertex_entry_bounds(payload, offset, end).is_some()
-                    && !rows.contains(&offset)
                 {
-                    ctx.charge_collection_items(1, "creo trim bucket vertex nodes")?;
-                    rows.insert(offset);
+                    ctx.insert_btree_set(&mut rows, offset, "creo trim bucket vertex nodes")?;
                 }
             }
             let prototype = usize::from(
@@ -3273,10 +3261,7 @@ fn positional_trim_entity_table(
             (external_id, start_vertex, end_vertex)
         {
             if external_id != 0 && payload.get(p) == Some(&0) {
-                if !seen.contains(&external_id) {
-                    ctx.charge_collection_items(1, "creo trim entity ID nodes")?;
-                    seen.insert(external_id);
-                }
+                ctx.insert_btree_set(&mut seen, external_id, "creo trim entity ID nodes")?;
                 ctx.reserve_vec(&mut rows, 1, "creo trim entity rows")?;
                 rows.push(FeatureTrimEntity {
                     external_id,
@@ -3831,8 +3816,11 @@ fn entity_intersection(
         if unique_entities.contains(entity_id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo trim intersection entity nodes")?;
-        unique_entities.insert(*entity_id);
+        ctx.insert_btree_set(
+            &mut unique_entities,
+            *entity_id,
+            "creo trim intersection entity nodes",
+        )?;
     }
     let crate::feature::definitions::ReconciledPoints {
         points,
@@ -4017,13 +4005,11 @@ fn order_table(
         if external_ids.contains(&external_id) {
             break;
         }
-        ctx.charge_collection_items(1, "creo order external ID nodes")?;
-        external_ids.insert(external_id);
+        ctx.insert_btree_set(&mut external_ids, external_id, "creo order external ID nodes")?;
         if internal_ids.contains(&internal_id) {
             break;
         }
-        ctx.charge_collection_items(1, "creo order internal ID nodes")?;
-        internal_ids.insert(internal_id);
+        ctx.insert_btree_set(&mut internal_ids, internal_id, "creo order internal ID nodes")?;
         ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
         rows.push(FeatureOrderRow {
             external_id,
@@ -4111,13 +4097,11 @@ fn positional_order_table(
         if external_ids.contains(&external_id) {
             break;
         }
-        ctx.charge_collection_items(1, "creo order external ID nodes")?;
-        external_ids.insert(external_id);
+        ctx.insert_btree_set(&mut external_ids, external_id, "creo order external ID nodes")?;
         if internal_ids.contains(&internal_id) {
             break;
         }
-        ctx.charge_collection_items(1, "creo order internal ID nodes")?;
-        internal_ids.insert(internal_id);
+        ctx.insert_btree_set(&mut internal_ids, internal_id, "creo order internal ID nodes")?;
         let row = FeatureOrderRow {
             external_id,
             internal_id,
@@ -6278,10 +6262,12 @@ fn saved_positional_generated_entities(
         let Some(segment) = segments.unique_segment(row.external_id) else {
             continue;
         };
-        if !generated_segments.contains_key(&row.internal_id) {
-            ctx.charge_collection_items(1, "creo saved generated segment nodes")?;
-        }
-        generated_segments.insert(row.internal_id, segment);
+        ctx.insert_btree_map(
+            &mut generated_segments,
+            row.internal_id,
+            segment,
+            "creo saved generated segment nodes",
+        )?;
     }
     let mut starts = Vec::new();
     for separator in start..end {
@@ -7457,10 +7443,11 @@ pub(crate) fn definitions(
     let mut starts = definition_starts(ctx, payload)?;
     let mut retained_offsets = BTreeSet::new();
     for DefinitionStart { offset, .. } in &starts {
-        if !retained_offsets.contains(offset) {
-            ctx.charge_collection_items(1, "creo retained definition offset nodes")?;
-            retained_offsets.insert(*offset);
-        }
+        ctx.insert_btree_set(
+            &mut retained_offsets,
+            *offset,
+            "creo retained definition offset nodes",
+        )?;
     }
     let replay_markers = s2d_replay_starts(ctx, payload)?;
     let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
@@ -7567,10 +7554,7 @@ fn claimed_s2d_replay_markers(
         });
     let mut markers = BTreeSet::new();
     for marker in candidates {
-        if !markers.contains(&marker) {
-            ctx.charge_collection_items(1, "creo claimed S2D marker nodes")?;
-            markers.insert(marker);
-        }
+        ctx.insert_btree_set(&mut markers, marker, "creo claimed S2D marker nodes")?;
     }
     Ok(markers)
 }
@@ -7587,10 +7571,7 @@ pub(crate) fn positional_replay_definitions(
     let mut pending_offsets = BTreeSet::new();
     for offset in replay_markers {
         if !claimed_markers.contains(&offset) {
-            if !pending_offsets.contains(&offset) {
-                ctx.charge_collection_items(1, "creo pending S2D marker nodes")?;
-                pending_offsets.insert(offset);
-            }
+            ctx.insert_btree_set(&mut pending_offsets, offset, "creo pending S2D marker nodes")?;
             let id = inherited_definition_id(&starts, offset);
             ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
             starts.push(DefinitionStart {
@@ -7712,10 +7693,7 @@ pub(crate) fn bind_trimmed_definition_owners(
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
     {
-        if !claimed_owner_ids.contains(&owner) {
-            ctx.charge_collection_items(1, "creo trimmed claimed owner nodes")?;
-            claimed_owner_ids.insert(owner);
-        }
+        ctx.insert_btree_set(&mut claimed_owner_ids, owner, "creo trimmed claimed owner nodes")?;
     }
     let mut candidates = Vec::new();
     for definition in &definitions {
@@ -7730,10 +7708,8 @@ pub(crate) fn bind_trimmed_definition_owners(
                 let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
                 if source_ids.len() == external_ids.len()
                     && source_ids.iter().copied().eq(external_ids.iter().copied())
-                    && !owners.contains(&owner)
                 {
-                    ctx.charge_collection_items(1, "creo trimmed owner candidate nodes")?;
-                    owners.insert(owner);
+                    ctx.insert_btree_set(&mut owners, owner, "creo trimmed owner candidate nodes")?;
                 }
             }
         }
@@ -7742,9 +7718,7 @@ pub(crate) fn bind_trimmed_definition_owners(
     }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        if !owner_candidate_counts.contains_key(owner) {
-            ctx.charge_collection_items(1, "creo trimmed owner count nodes")?;
-        }
+        ctx.admit_btree_entry(&owner_candidate_counts, owner, "creo trimmed owner count nodes")?;
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
     for (definition, owners) in definitions.iter_mut().zip(candidates) {
@@ -7782,10 +7756,11 @@ pub(crate) fn bind_replay_definition_owners(
             let mut order_external_ids = BTreeSet::new();
             if let Some(table) = &definition.order_table {
                 for row in &table.rows {
-                    if !order_external_ids.contains(&row.external_id) {
-                        ctx.charge_collection_items(1, "creo replay order entity ID nodes")?;
-                        order_external_ids.insert(row.external_id);
-                    }
+                    ctx.insert_btree_set(
+                        &mut order_external_ids,
+                        row.external_id,
+                        "creo replay order entity ID nodes",
+                    )?;
                 }
             }
             if !trimmed_external_ids.is_empty() || !order_external_ids.is_empty() {
@@ -7801,10 +7776,8 @@ pub(crate) fn bind_replay_definition_owners(
                             .iter()
                             .copied()
                             .eq(trimmed_external_ids.iter().copied())
-                        && !owners.contains(&owner)
                     {
-                        ctx.charge_collection_items(1, "creo replay exact owner nodes")?;
-                        owners.insert(owner);
+                        ctx.insert_btree_set(&mut owners, owner, "creo replay exact owner nodes")?;
                     }
                 }
                 if owners.is_empty() {
@@ -7816,10 +7789,12 @@ pub(crate) fn bind_replay_definition_owners(
                         let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
                         if !source_ids.is_empty()
                             && source_ids.is_subset(&order_external_ids)
-                            && !owners.contains(&owner)
                         {
-                            ctx.charge_collection_items(1, "creo replay subset owner nodes")?;
-                            owners.insert(owner);
+                            ctx.insert_btree_set(
+                                &mut owners,
+                                owner,
+                                "creo replay subset owner nodes",
+                            )?;
                         }
                     }
                 }
@@ -7830,9 +7805,7 @@ pub(crate) fn bind_replay_definition_owners(
     }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        if !owner_candidate_counts.contains_key(owner) {
-            ctx.charge_collection_items(1, "creo replay owner count nodes")?;
-        }
+        ctx.admit_btree_entry(&owner_candidate_counts, owner, "creo replay owner count nodes")?;
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
     for (definition, owners) in definitions.iter_mut().zip(candidates) {
@@ -7881,19 +7854,14 @@ pub(crate) fn bind_section_owners(
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
     {
-        if !claimed_owner_ids.contains(&owner) {
-            ctx.charge_collection_items(1, "creo section claimed owner nodes")?;
-            claimed_owner_ids.insert(owner);
-        }
+        ctx.insert_btree_set(&mut claimed_owner_ids, owner, "creo section claimed owner nodes")?;
     }
     let mut definitions_per_plane = BTreeMap::new();
     for plane_id in definitions.iter().filter_map(|definition| {
         (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
-        if !definitions_per_plane.contains_key(&plane_id) {
-            ctx.charge_collection_items(1, "creo section plane count nodes")?;
-        }
+        ctx.admit_btree_entry(&definitions_per_plane, &plane_id, "creo section plane count nodes")?;
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
     let mut ordered_operations =

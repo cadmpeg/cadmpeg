@@ -1129,9 +1129,8 @@ fn collect_identity_indices<'a>(
             *existing = index;
             continue;
         }
-        ctx.charge_collection_items(1, operation)?;
         let copy = ctx.copy_retained_text(identity, operation)?;
-        result.insert(copy, index);
+        ctx.insert_btree_map(&mut result, copy, index, operation)?;
     }
     Ok(result)
 }

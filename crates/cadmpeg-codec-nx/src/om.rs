@@ -3367,13 +3367,12 @@ fn operation_state_group_table_before_counter_map(
         });
         if replace {
             if !best_by_end.contains_key(end) {
-                ctx.charge_collection_items(1, "nx operation-state group paths")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, GroupPath)>()),
                     "nx operation-state group paths",
                 )?;
             }
-            best_by_end.insert(*end, path);
+            ctx.insert_btree_map(&mut best_by_end, *end, path, "nx operation-state group paths")?;
         }
     }
 
@@ -4684,11 +4683,10 @@ pub(crate) fn indexed_sections<'a>(
         if seen_record_starts.contains(&table_end) {
             continue;
         }
-        ctx.charge_collection_items(1, "nx OM seen record starts")?;
         temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             usize,
         >()))?;
-        seen_record_starts.insert(table_end);
+        ctx.insert_btree_set(&mut seen_record_starts, table_end, "nx OM seen record starts")?;
         ctx.reserve_scoped_vec(
             &mut temporary,
             &mut candidates,
@@ -4775,11 +4773,10 @@ pub(crate) fn indexed_sections<'a>(
         if seen_record_starts.contains(&second) {
             continue;
         }
-        ctx.charge_collection_items(1, "nx OM seen record starts")?;
         temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             usize,
         >()))?;
-        seen_record_starts.insert(second);
+        ctx.insert_btree_set(&mut seen_record_starts, second, "nx OM seen record starts")?;
         ctx.reserve_scoped_vec(
             &mut temporary,
             &mut candidates,
@@ -4887,8 +4884,7 @@ pub(crate) fn offset_store_control_class_ordinals(
         if identities.contains(&identity) {
             break;
         }
-        ctx.charge_collection_items(1, "nx offset-store class identities")?;
-        identities.insert(identity);
+        ctx.insert_btree_set(&mut identities, identity, "nx offset-store class identities")?;
         maximum_identity = maximum_identity.max(identity);
         if maximum_identity < *minimum && boundary.replace(index + 1).is_some() {
             return Ok(None);

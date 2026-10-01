@@ -52,15 +52,16 @@ pub(crate) fn transfer(
             for property in &owned {
                 let name =
                     ctx.copy_retained_text(&property.name, "fcstd annotation property name")?;
-                ctx.charge_collection_items(1, "fcstd annotation property map")?;
                 if property.links().is_empty() {
-                    parameters.insert(
+                    ctx.insert_btree_map(
+                        &mut parameters,
                         name,
                         ctx.copy_retained_text(
                             property.xml.text(),
                             "fcstd annotation parameter XML",
                         )?,
-                    );
+                        "fcstd annotation property map",
+                    )?;
                 } else {
                     let mut links =
                         ctx.collection_vec(property.links().len(), "fcstd annotation links")?;
@@ -71,7 +72,12 @@ pub(crate) fn transfer(
                                 .transpose()?,
                         );
                     }
-                    references.insert(name, links);
+                    ctx.insert_btree_map(
+                        &mut references,
+                        name,
+                        links,
+                        "fcstd annotation property map",
+                    )?;
                 }
             }
             let mut text = Vec::new();
@@ -178,11 +184,12 @@ pub(crate) fn transfer_neutral(
             for link in targets {
                 selections.push(target(link)?);
             }
-            ctx.charge_collection_items(1, "fcstd annotation reference roles")?;
-            references.insert(
+            ctx.insert_btree_map(
+                &mut references,
                 ctx.copy_retained_text(role, "fcstd annotation reference role")?,
                 selections,
-            );
+                "fcstd annotation reference roles",
+            )?;
         }
         ctx.reserve_vec(
             &mut model.semantic_annotations,
@@ -191,11 +198,12 @@ pub(crate) fn transfer_neutral(
         )?;
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
-            ctx.charge_collection_items(1, "fcstd annotation neutral parameters")?;
-            parameters.insert(
+            ctx.insert_btree_map(
+                &mut parameters,
                 ctx.copy_retained_text(name, "fcstd annotation parameter name")?,
                 ctx.copy_retained_text(value, "fcstd annotation parameter value")?,
-            );
+                "fcstd annotation neutral parameters",
+            )?;
         }
         let mut assets =
             ctx.collection_vec(record.side_entries.len(), "fcstd annotation assets")?;
@@ -614,11 +622,12 @@ fn direct_value_attributes(
     validate_leaf_value(ctx, value, property, allowed_attributes)?;
     let mut attributes = BTreeMap::new();
     for attribute in value.attributes() {
-        ctx.charge_collection_items(1, "fcstd annotation value attributes")?;
-        attributes.insert(
+        ctx.insert_btree_map(
+            &mut attributes,
             ctx.copy_retained_text(attribute.name(), "fcstd annotation attribute name")?,
             ctx.copy_retained_text(attribute.value(), "fcstd annotation attribute value")?,
-        );
+            "fcstd annotation value attributes",
+        )?;
     }
     Ok(attributes)
 }

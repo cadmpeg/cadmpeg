@@ -2303,10 +2303,12 @@ pub(crate) fn parse_payloads(
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
     let mut entries_by_name = BTreeMap::new();
     for entry in entries {
-        if !entries_by_name.contains_key(entry.name()) {
-            ctx.charge_collection_items(1, "FreeCAD shape entry index")?;
-        }
-        entries_by_name.insert(entry.name(), entry);
+        ctx.insert_btree_map(
+            &mut entries_by_name,
+            entry.name(),
+            entry,
+            "FreeCAD shape entry index",
+        )?;
     }
     let mut payloads = Vec::new();
     for property in properties
@@ -2469,8 +2471,12 @@ fn increment(
     if let Some(count) = counts.get_mut(family) {
         *count += 1;
     } else {
-        ctx.charge_collection_items(1, "FreeCAD carrier census families")?;
-        counts.insert(family.to_owned(), 1);
+        ctx.insert_btree_map(
+            counts,
+            family.to_owned(),
+            1,
+            "FreeCAD carrier census families",
+        )?;
     }
     Ok(())
 }

@@ -778,10 +778,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         .iter()
         .filter_map(|row| trim_segment_id(definition, row))
     {
-        if !trimmed_external_ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo missing-line trimmed ID nodes")?;
-            trimmed_external_ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut trimmed_external_ids, id, "creo missing-line trimmed ID nodes")?;
     }
     let Some(missing) =
         crate::decode::uniqueness::exactly_one(segments.rows.ordinary().filter(|candidate| {
@@ -813,17 +810,19 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     }
     let mut ordered_ids = BTreeSet::new();
     for row in &order.rows {
-        if !ordered_ids.contains(&row.internal_id) {
-            ctx.charge_collection_items(1, "creo missing-line ordered ID nodes")?;
-            ordered_ids.insert(row.internal_id);
-        }
+        ctx.insert_btree_set(
+            &mut ordered_ids,
+            row.internal_id,
+            "creo missing-line ordered ID nodes",
+        )?;
     }
     let mut geometry_ids = BTreeSet::new();
     for (internal_id, _, _) in &geometries {
-        if !geometry_ids.contains(internal_id) {
-            ctx.charge_collection_items(1, "creo missing-line geometry ID nodes")?;
-            geometry_ids.insert(*internal_id);
-        }
+        ctx.insert_btree_set(
+            &mut geometry_ids,
+            *internal_id,
+            "creo missing-line geometry ID nodes",
+        )?;
     }
     if ordered_ids.len() != order.rows.len()
         || geometry_ids.len() != geometries.len()
@@ -962,8 +961,7 @@ pub(in crate::decode) fn saved_profile_chains(
     }
     let mut remaining = BTreeSet::new();
     for index in 0..rows.len() {
-        ctx.charge_collection_items(1, "creo saved profile remaining nodes")?;
-        remaining.insert(index);
+        ctx.insert_btree_set(&mut remaining, index, "creo saved profile remaining nodes")?;
     }
     while let Some(seed) = remaining
         .iter()
@@ -982,8 +980,7 @@ pub(in crate::decode) fn saved_profile_chains(
             if used.contains(&row) {
                 break;
             }
-            ctx.charge_collection_items(1, "creo saved profile visited nodes")?;
-            used.insert(row);
+            ctx.insert_btree_set(&mut used, row, "creo saved profile visited nodes")?;
             let Some(entity) = sketch_entity_id_admitted(ctx, sketch, rows[row].0)? else {
                 continue;
             };

@@ -87,10 +87,7 @@ fn insert_generating_segment_id(
     ids: &mut BTreeSet<u32>,
     id: u32,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if !ids.contains(&id) {
-        ctx.charge_collection_items(1, "creo revolution generating segment IDs")?;
-        ids.insert(id);
-    }
+    ctx.insert_btree_set(ids, id, "creo revolution generating segment IDs")?;
     Ok(())
 }
 

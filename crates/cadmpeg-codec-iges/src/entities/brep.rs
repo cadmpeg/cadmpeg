@@ -155,9 +155,11 @@ fn topology_vertex(
         1,
         "iges B-rep topology vertices",
     )?;
-    if !vertex_ids.contains_key(&(list, index)) {
-        ctx.charge_collection_items(1, "iges B-rep topology vertex index")?;
-    }
+    ctx.admit_btree_entry(
+        vertex_ids,
+        &(list, index),
+        "iges B-rep topology vertex index",
+    )?;
     let point_id = crate::ids::point_admitted(&stem.child(list).slot(index + 1), ctx)?;
     let point = Point::new(
         point_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
@@ -1338,12 +1340,11 @@ pub(super) fn project(
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
                                     if let Some(curve) = edge.curve() {
-                                        if !positions.contains_key(curve.as_str()) {
-                                            ctx.charge_collection_items(
-                                                1,
-                                                "iges B-rep source edge index nodes",
-                                            )?;
-                                        }
+                                        ctx.admit_btree_entry(
+                                            &positions,
+                                            &curve.as_str(),
+                                            "iges B-rep source edge index nodes",
+                                        )?;
                                         let indexed = positions.entry(curve.as_str()).or_default();
                                         ctx.reserve_vec(
                                             indexed,
@@ -1481,9 +1482,11 @@ pub(super) fn project(
                         let coedge_id = coedge_ids[coedge_position]
                             .try_clone_for_decode(ctx, "iges B-rep identity copy")?;
                         let radial_key = (shell_sequence, edge_key.0, edge_key.1);
-                        if !radial.contains_key(&radial_key) {
-                            ctx.charge_collection_items(1, "iges B-rep radial index nodes")?;
-                        }
+                        ctx.admit_btree_entry(
+                            &radial,
+                            &radial_key,
+                            "iges B-rep radial index nodes",
+                        )?;
                         let ring = radial.entry(radial_key).or_default();
                         ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids")?;
                         ring.push(coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?);

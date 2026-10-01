@@ -47,11 +47,15 @@ fn unique_model_surface_geometries(
         if geometries.contains_key(&surface_id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo counterbore model surface nodes")?;
         let geometry = surface
             .geometry
             .try_clone_for_decode(ctx, "creo counterbore model geometry")?;
-        geometries.insert(surface_id, geometry);
+        ctx.insert_btree_map(
+            &mut geometries,
+            surface_id,
+            geometry,
+            "creo counterbore model surface nodes",
+        )?;
     }
     Ok(Some(geometries))
 }
@@ -71,10 +75,11 @@ pub(in crate::decode) fn counterbore_dimensions(
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
-        if !generated_cylinders.contains(&surface_id) {
-            ctx.charge_collection_items(1, "creo counterbore generated cylinder nodes")?;
-            generated_cylinders.insert(surface_id);
-        }
+        ctx.insert_btree_set(
+            &mut generated_cylinders,
+            surface_id,
+            "creo counterbore generated cylinder nodes",
+        )?;
     }
     let Some(existing_geometries) = unique_model_surface_geometries(ctx, ir)? else {
         return Ok(None);
@@ -439,9 +444,11 @@ pub(in crate::decode) fn counterbore_cylinder_sources(
             continue;
         };
         if row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder {
-            if !cylinders_by_source.contains_key(&source_id) {
-                ctx.charge_collection_items(1, "creo counterbore source nodes")?;
-            }
+            ctx.admit_btree_entry(
+                &cylinders_by_source,
+                &source_id,
+                "creo counterbore source nodes",
+            )?;
             let ids = cylinders_by_source.entry(source_id).or_default();
             ctx.reserve_vec(ids, 1, "creo counterbore source cylinder IDs")?;
             ids.push(entry.entity_id);

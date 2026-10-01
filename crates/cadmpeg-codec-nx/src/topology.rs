@@ -696,8 +696,7 @@ pub(crate) fn intersection_data_curves(
         if seen.contains(&curve.xmt) {
             continue;
         }
-        ctx.charge_collection_items(1, "NX intersection identities")?;
-        seen.insert(curve.xmt);
+        ctx.insert_btree_set(&mut seen, curve.xmt, "NX intersection identities")?;
         ctx.reserve_retained_vec(&mut out, 1, "NX intersection data curves")?;
         out.push(curve);
     }
@@ -949,9 +948,11 @@ impl Graph {
             let Some(role) = ReferenceRole::for_kind(node.kind) else {
                 continue;
             };
-            if !candidates.contains_key(&(role, node.xmt)) {
-                ctx.charge_collection_items(1, "NX topology candidate identities")?;
-            }
+            ctx.admit_btree_entry(
+                &candidates,
+                &(role, node.xmt),
+                "NX topology candidate identities",
+            )?;
             candidates
                 .entry((role, node.xmt))
                 .and_modify(|candidate| *candidate = None)
@@ -964,10 +965,7 @@ impl Graph {
             .flat_map(Node::reference_targets)
             .filter(|(_, xmt)| *xmt > 1)
         {
-            if !required.contains(&target) {
-                ctx.charge_collection_items(1, "NX topology required targets")?;
-            }
-            required.insert(target);
+            ctx.insert_btree_set(&mut required, target, "NX topology required targets")?;
         }
         let mut changed = false;
         while let Some(target) = required.pop_first() {
@@ -983,10 +981,7 @@ impl Graph {
                 .into_iter()
                 .filter(|(_, xmt)| *xmt > 1)
             {
-                if !required.contains(&target) {
-                    ctx.charge_collection_items(1, "NX topology required targets")?;
-                }
-                required.insert(target);
+                ctx.insert_btree_set(&mut required, target, "NX topology required targets")?;
             }
             ctx.charge_collection_items(2, "NX topology admitted node indices")?;
             reservation.grow(u64_from_index(candidate.bytes.len()))?;
@@ -1013,9 +1008,7 @@ impl Graph {
         if changed {
             self.by_kind.clear();
             for &key in self.by_pos.values() {
-                if !self.by_kind.contains_key(&key.0) {
-                    ctx.charge_collection_items(1, "NX topology kind indices")?;
-                }
+                ctx.admit_btree_entry(&self.by_kind, &key.0, "NX topology kind indices")?;
                 let keys = self.by_kind.entry(key.0).or_default();
                 ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
                 keys.push(key);
@@ -1105,9 +1098,7 @@ impl Graph {
             graph.nodes.insert(key, node);
         }
         for &key in graph.by_pos.values() {
-            if !graph.by_kind.contains_key(&key.0) {
-                ctx.charge_collection_items(1, "NX topology kind indices")?;
-            }
+            ctx.admit_btree_entry(&graph.by_kind, &key.0, "NX topology kind indices")?;
             let keys = graph.by_kind.entry(key.0).or_default();
             ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
             keys.push(key);
@@ -1206,9 +1197,13 @@ impl Graph {
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
         let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
         for node in candidates {
+            ctx.admit_btree_entry(
+                &by_key,
+                &(node.kind, node.xmt),
+                "NX topology unique candidate keys",
+            )?;
             match by_key.entry((node.kind, node.xmt)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "NX topology unique candidate keys")?;
                     entry.insert(Some(node));
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -1529,10 +1524,11 @@ impl Graph {
                 }
                 for (_, ring) in rings {
                     for xmt in ring {
-                        if !reachable_fins.contains(&xmt) {
-                            ctx.charge_collection_items(1, "NX reachable FIN identities")?;
-                        }
-                        reachable_fins.insert(xmt);
+                        ctx.insert_btree_set(
+                            &mut reachable_fins,
+                            xmt,
+                            "NX reachable FIN identities",
+                        )?;
                     }
                 }
             }
@@ -1595,11 +1591,10 @@ impl Graph {
                 return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current }.into());
             }
             ctx.charge_work(1, "walk NX face loops")?;
-            ctx.charge_collection_items(1, "NX face loop identities")?;
             seen_reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<u32>(),
             ))?;
-            seen_loops.insert(current);
+            ctx.insert_btree_set(&mut seen_loops, current, "NX face loop identities")?;
             let fields = self
                 .get(NodeKind::Loop, current)
                 .and_then(Node::loop_fields)
@@ -1643,11 +1638,10 @@ impl Graph {
                 };
             }
             ctx.charge_work(1, "walk NX FIN ring")?;
-            ctx.charge_collection_items(1, "NX FIN ring identities")?;
             seen_reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<u32>(),
             ))?;
-            seen.insert(current);
+            ctx.insert_btree_set(&mut seen, current, "NX FIN ring identities")?;
             ctx.reserve_retained_vec(&mut ring, 1, "NX FIN ring entries")?;
             ring.push(current);
             let invalid_fin = FaceLoopFailure::InvalidFinRing {

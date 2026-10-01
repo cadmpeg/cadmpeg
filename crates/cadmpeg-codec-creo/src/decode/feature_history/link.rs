@@ -314,10 +314,17 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
         {
             return Ok(BTreeMap::new());
         }
-        ctx.charge_collection_items(1, "creo bound generated surface IDs")?;
-        bound_surfaces.insert(surface_id);
-        ctx.charge_collection_items(1, "creo ordered generated surface bindings")?;
-        bindings.insert(external_id, surface_id);
+        ctx.insert_btree_set(
+            &mut bound_surfaces,
+            surface_id,
+            "creo bound generated surface IDs",
+        )?;
+        ctx.insert_btree_map(
+            &mut bindings,
+            external_id,
+            surface_id,
+            "creo ordered generated surface bindings",
+        )?;
     }
     Ok(bindings)
 }
@@ -344,9 +351,12 @@ pub(in super::super) fn profile_segment_ids(
             crate::identity::matches_numbered_identity(scope, "", definition_id)
                 && crate::identity::matches_numbered_identity(external, "", segment.external_id)
         });
-        if matches && !ids.contains(&segment.external_id) {
-            ctx.charge_collection_items(1, "creo profile segment ID nodes")?;
-            ids.insert(segment.external_id);
+        if matches {
+            ctx.insert_btree_set(
+                &mut ids,
+                segment.external_id,
+                "creo profile segment ID nodes",
+            )?;
         }
     }
     Ok(ids)

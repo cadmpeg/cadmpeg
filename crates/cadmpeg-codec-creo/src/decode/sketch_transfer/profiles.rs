@@ -43,9 +43,7 @@ pub(in super::super) fn resolved_profile_chains(
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, row) in rows.iter().enumerate() {
         for vertex in row.0.vertices {
-            if !incident.contains_key(&vertex) {
-                ctx.charge_collection_items(1, "creo trim profile incidence nodes")?;
-            }
+            ctx.admit_btree_entry(&incident, &vertex, "creo trim profile incidence nodes")?;
             let indices = incident.entry(vertex).or_default();
             ctx.reserve_vec(indices, 1, "creo trim profile incidence rows")?;
             indices.push(index);
@@ -53,8 +51,7 @@ pub(in super::super) fn resolved_profile_chains(
     }
     let mut remaining = BTreeSet::new();
     for index in 0..rows.len() {
-        ctx.charge_collection_items(1, "creo trim profile remaining nodes")?;
-        remaining.insert(index);
+        ctx.insert_btree_set(&mut remaining, index, "creo trim profile remaining nodes")?;
     }
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
@@ -64,9 +61,11 @@ pub(in super::super) fn resolved_profile_chains(
         while let Some(index) = frontier.pop() {
             for vertex in rows[index].0.vertices {
                 for adjacent in &incident[&vertex] {
-                    if !component.contains(adjacent) {
-                        ctx.charge_collection_items(1, "creo trim profile component nodes")?;
-                        component.insert(*adjacent);
+                    if ctx.insert_btree_set(
+                        &mut component,
+                        *adjacent,
+                        "creo trim profile component nodes",
+                    )? {
                         ctx.reserve_vec(&mut frontier, 1, "creo trim profile frontier")?;
                         frontier.push(*adjacent);
                     }
@@ -206,9 +205,7 @@ fn resolved_segment_profile_chains(
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, segment) in rows.iter().enumerate() {
         for point in segment.point_ids() {
-            if !incident.contains_key(&point) {
-                ctx.charge_collection_items(1, "creo segment profile incidence nodes")?;
-            }
+            ctx.admit_btree_entry(&incident, &point, "creo segment profile incidence nodes")?;
             let indices = incident.entry(point).or_default();
             ctx.reserve_vec(indices, 1, "creo segment profile incidence rows")?;
             indices.push(index);
@@ -216,8 +213,7 @@ fn resolved_segment_profile_chains(
     }
     let mut remaining = BTreeSet::new();
     for index in 0..rows.len() {
-        ctx.charge_collection_items(1, "creo segment profile remaining nodes")?;
-        remaining.insert(index);
+        ctx.insert_btree_set(&mut remaining, index, "creo segment profile remaining nodes")?;
     }
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
@@ -227,9 +223,11 @@ fn resolved_segment_profile_chains(
         while let Some(index) = frontier.pop() {
             for point in rows[index].point_ids() {
                 for adjacent in &incident[&point] {
-                    if !component.contains(adjacent) {
-                        ctx.charge_collection_items(1, "creo segment profile component nodes")?;
-                        component.insert(*adjacent);
+                    if ctx.insert_btree_set(
+                        &mut component,
+                        *adjacent,
+                        "creo segment profile component nodes",
+                    )? {
                         ctx.reserve_vec(&mut frontier, 1, "creo segment profile frontier")?;
                         frontier.push(*adjacent);
                     }
@@ -336,8 +334,7 @@ pub(in super::super) fn solver_only_section_entities(
         if let Some(first_offset) = entities.get_mut(&id) {
             *first_offset = (*first_offset).min(offset);
         } else {
-            ctx.charge_collection_items(1, "creo solver-only entity nodes")?;
-            entities.insert(id, offset);
+            ctx.insert_btree_map(&mut entities, id, offset, "creo solver-only entity nodes")?;
         }
     }
     Ok(entities)

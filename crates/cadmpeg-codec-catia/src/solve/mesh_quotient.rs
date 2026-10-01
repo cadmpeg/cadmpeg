@@ -5859,14 +5859,9 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
         end: usize,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        if !relation.contains_key(&start) {
-            ctx.charge_collection_items(1, operation)?;
-        }
+        ctx.admit_btree_entry(relation, &start, operation)?;
         let ends = relation.entry(start).or_default();
-        if !ends.contains(&end) {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        Ok(ends.insert(end))
+        ctx.insert_btree_set(ends, end, operation)
     }
 
     fn clone_relation(

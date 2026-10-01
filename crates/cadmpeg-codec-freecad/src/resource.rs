@@ -33,8 +33,7 @@ pub(crate) fn named_entries_charged<V>(
                 operation,
             )?));
         };
-        ctx.charge_collection_items(1, operation)?;
-        keyed.insert(key, value);
+        ctx.insert_btree_map(&mut keyed, key, value, operation)?;
     }
     Ok(keyed)
 }

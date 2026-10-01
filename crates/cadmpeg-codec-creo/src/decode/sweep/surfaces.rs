@@ -979,10 +979,7 @@ fn extrusion_solved_segment_ids(
         .flat_map(|trim_entities| &trim_entities.rows)
         .filter_map(|row| trim_segment_id(definition, row))
     {
-        if !solved.contains(&id) {
-            ctx.charge_collection_items(1, "creo extrusion solved segment ID nodes")?;
-        }
-        solved.insert(id);
+        ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
     }
     Ok(solved)
 }

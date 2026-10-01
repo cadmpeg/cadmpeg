@@ -161,20 +161,27 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
     let mut kinds = BTreeMap::new();
     let mut kind_reservation = ctx.reserve_scoped(0, "NX projected curve kinds")?;
     for label in labels {
-        ctx.charge_collection_items(1, "NX projected curve kinds")?;
         kind_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &str)>() * 4,
         ))?;
-        kinds.insert(label.id.as_str(), label.value.as_str());
+        ctx.insert_btree_map(
+            &mut kinds,
+            label.id.as_str(),
+            label.value.as_str(),
+            "NX projected curve kinds",
+        )?;
     }
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX projected curve operations")?;
     for reference in references {
-        ctx.charge_collection_items(1, "NX projected curve operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(reference.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX projected curve operations",
+        )?;
     }
     let mut payloads = Vec::new();
     for operation_label in operations {
@@ -758,10 +765,11 @@ pub(in crate::native) fn feature_surface_construction_payloads(
     let mut labels = BTreeSet::new();
     for reference in references {
         ctx.charge_work(1, "scan NX surface payload labels")?;
-        if !labels.contains(reference.operation_label.as_str()) {
-            ctx.charge_collection_items(1, "NX surface payload labels")?;
-            labels.insert(reference.operation_label.as_str());
-        }
+        ctx.insert_btree_set(
+            &mut labels,
+            reference.operation_label.as_str(),
+            "NX surface payload labels",
+        )?;
     }
     let mut output = Vec::new();
     for operation_label in labels {
@@ -1661,11 +1669,14 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude profile operations")?;
     for reference in references {
-        ctx.charge_collection_items(1, "NX extrude profile operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(reference.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX extrude profile operations",
+        )?;
     }
     let mut profiles = Vec::new();
     for operation_label in operations {
@@ -1856,11 +1867,14 @@ pub(in crate::native) fn feature_extrude_32_constructions(
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude 32 operations")?;
     for branch in branches {
-        ctx.charge_collection_items(1, "NX extrude 32 operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(branch.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            branch.operation_label.as_str(),
+            "NX extrude 32 operations",
+        )?;
     }
     let mut constructions = Vec::new();
     for operation_label in operations {
@@ -2062,11 +2076,14 @@ pub(in crate::native) fn feature_block_constructions(
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX block construction operations")?;
     for reference in references {
-        ctx.charge_collection_items(1, "NX block construction operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(reference.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX block construction operations",
+        )?;
     }
     let mut constructions = Vec::new();
     for operation_label in operations {

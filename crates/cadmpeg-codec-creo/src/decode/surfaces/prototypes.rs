@@ -363,9 +363,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
     for (_, row, _) in &associations {
+        ctx.admit_btree_entry(
+            &association_counts,
+            &row.offset,
+            "creo surface prototype row counts",
+        )?;
         let count = match association_counts.entry(row.offset) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo surface prototype row counts")?;
                 entry.insert(0)
             }
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -728,8 +732,7 @@ fn legacy_carrier_counts(
         if let Some(count) = counts.get_mut(&id) {
             *count += 1;
         } else {
-            ctx.charge_collection_items(1, "creo legacy carrier count nodes")?;
-            counts.insert(id, 1);
+            ctx.insert_btree_map(&mut counts, id, 1, "creo legacy carrier count nodes")?;
         }
     }
     Ok(counts)

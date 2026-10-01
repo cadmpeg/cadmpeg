@@ -205,8 +205,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 }),
             },
         )?;
-        ctx.charge_collection_items(1, "creo transferred carrier curve nodes")?;
-        transferred.insert(id);
+        ctx.insert_btree_set(&mut transferred, id, "creo transferred carrier curve nodes")?;
     }
     Ok(transferred)
 }
@@ -459,14 +458,20 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 }),
             },
         )?;
-        ctx.charge_collection_items(1, "creo NURBS boundary curve ID nodes")?;
-        result.ids.insert(crate::identity::copy_checked_id(
-            ctx,
-            id.as_str(),
-            "creo NURBS boundary result curve ID copy",
-        )?);
-        ctx.charge_collection_items(1, "creo NURBS boundary endpoint nodes")?;
-        result.endpoint_witnesses.insert(id);
+        ctx.insert_btree_set(
+            &mut result.ids,
+            crate::identity::copy_checked_id(
+                ctx,
+                id.as_str(),
+                "creo NURBS boundary result curve ID copy",
+            )?,
+            "creo NURBS boundary curve ID nodes",
+        )?;
+        ctx.insert_btree_set(
+            &mut result.endpoint_witnesses,
+            id,
+            "creo NURBS boundary endpoint nodes",
+        )?;
         match kind {
             NurbsBoundaryKind::ExtrusionPlane => result.extrusion_plane_count += 1,
             NurbsBoundaryKind::ExtrusionPlaneSectionGenerator => {

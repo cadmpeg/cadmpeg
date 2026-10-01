@@ -781,15 +781,7 @@ fn object_id_index<'a>(
     for object in objects {
         let id =
             legacy::checked_object_node_id(ctx, object.offset, "creo legacy object index IDs")?;
-        match index.entry(id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo legacy object index nodes")?;
-                entry.insert(object);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(object);
-            }
-        }
+        ctx.insert_btree_map(&mut index, id, object, "creo legacy object index nodes")?;
     }
     Ok(index)
 }
@@ -801,9 +793,9 @@ fn child_index<'a>(
     let mut index = BTreeMap::new();
     for object in objects {
         if let Some(parent) = object.parent {
+            ctx.admit_btree_entry(&index, &parent, "creo legacy child index nodes")?;
             match index.entry(parent) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo legacy child index nodes")?;
                     let mut children = Vec::new();
                     ctx.reserve_vec(&mut children, 1, "creo legacy child index rows")?;
                     children.push(object);

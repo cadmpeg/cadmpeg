@@ -446,18 +446,19 @@ impl<'a> Container<'a> {
                             .get(*entry_index)
                             .and_then(crate::container::DirEntry::file_span)
                             .map_or(0, |(offset, _)| offset);
-                        ctx.charge_collection_items(1, "NX cached offset blocks")?;
                         ctx.charge_retained(
                             u64_from_index(std::mem::size_of::<(String, (&[u8], u64))>()),
                             "NX cached offset blocks",
                         )?;
-                        blocks.insert(
+                        ctx.insert_btree_map(
+                            &mut blocks,
                             offset_block_key(ctx, section_ordinal, 0)?,
                             (
                                 control.bytes,
                                 entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
                             ),
-                        );
+                            "NX cached offset blocks",
+                        )?;
                         for (record_ordinal, block) in records.iter().enumerate() {
                             let ordinal = record_ordinal.checked_add(1).ok_or_else(|| {
                                 ctx.refuse_codec_limit(
@@ -466,19 +467,20 @@ impl<'a> Container<'a> {
                                     u64::MAX,
                                 )
                             })?;
-                            ctx.charge_collection_items(1, "NX cached offset blocks")?;
                             ctx.charge_retained(
                                 u64_from_index(std::mem::size_of::<(String, (&[u8], u64))>()),
                                 "NX cached offset blocks",
                             )?;
-                            blocks.insert(
+                            ctx.insert_btree_map(
+                                &mut blocks,
                                 offset_block_key(ctx, section_ordinal, ordinal)?,
                                 (
                                     block.bytes,
                                     entry_offset
                                         + cadmpeg_core::decode::u64_from_index(block.offset),
                                 ),
-                            );
+                                "NX cached offset blocks",
+                            )?;
                         }
                     }
                     IndexedSectionCache::Borrowed { sections, blocks }
@@ -963,12 +965,11 @@ fn parse_extref_record_index(
         if record_ids.contains(&record_id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "nx external reference record ids")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
             "nx external reference record ids",
         )?;
-        record_ids.insert(record_id);
+        ctx.insert_btree_set(&mut record_ids, record_id, "nx external reference record ids")?;
         let Some(offset) = View::u32_le_at(payload, at) else {
             return Ok(None);
         };
@@ -1250,12 +1251,15 @@ fn parse_indexed_section_cache<'bytes>(
             None
         };
         for section in parsed {
-            ctx.charge_collection_items(1, "NX indexed cache seen sections")?;
             ctx.charge_retained(
                 u64_from_index(std::mem::size_of::<(usize, usize)>()),
                 "NX indexed cache seen sections",
             )?;
-            if !seen.insert((offset, section.object_id_table_offset)) {
+            if !ctx.insert_btree_set(
+                &mut seen,
+                (offset, section.object_id_table_offset),
+                "NX indexed cache seen sections",
+            )? {
                 continue;
             }
             if let Some(source) = &source {
@@ -1472,12 +1476,11 @@ pub(crate) fn scan_legacy<'a>(
         logical_offset = logical_offset
             .checked_add(byte_len)
             .ok_or_else(|| CodecError::Malformed("legacy CFB logical image overflows".into()))?;
-        ctx.charge_collection_items(1, "legacy NX stream spans")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&(stream.id(), span))),
             "legacy NX stream spans",
         )?;
-        stream_spans.insert(stream.id(), span);
+        ctx.insert_btree_map(&mut stream_spans, stream.id(), span, "legacy NX stream spans")?;
         ctx.reserve_retained_vec(&mut stream_views, 1, "legacy NX stream views")?;
         stream_views.push(view);
     }

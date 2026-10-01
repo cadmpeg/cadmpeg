@@ -1256,8 +1256,7 @@ fn insert_opaque_index(
     indices: &mut BTreeSet<usize>,
     index: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(1, "Rhino opaque instance definition indexes")?;
-    indices.insert(index);
+    ctx.insert_btree_set(indices, index, "Rhino opaque instance definition indexes")?;
     Ok(())
 }
 

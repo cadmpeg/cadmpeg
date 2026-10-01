@@ -1090,19 +1090,26 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
     let mut index_reservation = ctx.reserve_scoped(0, "NX pattern construction indexes")?;
     let mut kinds = BTreeMap::<&str, &str>::new();
     for label in labels {
-        ctx.charge_collection_items(1, "NX pattern construction labels")?;
         index_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &str)>() * 4,
         ))?;
-        kinds.insert(label.id.as_str(), label.value.as_str());
+        ctx.insert_btree_map(
+            &mut kinds,
+            label.id.as_str(),
+            label.value.as_str(),
+            "NX pattern construction labels",
+        )?;
     }
     let mut operations = BTreeSet::<&str>::new();
     for reference in references {
-        ctx.charge_collection_items(1, "NX pattern construction operations")?;
         index_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(reference.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX pattern construction operations",
+        )?;
     }
     let mut output = Vec::new();
     'operations: for operation_label in operations {

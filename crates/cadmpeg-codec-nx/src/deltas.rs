@@ -2104,12 +2104,11 @@ fn merge_records(
                 .get(&key)
                 .is_none_or(|record| tombstone.offset > record.offset)
         {
-            ctx.charge_collection_items(1, "NX deltas deletion keys")?;
             deletion_reservation
                 .grow(u64_from_index(
                     std::mem::size_of::<((u8, u32), &Tombstone)>(),
                 ))?;
-            deletions.insert(key, tombstone);
+            ctx.insert_btree_map(&mut deletions, key, tombstone, "NX deltas deletion keys")?;
         }
     }
     let build = |include_topology: bool| -> Result<_, CodecError> {
@@ -2292,9 +2291,7 @@ fn count_unmatched_events(
             })
         {
             let name = tombstone_kind.name();
-            if !unmatched.contains_key(name) {
-                ctx.charge_collection_items(1, "NX unmatched tombstone families")?;
-            }
+            ctx.admit_btree_entry(&unmatched, &name, "NX unmatched tombstone families")?;
             *unmatched.entry(name).or_default() += 1;
         }
     }
