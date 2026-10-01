@@ -485,11 +485,7 @@ impl ModelDraft<DraftAccounting> {
         let identity = if exactness != Exactness::ByteExact
             && !self.accounting.exactness.contains_key(&identity)
         {
-            ctx.charge_collection_items(1, "draft exactness records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Exactness)>()),
-                "draft exactness records",
-            )?;
+            ctx.admit_retained_btree_record::<String, Exactness>(0, "draft exactness records")?;
             ctx.copy_retained_text(&identity, "draft exactness identity")?
         } else {
             identity

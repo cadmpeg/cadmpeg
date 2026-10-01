@@ -470,9 +470,7 @@ impl AnnotationBuilder {
         let stored_id = if self.annotations.provenance.contains_key(&id) {
             id
         } else {
-            admit_annotation_record::<String, AnnotationProvenance>(
-                ctx,
-                "collect source provenance",
+            ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, "collect source provenance",
             )?;
             ctx.copy_retained_text(&id, "retain source provenance identity")?
         };
@@ -590,9 +588,7 @@ impl AnnotationBuilder {
             .map_or(0, |note| note.fields().len());
         ctx.charge_work(u64_from_index(fields), "retain source exactness fields")?;
         if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
-            admit_annotation_record::<String, ExactnessNote>(
-                ctx,
-                "collect source exactness entities",
+            ctx.admit_retained_btree_record::<String, ExactnessNote>(0, "collect source exactness entities",
             )?;
         }
         Ok(self.exactness_owned(id, exactness))
@@ -697,15 +693,11 @@ impl AnnotationBuilder {
         let new_field =
             keep_field && existing.is_none_or(|note| !note.fields().contains_key(field.as_ref()));
         if new_entity {
-            admit_annotation_record::<String, ExactnessNote>(
-                ctx,
-                "collect source exactness entities",
+            ctx.admit_retained_btree_record::<String, ExactnessNote>(0, "collect source exactness entities",
             )?;
         }
         if new_field {
-            admit_annotation_record::<FieldName, Exactness>(
-                ctx,
-                "collect source exactness fields",
+            ctx.admit_retained_btree_record::<FieldName, Exactness>(0, "collect source exactness fields",
             )?;
         }
         let fields = existing.map_or(0, |note| note.fields().len());
@@ -788,14 +780,6 @@ impl AnnotationBuilder {
     pub fn build(self) -> Annotations {
         self.annotations
     }
-}
-
-fn admit_annotation_record<K, V>(
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<(K, V)>()), operation)
 }
 
 fn admit_identity_work(
@@ -930,17 +914,17 @@ impl Annotations {
             match (provenance, exactness) {
                 (Some(provenance), Some(exactness)) => {
                     let provenance_key = ctx.copy_retained_text(&target, operation)?;
-                    admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?;
+                    ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
                     remapped.provenance.insert(provenance_key, provenance);
-                    admit_annotation_record::<String, ExactnessNote>(ctx, operation)?;
+                    ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
                     remapped.exactness.insert(target, exactness);
                 }
                 (Some(provenance), None) => {
-                    admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?;
+                    ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
                     remapped.provenance.insert(target, provenance);
                 }
                 (None, Some(exactness)) => {
-                    admit_annotation_record::<String, ExactnessNote>(ctx, operation)?;
+                    ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
                     remapped.exactness.insert(target, exactness);
                 }
                 (None, None) => {}
@@ -996,12 +980,12 @@ impl Annotations {
         }
         if !self.provenance.is_empty() && !other.provenance.is_empty() {
             for _entry in self.provenance.iter().chain(other.provenance.iter()) {
-                admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?;
+                ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
             }
         }
         if !self.exactness.is_empty() && !other.exactness.is_empty() {
             for _entry in self.exactness.iter().chain(other.exactness.iter()) {
-                admit_annotation_record::<String, ExactnessNote>(ctx, operation)?;
+                ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
             }
         }
         self.provenance.append(&mut other.provenance);
