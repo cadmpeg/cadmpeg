@@ -3258,16 +3258,14 @@ fn consume_type_45(
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
-    let parsed = (|| {
+    let parsed: Option<Result<_, CodecError>> = (|| {
         (View::u16_be_at(stream, offset) == Some(45)).then_some(())?;
-        let direct = type_45_layout(stream, offset, 0);
+        let direct = propagate_resource!(type_45_layout(ctx, stream, offset, 0));
         let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-        let escaped = escaped_marker
-            .then(|| type_45_layout(stream, offset, 1))
-            .flatten();
-        select_enveloped_layout(escaped_marker, direct, escaped)
+        let escaped = if escaped_marker { propagate_resource!(type_45_layout(ctx, stream, offset, 1)) } else { None };
+        select_enveloped_layout(escaped_marker, direct, escaped).map(Ok)
     })();
-    let Some((xmt, end)) = parsed else {
+    let Some((xmt, end)) = parsed.transpose()? else {
         return Ok(None);
     };
     admitted_record(ctx, stream, offset, end, RecordFamily::Type45, xmt)
@@ -3340,36 +3338,43 @@ fn type_67_layout(
     Some((xmt, node_id, references, at))
 }
 
-fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(u32, usize)> {
+fn type_45_layout(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize, envelope_len: usize) -> Result<Option<(u32, usize)>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
     let count_at = offset.checked_add(2 + envelope_len)?;
     let count = usize::try_from(View::u32_be_at(stream, count_at)?).ok()?;
     (count > 0).then_some(())?;
     let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
     (xmt > 1).then_some(())?;
     let data_at = count_at.checked_add(4 + xmt_len)?;
-    let finite_end = |value_count: usize| {
+    let finite_end = |value_count: usize| -> Result<Option<usize>, CodecError> {
+        let parsed: Option<Result<_, CodecError>> = (|| {
         let end = data_at.checked_add(value_count.checked_mul(8)?)?;
         let raw = stream.get(data_at..end)?;
+        propagate_resource!(ctx.charge_work(u64_from_index(value_count), "validate NX type-45 lane"));
         (0..value_count)
             .all(|i| {
                 View::f64_be_at(raw, i * 8)
                     .is_some_and(|value| value.is_finite() && (value == 0.0 || value.is_normal()))
             })
-            .then_some(end)
+            .then_some(Ok(end))
+        })();
+        parsed.transpose()
     };
-    let exact_end = finite_end(count);
+    let exact_end = propagate_resource!(finite_end(count));
     let successor_count = count.checked_add(1)?;
     let successor_extent = data_at.checked_add(successor_count.checked_mul(8)?)?;
-    let successor_end = finite_end(successor_count);
+    let successor_end = propagate_resource!(finite_end(successor_count));
     let end = match (exact_end, successor_end) {
-        (Some(exact), Some(_)) if crate::nurbs::auxiliary_record_at(stream, exact).is_some() => {
+        (Some(exact), Some(_)) if propagate_resource!(crate::nurbs::auxiliary_record_at(ctx, stream, exact)).is_some() => {
             exact
         }
         (_, Some(successor)) => successor,
         (Some(exact), None) if successor_extent > stream.len() => exact,
         (Some(_) | None, None) => return None,
     };
-    Some((xmt, end))
+    Some(Ok((xmt, end)))
+})();
+    parsed.transpose()
 }
 
 fn type_141_layout(
@@ -3498,7 +3503,7 @@ fn consume_nurbs_auxiliary(
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
-    let Some(auxiliary) = crate::nurbs::auxiliary_record_at(stream, offset) else {
+    let Some(auxiliary) = crate::nurbs::auxiliary_record_at(ctx, stream, offset)? else {
         return Ok(None);
     };
     admitted_record(

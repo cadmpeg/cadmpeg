@@ -74,6 +74,15 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 mod canonical_uuid;
 mod container;
 mod decode;

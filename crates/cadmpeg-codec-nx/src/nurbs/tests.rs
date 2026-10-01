@@ -140,7 +140,7 @@ fn assert_shared_parse_matches_standalone(stream: &[u8]) {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, stream))
             .unwrap();
-    let shared = crate::nurbs::parse_with_graph(stream, &graph);
+    let shared = crate::test_support::with_decode_context(|ctx| crate::nurbs::parse_with_graph(ctx, stream, &graph)).unwrap();
     assert_same_surfaces(
         &shared.surfaces,
         &crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, stream))
@@ -432,8 +432,10 @@ fn nurbs_scanners_defer_unreferenced_lane_materialization() {
         );
         arrays[pos + 6..pos + 8].copy_from_slice(&reference.to_be_bytes());
     }
-    let parsed_arrays = crate::nurbs::arrays(&arrays);
-    assert_eq!(parsed_arrays.u16s.len(), ARRAY_CANDIDATES);
+    crate::test_support::with_decode_context(|ctx| {
+        let parsed_arrays = crate::nurbs::arrays(ctx, &arrays).unwrap();
+        assert_eq!(parsed_arrays.u16s.len(), ARRAY_CANDIDATES);
+    });
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &arrays))
             .unwrap()
@@ -452,8 +454,10 @@ fn nurbs_scanners_defer_unreferenced_lane_materialization() {
         );
         payloads[pos + 13..pos + 15].copy_from_slice(&1u16.to_be_bytes());
     }
-    let parsed_payloads = crate::nurbs::curve_payloads(&payloads);
-    assert_eq!(parsed_payloads.len(), PAYLOAD_CANDIDATES);
+    crate::test_support::with_decode_context(|ctx| {
+        let parsed_payloads = crate::nurbs::curve_payloads(ctx, &payloads).unwrap();
+        assert_eq!(parsed_payloads.len(), PAYLOAD_CANDIDATES);
+    });
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &payloads))
             .unwrap()
@@ -1108,4 +1112,29 @@ fn nurbs_surface_reads_sense_after_extended_common_header_reference() {
         panic!("expected NURBS surface");
     };
     assert!(surface.normal_reversed());
+}
+
+#[test]
+fn nurbs_shared_scan_refuses_exhausted_work() {
+    let bytes = bspline_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &bytes)).unwrap();
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
+        assert!(matches!(super::parse_with_graph(ctx, &bytes, &graph), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX NURBS arrays"));
+    });
+}
+
+#[test]
+fn nurbs_array_index_refuses_scoped_storage_before_insertion() {
+    let bytes = [0, 127, 0, 0, 0, 1, 0, 12, 0, 2];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
+        assert!(matches!(super::arrays(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS array index"));
+    });
+}
+
+#[test]
+fn nurbs_auxiliary_lane_preserves_work_refusal() {
+    let bytes = [0, 128, 0, 0, 0, 1, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
+        assert!(matches!(super::auxiliary_record_at(ctx, &bytes, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "validate NX NURBS floating-point lane"));
+    });
 }
