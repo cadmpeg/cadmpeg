@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode fixed local component-occurrence carriers.
 
-use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::container::ContainerRole;
 
 use cadmpeg_core::decode::{DecodeContext, View};

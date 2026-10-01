@@ -114,7 +114,9 @@ pub(super) fn model_root(
         "scan F3Z manifest JSON",
         "admit F3Z manifest JSON nodes",
     )? {
-        return Err(CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON")));
+        return Err(CodecError::malformed(format_args!(
+            "{MANIFEST_ENTRY} is not valid JSON"
+        )));
     }
     let manifest = serde_json::from_slice::<ManifestJson>(manifest_bytes).map_err(|error| {
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
@@ -296,14 +298,19 @@ fn model_root_member(
                 }
             }
             if is_root {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(object.relative_path.len()), "match F3Z root object path")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(object.relative_path.len()),
+                    "match F3Z root object path",
+                )?;
                 if object.relative_path == archive_root {
                     root = Some(object);
                     break;
                 }
             }
         }
-        let Some(root) = root else { continue; };
+        let Some(root) = root else {
+            continue;
+        };
         for object in &graph.design_objects {
             if !object.content_type.eq_ignore_ascii_case("f3d")
                 || !crate::container::is_f3d_name(&object.relative_path)
@@ -356,14 +363,22 @@ mod tests {
     #[test]
     fn drawing_root_search_preserves_work_refusal() {
         let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[1,2],"designObjects":[{"id":2,"relativePath":"drawing.f2d","contentType":"f2d","references":[]}] }]}}"#;
-        let bytes = crate::test_support::assembly_test::f3z_archive_with_design_description("drawing.f2d", &[("drawing.f2d", b"drawing"), ("model.f3d", b"model")], description);
+        let bytes = crate::test_support::assembly_test::f3z_archive_with_design_description(
+            "drawing.f2d",
+            &[("drawing.f2d", b"drawing"), ("model.f3d", b"model")],
+            description,
+        );
         crate::test_support::with_decode_context(|scan_ctx| {
-            let scan = crate::container::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+            let scan =
+                crate::container::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                    .unwrap();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(description.len());
             crate::test_support::with_decode_policy(&policy, |ctx| {
                 let error = super::model_root_member(ctx, &scan, "drawing.f2d").unwrap_err();
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("root scan must refuse"); };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("root scan must refuse");
+                };
                 assert_eq!(limit.operation, "match F3Z root object ID");
                 assert_eq!(Some(limit), ctx.resource_refusal());
             });
@@ -378,16 +393,25 @@ mod tests {
         crate::test_support::with_decode_context(|scan_ctx| {
             let root = cadmpeg_core::decode::View::over_retained(&bytes);
             let scan = crate::container::scan(scan_ctx, root).unwrap();
-            for dimension in [cadmpeg_core::decode::ResourceDimension::WorkUnits, cadmpeg_core::decode::ResourceDimension::RecursionDepth] {
+            for dimension in [
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            ] {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 match dimension {
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                    cadmpeg_core::decode::ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 1,
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = 0;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                        policy.limits.max_recursion_depth = 1;
+                    }
                     _ => unreachable!(),
                 }
                 crate::test_support::with_decode_policy(&policy, |ctx| {
                     let error = super::model_root(ctx, &scan).unwrap_err();
-                    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("manifest scan must refuse"); };
+                    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                        panic!("manifest scan must refuse");
+                    };
                     assert_eq!(limit.dimension, dimension);
                     assert_eq!(limit.operation, "scan F3Z manifest JSON");
                     assert_eq!(Some(limit), ctx.resource_refusal());

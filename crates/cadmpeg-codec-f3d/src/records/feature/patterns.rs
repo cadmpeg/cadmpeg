@@ -69,10 +69,17 @@ pub(crate) struct DesignPlane {
 
 impl DesignPlane {
     pub(crate) fn from_parts(origin: FinitePoint3, normal: FiniteVector3) -> Option<Self> {
-        Some(Self { origin, normal: UnitVector3::new(normal.get())? })
+        Some(Self {
+            origin,
+            normal: UnitVector3::new(normal.get())?,
+        })
     }
-    pub(crate) fn origin(self) -> FinitePoint3 { self.origin }
-    pub(crate) fn normal(self) -> UnitVector3 { self.normal }
+    pub(crate) fn origin(self) -> FinitePoint3 {
+        self.origin
+    }
+    pub(crate) fn normal(self) -> UnitVector3 {
+        self.normal
+    }
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
@@ -321,7 +328,8 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
                             identity_offset,
                         })
                         .collect::<Vec<_>>()
-                        .try_into().map_err(|_| "historical axis wrappers must be nonempty")?,
+                        .try_into()
+                        .map_err(|_| "historical axis wrappers must be nonempty")?,
                     persistent_identity: *persistent_identity,
                     resolved,
                 })
@@ -871,7 +879,9 @@ mod tests {
                     record_index: 2,
                     identity_offset: 30,
                 },
-            ].try_into().unwrap(),
+            ]
+            .try_into()
+            .unwrap(),
             persistent_identity: 7,
             resolved: resolved.then(|| DesignAxis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
@@ -992,16 +1002,26 @@ mod tests {
             let mut record = construction(Some(components()));
             let previous = serde_json::to_vec(&record).unwrap();
             let frames = (0..count).map(frame).collect();
-            assert!(record.try_set_instances(Some(DesignRectangularPatternInstances::Bodies(frames))).is_err());
+            assert!(record
+                .try_set_instances(Some(DesignRectangularPatternInstances::Bodies(frames)))
+                .is_err());
             assert_eq!(serde_json::to_vec(&record).unwrap(), previous);
             let mut wire = serde_json::to_value(&record).unwrap();
-            wire["instances"] = serde_json::to_value(DesignRectangularPatternInstances::Bodies((0..count).map(frame).collect())).unwrap();
+            wire["instances"] = serde_json::to_value(DesignRectangularPatternInstances::Bodies(
+                (0..count).map(frame).collect(),
+            ))
+            .unwrap();
             assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(wire).is_err());
         }
         let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
         wire.v_count = 2;
         wire.v_extent = 1.0;
-        wire.instances = Some(DesignRectangularPatternInstances::Bodies(vec![frame(1), frame(2), frame(3), frame(4)]));
+        wire.instances = Some(DesignRectangularPatternInstances::Bodies(vec![
+            frame(1),
+            frame(2),
+            frame(3),
+            frame(4),
+        ]));
         assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());
     }
 }

@@ -1071,7 +1071,13 @@ fn repeated_target_occurrence_placement_details(
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=36, "retain F3D UTF-16 string")?);
+        let (guid, next) = xref_some!(lp_utf16_bounded_charged(
+            decode,
+            body,
+            at,
+            36..=36,
+            "retain F3D UTF-16 string"
+        )?);
         if !is_guid_relaxed(&guid) {
             return Ok(None);
         }
@@ -1082,7 +1088,13 @@ fn repeated_target_occurrence_placement_details(
     }
     at += METADATA_MARKER.len();
 
-    let (component_guid, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=36, "retain F3D UTF-16 string")?);
+    let (component_guid, next) = xref_some!(lp_utf16_bounded_charged(
+        decode,
+        body,
+        at,
+        36..=36,
+        "retain F3D UTF-16 string"
+    )?);
     if !is_guid_relaxed(&component_guid) {
         return Ok(None);
     }
@@ -1097,7 +1109,13 @@ fn repeated_target_occurrence_placement_details(
     }
     at = next;
     let role_offset = at;
-    let (role, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=256, "retain F3D UTF-16 string")?);
+    let (role, next) = xref_some!(lp_utf16_bounded_charged(
+        decode,
+        body,
+        at,
+        36..=256,
+        "retain F3D UTF-16 string"
+    )?);
     if !is_guid_prefix(&role) {
         return Ok(None);
     }
@@ -1124,7 +1142,13 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 4;
-    let (final_role, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=256, "retain F3D UTF-16 string")?);
+    let (final_role, next) = xref_some!(lp_utf16_bounded_charged(
+        decode,
+        body,
+        at,
+        36..=256,
+        "retain F3D UTF-16 string"
+    )?);
     if !final_role.eq_ignore_ascii_case(&role) {
         return Ok(None);
     }
@@ -1186,12 +1210,12 @@ pub(crate) fn repeated_target_component_insert(
 /// generation. The carrier has no matrix; its placement is the stored
 /// identity transform. The repeated GUID and role fields are part of the
 /// carrier grammar, not an occurrence-count signal.
-pub(crate) fn grouped_component_insert_identity<'a>(
-    bytes: &'a [u8],
+pub(crate) fn grouped_component_insert_identity(
+    bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(Utf16View<'a>, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1203,12 +1227,12 @@ pub(crate) fn grouped_component_insert_identity<'a>(
 
 /// Parse the class-380 grouped identity carrier used by the class-410/class-261
 /// `Component Insert` generation.
-pub(crate) fn grouped_component_insert_identity_class380<'a>(
-    bytes: &'a [u8],
+pub(crate) fn grouped_component_insert_identity_class380(
+    bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(Utf16View<'a>, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1220,12 +1244,12 @@ pub(crate) fn grouped_component_insert_identity_class380<'a>(
 
 /// Parse the class-369 grouped identity carrier used by the class-426/class-258
 /// `Component Insert` generation.
-pub(crate) fn grouped_component_insert_identity_class369<'a>(
-    bytes: &'a [u8],
+pub(crate) fn grouped_component_insert_identity_class369(
+    bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(Utf16View<'a>, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1237,12 +1261,12 @@ pub(crate) fn grouped_component_insert_identity_class369<'a>(
 
 /// Parse the variable-role grouped identity carrier used by the class-434/
 /// class-266 `Component Insert` generation.
-pub(crate) fn grouped_component_insert_identity_class341<'a>(
-    bytes: &'a [u8],
+pub(crate) fn grouped_component_insert_identity_class341(
+    bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(Utf16View<'a>, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1304,7 +1328,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
     }
     at += 1;
     let (type_guid, next) = lp_ascii_strict(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&type_guid) {
+    if !is_guid_relaxed(type_guid) {
         return None;
     }
     at = next;
@@ -1375,8 +1399,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
     }
     at += 1;
     let (repeated_type_guid, next) = lp_ascii_strict(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&repeated_type_guid) || !repeated_type_guid.eq_ignore_ascii_case(&type_guid)
-    {
+    if !is_guid_relaxed(repeated_type_guid) || !repeated_type_guid.eq_ignore_ascii_case(type_guid) {
         return None;
     }
     at = next;
@@ -1564,7 +1587,7 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
     }
     *at += 1;
     let (type_guid, next) = lp_ascii_strict(body, *at, 36..=36)?;
-    if !is_guid_relaxed(&type_guid) {
+    if !is_guid_relaxed(type_guid) {
         return None;
     }
     *at = next;

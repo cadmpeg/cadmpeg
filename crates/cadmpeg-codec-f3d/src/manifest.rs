@@ -43,25 +43,44 @@ struct ManifestFailure<'ctx> {
     reservation: Option<ScopedReservation<'ctx>>,
 }
 impl ManifestFailure<'_> {
-    fn is_resource(&self) -> bool { matches!(self.error, CodecError::ResourceLimit(_)) }
+    fn is_resource(&self) -> bool {
+        matches!(self.error, CodecError::ResourceLimit(_))
+    }
     fn into_codec(self) -> CodecError {
         if let Some(reservation) = self.reservation {
-            if let Err(refusal) = reservation.commit() { return refusal; }
+            if let Err(refusal) = reservation.commit() {
+                return refusal;
+            }
         }
         self.error
     }
 }
 impl From<CodecError> for ManifestFailure<'_> {
-    fn from(error: CodecError) -> Self { Self { error, reservation: None } }
+    fn from(error: CodecError) -> Self {
+        Self {
+            error,
+            reservation: None,
+        }
+    }
 }
 impl std::fmt::Display for ManifestFailure<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.error, formatter)
     }
 }
-fn probe_malformed<'ctx>(ctx: &'ctx DecodeContext<'_>, field: &str, message: impl std::fmt::Display) -> ManifestFailure<'ctx> {
-    match ctx.format_scoped(format_args!("F3D {field}: {message}"), "describe malformed F3D manifest") {
-        Ok((text, reservation)) => ManifestFailure { error: crate::error::malformed(text), reservation: Some(reservation) },
+fn probe_malformed<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    field: &str,
+    message: impl std::fmt::Display,
+) -> ManifestFailure<'ctx> {
+    match ctx.format_scoped(
+        format_args!("F3D {field}: {message}"),
+        "describe malformed F3D manifest",
+    ) {
+        Ok((text, reservation)) => ManifestFailure {
+            error: crate::error::malformed(text),
+            reservation: Some(reservation),
+        },
         Err(refusal) => refusal.into(),
     }
 }
@@ -127,7 +146,8 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
         at: usize,
     ) -> Result<Self, ManifestFailure<'ctx>> {
         let mut view = View::over_retained(bytes);
-        view.seek(at).ok_or_else(|| truncated(ctx, "manifest offset"))?;
+        view.seek(at)
+            .ok_or_else(|| truncated(ctx, "manifest offset"))?;
         Ok(Self { view, ctx })
     }
 
@@ -173,12 +193,21 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
 
     fn ascii(&mut self, field: &str) -> Result<&'a str, ManifestFailure<'ctx>> {
         let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
-        let raw = self.view.take(count).ok_or_else(|| truncated(self.ctx, field))?;
-        self.ctx.charge_work(u64_from_index(raw.len()) * 4, "decode F3D manifest ASCII")?;
+        let raw = self
+            .view
+            .take(count)
+            .ok_or_else(|| truncated(self.ctx, field))?;
+        self.ctx
+            .charge_work(u64_from_index(raw.len()) * 4, "decode F3D manifest ASCII")?;
         if !raw.iter().all(|byte| matches!(byte, 0x20..=0x7e)) {
-            return Err(probe_malformed(self.ctx, field, "contains a non-printable ASCII byte"));
+            return Err(probe_malformed(
+                self.ctx,
+                field,
+                "contains a non-printable ASCII byte",
+            ));
         }
-        std::str::from_utf8(raw).map_err(|_| probe_malformed(self.ctx, field, "contains a non-printable ASCII byte"))
+        std::str::from_utf8(raw)
+            .map_err(|_| probe_malformed(self.ctx, field, "contains a non-printable ASCII byte"))
     }
 
     fn expect_ascii(&mut self, field: &str, expected: &str) -> Result<(), ManifestFailure<'ctx>> {
@@ -198,11 +227,22 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
         self.utf16_with_count(count, field)
     }
 
-    fn utf16_with_count(&mut self, count: usize, field: &str) -> Result<Utf16View<'a>, ManifestFailure<'ctx>> {
-        let needed = count.checked_mul(2).ok_or_else(|| truncated(self.ctx, field))?;
-        let raw = self.view.take(needed).ok_or_else(|| truncated(self.ctx, field))?;
-        self.ctx.charge_work(u64_from_index(needed) * 8, "decode F3D manifest UTF-16")?;
-        Utf16View::new(raw).ok_or_else(|| probe_malformed(self.ctx, field, "contains invalid UTF-16LE"))
+    fn utf16_with_count(
+        &mut self,
+        count: usize,
+        field: &str,
+    ) -> Result<Utf16View<'a>, ManifestFailure<'ctx>> {
+        let needed = count
+            .checked_mul(2)
+            .ok_or_else(|| truncated(self.ctx, field))?;
+        let raw = self
+            .view
+            .take(needed)
+            .ok_or_else(|| truncated(self.ctx, field))?;
+        self.ctx
+            .charge_work(u64_from_index(needed) * 8, "decode F3D manifest UTF-16")?;
+        Utf16View::new(raw)
+            .ok_or_else(|| probe_malformed(self.ctx, field, "contains invalid UTF-16LE"))
     }
 
     fn expect_utf16(&mut self, field: &str, expected: &str) -> Result<(), ManifestFailure<'ctx>> {
@@ -233,7 +273,11 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
         let count = usize::try_from(self.u32(field)?)
             .map_err(|_| probe_malformed(self.ctx, field, "count does not fit memory"))?;
         if count > max {
-            return Err(probe_malformed(self.ctx, field, format_args!("count {count} exceeds the limit {max}")));
+            return Err(probe_malformed(
+                self.ctx,
+                field,
+                format_args!("count {count} exceeds the limit {max}"),
+            ));
         }
         Ok(count)
     }
@@ -264,14 +308,21 @@ pub(crate) fn parse_top_level(
     bytes: &[u8],
 ) -> Result<TopLevelManifest, CodecError> {
     let parsed = (|| {
-    if bytes.len() > MAX_TOP_LEVEL_MANIFEST_BYTES {
-        return Err(probe_malformed(ctx, "top-level manifest", format_args!("{} bytes exceed the limit {MAX_TOP_LEVEL_MANIFEST_BYTES}", bytes.len())));
-    }
-    let mut cursor = Cursor::new(ctx, bytes);
-    // An unreadable version field is corrupt bytes: nothing names a generation,
-    // so there is no recognized document to refuse.
-    let version = cursor.ascii("top-level manifest version")?;
-    let asset_folder_bases = parse_top_level_body(ctx, bytes, cursor).map_err(|error| {
+        if bytes.len() > MAX_TOP_LEVEL_MANIFEST_BYTES {
+            return Err(probe_malformed(
+                ctx,
+                "top-level manifest",
+                format_args!(
+                    "{} bytes exceed the limit {MAX_TOP_LEVEL_MANIFEST_BYTES}",
+                    bytes.len()
+                ),
+            ));
+        }
+        let mut cursor = Cursor::new(ctx, bytes);
+        // An unreadable version field is corrupt bytes: nothing names a generation,
+        // so there is no recognized document to refuse.
+        let version = cursor.ascii("top-level manifest version")?;
+        let asset_folder_bases = parse_top_level_body(ctx, bytes, cursor).map_err(|error| {
         if error.is_resource() {
             error
         } else {
@@ -283,9 +334,17 @@ pub(crate) fn parse_top_level(
             )
         }
     })?;
-    let version = ctx.copy_retained_text(version, "retain F3D manifest ASCII")?;
-    let asset_folder_bases = ctx.try_collect_vec(asset_folder_bases.into_iter().map(|base| base.to_retained(ctx, "retain F3D manifest UTF-16")), "collect F3D retained asset folders")?;
-    Ok(TopLevelManifest { version, asset_folder_bases })
+        let version = ctx.copy_retained_text(version, "retain F3D manifest ASCII")?;
+        let asset_folder_bases = ctx.try_collect_vec(
+            asset_folder_bases
+                .into_iter()
+                .map(|base| base.to_retained(ctx, "retain F3D manifest UTF-16")),
+            "collect F3D retained asset folders",
+        )?;
+        Ok(TopLevelManifest {
+            version,
+            asset_folder_bases,
+        })
     })();
     parsed.map_err(ManifestFailure::into_codec)
 }
@@ -308,14 +367,16 @@ fn parse_top_level_body<'a, 'ctx>(
         let _generation_major = cursor.u32("top-level manifest generation major")?;
         let _generation_minor = cursor.u32("top-level manifest generation minor")?;
         let _generation_flags = cursor.u32("top-level manifest generation flags")?;
-        bounded_count(ctx,
+        bounded_count(
+            ctx,
             cursor.u32("top-level manifest registry count")?,
             MAX_REGISTRY_ENTRIES,
             "top-level manifest registry count",
         )?
     } else {
         let _legacy_generation = cursor.u32("top-level manifest legacy generation")?;
-        bounded_count(ctx,
+        bounded_count(
+            ctx,
             cursor.u32("top-level manifest registry count")?,
             MAX_REGISTRY_ENTRIES,
             "top-level manifest registry count",
@@ -324,9 +385,15 @@ fn parse_top_level_body<'a, 'ctx>(
 
     let mut registry_names = BTreeSet::new();
     for ordinal in 0..registry_count {
-        let (field, _field_budget) = ctx.format_scoped(format_args!("top-level manifest registry name {ordinal}"), "describe F3D manifest field")?;
+        let (field, _field_budget) = ctx.format_scoped(
+            format_args!("top-level manifest registry name {ordinal}"),
+            "describe F3D manifest field",
+        )?;
         let name = cursor.ascii(&field)?;
-        ctx.charge_work(u64_from_index(name.len()) * u64_from_index(registry_names.len() + 1) * 2, "compare F3D manifest registry names")?;
+        ctx.charge_work(
+            u64_from_index(name.len()) * u64_from_index(registry_names.len() + 1) * 2,
+            "compare F3D manifest registry names",
+        )?;
         if name.is_empty() || registry_names.contains(&name) {
             return Err(probe_malformed(
                 ctx,
@@ -339,7 +406,10 @@ fn parse_top_level_body<'a, 'ctx>(
             name,
             "index F3D manifest registry names",
         )?;
-        let (field, _field_budget) = ctx.format_scoped(format_args!("top-level manifest registry value {ordinal}"), "describe F3D manifest field")?;
+        let (field, _field_budget) = ctx.format_scoped(
+            format_args!("top-level manifest registry value {ordinal}"),
+            "describe F3D manifest field",
+        )?;
         let _value = cursor.u32(&field)?;
     }
 
@@ -392,17 +462,24 @@ fn parse_asset_tail_at<'a, 'ctx>(
 ) -> Result<Vec<Utf16View<'a>>, ManifestFailure<'ctx>> {
     let mut cursor = Cursor::from_offset(ctx, bytes, at)?;
     let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
-    let asset_folder_count = bounded_nonzero_count(ctx,
+    let asset_folder_count = bounded_nonzero_count(
+        ctx,
         cursor.u32("top-level manifest asset-folder count")?,
         MAX_ASSET_FOLDERS,
         "top-level manifest asset-folder count",
     )?;
     let mut asset_folder_bases = Vec::new();
     for ordinal in 0..asset_folder_count {
-        let (field, _field_budget) = ctx.format_scoped(format_args!("top-level manifest asset-folder base {ordinal}"), "describe F3D manifest field")?;
+        let (field, _field_budget) = ctx.format_scoped(
+            format_args!("top-level manifest asset-folder base {ordinal}"),
+            "describe F3D manifest field",
+        )?;
         let base = cursor.utf16(&field)?;
         validate_asset_base_view(ctx, base)?;
-        ctx.charge_work(u64_from_index(base.len()) * 2 * u64_from_index(asset_folder_bases.len()), "compare F3D manifest asset bases")?;
+        ctx.charge_work(
+            u64_from_index(base.len()) * 2 * u64_from_index(asset_folder_bases.len()),
+            "compare F3D manifest asset bases",
+        )?;
         if asset_folder_bases.contains(&base) {
             return Err(probe_malformed(
                 ctx,
@@ -429,7 +506,11 @@ fn parse_asset_tail_at<'a, 'ctx>(
             if !cursor.exhausted() {
                 let lineage_urn = cursor.utf16("top-level manifest lineage URN")?;
                 if lineage_urn.len() <= 4
-                    || !lineage_urn.chars().take(4).map(|ch| ch.to_ascii_lowercase()).eq("urn:".chars())
+                    || !lineage_urn
+                        .chars()
+                        .take(4)
+                        .map(|ch| ch.to_ascii_lowercase())
+                        .eq("urn:".chars())
                     || !lineage_urn.chars().skip(4).all(|ch| ch.is_ascii_graphic())
                 {
                     return Err(probe_malformed(
@@ -475,12 +556,21 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
         let (active, _active_budget) =
             ctx.format_scoped(format_args!("{base}[Active]"), "name F3D active asset")?;
         let mut folder_matches = [None; 2];
-        for (slot, candidate) in folder_matches.iter_mut().zip([base.as_str(), active.as_str()]) {
+        for (slot, candidate) in folder_matches
+            .iter_mut()
+            .zip([base.as_str(), active.as_str()])
+        {
             for name in &names {
-                let work = u64_from_index(candidate.len()).checked_add(u64_from_index(name.len()))
-                    .ok_or_else(|| ctx.refuse_codec_limit("match F3D asset folders", u64::MAX - 1, u64::MAX))?;
+                let work = u64_from_index(candidate.len())
+                    .checked_add(u64_from_index(name.len()))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("match F3D asset folders", u64::MAX - 1, u64::MAX)
+                    })?;
                 ctx.charge_work(work, "match F3D asset folders")?;
-                if name.strip_prefix(candidate).is_some_and(|suffix| suffix.starts_with('/')) {
+                if name
+                    .strip_prefix(candidate)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+                {
                     *slot = Some(candidate);
                     break;
                 }
@@ -489,10 +579,18 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
         let folder = match folder_matches {
             [Some(folder), None] | [None, Some(folder)] => folder,
             [None, None] => {
-                return Err(parse_malformed(ctx, "top-level manifest asset-folder run", format_args!("listed base {base:?} has no archive folder")))
+                return Err(parse_malformed(
+                    ctx,
+                    "top-level manifest asset-folder run",
+                    format_args!("listed base {base:?} has no archive folder"),
+                ))
             }
             [Some(_), Some(_)] => {
-                return Err(parse_malformed(ctx, "top-level manifest asset-folder run", format_args!("listed base {base:?} resolves to multiple archive folders")))
+                return Err(parse_malformed(
+                    ctx,
+                    "top-level manifest asset-folder run",
+                    format_args!("listed base {base:?} resolves to multiple archive folders"),
+                ))
             }
         };
         let (manifest_name, _manifest_name_budget) = ctx.format_scoped(
@@ -507,7 +605,10 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
             )
         })?;
         let header = parse_asset_header(ctx, bytes)?;
-        ctx.charge_work(u64_from_index(header.base_name.len()) * 2, "compare F3D asset manifest base")?;
+        ctx.charge_work(
+            u64_from_index(header.base_name.len()) * 2,
+            "compare F3D asset manifest base",
+        )?;
         if !header.base_name.eq_str(base) {
             return Err(parse_malformed(
                 ctx,
@@ -524,7 +625,8 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 fusion_subtype: None
             }
         ) {
-            let name = ctx.format_scoped(format_args!("{folder}"), "retain F3D Design asset folder")?;
+            let name =
+                ctx.format_scoped(format_args!("{folder}"), "retain F3D Design asset folder")?;
             ctx.push_vec(
                 &mut design_folders,
                 name,
@@ -535,10 +637,12 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
 
     match design_folders.len() {
         1 => {
-            let (name, reservation) = design_folders.pop().ok_or_else(|| CodecError::malformed("missing admitted Design asset folder"))?;
+            let (name, reservation) = design_folders
+                .pop()
+                .ok_or_else(|| CodecError::malformed("missing admitted Design asset folder"))?;
             reservation.commit()?;
             Ok(name)
-        },
+        }
         0 => Err(parse_malformed(
             ctx,
             "top-level manifest asset-folder run",
@@ -557,22 +661,22 @@ fn parse_asset_header<'a>(
     bytes: &'a [u8],
 ) -> Result<AssetManifestHeader<'a>, CodecError> {
     let parsed = (|| {
-    let mut cursor = Cursor::new(ctx, bytes);
-    let base_name = cursor.utf16("asset manifest base name")?;
-    validate_asset_base_view(ctx, base_name)?;
-    let _primary_guid = cursor.guid("asset manifest primary GUID")?;
-    let _secondary_guid = cursor.guid("asset manifest secondary GUID")?;
-    let asset_type = cursor.ascii("asset manifest asset type")?;
-    if !asset_type.ends_with("AssetType") {
-        return Err(probe_malformed(
-            ctx,
-            "asset manifest asset type",
-            format_args!("invalid asset type {asset_type:?}"),
-        ));
-    }
-    let kind = if asset_type == DESIGN_ASSET_TYPE {
-        let revision = cursor.u32("Fusion asset manifest revision")?;
-        let fusion_subtype = match revision {
+        let mut cursor = Cursor::new(ctx, bytes);
+        let base_name = cursor.utf16("asset manifest base name")?;
+        validate_asset_base_view(ctx, base_name)?;
+        let _primary_guid = cursor.guid("asset manifest primary GUID")?;
+        let _secondary_guid = cursor.guid("asset manifest secondary GUID")?;
+        let asset_type = cursor.ascii("asset manifest asset type")?;
+        if !asset_type.ends_with("AssetType") {
+            return Err(probe_malformed(
+                ctx,
+                "asset manifest asset type",
+                format_args!("invalid asset type {asset_type:?}"),
+            ));
+        }
+        let kind = if asset_type == DESIGN_ASSET_TYPE {
+            let revision = cursor.u32("Fusion asset manifest revision")?;
+            let fusion_subtype = match revision {
             0 => {
                 parse_revision_zero_design_asset(&mut cursor)?;
                 cursor.finish("revision-0 Fusion asset manifest")?;
@@ -596,25 +700,33 @@ fn parse_asset_header<'a>(
                 }
             })?,
         };
-        AssetKind::Design { fusion_subtype }
-    } else {
-        AssetKind::Other
-    };
-    Ok(AssetManifestHeader { base_name, kind })
+            AssetKind::Design { fusion_subtype }
+        } else {
+            AssetKind::Other
+        };
+        Ok(AssetManifestHeader { base_name, kind })
     })();
     parsed.map_err(ManifestFailure::into_codec)
 }
 
-fn parse_capability_registry<'ctx>(cursor: &mut Cursor<'_, 'ctx, '_>) -> Result<(), ManifestFailure<'ctx>> {
+fn parse_capability_registry<'ctx>(
+    cursor: &mut Cursor<'_, 'ctx, '_>,
+) -> Result<(), ManifestFailure<'ctx>> {
     let capability_count = cursor.count(
         "Fusion asset manifest capability count",
         MAX_REGISTRY_ENTRIES,
     )?;
     let mut capability_names = BTreeSet::new();
     for ordinal in 0..capability_count {
-        let (field, _field_budget) = cursor.ctx.format_scoped(format_args!("Fusion asset manifest capability name {ordinal}"), "describe F3D manifest field")?;
+        let (field, _field_budget) = cursor.ctx.format_scoped(
+            format_args!("Fusion asset manifest capability name {ordinal}"),
+            "describe F3D manifest field",
+        )?;
         let name = cursor.ascii(&field)?;
-        cursor.ctx.charge_work(u64_from_index(name.len()) * u64_from_index(capability_names.len() + 1) * 2, "compare F3D asset capability names")?;
+        cursor.ctx.charge_work(
+            u64_from_index(name.len()) * u64_from_index(capability_names.len() + 1) * 2,
+            "compare F3D asset capability names",
+        )?;
         if name.is_empty() || capability_names.contains(&name) {
             return Err(probe_malformed(
                 cursor.ctx,
@@ -627,7 +739,10 @@ fn parse_capability_registry<'ctx>(cursor: &mut Cursor<'_, 'ctx, '_>) -> Result<
             name,
             "index F3D asset capability names",
         )?;
-        let (field, _field_budget) = cursor.ctx.format_scoped(format_args!("Fusion asset manifest capability value {ordinal}"), "describe F3D manifest field")?;
+        let (field, _field_budget) = cursor.ctx.format_scoped(
+            format_args!("Fusion asset manifest capability value {ordinal}"),
+            "describe F3D manifest field",
+        )?;
         let _value = cursor.u32(&field)?;
     }
     Ok(())
@@ -643,7 +758,9 @@ fn parse_current_design_asset<'a, 'ctx>(
     Ok((!subtype.is_empty()).then_some(subtype))
 }
 
-fn parse_revision_zero_design_asset<'ctx>(cursor: &mut Cursor<'_, 'ctx, '_>) -> Result<(), ManifestFailure<'ctx>> {
+fn parse_revision_zero_design_asset<'ctx>(
+    cursor: &mut Cursor<'_, 'ctx, '_>,
+) -> Result<(), ManifestFailure<'ctx>> {
     cursor.expect_u32("revision-0 Fusion asset schema", 3)?;
     cursor.expect_u32("revision-0 Fusion asset kind count", 1)?;
     cursor.expect_ascii("revision-0 Fusion asset kind", "Neutron3DAssetType")?;
@@ -657,7 +774,9 @@ fn parse_revision_zero_design_asset<'ctx>(cursor: &mut Cursor<'_, 'ctx, '_>) -> 
     Ok(())
 }
 
-fn parse_revision_ten_design_asset<'ctx>(cursor: &mut Cursor<'_, 'ctx, '_>) -> Result<(), ManifestFailure<'ctx>> {
+fn parse_revision_ten_design_asset<'ctx>(
+    cursor: &mut Cursor<'_, 'ctx, '_>,
+) -> Result<(), ManifestFailure<'ctx>> {
     parse_capability_registry(cursor)?;
     cursor.expect_ascii("revision-10 Fusion asset kind", "Neutron3DAssetType")?;
     cursor.expect_u8("revision-10 Fusion asset subtype mode", 0)?;
@@ -672,9 +791,16 @@ fn parse_revision_ten_design_asset<'ctx>(cursor: &mut Cursor<'_, 'ctx, '_>) -> R
             break;
         }
         if link_count == MAX_REGISTRY_ENTRIES {
-            return Err(probe_malformed(cursor.ctx, "revision-10 Fusion asset links", format_args!("count exceeds the limit {MAX_REGISTRY_ENTRIES}")));
+            return Err(probe_malformed(
+                cursor.ctx,
+                "revision-10 Fusion asset links",
+                format_args!("count exceeds the limit {MAX_REGISTRY_ENTRIES}"),
+            ));
         }
-        let (field, _field_budget) = cursor.ctx.format_scoped(format_args!("revision-10 Fusion asset link {link_count} locator"), "describe F3D manifest field")?;
+        let (field, _field_budget) = cursor.ctx.format_scoped(
+            format_args!("revision-10 Fusion asset link {link_count} locator"),
+            "describe F3D manifest field",
+        )?;
         let locator = cursor.utf16_with_count(locator_units, &field)?;
         let mut last = ['\0'; 4];
         let contains_urn = locator.chars().any(|character| {
@@ -689,9 +815,15 @@ fn parse_revision_ten_design_asset<'ctx>(cursor: &mut Cursor<'_, 'ctx, '_>) -> R
                 format_args!("expected an embedded URN, found {locator:?}"),
             ));
         }
-        let (field, _field_budget) = cursor.ctx.format_scoped(format_args!("revision-10 Fusion asset link {link_count} GUID 1"), "describe F3D manifest field")?;
+        let (field, _field_budget) = cursor.ctx.format_scoped(
+            format_args!("revision-10 Fusion asset link {link_count} GUID 1"),
+            "describe F3D manifest field",
+        )?;
         let _first_guid = cursor.guid(&field)?;
-        let (field, _field_budget) = cursor.ctx.format_scoped(format_args!("revision-10 Fusion asset link {link_count} GUID 2"), "describe F3D manifest field")?;
+        let (field, _field_budget) = cursor.ctx.format_scoped(
+            format_args!("revision-10 Fusion asset link {link_count} GUID 2"),
+            "describe F3D manifest field",
+        )?;
         let _second_guid = cursor.guid(&field)?;
         link_count += 1;
     }
@@ -873,17 +1005,31 @@ fn validate_guid(value: &str, field: &str) -> Result<(), CodecError> {
 }
 
 fn asset_base_is_valid(mut characters: impl Iterator<Item = char>) -> bool {
-    let Some(first) = characters.next() else { return false; };
+    let Some(first) = characters.next() else {
+        return false;
+    };
     let second = characters.next();
     let third = characters.next();
-    if first == '.' && (second.is_none() || (second == Some('.') && third.is_none())) { return false; }
-    std::iter::once(first).chain(second).chain(third).chain(characters)
+    if first == '.' && (second.is_none() || (second == Some('.') && third.is_none())) {
+        return false;
+    }
+    std::iter::once(first)
+        .chain(second)
+        .chain(third)
+        .chain(characters)
         .all(|character| !matches!(character, '/' | '\\' | '\0'))
 }
 
-fn validate_asset_base_view<'ctx>(ctx: &'ctx DecodeContext<'_>, value: Utf16View<'_>) -> Result<(), ManifestFailure<'ctx>> {
+fn validate_asset_base_view<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    value: Utf16View<'_>,
+) -> Result<(), ManifestFailure<'ctx>> {
     if !asset_base_is_valid(value.chars()) {
-        return Err(probe_malformed(ctx, "asset-folder base name", format_args!("invalid path component {value:?}")));
+        return Err(probe_malformed(
+            ctx,
+            "asset-folder base name",
+            format_args!("invalid path component {value:?}"),
+        ));
     }
     Ok(())
 }
@@ -898,10 +1044,16 @@ fn validate_asset_base(value: &str) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn bounded_nonzero_count<'ctx>(ctx: &'ctx DecodeContext<'_>, value: u32, max: usize, field: &str) -> Result<usize, ManifestFailure<'ctx>> {
+fn bounded_nonzero_count<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    value: u32,
+    max: usize,
+    field: &str,
+) -> Result<usize, ManifestFailure<'ctx>> {
     let count = bounded_count(ctx, value, max, field)?;
     if count == 0 {
-        return Err(probe_malformed(ctx,
+        return Err(probe_malformed(
+            ctx,
             field,
             format_args!("count {count} is outside 1..={max}"),
         ));
@@ -909,11 +1061,20 @@ fn bounded_nonzero_count<'ctx>(ctx: &'ctx DecodeContext<'_>, value: u32, max: us
     Ok(count)
 }
 
-fn bounded_count<'ctx>(ctx: &'ctx DecodeContext<'_>, value: u32, max: usize, field: &str) -> Result<usize, ManifestFailure<'ctx>> {
-    let count =
-        usize::try_from(value).map_err(|_| probe_malformed(ctx, field, "count does not fit memory"))?;
+fn bounded_count<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    value: u32,
+    max: usize,
+    field: &str,
+) -> Result<usize, ManifestFailure<'ctx>> {
+    let count = usize::try_from(value)
+        .map_err(|_| probe_malformed(ctx, field, "count does not fit memory"))?;
     if count > max {
-        return Err(probe_malformed(ctx, field, format_args!("count {count} exceeds the limit {max}")));
+        return Err(probe_malformed(
+            ctx,
+            field,
+            format_args!("count {count} exceeds the limit {max}"),
+        ));
     }
     Ok(count)
 }

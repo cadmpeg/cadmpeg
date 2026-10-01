@@ -20,51 +20,54 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
     crate::test_support::with_decode_context(|ctx| {
-    let construction = exact_derived_instance_construction(
-        ctx,
-        &bytes,
-        &records,
-        &scope,
-        std::slice::from_ref(&occurrence),
-    )
-    .unwrap().expect("exact DerivedInstance construction");
-    assert_eq!(construction.reference_record_index, 305);
-    assert_eq!(construction.relation_record_index, 383);
-    assert_eq!(construction.carrier_record_index, 382);
-    assert_eq!(construction.component_guid.as_str(), COMPONENT);
-    assert_eq!(construction.occurrence_guid.as_str(), OCCURRENCE);
-    assert_eq!(
-        construction.transform,
-        occurrence.transform().as_ref().copied().unwrap().value
-    );
-    assert_eq!(
-        construction.transform_offset,
-        425 + u64_from_index(scope_279::TRANSFORM)
-    );
+        let construction = exact_derived_instance_construction(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            std::slice::from_ref(&occurrence),
+        )
+        .unwrap()
+        .expect("exact DerivedInstance construction");
+        assert_eq!(construction.reference_record_index, 305);
+        assert_eq!(construction.relation_record_index, 383);
+        assert_eq!(construction.carrier_record_index, 382);
+        assert_eq!(construction.component_guid.as_str(), COMPONENT);
+        assert_eq!(construction.occurrence_guid.as_str(), OCCURRENCE);
+        assert_eq!(
+            construction.transform,
+            occurrence.transform().as_ref().copied().unwrap().value
+        );
+        assert_eq!(
+            construction.transform_offset,
+            425 + u64_from_index(scope_279::TRANSFORM)
+        );
 
-    scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-    assert!(exact_derived_instance_construction(
-        ctx,
-        &bytes,
-        &records,
-        &scope,
-        std::slice::from_ref(&occurrence),
-    )
-    .unwrap().is_none());
+        scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
+        assert!(exact_derived_instance_construction(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            std::slice::from_ref(&occurrence),
+        )
+        .unwrap()
+        .is_none());
 
-    scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
-    bytes[425 + scope_279::TRANSFORM + 6] = 0;
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    assert!(exact_derived_instance_construction(
-        ctx,
-        &bytes,
-        &records,
-        &scope,
-        std::slice::from_ref(&occurrence),
-    )
-    .unwrap().is_none());
+        scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
+        bytes[425 + scope_279::TRANSFORM + 6] = 0;
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert!(exact_derived_instance_construction(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            std::slice::from_ref(&occurrence),
+        )
+        .unwrap()
+        .is_none());
     });
 }
 
@@ -174,10 +177,19 @@ fn derived_instance_guid_copies_preserve_retained_refusals() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = exact_derived_instance_construction(ctx, &bytes, &records, &scope, std::slice::from_ref(&occurrence)).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            let error = exact_derived_instance_construction(
+                ctx,
+                &bytes,
+                &records,
+                &scope,
+                std::slice::from_ref(&occurrence),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && failure.operation == "retain F3D construction GUID"));
+                    && failure.operation == "retain F3D construction GUID")
+            );
         });
     }
 }

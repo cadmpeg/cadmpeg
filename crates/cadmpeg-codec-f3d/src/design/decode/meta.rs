@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design segment metadata and the ordered feature timeline.
 
-use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use std::collections::{HashMap, HashSet};
@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{take_reference, Reference};
 use crate::container::ContainerScan;
-use crate::design::decode::text::{design_record_id_charged};
+use crate::design::decode::text::design_record_id_charged;
 use crate::ids::native_stream;
 use crate::records::{
     entity_header::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION},
@@ -250,8 +250,13 @@ pub(crate) fn decode_component_naming_spaces(
                 if !component_entities.contains(&component_record_index) {
                     continue;
                 }
-                let Some((context_uuid, _)) =
-                    lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36, "f3d Design UTF-16 text")?
+                let Some((context_uuid, _)) = lp_utf16_bounded_charged(
+                    ctx,
+                    bytes,
+                    uuid_offset,
+                    36..=36,
+                    "f3d Design UTF-16 text",
+                )?
                 else {
                     continue;
                 };
@@ -299,8 +304,13 @@ pub(crate) fn decode_component_naming_spaces(
             }) {
                 continue;
             }
-            let Some((context_uuid, _)) =
-                lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36, "f3d Design UTF-16 text")?
+            let Some((context_uuid, _)) = lp_utf16_bounded_charged(
+                ctx,
+                bytes,
+                uuid_offset,
+                36..=36,
+                "f3d Design UTF-16 text",
+            )?
             else {
                 continue;
             };

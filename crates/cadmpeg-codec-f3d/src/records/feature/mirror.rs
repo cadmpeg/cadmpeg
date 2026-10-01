@@ -233,8 +233,10 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
                 .plane_scope_record_index
                 .map(|reference| reference.offset),
             plane_selection_record_index: record.plane_selection_record_index,
-            plane_origin: record.plane.map(|plane| plane.origin()),
-            plane_normal: record.plane.map(|plane| FiniteVector3::from(plane.normal())),
+            plane_origin: record.plane.map(DesignPlane::origin),
+            plane_normal: record
+                .plane
+                .map(|plane| FiniteVector3::from(plane.normal())),
         }
     }
 }

@@ -10,8 +10,8 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 
+use crate::design::decode::text::relaxed_guid_end;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
-use crate::design::decode::text::{relaxed_guid_end};
 use crate::ids::native_stream;
 use crate::layout::component_insert_carrier_334_prefix as component_carrier_334;
 use crate::layout::component_insert_identity_scope_compact as component_identity_scope;
@@ -347,7 +347,13 @@ pub(super) fn exact_component_insert_construction(
                             ) {
                                 return Some(Err(error));
                             }
-                            let role = match lp_utf16_bounded_charged(ctx, bytes, at, 36..=36, "f3d Design UTF-16 text") {
+                            let role = match lp_utf16_bounded_charged(
+                                ctx,
+                                bytes,
+                                at,
+                                36..=36,
+                                "f3d Design UTF-16 text",
+                            ) {
                                 Ok(Some((role, _))) => role,
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
@@ -493,7 +499,13 @@ pub(super) fn exact_component_insert_construction(
                     }
                     let transform_at = after_role.checked_add(2)?;
                     if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                        let role = match lp_utf16_bounded_charged(ctx, bytes, at, 36..=38, "f3d Design UTF-16 text") {
+                        let role = match lp_utf16_bounded_charged(
+                            ctx,
+                            bytes,
+                            at,
+                            36..=38,
+                            "f3d Design UTF-16 text",
+                        ) {
                             Ok(Some((role, _))) => role,
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
@@ -1015,7 +1027,13 @@ fn legacy_component_insert_placements(
             continue;
         };
         let Some((asset_identity, after_asset_identity, _asset_reservation)) =
-            lp_utf16_bounded_scoped(ctx, bytes, after_asset_guid + 1, 37..=256, "f3d Design temporary UTF-16 text")?
+            lp_utf16_bounded_scoped(
+                ctx,
+                bytes,
+                after_asset_guid + 1,
+                37..=256,
+                "f3d Design temporary UTF-16 text",
+            )?
         else {
             continue;
         };
@@ -1032,7 +1050,13 @@ fn legacy_component_insert_placements(
         let carrier_transform_at = after_asset_identity + 1;
         let after_transform = carrier_transform_at + 16 * 8;
         let Some((repeated_identity, after_repeated_identity, _repeated_reservation)) =
-            lp_utf16_bounded_scoped(ctx, bytes, after_transform + 4, 37..=256, "f3d Design temporary UTF-16 text")?
+            lp_utf16_bounded_scoped(
+                ctx,
+                bytes,
+                after_transform + 4,
+                37..=256,
+                "f3d Design temporary UTF-16 text",
+            )?
         else {
             continue;
         };
@@ -1043,7 +1067,9 @@ fn legacy_component_insert_placements(
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         {
             ctx.reserve_vec(&mut placements, 1, "f3d legacy component insert placements")?;
-            let Some((role, _)) = lp_utf16_bounded_charged(ctx, bytes, role_at, 36..=36, "f3d Design UTF-16 text")? else {
+            let Some((role, _)) =
+                lp_utf16_bounded_charged(ctx, bytes, role_at, 36..=36, "f3d Design UTF-16 text")?
+            else {
                 continue;
             };
             placements.push((role, role_at + 4, Some(carrier_transform_at)));

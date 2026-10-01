@@ -76,20 +76,26 @@ impl From<XrefPlacementTransform> for [[f64; 4]; 4] {
 pub(crate) struct RequiredXrefText(String);
 
 impl RequiredXrefText {
-    pub(crate) fn as_str(&self) -> &str { &self.0 }
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl TryFrom<String> for RequiredXrefText {
     type Error = &'static str;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.is_empty() { return Err("required XREF text must be non-empty"); }
+        if value.is_empty() {
+            return Err("required XREF text must be non-empty");
+        }
         Ok(Self(value))
     }
 }
 
 impl std::ops::Deref for RequiredXrefText {
     type Target = str;
-    fn deref(&self) -> &str { self.as_str() }
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
 }
 
 impl std::fmt::Display for RequiredXrefText {
@@ -169,7 +175,10 @@ mod tests {
         for field in ["from", "relative_path", "neutron_role"] {
             let mut empty = reference.clone();
             empty[field] = serde_json::json!("");
-            assert!(serde_json::from_value::<XrefReference>(empty).is_err(), "{field}");
+            assert!(
+                serde_json::from_value::<XrefReference>(empty).is_err(),
+                "{field}"
+            );
             let mut whitespace = reference.clone();
             whitespace[field] = serde_json::json!(" ");
             let record = serde_json::from_value::<XrefReference>(whitespace.clone()).unwrap();
@@ -178,6 +187,10 @@ mod tests {
         }
         let mut whitespace = design;
         whitespace["target_file_name"] = serde_json::json!(" ");
-        assert_eq!(serde_json::to_value(serde_json::from_value::<XrefDesign>(whitespace.clone()).unwrap()).unwrap(), whitespace);
+        assert_eq!(
+            serde_json::to_value(serde_json::from_value::<XrefDesign>(whitespace.clone()).unwrap())
+                .unwrap(),
+            whitespace
+        );
     }
 }

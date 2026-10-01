@@ -18,7 +18,10 @@ impl<'de> DeserializeSeed<'de> for CountJsonNodes<'_, '_> {
     type Value = ();
 
     fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        if let Err(error) = self.ctx.charge_collection_items(1, self.collection_operation) {
+        if let Err(error) = self
+            .ctx
+            .charge_collection_items(1, self.collection_operation)
+        {
             self.refusal.replace(Some(error));
             return Err(D::Error::custom("JSON collection limit exceeded"));
         }
@@ -80,8 +83,8 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
             .next_element_seed(CountJsonNodes {
                 ctx: self.ctx,
                 operation: self.operation,
-            collection_operation: self.collection_operation,
-                        refusal: self.refusal,
+                collection_operation: self.collection_operation,
+                refusal: self.refusal,
             })?
             .is_some()
         {}
@@ -100,16 +103,16 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
             .next_key_seed(CountJsonNodes {
                 ctx: self.ctx,
                 operation: self.operation,
-            collection_operation: self.collection_operation,
-                        refusal: self.refusal,
+                collection_operation: self.collection_operation,
+                refusal: self.refusal,
             })?
             .is_some()
         {
             map.next_value_seed(CountJsonNodes {
                 ctx: self.ctx,
                 operation: self.operation,
-            collection_operation: self.collection_operation,
-                        refusal: self.refusal,
+                collection_operation: self.collection_operation,
+                refusal: self.refusal,
             })?;
         }
         Ok(())
@@ -155,7 +158,9 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 2;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = super::preflight(ctx, b"[0,0,0,", "JSON preflight", "JSON scan", "JSON nodes").unwrap_err();
+            let error =
+                super::preflight(ctx, b"[0,0,0,", "JSON preflight", "JSON scan", "JSON nodes")
+                    .unwrap_err();
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("invalid prefix must preserve its admission refusal");
             };

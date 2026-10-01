@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact thread construction scopes and thread payloads.
 
-
-use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_compact_legacy_construction_tail as thread_compact_legacy_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
@@ -140,13 +139,23 @@ pub(super) fn parse_thread_payload(
     expected_form: ThreadPrefix,
     face_group_record_indices: Vec<u32>,
 ) -> Result<Option<DesignThreadConstruction>, CodecError> {
-    let Some((designation, after_designation)) =
-        lp_utf16_bounded_charged(ctx, bytes, designation_at, 1..=128, "f3d Design UTF-16 text")?
+    let Some((designation, after_designation)) = lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        designation_at,
+        1..=128,
+        "f3d Design UTF-16 text",
+    )?
     else {
         return Ok(None);
     };
-    let Some((nominal_size_text, after_nominal)) =
-        lp_utf16_bounded_charged(ctx, bytes, after_designation, 1..=64, "f3d Design UTF-16 text")?
+    let Some((nominal_size_text, after_nominal)) = lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_designation,
+        1..=64,
+        "f3d Design UTF-16 text",
+    )?
     else {
         return Ok(None);
     };

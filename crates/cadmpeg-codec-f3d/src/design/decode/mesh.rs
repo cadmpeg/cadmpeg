@@ -5,7 +5,7 @@
 //! and a typed Design graph joins the container, mesh body, owning feature,
 //! optional texture resources, and Scene state ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 
-use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::DecodeContext;
 use std::fmt::Write;
@@ -583,8 +583,14 @@ fn parse_mesh_entry_name_record(
     let guid_record_index =
         exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)
             .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
-    let (entry_name, _) = lp_utf16_bounded_charged(ctx, record, entry_name_prefix::LEN, 1..=1024, "f3d Design UTF-16 text")?
-        .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
+    let (entry_name, _) = lp_utf16_bounded_charged(
+        ctx,
+        record,
+        entry_name_prefix::LEN,
+        1..=1024,
+        "f3d Design UTF-16 text",
+    )?
+    .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
     Ok(MeshEntryNameRecord {
         entry: DesignMeshEntryName::new(identity, entry_name)
             .map_err(|_| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?,
@@ -1236,7 +1242,9 @@ fn parse_mesh_texture_filename_record(
         ctx,
         record,
         texture_filename::BASENAME_CODE_UNIT_COUNT,
-        1..=1024, "f3d Design UTF-16 text")?
+        1..=1024,
+        "f3d Design UTF-16 text",
+    )?
     .ok_or_else(|| malformed_frame(ctx, "mesh-texture-filename", frame.entity_id))?;
     if end != record.len() {
         return Err(malformed_frame(

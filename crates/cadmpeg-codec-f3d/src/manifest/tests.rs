@@ -527,13 +527,15 @@ fn encode_fusion_subtype_asset(
     Ok(bytes)
 }
 
-
 #[test]
 fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
     let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     let mut anchor = Vec::new();
     push_utf16(&mut anchor, DESIGN_GUID).unwrap();
-    let at = bytes.windows(anchor.len()).rposition(|window| window == anchor).unwrap();
+    let at = bytes
+        .windows(anchor.len())
+        .rposition(|window| window == anchor)
+        .unwrap();
     let mut failed = Vec::new();
     for _ in 0..32 {
         push_utf16(&mut failed, OTHER_GUID).unwrap();
@@ -543,7 +545,9 @@ fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
     }
     bytes.splice(at..at, failed);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (TOP_LEVEL_MANIFEST_VERSION.len() + "Design Base".len()).try_into().unwrap();
+    policy.limits.max_retained_bytes = (TOP_LEVEL_MANIFEST_VERSION.len() + "Design Base".len())
+        .try_into()
+        .unwrap();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let manifest = parse_top_level(ctx, &bytes).unwrap();
         assert_eq!(manifest.declared_version(), TOP_LEVEL_MANIFEST_VERSION);
@@ -554,7 +558,12 @@ fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let header = parse_asset_header(ctx, &asset).unwrap();
         assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
-        assert_eq!(header.kind, AssetKind::Design { fusion_subtype: None });
+        assert_eq!(
+            header.kind,
+            AssetKind::Design {
+                fusion_subtype: None
+            }
+        );
     });
 }
 
@@ -566,7 +575,9 @@ fn failed_manifest_tail_preserves_scoped_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let error = super::parse_asset_tail(ctx, &bytes, 0).unwrap_err().into_codec();
+        let error = super::parse_asset_tail(ctx, &bytes, 0)
+            .unwrap_err()
+            .into_codec();
         assert!(matches!(error, CodecError::ResourceLimit(failure)
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && failure.operation == "describe malformed F3D manifest"));

@@ -4,12 +4,12 @@
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::index_from_u32;
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
-use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::text::{design_record_id_charged};
+use crate::design::decode::text::design_record_id_charged;
 use crate::ids::native_stream;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{

@@ -31,7 +31,14 @@ fn fixed_guid_scan_matches_decoded_relaxed_guid_validation() {
             bytes.extend_from_slice(&code_unit.to_le_bytes());
         }
         let prior = crate::test_support::with_decode_context(|ctx| {
-            crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 36..=36, "retain F3D UTF-16 string").unwrap()
+            crate::bytes::lp_utf16_bounded_charged(
+                ctx,
+                &bytes,
+                0,
+                36..=36,
+                "retain F3D UTF-16 string",
+            )
+            .unwrap()
         })
         .and_then(|(guid, end)| crate::bytes::is_guid_relaxed(&guid).then_some(end));
         assert_eq!(

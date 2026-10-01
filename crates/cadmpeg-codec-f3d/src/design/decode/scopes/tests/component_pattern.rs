@@ -97,10 +97,13 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = bind_component_pattern_occurrences(ctx, &mut scope, &occurrences).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            let error =
+                bind_component_pattern_occurrences(ctx, &mut scope, &occurrences).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "retain F3D pattern GUID"));
+                    && failure.operation == "retain F3D pattern GUID")
+            );
         });
     }
     let arena = DecodeArena::new();

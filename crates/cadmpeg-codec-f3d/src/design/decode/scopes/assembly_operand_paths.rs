@@ -4,10 +4,10 @@
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::text::{fixed_relaxed_guid_text};
+use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;

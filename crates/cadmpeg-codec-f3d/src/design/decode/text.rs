@@ -123,7 +123,14 @@ mod tests {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
             let owned = crate::test_support::with_decode_context(|ctx| {
-                crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 1..=256, "retain F3D UTF-16 string").unwrap()
+                crate::bytes::lp_utf16_bounded_charged(
+                    ctx,
+                    &bytes,
+                    0,
+                    1..=256,
+                    "retain F3D UTF-16 string",
+                )
+                .unwrap()
             })
             .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
             assert_eq!(relaxed_guid_end(&bytes, 0), owned);
@@ -146,7 +153,14 @@ mod tests {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
             let prior = crate::test_support::with_decode_context(|ctx| {
-                crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 36..=36, "retain F3D UTF-16 string").unwrap()
+                crate::bytes::lp_utf16_bounded_charged(
+                    ctx,
+                    &bytes,
+                    0,
+                    36..=36,
+                    "retain F3D UTF-16 string",
+                )
+                .unwrap()
             })
             .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
             let current = fixed_guid_ascii(&bytes, 0)
@@ -175,7 +189,9 @@ mod tests {
                     ctx,
                     &bytes,
                     0,
-                    expected.len()..=expected.len(), "retain F3D UTF-16 string")
+                    expected.len()..=expected.len(),
+                    "retain F3D UTF-16 string",
+                )
                 .unwrap()
             })
             .and_then(|(text, end)| (text == expected).then_some(end));

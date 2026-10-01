@@ -194,13 +194,22 @@ fn circular_pattern_construction_refuses_zero_count() {
 fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
     let wire = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_offset":51,"stitch_tolerance_record_index":12,"seed_group_record_index":20,"plane_group_record_index":30,"plane_origin":[0.0,0.0,0.0]}"#;
     let mut value: serde_json::Value = serde_json::from_str(wire).unwrap();
-    for normal in [[0.0,0.0,0.0], [0.0,0.0,2.0]] {
+    for normal in [[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]] {
         value["plane_normal"] = serde_json::json!(normal);
         let error = serde_json::from_value::<DesignMirrorConstruction>(value.clone()).unwrap_err();
-        assert!(error.to_string().contains("plane_normal must be a unit vector"));
+        assert!(error
+            .to_string()
+            .contains("plane_normal must be a unit vector"));
     }
-    value["plane_origin"] = serde_json::to_value(cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)).unwrap()).unwrap();
-    value["plane_normal"] = serde_json::to_value(cadmpeg_ir::features::FiniteVector3::from(cadmpeg_ir::units::UnitVector3::Z_AXIS)).unwrap();
+    value["plane_origin"] = serde_json::to_value(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+            .unwrap(),
+    )
+    .unwrap();
+    value["plane_normal"] = serde_json::to_value(cadmpeg_ir::features::FiniteVector3::from(
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+    ))
+    .unwrap();
     let plane: DesignMirrorConstruction = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(serde_json::to_value(plane).unwrap(), value);
 }

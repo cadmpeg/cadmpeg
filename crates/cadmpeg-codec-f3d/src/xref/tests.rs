@@ -198,11 +198,23 @@ fn redirections_design_id_refuses_retained_limit() {
 fn redirections_reference_id_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2 * u64_from_index("f3d:xref:design#0".len());
+    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
+    let parsed: super::RedirectionsJson = serde_json::from_str(&bytes).unwrap();
+    let design_text_bytes: usize = parsed
+        .designs
+        .iter()
+        .map(|design| {
+            design.target_file_name.capacity()
+                + design.display_name.capacity()
+                + design.lineage_urn.capacity()
+                + design.version_urn.capacity()
+        })
+        .sum();
+    policy.limits.max_retained_bytes =
+        2 * u64_from_index("f3d:xref:design#0".len()) + u64_from_index(design_text_bytes);
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
-    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -504,7 +516,19 @@ fn xref_stream_scope_refuses_retained_limit() {
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-    limit_policy.limits.max_retained_bytes = 498;
+    // MetaStream parsing and serializer lookup retain their header fields.
+    let meta_text = "Design".len()
+        + 36
+        + "FusionDesignSegmentType".len()
+        + "Fusion".len()
+        + 36
+        + "Component".len()
+        + "Design".len()
+        + 36;
+    // Both placement attempts retain one class tag and two copies of the role.
+    let path_text = 2 * ("256".len() + 2 * XREF_ROLE.len());
+    let cache_key = "FusionAssetName[Active]/Design1/MetaStream.dat".len();
+    limit_policy.limits.max_retained_bytes = u64_from_index(meta_text + path_text + cache_key);
     let limit_ctx =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
             .unwrap()
@@ -1108,10 +1132,16 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     assert_eq!(matrix_4.len(), 823);
     assert_eq!(matrix_5.len(), 823);
     assert_eq!(matrix_6.len(), 823);
-    let (matrix_role, _, matrix_offset) =
-        super::repeated_target_component_insert(&cadmpeg_test_support::service_decode_context(), &matrix_6, 0, matrix_6.len(), 15, matrix)
-            .unwrap()
-            .expect("matrix carrier matching the scope transform");
+    let (matrix_role, _, matrix_offset) = super::repeated_target_component_insert(
+        &cadmpeg_test_support::service_decode_context(),
+        &matrix_6,
+        0,
+        matrix_6.len(),
+        15,
+        matrix,
+    )
+    .unwrap()
+    .expect("matrix carrier matching the scope transform");
     assert_eq!(matrix_role, role);
     assert!(matrix_offset.is_some());
     let mut bytes = identity_1;
@@ -1918,9 +1948,14 @@ fn repeated_target_component_insert_preserves_caller_refusal() {
             0,
             bytes.len(),
             10,
-            [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
-             [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
-        ).unwrap_err();
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        )
+        .unwrap_err();
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("placement must preserve the resource refusal");
         };

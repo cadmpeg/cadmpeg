@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
-use crate::bytes::{lp_utf16_bounded_charged};
 use crate::bytes::lp_ascii_filtered_view;
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
@@ -250,7 +250,9 @@ fn parse_decal_asset_record(
             ctx,
             bytes,
             name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
-            1..=1024, "f3d Design UTF-16 text") {
+            1..=1024,
+            "f3d Design UTF-16 text",
+        ) {
             Ok(Some(value)) => value,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact combine operations and external body identities.
 
-use crate::bytes::{lp_utf16_bounded_charged};
 use super::draft::contains_consecutive_guid_pair;
 use super::parameter_scope::parameter_scope_payload_length;
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 
@@ -221,7 +221,8 @@ pub(super) fn take_external_reference_identity(
         let segment = View::u32_le_at(bytes, segment_at)?;
         let asset_at = segment_at.checked_add(4)?;
         let (asset_id, after_asset_id) =
-            match lp_utf16_bounded_charged(ctx, bytes, asset_at, 1..=256, "f3d Design UTF-16 text") {
+            match lp_utf16_bounded_charged(ctx, bytes, asset_at, 1..=256, "f3d Design UTF-16 text")
+            {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
@@ -231,29 +232,44 @@ pub(super) fn take_external_reference_identity(
             return None;
         }
         let link_name_at = after_asset_id.checked_add(1)?;
-        let (link_name, after_link_name) =
-            match lp_utf16_bounded_charged(ctx, bytes, link_name_at, 1..=256, "f3d Design UTF-16 text") {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (link_name, after_link_name) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            link_name_at,
+            1..=256,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let (version, end) = match bytes.get(after_link_name)? {
             0 => (None, after_link_name.checked_add(1)?),
             1 => {
                 let property_key_at = after_link_name.checked_add(1)?;
-                let (property_key, after_property_key) =
-                    match lp_utf16_bounded_charged(ctx, bytes, property_key_at, 1..=256, "f3d Design UTF-16 text") {
-                        Ok(Some(value)) => value,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
+                let (property_key, after_property_key) = match lp_utf16_bounded_charged(
+                    ctx,
+                    bytes,
+                    property_key_at,
+                    1..=256,
+                    "f3d Design UTF-16 text",
+                ) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 let version_urn_at = after_property_key;
-                let (version_urn, end) =
-                    match lp_utf16_bounded_charged(ctx, bytes, version_urn_at, 1..=256, "f3d Design UTF-16 text") {
-                        Ok(Some(value)) => value,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
+                let (version_urn, end) = match lp_utf16_bounded_charged(
+                    ctx,
+                    bytes,
+                    version_urn_at,
+                    1..=256,
+                    "f3d Design UTF-16 text",
+                ) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 let property_key =
                     crate::records::mesh::DesignRelaxedGuidText::try_from(property_key).ok()?;
                 (
@@ -313,19 +329,29 @@ fn exact_combine_external_body_identity(
         }
         cursor = cursor.checked_add(4)?;
         let selector_asset_at = cursor;
-        let (selector_asset_id, after_selector_asset_id) =
-            match lp_utf16_bounded_charged(ctx, bytes, selector_asset_at, 1..=256, "f3d Design UTF-16 text") {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (selector_asset_id, after_selector_asset_id) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            selector_asset_at,
+            1..=256,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let selector_context_at = after_selector_asset_id;
-        let (selector_context_id, after_selector_context_id) =
-            match lp_utf16_bounded_charged(ctx, bytes, selector_context_at, 1..=256, "f3d Design UTF-16 text") {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (selector_context_id, after_selector_context_id) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            selector_context_at,
+            1..=256,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let selector_asset_id =
             crate::records::mesh::DesignRelaxedGuidText::try_from(selector_asset_id).ok()?;
         let selector_context_id =

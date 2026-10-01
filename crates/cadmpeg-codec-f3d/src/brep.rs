@@ -42,10 +42,20 @@ fn collect_owned_ids_charged(
     let _depth = ctx.enter_nested("walk F3D BREP owned IDs")?;
     ctx.charge_work(1, "walk F3D BREP owned IDs")?;
     if let serde_value::Value::String(text) = value {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("walk F3D BREP owned IDs", 0, u64::MAX))?, "walk F3D BREP owned IDs")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len())
+                .checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("walk F3D BREP owned IDs", 0, u64::MAX))?,
+            "walk F3D BREP owned IDs",
+        )?;
     }
     if let Some(id) = cadmpeg_asm::brep::entity_id(value) {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("hash F3D BREP owned ID", 0, u64::MAX))?, "hash F3D BREP owned ID")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(id.len())
+                .checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("hash F3D BREP owned ID", 0, u64::MAX))?,
+            "hash F3D BREP owned ID",
+        )?;
         if !owned.contains(id) {
             let key = ctx.copy_retained_text(id, "copy F3D BREP owned ID")?;
 
@@ -81,12 +91,20 @@ fn remap_owned_ids_charged(
     let _depth = ctx.enter_nested("remap F3D BREP owned IDs")?;
     ctx.charge_work(1, "remap F3D BREP owned IDs")?;
     if let serde_value::Value::String(text) = value {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("remap F3D BREP owned IDs", 0, u64::MAX))?, "remap F3D BREP owned IDs")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len())
+                .checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("remap F3D BREP owned IDs", 0, u64::MAX))?,
+            "remap F3D BREP owned IDs",
+        )?;
     }
     match value {
         serde_value::Value::String(id) => {
             if let Some(replacement) = replacements.get(id) {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(replacement.len()), "copy F3D BREP remapped ID")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(replacement.len()),
+                    "copy F3D BREP remapped ID",
+                )?;
                 *id = ctx.copy_retained_text(replacement, "copy F3D BREP remapped ID")?;
             }
         }
@@ -120,7 +138,12 @@ fn collect_brep_references(
     let _depth = ctx.enter_nested("walk F3D BREP references")?;
     ctx.charge_work(1, "walk F3D BREP references")?;
     if let serde_value::Value::String(text) = value {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("walk F3D BREP references", 0, u64::MAX))?, "walk F3D BREP references")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len())
+                .checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("walk F3D BREP references", 0, u64::MAX))?,
+            "walk F3D BREP references",
+        )?;
     }
     match value {
         serde_value::Value::String(id) if owned.contains(id) && !references.contains(id) => {
@@ -332,7 +355,8 @@ impl Brep {
     ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
         let mut resolved = HashMap::new();
         for selector in selectors {
-            let Some(body) = resolve_body_selector(ctx, self.asm.body_native_keys.iter(), *selector)?
+            let Some(body) =
+                resolve_body_selector(ctx, self.asm.body_native_keys.iter(), *selector)?
             else {
                 continue;
             };
@@ -674,7 +698,9 @@ pub(crate) fn resolve_body_selector<'a>(
         ctx.charge_work(1, "match F3D native body selector")?;
         if body.asm_body_key == Some(selector) {
             if direct.is_some() {
-                return Err(CodecError::malformed(format_args!("F3D body selector {selector} matches multiple native body keys")));
+                return Err(CodecError::malformed(format_args!(
+                    "F3D body selector {selector} matches multiple native body keys"
+                )));
             }
             direct = Some(&body.body);
         }
@@ -682,13 +708,17 @@ pub(crate) fn resolve_body_selector<'a>(
     if direct.is_some() {
         return Ok(direct);
     }
-    let Ok(ordinal) = u32::try_from(selector) else { return Ok(None); };
+    let Ok(ordinal) = u32::try_from(selector) else {
+        return Ok(None);
+    };
     let mut matched = None;
     for body in body_keys {
         ctx.charge_work(1, "match F3D ordinal body selector")?;
         if body.body_ordinal == ordinal {
             if matched.is_some() {
-                return Err(CodecError::malformed(format_args!("F3D body selector {selector} matches multiple body ordinals")));
+                return Err(CodecError::malformed(format_args!(
+                    "F3D body selector {selector} matches multiple body ordinals"
+                )));
             }
             matched = Some(&body.body);
         }
