@@ -551,7 +551,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         .iter()
         .any(|loss| is_external_assembly_loss(&loss.code));
     let (rederivation, rederivation_boundary) = if part_design_applicable {
-        neutral_rederivation_evidence(decoded.ir())
+        neutral_rederivation_evidence(decoded.ir())?
     } else {
         (VerificationStatus::Inapplicable, None)
     };
@@ -685,22 +685,26 @@ fn unique_face_body<'a>(
 }
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
-fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<RederivationBoundary>) {
-    match saved_body_census_evidence(ir) {
-        BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
-        BodyCensusEvaluation::Mismatch { .. } => (
-            VerificationStatus::Missing,
-            Some(RederivationBoundary::SavedBodyCensusMismatch),
-        ),
-        BodyCensusEvaluation::Unsupported { feature, reason } => (
-            VerificationStatus::Missing,
-            Some(RederivationBoundary::Unsupported { feature, reason }),
-        ),
-        BodyCensusEvaluation::ConfigurationEvaluation => (
-            VerificationStatus::Missing,
-            Some(RederivationBoundary::ConfigurationEvaluation),
-        ),
-    }
+fn neutral_rederivation_evidence(
+    ir: &CadIr,
+) -> Result<(VerificationStatus, Option<RederivationBoundary>), cadmpeg_core::CodecError> {
+    Ok(
+        match saved_body_census_evidence(ir, &DecodeOptions::default().policy)? {
+            BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
+            BodyCensusEvaluation::Mismatch { .. } => (
+                VerificationStatus::Missing,
+                Some(RederivationBoundary::SavedBodyCensusMismatch),
+            ),
+            BodyCensusEvaluation::Unsupported { feature, reason } => (
+                VerificationStatus::Missing,
+                Some(RederivationBoundary::Unsupported { feature, reason }),
+            ),
+            BodyCensusEvaluation::ConfigurationEvaluation => (
+                VerificationStatus::Missing,
+                Some(RederivationBoundary::ConfigurationEvaluation),
+            ),
+        },
+    )
 }
 
 fn canonical_sha256(
@@ -1022,7 +1026,7 @@ mod tests {
     fn empty_neutral_history_rederives_the_empty_saved_body_census() {
         let ir = CadIr::empty();
         assert_eq!(
-            neutral_rederivation_evidence(&ir),
+            neutral_rederivation_evidence(&ir).expect("census evaluates"),
             (VerificationStatus::Verified, None)
         );
     }
@@ -1070,7 +1074,7 @@ mod tests {
         });
 
         assert_eq!(
-            neutral_rederivation_evidence(&ir),
+            neutral_rederivation_evidence(&ir).expect("census evaluates"),
             (VerificationStatus::Verified, None)
         );
     }
@@ -1104,7 +1108,7 @@ mod tests {
             native_ref: None,
         });
 
-        let (status, boundary) = neutral_rederivation_evidence(&ir);
+        let (status, boundary) = neutral_rederivation_evidence(&ir).expect("census evaluates");
         assert_eq!(status, VerificationStatus::Missing);
         assert_eq!(
             boundary,
@@ -1184,7 +1188,7 @@ mod tests {
         });
 
         assert_eq!(
-            neutral_rederivation_evidence(&ir),
+            neutral_rederivation_evidence(&ir).expect("census evaluates"),
             (VerificationStatus::Verified, None)
         );
     }

@@ -397,6 +397,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             crate::records::entity_header::DesignFeatureTimeline::try_new(
                 crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
                 crate::records::entity_header::DesignTimelineFrame::new(
+                    crate::records::admission::RecordAdmission::Admitted,
                     200,
                     60,
                     220,
@@ -470,6 +471,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         crate::records::entity_header::DesignFeatureTimeline::try_new(
             native.design_feature_timelines[0].id().clone(),
             crate::records::entity_header::DesignTimelineFrame::new(
+                crate::records::admission::RecordAdmission::Admitted,
                 200,
                 60,
                 220,

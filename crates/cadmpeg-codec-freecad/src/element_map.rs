@@ -213,6 +213,12 @@ pub(crate) fn parse(
             maps: parsed.maps,
         });
     }
+    ctx.stable_sort_by(
+        &mut tables,
+        |left, right| left.index.cmp(&right.index),
+        |_| 0,
+        "FreeCAD string tables sort",
+    )?;
     Ok((StringTables::try_from(tables)?, maps))
 }
 

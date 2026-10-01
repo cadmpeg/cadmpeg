@@ -2,6 +2,8 @@
 //! Neutral evaluation of Siemens NX feature-history effects.
 
 use crate::decode::feature_completeness;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 
 use std::collections::BTreeSet;
 
@@ -223,11 +225,21 @@ impl From<BodyCensusEvaluation> for BodyCensusEvaluationWire {
 /// The caller must validate the IR first. This evaluator checks replay order,
 /// operation completeness, and body lineage; it does not repeat topology or
 /// selection-target validation.
-pub(crate) fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
-    let rederived = match rederived_body_census(ir) {
+pub(crate) fn evaluate_saved_body_census(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<BodyCensusEvaluation, CodecError> {
+    let mut features = ir.model.features.iter().collect::<Vec<_>>();
+    ctx.stable_sort_by(
+        &mut features,
+        |left, right| left.ordinal.cmp(&right.ordinal),
+        |_| 0,
+        "nx saved body census features sort",
+    )?;
+    let rederived = match rederived_body_census(ir, &features) {
         Ok(bodies) => bodies,
         Err((feature, reason)) => {
-            return BodyCensusEvaluation::Unsupported { feature, reason };
+            return Ok(BodyCensusEvaluation::Unsupported { feature, reason });
         }
     };
     let saved = ir
@@ -237,20 +249,20 @@ pub(crate) fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
         .map(|body| body.id.clone())
         .collect::<BTreeSet<_>>();
     if rederived != saved {
-        return BodyCensusEvaluation::Mismatch {
+        return Ok(BodyCensusEvaluation::Mismatch {
             evidence: BodyCensusDifference {
                 rederived: CanonicalBodyCensus(rederived.into_iter().collect()),
                 saved: CanonicalBodyCensus(saved.into_iter().collect()),
             },
-        };
+        });
     }
 
     if !active_configuration_is_admitted(ir, &saved) {
-        return BodyCensusEvaluation::ConfigurationEvaluation;
+        return Ok(BodyCensusEvaluation::ConfigurationEvaluation);
     }
-    BodyCensusEvaluation::Verified {
+    Ok(BodyCensusEvaluation::Verified {
         bodies: CanonicalBodyCensus(rederived.into_iter().collect()),
-    }
+    })
 }
 
 fn feature_boundary(feature: &cadmpeg_ir::features::Feature) -> FeatureBoundary {
@@ -266,8 +278,13 @@ fn feature_boundary(feature: &cadmpeg_ir::features::Feature) -> FeatureBoundary 
 
 /// Saved-body census evidence for the profile harness.
 #[doc(hidden)]
-pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvaluation {
-    evaluate_saved_body_census(ir)
+pub fn saved_body_census_evidence(
+    ir: &CadIr,
+    policy: &DecodePolicy,
+) -> Result<BodyCensusEvaluation, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    evaluate_saved_body_census(&ctx, ir)
 }
 
 fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> bool {
@@ -297,6 +314,7 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
 
 fn rederived_body_census(
     ir: &CadIr,
+    features: &[&cadmpeg_ir::features::Feature],
 ) -> Result<BTreeSet<BodyId>, (FeatureBoundary, UnsupportedBodyCensusReason)> {
     let mut bodies = BTreeSet::new();
     let saved_bodies = ir
@@ -307,9 +325,7 @@ fn rederived_body_census(
         .collect::<BTreeSet<_>>();
     let mut seen_features = BTreeSet::new();
     let mut previous_ordinal = None;
-    let mut features = ir.model.features.iter().collect::<Vec<_>>();
-    features.sort_by_key(|feature| feature.ordinal);
-    for feature in features {
+    for &feature in features {
         if seen_features.contains(&feature.id)
             || previous_ordinal.is_some_and(|ordinal| feature.ordinal <= ordinal)
             || feature

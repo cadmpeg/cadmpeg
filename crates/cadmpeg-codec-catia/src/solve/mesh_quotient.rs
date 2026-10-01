@@ -5559,7 +5559,12 @@ fn possible_face_equations(
                 "catia_possible_face_equation_values",
             )?;
         }
-        face_equations.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut face_equations,
+            Ord::cmp,
+            |_| 0,
+            "catia mesh possible face equations sort",
+        )?;
         ctx.push_vec(
             &mut faces_equations,
             face_equations,
@@ -7862,11 +7867,16 @@ where
             "catia_endpoint_relation_branch_order",
         )?;
     }
-    branch_order.sort_unstable_by(|(left_score, left), (right_score, right)| {
-        right_score
-            .cmp(left_score)
-            .then_with(|| choices[*left].id.cmp(&choices[*right].id))
-    });
+    ctx.sort_unstable_by(
+        &mut branch_order,
+        |(left_score, left), (right_score, right)| {
+            right_score
+                .cmp(left_score)
+                .then_with(|| choices[*left].id.cmp(&choices[*right].id))
+        },
+        |_| 0,
+        "catia mesh endpoint relation branch order sort",
+    )?;
     for (_, index) in branch_order {
         if budget.exhausted() {
             return Ok(true);

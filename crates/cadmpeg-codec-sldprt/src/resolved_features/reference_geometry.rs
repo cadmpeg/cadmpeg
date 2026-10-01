@@ -431,7 +431,7 @@ pub(crate) fn enrich_history_reference_planes(
             let explicit = if offset_frames.is_some() {
                 None
             } else if anchored_frames.is_empty() {
-                match explicit_reference_plane_frame(bytes) {
+                match explicit_reference_plane_frame(ctx, bytes)? {
                     Ok(frame) => frame,
                     Err(()) if constraint.is_some() => None,
                     Err(()) => continue,
@@ -2864,10 +2864,13 @@ const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 const ANGLED_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
 
+type PlaneFrame = (Point3, Vector3, Vector3);
+
 pub(super) fn explicit_reference_plane_frame(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
-) -> Result<Option<(Point3, Vector3, Vector3)>, ()> {
-    let mut frames = matrix_reference_plane_frame_candidates(payload)
+) -> Result<Result<Option<PlaneFrame>, ()>, CodecError> {
+    let frames = matrix_reference_plane_frame_candidates(payload)
         .map(|(_, frame)| frame)
         .chain(fixed_reference_plane_frame_candidates(payload).map(|(_, frame)| frame))
         .chain(
@@ -2881,26 +2884,27 @@ pub(super) fn explicit_reference_plane_frame(
                 })
                 .map(|(_, frame)| frame),
         )
-        .chain(minimal_reference_plane_frame(payload))
-        .chain(
-            compact_reference_plane_frame_candidates(payload)
-                .filter(|(offset, _)| {
-                    !strong_reference_plane_overlap(
-                        payload,
-                        *offset,
-                        COMPACT_REFERENCE_PLANE_FRAME_LEN,
-                    )
-                })
-                .map(|(_, frame)| frame),
-        );
-    let Some(frame) = frames.next() else {
-        return Ok(None);
-    };
-    if frames.all(|candidate| candidate == frame) {
-        Ok(Some(frame))
-    } else {
-        Err(())
+        .chain(minimal_reference_plane_frame(payload));
+    let mut first = None;
+    for frame in frames {
+        match first {
+            None => first = Some(frame),
+            Some(existing) if existing != frame => return Ok(Err(())),
+            Some(_) => {}
+        }
     }
+    for candidate in compact_reference_plane_frame_candidates(ctx, payload) {
+        let (offset, frame) = candidate?;
+        if strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN) {
+            continue;
+        }
+        match first {
+            None => first = Some(frame),
+            Some(existing) if existing != frame => return Ok(Err(())),
+            Some(_) => {}
+        }
+    }
+    Ok(Ok(first))
 }
 
 fn strong_reference_plane_overlap(payload: &[u8], offset: usize, len: usize) -> bool {
@@ -3155,15 +3159,17 @@ fn offset_reference_plane_frame_pair(
         let matrix = matrix_candidates
             .iter()
             .find_map(|(matrix_offset, frame)| (*matrix_offset == offset).then_some(*frame));
+        let compact = match payload.get(offset..offset + COMPACT_REFERENCE_PLANE_FRAME_LEN) {
+            Some(window) => compact_reference_plane_frame(ctx, window)?,
+            None => None,
+        };
         let candidates = [
             fixed,
             matrix,
             payload
                 .get(offset..offset + MINIMAL_REFERENCE_PLANE_FRAME_LEN)
                 .and_then(minimal_reference_plane_frame),
-            payload
-                .get(offset..offset + COMPACT_REFERENCE_PLANE_FRAME_LEN)
-                .and_then(compact_reference_plane_frame),
+            compact,
         ];
         for frame in candidates.into_iter().flatten() {
             ctx.charge_work(
@@ -3436,15 +3442,27 @@ fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
     frames.all(|candidate| candidate == frame).then_some(frame)
 }
 
-fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
-    let mut frames = compact_reference_plane_frame_candidates(payload).map(|(_, frame)| frame);
-    let frame = frames.next()?;
-    frames.all(|candidate| candidate == frame).then_some(frame)
+fn compact_reference_plane_frame(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
+    let mut frames = compact_reference_plane_frame_candidates(ctx, payload);
+    let Some(first) = frames.next() else {
+        return Ok(None);
+    };
+    let (_, frame) = first?;
+    for candidate in frames {
+        if candidate?.1 != frame {
+            return Ok(None);
+        }
+    }
+    Ok(Some(frame))
 }
 
-fn compact_reference_plane_frame_candidates(
-    payload: &[u8],
-) -> impl Iterator<Item = (usize, (Point3, Vector3, Vector3))> + '_ {
+fn compact_reference_plane_frame_candidates<'a>(
+    ctx: &'a DecodeContext<'_>,
+    payload: &'a [u8],
+) -> impl Iterator<Item = Result<(usize, (Point3, Vector3, Vector3)), CodecError>> + 'a {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = View::f64_le_at(bytes, relative)?;
@@ -3488,14 +3506,29 @@ fn compact_reference_plane_frame_candidates(
                             <= EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9)
                         .then_some((offset, (origin, normal, u_axis)))
                 });
-                pair.sort_by_key(|candidate| {
-                    candidate
-                        .as_ref()
-                        .map_or([u64::MAX; 9], |(_, frame)| reference_plane_frame_key(frame))
-                });
-                Some(pair)
+                if let Err(error) = ctx.stable_sort_by(
+                    &mut pair,
+                    |left, right| {
+                        let key = |candidate: &Option<(usize, (Point3, Vector3, Vector3))>| {
+                            candidate.as_ref().map_or([u64::MAX; 9], |(_, frame)| {
+                                reference_plane_frame_key(frame)
+                            })
+                        };
+                        key(left).cmp(&key(right))
+                    },
+                    |_| 0,
+                    "sldprt compact reference plane frame pair sort",
+                ) {
+                    return Some(Err(error));
+                }
+                Some(Ok(pair))
             })();
-            candidates.into_iter().flatten().flatten()
+            let (pair, error) = match candidates {
+                Some(Ok(pair)) => (pair, None),
+                Some(Err(error)) => ([None, None], Some(error)),
+                None => ([None, None], None),
+            };
+            pair.into_iter().flatten().map(Ok).chain(error.map(Err))
         })
 }
 

@@ -694,7 +694,7 @@ fn hole_package_lane_container() -> crate::container::Container<'static> {
         0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
     ];
     let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
-    let part = crate::test_support::test_om::composed_feature_history_payload(
+    let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
         &[(&[0xff; 4], "HOLE PACKAGE", payload)],
         &store,
     );

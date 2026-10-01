@@ -1988,7 +1988,12 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             ctx.reserve_collection_vec(&mut owned, 1, "collect SLDPRT owned profile markers")?;
             owned.push(marker);
         }
-        owned.sort_unstable_by_key(|marker| marker.offset());
+        ctx.sort_unstable_by(
+            &mut owned,
+            |left, right| left.offset().cmp(&right.offset()),
+            |_| 0,
+            "sldprt profile axis owned markers sort",
+        )?;
         if let Some(start) = owned
             .windows(2)
             .find_map(|pair| (pair[1].id() == end.id()).then_some(pair[0]))
@@ -2035,8 +2040,14 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         )?;
         boundary_relations.push(endpoints);
     }
-    boundary_relations
-        .sort_unstable_by_key(|endpoints| [endpoints[0].offset(), endpoints[1].offset()]);
+    ctx.sort_unstable_by(
+        &mut boundary_relations,
+        |left, right| {
+            [left[0].offset(), left[1].offset()].cmp(&[right[0].offset(), right[1].offset()])
+        },
+        |_| 0,
+        "sldprt profile axis boundary relations sort",
+    )?;
     boundary_relations.dedup_by_key(|endpoints| [endpoints[0].id(), endpoints[1].id()]);
     match boundary_relations.as_slice() {
         [endpoints] => return Ok(Some(*endpoints)),

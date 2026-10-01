@@ -2884,7 +2884,7 @@ impl<'a> DecodeContext<'a> {
         }
         self.ir.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
-        let outcomes = self.class_outcomes()?;
+        let outcomes = self.class_outcomes(ctx)?;
         let decoded = outcomes
             .iter()
             .map(|(_, outcome)| outcome.decoded)
@@ -4156,8 +4156,10 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    fn class_outcomes(&self) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
-        let ctx = self.expand.ctx();
+    fn class_outcomes(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
         let mut outcomes = HashMap::new();
         for (object, status) in self.scan.objects.iter().zip(&self.statuses) {
             let class = object.class_uuid().unwrap_or_else(crate::wire::Uuid::nil);
@@ -4207,7 +4209,12 @@ impl<'a> DecodeContext<'a> {
                 ctx.format_retained(format_args!("{class}"), "Rhino class outcome label")?;
             sorted.push((label, outcome));
         }
-        sorted.sort_unstable_by(|(first, _), (second, _)| first.cmp(second));
+        ctx.sort_unstable_by(
+            &mut sorted,
+            |(first, _), (second, _)| first.cmp(second),
+            |(label, _)| label.len(),
+            "Rhino class outcome rows sort",
+        )?;
         Ok(sorted)
     }
 }

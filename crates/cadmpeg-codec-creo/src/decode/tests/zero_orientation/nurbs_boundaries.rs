@@ -436,24 +436,28 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     .expect("resource limits")
     .is_none());
     assert_eq!(
-        cubic_unit_interval_roots(
+        crate::decode::with_test_decode_ctx(|ctx| cubic_unit_interval_roots(
+            ctx,
             Coefficient::single(1.0),
             Coefficient::single(-1.5),
             Coefficient::single(0.66),
             Coefficient::single(-0.08),
             1.0e-12
-        )
+        ))
+        .expect("roots are admitted")
         .len(),
         3
     );
     assert_eq!(
-        cubic_unit_interval_roots(
+        crate::decode::with_test_decode_ctx(|ctx| cubic_unit_interval_roots(
+            ctx,
             Coefficient::single(1.0),
             Coefficient::single(-1.8),
             Coefficient::single(1.05),
             Coefficient::single(-0.2),
             1.0e-12
-        )
+        ))
+        .expect("roots are admitted")
         .len(),
         2
     );

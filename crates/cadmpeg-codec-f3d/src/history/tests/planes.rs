@@ -22,34 +22,37 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
             face_slot,
         }
     };
-    let primary = candidate("history-a", 10);
-    assert_eq!(
-        super::super::selection::unique_mirror_plane_candidate(vec![primary.clone()], Vec::new()),
-        Some(primary.clone())
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let unique = |primary: Vec<_>, persistent: Vec<_>| {
+            super::super::selection::unique_mirror_plane_candidate(ctx, primary, persistent)
+                .expect("candidate sorts are admitted")
+        };
+        let primary = candidate("history-a", 10);
+        assert_eq!(
+            unique(vec![primary.clone()], Vec::new()),
+            Some(primary.clone())
+        );
 
-    let second_primary = candidate("history-b", 20);
-    assert_eq!(
-        super::super::selection::unique_mirror_plane_candidate(
-            vec![primary.clone(), second_primary.clone()],
-            Vec::new(),
-        ),
-        None
-    );
-    assert_eq!(
-        super::super::selection::unique_mirror_plane_candidate(
-            vec![primary, second_primary.clone()],
-            vec![second_primary.clone()],
-        ),
-        Some(second_primary.clone())
-    );
-    assert_eq!(
-        super::super::selection::unique_mirror_plane_candidate(
-            vec![candidate("history-a", 10), second_primary.clone()],
-            vec![candidate("history-a", 11), second_primary],
-        ),
-        None
-    );
+        let second_primary = candidate("history-b", 20);
+        assert_eq!(
+            unique(vec![primary.clone(), second_primary.clone()], Vec::new()),
+            None
+        );
+        assert_eq!(
+            unique(
+                vec![primary, second_primary.clone()],
+                vec![second_primary.clone()],
+            ),
+            Some(second_primary.clone())
+        );
+        assert_eq!(
+            unique(
+                vec![candidate("history-a", 10), second_primary.clone()],
+                vec![candidate("history-a", 11), second_primary],
+            ),
+            None
+        );
+    });
 }
 
 #[test]

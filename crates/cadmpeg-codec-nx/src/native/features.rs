@@ -3603,15 +3603,6 @@ pub(super) fn canonical_feature_history_links(
     mut links: Vec<SegmentOmLink>,
 ) -> Result<Vec<SegmentOmLink>, CodecError> {
     links.retain(|link| link.schema_role == OmSchemaRole::FeatureHistory);
-    let _sorting = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(
-            links
-                .len()
-                .checked_mul(std::mem::size_of::<SegmentOmLink>())
-                .ok_or_else(|| ctx.refuse_codec_limit("sort NX feature history links", 0, 1))?,
-        ),
-        "sort NX feature history links",
-    )?;
     ctx.stable_sort_by(
         &mut links,
         |first, second| {

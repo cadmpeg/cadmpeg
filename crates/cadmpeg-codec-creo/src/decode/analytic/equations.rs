@@ -365,7 +365,7 @@ pub(super) fn intersect_two_planes_with_quadric(
             + quadric.constant.abs(),
     );
     let mut points = Vec::new();
-    for point in real_roots(quadratic, linear, constant)
+    for point in real_roots(ctx, quadratic, linear, constant)?
         .into_iter()
         .map(|parameter| {
             std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
@@ -1282,8 +1282,13 @@ fn refine_plane_conic_tangency(
 /// decision there is the one that constructor made. The two sums formed here
 /// scale that same bar by the powers of `u` they multiply it with, which bounds
 /// each sum against the exact coefficients rather than against the stated ones.
-fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> QuadraticRoots {
+fn conic_v_roots(
+    ctx: &DecodeContext<'_>,
+    conic: PlaneConicEquation,
+    u: f64,
+) -> Result<QuadraticRoots, CodecError> {
     real_roots(
+        ctx,
         conic.vv,
         Coefficient::summed(
             conic.uv.stated().mul_add(u, conic.v.stated()),
@@ -1305,8 +1310,8 @@ pub(super) fn common_plane_conic_parameters(
     let mut parameters = Vec::<[f64; 2]>::new();
     for root in real_polynomial_roots(ctx, &resultant)? {
         let u = root.value;
-        let first_v_roots = conic_v_roots(first, u);
-        let second_v_roots = conic_v_roots(second, u);
+        let first_v_roots = conic_v_roots(ctx, first, u)?;
+        let second_v_roots = conic_v_roots(ctx, second, u)?;
         for v in first_v_roots.into_iter().chain(second_v_roots) {
             // A derivative-station candidate can be two intersections that are
             // close in u or one point where the conics touch. Ordinary

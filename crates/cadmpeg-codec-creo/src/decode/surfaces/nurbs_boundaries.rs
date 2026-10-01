@@ -663,8 +663,13 @@ impl CubicRoots {
         }
     }
 
-    fn sort_and_dedup(&mut self) {
-        self.values[..self.len].sort_by(f64::total_cmp);
+    fn sort_and_dedup(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.stable_sort_by(
+            &mut self.values[..self.len],
+            f64::total_cmp,
+            |_| 0,
+            "creo cubic extrusion roots sort",
+        )?;
         let mut unique = 0;
         for index in 0..self.len {
             if unique == 0
@@ -679,6 +684,7 @@ impl CubicRoots {
             }
         }
         self.len = unique;
+        Ok(())
     }
 
     pub(in super::super) fn as_slice(&self) -> &[f64] {
@@ -700,12 +706,13 @@ impl std::ops::Index<usize> for CubicRoots {
 }
 
 pub(in super::super) fn cubic_unit_interval_roots(
+    ctx: &DecodeContext<'_>,
     cubic: Coefficient,
     quadratic: Coefficient,
     linear: Coefficient,
     constant: Coefficient,
     value_tolerance: f64,
-) -> CubicRoots {
+) -> Result<CubicRoots, CodecError> {
     let [cubic_value, quadratic_value, linear_value, constant_value] =
         [cubic, quadratic, linear, constant].map(Coefficient::stated);
     let scale = cubic_value
@@ -714,7 +721,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
         .max(linear_value.abs())
         .max(constant_value.abs());
     if scale <= value_tolerance {
-        return CubicRoots::new();
+        return Ok(CubicRoots::new());
     }
     let evaluate = |parameter: f64| {
         ((cubic_value * parameter + quadratic_value) * parameter + linear_value) * parameter
@@ -726,29 +733,30 @@ pub(in super::super) fn cubic_unit_interval_roots(
     // state.
     if cubic_value == 0.0 {
         let mut roots = CubicRoots::new();
-        for root in real_roots(quadratic, linear, constant) {
+        for root in real_roots(ctx, quadratic, linear, constant)? {
             if let Some(parameter) = unit_interval_parameter(root) {
                 if evaluate(root).abs() <= value_tolerance {
                     roots.push(parameter);
                 }
             }
         }
-        roots.sort_and_dedup();
-        return roots;
+        roots.sort_and_dedup(ctx)?;
+        return Ok(roots);
     }
     let mut stations = CubicRoots::new();
     stations.push(0.0);
     stations.push(1.0);
     for root in real_roots(
+        ctx,
         Coefficient::summed(3.0 * cubic_value, 3.0 * cubic.terms()),
         Coefficient::summed(2.0 * quadratic_value, 2.0 * quadratic.terms()),
         linear,
-    ) {
+    )? {
         if root > EPS_CUBIC_PARAM && root < 1.0 - EPS_CUBIC_PARAM {
             stations.push(root);
         }
     }
-    stations.sort_and_dedup();
+    stations.sort_and_dedup(ctx)?;
     let mut roots = CubicRoots::new();
     for &station in stations.as_slice() {
         if evaluate(station).abs() <= value_tolerance {
@@ -784,8 +792,8 @@ pub(in super::super) fn cubic_unit_interval_roots(
         }
         roots.push(f64::midpoint(left, right));
     }
-    roots.sort_and_dedup();
-    roots
+    roots.sort_and_dedup(ctx)?;
+    Ok(roots)
 }
 
 /// Generator curve where a cubic extrusion surface meets a plane.
@@ -920,8 +928,17 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         });
         let [cubic, quadratic, linear, constant] = plane_distance_coefficients(signed);
         let weight_scale = weights.iter().copied().fold(1.0, f64::max);
-        let roots =
-            cubic_unit_interval_roots(cubic, quadratic, linear, constant, tolerance * weight_scale);
+        let roots = match cubic_unit_interval_roots(
+            ctx,
+            cubic,
+            quadratic,
+            linear,
+            constant,
+            tolerance * weight_scale,
+        ) {
+            Ok(roots) => roots,
+            Err(error) => return Some(Err(error)),
+        };
         let [parameter] = roots.as_slice() else {
             return None;
         };
@@ -1405,11 +1422,18 @@ mod tests {
             [linear.stated(), constant.stated()],
             [20.700_000_000_000_003, -8.9]
         );
-        assert_eq!(
-            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE)
-                .as_slice(),
-            [-constant.stated() / linear.stated()]
-        );
+        let roots = crate::decode::with_test_decode_ctx(|ctx| {
+            super::cubic_unit_interval_roots(
+                ctx,
+                cubic,
+                quadratic,
+                linear,
+                constant,
+                EPS_TEST_VALUE,
+            )
+        })
+        .expect("roots are admitted");
+        assert_eq!(roots.as_slice(), [-constant.stated() / linear.stated()]);
 
         // Plane distances that are exactly quadratic in the polygon index. The
         // exact third difference of -0.1, -0.1, 0.0, 0.2 is zero and it computes
@@ -1421,8 +1445,17 @@ mod tests {
             [quadratic.stated(), linear.stated(), constant.stated()],
             [0.300_000_000_000_000_04, 0.0, -0.1]
         );
-        let roots =
-            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE);
+        let roots = crate::decode::with_test_decode_ctx(|ctx| {
+            super::cubic_unit_interval_roots(
+                ctx,
+                cubic,
+                quadratic,
+                linear,
+                constant,
+                EPS_TEST_VALUE,
+            )
+        })
+        .expect("roots are admitted");
         assert_eq!(roots.len(), 1);
         assert!((roots[0] - (1.0f64 / 3.0).sqrt()).abs() <= EPS_TEST_ROOT);
     }

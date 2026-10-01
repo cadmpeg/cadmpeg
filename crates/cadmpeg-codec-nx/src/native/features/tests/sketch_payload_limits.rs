@@ -21,7 +21,7 @@ fn sketch_reference_refusal(
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(
             ctx,
-            crate::test_support::test_prt::composed_feature_history_prt(),
+            crate::test_support::test_prt::composed_feature_history_prt_over_sort_scratch(),
         )
     })
     .expect("composed feature-history container");

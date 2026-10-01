@@ -66,6 +66,7 @@ fn native() -> crate::native::F3dNative {
         design_feature_timelines: vec![DesignFeatureTimeline::try_new(
             crate::ids::native_design_feature_timeline_id(bulk, 200),
             DesignTimelineFrame::new(
+                crate::records::admission::RecordAdmission::Admitted,
                 200,
                 60,
                 220,
@@ -370,6 +371,7 @@ fn forward_history_native() -> crate::native::F3dNative {
     native.design_feature_timelines[0] = DesignFeatureTimeline::try_new(
         timeline.id().clone(),
         DesignTimelineFrame::new(
+            crate::records::admission::RecordAdmission::Admitted,
             200,
             80,
             220,

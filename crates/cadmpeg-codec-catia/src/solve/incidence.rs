@@ -664,30 +664,37 @@ fn join_incidence_components_by_coupling(
 }
 
 fn order_incidence_components_by_branch_width(
+    ctx: &DecodeContext<'_>,
     components: &mut [Vec<usize>],
     choices: &[Vec<[usize; 2]>],
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     if components
         .iter()
         .flatten()
         .any(|edge| *edge >= choices.len())
     {
-        return None;
+        return Ok(None);
     }
     let branch_width = |component: &[usize]| {
         component.iter().try_fold(1usize, |width, edge| {
             width.checked_mul(choices[*edge].len())
         })
     };
-    components.sort_by_key(|component| {
+    let order_key = |component: &Vec<usize>| {
         (
             branch_width(component).is_none(),
             branch_width(component),
             component.len(),
             component.first().copied().unwrap_or_default(),
         )
-    });
-    Some(())
+    };
+    ctx.stable_sort_by(
+        components,
+        |left, right| order_key(left).cmp(&order_key(right)),
+        |_| 0,
+        "catia incidence component branch width sort",
+    )?;
+    Ok(Some(()))
 }
 
 /// Order incidence components while preserving prerequisites between their
@@ -725,9 +732,7 @@ fn order_incidence_components_by_constraints(
         return Ok(None);
     }
     if assignment_order.is_none() {
-        return Ok(order_incidence_components_by_branch_width(
-            components, choices,
-        ));
+        return order_incidence_components_by_branch_width(ctx, components, choices);
     }
 
     let edge_entry_count = components
@@ -2737,7 +2742,12 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) -> Result<bool, CodecError> {
         let mut faces = self.edge_faces[edge];
-        faces.sort_unstable();
+        self.ctx.sort_unstable_by(
+            &mut faces,
+            Ord::cmp,
+            |_| 0,
+            "catia incidence degree support faces sort",
+        )?;
         let length = if faces[0] == faces[1] { 1 } else { 2 };
         let preserved = self.degree_frontiers_supported(
             &faces[..length],
@@ -6024,9 +6034,14 @@ where
     )?;
     for candidates in &mut choices {
         for pair in candidates.iter_mut() {
-            pair.sort_unstable();
+            ctx.sort_unstable_by(pair, Ord::cmp, |_| 0, "catia incidence choice pair sort")?;
         }
-        candidates.sort_unstable();
+        ctx.sort_unstable_by(
+            candidates,
+            Ord::cmp,
+            |_| 0,
+            "catia incidence choice pairs sort",
+        )?;
         candidates.dedup();
     }
     let valid = if choices.iter().any(Vec::is_empty) {

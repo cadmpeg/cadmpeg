@@ -28,6 +28,7 @@ use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::segments::SegmentBodyBinding;
 use crate::om::state_journal::JournalRow;
 use crate::test_support::test_om::composed_feature_history_payload;
+use crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch;
 use crate::test_support::test_om::composed_feature_history_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use std::collections::BTreeMap;
@@ -327,12 +328,7 @@ fn unlabeled_history_fixture() -> crate::container::Container<'static> {
     section.splice(second_header..second_header, unlabeled);
     let payload_len = u32::try_from(section.len() - 16).expect("fixture value fits u32");
     section[8..12].copy_from_slice(&payload_len.to_be_bytes());
-    let mut payload = Vec::new();
-    for word in [32u32, 9, 11, 1, 1, 24] {
-        payload.extend_from_slice(&word.to_le_bytes());
-    }
-    payload.resize(32, 0);
-    payload.extend_from_slice(&section);
+    let payload = crate::test_support::test_om::feature_history_section_over_sort_scratch(&section);
     crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(
             ctx,
@@ -766,7 +762,10 @@ fn operation_object_reference_refusal(
             b"\x01\x02\x17\x07\xff\x80\x00\x00\x02"
         }
     };
-    let payload = composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", field.to_vec())], &[]);
+    let payload = composed_feature_history_payload_over_sort_scratch(
+        &[(&[0xff; 4], "EXTRUDE", field.to_vec())],
+        &[],
+    );
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(
             ctx,
@@ -860,7 +859,10 @@ fn operation_common_frame_refusal(
         0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
         0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
     ];
-    let payload = composed_feature_history_payload(&[(&[0xff; 4], "FSET", frame.to_vec())], &[]);
+    let payload = composed_feature_history_payload_over_sort_scratch(
+        &[(&[0xff; 4], "FSET", frame.to_vec())],
+        &[],
+    );
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(
             ctx,
@@ -908,8 +910,10 @@ fn feature_payload_reference_refusal(
         FeaturePayloadReferenceRoute::PrimaryBody
         | FeaturePayloadReferenceRoute::BodyOccurrences => b"\x01\x02\x10\x07\xff",
     };
-    let payload =
-        composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", payload_bytes.to_vec())], &[]);
+    let payload = composed_feature_history_payload_over_sort_scratch(
+        &[(&[0xff; 4], "EXTRUDE", payload_bytes.to_vec())],
+        &[],
+    );
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(
             ctx,
@@ -945,7 +949,7 @@ fn input_block_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let store = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
-    let payload = composed_feature_history_payload(
+    let payload = composed_feature_history_payload_over_sort_scratch(
         &[(
             &[1, 0xff, 0xff, 0xff],
             "EXTRUDE",
@@ -1188,8 +1192,10 @@ fn operation_body_write_refusal(
 ) -> cadmpeg_core::CodecError {
     let body_write = b"\x01\x02\x0b\x31\x97\x75\x01\x02\x10\x41\xff";
     let store = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
-    let payload =
-        composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write.to_vec())], &store);
+    let payload = composed_feature_history_payload_over_sort_scratch(
+        &[(&[0xff; 4], "EXTRUDE", body_write.to_vec())],
+        &store,
+    );
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(
             ctx,

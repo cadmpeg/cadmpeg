@@ -1672,7 +1672,12 @@ fn registry_feature_edges(
         ctx.insert_btree_set(&mut seen, edge, "index paramesh feature edges")?;
         feature_edges.push(edge);
     }
-    feature_edges.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut feature_edges,
+        Ord::cmp,
+        |_| 0,
+        "f3d paramesh feature edges sort",
+    )?;
     Ok(feature_edges)
 }
 

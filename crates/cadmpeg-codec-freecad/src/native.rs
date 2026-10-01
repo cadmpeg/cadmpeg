@@ -540,7 +540,18 @@ mod tests {
             namespace.arenas()["string_tables"][2].id(),
             "fcstd:native:string-table#10"
         );
-        let tables: super::StringTables = namespace.arena_as_collection("string_tables").unwrap();
+        let mut ordered = namespace
+            .arena_as::<super::StringTableRecord>("string_tables")
+            .unwrap();
+        cadmpeg_test_support::service_decode_context()
+            .stable_sort_by(
+                &mut ordered,
+                |left, right| left.index.cmp(&right.index),
+                |_| 0,
+                "test string tables sort",
+            )
+            .unwrap();
+        let tables = super::StringTables::try_from(ordered).unwrap();
         assert_eq!(
             tables
                 .as_slice()
@@ -3788,6 +3799,8 @@ pub(crate) struct ByteCoverageRecord {
 }
 
 /// Persistent string tables in contiguous numeric `HasherIndex` order.
+///
+/// Construction requires the records already in that order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Vec<StringTableRecord>")]
 pub(crate) struct StringTables(Vec<StringTableRecord>);
@@ -3801,8 +3814,7 @@ impl StringTables {
 impl TryFrom<Vec<StringTableRecord>> for StringTables {
     type Error = cadmpeg_ir::native::NativeConvertError;
 
-    fn try_from(mut records: Vec<StringTableRecord>) -> Result<Self, Self::Error> {
-        records.sort_by_key(|record| record.index);
+    fn try_from(records: Vec<StringTableRecord>) -> Result<Self, Self::Error> {
         for (position, record) in records.iter().enumerate() {
             if record.index != position {
                 return Err(Self::Error::InvalidCollection(format!(
@@ -3820,7 +3832,7 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
 #[serde(try_from = "StringTableRecordWire")]
 pub(crate) struct StringTableRecord {
     /// Zero-based document table index referenced by shape properties.
-    index: usize,
+    pub(crate) index: usize,
     /// Owning property when the table is serialized beside its first use.
     pub(crate) owner_property: Option<String>,
     /// Whether all strings, rather than only marked strings, were persisted.

@@ -204,7 +204,11 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
 #[test]
 fn polynomial_root_isolation_retains_repeated_real_roots() {
-    let roots = real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
+    let roots = crate::test_support::with_decode_context(|ctx| {
+        real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0])
+    })
+    .expect("roots are admitted")
+    .expect("finite quartic roots");
 
     assert_eq!(roots.len(), 3);
     for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {

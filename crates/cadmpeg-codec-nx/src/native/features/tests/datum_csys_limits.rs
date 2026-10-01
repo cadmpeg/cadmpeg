@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::features::feature_datum_csys_constructions;
-use crate::test_support::test_om::composed_feature_history_payload;
+use crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch;
 use crate::test_support::test_prt::prt_with_named_payloads;
 
 fn datum_csys_refusal(
@@ -15,8 +15,10 @@ fn datum_csys_refusal(
     }
     frame.extend_from_slice(&[0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
     let store = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
-    let payload =
-        composed_feature_history_payload(&[(&[3, 0xff, 0xff, 0xff], "DATUM_CSYS", frame)], &store);
+    let payload = composed_feature_history_payload_over_sort_scratch(
+        &[(&[3, 0xff, 0xff, 0xff], "DATUM_CSYS", frame)],
+        &store,
+    );
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(
             ctx,

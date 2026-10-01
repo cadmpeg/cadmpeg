@@ -26,9 +26,14 @@ fn matrix_reference_plane_owns_overlapping_compact_scan_window() {
     }
     payload[48] = 1;
 
-    assert!(compact_reference_plane_frame_candidates(&payload).any(|(offset, _)| offset == 33));
+    assert!(compact_reference_plane_frame_candidates(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload
+    )
+    .any(|candidate| candidate.unwrap().0 == 33));
     assert_eq!(
-        explicit_reference_plane_frame(&payload),
+        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -76,7 +81,8 @@ fn matrix_reference_plane_owns_overlapping_angled_scan_window() {
 
     assert!(angled_reference_plane_frame_candidates(&payload).any(|(offset, _)| offset == 105));
     assert_eq!(
-        explicit_reference_plane_frame(&payload),
+        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),

@@ -2417,7 +2417,18 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         "nx boundary surface breaks",
     )?;
     breaks.extend(surface_breaks);
-    breaks.sort_by(f64::total_cmp);
+    if geometry_budget
+        .charges
+        .stable_sort_by(
+            &mut breaks,
+            f64::total_cmp,
+            |_| 0,
+            "nx boundary pcurve breaks sort",
+        )
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(false), Err);
+    }
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
     for parameter in breaks {
         if !geometry_budget.charge() {
@@ -2499,7 +2510,18 @@ fn exact_boundary_curve_breaks(
         "nx boundary range breaks",
     )?;
     breaks.extend(range);
-    breaks.sort_by(f64::total_cmp);
+    if geometry_budget
+        .charges
+        .stable_sort_by(
+            &mut breaks,
+            f64::total_cmp,
+            |_| 0,
+            "nx boundary curve breaks sort",
+        )
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    }
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
     Ok(Some(breaks))
 }
@@ -2795,7 +2817,18 @@ fn coincident_pcurve_pair_with_index(
             "nx coincident pcurve breaks",
         )?;
         breaks.extend(second);
-        breaks.sort_by(f64::total_cmp);
+        if geometry_budget
+            .charges
+            .stable_sort_by(
+                &mut breaks,
+                f64::total_cmp,
+                |_| 0,
+                "nx coincident pcurve breaks sort",
+            )
+            .is_err()
+        {
+            return geometry_budget.resource_refusal().map_or(Ok(false), Err);
+        }
         breaks.dedup();
         for parameter in breaks {
             if !separation(parameter)?.is_some_and(|value| value <= tolerance) {

@@ -1786,12 +1786,13 @@ pub(super) fn ensure_native_edge_support_surface(
 }
 
 pub(super) fn circle_endpoint_range_choices(
+    ctx: &DecodeContext<'_>,
     center: Point3,
     radius: f64,
     axis: UnitVector3,
     start: Point3,
     end: Point3,
-) -> Option<CircleRangeChoices> {
+) -> Result<Option<CircleRangeChoices>, CodecError> {
     const ENDPOINT_TOLERANCE: f64 = 2e-3;
 
     if !radius.is_finite()
@@ -1799,13 +1800,13 @@ pub(super) fn circle_endpoint_range_choices(
         || (start.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
         || (end.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
     {
-        return None;
+        return Ok(None);
     }
     if start.distance(end) <= ENDPOINT_TOLERANCE {
-        return Some(CircleRangeChoices {
+        return Ok(Some(CircleRangeChoices {
             ranges: [[0.0, std::f64::consts::TAU], [0.0; 2]],
             len: 1,
-        });
+        }));
     }
     let axis = axis.recharted_by_largest_component();
     let reference = cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
@@ -1819,18 +1820,27 @@ pub(super) fn circle_endpoint_range_choices(
     };
     let mut endpoints = [angle(start), angle(end)];
     if endpoints.iter().any(|angle| !angle.is_finite()) {
-        return None;
+        return Ok(None);
     }
-    endpoints.sort_by(f64::total_cmp);
-    let short = crate::nurbs::canonical_periodic_range(endpoints)?;
-    let long = crate::nurbs::canonical_periodic_range([
+    ctx.stable_sort_by(
+        &mut endpoints,
+        f64::total_cmp,
+        |_| 0,
+        "catia standard circle endpoint angles sort",
+    )?;
+    let Some(short) = crate::nurbs::canonical_periodic_range(endpoints) else {
+        return Ok(None);
+    };
+    let Some(long) = crate::nurbs::canonical_periodic_range([
         endpoints[1],
         endpoints[0] + std::f64::consts::TAU,
-    ])?;
-    Some(CircleRangeChoices {
+    ]) else {
+        return Ok(None);
+    };
+    Ok(Some(CircleRangeChoices {
         ranges: [short, long],
         len: 2,
-    })
+    }))
 }
 
 pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>(

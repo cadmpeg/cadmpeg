@@ -3343,8 +3343,18 @@ fn bind_edge_vertices(
             if let Some(previous) = edges.get(&member.edge) {
                 let mut previous_sorted = *previous;
                 let mut current_sorted = indices;
-                previous_sorted.sort_unstable();
-                current_sorted.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut previous_sorted,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia b5 edge vertex pair sort",
+                )?;
+                ctx.sort_unstable_by(
+                    &mut current_sorted,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia b5 edge vertex pair sort",
+                )?;
                 if previous_sorted != current_sorted {
                     edges.remove(&member.edge);
                     ctx.insert_hash_set(

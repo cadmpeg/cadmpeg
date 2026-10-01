@@ -749,7 +749,8 @@ impl DesignDimensionAnnotationFrame {
                 return Err("return_member_offsets disagree with frame layout".into());
             }
         }
-        let mut operand_members = admission
+        // The return members must be the operands' geometry indices as a multiset.
+        let operand_members = admission
             .collect_vec(
                 draft
                     .operands
@@ -758,15 +759,41 @@ impl DesignDimensionAnnotationFrame {
                 "index F3D annotation operands",
             )
             .map_err(AnnotationFrameBuildError::Resource)?;
-        let mut return_members = admission
+        let return_members = admission
             .collect_vec(
                 draft.return_members.iter().map(|member| member.value),
                 "index F3D annotation return members",
             )
             .map_err(AnnotationFrameBuildError::Resource)?;
-        operand_members.sort_unstable();
-        return_members.sort_unstable();
-        if operand_members != return_members {
+        let mut unmatched = std::collections::BTreeMap::new();
+        for index in &operand_members {
+            let count = unmatched.get(index).copied().unwrap_or(0usize);
+            admission
+                .insert_btree_map(
+                    &mut unmatched,
+                    *index,
+                    count + 1,
+                    "count F3D annotation operand geometry indices",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?;
+        }
+        let mut members_agree = return_members.len() == operand_members.len();
+        for member in &return_members {
+            let count = unmatched.get(member).copied().unwrap_or(0usize);
+            if count == 0 {
+                members_agree = false;
+                break;
+            }
+            admission
+                .insert_btree_map(
+                    &mut unmatched,
+                    *member,
+                    count - 1,
+                    "match F3D annotation return members",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?;
+        }
+        if !members_agree {
             return Err("return_members disagree with operands geometry indices".into());
         }
         Ok(Self {

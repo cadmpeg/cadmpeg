@@ -1251,9 +1251,15 @@ fn timeline_frame_rejects_invalid_source_spans() {
                 .to_string();
         assert!(error.contains(diagnostic), "{field}: {error}");
     }
-    let empty =
-        crate::records::entity_header::DesignTimelineFrame::new(200, 44, 220, 240, Vec::new())
-            .unwrap();
+    let empty = crate::records::entity_header::DesignTimelineFrame::new(
+        crate::records::admission::RecordAdmission::Admitted,
+        200,
+        44,
+        220,
+        240,
+        Vec::new(),
+    )
+    .unwrap();
     assert!(empty.items().is_empty());
 }
 

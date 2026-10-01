@@ -1678,18 +1678,21 @@ pub(super) fn lane_sketch_plane_frames(
     Ok(frames)
 }
 
-pub(super) fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
+pub(super) fn ordered_rectangle_corners(
+    ctx: &DecodeContext<'_>,
+    points: &[Point2],
+) -> Result<Option<[Point2; 4]>, CodecError> {
     let [_, _, _, _] = points else {
-        return None;
+        return Ok(None);
     };
     let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
-    u.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut u, f64::total_cmp, |_| 0, "sldprt rectangle u sort")?;
     u.dedup();
     let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
-    v.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut v, f64::total_cmp, |_| 0, "sldprt rectangle v sort")?;
     v.dedup();
     let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
-        return None;
+        return Ok(None);
     };
     let corners = [
         Point2::new(*u0, *v0),
@@ -1697,24 +1700,37 @@ pub(super) fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]
         Point2::new(*u1, *v1),
         Point2::new(*u0, *v1),
     ];
-    corners
+    Ok(corners
         .iter()
         .all(|corner| points.iter().filter(|point| *point == corner).count() == 1)
-        .then_some(corners)
+        .then_some(corners))
 }
 
-fn ordered_tolerant_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
+fn ordered_tolerant_rectangle_corners(
+    ctx: &DecodeContext<'_>,
+    points: &[Point2],
+) -> Result<Option<[Point2; 4]>, CodecError> {
     let [_, _, _, _] = points else {
-        return None;
+        return Ok(None);
     };
     let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
-    u.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(
+        &mut u,
+        f64::total_cmp,
+        |_| 0,
+        "sldprt tolerant rectangle u sort",
+    )?;
     u.dedup_by(|left, right| same_dimension_length(*left, *right));
     let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
-    v.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(
+        &mut v,
+        f64::total_cmp,
+        |_| 0,
+        "sldprt tolerant rectangle v sort",
+    )?;
     v.dedup_by(|left, right| same_dimension_length(*left, *right));
     let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
-        return None;
+        return Ok(None);
     };
     let corners = [
         Point2::new(*u0, *v0),
@@ -1722,7 +1738,7 @@ fn ordered_tolerant_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> 
         Point2::new(*u1, *v1),
         Point2::new(*u0, *v1),
     ];
-    corners
+    Ok(corners
         .iter()
         .all(|corner| {
             points
@@ -1734,7 +1750,7 @@ fn ordered_tolerant_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> 
                 .count()
                 == 1
         })
-        .then_some(corners)
+        .then_some(corners))
 }
 
 pub(super) fn indexed_rectangle_from_line_cycle(
@@ -1776,18 +1792,12 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         "collect SLDPRT rectangle marker roster",
     )?;
     roster.extend_from_slice(markers);
-    let marker_count = cadmpeg_core::decode::u64_from_index(roster.len());
-    let sort_work = marker_count
-        .checked_mul(u64::from(usize::BITS - roster.len().leading_zeros()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "sort SLDPRT rectangle marker roster",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_work(sort_work, "sort SLDPRT rectangle marker roster")?;
-    roster.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        &mut roster,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sldprt rectangle marker roster sort",
+    )?;
     let mut records = Vec::new();
     for marker in markers {
         let record = (|| {
@@ -1862,7 +1872,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
             }
         }
     }
-    Ok((|| {
+    (|| {
         let endpoint_space = records.first().map(RectangleLineRecord::endpoint_space)?;
         if records
             .iter()
@@ -1906,7 +1916,14 @@ pub(super) fn indexed_rectangle_from_line_cycle(
             }
             edges[index] = endpoints;
         }
-        edges[..edge_count].sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut edges[..edge_count],
+            Ord::cmp,
+            |_| 0,
+            "sldprt rectangle line edges sort",
+        ) {
+            return Some(Err(error));
+        }
         let edges = &edges[..edge_count];
         if edges.windows(2).any(|pair| pair[0] == pair[1])
             || edges.iter().any(|edge| edge[0] == edge[1])
@@ -1917,7 +1934,14 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         for (index, vertex) in edges.iter().flatten().enumerate() {
             vertices[index] = *vertex;
         }
-        vertices[..edge_count * 2].sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut vertices[..edge_count * 2],
+            Ord::cmp,
+            |_| 0,
+            "sldprt rectangle line vertices sort",
+        ) {
+            return Some(Err(error));
+        }
         let mut unique_vertices = [0u32; 4];
         let mut vertex_count = 0;
         for vertex in &vertices[..edge_count * 2] {
@@ -1937,7 +1961,14 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         for (index, vertex) in vertices.iter().enumerate() {
             degrees[index] = edges.iter().filter(|edge| edge.contains(vertex)).count();
         }
-        degrees.sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut degrees,
+            Ord::cmp,
+            |_| 0,
+            "sldprt rectangle vertex degrees sort",
+        ) {
+            return Some(Err(error));
+        }
         if !matches!(degrees, [2, 2, 2, 2] | [1, 1, 2, 2]) {
             return None;
         }
@@ -1993,7 +2024,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 ]
             }
             [_, _, _] => {
-                let axis_aligned = (|| {
+                let axis_aligned = (|| -> Result<Option<[Point2; 4]>, CodecError> {
                     let mut u = [0.0; 3];
                     let mut v = [0.0; 3];
                     let mut u_len = 0;
@@ -2014,10 +2045,20 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                             v_len += 1;
                         }
                     }
-                    u[..u_len].sort_by(f64::total_cmp);
-                    v[..v_len].sort_by(f64::total_cmp);
+                    ctx.stable_sort_by(
+                        &mut u[..u_len],
+                        f64::total_cmp,
+                        |_| 0,
+                        "sldprt rectangle axis u sort",
+                    )?;
+                    ctx.stable_sort_by(
+                        &mut v[..v_len],
+                        f64::total_cmp,
+                        |_| 0,
+                        "sldprt rectangle axis v sort",
+                    )?;
                     let ([u0, u1], [v0, v1]) = (&u[..u_len], &v[..v_len]) else {
-                        return None;
+                        return Ok(None);
                     };
                     let products = [
                         Point2::new(*u0, *v0),
@@ -2031,14 +2072,21 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                             same_dimension_length(product.u, *point_u)
                                 && same_dimension_length(product.v, *point_v)
                         });
-                        let (index, _) = matches.next()?;
+                        let Some((index, _)) = matches.next() else {
+                            return Ok(None);
+                        };
                         if matches.next().is_some() || occupied[index] {
-                            return None;
+                            return Ok(None);
                         }
                         occupied[index] = true;
                     }
-                    (occupied.iter().filter(|occupied| **occupied).count() == 3).then_some(products)
+                    Ok((occupied.iter().filter(|occupied| **occupied).count() == 3)
+                        .then_some(products))
                 })();
+                let axis_aligned = match axis_aligned {
+                    Ok(corners) => corners,
+                    Err(error) => return Some(Err(error)),
+                };
                 if let Some(corners) = axis_aligned {
                     corners
                 } else {
@@ -2090,17 +2138,19 @@ pub(super) fn indexed_rectangle_from_line_cycle(
             ],
             _ => return None,
         };
-        let corners = corners
-            .iter()
-            .all(Point2::is_finite)
-            .then(|| {
-                if edges.len() == 3 {
-                    ordered_tolerant_rectangle_corners(&corners)
-                } else {
-                    ordered_rectangle_corners(&corners)
-                }
-            })
-            .flatten()?;
+        if !corners.iter().all(Point2::is_finite) {
+            return None;
+        }
+        let ordered = if edges.len() == 3 {
+            ordered_tolerant_rectangle_corners(ctx, &corners)
+        } else {
+            ordered_rectangle_corners(ctx, &corners)
+        };
+        let corners = match ordered {
+            Ok(Some(corners)) => corners,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         (edges.len() == 4
             || edges.iter().all(|[first, second]| {
                 let (Some(first), Some(second)) = (
@@ -2118,8 +2168,9 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 same_dimension_length(first[0], second[0])
                     ^ same_dimension_length(first[1], second[1])
             }))
-        .then_some(corners)
-    })())
+        .then_some(Ok(corners))
+    })()
+    .transpose()
 }
 
 pub(super) fn compact_legacy_rectangle_line_endpoints(
@@ -2328,16 +2379,9 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
         v.push(point.1);
     }
     let point_count = cadmpeg_core::decode::u64_from_index(points.len());
-    let sort_work = point_count
-        .checked_mul(u64::from(usize::BITS - points.len().leading_zeros()))
-        .and_then(|work| work.checked_mul(2))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("sort SLDPRT rectangle coordinates", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(sort_work, "sort SLDPRT rectangle coordinates")?;
-    u.sort_unstable();
+    ctx.sort_unstable_by(&mut u, Ord::cmp, |_| 0, "sldprt rectangle cells u sort")?;
     u.dedup();
-    v.sort_unstable();
+    ctx.sort_unstable_by(&mut v, Ord::cmp, |_| 0, "sldprt rectangle cells v sort")?;
     v.dedup();
     let dimension_count = cadmpeg_core::decode::u64_from_index(dimensions_mm.len());
     let dimension_work = dimension_count
