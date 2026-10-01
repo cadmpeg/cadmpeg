@@ -1727,8 +1727,13 @@ pub(crate) fn scan_bytes<'a>(
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
-    let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET).unwrap_or(0);
-    let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH).unwrap_or(0);
+    if data.get(..OUTER_MAGIC.len()) != Some(OUTER_MAGIC.as_slice()) {
+        return Err(CodecError::WrongFormat("missing V5_CFV2 container magic".to_owned()));
+    }
+    let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET)
+        .ok_or_else(|| CodecError::malformed("truncated outer directory offset"))?;
+    let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH)
+        .ok_or_else(|| CodecError::malformed("truncated outer directory length"))?;
 
     let outer = parse_outer_stream_directory(ctx, &data)?;
     let inner = parse_stream_directory(ctx, &data)?;
