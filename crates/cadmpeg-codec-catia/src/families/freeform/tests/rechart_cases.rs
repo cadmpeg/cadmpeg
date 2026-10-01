@@ -527,7 +527,9 @@ fn overflowing_cone_lift() -> (SurfaceGeometry, PcurveGeometry) {
 #[test]
 fn standard_carrier_endpoint_loci_keep_an_overflowing_lift() {
     let (cone, pcurve) = overflowing_cone_lift();
-    let loci = super::super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+    let loci = crate::test_support::with_service_context(|ctx| {
+        super::super::standard_carrier_endpoint_loci(ctx, &pcurve, &cone, [0.0, 1.0])
+    })
         .expect("evaluator allocation succeeds")
         .expect("both ends lift");
     assert!(!loci[0].is_finite());
@@ -568,7 +570,9 @@ fn placed_overflowing_cone_lift() -> (SurfaceGeometry, PcurveGeometry) {
 #[test]
 fn standard_carrier_endpoint_loci_keep_an_overflowing_placed_lift() {
     let (cone, pcurve) = placed_overflowing_cone_lift();
-    let loci = super::super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+    let loci = crate::test_support::with_service_context(|ctx| {
+        super::super::standard_carrier_endpoint_loci(ctx, &pcurve, &cone, [0.0, 1.0])
+    })
         .expect("evaluator allocation succeeds")
         .expect("both ends lift");
     assert!(!loci[0].is_finite());
@@ -586,4 +590,16 @@ fn a_pcurve_lift_with_an_overflowing_placed_end_is_measured_at_its_finite_end() 
         cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
     )
     .expect("evaluator allocation succeeds"));
+}
+
+#[test]
+fn standard_carrier_endpoints_refuse_caller_depth() {
+    let (cone, pcurve) = overflowing_cone_lift();
+    crate::test_support::with_depth_limit(0, |ctx| {
+        let error = super::super::standard_carrier_endpoint_loci(ctx, &pcurve, &cone, [0.0, 1.0])
+            .expect_err("carrier evaluation exceeds caller depth");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }
