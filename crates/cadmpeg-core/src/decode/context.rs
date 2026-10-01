@@ -309,15 +309,6 @@ impl<'a> DecodeContext<'a> {
         Ok((value, storage))
     }
 
-    pub(crate) fn collection_allocation_failed_limit(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> ResourceLimit {
-        self.budget
-            .collection_allocation_failed_limit(u64_from_index(count), operation)
-    }
-
     /// Copies admitted text into retained storage with a typed resource refusal.
     pub fn copy_retained_text_limit(
         &self,
