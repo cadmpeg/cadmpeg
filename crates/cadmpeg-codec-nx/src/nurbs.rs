@@ -791,7 +791,7 @@ fn array_record_at<'bytes>(
         let count = View::u16_be_at(bytes, pos + 4 + escape).map(usize::from)?;
         (count > 0).then_some(())?;
         let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
-        (reference > 5).then_some(())?;
+        NonNullXmt::try_from(reference).ok()?;
         let data = pos + 6 + escape + reference_len;
         let end = data.checked_add(count.checked_mul(width)?)?;
         let raw = bytes.get(data..end)?;
@@ -854,7 +854,7 @@ fn surface_payload_at<'bytes>(
         (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
         let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-        (xmt > 10).then_some(())?;
+        NonNullXmt::try_from(xmt).ok()?;
         let shift = escape + xmt_len - 2;
         let count_escape = usize::from(bytes.get(pos + 91 + shift) == Some(&0xff));
         let count_at = pos + 91 + shift + count_escape;
@@ -887,7 +887,7 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let mut at = pos.checked_add(2 + escape + xmt_len)?;
     for _ in 0..8 {
         View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
@@ -947,7 +947,7 @@ fn curve_payload_at<'bytes>(
         (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
         let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-        (xmt > 10).then_some(())?;
+        NonNullXmt::try_from(xmt).ok()?;
         let shift = escape + xmt_len - 2;
         let count_escape = usize::from(bytes.get(pos + 9 + shift) == Some(&0xff));
         let count_at = pos + 9 + shift + count_escape;
@@ -967,7 +967,7 @@ fn curve_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let mut at = pos.checked_add(2 + escape + xmt_len)?;
     matches!(bytes.get(at), Some(1 | 2)).then_some(())?;
     at += 1;
@@ -1080,7 +1080,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     (bytes.get(pos..pos + 2) == Some(&[0, 126])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let shift = escape + xmt_len - 2;
     let u_periodic = logical_at(bytes, pos + surf_desc::U_PERIODIC + shift)?;
     let v_periodic = logical_at(bytes, pos + surf_desc::V_PERIODIC + shift)?;
@@ -1262,7 +1262,7 @@ fn curve_descriptor_at(
     (bytes.get(pos..pos + 2) == Some(&[0, 136])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let shift = escape + xmt_len - 2;
     let degree = View::u16_be_at(bytes, pos + curve_desc::DEGREE + shift)?;
     let poles = usize::try_from(View::u32_be_at(
