@@ -32,7 +32,7 @@ fn decode_preserves_unresolved_active_configuration() {
         br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
     ));
     assert_eq!(
-        container::active_configuration_index(&container::scan_bytes(&source)),
+        container::active_configuration_index(&crate::test_support::container::scan(&source)),
         None
     );
 
@@ -132,7 +132,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
         &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
     ));
     assert_eq!(
-        container::scan_bytes(&source).blocks[0].section.name(),
+        crate::test_support::container::scan(&source).blocks[0].section.name(),
         Some("Contents/Config-3-Partition")
     );
     let decoded = SldprtCodec
@@ -170,7 +170,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     );
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks
         .iter()

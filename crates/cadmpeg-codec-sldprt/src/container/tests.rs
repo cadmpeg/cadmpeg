@@ -34,7 +34,9 @@ fn probe_x84_wrapped_double_length_admits_overflowed_cache_cell() {
     bytes[18..22].copy_from_slice(&l.to_le_bytes());
     bytes[22..26].copy_from_slice(&1_u32.to_le_bytes());
     bytes[26] = b'A'.rotate_left(4);
-    assert!(super::try_cache_cell(&bytes, 0).is_none());
+    assert!(super::try_cache_cell_with(&bytes, 0, |raw|
+        super::nibble_swap_name_charged(&cadmpeg_test_support::service_decode_context(), raw)
+    ).unwrap().is_none());
 }
 
 fn marker_collection_refusal(marker: Vec<u8>) -> cadmpeg_core::decode::ResourceLimit {
@@ -301,7 +303,7 @@ fn compound_scan_refuses_collection_limit() {
 #[test]
 fn scan_classifies_blocks_cells_and_directory() {
     let f = synthetic_sldprt();
-    let scan = container::scan_bytes(&f);
+    let scan = crate::test_support::container::scan(&f);
     assert_eq!(scan.version, 0x0000_0004);
     assert_eq!(scan.blocks.len(), 2);
     assert_eq!(scan.cache_cells.len(), 1);
@@ -324,11 +326,11 @@ fn scan_classifies_blocks_cells_and_directory() {
 
 #[test]
 fn empty_block_name_is_anonymous_but_has_offset_owner() {
-    assert_eq!(container::nibble_swap_name(&[]), Some(String::new()));
+    assert_eq!(container::nibble_swap_name_charged(&cadmpeg_test_support::service_decode_context(), &[]).unwrap(), Some(String::new()));
 
     let mut source = outer_header();
     source.extend(make_block(0x44, "", b"anonymous payload"));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let block = &scan.blocks[0];
 
     assert_eq!(block.section.name(), None);
@@ -338,7 +340,7 @@ fn empty_block_name_is_anonymous_but_has_offset_owner() {
 #[test]
 fn parasolid_partition_selection_withholds_ambiguous_sites() {
     let source = sldprt_with_colliding_sites();
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     assert!(container::has_parasolid_body_stream(&scan));
     assert!(container::select_active_parasolid_site(&scan).is_none());
@@ -359,7 +361,7 @@ fn parasolid_partition_selection_retains_a_compound_stream_site() {
         None,
     )
     .expect("compound stream");
-    let scan = container::completed_scan(&[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]);
+    let scan = container::completed_scan_charged(&ctx, &[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]).unwrap();
 
     let site = container::select_active_parasolid_site(&scan).expect("compound partition");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
@@ -380,7 +382,7 @@ fn parasolid_partition_selection_uses_explicit_active_source_index() {
         "Contents/SolidWorks",
         br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
     ));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     let site = container::select_active_parasolid_site(&scan).expect("explicit active partition");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
@@ -400,7 +402,7 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
         "Contents/Features",
         br#"<?xml version="1.0"?><swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swID="0" swModelRef="model-0" swMostRecentConfiguration="NO"/><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
     ));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(
         container::manifest_active_configuration(&scan),
@@ -424,7 +426,7 @@ fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
     }
     let mut source = sldprt_with_colliding_sites();
     source.extend(make_block(0x43, "Contents/Features", &payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(1));
     let site = container::select_active_parasolid_site(&scan).expect("UTF-16 manifest");
@@ -444,7 +446,7 @@ fn explicit_source_index_precedes_the_manifest_partition_id() {
         "Contents/Features",
         br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First"/><swModel id="model-1" swConfigurationName="Second"/><swConfigurationList><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
     ));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(0));
     let site = container::select_active_parasolid_site(&scan).expect("explicit source index");
@@ -459,7 +461,7 @@ fn non_unique_manifest_activity_does_not_select_one_of_multiple_partitions() {
     ] {
         let mut source = sldprt_with_colliding_sites();
         source.extend(make_block(0x43, "Contents/Features", manifest));
-        let scan = container::scan_bytes(&source);
+        let scan = crate::test_support::container::scan(&source);
         assert_eq!(container::manifest_active_configuration(&scan), None);
         assert_eq!(container::active_configuration_index(&scan), None);
         assert!(container::select_active_parasolid_site(&scan).is_none());
@@ -474,7 +476,7 @@ fn manifest_activity_is_read_only_from_the_features_stream() {
         "Contents/SolidWorks",
         br#"<swSolidWorks><swConfigurationList><swConfiguration swID="1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
     ));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(container::manifest_active_configuration(&scan), None);
     assert_eq!(container::active_configuration_index(&scan), None);
@@ -489,7 +491,7 @@ fn parasolid_partition_selection_never_uses_a_deltas_section() {
         "Contents/Config-0-Deltas",
         &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
     ));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
 
     assert!(container::has_parasolid_body_stream(&scan));
     assert!(container::select_active_parasolid_site(&scan).is_none());
@@ -530,7 +532,7 @@ fn inspect_enumerates_every_structure() {
 fn inspection_inventory_refuses_unadmitted_payload_hash() {
     let mut source = outer_header();
     source.extend(make_block(0x20, "PreviewPNG", &[0; 64]));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -546,7 +548,7 @@ fn inspection_inventory_refuses_unadmitted_payload_hash() {
 fn inspection_inventory_refuses_unadmitted_entry_storage() {
     let mut source = outer_header();
     source.extend(make_cache_cell(90, "Contents/DisplayLists"));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -600,4 +602,25 @@ fn oversized_block_expansion_is_a_resource_refusal() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let error = container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&source)).err().unwrap();
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "expand SLDPRT native block" && limit.additional == 1));
+}
+
+#[test]
+fn compound_scan_preserves_caller_work_refusal() {
+    let source = synthetic_compound_with_storage("ISolidWorksInformation");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let error = container::scan(&ctx, root).err().unwrap();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn compound_scan_preserves_malformed_open_error() {
+    let error = container::scan(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_core::decode::View::over_retained(&COMPOUND_FILE_MAGIC),
+    ).err().unwrap();
+    assert!(matches!(error, CodecError::Malformed(_)));
 }

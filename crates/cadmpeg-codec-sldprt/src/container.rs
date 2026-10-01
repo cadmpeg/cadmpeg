@@ -13,11 +13,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_container::compression::{
-    inflate_bounded_probe, inflate_deflate_owned, inflate_zlib_member_owned,
+    inflate_deflate_owned, inflate_zlib_member_owned,
 };
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{
-    index_from_u32, u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
+    index_from_u32, u64_from_index, DecodeContext, ExpandSpec,
     ScopedReservation, View,
 };
 use cadmpeg_core::dialect::DialectLayers;
@@ -103,21 +103,6 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
         return false;
     };
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
-}
-
-/// Decode a nibble-swapped section name.
-///
-/// Returns `None` when any decoded byte falls outside printable ASCII.
-fn nibble_swap_name(raw: &[u8]) -> Option<String> {
-    let mut s = String::with_capacity(raw.len());
-    for &b in raw {
-        let swapped = b.rotate_left(4);
-        if !(0x20..0x7f).contains(&swapped) {
-            return None;
-        }
-        s.push(char::from(swapped));
-    }
-    Some(s)
 }
 
 fn nibble_swap_name_charged(
@@ -361,70 +346,6 @@ pub(crate) fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Scan an in-memory `.sldprt` image.
-///
-/// Truncated input produces a scan containing every structure that could be
-/// validated; missing outer-header bytes yield version zero.
-pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
-    if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let compound_streams = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .ok()
-            .and_then(|(ctx, root)| compound_streams(&ctx, root).ok())
-            .unwrap_or_default();
-        return completed_scan(
-            bytes,
-            0,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            compound_streams,
-        );
-    }
-    let version = native_version(bytes);
-    let NativeMarkers {
-        blocks,
-        directory,
-        cache_cells,
-    } = walk_native_markers(
-        bytes,
-        &ScanAdmission::Probe,
-        |off| Ok(try_block(bytes, off)),
-        |off| Ok(try_cache_cell(bytes, off)),
-        |off| Ok(try_directory_entry(bytes, off)),
-    )
-    .unwrap_or_default();
-
-    completed_scan(bytes, version, blocks, directory, cache_cells, Vec::new())
-}
-
-fn completed_scan(
-    source_image: &[u8],
-    version: u32,
-    blocks: Vec<Block>,
-    directory: Vec<DirectoryEntry>,
-    cache_cells: Vec<CacheCell>,
-    compound_streams: Vec<CompoundStream>,
-) -> ContainerScan<'_> {
-    let mut scan = assemble_scan(
-        source_image,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        compound_streams,
-    );
-    let solidworks = scan_solidworks_envelopes(
-        scan.sections()
-            .map(|section| (section.name(), section.payload())),
-        &ScanAdmission::Probe,
-    )
-    .unwrap_or_default();
-    scan.solidworks = solidworks;
-    scan
-}
-
 fn completed_scan_charged<'a>(
     ctx: &DecodeContext<'_>,
     source_image: &'a [u8],
@@ -567,7 +488,7 @@ fn compound_stream(
 
 /// Scans an in-memory image while routing inflate through the decode budget.
 pub(crate) fn scan<'a>(
-    ctx: &DecodeContext<'a>,
+    ctx: &DecodeContext<'_>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
@@ -610,7 +531,7 @@ pub(crate) fn scan<'a>(
 /// extract stay codec-local because they are `SolidWorks` payload semantics, not
 /// CFB.
 fn compound_streams<'a>(
-    ctx: &DecodeContext<'a>,
+    ctx: &DecodeContext<'_>,
     root: View<'a>,
 ) -> Result<Vec<CompoundStream>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
@@ -649,7 +570,7 @@ fn compound_streams<'a>(
 }
 
 fn decode_wrapped_payload_budgeted<'a>(
-    ctx: &DecodeContext<'a>,
+    ctx: &DecodeContext<'_>,
     source: View<'a>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let payload = source.window();
@@ -809,19 +730,8 @@ fn block_from_inflated(
     }))
 }
 
-fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
-    let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
-    let payload = bytes.get(payload_start..payload_end)?;
-    let inflated = inflate_bounded_probe(payload, index_from_u32(frame.uncomp_sz))?;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).ok()?;
-    block_from_inflated(&ctx, bytes, off, &frame, inflated)
-        .ok()
-        .flatten()
-}
-
 fn try_block_budgeted<'a>(
-    ctx: &DecodeContext<'a>,
+    ctx: &DecodeContext<'_>,
     root: View<'a>,
     off: usize,
 ) -> Result<Option<RawBlock>, CodecError> {
@@ -851,18 +761,6 @@ fn try_block_budgeted<'a>(
         Err(_) => return Ok(None),
     };
     block_from_inflated(ctx, bytes, off, &frame, inflated)
-}
-
-/// Test a marker hit against the cache-cell relational invariant
-/// (`f@+10 == 2L`, `f@+14 == L/2`, `f@+18 == L`, `f@+22 == name_len`) plus a
-/// printable nibble-swapped name ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#12-cache-cell-section-index-grid)).
-fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
-    match try_cache_cell_with(bytes, off, |raw| {
-        Ok::<_, std::convert::Infallible>(nibble_swap_name(raw))
-    }) {
-        Ok(cell) => cell,
-        Err(never) => match never {},
-    }
 }
 
 fn try_cache_cell_with<E>(
@@ -899,18 +797,6 @@ fn try_cache_cell_with<E>(
         logical_len: l,
         name,
     }))
-}
-
-/// Test a marker hit against the tail-directory frame: two zero words at +10 and
-/// +18, a size at +14, a name length at +22, a 14-byte descriptor, then a
-/// printable nibble-swapped name ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#13-tail-section-directory)).
-fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
-    match try_directory_entry_with(bytes, off, |raw| {
-        Ok::<_, std::convert::Infallible>(nibble_swap_name(raw))
-    }) {
-        Ok(entry) => entry,
-        Err(never) => match never {},
-    }
 }
 
 fn try_directory_entry_with<E>(

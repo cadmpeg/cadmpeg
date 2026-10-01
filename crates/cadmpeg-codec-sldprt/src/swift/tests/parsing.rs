@@ -169,7 +169,7 @@ fn swift_annotations_refuse_retained_stream_limit() {
         "SWIFT/Schema",
         &payload,
     ));
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(root.class.len()).expect("fixture length");
@@ -200,7 +200,7 @@ fn swift_rendered_annotation_limit_error(
         "SWIFT/Schema",
         &payload,
     ));
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     set_limit(&mut policy.limits);

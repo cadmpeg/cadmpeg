@@ -249,11 +249,15 @@ impl SldprtCodec {
             .namespace("sldprt")
             .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
-        let source_scan = records
-            .iter()
+        let source_arena = cadmpeg_core::decode::DecodeArena::new();
+        let source_context = records.iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data)
-            .map(container::scan_bytes);
+            .map(|bytes| cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                bytes, &source_arena, &cadmpeg_core::decode::DecodePolicy::desktop(),
+            )).transpose()?;
+        let source_scan = source_context.as_ref()
+            .map(|(ctx, root)| container::scan(ctx, *root)).transpose()?;
         history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
         Ok(Written::Semantic {
             path: if records.is_empty() {

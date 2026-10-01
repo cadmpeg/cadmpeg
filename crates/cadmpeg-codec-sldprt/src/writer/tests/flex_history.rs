@@ -19,7 +19,6 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::SldprtCodec;
 
 #[test]
@@ -1239,7 +1238,7 @@ fn encoder_writes_source_less_native_features() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
             .section
