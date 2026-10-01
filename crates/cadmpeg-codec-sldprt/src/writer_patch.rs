@@ -440,7 +440,6 @@ fn patch_surfaces(
             super::writer::surface_values(&surface.geometry, reference, scale)?;
         if patch_compact(
             payload,
-            0,
             raw_annotation_offset(annotations, &surface.id)?,
             &values,
         ).is_none() { return Ok(None); }
@@ -492,7 +491,6 @@ fn patch_curves(
         let (_, values) = super::writer::curve_values(&curve.geometry, scale)?;
         if patch_compact(
             payload,
-            0,
             raw_annotation_offset(annotations, &curve.id)?,
             &values,
         ).is_none() { return Ok(None); }
@@ -502,16 +500,15 @@ fn patch_curves(
 
 fn patch_compact(
     payload: &mut [u8],
-    body_start: usize,
     offset: usize,
     values: &[f64],
 ) -> Option<()> {
-    let carrier = crate::brep::parse_carrier(payload.get(body_start..)?, offset)?;
+    let carrier = crate::brep::parse_carrier(payload, offset)?;
     let end = match carrier {
         crate::brep::Carrier::Curve(carrier) => carrier.end,
         crate::brep::Carrier::Surface(carrier) => carrier.end,
     };
-    let start = body_start.checked_add(end.checked_sub(values.len() * 8)?)?;
+    let start = end.checked_sub(values.len() * 8)?;
     for (index, value) in values.iter().enumerate() {
         payload
             .get_mut(start + index * 8..start + (index + 1) * 8)?
