@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
@@ -325,7 +324,7 @@ pub(super) fn transfer_closed_face_topology(
                 source_range.map(|range| (range, false))
             } else {
                 match source_range {
-                    Some(range) => match curve_orientation(
+                    Some(range) => match curve_orientation(admission.context(),
                         &curve_geometry,
                         range,
                         occurrence.raw_endpoints.map(FinitePoint3::get),
@@ -1402,16 +1401,17 @@ fn pcurve_parameter_range(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
 }
 
 fn curve_orientation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &cadmpeg_ir::geometry::CurveGeometry,
     parameter_range: [f64; 2],
     endpoints: [Point3; 2],
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
     let Some(start) =
-        cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[0]))?
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[0])?)?
     else {
         return Ok(None);
     };
-    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[1]))?
+    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[1])?)?
     else {
         return Ok(None);
     };

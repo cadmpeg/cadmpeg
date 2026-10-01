@@ -79,7 +79,7 @@ pub(super) fn standard_pcurve_geometry(
     ) = (&support.geometry, witness)
     {
         if let Some(end) =
-            witnessed_surface_circle_end(surface, center.get(), radius.get(), uv, witness.get())?
+            witnessed_surface_circle_end(ctx, surface, center.get(), radius.get(), uv, witness.get())?
         {
             uv[1] = end;
         }
@@ -136,11 +136,7 @@ pub(super) fn standard_pcurve_geometry(
 
     let direction = Point2::new(uv[1].u - uv[0].u, uv[1].v - uv[0].v);
     let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
-    let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
-        surface,
-        midpoint_uv.u,
-        midpoint_uv.v,
-    ))?
+    let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, midpoint_uv.u, midpoint_uv.v)?)?
     else {
         return Ok(None);
     };
@@ -195,6 +191,7 @@ pub(super) fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Optio
 }
 
 pub(super) fn witnessed_surface_circle_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     center: Point3,
     radius: f64,
@@ -227,11 +224,7 @@ pub(super) fn witnessed_surface_circle_end(
         } else {
             candidate.v = selected;
         }
-        let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
-            surface,
-            0.5 * (uv[0].u + candidate.u),
-            0.5 * (uv[0].v + candidate.v),
-        ))?
+        let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, 0.5 * (uv[0].u + candidate.u), 0.5 * (uv[0].v + candidate.v))?)?
         else {
             continue;
         };
@@ -856,6 +849,7 @@ pub(super) fn standard_spline_perpendicular_cylinders(
 }
 
 pub(super) fn standard_native_support_witness(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &StandardEdgeSupport,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let parameter = 0.5 * (native.parameter_range[0] + native.parameter_range[1]);
@@ -867,14 +861,12 @@ pub(super) fn standard_native_support_witness(
             return Ok(None);
         };
         let Some(uv) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(pcurve, parameter))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?)?
         else {
             return Ok(None);
         };
         Ok(
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
-                surface, uv.u, uv.v,
-            ))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?)?
             .map(cadmpeg_ir::features::FinitePoint3::get),
         )
     };
@@ -1337,7 +1329,7 @@ pub(super) fn build_standard_edge_curve(
             ir.model.points[points[1]].position().get(),
         ];
         let witness = match native_support {
-            Some(native) => standard_native_support_witness(native)?,
+            Some(native) => standard_native_support_witness(ctx, native)?,
             None => None,
         };
         if let Some(witness) = witness {
@@ -1984,7 +1976,7 @@ pub(super) fn standard_circle_param_range(
         else {
             continue;
         };
-        let Some(range) = circle_parameter_range_from_surface_branch(
+        let Some(range) = circle_parameter_range_from_surface_branch(ctx,
             crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
                 surface: &surface.geometry,
                 center,

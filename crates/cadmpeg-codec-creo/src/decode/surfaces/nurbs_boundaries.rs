@@ -984,7 +984,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         } else {
             None
         };
-        let curve = match NurbsCurve::from_lanes_admitted(
+        let curve = match NurbsCurve::from_lanes_for_decode(
             ctx,
             curve.degree(),
             knots,

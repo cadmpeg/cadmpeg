@@ -15,7 +15,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
+use cadmpeg_ir::eval::nurbs_pcurve_uv;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     analytic::ConeSurface,
@@ -1455,7 +1455,7 @@ fn parse_from_records_with_class21(
             pcurve.control_points.first(),
             pcurve.control_points.last(),
         ) {
-            lift_pcurve_endpoints(surface, &profiles, [first.get(), last.get()])?
+            lift_pcurve_endpoints(ctx, surface, &profiles, [first.get(), last.get()])?
         } else {
             None
         };
@@ -2689,7 +2689,7 @@ fn lift_parameter_incidence(
             return Ok(None);
         };
         return Ok(
-            lift_pcurve_endpoints(surface, geometry.profiles, [uv, uv])?.map(|[point, _]| point)
+            lift_pcurve_endpoints(ctx, surface, geometry.profiles, [uv, uv])?.map(|[point, _]| point)
         );
     }
     let Some(opaque) = geometry.opaque_pcurves.get(&pcurve_id) else {
@@ -3482,7 +3482,7 @@ fn pcurve_endpoints(
             return Ok(pcurve.lifted_endpoints);
         };
         return Ok(
-            lift_pcurve_endpoints(surface, geometry.profiles, uv)?.or(pcurve.lifted_endpoints)
+            lift_pcurve_endpoints(ctx, surface, geometry.profiles, uv)?.or(pcurve.lifted_endpoints)
         );
     }
     let Some(opaque) = geometry.opaque_pcurves.get(&pcurve_id) else {
@@ -4968,24 +4968,25 @@ fn supported_surface_pcurves_match(
 }
 
 fn lift_pcurve_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &B5Surface,
     profiles: &BTreeMap<u32, B5Profile>,
     endpoints: [[f64; 2]; 2],
 ) -> Result<Option<[FinitePoint3; 2]>, cadmpeg_core::decode::ResourceLimit> {
     if let B5Surface::Nurbs(surface) = surface {
-        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx,
             surface,
             endpoints[0][0],
             endpoints[0][1],
-        ))?
+        )?)?
         else {
             return Ok(None);
         };
-        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx,
             surface,
             endpoints[1][0],
             endpoints[1][1],
-        ))?
+        )?)?
         else {
             return Ok(None);
         };

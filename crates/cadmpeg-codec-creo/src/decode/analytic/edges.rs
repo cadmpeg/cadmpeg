@@ -161,7 +161,7 @@ pub(super) fn nonperiodic_nurbs_endpoint_points(
     require_some!(valid_positive_nurbs_curve(nurbs));
     let range = require_some!(nurbs_intrinsic_parameter_range(nurbs));
     let [first, second] = range.map(|parameter| {
-        cadmpeg_ir::eval::admitted::curve_point(ctx, geometry, parameter.get()).and_then(|value| {
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter.get()).and_then(|value| {
             Ok(
                 cadmpeg_ir::eval::finite_or_refusal(value)?
                     .map(|point| [point.x, point.y, point.z]),
@@ -217,7 +217,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
     }
 
     let [first, second] =
-        range.map(|parameter| cadmpeg_ir::eval::admitted::curve_point(ctx, geometry, parameter));
+        range.map(|parameter| cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter));
     let mapped = [
         cadmpeg_ir::eval::finite_or_refusal(first?)?,
         cadmpeg_ir::eval::finite_or_refusal(second?)?,
@@ -294,7 +294,7 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
     }
 
     let [first, second] = intrinsic_range
-        .map(|parameter| cadmpeg_ir::eval::admitted::curve_point(ctx, &*geometry, parameter.get()));
+        .map(|parameter| cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &*geometry, parameter.get()));
     let mapped = [
         cadmpeg_ir::eval::finite_or_refusal(first?)?,
         cadmpeg_ir::eval::finite_or_refusal(second?)?,
@@ -338,7 +338,7 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
     let range = FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(nurbs)));
     let [first, second] =
         range.map(|parameter| {
-            cadmpeg_ir::eval::admitted::curve_point(ctx, geometry, parameter).and_then(|value| {
+            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter).and_then(|value| {
                 Ok(cadmpeg_ir::eval::finite_or_refusal(value)?
                     .map(|point| [point.x, point.y, point.z]))
             })
@@ -427,7 +427,7 @@ fn degree_one_nurbs_point_parameter(
             require_some!(cadmpeg_ir::math::interpolate(lower, upper, local)).get()
         };
         let Some(mapped) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::admitted::curve_point(ctx, geometry, parameter)?,
+            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter)?,
         )?
         else {
             continue;
@@ -665,6 +665,7 @@ pub(in crate::decode) fn nonperiodic_conic_edge_parameter_range(
 }
 
 pub(super) fn periodic_conic_edge_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
     interior: [f64; 3],
@@ -707,10 +708,7 @@ pub(super) fn periodic_conic_edge_parameter_range(
     let scale = radii.into_iter().fold(1.0, f64::max);
     let matches_interior = |range: [f64; 2]| -> Result<bool, cadmpeg_core::CodecError> {
         Ok(
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(
-                geometry,
-                f64::midpoint(range[0], range[1]),
-            ))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, f64::midpoint(range[0], range[1]))?)?
             .is_some_and(|point| {
                 let point = [point.x, point.y, point.z];
                 dot(

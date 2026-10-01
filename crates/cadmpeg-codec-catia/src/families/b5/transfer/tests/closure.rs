@@ -1213,67 +1213,67 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         20,
         crate::test_support::test_b5::finite_pair([0.0, 1.0]),
     )];
-    assert!(b5_supports_follow_edge(
+    assert!(crate::test_support::with_service_context(|ctx| b5_supports_follow_edge(ctx,
         &supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds"));
-    assert!(!b5_supports_follow_edge(
+    assert!(!crate::test_support::with_service_context(|ctx| b5_supports_follow_edge(ctx,
         &supports,
         [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds"));
-    assert!(!b5_supports_follow_edge(
+    assert!(!crate::test_support::with_service_context(|ctx| b5_supports_follow_edge(ctx,
         &supports,
         [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds"));
     let mut reversed_supports = [(
         10,
         20,
         crate::test_support::test_b5::finite_pair([1.0, 0.0]),
     )];
-    orient_b5_supports_to_edge(
+    crate::test_support::with_service_context(|ctx| orient_b5_supports_to_edge(ctx,
         &mut reversed_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds");
     assert_eq!(
         reversed_supports[0].2,
         crate::test_support::test_b5::finite_pair([0.0, 1.0])
     );
-    assert!(b5_supports_follow_edge(
+    assert!(crate::test_support::with_service_context(|ctx| b5_supports_follow_edge(ctx,
         &reversed_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds"));
     let mut tolerance_ambiguous_supports = [(
         10,
         20,
         crate::test_support::test_b5::finite_pair([1.0, 0.0]),
     )];
-    orient_b5_supports_to_edge(
+    crate::test_support::with_service_context(|ctx| orient_b5_supports_to_edge(ctx,
         &mut tolerance_ambiguous_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         [1.01; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds");
     assert_eq!(
         tolerance_ambiguous_supports[0].2,
@@ -1291,29 +1291,29 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
             crate::test_support::test_b5::finite_pair([0.0, 1.0]),
         ),
     ];
-    orient_b5_supports_to_edge(
+    crate::test_support::with_service_context(|ctx| orient_b5_supports_to_edge(ctx,
         &mut oppositely_parameterized_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         [1.01; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds");
     assert_eq!(
         oppositely_parameterized_supports[1].2,
         crate::test_support::test_b5::finite_pair([1.0, 0.0])
     );
     assert!(
-        b5_supports_agree(&oppositely_parameterized_supports, &surfaces, &pcurves,)
+        crate::test_support::with_service_context(|ctx| b5_supports_agree(ctx, &oppositely_parameterized_supports, &surfaces, &pcurves,))
             .expect("evaluator allocation succeeds")
     );
-    assert!(b5_supports_follow_edge(
+    assert!(crate::test_support::with_service_context(|ctx| b5_supports_follow_edge(ctx,
         &supports,
         [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
         [1.01; 2],
         &surfaces,
         &pcurves,
-    )
+    ))
     .expect("evaluator allocation succeeds"));
 }
 
@@ -1792,7 +1792,7 @@ fn b5_supports_with_an_overflowing_endpoint_agree_on_their_finite_endpoints() {
         ),
     ];
     assert!(
-        b5_supports_agree(&supports, &surfaces, &pcurves).expect("evaluator allocation succeeds")
+        crate::test_support::with_service_context(|ctx| b5_supports_agree(ctx, &supports, &surfaces, &pcurves)).expect("evaluator allocation succeeds")
     );
 }
 
@@ -1853,6 +1853,6 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
         ),
     ];
     assert!(
-        b5_supports_agree(&supports, &surfaces, &pcurves).expect("evaluator allocation succeeds")
+        crate::test_support::with_service_context(|ctx| b5_supports_agree(ctx, &supports, &surfaces, &pcurves)).expect("evaluator allocation succeeds")
     );
 }

@@ -140,7 +140,7 @@ impl DecodeBudget {
         Ok(())
     }
 
-    fn refuse_limit(
+    pub(super) fn refuse_limit(
         &self,
         dimension: ResourceDimension,
         reason: ResourceFailure,
@@ -347,7 +347,7 @@ impl DecodeBudget {
     pub(super) fn enter_nested(
         &self,
         operation: &'static str,
-    ) -> Result<DepthGuard<'_>, CodecError> {
+    ) -> Result<DepthGuard<'_>, ResourceLimit> {
         self.charge(
             ResourceDimension::RecursionDepth,
             &self.recursion_depth,
@@ -410,7 +410,8 @@ pub struct ScopedReservation<'a> {
 }
 
 impl ScopedReservation<'_> {
-    pub(super) fn grow_resource(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
+    /// Increases live temporary storage and returns the resource refusal.
+    pub fn grow_limit(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
         self.budget.charge(
             ResourceDimension::MaterializedBytes,
             &self.budget.materialized,
@@ -433,7 +434,7 @@ impl ScopedReservation<'_> {
 
     /// Increases the live temporary reservation.
     pub fn grow(&mut self, bytes: u64) -> Result<(), CodecError> {
-        self.grow_resource(bytes).map_err(Into::into)
+        self.grow_limit(bytes).map_err(Into::into)
     }
 
     /// Converts the temporary reservation into session-retained bytes.

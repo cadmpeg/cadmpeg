@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use super::{admitted, difference_quotient, finite_or_refusal};
+use super::{decode, difference_quotient, finite_or_refusal};
 use crate::math::sum::scaled_ratio_products;
 use crate::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_core::convert::f64_from_index;
@@ -39,23 +39,23 @@ pub(super) fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 /// Scratch contains `degree + 1` values, at most the admitted control count.
 pub(super) fn bspline_basis(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],
     degree: usize,
     span: usize,
     t: f64,
-) -> Option<admitted::SupportValues<f64>> {
+) -> Option<decode::SupportValues<f64>> {
     let support = degree.checked_add(1)?;
     let mut values = if support <= 2 {
-        admitted::SupportValues::Inline {
+        decode::SupportValues::Inline {
             values: [0.0; 2],
             len: support,
         }
     } else {
         scratch.work(support.checked_mul(support)?, "IR B-spline basis work")?;
-        admitted::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
+        decode::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
     };
-    scratch.admit_limit(fill_bspline_basis(knots, degree, span, t, &mut values))??;
+    scratch.admit(fill_bspline_basis(knots, degree, span, t, &mut values))??;
     Some(values)
 }
 
@@ -128,13 +128,13 @@ pub(super) fn fill_bspline_basis(
 /// a lane or the quotient left the finite range, and `None` with the refusal
 /// recorded when the quotient was refused a resource.
 fn nan_quotient(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     lanes: Option<[FiniteReal; 3]>,
 ) -> Option<f64> {
     let Some([value, end, start]) = lanes else {
         return Some(f64::NAN);
     };
-    let quotient = scratch.admit_limit(finite_or_refusal(difference_quotient(
+    let quotient = scratch.admit(finite_or_refusal(difference_quotient(
         value,
         FiniteReal::ZERO,
         end,
@@ -144,7 +144,7 @@ fn nan_quotient(
 }
 
 pub(super) fn bspline_basis_derivative(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],
     degree: usize,
     span: usize,
@@ -205,7 +205,7 @@ pub(super) fn bspline_basis_derivative(
 
 /// The owned basis has `degree + 1` values, at most the admitted control count.
 pub(super) fn bspline_basis_second_derivative(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],
     degree: usize,
     span: usize,
@@ -278,7 +278,7 @@ pub(super) struct ScaledBasisDerivatives {
 }
 
 pub(super) fn bspline_basis_scaled_derivatives(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],
     degree: usize,
     span: usize,
@@ -311,7 +311,7 @@ pub(super) fn bspline_basis_scaled_derivatives(
 }
 
 fn bspline_basis_scaled_derivative_level(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],
     degree: usize,
     span: usize,
@@ -341,7 +341,7 @@ fn bspline_basis_scaled_derivative_level(
             } else {
                 let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
                 scratch
-                    .admit_limit(finite_or_refusal(difference_quotient(
+                    .admit(finite_or_refusal(difference_quotient(
                         scale.into(),
                         FiniteReal::ZERO,
                         hi_knot,

@@ -24,14 +24,14 @@ fn profile_sampling_propagates_evaluator_refusal() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(
-        matches!((|| { let mut evaluator = cadmpeg_ir::eval::admitted::NurbsPointEvaluator::new(&ctx, &nurbs)?; super::nurbs_profile_point(&ctx, &mut evaluator, &nurbs, 0.5) })(), Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
+        matches!((|| { let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&ctx, &nurbs)?; super::nurbs_profile_point(&ctx, &mut evaluator, &nurbs, 0.5) })(), Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
     );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         (|| {
-            let mut evaluator = cadmpeg_ir::eval::admitted::NurbsPointEvaluator::new(&ctx, &nurbs)?;
+            let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&ctx, &nurbs)?;
             super::nurbs_profile_point(&ctx, &mut evaluator, &nurbs, 0.5)
         })()
         .expect("service"),

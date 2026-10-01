@@ -15,7 +15,7 @@ use std::hash::Hash;
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -557,8 +557,7 @@ fn solved_curve(
             .iter()
             .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)),
     );
-    charge_items(ctx, point_count, "admit intersection curve poles")?;
-    let nurbs = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
+    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, knots, controls, None, false)? {
         Ok(nurbs) => nurbs,
         Err(error) => {
             refusal.note(
@@ -1087,7 +1086,7 @@ mod tests {
 
     #[test]
     fn parasolid_intersection_poles_refuse_before_admission() {
-        intersection_curve_boundary(16, "admit intersection curve poles");
+        intersection_curve_boundary(16, "IR NURBS admitted poles");
     }
 
     #[test]

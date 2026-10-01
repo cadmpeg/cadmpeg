@@ -345,7 +345,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             };
             let parameter = start.midpoint(end);
             if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::curve_point(curve, parameter),
+                cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve, parameter)?,
             )? {
                 ctx.push_vec(
                     &mut witnesses,
@@ -5179,10 +5179,7 @@ fn standard_limit_curve_bindings(
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
             ));
-            let midpoint = match cadmpeg_ir::eval::curve_point(
-                &geometry,
-                0.5 * (start_parameter + end_parameter),
-            ) {
+            let midpoint = match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, 0.5 * (start_parameter + end_parameter))? {
                 Ok(point) => point,
                 Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                     return Err(limit.into());
@@ -9447,7 +9444,7 @@ fn standard_face_boundary_witnesses(
                 continue;
             };
             if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end)),
+                cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &curve.geometry, 0.5 * (start + end))?,
             )? {
                 ctx.push_vec(&mut witnesses, point.get(), "catia_a5_face_witness_points")?;
             }

@@ -724,13 +724,7 @@ fn revolution_nurbs(
     let profile_knots = ctx
         .copy_retained_slice(profile.knots(), "Rhino revolution profile knots")
         .map_err(crate::curves::GeometryError::from)?;
-    admit_nurbs_pole_conversion(ctx, output_count, true)?;
-    let mut result = NurbsSurface::from_lanes(
-        NurbsSurfaceAxis::new(2, knots, false),
-        NurbsSurfaceAxis::new(profile.degree(), profile_knots, profile.periodic()),
-        NurbsSurfaceLanes::new(point_rows, Some(weight_rows)),
-        false,
-    )
+    let mut result = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(ctx, NurbsSurfaceAxis::new(2, knots, false), NurbsSurfaceAxis::new(profile.degree(), profile_knots, profile.periodic()), NurbsSurfaceLanes::new(point_rows, Some(weight_rows)), false).map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         result.transpose_parameter_axes();

@@ -990,11 +990,7 @@ pub(crate) fn scan_curve_carriers(
         if knots.len() != expected {
             continue;
         }
-        if weights.is_some() {
-            charge_items(ctx, points.len(), "pair Parasolid curve weighted poles")?;
-        }
-        charge_items(ctx, points.len(), "admit Parasolid curve poles")?;
-        let nurbs = match NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false) {
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, descriptor.degree, knots, points, weights, false)? {
             Ok(nurbs) => nurbs,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
@@ -1320,11 +1316,7 @@ pub(crate) fn scan_surface_carriers(
                 "partition Parasolid surface weight rows",
             )?;
             charge_items(ctx, expected_poles, "partition Parasolid surface weights")?;
-            charge_items(ctx, descriptor.u_count, "pair Parasolid weighted pole rows")?;
-            charge_items(ctx, expected_poles, "pair Parasolid weighted poles")?;
         }
-        charge_items(ctx, descriptor.u_count, "admit Parasolid surface pole rows")?;
-        charge_items(ctx, expected_poles, "admit Parasolid surface poles")?;
         let mut pole_rows = Vec::new();
         cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             &mut pole_rows,
@@ -1358,20 +1350,15 @@ pub(crate) fn scan_surface_carriers(
         } else {
             None
         };
-        let nurbs = match NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,
                 u_knots,
                 descriptor.u_periodic,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.v_degree,
                 v_knots,
                 descriptor.v_periodic,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
-            false,
-        ) {
+            ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows), false)? {
             Ok(nurbs) => nurbs,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
@@ -1555,7 +1542,7 @@ mod tests {
             matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "pair Parasolid curve weighted poles"),
+                    && limit.operation == "IR NURBS paired poles"),
             "{error:?}"
         );
     }
@@ -1573,7 +1560,7 @@ mod tests {
             matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Parasolid curve poles"),
+                    && limit.operation == "IR NURBS admitted poles"),
             "{error:?}"
         );
     }

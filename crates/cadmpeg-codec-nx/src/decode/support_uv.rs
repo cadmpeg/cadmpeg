@@ -38,7 +38,7 @@ use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, finite_or_refusal,
-    nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
+    nurbs_surface_parameter_within_tolerance_with_budget,
 };
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
@@ -1062,7 +1062,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                         fully_validated = false;
                         break;
                     }
-                    let Some(uv) = finite_or_refusal(pcurve_uv(&pcurve.geometry, *parameter))?
+                    let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &pcurve.geometry, *parameter)?)?
                     else {
                         fully_validated = false;
                         continue;

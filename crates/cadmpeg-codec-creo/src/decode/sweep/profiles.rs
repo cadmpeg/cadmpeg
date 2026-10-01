@@ -63,10 +63,10 @@ fn sketch_geometry_endpoints(
             let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let (Some(first), Some(last)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
                     ctx, &carrier, lower,
                 )?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
                     ctx, &carrier, upper,
                 )?)?,
             ) else {
@@ -971,7 +971,7 @@ struct NurbsProfileSpan {
 
 fn nurbs_profile_point(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::admitted::NurbsPointEvaluator<'_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
     nurbs: &NurbsCurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -987,7 +987,7 @@ fn nurbs_profile_point(
 
 fn append_nurbs_profile_span(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::admitted::NurbsPointEvaluator<'_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
     nurbs: &NurbsCurve,
     span: &NurbsProfileSpan,
     points: &mut Vec<[f64; 2]>,
@@ -1077,7 +1077,7 @@ fn nurbs_profile_polyline(
     let Some(range) = nurbs_intrinsic_parameter_range(nurbs) else {
         return Ok(None);
     };
-    let mut evaluator = cadmpeg_ir::eval::admitted::NurbsPointEvaluator::new(ctx, nurbs)?;
+    let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, nurbs)?;
     let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
     let Some(first) = nurbs_profile_point(ctx, &mut evaluator, nurbs, lower)? else {
         return Ok(None);
@@ -1178,10 +1178,10 @@ fn nurbs_profile_signed_area_twice(
         {
             let parameter = middle + half_width * node;
             let (Some(point), Some(tangent)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
                     ctx, &carrier, parameter,
                 )?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_tangent(
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_tangent_for_decode(
                     ctx, &carrier, parameter,
                 )?)?,
             ) else {

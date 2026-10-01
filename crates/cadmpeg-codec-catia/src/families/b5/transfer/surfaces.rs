@@ -331,21 +331,15 @@ fn profile_nurbs(
             point, direction, ..
         } => crate::nurbs::note_refusal(
             ctx,
-            NurbsCurve::from_lanes(
-                1,
-                ctx.collect_vec(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, ctx.collect_vec(
                     [interval[0], interval[0], interval[1], interval[1]],
                     "catia_b5_revolution_line_profile_knots",
-                )?,
-                ctx.collect_vec(
+                )?, ctx.collect_vec(
                     interval.into_iter().map(|parameter| {
                         point3(add(coordinates(*point), scale(direction.get(), parameter)))
                     }),
                     "catia_b5_revolution_line_profile_points",
-                )?,
-                None,
-                false,
-            ),
+                )?, None, false)?,
             refusal,
             format_args!("b5 line profile of a revolution surface: {record}"),
         )?,
@@ -466,7 +460,7 @@ pub(super) fn rational_arc(
     }
     crate::nurbs::note_refusal(
         ctx,
-        NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false),
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 2, knots, control_points, Some(weights), false)?,
         refusal,
         format_args!("b5 rational arc profile of a revolution surface: {record}"),
     )
@@ -681,16 +675,11 @@ pub(super) fn revolve_nurbs(
         };
         let surface = match crate::nurbs::note_refusal(
             ctx,
-            NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
                     profile_knots,
                     false,
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(point_rows, Some(weight_rows)),
-                false,
-            ),
+                ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(point_rows, Some(weight_rows)), false) { Ok(value) => value, Err(error) => return Some(Err(error)) },
             refusal,
             format_args!("b5 revolution surface built from its profile: {record}"),
         ) {

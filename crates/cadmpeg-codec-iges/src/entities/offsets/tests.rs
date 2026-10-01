@@ -378,12 +378,12 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
 
     let source = &ir.model.curves[0];
     assert_eq!(
-        super::source_parameter_range(
+        crate::test_support::with_service_context(&[], |ctx| super::source_parameter_range(ctx,
             &ir,
             &source_id,
             source.geometry.solved().expect("solved carrier"),
             EPS_OFFSET_ENDPOINT_MATCH,
-        )
+        ))
         .expect("source parameter selection")
         .map(FiniteVector::get),
         Some([0.0, 2.0])

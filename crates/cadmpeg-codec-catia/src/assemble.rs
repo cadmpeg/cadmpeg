@@ -355,6 +355,7 @@ pub(crate) struct CircleParameterRangeFromSurfaceBranchInputs<'input0> {
 }
 
 pub(crate) fn circle_parameter_range_from_surface_branch(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     inputs: CircleParameterRangeFromSurfaceBranchInputs<'_>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
     let CircleParameterRangeFromSurfaceBranchInputs {
@@ -420,7 +421,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         return Ok(None);
     }
     let Some(surface_midpoint) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v),
+        cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, midpoint_uv.u, midpoint_uv.v)?,
     )?
     else {
         return Ok(None);
@@ -1435,7 +1436,7 @@ mod route_tests {
             )
             .expect("valid PlaneSurface fixture"),
         ));
-        let range = circle_parameter_range_from_surface_branch(
+        let range = crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
             crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
                 surface: &surface,
                 center: Point3::new(0.0, 0.0, 0.0),
@@ -1449,7 +1450,7 @@ mod route_tests {
                 pcurve_direction: FinitePoint2::new(Point2::new(0.0, sweep))
                     .expect("finite pcurve direction"),
             },
-        )
+        ))
         .expect("circle evaluation resources")
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
@@ -1479,7 +1480,7 @@ mod route_tests {
         };
         let (center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction) =
             args();
-        assert!(circle_parameter_range_from_surface_branch(
+        assert!(crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
             crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
                 surface: &surface,
                 center: Point3::new(f64::NAN, center.y, center.z),
@@ -1491,10 +1492,10 @@ mod route_tests {
                 pcurve_origin,
                 pcurve_direction
             }
-        )
+        ))
         .expect("circle evaluation resources")
         .is_none());
-        assert!(circle_parameter_range_from_surface_branch(
+        assert!(crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
             crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
                 surface: &surface,
                 center,
@@ -1506,10 +1507,10 @@ mod route_tests {
                 pcurve_origin,
                 pcurve_direction
             }
-        )
+        ))
         .expect("circle evaluation resources")
         .is_none());
-        assert!(circle_parameter_range_from_surface_branch(
+        assert!(crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
             crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
                 surface: &surface,
                 center,
@@ -1521,7 +1522,7 @@ mod route_tests {
                 pcurve_origin,
                 pcurve_direction
             }
-        )
+        ))
         .expect("circle evaluation resources")
         .is_none());
     }

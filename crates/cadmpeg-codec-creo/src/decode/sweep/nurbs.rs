@@ -352,7 +352,7 @@ pub(in super::super) fn saved_spline_nurbs(
         "creo saved spline controls",
     )?;
     converted_controls.extend(control_points.into_iter().map(Point3::from));
-    match NurbsCurve::from_lanes_admitted(ctx, 3, knots, converted_controls, None, false)? {
+    match NurbsCurve::from_lanes_for_decode(ctx, 3, knots, converted_controls, None, false)? {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             refusal.note_checked(
@@ -627,7 +627,7 @@ pub(in super::super) fn interpolation_spline_surface(
         row.extend_from_slice(points);
         pole_rows.push(row);
     }
-    match NurbsSurface::from_lanes_admitted(
+    match NurbsSurface::from_lanes_for_decode(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots, false),
@@ -1287,7 +1287,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
     knots.extend([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-    match NurbsCurve::from_lanes_admitted(ctx, 3, knots, controls, None, false)? {
+    match NurbsCurve::from_lanes_for_decode(ctx, 3, knots, controls, None, false)? {
         Ok(curve) => Ok(Some((curve, sweep))),
         Err(error) => {
             refusal.note_checked(

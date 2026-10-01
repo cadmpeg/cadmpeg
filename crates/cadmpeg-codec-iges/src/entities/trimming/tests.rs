@@ -1003,21 +1003,21 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         [0.0, 1.0],
     )];
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    assert!(!super::edge_range_matches_curve(
+    assert!(!crate::test_support::with_service_context(&[], |ctx| super::edge_range_matches_curve(ctx,
         &candidates[0],
         &index,
         Point3::new(10.0, 0.0, 0.0),
         Point3::new(11.0, 0.0, 0.0),
         EPS_BOUNDARY_ENDPOINT_MATCH,
-    )
+    ))
     .unwrap());
-    assert!(super::edge_range_matches_curve(
+    assert!(crate::test_support::with_service_context(&[], |ctx| super::edge_range_matches_curve(ctx,
         &candidates[1],
         &index,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
         EPS_BOUNDARY_ENDPOINT_MATCH,
-    )
+    ))
     .unwrap());
     let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
         &[&candidates[0], &candidates[1]],

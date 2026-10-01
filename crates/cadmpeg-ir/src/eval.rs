@@ -44,7 +44,7 @@ use cadmpeg_core::decode::work_scratch::WorkScratch;
 use cadmpeg_core::decode::{u64_from_index, ResourceLimit, WorkBudget};
 
 /// Evaluation under the caller decode resource limits.
-pub mod admitted;
+pub mod decode;
 
 mod basis;
 mod bezier;
@@ -1582,16 +1582,7 @@ pub fn nurbs_curve_point_at(
     curve: &NurbsCurve,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let poles = curve.pole_rows();
-    nurbs_curve_point_evaluation(
-        &admitted::Scratch::default(),
-        curve.degree(),
-        curve.knots(),
-        poles.count(),
-        |index| poles.point_at(index),
-        |index| poles.weight_at(index),
-        FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?,
-    )
+    default_evaluation(|ctx| decode::nurbs_curve_point_at_for_decode(ctx, curve, t))
 }
 
 /// Evaluate a NURBS curve with a caller-owned basis buffer of `degree + 1`
@@ -1627,7 +1618,7 @@ pub fn nurbs_curve_point_at_with_basis(
 /// reached. A knot vector or pole list that states no span at `t`, and a zero
 /// weight sum, have no value.
 fn nurbs_curve_point_evaluation(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     count: usize,
@@ -1641,7 +1632,7 @@ fn nurbs_curve_point_evaluation(
 }
 
 fn nurbs_curve_point_unsettled(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     count: usize,
@@ -1763,6 +1754,12 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     tolerance: NonNegativeLength,
     seed: FiniteReal,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     let tolerance = tolerance.get();
     let Some(degree) = usize::try_from(curve.degree()).ok() else {
         return Ok(None);
@@ -1790,7 +1787,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     }
     let distance = |parameter: FiniteReal| {
         let position = finite_or_refusal(nurbs_curve_point_evaluation(
-            &admitted::Scratch::default(),
+            &scratch,
             curve.degree(),
             curve.knots(),
             poles.len(),
@@ -1868,6 +1865,8 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         intervals.push(halves[nearer]);
     }
     Ok(None)
+})();
+    scratch.unless_refused()?; result
 }
 
 fn nurbs_curve_parameter_near_point_newton(
@@ -1879,11 +1878,17 @@ fn nurbs_curve_parameter_near_point_newton(
     seed: FiniteReal,
     search: NurbsSearchWindow<'_>,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     let window = parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
     let mut parameter = window.project(ExtendedReal::from_finite(seed));
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
         let Some(position) = finite_or_refusal(nurbs_curve_point_evaluation(
-            &admitted::Scratch::default(),
+            &scratch,
             curve.degree(),
             curve.knots(),
             poles.len(),
@@ -1903,7 +1908,7 @@ fn nurbs_curve_parameter_near_point_newton(
             return Ok(Some(parameter));
         }
         let Some(tangent) = finite_or_refusal(nurbs_curve_derivative(
-            &admitted::Scratch::default(),
+            &scratch,
             curve.degree(),
             curve.knots(),
             poles,
@@ -1930,6 +1935,8 @@ fn nurbs_curve_parameter_near_point_newton(
         parameter = next;
     }
     Ok(None)
+})();
+    scratch.unless_refused()?; result
 }
 
 /// Global model-space speed bound for a structurally valid rational NURBS
@@ -2281,8 +2288,14 @@ fn nurbs_pcurve_differential(
     weights: Option<&[f64]>,
     t: f64,
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     nurbs_pcurve_differential_with(
-        &admitted::Scratch::default(),
+        &scratch,
         degree,
         knots,
         control_points.len(),
@@ -2290,6 +2303,8 @@ fn nurbs_pcurve_differential(
         weights,
         FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?,
     )
+})();
+    scratch.settle(result)
 }
 
 /// The point and first two derivatives at `t` of a possibly-rational
@@ -2302,7 +2317,7 @@ fn nurbs_pcurve_differential(
 /// derivatives from the finite point, so a curve without one has no
 /// derivatives here.
 fn nurbs_pcurve_differential_with(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     count: usize,
@@ -2316,7 +2331,7 @@ fn nurbs_pcurve_differential_with(
 }
 
 fn nurbs_pcurve_differential_unsettled(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     count: usize,
@@ -2587,8 +2602,7 @@ pub fn nurbs_surface_point(
     u_at: f64,
     v_at: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let [x, y, z] = nurbs_surface_local(&admitted::Scratch::default(), surface, u_at, v_at)?.point;
-    Ok(FinitePoint3::from_coordinates(x, y, z))
+    default_evaluation(|ctx| decode::nurbs_surface_point_for_decode(ctx, surface, u_at, v_at))
 }
 
 /// A tensor-product NURBS surface at a parameter: its spans, its bases and
@@ -2598,7 +2612,7 @@ struct NurbsSurfaceLocal<'a> {
     degrees: [usize; 2],
     spans: [usize; 2],
     parameters: [f64; 2],
-    bases: [admitted::SupportValues<f64>; 2],
+    bases: [decode::SupportValues<f64>; 2],
     base: Homogeneous,
     point: [FiniteReal; 3],
 }
@@ -2655,9 +2669,15 @@ impl NurbsSurfaceLocal<'_> {
     /// and a projection that is absent or overflows each left the finite
     /// range.
     fn first(&self) -> Result<NurbsSurfaceFirstPartials, EvaluationFailure<()>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
         let non_finite = EvaluationFailure::NonFinite(());
         let knots = [self.surface.u_knots(), self.surface.v_knots()];
-        let scratch = admitted::Scratch::default();
+
         let derivative = |axis: usize| {
             basis::bspline_basis_derivative(
                 &scratch,
@@ -2684,7 +2704,9 @@ impl NurbsSurfaceLocal<'_> {
             sums: [u, v],
             lanes,
         })
-    }
+    })();
+    scratch.settle(result)
+}
 
     /// The second partials over `first`, or why they have none, in the terms
     /// of [`Self::first`].
@@ -2692,9 +2714,15 @@ impl NurbsSurfaceLocal<'_> {
         &self,
         first: &NurbsSurfaceFirstPartials,
     ) -> Result<[[FiniteReal; 3]; 3], EvaluationFailure<()>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
         let non_finite = EvaluationFailure::NonFinite(());
         let knots = [self.surface.u_knots(), self.surface.v_knots()];
-        let scratch = admitted::Scratch::default();
+
         let second = |axis: usize| {
             basis::bspline_basis_second_derivative(
                 &scratch,
@@ -2722,7 +2750,9 @@ impl NurbsSurfaceLocal<'_> {
             lane(uv, &[(uv, self.point), (u, dv), (v, du)])?,
             lane(vv, &[(vv, self.point), (v, dv), (v, dv)])?,
         ])
-    }
+    })();
+    scratch.settle(result)
+}
 }
 
 /// A tensor-product NURBS surface at `(u, v)`, or why it has no finite
@@ -2733,7 +2763,7 @@ impl NurbsSurfaceLocal<'_> {
 /// it reached. A parameter that is not finite, a knot vector or pole net that
 /// states no span at the parameter, and a zero weight sum have no value.
 fn nurbs_surface_local<'a>(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     surface: &'a NurbsSurface,
     u_at: f64,
     v_at: f64,
@@ -2742,7 +2772,7 @@ fn nurbs_surface_local<'a>(
 }
 
 fn nurbs_surface_local_unsettled<'a>(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     surface: &'a NurbsSurface,
     u_at: f64,
     v_at: f64,
@@ -2809,12 +2839,20 @@ fn nurbs_surface_first_order(
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let local = nurbs_surface_local(&admitted::Scratch::default(), surface, u_at, v_at)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
+    let local = nurbs_surface_local(&scratch, surface, u_at, v_at)?;
     let [x, y, z] = local.point;
     Ok(SurfaceFirstOrder {
         point: FinitePoint3::from_coordinates(x, y, z),
         first: local.first().map(|first| first.lanes.map(finite_vector)),
     })
+})();
+    scratch.settle(result)
 }
 
 /// A NURBS surface's point with its first and second partials at `(u, v)`,
@@ -2824,7 +2862,13 @@ fn nurbs_surface_jet(
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    let local = nurbs_surface_local(&admitted::Scratch::default(), surface, u_at, v_at)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
+    let local = nurbs_surface_local(&scratch, surface, u_at, v_at)?;
     let [x, y, z] = local.point;
     let first = local.first();
     let second = first
@@ -2836,6 +2880,8 @@ fn nurbs_surface_jet(
         first: first.map(|first| first.lanes.map(finite_vector)),
         second: second.map(|lanes| lanes.map(finite_vector)),
     })
+})();
+    scratch.settle(result)
 }
 
 /// The vector of three finite lanes.
@@ -2932,6 +2978,12 @@ pub fn nurbs_surface_isocurve(
     fixed_axis: SurfaceParameterAxis,
     fixed_parameter: f64,
 ) -> Result<Option<NurbsCurve>, ResourceLimit> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
         return Ok(None);
     };
@@ -2961,7 +3013,7 @@ pub fn nurbs_surface_isocurve(
     else {
         return Ok(None);
     };
-    let scratch = admitted::Scratch::default();
+
     let Some(fixed_basis) = basis::bspline_basis(
         &scratch,
         fixed_knots,
@@ -3039,6 +3091,8 @@ pub fn nurbs_surface_isocurve(
         Err(crate::geometry::nurbs::NurbsError::ResourceLimit(limit)) => Err(limit),
         Err(_) => Ok(None),
     }
+})();
+    scratch.unless_refused()?; result
 }
 
 /// Why an evaluator has no finite value at its input.
@@ -3377,12 +3431,20 @@ pub fn curve_tangent_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     curve_derivative_evaluation(
-        &admitted::Scratch::default(),
+        &scratch,
         geometry,
         t,
         CurveDerivative::First,
     )
+})();
+    scratch.settle(result)
 }
 
 /// Evaluate the exact second derivative of a directly stored curve, or report
@@ -3391,12 +3453,20 @@ pub fn curve_second_derivative_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     curve_derivative_evaluation(
-        &admitted::Scratch::default(),
+        &scratch,
         geometry,
         t,
         CurveDerivative::Second,
     )
+})();
+    scratch.settle(result)
 }
 
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
@@ -3492,6 +3562,12 @@ fn curve_derivative_with_budget_evaluation(
     order: CurveDerivative,
     budget: &WorkBudget<'_>,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     let charged = |cost: Option<usize>| {
         cost.is_some_and(|cost| budget.charge_by(cost))
             .then_some(())
@@ -3504,11 +3580,11 @@ fn curve_derivative_with_budget_evaluation(
                 CurveDerivative::Second => 3,
             };
             charged(nurbs_curve_derivative_evaluation_cost(nurbs, basis_levels))?;
-            curve_derivative_evaluation(&admitted::Scratch::default(), geometry, t, order)
+            curve_derivative_evaluation(&scratch, geometry, t, order)
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             charged(Some(polyline.point_count()))?;
-            curve_derivative_evaluation(&admitted::Scratch::default(), geometry, t, order)
+            curve_derivative_evaluation(&scratch, geometry, t, order)
         }
         SolvedCurveGeometry::Transformed(placed) => {
             if !budget.charge() {
@@ -3519,8 +3595,10 @@ fn curve_derivative_with_budget_evaluation(
                 curve_derivative_with_budget_evaluation(placed.basis(), t, order, budget),
             )
         }
-        _ => curve_derivative_evaluation(&admitted::Scratch::default(), geometry, t, order),
+        _ => curve_derivative_evaluation(&scratch, geometry, t, order),
     }
+})();
+    scratch.settle(result)
 }
 
 /// A placed carrier's derivative from its basis derivative. A derivative the
@@ -3552,7 +3630,7 @@ fn admit_derivative(derivative: Vector3) -> Result<FiniteVector3, EvaluationFail
 /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
 /// construction; no arm follows an arena id.
 fn curve_derivative_evaluation(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     geometry: &SolvedCurveGeometry,
     t: f64,
     order: CurveDerivative,
@@ -3561,7 +3639,7 @@ fn curve_derivative_evaluation(
 }
 
 fn curve_derivative_unsettled(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     geometry: &SolvedCurveGeometry,
     t: f64,
     order: CurveDerivative,
@@ -3740,7 +3818,7 @@ fn sinh_cosh_lanes(
 /// overflows. A knot vector or pole list that states no span at `t`, a zero
 /// weight sum, and a span of zero width have no value.
 fn nurbs_curve_derivative(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     control_points: &[FinitePoint3],
@@ -3760,7 +3838,7 @@ fn nurbs_curve_derivative(
 }
 
 fn nurbs_curve_derivative_unsettled(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     control_points: &[FinitePoint3],
@@ -4056,6 +4134,12 @@ fn model_curve_differential_by_id_inner(
     parameter: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     let depth_guard = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     if !parameter.is_finite() {
         return Err(EvaluationFailure::NoValue);
@@ -4132,7 +4216,7 @@ fn model_curve_differential_by_id_inner(
             ),
             || {
                 curve_derivative_evaluation(
-                    &admitted::Scratch::default(),
+                    &scratch,
                     cache,
                     parameter,
                     CurveDerivative::First,
@@ -4140,7 +4224,7 @@ fn model_curve_differential_by_id_inner(
             },
             || {
                 curve_derivative_evaluation(
-                    &admitted::Scratch::default(),
+                    &scratch,
                     cache,
                     parameter,
                     CurveDerivative::Second,
@@ -4176,7 +4260,7 @@ fn model_curve_differential_by_id_inner(
             curve_point_solved(solved, parameter),
             || {
                 curve_derivative_evaluation(
-                    &admitted::Scratch::default(),
+                    &scratch,
                     solved,
                     parameter,
                     CurveDerivative::First,
@@ -4184,7 +4268,7 @@ fn model_curve_differential_by_id_inner(
             },
             || {
                 curve_derivative_evaluation(
-                    &admitted::Scratch::default(),
+                    &scratch,
                     solved,
                     parameter,
                     CurveDerivative::Second,
@@ -4192,6 +4276,8 @@ fn model_curve_differential_by_id_inner(
             },
         ),
     }
+})();
+    scratch.settle(result)
 }
 
 /// Map a nonnegative local subset parameter into its ordered source range.
@@ -5570,6 +5656,15 @@ pub fn curve_point_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    default_evaluation(|ctx| decode::curve_point_solved_for_decode(ctx, geometry, t))
+}
+
+fn curve_point_evaluation(
+    scratch: &decode::Scratch<'_, '_>,
+    geometry: &SolvedCurveGeometry,
+    t: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let _depth = scratch.enter().ok_or(EvaluationFailure::NoValue)?;
     let parameter = || FiniteReal::new(t).ok_or(EvaluationFailure::NoValue);
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
@@ -5668,7 +5763,7 @@ pub fn curve_point_solved(
                 map_nurbs_curve_parameter(nurbs, parameter()?).ok_or(EvaluationFailure::NoValue)?;
             let poles = nurbs.pole_rows();
             nurbs_curve_point_evaluation(
-                &admitted::Scratch::default(),
+                scratch,
                 nurbs.degree(),
                 nurbs.knots(),
                 poles.count(),
@@ -5684,7 +5779,7 @@ pub fn curve_point_solved(
             t,
         ),
         SolvedCurveGeometry::Transformed(placed) => {
-            placed_point(*placed.transform(), curve_point_solved(placed.basis(), t))
+            placed_point(*placed.transform(), curve_point_evaluation(scratch, placed.basis(), t))
         }
         SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => {
             Err(EvaluationFailure::NoValue)
@@ -5704,11 +5799,23 @@ pub fn surface_point_solved(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    default_evaluation(|ctx| decode::surface_point_solved_for_decode(ctx, geometry, u, v))
+}
+
+fn surface_point_evaluation(
+    scratch: &decode::Scratch<'_, '_>,
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let _depth = scratch.enter().ok_or(EvaluationFailure::NoValue)?;
     match geometry {
-        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_local(scratch, nurbs, u, v).map(|local| {
+            let [x,y,z] = local.point; FinitePoint3::from_coordinates(x,y,z)
+        }),
         SolvedSurfaceGeometry::Transformed(placed) => placed_point(
             *placed.transform(),
-            surface_point_solved(placed.basis(), u, v),
+            surface_point_evaluation(scratch, placed.basis(), u, v),
         ),
         _ => analytic_surface_second_partials(geometry, u, v)
             .map_or(Err(EvaluationFailure::NoValue), |partials| {
@@ -8916,13 +9023,7 @@ pub fn pcurve_uv(
     geometry: &PcurveGeometry,
     t: f64,
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
-    let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let evaluated = pcurve_uv_differential(&admitted::Scratch::default(), geometry, t)
-        .ok_or(EvaluationFailure::NoValue)?;
-    if let Some(limit) = evaluated.resource {
-        return Err(EvaluationFailure::ResourceLimit(limit));
-    }
-    evaluated.point.map_err(EvaluationFailure::NonFinite)
+    default_evaluation(|ctx| decode::pcurve_uv_for_decode(ctx, geometry, t))
 }
 
 /// Evaluate the exact first derivative of a directly stored pcurve.
@@ -8936,13 +9037,21 @@ pub fn pcurve_tangent(
     geometry: &PcurveGeometry,
     t: f64,
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    let scratch = decode::Scratch::new(&ctx);
+    let result = (|| {
     let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let evaluated = pcurve_uv_differential(&admitted::Scratch::default(), geometry, t)
+    let evaluated = pcurve_uv_differential(&scratch, geometry, t)
         .ok_or(EvaluationFailure::NoValue)?;
     if let Some(limit) = evaluated.resource {
         return Err(EvaluationFailure::ResourceLimit(limit));
     }
     evaluated.tangent
+})();
+    scratch.settle(result)
 }
 
 /// The angle of a polar chart point and its first two derivatives, without
@@ -9111,7 +9220,7 @@ fn reached_value(
 /// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING). No arm
 /// follows an arena id, so the value handed in bounds the descent.
 fn pcurve_uv_differential(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     geometry: &PcurveGeometry,
     parameter: FiniteReal,
 ) -> Option<PcurveEvaluation> {
@@ -9123,7 +9232,7 @@ fn pcurve_uv_differential(
 }
 
 fn pcurve_uv_unsettled(
-    scratch: &admitted::Scratch<'_, '_>,
+    scratch: &decode::Scratch<'_, '_>,
     geometry: &PcurveGeometry,
     parameter: FiniteReal,
 ) -> Option<PcurveEvaluation> {
@@ -9778,7 +9887,7 @@ pub fn curve_point(
     geometry: &CurveGeometry,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    curve_point_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, t)
+    default_evaluation(|ctx| decode::curve_point_for_decode(ctx, geometry, t))
 }
 
 /// Evaluate the exact first derivative of a stored curve carrier, or report
@@ -9788,7 +9897,7 @@ pub fn curve_tangent(
     geometry: &CurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_tangent_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, t)
+    default_evaluation(|ctx| decode::curve_tangent_for_decode(ctx, geometry, t))
 }
 
 /// Evaluate the exact second derivative of a stored curve carrier, or report
@@ -9848,7 +9957,7 @@ pub fn surface_point(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    surface_point_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v)
+    default_evaluation(|ctx| decode::surface_point_for_decode(ctx, geometry, u, v))
 }
 
 /// Evaluate a surface carrier at `(u, v)` within a caller-owned work slice.
@@ -9943,3 +10052,23 @@ fn model_surface_point_with_budget(
 
 #[cfg(test)]
 mod numerical_range_tests;
+
+fn default_evaluation<T, R>(
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<T, EvaluationFailure<R>>, ResourceLimit>,
+) -> Result<T, EvaluationFailure<R>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(EvaluationFailure::from)?;
+    run(&ctx).map_err(EvaluationFailure::ResourceLimit)?
+}
+
+impl<R> From<cadmpeg_core::CodecError> for EvaluationFailure<R> {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
+            _ => Self::NoValue,
+        }
+    }
+}
