@@ -40,23 +40,20 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    pub(crate) fn from_present_values_charged(
-        ctx: &DecodeContext<'_>,
-        values: Vec<[f64; 2]>,
-    ) -> Result<Option<Self>, CodecError> {
-        let count = values.len();
-        let operation = "NX chart support-UV lane";
-        let mut checked = ctx.retained_vec(count, operation)?;
+    fn present_with_storage(values: Vec<[f64; 2]>, mut checked: Vec<FiniteVector<2>>) -> Option<Self> {
+        (checked.is_empty() && checked.capacity() >= values.len()).then_some(())?;
         for pair in values {
-            let Some(value) = FiniteVector::new(pair) else {
-                return Ok(None);
-            };
-            if pair.contains(&MISSING_PARAMETER) {
-                return Ok(None);
-            }
-            checked.push(value);
+            if pair.contains(&MISSING_PARAMETER) { return None; }
+            checked.push(FiniteVector::new(pair)?);
         }
-        Ok(Some(Self(checked)))
+        Some(Self(checked))
+    }
+
+    pub(crate) fn from_present_values_scoped<'ctx>(ctx: &'ctx DecodeContext<'_>, values: Vec<[f64; 2]>) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), "admit NX chart support-UV lane")?;
+        let (checked, reservation) = ctx.temporary_vec(values.len(), "NX chart support-UV lane")?;
+        let lane = Self::present_with_storage(values, checked);
+        Ok(lane.map(|lane| (lane, reservation)))
     }
     /// Construct one parameter pair per chart sample.
     #[cfg(test)]
@@ -76,17 +73,8 @@ impl SupportUvLane {
     }
 
     pub(crate) fn from_present_values(values: Vec<[f64; 2]>) -> Option<Self> {
-        Some(Self(
-            values
-                .into_iter()
-                .map(|pair| {
-                    let checked = FiniteVector::new(pair)?;
-                    pair.iter()
-                        .all(|value| *value != MISSING_PARAMETER)
-                        .then_some(checked)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        ))
+        let checked = DecodeContext::admitted_vec(values.len(), "NX chart support-UV lane").ok()?;
+        Self::present_with_storage(values, checked)
     }
 
     /// Ordered support parameter pairs.
