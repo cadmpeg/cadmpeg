@@ -2153,7 +2153,7 @@ fn merge_records(
         }
         Ok((merged, reservation))
     };
-    if graph.body_shape_shells().next().is_some() {
+    if graph.body_shape_shells(ctx)?.next().is_some() {
         let (merged, reservation) = build(false)?;
         reservation.commit()?;
         return Ok(merged);
@@ -2165,10 +2165,10 @@ fn merge_records(
     let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
     let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
     let accounted_faces = merged_graph
-        .body_shape_face_count()
+        .body_shape_face_count(ctx)?
         .checked_add(deleted_faces)
         .ok_or_else(|| CodecError::Malformed("NX accounted face count overflow".into()))?;
-    let unaccounted_face_loss = !deletes_owner && accounted_faces < graph.body_shape_face_count();
+    let unaccounted_face_loss = !deletes_owner && accounted_faces < graph.body_shape_face_count(ctx)?;
     if base_complete && (!merged_complete || unaccounted_face_loss) {
         let (selected, reservation) = build(false)?;
         reservation.commit()?;
