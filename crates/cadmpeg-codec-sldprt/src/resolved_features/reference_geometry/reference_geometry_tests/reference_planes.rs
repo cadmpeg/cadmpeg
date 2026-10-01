@@ -6,7 +6,7 @@ fn reference_plane_error(policy: DecodePolicy) -> CodecError {
     let class_offset = 16;
     let body = class_offset + super::CLASS_MARKER.len() + 2 + CLASS.len();
     let mut payload =
-        cadmpeg_core::decode::alloc_filled(body + 48 + 16, 0u8, "fixed reference-plane fixture")
+        cadmpeg_test_support::service_decode_context().alloc_filled(body + 48 + 16, 0u8, "fixed reference-plane fixture")
             .expect("fixed fixture allocation");
     payload[class_offset..class_offset + super::CLASS_MARKER.len()]
         .copy_from_slice(super::CLASS_MARKER);
