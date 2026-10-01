@@ -1614,3 +1614,17 @@ fn e5_stride_selection_refuses_caller_work() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
+
+#[test]
+fn container_scan_rejects_wrong_magic_and_truncated_header() {
+    for bytes in [&[][..], &b"garbage!"[..]] {
+        let result = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes));
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::WrongFormat(_))));
+    }
+    for length in 8..16 {
+        let mut bytes = super::OUTER_MAGIC.to_vec();
+        bytes.resize(length, 0);
+        let result = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes));
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))));
+    }
+}
