@@ -1720,7 +1720,7 @@ fn brep_entities(
         .iter()
         .map(|body| body.id.as_str().to_owned())
         .collect::<Vec<_>>();
-    ctx.stable_sort_by(&mut body_ids, Ord::cmp, |item| item.len(), "iges body_ids sort")?;
+    ctx.stable_sort_by(&mut body_ids, Ord::cmp, std::string::String::len, "iges body_ids sort")?;
     for body_id in body_ids {
         let body = bodies
             .iter()
@@ -1815,7 +1815,7 @@ fn brep_entities(
         }
 
         let mut vertex_ids = body_vertex_ids.into_iter().collect::<Vec<_>>();
-        ctx.stable_sort_by(&mut vertex_ids, Ord::cmp, |item| item.len(), "iges vertex_ids sort")?;
+        ctx.stable_sort_by(&mut vertex_ids, Ord::cmp, std::string::String::len, "iges vertex_ids sort")?;
         let mut vertex_indices = BTreeMap::new();
         for (index, vertex_id) in vertex_ids.iter().enumerate() {
             vertex_indices.insert(vertex_id.clone(), index);
@@ -1849,7 +1849,7 @@ fn brep_entities(
         });
 
         let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
-        ctx.stable_sort_by(&mut edge_ids, Ord::cmp, |item| item.len(), "iges edge_ids sort")?;
+        ctx.stable_sort_by(&mut edge_ids, Ord::cmp, std::string::String::len, "iges edge_ids sort")?;
         let mut edge_indices = BTreeMap::new();
         for (index, edge_id) in edge_ids.iter().enumerate() {
             edge_indices.insert(edge_id.clone(), index);
