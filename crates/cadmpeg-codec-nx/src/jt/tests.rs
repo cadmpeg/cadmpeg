@@ -451,7 +451,10 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
         };
         65
     ];
-    assert!(decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries,).is_none());
+    crate::test_support::with_decode_context_over(&[], |_| {}, |ctx| {
+        let error = super::decode_arithmetic(ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries).err().expect("local work limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols"));
+    });
 }
 
 #[test]
@@ -903,4 +906,43 @@ fn jt_probability_context_rejects_signed_symbol_bias_underflow() {
         assert!(decode_int32_cdp2(&packet, 0).is_none());
         assert!(frame_int32_cdp2(&packet, 0).is_none());
     }
+}
+
+#[test]
+fn jt_integer_scratch_requires_retained_commit() {
+    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
+    crate::test_support::with_decode_context_over(&packet, |policy| policy.limits.max_retained_bytes = 0, |ctx| {
+        let (lane, length) = super::decode_int32_cdp2_inner(ctx, &packet, 0).unwrap().unwrap();
+        assert_eq!(&*lane, &[1, -1]);
+        assert_eq!(length, packet.len());
+        assert!(matches!(lane.into_retained(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    });
+}
+
+#[test]
+fn jt_lossless_component_uses_scoped_storage() {
+    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_retained_bytes = 0, |ctx| {
+        let lane = super::lossless_coordinate_component(ctx, &[0, 0], &[0, 0]).unwrap().unwrap();
+        assert_eq!(lane.len(), 2);
+        assert!(lane.iter().all(|value| value.get() == 0.0));
+    });
+}
+
+#[test]
+fn jt_arithmetic_local_work_refusal_is_structured() {
+    let entries = vec![super::ProbabilityEntry { symbol: 0, occurrence_count: 1, value: 0 }; 100];
+    crate::test_support::with_decode_context_over(&[], |_| {}, |ctx| {
+        let error = super::decode_arithmetic(ctx, &[], 0, 700_000, &entries).err().unwrap();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols" && limit.limit == 64_000_000));
+    });
+}
+
+#[test]
+fn jt_component_owner_keeps_scratch_reservation_live() {
+    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_materialized_bytes = 8, |ctx| {
+        let component = super::lossless_coordinate_component(ctx, &[0, 0], &[0, 0]).unwrap().unwrap();
+        assert_eq!(component.len(), 2);
+        assert!(ctx.reserve_scoped(1, "overlapping JT component copy").is_err());
+        assert_eq!(component[0].get(), 0.0);
+    });
 }
