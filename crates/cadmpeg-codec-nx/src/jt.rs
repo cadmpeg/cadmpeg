@@ -1006,26 +1006,13 @@ const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
 /// Upper bound on arithmetic decoder table lookups for one lane.
 const MAX_ARITHMETIC_WORK: usize = 64_000_000;
 
-struct ArithmeticSymbols<'a> {
-    values: Vec<Option<i32>>,
-    _reservation: ScopedReservation<'a>,
-}
-
-impl std::ops::Deref for ArithmeticSymbols<'_> {
-    type Target = [Option<i32>];
-
-    fn deref(&self) -> &Self::Target {
-        &self.values
-    }
-}
-
 fn decode_arithmetic<'a>(
     ctx: &'a DecodeContext<'_>,
     code_words: &[u8],
     code_bit_len: usize,
     value_count: usize,
     entries: &[ProbabilityEntry],
-) -> Result<Option<ArithmeticSymbols<'a>>, CodecError> {
+) -> Result<Option<ScratchLane<'a, Option<i32>>>, CodecError> {
     let decoded: Option<Result<_, CodecError>> = (|| {
         // Arithmetic symbols can consume zero code bits, so the stream length puts
         // no floor under `value_count`; an absolute cap bounds the allocation and
@@ -1098,10 +1085,7 @@ fn decode_arithmetic<'a>(
                 Some(entry.value)
             });
         }
-        Some(Ok(ArithmeticSymbols {
-            values,
-            _reservation: reservation,
-        }))
+        Some(Ok(ScratchLane { values, reservation }))
     })();
     decoded.transpose()
 }
@@ -1297,7 +1281,8 @@ fn decode_int32_cdp2_inner<'ctx>(
         cursor += oob_len;
         let mut out_of_band = out_of_band.iter().copied();
         let (mut values, reservation) = propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
-        for value in symbols.values {
+        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(value_count), "form JT arithmetic values"));
+        for value in symbols.iter().copied() {
             values.push(value.or_else(|| out_of_band.next())?);
         }
         Some(Ok((ScratchLane { values, reservation }, cursor)))
