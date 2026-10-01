@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission scan for JSON payloads decoded into typed records.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -11,8 +11,6 @@ struct CountJsonNodes<'a, 'b> {
     ctx: &'a DecodeContext<'b>,
     operation: &'static str,
     collection_operation: &'static str,
-    count: &'a Cell<u64>,
-    overflowed: &'a Cell<bool>,
     refusal: &'a RefCell<Option<CodecError>>,
 }
 
@@ -20,11 +18,6 @@ impl<'de> DeserializeSeed<'de> for CountJsonNodes<'_, '_> {
     type Value = ();
 
     fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        let Some(next) = self.count.get().checked_add(1) else {
-            self.overflowed.set(true);
-            return Err(D::Error::custom("JSON node count overflows"));
-        };
-        self.count.set(next);
         if let Err(error) = self.ctx.charge_collection_items(1, self.collection_operation) {
             self.refusal.replace(Some(error));
             return Err(D::Error::custom("JSON collection limit exceeded"));
@@ -70,8 +63,6 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
             ctx: self.ctx,
             operation: self.operation,
             collection_operation: self.collection_operation,
-            count: self.count,
-            overflowed: self.overflowed,
             refusal: self.refusal,
         }
         .deserialize(deserializer)
@@ -90,9 +81,7 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
                 ctx: self.ctx,
                 operation: self.operation,
             collection_operation: self.collection_operation,
-                count: self.count,
-                overflowed: self.overflowed,
-                refusal: self.refusal,
+                        refusal: self.refusal,
             })?
             .is_some()
         {}
@@ -112,9 +101,7 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
                 ctx: self.ctx,
                 operation: self.operation,
             collection_operation: self.collection_operation,
-                count: self.count,
-                overflowed: self.overflowed,
-                refusal: self.refusal,
+                        refusal: self.refusal,
             })?
             .is_some()
         {
@@ -122,9 +109,7 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
                 ctx: self.ctx,
                 operation: self.operation,
             collection_operation: self.collection_operation,
-                count: self.count,
-                overflowed: self.overflowed,
-                refusal: self.refusal,
+                        refusal: self.refusal,
             })?;
         }
         Ok(())
@@ -143,16 +128,12 @@ pub(crate) fn preflight(
     let payload_bytes = u64::try_from(payload.len())
         .map_err(|_| ctx.refuse_codec_limit(preflight_operation, 0, u64::MAX))?;
     ctx.charge_work(payload_bytes, scan_operation)?;
-    let item_count = Cell::new(0_u64);
-    let overflowed = Cell::new(false);
     let refusal = RefCell::new(None);
     let mut parser = serde_json::Deserializer::from_slice(payload);
     if (CountJsonNodes {
         ctx,
         operation: scan_operation,
         collection_operation,
-        count: &item_count,
-        overflowed: &overflowed,
         refusal: &refusal,
     })
     .deserialize(&mut parser)
@@ -161,9 +142,6 @@ pub(crate) fn preflight(
     {
         if let Some(error) = refusal.into_inner() {
             return Err(error);
-        }
-        if overflowed.get() {
-            return Err(ctx.refuse_codec_limit(preflight_operation, 0, u64::MAX));
         }
         return Ok(false);
     }
