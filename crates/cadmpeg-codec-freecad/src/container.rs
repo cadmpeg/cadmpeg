@@ -269,11 +269,8 @@ pub(crate) fn source_attributes(
             0,
             "FCStd source attribute records",
         )?;
-        let key = NonBlankString::new(ctx.copy_retained_text(
-            key,
-            "FCStd source attribute key",
-        )?)
-        .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
+        let key = NonBlankString::new(ctx.copy_retained_text(key, "FCStd source attribute key")?)
+            .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
         attributes.insert(key, value);
     }
     Ok(attributes)

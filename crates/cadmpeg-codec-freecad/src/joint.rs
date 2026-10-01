@@ -17,14 +17,17 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
+    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD joint owner storage")?;
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.reserve_map(&mut by_owner, 1, "fcstd joint owner index")?;
+            owner_storage
+                .with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd joint owner index"))?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            ctx.reserve_vec(owned, 1, "fcstd joint owner properties")?;
+            owner_storage
+                .with_storage(|| ctx.reserve_vec(owned, 1, "fcstd joint owner properties"))?;
             owned.push(property);
         }
     }
@@ -33,7 +36,8 @@ pub(crate) fn transfer(
         let source = by_owner
             .get(object.id.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = ctx.collection_vec(source.len(), "fcstd joint selected properties")?;
+        let mut owned = owner_storage
+            .with_storage(|| ctx.collection_vec(source.len(), "fcstd joint selected properties"))?;
         owned.extend_from_slice(source);
         let grounded_property = sole_named_property(ctx, "joint", &owned, "ObjectToGround")?;
         let joint_type_property = sole_named_property(ctx, "joint", &owned, "JointType")?;
@@ -168,12 +172,15 @@ pub(crate) fn transfer_neutral(
         .iter()
         .filter(|occurrence| occurrence.native_ref.is_some())
         .count();
+    let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD joint occurrence lookup")?;
     let mut occurrence_by_native = HashMap::new();
-    ctx.reserve_map(
-        &mut occurrence_by_native,
-        count,
-        "fcstd joint occurrence index",
-    )?;
+    lookup_storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut occurrence_by_native,
+            count,
+            "fcstd joint occurrence index",
+        )
+    })?;
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
             occurrence_by_native.insert(native, &occurrence.id);
@@ -1074,16 +1081,13 @@ pub(crate) mod tests {
             xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
                 .expect("valid XML span"),
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::native_id("joint", &object.name).len(),
-        ) - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::transfer(&ctx, &[object], &[property]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD native identity"));
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+            super::transfer(
+                ctx,
+                std::slice::from_ref(&object),
+                std::slice::from_ref(&property),
+            )
+        });
     }
 
     #[test]

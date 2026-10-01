@@ -198,16 +198,13 @@ fn attachment_identity_refuses_at_retained_limit() {
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
             .expect("valid XML span"),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        crate::native::native_id("attachment", &object.name).len(),
-    ) - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer(&ctx, &[object], &[property]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD native identity"));
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+        super::transfer(
+            ctx,
+            std::slice::from_ref(&object),
+            std::slice::from_ref(&property),
+        )
+    });
 }
 
 #[test]

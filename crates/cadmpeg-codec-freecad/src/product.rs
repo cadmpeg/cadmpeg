@@ -36,7 +36,8 @@ pub(crate) fn transfer(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            storage.with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd product owner index"))?;
+            storage
+                .with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd product owner index"))?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -52,7 +53,9 @@ pub(crate) fn transfer(
         let source = by_owner
             .get(object.id.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = storage.with_storage(|| ctx.collection_vec(source.len(), "fcstd product selected properties"))?;
+        let mut owned = storage.with_storage(|| {
+            ctx.collection_vec(source.len(), "fcstd product selected properties")
+        })?;
         owned.extend_from_slice(source);
         let group = sole_named_property(ctx, "product", &owned, "Group")?;
         let members = group
@@ -245,13 +248,17 @@ pub(crate) fn transfer_neutral(
     let mut occurrence_objects = HashSet::new();
     for record in records {
         if matches!(record.node, ProductNode::Occurrence(_)) {
-            storage.with_storage(|| ctx.insert_hash_set(
-                &mut occurrence_objects,
-                record.object.as_str(),
-                "fcstd product occurrence names",
-            ))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut occurrence_objects,
+                    record.object.as_str(),
+                    "fcstd product occurrence names",
+                )
+            })?;
         } else {
-            storage.with_storage(|| ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
+            })?;
             component_objects.push(record.object.as_str());
         }
     }
@@ -261,12 +268,16 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|member| !occurrence_objects.contains(member.as_str()))
         {
-            storage.with_storage(|| ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
+            })?;
             component_objects.push(member.as_str());
         }
         if record.external_document().is_none() {
             if let Some(prototype) = record.prototype() {
-                storage.with_storage(|| ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names"))?;
+                storage.with_storage(|| {
+                    ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
+                })?;
                 component_objects.push(prototype);
             }
         }
@@ -279,13 +290,17 @@ pub(crate) fn transfer_neutral(
         {
             if target.document().is_none() {
                 if let Some(name) = target.object() {
-                    storage.with_storage(|| ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names"))?;
+                    storage.with_storage(|| {
+                        ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
+                    })?;
                     component_objects.push(name);
                 }
             }
         }
         for name in record.element_objects() {
-            storage.with_storage(|| ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
+            })?;
             component_objects.push(name);
         }
     }
@@ -296,7 +311,9 @@ pub(crate) fn transfer_neutral(
                     .object()
                     .filter(|name| !occurrence_objects.contains(*name))
                 {
-                    storage.with_storage(|| ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names"))?;
+                    storage.with_storage(|| {
+                        ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
+                    })?;
                     component_objects.push(name);
                 }
             }
@@ -313,15 +330,19 @@ pub(crate) fn transfer_neutral(
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !properties_by_owner.contains_key(property.owner.as_str()) {
-            storage.with_storage(|| ctx.reserve_map(
-                &mut properties_by_owner,
-                1,
-                "fcstd product neutral owner index",
-            ))?;
+            storage.with_storage(|| {
+                ctx.reserve_map(
+                    &mut properties_by_owner,
+                    1,
+                    "fcstd product neutral owner index",
+                )
+            })?;
             properties_by_owner.insert(property.owner.as_str(), Vec::new());
         }
         if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
-            storage.with_storage(|| ctx.reserve_vec(owned, 1, "fcstd product neutral owner properties"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(owned, 1, "fcstd product neutral owner properties")
+            })?;
             owned.push(property);
         }
     }
@@ -329,7 +350,9 @@ pub(crate) fn transfer_neutral(
     for (&owner, owned) in &properties_by_owner {
         if let Some(property) = selected_placement(ctx, owned)? {
             if let Some(placement) = placement_matrix(ctx, property)? {
-                storage.with_storage(|| ctx.reserve_map(&mut placements_by_object, 1, "fcstd product placements"))?;
+                storage.with_storage(|| {
+                    ctx.reserve_map(&mut placements_by_object, 1, "fcstd product placements")
+                })?;
                 placements_by_object.insert(owner, placement.transform());
             }
         }
@@ -362,7 +385,9 @@ pub(crate) fn transfer_neutral(
             let member = member.as_str();
             match parent_by_object.get(member) {
                 None => {
-                    storage.with_storage(|| ctx.reserve_map(&mut parent_by_object, 1, "fcstd product parent index"))?;
+                    storage.with_storage(|| {
+                        ctx.reserve_map(&mut parent_by_object, 1, "fcstd product parent index")
+                    })?;
                     parent_by_object.insert(member, record.object.as_str());
                 }
                 Some(previous) if *previous != record.object.as_str() => {
@@ -399,13 +424,15 @@ pub(crate) fn transfer_neutral(
                         .unwrap_or_default(),
                 )
                 .map_err(|error| malformed(error.to_string()))?;
-            let prototype_transform = storage.with_storage(|| linked_prototype_transform(
-                ctx,
-                record,
-                &record_by_object,
-                &placements_by_object,
-                &mut Vec::new(),
-            ))?;
+            let prototype_transform = storage.with_storage(|| {
+                linked_prototype_transform(
+                    ctx,
+                    record,
+                    &record_by_object,
+                    &placements_by_object,
+                    &mut Vec::new(),
+                )
+            })?;
             let element_scale = record
                 .element_scales()
                 .get(index)
@@ -517,29 +544,37 @@ pub(crate) fn transfer_neutral(
     }
 
     let mut object_by_id = HashMap::new();
-    storage.with_storage(|| ctx.reserve_map(
-        &mut object_by_id,
-        objects.len(),
-        "fcstd product object index",
-    ))?;
+    storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut object_by_id,
+            objects.len(),
+            "fcstd product object index",
+        )
+    })?;
     for object in objects {
         object_by_id.insert(object.id.as_str(), object);
     }
     let mut property_owner = HashMap::new();
-    storage.with_storage(|| ctx.reserve_map(
-        &mut property_owner,
-        properties.len(),
-        "fcstd product property owners",
-    ))?;
+    storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut property_owner,
+            properties.len(),
+            "fcstd product property owners",
+        )
+    })?;
     for property in properties {
         property_owner.insert(property.id.as_str(), property.owner.as_str());
     }
     let mut body_owners = Vec::new();
     for payload in payloads {
         if let Some(owner) = property_owner.get(payload.property.as_str()) {
-            storage.with_storage(|| ctx.reserve_vec(&mut body_owners, 1, "fcstd product body owners"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut body_owners, 1, "fcstd product body owners")
+            })?;
             body_owners.push((
-                storage.with_storage(|| crate::native::model_id_charged(ctx, "body", &payload.id, ""))?,
+                storage.with_storage(|| {
+                    crate::native::model_id_charged(ctx, "body", &payload.id, "")
+                })?,
                 *owner,
             ));
         }
@@ -567,7 +602,12 @@ pub(crate) fn transfer_neutral(
             cadmpeg_core::nonblank_literal!("Manufacturer"),
         ] {
             if let Some(value) = metadata_string(ctx, owned, name.as_str())? {
-                ctx.insert_btree_map(&mut bom_properties, name, value, "fcstd product BOM properties")?;
+                ctx.insert_btree_map(
+                    &mut bom_properties,
+                    name,
+                    value,
+                    "fcstd product BOM properties",
+                )?;
             }
         }
         let id_part_number = if source_object.is_some_and(|object| {
@@ -648,12 +688,14 @@ pub(crate) fn transfer_neutral(
     for occurrence in &mut occurrences {
         let parent = match &occurrence.parent {
             OccurrenceParent::Root {} => None,
-            OccurrenceParent::Occurrence { occurrence } => {
-                Some(storage.with_storage(|| ctx.copy_retained_text(occurrence.as_str(), "fcstd product ordinal parent"))?)
-            }
+            OccurrenceParent::Occurrence { occurrence } => Some(storage.with_storage(|| {
+                ctx.copy_retained_text(occurrence.as_str(), "fcstd product ordinal parent")
+            })?),
         };
         if !next_ordinal.contains_key(&parent) {
-            storage.with_storage(|| ctx.reserve_map(&mut next_ordinal, 1, "fcstd product ordinal index"))?;
+            storage.with_storage(|| {
+                ctx.reserve_map(&mut next_ordinal, 1, "fcstd product ordinal index")
+            })?;
         }
         let ordinal = next_ordinal.entry(parent).or_default();
         occurrence.ordinal = *ordinal;
@@ -1391,7 +1433,9 @@ pub(crate) fn product_cycle_nodes<'a>(
     };
     let mut storage = ctx.reserve_scoped(0, "fcstd product cycle workspace")?;
     let mut reverse = HashMap::<&str, Vec<&str>>::new();
-    storage.with_storage(|| ctx.reserve_map(&mut reverse, nodes.len(), "fcstd product reverse graph"))?;
+    storage.with_storage(|| {
+        ctx.reserve_map(&mut reverse, nodes.len(), "fcstd product reverse graph")
+    })?;
     for &source in nodes.keys() {
         reverse.insert(source, Vec::new());
     }
@@ -1399,16 +1443,21 @@ pub(crate) fn product_cycle_nodes<'a>(
         for target in edges(source) {
             ctx.charge_work(1, "fcstd product reverse edge")?;
             if let Some(sources) = reverse.get_mut(target) {
-                storage.with_storage(|| ctx.reserve_vec(sources, 1, "fcstd product reverse sources"))?;
+                storage.with_storage(|| {
+                    ctx.reserve_vec(sources, 1, "fcstd product reverse sources")
+                })?;
                 sources.push(source);
             }
         }
     }
 
     let mut visited = HashSet::new();
-    let mut finish = storage.with_storage(|| ctx.collection_vec(nodes.len(), "fcstd product finish order"))?;
+    let mut finish =
+        storage.with_storage(|| ctx.collection_vec(nodes.len(), "fcstd product finish order"))?;
     for &root in nodes.keys() {
-        if !storage.with_storage(|| ctx.insert_hash_set(&mut visited, root, "fcstd product visited nodes"))? {
+        if !storage.with_storage(|| {
+            ctx.insert_hash_set(&mut visited, root, "fcstd product visited nodes")
+        })? {
             continue;
         }
         let mut stack = Vec::new();
@@ -1418,8 +1467,12 @@ pub(crate) fn product_cycle_nodes<'a>(
             ctx.charge_work(1, "fcstd product forward traversal")?;
             if let Some(&target) = targets.get(*next) {
                 *next += 1;
-                if storage.with_storage(|| ctx.insert_hash_set(&mut visited, target, "fcstd product visited nodes"))? {
-                    storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "fcstd product forward stack"))?;
+                if storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut visited, target, "fcstd product visited nodes")
+                })? {
+                    storage.with_storage(|| {
+                        ctx.reserve_vec(&mut stack, 1, "fcstd product forward stack")
+                    })?;
                     stack.push((target, storage.with_storage(|| collect_edges(target))?, 0));
                 }
             } else {
@@ -1432,7 +1485,9 @@ pub(crate) fn product_cycle_nodes<'a>(
     let mut assigned = HashSet::new();
     let mut cyclic = HashSet::new();
     while let Some(root) = finish.pop() {
-        if !storage.with_storage(|| ctx.insert_hash_set(&mut assigned, root, "fcstd product assigned nodes"))? {
+        if !storage.with_storage(|| {
+            ctx.insert_hash_set(&mut assigned, root, "fcstd product assigned nodes")
+        })? {
             continue;
         }
         let mut component = Vec::new();
@@ -1441,11 +1496,17 @@ pub(crate) fn product_cycle_nodes<'a>(
         stack.push(root);
         while let Some(current) = stack.pop() {
             ctx.charge_work(1, "fcstd product reverse traversal")?;
-            storage.with_storage(|| ctx.reserve_vec(&mut component, 1, "fcstd product component nodes"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut component, 1, "fcstd product component nodes")
+            })?;
             component.push(current);
             for &source in reverse.get(current).into_iter().flatten() {
-                if storage.with_storage(|| ctx.insert_hash_set(&mut assigned, source, "fcstd product assigned nodes"))? {
-                    storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "fcstd product reverse stack"))?;
+                if storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut assigned, source, "fcstd product assigned nodes")
+                })? {
+                    storage.with_storage(|| {
+                        ctx.reserve_vec(&mut stack, 1, "fcstd product reverse stack")
+                    })?;
                     stack.push(source);
                 }
             }

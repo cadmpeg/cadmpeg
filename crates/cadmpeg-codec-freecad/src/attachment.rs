@@ -127,14 +127,18 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<AttachmentRecord>, CodecError> {
+    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD attachment owner storage")?;
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         let owner = property.owner.as_str();
         if !by_owner.contains_key(owner) {
-            ctx.reserve_map(&mut by_owner, 1, "FreeCAD attachment owner lookup")?;
+            owner_storage.with_storage(|| {
+                ctx.reserve_map(&mut by_owner, 1, "FreeCAD attachment owner lookup")
+            })?;
         }
         let owned = by_owner.entry(owner).or_default();
-        ctx.reserve_vec(owned, 1, "FreeCAD attachment owner properties")?;
+        owner_storage
+            .with_storage(|| ctx.reserve_vec(owned, 1, "FreeCAD attachment owner properties"))?;
         owned.push(property);
     }
     let mut records = Vec::new();
