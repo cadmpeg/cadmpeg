@@ -20,12 +20,6 @@ use crate::dialect::{dialect_loss, layers, terminator_line, Family, StreamEviden
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
-/// The requested layer and its admitted semantic payload.
-enum DecodeLayer {
-    Container,
-    Model(AsmBrep),
-}
-
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(ctx, bytes)? {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
@@ -55,7 +49,7 @@ fn decode_asm_binary(
         ));
     };
     let payload = if ctx.container_only() {
-        DecodeLayer::Container
+        None
     } else {
     let start = stream.offset();
     // A history-bearing stream ends its solved partition at the delta-state
@@ -92,7 +86,7 @@ fn decode_asm_binary(
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
-        DecodeLayer::Model(brep)
+        Some(brep)
     };
     let mut attributes = BTreeMap::new();
     header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
@@ -130,7 +124,7 @@ fn decode_acis_binary(
         ));
     };
     let payload = if ctx.container_only() {
-        DecodeLayer::Container
+        None
     } else {
     let start = stream.offset();
     let framed = match acis_header::solved_record_limit_with_header(ctx, bytes, header)? {
@@ -165,7 +159,7 @@ fn decode_acis_binary(
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
-        DecodeLayer::Model(brep)
+        Some(brep)
     };
     let mut attributes = BTreeMap::new();
     header_attributes(ctx, &header.metadata, Family::Acis, &mut attributes)?;
@@ -229,7 +223,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     }));
     let (matched, kernel) = layers(&evidence);
     let payload = match records {
-        Some(records) => DecodeLayer::Model(decode_with_header(
+        Some(records) => Some(decode_with_header(
         ctx,
         &records,
         bytes,
@@ -238,7 +232,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?),
-        None => DecodeLayer::Container,
+        None => None,
     };
     build_result(
         ctx,
@@ -274,7 +268,7 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 
 fn build_result(
     ctx: &DecodeContext<'_>,
-    payload: DecodeLayer,
+    payload: Option<AsmBrep>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
@@ -317,8 +311,8 @@ fn build_result(
     }
 
     let brep = match payload {
-        DecodeLayer::Model(brep) => brep,
-        DecodeLayer::Container => return Ok(Decoded {
+        Some(brep) => brep,
+        None => return Ok(Decoded {
             ir,
             body: DecodeBody {
                 losses,
