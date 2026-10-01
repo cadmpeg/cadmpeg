@@ -71,7 +71,7 @@ pub(crate) fn project_catalog(
     ctx.stable_sort_by(
         &mut duplicate_guids,
         Ord::cmp,
-        |item| item.len(),
+        std::string::String::len,
         "Inventor duplicate material GUID sort",
     )?;
 

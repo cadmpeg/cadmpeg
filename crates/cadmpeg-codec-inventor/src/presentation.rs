@@ -2055,7 +2055,9 @@ mod tests {
         let face_keys = std::collections::HashMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        // The one-key face sort takes its count plus a sixteen-byte pair and twice the
+        // twenty-byte face id over two levels at eight units each, leaving nothing for the scan.
+        policy.limits.max_work_units = 1 + (16 + 2 * 20) * 2 * 8;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
