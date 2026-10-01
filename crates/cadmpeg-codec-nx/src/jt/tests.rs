@@ -880,3 +880,27 @@ fn dequantization_refuses_value_below_binary32_range_before_rounding() {
         .expect("finite ordered quantization range");
     assert!(super::dequantize_uniform(0, range, 2).is_none());
 }
+
+#[test]
+fn jt_probability_context_rejects_signed_symbol_bias_underflow() {
+    for raw in [0x8000_0000_u32, 0x8000_0001] {
+        let mut bits = Vec::new();
+        for (value, width) in [(32_u32, 6), (1, 6), (0, 6), (0, 32), (raw, 32), (1, 1)] {
+            bits.extend((0..width).rev().map(|shift| (value >> shift) & 1 != 0));
+        }
+        let mut context = vec![0, 1];
+        for chunk in bits.chunks(8) {
+            let mut byte = 0_u8;
+            for bit in chunk {
+                byte = (byte << 1) | u8::from(*bit);
+            }
+            context.push(byte << (8 - chunk.len()));
+        }
+        assert!(parse_probability_context(&context).is_none());
+        let mut packet = vec![1, 0, 0, 0, 3, 16, 0, 0, 0, 0, 0, 0, 0];
+        packet.extend(context);
+        packet.extend([0; 4]);
+        assert!(decode_int32_cdp2(&packet, 0).is_none());
+        assert!(frame_int32_cdp2(&packet, 0).is_none());
+    }
+}
