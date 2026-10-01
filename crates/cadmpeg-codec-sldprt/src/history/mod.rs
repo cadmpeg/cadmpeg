@@ -131,9 +131,12 @@ pub(crate) fn histories(
             else {
                 return Ok(histories);
             };
-            let Ok(doc) = roxmltree::Document::parse(text.as_str()) else {
-                return Ok(histories);
+            let admitted_doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+                Ok(tree) => tree,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => { return Ok(histories); }
             };
+            let doc = admitted_doc.document();
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
                 return Ok(histories);
