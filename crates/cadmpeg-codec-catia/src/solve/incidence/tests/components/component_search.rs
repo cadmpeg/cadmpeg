@@ -127,12 +127,15 @@ fn compact_boundary_advance_refuses_nested_ordered_alternative_copies() {
             None,
             vec![(quotient.clone(), HashSet::new())],
             &budget,
-        ).map(|outcome| matches!(outcome, crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)))
+        )
+        .map(|outcome| {
+            matches!(
+                outcome,
+                crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
+            )
+        })
     };
-    assert!(matches!(
-        run(&service_ctx).expect("service resource budget"),
-        true
-    ));
+    assert!(run(&service_ctx).expect("service resource budget"));
 
     let mut refused = HashSet::new();
     for limit in 0..128 {

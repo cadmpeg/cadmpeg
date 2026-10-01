@@ -24,7 +24,7 @@ use super::{
     UnionFind, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 
-impl<'storage, 'ctx> MeshSelectionSearch<'storage, 'ctx> {
+impl<'storage> MeshSelectionSearch<'storage, '_> {
     pub(super) fn should_stop(&self) -> bool {
         self.outcome.is_closed()
     }
@@ -61,9 +61,9 @@ impl<'storage, 'ctx> MeshSelectionSearch<'storage, 'ctx> {
         &self,
         quotient: &mut MeshQuotient<'storage>,
     ) -> Result<Option<usize>, CodecError> {
-        fn choice_component_reductions<'storage>(
+        fn choice_component_reductions(
             choice: &[[usize; 2]],
-            quotient: &mut MeshQuotient<'storage>,
+            quotient: &mut MeshQuotient<'_>,
             possible: &mut UnionFind<'_>,
         ) -> HashMap<usize, usize> {
             let mut equations = HashMap::<usize, Vec<[usize; 2]>>::new();
@@ -1525,9 +1525,9 @@ pub(super) fn direction_work_estimate(
     })
 }
 
-pub(super) fn mesh_assignment_can_merge<'storage>(
+pub(super) fn mesh_assignment_can_merge(
     assignment: &MeshFaceBoundaryAssignment,
-    quotient: &mut MeshQuotient<'storage>,
+    quotient: &mut MeshQuotient<'_>,
 ) -> bool {
     pub(super) fn possible_ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
         let port = |reversed: bool| {
@@ -1962,12 +1962,19 @@ impl DistinctAssignment {
         point_count: usize,
     ) -> Result<Option<Self>, CodecError> {
         let (mut seen, _storage) = ctx.temporary_vec(point_count, "catia_distinct_assignment")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(point_count), "catia_distinct_assignment")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(point_count),
+            "catia_distinct_assignment",
+        )?;
         seen.resize(point_count, false);
         for &point in &points {
             ctx.charge_work(1, "catia_distinct_assignment")?;
-            let Some(used) = seen.get_mut(point) else { return Ok(None) };
-            if *used { return Ok(None); }
+            let Some(used) = seen.get_mut(point) else {
+                return Ok(None);
+            };
+            if *used {
+                return Ok(None);
+            }
             *used = true;
         }
         Ok(Some(Self { points }))
@@ -2332,36 +2339,49 @@ mod reduced_matching_tests {
     use super::{reduced_distinct_matching, DistinctAssignment};
 
     #[test]
-fn distinct_assignment_initialization_refuses_work() {
-    crate::test_support::with_work_limit(0, |ctx| {
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::DistinctAssignment::new(ctx, vec![], 64) else { panic!("resource refusal required") };
-        assert_eq!(limit.operation, "catia_distinct_assignment");
-        assert_eq!(limit.additional, 64);
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
-}
+    fn distinct_assignment_initialization_refuses_work() {
+        crate::test_support::with_work_limit(0, |ctx| {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                super::DistinctAssignment::new(ctx, vec![], 64)
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_distinct_assignment");
+            assert_eq!(limit.additional, 64);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 
-#[test]
+    #[test]
     fn reduced_matching_reserves_later_singletons_before_domains() {
         crate::test_support::with_service_context(|ctx| {
             let budget = ctx.work_budget(100);
             let domains = [vec![0, 1], vec![0]];
             let assignment = reduced_distinct_matching(ctx, &domains, 2, &budget, None)
-                .expect("admitted matching").expect("distinct solution");
+                .expect("admitted matching")
+                .expect("distinct solution");
             assert_eq!(assignment.points, [1, 0]);
-            assert!(reduced_distinct_matching(ctx, &domains, 2, &budget, Some((0, 1)))
-                .expect("admitted exclusion").is_none());
+            assert!(
+                reduced_distinct_matching(ctx, &domains, 2, &budget, Some((0, 1)))
+                    .expect("admitted exclusion")
+                    .is_none()
+            );
         });
     }
 
     #[test]
     fn reduced_matching_rejects_duplicate_and_out_of_range_assignments() {
         crate::test_support::with_service_context(|ctx| {
-            assert!(DistinctAssignment::new(ctx, vec![0, 0], 2).expect("admitted").is_none());
-            assert!(DistinctAssignment::new(ctx, vec![2], 2).expect("admitted").is_none());
+            assert!(DistinctAssignment::new(ctx, vec![0, 0], 2)
+                .expect("admitted")
+                .is_none());
+            assert!(DistinctAssignment::new(ctx, vec![2], 2)
+                .expect("admitted")
+                .is_none());
             let budget = ctx.work_budget(100);
             assert!(reduced_distinct_matching(ctx, &[vec![2]], 2, &budget, None)
-                .expect("admitted").is_none());
+                .expect("admitted")
+                .is_none());
         });
     }
 }

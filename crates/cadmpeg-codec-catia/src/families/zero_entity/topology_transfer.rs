@@ -1413,7 +1413,8 @@ fn curve_orientation(
     else {
         return Ok(None);
     };
-    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(curve_point(ctx, geometry, parameter_range[1])?)?
+    let Some(end) =
+        cadmpeg_ir::eval::finite_or_refusal(curve_point(ctx, geometry, parameter_range[1])?)?
     else {
         return Ok(None);
     };
@@ -1937,14 +1938,26 @@ mod orientation_admission_tests {
         use cadmpeg_ir::math::{Point3, Vector3};
         let curve = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0).unit().expect("unit direction"))
-                .expect("line")));
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0).unit().expect("unit direction"),
+            )
+            .expect("line"),
+        ));
         crate::test_support::with_depth_limit(0, |ctx| {
-            let error = super::curve_orientation(ctx, &curve, [0.0, 1.0],
-                [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)])
-                .expect_err("caller depth refuses curve evaluation");
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
-            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+            let error = super::curve_orientation(
+                ctx,
+                &curve,
+                [0.0, 1.0],
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            )
+            .expect_err("caller depth refuses curve evaluation");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            );
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
     }

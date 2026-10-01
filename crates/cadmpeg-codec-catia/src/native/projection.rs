@@ -5,15 +5,17 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::object_graph;
 
+use super::edge_definition::CatiaConsolidatedEdgeDefinition;
+
 use super::{
     catalog, container, design_object_id, entity_table, resolved_payload_references,
     resolved_storage_link, terminal_null_entity_id, value_block, AliasLead, CatiaAliasRow,
     CatiaAllocationReferenceEncoding, CatiaCatalog, CatiaCatalogEntry,
     CatiaConsolidatedAnalyticCircleBinding, CatiaConsolidatedCircle,
-    CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeDefinition, CatiaConsolidatedEdgeNode,
-    CatiaConsolidatedEdgeRun, CatiaConsolidatedEdgeUses, CatiaConsolidatedOwnerPacket,
-    CatiaConsolidatedPcurve, CatiaConsolidatedSupportBinding, CatiaDesignClass, CatiaEntityRecord,
-    CatiaEntityRecordBody, CatiaEntityReference, CatiaExternalReference, CatiaFaceNodeRelation,
+    CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeRun,
+    CatiaConsolidatedEdgeUses, CatiaConsolidatedOwnerPacket, CatiaConsolidatedPcurve,
+    CatiaConsolidatedSupportBinding, CatiaDesignClass, CatiaEntityRecord, CatiaEntityRecordBody,
+    CatiaEntityReference, CatiaExternalReference, CatiaFaceNodeRelation,
     CatiaFaceNodeTargetEncoding, CatiaFinjplSegment, CatiaObjectClass, CatiaObjectEntity,
     CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaObjectStorage,
     CatiaOuterContainerBinding, CatiaOwnerBoundaryCycle, CatiaOwnerBoundaryEdge,
@@ -534,7 +536,8 @@ pub(crate) fn consolidated_edge_nodes(
             )?,
             byte_offset: u64_from_index(node.pos),
             source_index,
-            token: crate::wire::records::WidthCodedToken::new(width, node.header_token).map_err(CodecError::malformed)?,
+            token: crate::wire::records::WidthCodedToken::new(width, node.header_token)
+                .map_err(CodecError::malformed)?,
             flag,
             allocation,
             curve_ref: node.curve_ref,
@@ -555,7 +558,6 @@ pub(crate) fn consolidated_edge_nodes(
     }
     Ok(output)
 }
-
 
 pub(super) fn native_allocation_reference_encoding(
     encoding: crate::wire::bytes::AllocationReferenceEncoding,

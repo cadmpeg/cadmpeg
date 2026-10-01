@@ -221,7 +221,8 @@ fn partial_compact_assignment_viable(
     }
 }
 
-pub(super) struct CloseCoordinateRootsWithIncidenceInputs<'storage, 
+pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
+    'storage,
     'input0,
     'input1,
     'input2,

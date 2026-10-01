@@ -23,7 +23,10 @@ impl UnionFind<'_> {
         for (node, parent) in parents.iter_mut().enumerate() {
             *parent = node;
         }
-        Ok(Self { parents, _storage: None })
+        Ok(Self {
+            parents,
+            _storage: None,
+        })
     }
 
     /// Creates `length` singleton sets, one per node `0..length`.
@@ -40,9 +43,15 @@ impl UnionFind<'_> {
         ctx: &'storage DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<UnionFind<'storage>, CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.parents.len()), operation)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.parents.len()),
+            operation,
+        )?;
         let (parents, storage) = ctx.copy_temporary_slice(&self.parents, operation)?;
-        Ok(UnionFind { parents, _storage: Some(storage) })
+        Ok(UnionFind {
+            parents,
+            _storage: Some(storage),
+        })
     }
 
     /// Returns the number of nodes.
@@ -99,7 +108,12 @@ impl UnionFind<'_> {
 
 #[cfg(test)]
 impl Clone for UnionFind<'_> {
-    fn clone(&self) -> Self { Self { parents: self.parents.clone(), _storage: None } }
+    fn clone(&self) -> Self {
+        Self {
+            parents: self.parents.clone(),
+            _storage: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -163,19 +177,44 @@ mod tests {
         let union = UnionFind::new(1);
         crate::test_support::with_retained_limit(0, |ctx| {
             for _ in 0..64 {
-                assert_eq!(union.clone_charged(ctx, "catia_union_snapshot").expect("temporary snapshot").len(), 1);
+                assert_eq!(
+                    union
+                        .clone_charged(ctx, "catia_union_snapshot")
+                        .expect("temporary snapshot")
+                        .len(),
+                    1
+                );
             }
         });
-        crate::test_support::with_materialized_limit(u64::try_from(std::mem::size_of::<usize>()).expect("parent bytes"), |ctx| {
-            for _ in 0..64 {
-                assert_eq!(union.clone_charged(ctx, "catia_union_snapshot").expect("released snapshot bytes").len(), 1);
-            }
-            let first = union.clone_charged(ctx, "catia_union_snapshot").expect("one live snapshot");
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = union.clone_charged(ctx, "catia_union_snapshot").expect_err("two simultaneous snapshots exceed storage") else { panic!("resource refusal required") };
-            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-            assert_eq!(first.len(), 1);
-        });
+        crate::test_support::with_materialized_limit(
+            u64::try_from(std::mem::size_of::<usize>()).expect("parent bytes"),
+            |ctx| {
+                for _ in 0..64 {
+                    assert_eq!(
+                        union
+                            .clone_charged(ctx, "catia_union_snapshot")
+                            .expect("released snapshot bytes")
+                            .len(),
+                        1
+                    );
+                }
+                let first = union
+                    .clone_charged(ctx, "catia_union_snapshot")
+                    .expect("one live snapshot");
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = union
+                    .clone_charged(ctx, "catia_union_snapshot")
+                    .expect_err("two simultaneous snapshots exceed storage")
+                else {
+                    panic!("resource refusal required")
+                };
+                assert_eq!(
+                    limit.dimension,
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                );
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                assert_eq!(first.len(), 1);
+            },
+        );
     }
 
     #[test]

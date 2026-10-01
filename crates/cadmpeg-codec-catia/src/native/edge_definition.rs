@@ -67,15 +67,33 @@ impl Serialize for CatiaConsolidatedEdgeDefinition {
 }
 
 impl CatiaConsolidatedEdgeDefinition {
-    pub(crate) fn from_source(ctx: &cadmpeg_core::decode::DecodeContext<'_>, definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition) -> Result<Self, cadmpeg_core::CodecError> {
-        let data = crate::families::consolidated::records::consolidated_edge_definition_data_charged(ctx, definition.class.into(), &definition.frame.payload)?;
-        Ok(Self { frame: definition.frame.into(), class: definition.class, data })
+    pub(crate) fn from_source(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let data =
+            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
+                ctx,
+                definition.class.into(),
+                &definition.frame.payload,
+            )?;
+        Ok(Self {
+            frame: definition.frame.into(),
+            class: definition.class,
+            data,
+        })
     }
-    pub(crate) fn data(&self) -> Option<&ConsolidatedEdgeDefinitionData> { self.data.as_ref() }
+    pub(crate) fn data(&self) -> Option<&ConsolidatedEdgeDefinitionData> {
+        self.data.as_ref()
+    }
     #[cfg(test)]
-    pub(crate) fn frame(&self) -> &ConsolidatedRawFrame<u64> { &self.frame }
+    pub(crate) fn frame(&self) -> &ConsolidatedRawFrame<u64> {
+        &self.frame
+    }
     #[cfg(test)]
-    pub(crate) fn class(&self) -> ConsolidatedEdgeDefinitionClass { self.class }
+    pub(crate) fn class(&self) -> ConsolidatedEdgeDefinitionClass {
+        self.class
+    }
 }
 
 #[cfg(test)]
@@ -98,11 +116,18 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
     fn try_from(wire: EdgeDefinitionWire) -> Result<Self, Self::Error> {
         let data = wire.data;
         let value = Self {
-            frame: ConsolidatedRawFrame::new(wire.byte_offset, wire.width, wire.flag, wire.header_token, wire.payload)?,
+            frame: ConsolidatedRawFrame::new(
+                wire.byte_offset,
+                wire.width,
+                wire.flag,
+                wire.header_token,
+                wire.payload,
+            )?,
             class: wire.class,
             data,
         };
-        if value.data != consolidated_edge_definition_data(value.class.into(), &value.frame.payload) {
+        if value.data != consolidated_edge_definition_data(value.class.into(), &value.frame.payload)
+        {
             return Err("edge-definition data differs from its class and payload".to_owned());
         }
         Ok(value)
@@ -119,7 +144,14 @@ mod tests {
 
     fn edge_definition() -> CatiaConsolidatedEdgeDefinition {
         CatiaConsolidatedEdgeDefinition {
-            frame: ConsolidatedRawFrame::new(12, ConsolidatedFrameWidth::One, ConsolidatedFrameFlag::Flag03, 5, vec![0x81, 0x05, 0x0f, 0x87]).expect("checked fixture frame"),
+            frame: ConsolidatedRawFrame::new(
+                12,
+                ConsolidatedFrameWidth::One,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                vec![0x81, 0x05, 0x0f, 0x87],
+            )
+            .expect("checked fixture frame"),
             class: ConsolidatedEdgeDefinitionClass::Class24,
             data: Some(
                 crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 {
@@ -132,13 +164,28 @@ mod tests {
     #[test]
     fn native_edge_definition_access_borrows_the_admitted_value() {
         let source = crate::families::consolidated::records::ConsolidatedEdgeDefinition {
-            frame: ConsolidatedRawFrame::new(12, ConsolidatedFrameWidth::One, ConsolidatedFrameFlag::Flag03, 5, vec![0x81, 0x05, 0x0f, 0x87]).expect("checked frame"),
+            frame: ConsolidatedRawFrame::new(
+                12,
+                ConsolidatedFrameWidth::One,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                vec![0x81, 0x05, 0x0f, 0x87],
+            )
+            .expect("checked frame"),
             class: ConsolidatedEdgeDefinitionClass::Class24,
         };
-        let value = crate::test_support::with_service_context(|ctx| CatiaConsolidatedEdgeDefinition::from_source(ctx, source)).expect("admitted definition");
+        let value = crate::test_support::with_service_context(|ctx| {
+            CatiaConsolidatedEdgeDefinition::from_source(ctx, source)
+        })
+        .expect("admitted definition");
         let data = value.data().expect("compact data");
         assert!(std::ptr::eq(data, value.data().expect("same data")));
-        assert_eq!(data, &crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 { operand: 1 });
+        assert_eq!(
+            data,
+            &crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 {
+                operand: 1
+            }
+        );
     }
 
     #[test]
@@ -209,7 +256,14 @@ mod tests {
     #[test]
     fn wire_data_is_derived_and_conflicts_are_rejected() {
         let value = CatiaConsolidatedEdgeDefinition {
-            frame: ConsolidatedRawFrame::new(12, ConsolidatedFrameWidth::try_from(1).expect("one-byte width"), ConsolidatedFrameFlag::try_from(3).expect("frame flag"), 5, vec![0x81, 0x05, 0x0f, 0x87]).expect("checked fixture frame"),
+            frame: ConsolidatedRawFrame::new(
+                12,
+                ConsolidatedFrameWidth::try_from(1).expect("one-byte width"),
+                ConsolidatedFrameFlag::try_from(3).expect("frame flag"),
+                5,
+                vec![0x81, 0x05, 0x0f, 0x87],
+            )
+            .expect("checked fixture frame"),
             class: ConsolidatedEdgeDefinitionClass::Class24,
             data: Some(
                 crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 {

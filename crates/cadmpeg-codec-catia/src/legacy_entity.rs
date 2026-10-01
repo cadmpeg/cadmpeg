@@ -444,7 +444,8 @@ pub(crate) fn parse_runs(
     ctx: &DecodeContext<'_>,
     data: &[u8],
 ) -> Result<Vec<LegacyEntityRun>, CodecError> {
-    let directory_offset = container::outer_stream_directory_range(ctx, data)?.map(|range| range.start);
+    let directory_offset =
+        container::outer_stream_directory_range(ctx, data)?.map(|range| range.start);
     parse_runs_with_directory_offset(ctx, data, directory_offset)
 }
 

@@ -3196,7 +3196,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let arguments = self.descend(depth, Self::function_arguments)?;
             value = match (method, value, arguments.as_slice()) {
                 ("Length", EvaluatedFormulaValue::String(value), []) => {
-                    self.admit(self.ctx.charge_work(u64_from_index(value.value().len()), "catia_formula_string_length"))?;
+                    self.admit(self.ctx.charge_work(
+                        u64_from_index(value.value().len()),
+                        "catia_formula_string_length",
+                    ))?;
                     let length = u32::try_from(value.value().chars().count()).ok()?;
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && value.is_known()) {
@@ -3289,7 +3292,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ("ToReal", EvaluatedFormulaValue::String(value), []) => {
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && value.is_known()) {
-                            self.admit(self.ctx.charge_work(u64_from_index(value.value().len()), "catia_formula_string_real"))?;
+                            self.admit(self.ctx.charge_work(
+                                u64_from_index(value.value().len()),
+                                "catia_formula_string_real",
+                            ))?;
                             finite_scalar(value.value().parse::<f64>().ok()?)?
                         } else {
                             static_unknown_result(0.0, FormulaDimension::SCALAR)
@@ -3322,8 +3328,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     }
 
     fn string_boundary(&mut self, value: &str, index: usize) -> Option<usize> {
-        let work = self.admit(u64_from_index(value.len()).checked_mul(2)
-            .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_string_boundary", u64::MAX, u64::MAX)))?;
+        let work = self.admit(u64_from_index(value.len()).checked_mul(2).ok_or_else(|| {
+            self.ctx
+                .refuse_codec_limit("catia_formula_string_boundary", u64::MAX, u64::MAX)
+        }))?;
         self.admit(self.ctx.charge_work(work, "catia_formula_string_boundary"))?;
         if index == value.chars().count() {
             Some(value.len())
@@ -3332,10 +3340,22 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
     }
 
-    fn search_string(&mut self, value: &str, needle: &str, start: usize, forward: bool) -> Option<i64> {
-        let work = self.admit(u64_from_index(value.len()).checked_mul(3)
-            .and_then(|work| work.checked_add(u64_from_index(needle.len())))
-            .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_string_search", u64::MAX, u64::MAX)))?;
+    fn search_string(
+        &mut self,
+        value: &str,
+        needle: &str,
+        start: usize,
+        forward: bool,
+    ) -> Option<i64> {
+        let work = self.admit(
+            u64_from_index(value.len())
+                .checked_mul(3)
+                .and_then(|work| work.checked_add(u64_from_index(needle.len())))
+                .ok_or_else(|| {
+                    self.ctx
+                        .refuse_codec_limit("catia_formula_string_search", u64::MAX, u64::MAX)
+                }),
+        )?;
         self.admit(self.ctx.charge_work(work, "catia_formula_string_search"))?;
         let character_count = value.chars().count();
         if start > character_count {
@@ -3399,11 +3419,20 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 source.is_known() && from.is_known() && to.is_known() && !from.value().is_empty();
             let value = if self.evaluate || (self.static_check && known) {
                 // Two formatting passes scan the source and emit each replacement.
-                let work = self.admit(u64_from_index(from.value().len())
-                    .checked_add(u64_from_index(to.value().len())).and_then(|width| width.checked_add(1))
-                    .and_then(|width| u64_from_index(source.value().len()).checked_mul(width))
-                    .and_then(|work| work.checked_mul(2))
-                    .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_replace_work", u64::MAX, u64::MAX)))?;
+                let work = self.admit(
+                    u64_from_index(from.value().len())
+                        .checked_add(u64_from_index(to.value().len()))
+                        .and_then(|width| width.checked_add(1))
+                        .and_then(|width| u64_from_index(source.value().len()).checked_mul(width))
+                        .and_then(|work| work.checked_mul(2))
+                        .ok_or_else(|| {
+                            self.ctx.refuse_codec_limit(
+                                "catia_formula_replace_work",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        }),
+                )?;
                 self.admit(self.ctx.charge_work(work, "catia_formula_replace_work"))?;
                 let formatted = self.ctx.format_retained(
                     format_args!(
@@ -3462,8 +3491,17 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let known = value.is_known();
             let string_value = if self.evaluate || (self.static_check && known) {
                 // A Unicode character maps to at most three characters; formatting runs twice.
-                let work = self.admit(u64_from_index(value.value().len()).checked_mul(12)
-                    .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_case_work", u64::MAX, u64::MAX)))?;
+                let work = self.admit(
+                    u64_from_index(value.value().len())
+                        .checked_mul(12)
+                        .ok_or_else(|| {
+                            self.ctx.refuse_codec_limit(
+                                "catia_formula_case_work",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        }),
+                )?;
                 self.admit(self.ctx.charge_work(work, "catia_formula_case_work"))?;
                 let formatted = self.ctx.format_retained(
                     format_args!(
@@ -4898,11 +4936,24 @@ mod parser_tests {
         let bindings = BTreeMap::new();
         for (depth, accepted) in [(128, true), (129, false)] {
             let expression = format!("{}1{}", "true ? ".repeat(depth), " ; 1".repeat(depth));
-            assert_eq!(
-                evaluate_formula_expression(&expression, &bindings).is_some(),
-                accepted,
-                "{depth}"
-            );
+            crate::test_support::with_service_context(|ctx| {
+                let result =
+                    super::evaluate_formula_expression_charged(ctx, &expression, &bindings);
+                if accepted {
+                    assert!(
+                        result.expect("128 descents fit the ceiling").is_some(),
+                        "{depth}"
+                    );
+                } else {
+                    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+                        panic!("resource refusal required")
+                    };
+                    assert_eq!(limit.operation, "catia_formula_expression_local_depth");
+                    assert_eq!(limit.limit, 128);
+                    assert_eq!(limit.additional, 1);
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                }
+            });
         }
     }
 

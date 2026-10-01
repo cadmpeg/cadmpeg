@@ -2413,7 +2413,7 @@ fn restore_incidence_degrees(degrees: &mut [BTreeMap<usize, u8>], undo: Incidenc
     }
 }
 
-impl<'storage, 'v> IncidenceComponentSearch<'storage, 'v> {
+impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn candidate_pairs(
         &self,
         edge: usize,
@@ -4581,7 +4581,8 @@ where
     visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices, edge_faces, face_count, point_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, solution_valid, visitor, session_budget: &budget })
 }
 
-struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<'storage, 
+struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -4612,7 +4613,8 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<'stora
 
 fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<'storage, F, V>(
     ctx: &'storage DecodeContext<'_>,
-    inputs: VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<'storage, 
+    inputs: VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
+        'storage,
         '_,
         '_,
         '_,
@@ -4875,7 +4877,8 @@ where
         search.search()?;
         Ok(search.state == IncidenceSearchState::Exhausted)
     }
-    struct VisitComponentsInputs<'storage, 
+    struct VisitComponentsInputs<
+        'storage,
         'input0,
         'input1,
         'input2,
@@ -4935,7 +4938,8 @@ where
     }
     fn visit_components<'storage, F, V>(
         ctx: &'storage DecodeContext<'_>,
-        inputs: VisitComponentsInputs<'storage, 
+        inputs: VisitComponentsInputs<
+            'storage,
             '_,
             '_,
             '_,
@@ -5741,7 +5745,8 @@ pub(crate) fn reconstruct_incidence_candidates(
     )
 }
 
-struct VisitIncidenceEndpointPairSolutionsInputs<'storage, 
+struct VisitIncidenceEndpointPairSolutionsInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -5774,7 +5779,8 @@ struct VisitIncidenceEndpointPairSolutionsInputs<'storage,
 
 fn visit_incidence_endpoint_pair_solutions<'storage, F, V>(
     ctx: &'storage DecodeContext<'_>,
-    inputs: VisitIncidenceEndpointPairSolutionsInputs<'storage, 
+    inputs: VisitIncidenceEndpointPairSolutionsInputs<
+        'storage,
         '_,
         '_,
         '_,
@@ -5811,7 +5817,8 @@ where
     visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs { edge_rows, vertex_points, edge_faces, edge_candidates, face_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, complete_solution_budget, solution_valid, visitor })
 }
 
-pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<'storage, 
+pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -5845,7 +5852,8 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
 
 pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<'storage, F, V>(
     ctx: &'storage DecodeContext<'_>,
-    inputs: VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<'storage, 
+    inputs: VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
+        'storage,
         '_,
         '_,
         '_,

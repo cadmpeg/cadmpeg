@@ -1392,9 +1392,9 @@ fn initial_quotient_union_and_merge_refuse_each_collection_limit() {
 }
 
 #[cfg(test)]
-fn complete_mesh_endpoint_candidates_from_quotient<'storage>(
+fn complete_mesh_endpoint_candidates_from_quotient(
     edge_candidates: &[Vec<[usize; 2]>],
-    quotient: &mut MeshQuotient<'storage>,
+    quotient: &mut MeshQuotient<'_>,
     max_pairs_per_edge: usize,
     max_pairs_total: usize,
 ) -> Option<Vec<Vec<[usize; 2]>>> {
@@ -1458,7 +1458,10 @@ fn complete_mesh_endpoint_candidates_from_quotient<'storage>(
 }
 
 impl<'storage> MeshQuotient<'storage> {
-    pub(crate) fn clone_charged(&self, ctx: &'storage DecodeContext<'_>) -> Result<Self, CodecError> {
+    pub(crate) fn clone_charged(
+        &self,
+        ctx: &'storage DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
         let union = self
             .union
             .clone_charged(ctx, "catia_quotient_clone_union")?;
@@ -2495,8 +2498,8 @@ impl<'storage> MeshQuotient<'storage> {
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Vec<MeshOrientationOption<'storage>>, CodecError> {
-        fn copy_directions<'storage>(
-            ctx: &'storage DecodeContext<'_>,
+        fn copy_directions(
+            ctx: &DecodeContext<'_>,
             directions: &[Vec<bool>],
         ) -> Result<Vec<Vec<bool>>, CodecError> {
             let mut copy = Vec::new();
@@ -2511,7 +2514,8 @@ impl<'storage> MeshQuotient<'storage> {
             Ok(copy)
         }
 
-        struct BoundaryOrientationSearch<'storage, 
+        struct BoundaryOrientationSearch<
+            'storage,
             'input0,
             'input1,
             'input2,
@@ -3104,8 +3108,8 @@ impl<'storage> MeshQuotient<'storage> {
     ) -> Result<PointAssignmentOutcome, CodecError> {
         type PointNeighbors = HashMap<usize, HashSet<usize>>;
 
-        fn remaining_domains_match<'storage>(
-            ctx: &'storage DecodeContext<'_>,
+        fn remaining_domains_match(
+            ctx: &DecodeContext<'_>,
             values: &[(usize, Vec<usize>)],
             point_count: usize,
         ) -> Result<bool, CodecError> {
@@ -3205,8 +3209,8 @@ impl<'storage> MeshQuotient<'storage> {
             budget: Option<&'input9 WorkBudget<'input8>>,
         }
 
-        fn walk<'storage>(
-            ctx: &'storage DecodeContext<'_>,
+        fn walk(
+            ctx: &DecodeContext<'_>,
             inputs: CoordinateAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             fn rollback(
@@ -3512,14 +3516,9 @@ fn quotient_clone_refuses_retained_domains_and_member_nodes() {
         1
     );
     for (limit, operation) in [
+        (0, "catia_quotient_clone_domains"),
         (
-            0,
-            "catia_quotient_clone_domains",
-        ),
-        (
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<Arc<HashSet<usize>>>(),
-            ),
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Arc<HashSet<usize>>>()),
             "catia_quotient_clone_member_nodes",
         ),
     ] {
@@ -3580,7 +3579,8 @@ fn deferred_face_quotient_options_limited<'storage>(
         capacity: usize,
     }
 
-    struct DeferredGapFill<'storage, 
+    struct DeferredGapFill<
+        'storage,
         'input0,
         'input1,
         'input2,
@@ -3718,7 +3718,8 @@ fn deferred_face_quotient_options_limited<'storage>(
         Ok(())
     }
 
-    struct DeferredGapWalk<'storage, 
+    struct DeferredGapWalk<
+        'storage,
         'input0,
         'input1,
         'input2,
@@ -4099,7 +4100,7 @@ fn common_supported_corner_equations<'storage>(
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<HashSet<[usize; 2]>>, CodecError> {
-    fn compatible<'storage>(quotient: &MeshQuotient<'storage>, left: usize, right: usize) -> bool {
+    fn compatible(quotient: &MeshQuotient<'_>, left: usize, right: usize) -> bool {
         let left = quotient.union.root(left);
         let right = quotient.union.root(right);
         left == right || !quotient.domains[left].is_disjoint(&quotient.domains[right])
@@ -5163,7 +5164,7 @@ fn canonical_direction_bit(row: &[bool], index: usize) -> bool {
     row[index] ^ row.first().copied().unwrap_or(false)
 }
 
-fn orientation_fingerprint<'storage>(quotient: &MeshQuotient<'storage>, directions: &[Vec<bool>]) -> u64 {
+fn orientation_fingerprint(quotient: &MeshQuotient<'_>, directions: &[Vec<bool>]) -> u64 {
     let mut hasher = DefaultHasher::new();
     quotient.union.len().hash(&mut hasher);
     for node in 0..quotient.union.len() {
@@ -6734,7 +6735,8 @@ pub(super) type MeshEndpointRelationStateSignature = (
     Vec<Vec<MeshEndpointRelationSelection>>,
 );
 type MeshEndpointSolutionPredicate<'a> = dyn Fn(&[Option<[usize; 2]>]) -> bool + 'a;
-type MeshFixedDirectionOption<'storage> = (Vec<Vec<bool>>, MeshQuotient<'storage>, Vec<Option<bool>>);
+type MeshFixedDirectionOption<'storage> =
+    (Vec<Vec<bool>>, MeshQuotient<'storage>, Vec<Option<bool>>);
 
 pub(super) fn raw_endpoint_relation_state_signature(
     ctx: &DecodeContext<'_>,
@@ -9451,7 +9453,8 @@ fn resolve_singleton_mesh_endpoint_candidates(
 
 // Endpoint materialization receives independent evidence, budgets, predicates,
 // and gauge state so each fallback remains separately bounded and auditable.
-struct ResolveStandardMeshEndpointCandidatesInputs<'storage, 
+struct ResolveStandardMeshEndpointCandidatesInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -9483,7 +9486,8 @@ struct ResolveStandardMeshEndpointCandidatesInputs<'storage,
 
 fn resolve_standard_mesh_endpoint_candidates<'storage>(
     ctx: &'storage DecodeContext<'_>,
-    inputs: ResolveStandardMeshEndpointCandidatesInputs<'storage, 
+    inputs: ResolveStandardMeshEndpointCandidatesInputs<
+        'storage,
         '_,
         '_,
         '_,

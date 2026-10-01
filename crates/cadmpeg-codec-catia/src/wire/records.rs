@@ -6,7 +6,6 @@
 //! degree-5 UV jet decoder (`parse_consolidated_pcurve`). Nothing here depends
 //! on a `families` module; the family decoders consume it downward.
 
-
 use cadmpeg_core::decode::u64_from_index;
 
 type NativePcurveLanesOutput = Result<
@@ -55,7 +54,11 @@ pub(crate) struct OrderedPcurveSites(Vec<ConsolidatedPcurveSite>);
 impl TryFrom<Vec<ConsolidatedPcurveSite>> for OrderedPcurveSites {
     type Error = &'static str;
     fn try_from(sites: Vec<ConsolidatedPcurveSite>) -> Result<Self, Self::Error> {
-        if sites.len() < 2 || sites.windows(2).any(|pair| pair[0].knot.get() >= pair[1].knot.get()) {
+        if sites.len() < 2
+            || sites
+                .windows(2)
+                .any(|pair| pair[0].knot.get() >= pair[1].knot.get())
+        {
             return Err("pcurve sites require at least two strictly increasing knots");
         }
         Ok(Self(sites))
@@ -64,13 +67,17 @@ impl TryFrom<Vec<ConsolidatedPcurveSite>> for OrderedPcurveSites {
 
 impl std::ops::Deref for OrderedPcurveSites {
     type Target = [ConsolidatedPcurveSite];
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<'a> IntoIterator for &'a OrderedPcurveSites {
     type Item = &'a ConsolidatedPcurveSite;
     type IntoIter = std::slice::Iter<'a, ConsolidatedPcurveSite>;
-    fn into_iter(self) -> Self::IntoIter { self.0.iter() }
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
 }
 
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
@@ -381,11 +388,17 @@ impl WidthCodedToken {
             ConsolidatedFrameWidth::Two => 0xffff,
             ConsolidatedFrameWidth::Three => 0xff_ffff,
         };
-        if value > maximum { return Err("header token does not fit its declared width"); }
+        if value > maximum {
+            return Err("header token does not fit its declared width");
+        }
         Ok(Self { width, value })
     }
-    pub(crate) fn width(self) -> ConsolidatedFrameWidth { self.width }
-    pub(crate) fn value(self) -> u32 { self.value }
+    pub(crate) fn width(self) -> ConsolidatedFrameWidth {
+        self.width
+    }
+    pub(crate) fn value(self) -> u32 {
+        self.value
+    }
 }
 
 /// Length-closed A/B-family frame shared by edge-definition and descriptor records.
@@ -410,11 +423,26 @@ struct RawFrameWire<Offset> {
 }
 
 impl<Offset> ConsolidatedRawFrame<Offset> {
-    pub(crate) fn new(pos: Offset, width: ConsolidatedFrameWidth, flag: ConsolidatedFrameFlag, header_token: u32, payload: Vec<u8>) -> Result<Self, &'static str> {
-        Ok(Self { pos, token: WidthCodedToken::new(width, header_token)?, flag, payload })
+    pub(crate) fn new(
+        pos: Offset,
+        width: ConsolidatedFrameWidth,
+        flag: ConsolidatedFrameFlag,
+        header_token: u32,
+        payload: Vec<u8>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            pos,
+            token: WidthCodedToken::new(width, header_token)?,
+            flag,
+            payload,
+        })
     }
-    pub(crate) fn width(&self) -> ConsolidatedFrameWidth { self.token.width() }
-    pub(crate) fn header_token(&self) -> u32 { self.token.value() }
+    pub(crate) fn width(&self) -> ConsolidatedFrameWidth {
+        self.token.width()
+    }
+    pub(crate) fn header_token(&self) -> u32 {
+        self.token.value()
+    }
 }
 
 impl<Offset: Serialize> Serialize for ConsolidatedRawFrame<Offset> {
@@ -433,21 +461,41 @@ impl<Offset: Serialize> Serialize for ConsolidatedRawFrame<Offset> {
 impl<'de, Offset: Deserialize<'de>> Deserialize<'de> for ConsolidatedRawFrame<Offset> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = RawFrameWire::<Offset>::deserialize(deserializer)?;
-        Self::new(wire.byte_offset, wire.width, wire.flag, wire.header_token, wire.payload)
-            .map_err(serde::de::Error::custom)
+        Self::new(
+            wire.byte_offset,
+            wire.width,
+            wire.flag,
+            wire.header_token,
+            wire.payload,
+        )
+        .map_err(serde::de::Error::custom)
     }
 }
 
 impl ConsolidatedRawFrame {
-    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Result<Self, CodecError> {
-        Self::new(record.byte_offset(), record.width, record.flag, record.header_token, payload)
-            .map_err(CodecError::malformed)
+    pub(crate) fn from_record(
+        record: &ConsolidatedRecord,
+        payload: Vec<u8>,
+    ) -> Result<Self, CodecError> {
+        Self::new(
+            record.byte_offset(),
+            record.width,
+            record.flag,
+            record.header_token,
+            payload,
+        )
+        .map_err(CodecError::malformed)
     }
 }
 
 impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
     fn from(frame: ConsolidatedRawFrame) -> Self {
-        Self { pos: u64_from_index(frame.pos), token: frame.token, flag: frame.flag, payload: frame.payload }
+        Self {
+            pos: u64_from_index(frame.pos),
+            token: frame.token,
+            flag: frame.flag,
+            payload: frame.payload,
+        }
     }
 }
 
@@ -726,7 +774,10 @@ where
         loop {
             let mut added = Vec::new();
             let mut source_ends = HashSet::new();
-            ctx.charge_work(u64_from_index(source_records.len()), "catia_spanning_record_inventory")?;
+            ctx.charge_work(
+                u64_from_index(source_records.len()),
+                "catia_spanning_record_inventory",
+            )?;
             for record in &source_records {
                 ctx.insert_hash_set(
                     &mut source_ends,
@@ -739,8 +790,15 @@ where
                 if record_starts.contains(&source_start) {
                     continue;
                 }
-                let work = u64_from_index(source_ranges.len()).checked_mul(14)
-                    .ok_or_else(|| ctx.refuse_codec_limit("catia_spanning_record_probe", u64::MAX - 1, u64::MAX))?;
+                let work = u64_from_index(source_ranges.len())
+                    .checked_mul(14)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "catia_spanning_record_probe",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
                 ctx.charge_work(work, "catia_spanning_record_probe")?;
                 let Some(record) = parse_spanning_consolidated_record(
                     data,
@@ -964,18 +1022,27 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
-pub(crate) fn scan_vertex_records<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<impl Iterator<Item = FinitePoint3> + 'a, CodecError> {
+pub(crate) fn scan_vertex_records<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<impl Iterator<Item = FinitePoint3> + 'a, CodecError> {
     Ok(scan_vertex_rows(ctx, bytes)?.map(|(_, point)| point))
 }
 
 /// Locate every finite `05 08 01` coordinate row in `bytes`.
-pub(crate) fn scan_vertex_record_ranges<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<impl Iterator<Item = Range<usize>> + 'a, CodecError> {
+pub(crate) fn scan_vertex_record_ranges<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<impl Iterator<Item = Range<usize>> + 'a, CodecError> {
     Ok(scan_vertex_rows(ctx, bytes)?.map(|(range, _)| range))
 }
 
 /// Every `05 08 01` row whose three coordinates are finite, with its byte
 /// range and admitted point.
-fn scan_vertex_rows<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<impl Iterator<Item = (Range<usize>, FinitePoint3)> + 'a, CodecError> {
+fn scan_vertex_rows<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<impl Iterator<Item = (Range<usize>, FinitePoint3)> + 'a, CodecError> {
     ctx.charge_work(u64_from_index(bytes.len()), "catia_vertex_row_scan")?;
     let mut p = 0usize;
     Ok(std::iter::from_fn(move || loop {
@@ -1018,17 +1085,49 @@ mod tests {
     #[test]
     fn raw_frame_token_fit_is_checked_in_construction_and_serde() {
         use super::ConsolidatedRawFrame;
-        for (width, maximum) in [(ConsolidatedFrameWidth::One, 0xff), (ConsolidatedFrameWidth::Two, 0xffff), (ConsolidatedFrameWidth::Three, 0xff_ffff)] {
-            let frame = ConsolidatedRawFrame::new(12_u64, width, ConsolidatedFrameFlag::Flag03, maximum, vec![1]).expect("fitting token");
+        for (width, maximum) in [
+            (ConsolidatedFrameWidth::One, 0xff),
+            (ConsolidatedFrameWidth::Two, 0xffff),
+            (ConsolidatedFrameWidth::Three, 0xff_ffff),
+        ] {
+            let frame = ConsolidatedRawFrame::new(
+                12_u64,
+                width,
+                ConsolidatedFrameFlag::Flag03,
+                maximum,
+                vec![1],
+            )
+            .expect("fitting token");
             let bytes = serde_json::to_vec(&frame).expect("frame JSON");
-            assert_eq!(serde_json::from_slice::<ConsolidatedRawFrame<u64>>(&bytes).expect("checked frame JSON"), frame);
-            assert!(ConsolidatedRawFrame::new(12_u64, width, ConsolidatedFrameFlag::Flag03, maximum + 1, vec![1]).is_err());
+            assert_eq!(
+                serde_json::from_slice::<ConsolidatedRawFrame<u64>>(&bytes)
+                    .expect("checked frame JSON"),
+                frame
+            );
+            assert!(ConsolidatedRawFrame::new(
+                12_u64,
+                width,
+                ConsolidatedFrameFlag::Flag03,
+                maximum + 1,
+                vec![1]
+            )
+            .is_err());
             let mut wire = serde_json::to_value(&frame).expect("frame wire");
             wire["header_token"] = serde_json::json!(maximum + 1);
             assert!(serde_json::from_value::<ConsolidatedRawFrame<u64>>(wire).is_err());
         }
-        let frame = ConsolidatedRawFrame::new(12_u64, ConsolidatedFrameWidth::One, ConsolidatedFrameFlag::Flag03, 5, vec![1]).expect("frame");
-        assert_eq!(serde_json::to_string(&frame).expect("frame bytes"), r#"{"byte_offset":12,"width":1,"flag":3,"header_token":5,"payload":[1]}"#);
+        let frame = ConsolidatedRawFrame::new(
+            12_u64,
+            ConsolidatedFrameWidth::One,
+            ConsolidatedFrameFlag::Flag03,
+            5,
+            vec![1],
+        )
+        .expect("frame");
+        assert_eq!(
+            serde_json::to_string(&frame).expect("frame bytes"),
+            r#"{"byte_offset":12,"width":1,"flag":3,"header_token":5,"payload":[1]}"#
+        );
     }
 
     #[test]
@@ -1039,18 +1138,31 @@ mod tests {
             first_derivatives: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
             second_derivatives: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
         };
-        for sites in [vec![], vec![site(0.0)], vec![site(0.0), site(0.0)], vec![site(1.0), site(0.0)]] {
+        for sites in [
+            vec![],
+            vec![site(0.0)],
+            vec![site(0.0), site(0.0)],
+            vec![site(1.0), site(0.0)],
+        ] {
             assert!(super::OrderedPcurveSites::try_from(sites).is_err());
         }
-        let sites = super::OrderedPcurveSites::try_from(vec![site(0.0), site(1.0)]).expect("ordered knots");
-        assert_eq!(sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>(), [0.0, 1.0]);
+        let sites =
+            super::OrderedPcurveSites::try_from(vec![site(0.0), site(1.0)]).expect("ordered knots");
+        assert_eq!(
+            sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>(),
+            [0.0, 1.0]
+        );
     }
 
     #[test]
     fn vertex_scan_refuses_marker_free_work() {
         let bytes = [0_u8; 64];
         crate::test_support::with_work_limit(0, |ctx| {
-            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::scan_vertex_records(ctx, &bytes) else { panic!("resource refusal required") };
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                super::scan_vertex_records(ctx, &bytes)
+            else {
+                panic!("resource refusal required")
+            };
             assert_eq!(limit.operation, "catia_vertex_row_scan");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
@@ -1060,10 +1172,15 @@ mod tests {
     fn consolidated_record_scan_refuses_marker_free_work() {
         let bytes = [0_u8; 64];
         crate::test_support::with_work_limit(0, |ctx| {
-            let error = super::consolidated_records_in_sources(ctx, &bytes,
-                std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))))
-                .expect_err("marker-free scan consumes work");
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            let error = super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+            )
+            .expect_err("marker-free scan consumes work");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
             assert_eq!(limit.operation, "catia_record_scan");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
@@ -1377,9 +1494,13 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
 
-        let [point] = crate::test_support::with_service_context(|ctx| scan_vertex_records(ctx, &bytes).expect("service resource budget").collect::<Vec<_>>())
-            .try_into()
-            .expect("one vertex row");
+        let [point] = crate::test_support::with_service_context(|ctx| {
+            scan_vertex_records(ctx, &bytes)
+                .expect("service resource budget")
+                .collect::<Vec<_>>()
+        })
+        .try_into()
+        .expect("one vertex row");
         assert_eq!(point.x, 2_000_000.0);
         assert_eq!(point.y, -2_000_000.0);
         assert_eq!(point.z, 2_000_000.0);

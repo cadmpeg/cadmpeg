@@ -105,14 +105,25 @@ impl TrimPacket {
 
     fn expand_triangles(&self, ctx: &DecodeContext<'_>) -> Result<Vec<[u32; 3]>, CodecError> {
         let operation = "catia_trim_expansion_work";
-        let lengths = self.strip_lengths.len().checked_add(self.fan_lengths.len())
+        let lengths = self
+            .strip_lengths
+            .len()
+            .checked_add(self.fan_lengths.len())
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_work(u64_from_index(lengths), operation)?;
-        let triangle_count = self.strip_lengths.iter().chain(&self.fan_lengths)
+        let triangle_count = self
+            .strip_lengths
+            .iter()
+            .chain(&self.fan_lengths)
             .try_fold(self.independent_count, |count, &length| {
-                count.checked_add(match length { 0 | 1 => 0, length => length - 2 })
-            }).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let work = u64_from_index(triangle_count).checked_mul(3)
+                count.checked_add(match length {
+                    0 | 1 => 0,
+                    length => length - 2,
+                })
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let work = u64_from_index(triangle_count)
+            .checked_mul(3)
             .and_then(|work| work.checked_add(u64_from_index(self.handles.len())))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_work(work, operation)?;
@@ -151,7 +162,9 @@ impl TrimPacket {
         for &length in &self.fan_lengths {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
-            let Some((&center, rim)) = fan.split_first() else { continue; };
+            let Some((&center, rim)) = fan.split_first() else {
+                continue;
+            };
             for pair in rim.windows(2) {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
@@ -175,9 +188,15 @@ mod tests {
 
     #[test]
     fn trim_expansion_refuses_work_before_cache_installation() {
-        let packet = TrimPacket::try_from((1, vec![], vec![], vec![0, 1, 2])).expect("complete partition");
+        let packet =
+            TrimPacket::try_from((1, vec![], vec![], vec![0, 1, 2])).expect("complete partition");
         crate::test_support::with_work_limit(0, |ctx| {
-            let CodecError::ResourceLimit(limit) = packet.triangles(ctx).expect_err("triangle work must be admitted") else { panic!("resource refusal required") };
+            let CodecError::ResourceLimit(limit) = packet
+                .triangles(ctx)
+                .expect_err("triangle work must be admitted")
+            else {
+                panic!("resource refusal required")
+            };
             assert_eq!(limit.operation, "catia_trim_expansion_work");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });

@@ -623,7 +623,10 @@ pub(super) fn nurbs_isocurve(
         .ok()
         .and_then(|degree| degree.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_basis", u64::MAX, u64::MAX))?;
-    let rational_count = if matches!(surface.pole_grid(), cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }) {
+    let rational_count = if matches!(
+        surface.pole_grid(),
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
+    ) {
         count
     } else {
         0

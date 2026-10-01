@@ -24,14 +24,9 @@ fn mesh_orientation_options_refuse_collection_limit_before_declining() {
             .into(),
     );
     let run = |ctx: &DecodeContext<'_>| {
-        quotient.assignment_options_limited(
-            ctx,
-            &assignment,
-            &[vec![[0, 1]]],
-            &HashSet::new(),
-            1,
-            None,
-        ).map(|options| options.is_empty())
+        quotient
+            .assignment_options_limited(ctx, &assignment, &[vec![[0, 1]]], &HashSet::new(), 1, None)
+            .map(|options| options.is_empty())
     };
     catia_test_context!(service_ctx);
     assert!(run(&service_ctx).expect("service resource budget"));

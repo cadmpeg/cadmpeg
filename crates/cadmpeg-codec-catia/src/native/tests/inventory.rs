@@ -963,11 +963,24 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
 
 #[test]
 fn native_overlap_filter_refuses_before_inventory_mutation() {
-    let mut graphs = vec![crate::object_graph::ObjectGraph { pos: 0, total_len: 100, catalog_pos: None, records: Vec::new() }];
-    let mut blocks = vec![crate::value_block::ValueBlock { pos: 10, payload: Vec::new() }];
+    let mut graphs = vec![crate::object_graph::ObjectGraph {
+        pos: 0,
+        total_len: 100,
+        catalog_pos: None,
+        records: Vec::new(),
+    }];
+    let mut blocks = vec![crate::value_block::ValueBlock {
+        pos: 10,
+        payload: Vec::new(),
+    }];
     let mut catalogs = Vec::new();
     crate::test_support::with_work_limit(0, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut catalogs).expect_err("overlap comparison work must be admitted") else { panic!("resource refusal required") };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut catalogs)
+                .expect_err("overlap comparison work must be admitted")
+        else {
+            panic!("resource refusal required")
+        };
         assert_eq!(limit.operation, "catia_native_inventory_overlap");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });

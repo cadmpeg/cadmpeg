@@ -430,11 +430,11 @@ fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
     ];
     catia_test_context!(initial_ctx);
     let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
-            &initial_ctx,
-            &candidates,
-            3,
-            &[[10, 11], [10, 12], [13, 11], [14, 14]],
-        )
+        &initial_ctx,
+        &candidates,
+        3,
+        &[[10, 11], [10, 12], [13, 11], [14, 14]],
+    )
     .expect("service resource budget")
     .expect("initial quotient");
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -875,7 +875,15 @@ fn common_full_quotient_refuses_each_collection_limit() {
             &[Vec::new(), Vec::new()],
             &mut quotient,
         )?;
-        Ok::<_, CodecError>((result, [quotient.find(0), quotient.find(1), quotient.find(2), quotient.find(3)]))
+        Ok::<_, CodecError>((
+            result,
+            [
+                quotient.find(0),
+                quotient.find(1),
+                quotient.find(2),
+                quotient.find(3),
+            ],
+        ))
     };
     catia_test_context!(service_ctx);
     let (result, roots) = run(&service_ctx).expect("service resource budget");
