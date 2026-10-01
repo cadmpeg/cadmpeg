@@ -536,9 +536,10 @@ fn jpeg_extent(
 /// when coherent; otherwise the segment with the largest valid walk wins, with
 /// storage type `0x0000_008e` breaking ties. An unresolved tie rejects E5
 /// selection.
-#[must_use]
-pub(crate) fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
-    let body = outer_body_range(data)?;
+#[cfg(test)]
+pub(crate) fn e5_record_stream(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Option<Range<usize>>, CodecError> {
+    let Some(body) = outer_body_range(data) else { return Ok(None) };
+    ctx.charge_work(u64_from_index(body.bytes().len()), "catia_e5_segment_scan")?;
     let mut markers = memchr::memmem::find_iter(body.bytes(), FINJPL_MARKER)
         .map(|relative| body.range.start + relative);
     let mut current = markers.next();
@@ -552,7 +553,7 @@ pub(crate) fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
         }
         None
     });
-    select_e5_record_stream(data, body.range(), candidates)
+    select_e5_record_stream(ctx, data, body.range(), candidates)
 }
 
 fn outer_body_range(data: &[u8]) -> Option<BodyExtent<'_>> {
@@ -589,11 +590,13 @@ pub(crate) fn outer_preamble_range(data: &[u8]) -> Option<Range<usize>> {
 }
 
 fn e5_record_stream_in_segments(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     body: Range<usize>,
     segments: &[FinjplSegment],
-) -> Option<Range<usize>> {
+) -> Result<Option<Range<usize>>, CodecError> {
     select_e5_record_stream(
+        ctx,
         data,
         body,
         segments
@@ -603,13 +606,15 @@ fn e5_record_stream_in_segments(
 }
 
 fn select_e5_record_stream(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     body: Range<usize>,
     candidates: impl Iterator<Item = (Range<usize>, u32)>,
-) -> Option<Range<usize>> {
-    let preamble = outer_preamble_range(data)?;
-    if coherent_e5_record_count(&data[preamble.clone()]) >= 10 {
-        return Some(preamble);
+) -> Result<Option<Range<usize>>, CodecError> {
+    ctx.charge_work(u64_from_index(data.len()), "catia_e5_preamble_scan")?;
+    let Some(preamble) = outer_preamble_range(data) else { return Ok(None) };
+    if coherent_e5_record_count(ctx, &data[preamble.clone()])? >= 10 {
+        return Ok(Some(preamble));
     }
     let mut best: Option<(usize, bool, Range<usize>)> = None;
     let mut tied = false;
@@ -617,7 +622,7 @@ fn select_e5_record_stream(
         if range.start < body.start || range.end > body.end {
             continue;
         }
-        let count = coherent_e5_record_count(&data[range.clone()]);
+        let count = coherent_e5_record_count(ctx, &data[range.clone()])?;
         if count < 10 {
             continue;
         }
@@ -642,21 +647,18 @@ fn select_e5_record_stream(
             _ => {}
         }
     }
-    if tied {
-        None
-    } else {
-        best.map(|(_, _, range)| range)
-    }
+    Ok(if tied { None } else { best.map(|(_, _, range)| range) })
 }
 
 /// Count the longest declared-stride E5 walk in a bounded byte region.
 ///
 /// A stream may place the unframed `05 08 01` coordinate roster between E5
 /// records. No other gap is part of the walk.
-fn coherent_e5_record_count(data: &[u8]) -> usize {
+fn coherent_e5_record_count(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<usize, CodecError> {
     let mut best = 0;
     let mut search = 0;
     while search < data.len() {
+        ctx.charge_work(u64_from_index(data.len() - search), "catia_e5_marker_scan")?;
         let Some(relative) = data[search..]
             .windows(E5_MARKER.len())
             .position(|bytes| bytes == E5_MARKER)
@@ -664,11 +666,11 @@ fn coherent_e5_record_count(data: &[u8]) -> usize {
             break;
         };
         let start = search + relative;
-        let (count, consumed) = e5_record_walk_count(data, start);
+        let (count, consumed) = e5_record_walk_count(ctx, data, start)?;
         best = best.max(count);
         search = consumed.max(start + 1);
     }
-    best
+    Ok(best)
 }
 
 /// Return every valid `E5 0D 03` frame in a bounded stream region.
@@ -696,7 +698,8 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
     })
 }
 
-fn e5_record_walk_count(data: &[u8], start: usize) -> (usize, usize) {
+fn e5_record_walk_count(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<(usize, usize), CodecError> {
+    ctx.charge_work(u64_from_index(data.len() - start), "catia_e5_stride_walk")?;
     let mut count = 0;
     let mut position = start;
     let mut consumed = start;
@@ -717,7 +720,7 @@ fn e5_record_walk_count(data: &[u8], start: usize) -> (usize, usize) {
         }
         position = next;
     }
-    (count, consumed)
+    Ok((count, consumed))
 }
 
 fn e5_record_end(data: &[u8], position: usize) -> Option<usize> {
@@ -850,6 +853,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) census: Census,
     /// Identified storage variant.
     pub(crate) variant: Variant,
+    /// Selected coherent E5 stream in the root image.
+    pub(crate) e5_record_range: Option<Range<usize>>,
 }
 
 /// Return the logical record sources that can carry consolidated A/B records.
@@ -1032,6 +1037,7 @@ pub(crate) fn parse_stream_directory(
     if data.len() < inner_hdr::LEN {
         return Ok(None);
     }
+    ctx.charge_work(u64_from_index(data.len() - OUTER_MAGIC.len()), "catia_nested_magic_scan")?;
     let Some((inner, dir_offset, b)) = (|| {
         let inner = find_from(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
         let a = usize::try_from(View::u32_be_at(
@@ -1477,6 +1483,7 @@ fn parse_outer_container_declarations(
     if data.len() < 64 {
         return Ok(declarations);
     }
+    ctx.charge_work(u64_from_index(data.len()), "catia_container_declaration_scan")?;
     for start in 0..data.len() - 64 {
         if data.get(start + 8..start + 12) != Some(HEADER)
             || data.get(start + 16..start + 24) != Some(PREFIX)
@@ -1485,10 +1492,14 @@ fn parse_outer_container_declarations(
             continue;
         }
         let strings_start = start + 40;
+        ctx.charge_work(u64_from_index(data.len() - strings_start), "catia_container_terminal_scan")?;
         let Some(relative_terminal) = memchr::memmem::find(&data[strings_start..], TERMINAL) else {
             continue;
         };
         let terminal = strings_start + relative_terminal;
+        for _ in 0..2 {
+            ctx.charge_work(u64_from_index(relative_terminal), "catia_container_class_scan")?;
+        }
         let Some((class_name, base_class)) = declaration_class_pair(&data[strings_start..terminal])
         else {
             continue;
@@ -1511,6 +1522,11 @@ fn parse_outer_container_declarations(
             format_args!("_{canonical_stream_name}"),
             "catia_container_stream_name",
         )?;
+        for descriptor in descriptors {
+            for _ in 0..2 {
+                ctx.charge_work(u64_from_index(descriptor.name.len()), "catia_container_descriptor_lookup")?;
+            }
+        }
         let stream_name = match (
             descriptors
                 .iter()
@@ -1766,15 +1782,17 @@ pub(crate) fn scan_bytes<'a>(
         census.vertex_markers = count_subslice(ctx, b, VERTEX_MARKER)?;
     }
 
+    let e5_record_range = match outer_body.as_ref() {
+        Some(body) => e5_record_stream_in_segments(ctx, &data, body.range(), &finjpl_segments)?,
+        None => None,
+    };
     let variant = identify_variant(
         ctx,
         inner.as_ref(),
         brep.as_deref(),
         main_data_stream.as_deref(),
         &census,
-        outer_body.is_some_and(|body| {
-            e5_record_stream_in_segments(&data, body.range(), &finjpl_segments).is_some()
-        }),
+        e5_record_range.is_some(),
     )?;
 
     Ok(ContainerScan {
@@ -1792,6 +1810,7 @@ pub(crate) fn scan_bytes<'a>(
         outer_container_declarations,
         census,
         variant,
+        e5_record_range,
     })
 }
 

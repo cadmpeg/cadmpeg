@@ -175,6 +175,9 @@ fn parse_consolidated_pcurve(
     else {
         return Ok(None);
     };
+    let scalar_work = u64_from_index(count).checked_mul(7 * 8)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_pcurve_scalar_scan", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(scalar_work, "catia_pcurve_scalar_scan")?;
     let mut sites = Vec::new();
     ctx.reserve_vec(&mut sites, count, "catia_consolidated_pcurve_sites")?;
     for index in 0..count {
@@ -192,7 +195,7 @@ fn parse_consolidated_pcurve(
         });
     }
     ctx.charge_work(u64_from_index(sites.len()), "catia_pcurve_site_order")?;
-    let sites = OrderedPcurveSites::try_from(sites).map_err(CodecError::malformed)?;
+    let Ok(sites) = OrderedPcurveSites::try_from(sites) else { return Ok(None) };
     Ok(Some(ConsolidatedPcurve {
         pos,
         support_id,
@@ -276,18 +279,6 @@ fn pcurve_layout(
     let lanes = [knot_at, u_at, v_at, du_at, dv_at, ddu_at, ddv_at];
     if at > end || !matches!(&data[at..end], [0x07] | [0x07, 0x00]) {
         return None;
-    }
-    let mut previous = None;
-    for index in 0..count {
-        let offset = index * 8;
-        for lane in lanes {
-            f64_le(data, lane + offset)?;
-        }
-        let knot = f64_le(data, knot_at + offset)?.get();
-        if previous.is_some_and(|value| value >= knot) {
-            return None;
-        }
-        previous = Some(knot);
     }
     Some((support_id, count, extrapolation_sites, lanes, range, at))
 }
@@ -1289,6 +1280,23 @@ mod tests {
             consolidated_records_in_range_sources(&bytes, [[0..split, split..bytes.len()]]);
         assert_eq!(records.len(), 2);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
+    }
+
+    #[test]
+    fn pcurve_late_nonfinite_scalar_refuses_before_scan() {
+        let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let record = &records[0];
+        let payload = record.payload().expect("payload");
+        let (_, count, _, lanes, _, _) = super::pcurve_layout(&bytes, payload.start, payload.end).expect("layout");
+        let late = lanes[6] + (count - 1) * 8;
+        bytes[late..late + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        crate::test_support::with_work_limit(0, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A).expect_err("scalar scan needs work") else { panic!("resource refusal") };
+            assert_eq!(limit.operation, "catia_pcurve_scalar_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+        assert!(crate::test_support::with_service_context(|ctx| super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)).expect("service work").is_empty());
     }
 
     #[test]
