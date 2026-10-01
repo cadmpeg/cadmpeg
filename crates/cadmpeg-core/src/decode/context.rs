@@ -277,7 +277,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Reserves scoped bytes and fallible string capacity for temporary text.
-    pub fn reserve_scoped_string(
+    pub fn reserve_scoped_text(
         &self,
         bytes: usize,
         operation: &'static str,
@@ -517,7 +517,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Formats retained text through charged, fallible string growth.
-    pub fn format_retained(
+    pub fn format_retained_incremental(
         &self,
         message: fmt::Arguments<'_>,
         operation: &'static str,
@@ -1191,7 +1191,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         assert_eq!(
-            ctx.format_retained(
+            ctx.format_retained_incremental(
                 format_args!("{number}", number = 1234),
                 "test retained format"
             )
@@ -1199,7 +1199,7 @@ mod tests {
             "1234"
         );
         let error = ctx
-            .format_retained(format_args!("{}", 5), "test retained format")
+            .format_retained_incremental(format_args!("{}", 5), "test retained format")
             .expect_err("one more byte exceeds the retained limit");
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes

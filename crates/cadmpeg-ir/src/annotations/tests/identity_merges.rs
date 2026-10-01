@@ -104,9 +104,12 @@ fn charged_remapping_preserves_collision_text_and_tables() {
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = annotations
-        .map_ids_charged(&ctx, |_| Ok("merged".into()))
-        .unwrap_err();
+    let error = cadmpeg_core::CodecError::from(
+        annotations
+            .map_ids_charged(&ctx, |_| Ok("merged".into()), "test_annotation_remap")
+            .unwrap()
+            .unwrap_err(),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
         if message == "annotation identity collision at merged")

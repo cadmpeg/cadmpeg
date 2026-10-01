@@ -94,7 +94,8 @@ fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
         .get("design_edge_operands")
         .unwrap()[0];
     let fields = record.fields();
-    1 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
+    // The record and its identity field count one item each.
+    2 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
 }
 
 fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {

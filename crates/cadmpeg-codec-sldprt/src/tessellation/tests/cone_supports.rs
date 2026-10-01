@@ -38,7 +38,8 @@ fn cone_support_binds_display_list_face() {
     set_shell_faces(&mut model, vec![face.clone()]);
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#cone-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#cone-mesh")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(local_radius, 0.0, v),
@@ -107,7 +108,8 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     );
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#cone-cache-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#cone-cache-mesh")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 vertices,
                 vec![[0, 1, 2]],
@@ -152,7 +154,7 @@ fn conical_trim_uses_scaled_angular_coordinate() {
     };
     let mesh = |point: Point3, id: &str| {
         Tessellation::new(
-            id,
+            cadmpeg_ir::tessellation::TessellationId::mint(id).expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![point],
                 triangles: Vec::new(),

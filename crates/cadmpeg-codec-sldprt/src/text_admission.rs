@@ -60,5 +60,5 @@ pub(crate) fn reserve_scoped_string<'ctx>(
     operation: &'static str,
 ) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
     ctx.charge_work(u64_from_index(bytes), operation)?;
-    ctx.reserve_scoped_string(bytes, operation)
+    ctx.reserve_scoped_text(bytes, operation)
 }

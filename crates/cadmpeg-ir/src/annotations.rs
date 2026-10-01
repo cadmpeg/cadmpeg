@@ -627,6 +627,21 @@ impl AnnotationBuilder {
     }
 }
 
+/// Copy an identity into temporary storage counted by `scratch`.
+fn scoped_identity_copy(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    scratch.grow(cadmpeg_core::decode::u64_from_index(text.len()))?;
+    let mut copy = String::new();
+    copy.try_reserve_exact(text.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    copy.push_str(text);
+    Ok(copy)
+}
+
 fn admit_identity_work(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entries: usize,
@@ -679,7 +694,9 @@ impl Annotations {
     }
 
     /// Remap both tables while charging temporary indices and retained keys.
-    /// A collision leaves both tables unchanged.
+    /// The callback returns each target identity with its retained bytes
+    /// already charged; a target stored in both tables is copied and charged
+    /// once more. A collision leaves both tables unchanged.
     pub fn map_ids_charged(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -697,7 +714,7 @@ impl Annotations {
         let mut targets = std::collections::BTreeSet::new();
         let mut remapping = Vec::new();
         ctx.reserve_collection_vec(&mut remapping, ids.len(), operation)?;
-        let mut scoped_reservations = Vec::new();
+        let mut scratch = ctx.reserve_scoped(0, operation)?;
         for id in ids {
             ctx.charge_work(1, operation)?;
             let target = map(id)?;
@@ -705,19 +722,11 @@ impl Annotations {
             if targets.contains(&target) {
                 return Ok(Err(AnnotationIdentityCollision { id: target }));
             }
-            let (mut target_check, target_reservation) =
-                ctx.reserve_scoped_string(target.len(), operation)?;
-            target_check.push_str(&target);
+            let target_check = scoped_identity_copy(ctx, &mut scratch, &target, operation)?;
             ctx.charge_collection_items(1, operation)?;
             targets.insert(target_check);
-            ctx.reserve_collection_vec(&mut scoped_reservations, 1, operation)?;
-            scoped_reservations.push(target_reservation);
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), operation)?;
-            let (mut source, source_reservation) =
-                ctx.reserve_scoped_string(id.len(), operation)?;
-            source.push_str(id);
-            ctx.reserve_collection_vec(&mut scoped_reservations, 1, operation)?;
-            scoped_reservations.push(source_reservation);
+            let source = scoped_identity_copy(ctx, &mut scratch, id, operation)?;
             remapping.push((source, target));
         }
         let mut remapped = Self::default();
@@ -894,6 +903,7 @@ mod tests {
             let mut builder = super::AnnotationBuilder::new();
             let stream = super::StreamHandle::new(crate::stream_name!("test"));
             builder.note("test:point#0", &stream, 0);
+            builder.exactness("test:point#0", super::Exactness::Inferred);
             let mut annotations = builder.build();
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -903,17 +913,20 @@ mod tests {
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let outcome = annotations.map_ids_charged(
                 &ctx,
-                |_| Ok(String::from("test:point#mapped")),
+                |_| ctx.copy_retained_text(MAPPED, "test_annotation_target"),
                 "test_annotation_remap",
             );
             (outcome, annotations)
         };
+        const MAPPED: &str = "test:point#mapped";
         assert!(
             matches!(run(0, u64::MAX).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "test_annotation_remap")
         );
+        // The callback's own copy fits; the second table's key copy does not.
+        let mapped_bytes = u64::try_from(MAPPED.len()).expect("short identity");
         assert!(
-            matches!(run(u64::MAX, 0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            matches!(run(u64::MAX, mapped_bytes).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "test_annotation_remap")
         );
         let (outcome, annotations) = run(u64::MAX, u64::MAX);

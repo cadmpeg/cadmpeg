@@ -66,7 +66,7 @@ pub fn canonical_json_sha256_with_charge<T: Serialize + ?Sized, E: From<DigestEr
         return Err(E::from(DigestError::Write(error)));
     }
     drop(writer);
-    Ok(encode_hex(&hasher.finalize()))
+    Ok(LowerHex(&hasher.finalize()).to_string())
 }
 
 /// A digest could not be computed.

@@ -37,7 +37,7 @@ pub(crate) fn reserve<T>(
         .map_err(|_| allocation_refusal(additional, operation))
 }
 
-fn allocation_refusal(additional: usize, operation: &'static str) -> ResourceLimit {
+pub(crate) fn allocation_refusal(additional: usize, operation: &'static str) -> ResourceLimit {
     let requested = cadmpeg_core::decode::u64_from_index(additional);
     ResourceLimit::allocation_failed(
         ResourceDimension::Codec(operation),

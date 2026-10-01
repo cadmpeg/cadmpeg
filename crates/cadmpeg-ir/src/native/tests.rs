@@ -352,7 +352,9 @@ fn second_native_record_refuses_before_output_vec_growth() {
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    // The first record charges its slot and one item for each of its two
+    // canonical object members.
+    policy.limits.max_collection_items = 3;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::native::arena_from(
         &limited,

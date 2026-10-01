@@ -7067,7 +7067,7 @@ impl NativeSelections {
     ///
     /// The outer result reports a resource refusal. The inner result reports
     /// the same semantic admission error as `TryFrom<Vec<String>>`.
-    pub fn try_from_charged(
+    pub fn try_from_charged_with_work(
         value: Vec<String>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
@@ -7361,7 +7361,7 @@ impl BodySelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
-        let bodies = NativeSelections::try_from_charged(bodies, ctx)?;
+        let bodies = NativeSelections::try_from_charged_with_work(bodies, ctx)?;
         Ok(bodies.and_then(|bodies| {
             Ok(Self::Local {
                 bodies,
