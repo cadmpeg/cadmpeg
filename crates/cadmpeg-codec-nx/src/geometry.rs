@@ -10,7 +10,6 @@
 //! and radii are in millimetres; unit vectors and curve parameters are unchanged.
 //! Fixed-record framing resolves the optional envelope escape, every extended
 //! XMT in the common header, and the record boundary before geometry validation.
-//! Use [`crate::topology`] to resolve returned record offsets into topology.
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
@@ -37,38 +36,11 @@ use crate::vec3_at::vec3_be_at;
 
 const EPS_GEOMETRY_CONE_E6: f64 = 1.0e-6;
 
-/// A decoded analytic surface and its source offset.
-#[derive(Debug, Clone)]
-pub(crate) struct DecodedSurface {
-    /// Byte offset of the record's type tag within the stream.
-    pub(crate) pos: usize,
-    /// The decoded surface geometry.
-    pub(crate) geometry: SurfaceGeometry,
-}
-
-/// A decoded analytic curve and its source offset.
-#[derive(Debug, Clone)]
-pub(crate) struct DecodedCurve {
-    /// Byte offset of the record's type tag within the stream.
-    pub(crate) pos: usize,
-    /// The decoded curve geometry.
-    pub(crate) geometry: CurveGeometry,
-}
-
-/// A decoded point and its source offset.
-#[derive(Debug, Clone)]
-pub(crate) struct DecodedPoint {
-    /// Byte offset of the record's `00 1d` tag within the stream.
-    pub(crate) pos: usize,
-    /// Position in millimetres.
-    pub(crate) position: FinitePoint3,
-}
-
 /// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
 enum AnalyticRecord {
-    Point(DecodedPoint),
-    Surface(DecodedSurface),
-    Curve(DecodedCurve),
+    Point(FinitePoint3),
+    Surface(SurfaceGeometry),
+    Curve(CurveGeometry),
 }
 
 /// Decode validated point records in source order.
@@ -77,7 +49,7 @@ enum AnalyticRecord {
 pub(crate) fn points(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-) -> Result<Vec<DecodedPoint>, CodecError> {
+) -> Result<Vec<FinitePoint3>, CodecError> {
     analytic_records(ctx, stream, |record| match record {
         AnalyticRecord::Point(point) => Some(point),
         AnalyticRecord::Surface(_) | AnalyticRecord::Curve(_) => None,
@@ -88,7 +60,7 @@ pub(crate) fn points(
 pub(crate) fn surfaces(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-) -> Result<Vec<DecodedSurface>, CodecError> {
+) -> Result<Vec<SurfaceGeometry>, CodecError> {
     analytic_records(ctx, stream, |record| match record {
         AnalyticRecord::Surface(surface) => Some(surface),
         AnalyticRecord::Point(_) | AnalyticRecord::Curve(_) => None,
@@ -99,7 +71,7 @@ pub(crate) fn surfaces(
 pub(crate) fn curves(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-) -> Result<Vec<DecodedCurve>, CodecError> {
+) -> Result<Vec<CurveGeometry>, CodecError> {
     analytic_records(ctx, stream, |record| match record {
         AnalyticRecord::Curve(curve) => Some(curve),
         AnalyticRecord::Point(_) | AnalyticRecord::Surface(_) => None,
@@ -186,7 +158,7 @@ fn analytic_candidate(
             skip_sequence_at(stream, &mut at, 4)?;
             let xyz = vec3_be_at(stream, at)?;
             let position = mm_position(xyz)?;
-            AnalyticRecord::Point(DecodedPoint { pos, position })
+            AnalyticRecord::Point(position)
         }
         NodeKind::Plane
         | NodeKind::Cylinder
@@ -194,11 +166,11 @@ fn analytic_candidate(
         | NodeKind::Sphere
         | NodeKind::Torus => {
             decode_surface_record(record_bytes, kind, frame.shift + frame.payload_shift)
-                .map(|geometry| AnalyticRecord::Surface(DecodedSurface { pos, geometry }))?
+                .map(AnalyticRecord::Surface)?
         }
         NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse => {
             decode_curve_record(record_bytes, kind, frame.shift + frame.payload_shift)
-                .map(|geometry| AnalyticRecord::Curve(DecodedCurve { pos, geometry }))?
+                .map(AnalyticRecord::Curve)?
         }
         _ => return None,
     };

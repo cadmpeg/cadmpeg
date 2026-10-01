@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-// Fixture builders used Vec::with_capacity and iter::repeat_n while this suite
-// lived at crate root; deltas.rs denies those methods for production.
+// Fixture builders use allocation methods restricted in production.
 #![allow(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
@@ -28,7 +27,9 @@ use crate::test_support::test_streams::partial_ext11_charted_intersection_curve_
 use crate::test_support::test_streams::topology_partition_stream;
 use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 
-fn analytic_points(stream: &[u8]) -> Vec<crate::geometry::DecodedPoint> {
+const EPS_SAME_DECODED_POINT: f64 = 1.0e-12;
+
+fn analytic_points(stream: &[u8]) -> Vec<cadmpeg_ir::features::FinitePoint3> {
     crate::test_support::with_decode_context(|ctx| crate::geometry::points(ctx, stream).unwrap())
 }
 
@@ -1383,9 +1384,9 @@ fn merged_deltas_full_record_replaces_partition_node() {
     .unwrap();
     let points = analytic_points(&merged);
     assert_eq!(points.len(), 1);
-    assert_eq!(points[0].position.x, 12.5);
-    assert_eq!(points[0].position.y, -2.0);
-    assert_eq!(points[0].position.z, 4.0);
+    assert_eq!(points[0].x, 12.5);
+    assert_eq!(points[0].y, -2.0);
+    assert_eq!(points[0].z, 4.0);
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
@@ -1418,7 +1419,7 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
             .get(NodeKind::Point, 11)
             .is_some()
     );
-    assert_eq!(analytic_points(&merged)[0].position.x, 10.0);
+    assert_eq!(analytic_points(&merged)[0].x, 10.0);
 }
 
 #[test]
@@ -1512,7 +1513,7 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
         crate::deltas::merge_full_records(ctx, &partition, &delete_then_replace)
     })
     .unwrap();
-    assert_eq!(analytic_points(&merged)[0].position.x, 12.5);
+    assert_eq!(analytic_points(&merged)[0].x, 12.5);
 
     let mut replace_then_delete = full;
     replace_then_delete.extend_from_slice(&tombstone);
@@ -1520,7 +1521,7 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
         crate::deltas::merge_full_records(ctx, &partition, &replace_then_delete)
     })
     .unwrap();
-    assert_eq!(analytic_points(&merged)[0].position.x, 10.0);
+    assert_eq!(analytic_points(&merged)[0].x, 10.0);
 }
 
 #[test]
@@ -1581,16 +1582,16 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     let points = analytic_points(&merged);
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 2.0).abs() <= EPS_SAME_DECODED_POINT));
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 4.0).abs() <= EPS_SAME_DECODED_POINT));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 1.0).abs() <= EPS_SAME_DECODED_POINT));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 3.0).abs() <= EPS_SAME_DECODED_POINT));
 }
 
 #[test]
@@ -1616,16 +1617,16 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     let points = analytic_points(&merged);
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 2.0).abs() <= EPS_SAME_DECODED_POINT));
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 4.0).abs() <= EPS_SAME_DECODED_POINT));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 1.0).abs() <= EPS_SAME_DECODED_POINT));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12));
+        .any(|point| (point.x - 3.0).abs() <= EPS_SAME_DECODED_POINT));
 }
 
 #[test]
