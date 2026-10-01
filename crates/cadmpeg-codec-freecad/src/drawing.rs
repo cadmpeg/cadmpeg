@@ -293,22 +293,20 @@ pub(crate) fn transfer_neutral(
                 )
             })?,
             visible: None,
-            relationships: crate::resource::named_entries_charged(
+            relationships: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 &record.object,
                 relationships,
-                "fcstd drawing keyed relationships",
             )?,
             template,
             position,
             scale,
             direction,
             rotation_degrees,
-            parameters: crate::resource::named_entries_charged(
+            parameters: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 &record.object,
                 parameters,
-                "fcstd drawing keyed parameters",
             )?,
             assets,
             native_ref: ctx.copy_retained_text(&record.id, "fcstd drawing native reference")?,

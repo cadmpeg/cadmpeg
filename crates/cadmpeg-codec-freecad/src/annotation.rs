@@ -222,11 +222,10 @@ pub(crate) fn transfer_neutral(
                 )
             })?,
             text: ctx.copy_retained_strings(&record.text, "fcstd annotation neutral text")?,
-            references: crate::resource::named_entries_charged(
+            references: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 &record.object,
                 references,
-                "fcstd annotation keyed references",
             )?,
             value: None,
             format: match schema.text {
@@ -236,11 +235,10 @@ pub(crate) fn transfer_neutral(
                 _ => None,
             },
             position: annotation_position(ctx, &owned, schema.position)?,
-            parameters: crate::resource::named_entries_charged(
+            parameters: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 &record.object,
                 parameters,
-                "fcstd annotation keyed parameters",
             )?,
             assets,
             native_ref: ctx.copy_retained_text(&record.id, "fcstd annotation native reference")?,

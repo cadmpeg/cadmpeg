@@ -355,13 +355,9 @@ fn decode_container<'a>(
         format_args!("{}", document_kind.label()),
     )?;
     metadata.apply_attributes(ctx, &mut attributes)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(attributes.len()),
-        "name Inventor source attributes",
-    )?;
     ir.source = Some(SourceMeta::classified(
         dialects,
-        cadmpeg_core::text::named_entries("the inventor document", attributes)?,
+        cadmpeg_core::text::named_entries_for_decode(ctx, "the inventor document", attributes)?,
     ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         let entity_count = ir.model.entity_count();
@@ -1453,10 +1449,6 @@ fn project_root_product(
             "retain Inventor root BOM value",
         )?;
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(metadata.bom_properties.len()),
-        "name Inventor root BOM entries",
-    )?;
     Ok(ProductDefinition {
         id: ProductDefinitionId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
@@ -1471,7 +1463,8 @@ fn project_root_product(
         label,
         description,
         part_number,
-        bom_properties: cadmpeg_core::text::named_entries(
+        bom_properties: cadmpeg_core::text::named_entries_for_decode(
+                ctx,
             "inventor:document:product#root",
             metadata.bom_properties.clone(),
         )?,
