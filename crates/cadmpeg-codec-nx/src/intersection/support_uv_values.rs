@@ -86,7 +86,10 @@ impl SupportUvValues {
     }
 
     pub(crate) fn new(packing: SupportUvPacking, values: Vec<f64>) -> Result<Self, &'static str> {
-        let finite = DecodeContext::admitted_vec(values.len(), "NX finite support-UV values")
+        let finite = {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(values.len()).map(|()| storage)
+        }
             .map_err(|_| "values: storage allocation failed")?;
         Self::with_storage(packing, values, finite)
     }

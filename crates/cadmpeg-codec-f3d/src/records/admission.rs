@@ -21,7 +21,11 @@ impl RecordAdmission<'_, '_> {
     ) -> Result<(), CodecError> {
         match self {
             Self::Charged(ctx) => ctx.reserve_vec(values, count, operation),
-            Self::Admitted => DecodeContext::reserve_admitted_vec(values, count, operation),
+            Self::Admitted => values.try_reserve(count).map_err(|_| {
+                CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                    ResourceDimension::CollectionItems, u64::MAX, u64_from_index(count), operation,
+                ))
+            }),
         }
     }
 
@@ -32,7 +36,11 @@ impl RecordAdmission<'_, '_> {
     ) -> Result<Vec<T>, CodecError> {
         match self {
             Self::Charged(ctx) => ctx.collection_vec(count, operation),
-            Self::Admitted => DecodeContext::admitted_vec(count, operation),
+            Self::Admitted => {
+                let mut values = Vec::new();
+                self.reserve_vec(&mut values, count, operation)?;
+                Ok(values)
+            },
         }
     }
 
@@ -62,7 +70,7 @@ impl RecordAdmission<'_, '_> {
             Self::Admitted => {
                 let mut out = Vec::new();
                 for value in values {
-                    DecodeContext::reserve_admitted_vec(&mut out, 1, operation)?;
+                    self.reserve_vec(&mut out, 1, operation)?;
                     out.push(value);
                 }
                 Ok(out)
@@ -81,7 +89,7 @@ impl RecordAdmission<'_, '_> {
                 let mut out = Vec::new();
                 for value in values {
                     let value = value?;
-                    DecodeContext::reserve_admitted_vec(&mut out, 1, operation).map_err(E::from)?;
+                    self.reserve_vec(&mut out, 1, operation).map_err(E::from)?;
                     out.push(value);
                 }
                 Ok(out)
@@ -98,7 +106,7 @@ impl RecordAdmission<'_, '_> {
         match self {
             Self::Charged(ctx) => ctx.alloc_filled(count, value, operation),
             Self::Admitted => {
-                let mut values = DecodeContext::admitted_vec(count, operation)?;
+                let mut values = self.collection_vec(count, operation)?;
                 for _ in 0..count {
                     values.push(value.clone());
                 }
