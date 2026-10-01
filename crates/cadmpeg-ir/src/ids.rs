@@ -948,6 +948,13 @@ macro_rules! id_type {
         #[serde(transparent)]
         pub struct $name($crate::ids::Identity);
 
+        impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
+            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
+            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+                $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
+            }
+        }
+
         impl serde::Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
