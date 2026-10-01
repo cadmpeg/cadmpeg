@@ -3424,7 +3424,11 @@ fn parsed_named_surface_value(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                array.fill_tokens(slots)?;
+                match array.fill_tokens(ctx, slots) {
+                    Ok(Some(())) => {},
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
                 return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
             }
             let mut values = Vec::new();
@@ -3463,7 +3467,11 @@ fn parsed_named_surface_value(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                array.fill_tokens(slots)?;
+                match array.fill_tokens(ctx, slots) {
+                    Ok(Some(())) => {},
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
                 return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
             }
         }
@@ -3499,7 +3507,11 @@ fn parsed_named_surface_value(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            array.fill_tokens(slots)?;
+            match array.fill_tokens(ctx, slots) {
+                    Ok(Some(())) => {},
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
         } else if name == "local_sys" {
             let values = match sequential_named_local_system_slots(
                 ctx, remaining, slot_count, cache, refusal,

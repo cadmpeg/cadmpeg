@@ -1055,13 +1055,12 @@ fn retains_named_spline_point_and_tangent_arrays() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(2, 2)
                 .expect("valid scalar array");
-            array
-                .fill_tokens(vec![
+            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![
                     (Some(1.0), vec![0xe4]),
                     (Some(0.0), vec![0x0f]),
                     (Some(1.0), vec![0xe4]),
                     (Some(0.0), vec![0x0f]),
-                ])
+                ])).expect("admitted scalar fill")
                 .expect("matching scalar extent");
             array
         }))
@@ -1071,8 +1070,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(1, 2)
                 .expect("valid scalar array");
-            array
-                .fill_tokens(vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])
+            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])).expect("admitted scalar fill")
                 .expect("matching scalar extent");
             array
         }))
@@ -1082,8 +1080,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
         Some(&SurfaceNamedValue::CountedScalarArray({
             let mut array =
                 crate::surface::arrays::CountedScalars::empty(2).expect("valid scalar array");
-            array
-                .fill_tokens(vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])
+            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])).expect("admitted scalar fill")
                 .expect("matching scalar extent");
             array
         }))
@@ -1362,12 +1359,11 @@ fn tabulated_cylinder_parameters_end_the_tangent_field() {
         Some(&SurfaceNamedValue::CountedScalarArray({
             let mut array =
                 crate::surface::arrays::CountedScalars::empty(3).expect("valid scalar array");
-            array
-                .fill_tokens(vec![
+            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![
                     (Some(0.0), vec![0x0f]),
                     (Some(2.0), vec![0x2d, 0, 0, 0, 0, 0, 0, 0]),
                     (Some(3.0), vec![0x2d, 8, 0, 0, 0, 0, 0, 0]),
-                ])
+                ])).expect("admitted scalar fill")
                 .expect("matching scalar extent");
             array
         }))

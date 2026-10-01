@@ -1477,8 +1477,7 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(1, 3)
                 .expect("valid scalar array");
-            array
-                .fill_tokens(vec![
+            crate::decode::with_test_decode_ctx(|ctx| array.fill_tokens(ctx, vec![
                     (
                         Some(f64::from_be_bytes([
                             0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
@@ -1487,7 +1486,7 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
                     ),
                     (Some(1.0), vec![0xe4]),
                     (Some(0.0), vec![0x0f]),
-                ])
+                ])).expect("admitted scalar fill")
                 .expect("matching scalar extent");
             array
         }))
