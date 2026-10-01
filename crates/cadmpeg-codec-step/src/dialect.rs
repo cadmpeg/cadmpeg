@@ -48,6 +48,7 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::Exchange;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
@@ -257,45 +258,53 @@ impl StepDialect {
     /// format layer. The first identifier is the identity, matching the dialect
     /// note the codec reports, and the whole list is recorded under
     /// [`DECLARED_FILE_SCHEMA_IDENTIFIERS`].
-    pub(crate) fn classify(exchange: &Exchange) -> DialectMatch {
-        let identifiers = exchange.schema_identifiers();
-        let dialect = identifiers.first().map_or(Self::Unknown, |identifier| {
-            Self::from_schema_identifier(
-                identifier,
-                exchange.primary_schema_object_identifier().as_deref(),
-            )
+    pub(crate) fn classify(
+        exchange: &Exchange,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<DialectMatch, CodecError> {
+        let first = exchange.schema_identifiers().next();
+        let object_identifier = exchange.primary_schema_object_identifier(ctx)?;
+        let dialect = first.map_or(Self::Unknown, |identifier| {
+            Self::from_schema_identifier(identifier, object_identifier.as_deref())
         });
 
         let mut declared = BTreeMap::new();
-        if let Some(identifier) = identifiers.first() {
+        if let Some(identifier) = first {
+            ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIER),
-                identifier.clone(),
+                ctx.copy_retained_text(identifier, "step_dialect_declared_text")?,
             );
             if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
+                ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
                 declared.insert(
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
-                    arcs.into(),
+                    ctx.copy_retained_text(arcs, "step_dialect_declared_text")?,
                 );
             }
         }
-        if identifiers.len() > 1 {
+        if exchange.schema_identifiers().nth(1).is_some() {
+            ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIERS),
-                identifiers.join(","),
+                exchange.joined_schema_identifiers(ctx)?,
             );
         }
+        ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_IMPLEMENTATION_LEVEL),
-            exchange.implementation_level().into(),
+            ctx.copy_retained_text(
+                exchange.implementation_level(),
+                "step_dialect_declared_text",
+            )?,
         );
 
-        if dialect == Self::Unknown {
+        Ok(if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), Grammar::of(&NEAREST_STRATEGY.id()))
         } else {
             DialectMatch::admitted(dialect.id())
         }
-        .with_declared(declared)
+        .with_declared(declared))
     }
 }
 
@@ -307,22 +316,31 @@ impl StepDialect {
 /// how STEP satisfies it: the codec decodes an unrecognized schema by recording
 /// the string and reading the exchange with the AP242 entity vocabulary
 /// anyway, which is a recovery, not a verified read.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn dialect_loss(
+    matched: &DialectMatch,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<LossNote>, CodecError> {
     let Admission::Unverified { using } = matched.admission() else {
-        return None;
+        return Ok(None);
     };
-    let declaration = matched
-        .declared()
-        .get(DECLARED_FILE_SCHEMA_IDENTIFIER)
-        .map_or_else(
-            || "The exchange declares no FILE_SCHEMA identifier".to_owned(),
-            |identifier| format!("FILE_SCHEMA identifier {identifier}"),
-        );
-    Some(StepLossCode::SourceDialectUnverified.note(format!(
-        "{declaration}; it satisfies no declared STEP dialect, so this decode read the exchange \
+    let operation = "step_dialect_unverified_loss_text";
+    let message = match matched.declared().get(DECLARED_FILE_SCHEMA_IDENTIFIER) {
+        Some(identifier) => ctx.format_retained(
+            format_args!(
+                "FILE_SCHEMA identifier {identifier}; it satisfies no declared STEP dialect, so this decode read the exchange \
 with the entity vocabulary verified for {FORMAT}:{}",
-        using.as_str()
-    )))
+                using.as_str()
+            ), operation,
+        )?,
+        None => ctx.format_retained(
+            format_args!(
+                "The exchange declares no FILE_SCHEMA identifier; it satisfies no declared STEP dialect, so this decode read the exchange \
+with the entity vocabulary verified for {FORMAT}:{}",
+                using.as_str()
+            ), operation,
+        )?,
+    };
+    Ok(Some(StepLossCode::SourceDialectUnverified.note(message)))
 }
 
 /// Refuses the three alternate encodings this codec identifies and does not

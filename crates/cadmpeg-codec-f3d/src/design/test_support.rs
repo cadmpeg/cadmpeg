@@ -1,8 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared helpers for design-owner unit tests.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::parameters::design_parameter_discriminator;
 use crate::test_support::lp_utf16;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+/// Run a test with a decode context that has the default resource policy.
+pub(crate) fn with_test_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    f(&ctx)
+}
+
+/// Build a record index under the default test decode policy.
+pub(in crate::design) fn indexed_record_offsets_for_test(
+    bytes: &[u8],
+) -> crate::design::decode::sketch::IndexedRecordOffsets {
+    with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::IndexedRecordOffsets::build(ctx, bytes).unwrap()
+    })
+}
 
 pub(crate) fn parameter_record(
     owner: Option<u32>,
@@ -111,7 +130,7 @@ pub(super) fn primary_record(
 ) -> crate::metastream::RecordIndexEntry {
     crate::metastream::RecordIndexEntry {
         entity_id,
-        bulk_offset: bulk_offset as u64,
+        bulk_offset: u64_from_index(bulk_offset),
     }
 }
 
@@ -172,4 +191,40 @@ pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8>
     bytes[641..644].copy_from_slice(b"259");
     bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
     bytes
+}
+
+/// Build exact timeline frames for fixture scopes in their supplied order.
+pub(crate) fn synthetic_feature_timelines(
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> Vec<crate::records::entity_header::DesignFeatureTimeline> {
+    let mut streams = Vec::<(&str, Vec<crate::records::identity::Located<u64>>)>::new();
+    for scope in scopes {
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let item = crate::records::identity::Located {
+            value: u64::from(scope.record_index),
+            offset: 0,
+        };
+        if let Some((_, items)) = streams
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == stream)
+        {
+            items.push(item);
+        } else {
+            streams.push((stream, vec![item]));
+        }
+    }
+    streams
+        .into_iter()
+        .map(|(stream, items)| {
+            crate::records::entity_header::DesignFeatureTimeline::try_new(
+                crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+                crate::records::entity_header::DesignTimelineFrame::test_items(0, items),
+                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                std::num::NonZeroU64::new(1).unwrap(),
+                0,
+                std::num::NonZeroU64::new(1).unwrap(),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>()
 }

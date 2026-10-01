@@ -11,7 +11,3 @@ pub(crate) const SAT_ASM_BINARY: DialectId = cadmpeg_core::dialect_id!("sat:asm-
 pub(crate) const SAT_ACIS_BINARY: DialectId = cadmpeg_core::dialect_id!("sat:acis-binary");
 /// Registry-owned dialect id `sat:text`.
 pub(crate) const SAT_TEXT: DialectId = cadmpeg_core::dialect_id!("sat:text");
-/// Registry-owned dialect id `sat:unknown`.
-// Container detection cannot produce this registry row.
-#[allow(dead_code)]
-pub(crate) const SAT_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("sat:unknown");

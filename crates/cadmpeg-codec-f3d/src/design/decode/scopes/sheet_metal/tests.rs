@@ -2,6 +2,13 @@
 
 use crate::test_support::write_marked_reference;
 
+fn source_kinds<'a>(kinds: &'a [(u32, &'a str)]) -> impl Fn(u32, &str) -> bool + 'a {
+    move |record_index, expected| {
+        let mut matches = kinds.iter().filter(|(owner, _)| *owner == record_index);
+        matches.next().is_some_and(|(_, kind)| *kind == expected) && matches.next().is_none()
+    }
+}
+
 /// Field values written into a synthetic gap-and-length `Hem` frame.
 struct HemFixture {
     header_shift: usize,
@@ -41,8 +48,8 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
             &frame.bytes,
             0,
             frame.paired_at,
-            references.iter().copied(),
-            &[(301, "HemGap"), (304, "HemLength")],
+            &references.iter().copied(),
+            &source_kinds(&[(301, "HemGap"), (304, "HemLength")]),
         )
         .expect("fixed Hem operation");
         assert_eq!(operation.edge_wrapper_record_index, 308);
@@ -86,8 +93,8 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
             &frame.bytes,
             0,
             frame.paired_at,
-            references.iter().copied(),
-            &[(301, "HemGap"), (304, "HemLength")],
+            &references.iter().copied(),
+            &source_kinds(&[(301, "HemGap"), (304, "HemLength")]),
         )
         .is_none()
     );
@@ -96,8 +103,8 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
             &frame.bytes,
             0,
             frame.paired_at,
-            references.iter().copied(),
-            &[(301, "HemGap"), (301, "HemGap"), (304, "HemLength")],
+            &references.iter().copied(),
+            &source_kinds(&[(301, "HemGap"), (301, "HemGap"), (304, "HemLength")]),
         )
         .is_none()
     );
@@ -111,8 +118,8 @@ fn hem_scope_reads_the_rolled_owner_layout() {
         &frame.bytes,
         0,
         frame.paired_at,
-        references.iter().copied(),
-        &[(775, "HemRadius"), (788, "HemAngle")],
+        &references.iter().copied(),
+        &source_kinds(&[(775, "HemRadius"), (788, "HemAngle")]),
     )
     .expect("rolled Hem operation");
     assert_eq!(
@@ -134,8 +141,8 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
         &frame.bytes,
         0,
         frame.paired_at,
-        references.iter().copied(),
-        &[(703, "HemGap"), (706, "HemLength"), (775, "HemRadius")],
+        &references.iter().copied(),
+        &source_kinds(&[(703, "HemGap"), (706, "HemLength"), (775, "HemRadius")]),
     )
     .expect("teardrop Hem operation");
     assert_eq!(
@@ -169,8 +176,8 @@ fn hem_scope_refuses_an_owner_layout_whose_parameter_kinds_name_another_form() {
             &frame.bytes,
             0,
             frame.paired_at,
-            references.iter().copied(),
-            &[(301, "HemRadius"), (304, "HemAngle")],
+            &references.iter().copied(),
+            &source_kinds(&[(301, "HemRadius"), (304, "HemAngle")]),
         )
         .is_none()
     );

@@ -145,7 +145,7 @@ mod tests {
         bytes.resize(cap + 1024, 0x5a);
         let options = InspectOptions {
             limits: ResourceLimits {
-                max_input_bytes: cap as u64,
+                max_input_bytes: cadmpeg_core::decode::u64_from_index(cap),
                 ..ResourceLimits::desktop()
             },
         };
@@ -210,7 +210,11 @@ mod tests {
         for (offset, word) in encoded.iter().enumerate() {
             put_u16(entry, offset * 2, *word);
         }
-        put_u16(entry, 64, (encoded.len() * 2) as u16);
+        put_u16(
+            entry,
+            64,
+            u16::try_from(encoded.len() * 2).expect("test name length fits u16"),
+        );
         entry[66] = kind;
         entry[67] = 1;
         put_u32(entry, 68, FREE);

@@ -123,7 +123,49 @@ pub enum EntityKind {
 impl EntityKind {
     /// Position of this kind in the canonical arena registry.
     pub(crate) const fn index(self) -> usize {
-        self as usize
+        match self {
+            Self::Body => 0,
+            Self::Region => 1,
+            Self::Shell => 2,
+            Self::Face => 3,
+            Self::Loop => 4,
+            Self::Coedge => 5,
+            Self::Edge => 6,
+            Self::Vertex => 7,
+            Self::Point => 8,
+            Self::Surface => 9,
+            Self::Curve => 10,
+            Self::SubdSurface => 11,
+            Self::Pcurve => 12,
+            Self::ProceduralSurface => 13,
+            Self::ProceduralCurve => 14,
+            Self::Asset => 15,
+            Self::Feature => 16,
+            Self::FeatureInputTopology => 17,
+            Self::FeatureResultTopology => 18,
+            Self::DesignConfiguration => 19,
+            Self::DesignParameter => 20,
+            Self::Sketch => 21,
+            Self::SketchEntity => 22,
+            Self::SketchConstraint => 23,
+            Self::SpatialSketch => 24,
+            Self::SpatialSketchEntity => 25,
+            Self::SpatialSketchConstraint => 26,
+            Self::Spreadsheet => 27,
+            Self::ProductDefinition => 28,
+            Self::Occurrence => 29,
+            Self::AssemblyJoint => 30,
+            Self::Drawing => 31,
+            Self::SemanticAnnotation => 32,
+            Self::PresentationDocument => 33,
+            Self::ViewPresentation => 34,
+            Self::Tessellation => 35,
+            Self::Appearance => 36,
+            Self::AppearanceBinding => 37,
+            Self::SourceAttribute => 38,
+            Self::PmiAnnotation => 39,
+            Self::PresentationLayer => 40,
+        }
     }
 
     /// Every registered entity kind in canonical arena order.
@@ -197,6 +239,14 @@ pub trait EntitySchema: Serialize {
         &self,
         visitor: &mut dyn FnMut(Reference),
     ) -> Result<(), ReferenceWalkError>;
+
+    /// Visits typed reference IDs without copying their text.
+    fn visit_reference_ids(&self, visitor: &mut dyn FnMut(&str)) -> Result<(), ReferenceWalkError>
+    where
+        Self: Sized,
+    {
+        visit_typed_reference_ids(self, visitor)
+    }
 }
 
 /// Serializes a typed reference ID while preserving its ordinary string wire shape.
@@ -235,7 +285,9 @@ impl serde::ser::Error for ReferenceWalkError {
 
 struct ReferenceSerializer<'a> {
     identity: &'a str,
-    visitor: &'a mut dyn FnMut(Reference),
+    visitor: &'a mut dyn FnMut(&str),
+    in_reference: bool,
+    saw_reference_string: bool,
 }
 
 macro_rules! ignore_scalar {
@@ -270,9 +322,18 @@ impl Serializer for &mut ReferenceSerializer<'_> {
         serialize_f32(f32),
         serialize_f64(f64),
         serialize_char(char),
-        serialize_str(&str),
         serialize_bytes(&[u8]),
     );
+
+    fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
+        if self.in_reference {
+            self.saw_reference_string = true;
+            if value != self.identity {
+                (self.visitor)(value);
+            }
+        }
+        Ok(())
+    }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
         Ok(())
@@ -305,14 +366,19 @@ impl Serializer for &mut ReferenceSerializer<'_> {
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
         if name == REFERENCE_ID_MARKER {
-            let value = serde_json::to_value(value).map_err(serde::ser::Error::custom)?;
-            let target = value.as_str().ok_or_else(|| {
-                serde::ser::Error::custom("typed reference ID did not serialize as a string")
-            })?;
-            if target != self.identity {
-                (self.visitor)(Reference {
-                    target: target.to_owned(),
-                });
+            let prior = self.in_reference;
+            let prior_saw = self.saw_reference_string;
+            self.in_reference = true;
+            self.saw_reference_string = false;
+            let result = value.serialize(&mut *self);
+            let saw_string = self.saw_reference_string;
+            self.in_reference = prior;
+            self.saw_reference_string = prior_saw;
+            result?;
+            if !saw_string {
+                return Err(serde::ser::Error::custom(
+                    "typed reference ID did not serialize as a string",
+                ));
             }
             Ok(())
         } else {
@@ -469,10 +535,23 @@ fn visit_typed_references<T: EntitySchema>(
     entity: &T,
     visitor: &mut dyn FnMut(Reference),
 ) -> Result<(), ReferenceWalkError> {
+    visit_typed_reference_ids(entity, &mut |target| {
+        visitor(Reference {
+            target: target.to_owned(),
+        });
+    })
+}
+
+fn visit_typed_reference_ids<T: EntitySchema>(
+    entity: &T,
+    visitor: &mut dyn FnMut(&str),
+) -> Result<(), ReferenceWalkError> {
     let scope = ReferenceWalkScope::enter();
     let mut serializer = ReferenceSerializer {
         identity: entity.identity(),
         visitor,
+        in_reference: false,
+        saw_reference_string: false,
     };
     let outcome = entity.serialize(&mut serializer);
     drop(scope);

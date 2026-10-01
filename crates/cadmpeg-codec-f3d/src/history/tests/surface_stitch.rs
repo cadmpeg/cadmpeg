@@ -17,8 +17,18 @@ use crate::history_records::{
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
-#[test]
-fn surface_stitch_binds_all_unique_entity_face_candidates() {
+struct StitchFixture {
+    scope_id: String,
+    feature_id: cadmpeg_ir::features::FeatureId,
+    scope: crate::records::feature::scope::DesignParameterScope,
+    groups: Vec<crate::records::topology::construction::DesignConstructionOperandGroup>,
+    operands: Vec<crate::records::topology::entity_selection::DesignEntitySelectionOperand>,
+    history: AsmHistory,
+    feature: cadmpeg_ir::features::Feature,
+    input_topologies: Vec<cadmpeg_ir::features::FeatureInputTopology>,
+}
+
+fn surface_stitch_fixture() -> StitchFixture {
     use crate::records::{
         feature::scope::DesignParameterScope,
         topology::{
@@ -130,7 +140,8 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 context_id_offset: 0,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 0,
-                primary_identity: face_slot as u64,
+                primary_identity: u64::try_from(face_slot)
+                    .expect("fixture reference is nonnegative"),
                 primary_identity_offset: 21,
                 secondary: None,
                 historical_edge_candidates: Vec::new(),
@@ -210,8 +221,8 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         native_ref: None,
     };
     feature.native_ref = Some(scope_id.clone());
-    let mut input_topologies = vec![FeatureInputTopology {
-        id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
+    let input_topologies = vec![FeatureInputTopology {
+        id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
         bodies: (Vec::new()).try_into().unwrap(),
         faces: (Vec::new()).try_into().unwrap(),
@@ -219,6 +230,61 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     }];
+    StitchFixture {
+        scope_id,
+        feature_id,
+        scope,
+        groups,
+        operands,
+        history,
+        feature,
+        input_topologies,
+    }
+}
+
+#[test]
+fn surface_stitch_group_collection_refuses_limit() {
+    let mut fixture = surface_stitch_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = bind_feature_face_selections(
+        &ctx,
+        std::slice::from_mut(&mut fixture.feature),
+        &mut fixture.input_topologies,
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&fixture.scope),
+            groups: &fixture.groups,
+            operands: &[],
+            entity_operands: &fixture.operands,
+            body_recipe_operands: &[],
+            histories: std::slice::from_ref(&fixture.history),
+        },
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
+}
+
+#[test]
+fn surface_stitch_binds_all_unique_entity_face_candidates() {
+    use crate::records::topology::{
+        body_recipe::AsmHistoricalEntityKind, entity_selection::DesignEntitySelectionFaceCandidate,
+    };
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let StitchFixture {
+        scope_id,
+        feature_id,
+        scope,
+        groups,
+        operands,
+        history,
+        mut feature,
+        mut input_topologies,
+    } = surface_stitch_fixture();
     let mut ambiguous_feature = feature.clone();
     let mut ambiguous_operands = operands.clone();
     ambiguous_operands[1]
@@ -235,15 +301,19 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut ambiguous_topologies = input_topologies.clone();
 
     bind_feature_face_selections(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        std::slice::from_ref(&scope),
-        &groups,
-        &[],
-        &operands,
-        &[],
-        std::slice::from_ref(&history),
-    );
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: &groups,
+            operands: &[],
+            entity_operands: &operands,
+            body_recipe_operands: &[],
+            histories: std::slice::from_ref(&history),
+        },
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces:
@@ -260,7 +330,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("42"), 1);
     assert_eq!(
         state,
-        &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
+        &crate::ids::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(
         faces.as_slice(),
@@ -273,15 +343,19 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut ambiguous_feature),
         &mut ambiguous_topologies,
-        std::slice::from_ref(&scope),
-        &groups,
-        &[],
-        &ambiguous_operands,
-        &[],
-        std::slice::from_ref(&history),
-    );
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: &groups,
+            operands: &[],
+            entity_operands: &ambiguous_operands,
+            body_recipe_operands: &[],
+            histories: std::slice::from_ref(&history),
+        },
+    )
+    .unwrap();
     assert!(matches!(
         ambiguous_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {

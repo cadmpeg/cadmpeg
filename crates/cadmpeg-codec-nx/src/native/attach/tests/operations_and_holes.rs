@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::block_placement;
-use crate::native::attach::boolean_feature_definition;
-use crate::native::attach::delete_body_feature_definition;
-use crate::native::attach::extract_body_feature_definition;
-use crate::native::attach::new_body_boolean_op;
-use crate::native::attach::non_boolean_feature_definition;
-use crate::native::attach::non_modeling_history_definition;
-use crate::native::attach::offset_store_trim_body_feature_definition;
+use crate::native::attach::feature_projection::block_placement;
+use crate::native::attach::feature_projection::new_body_boolean_op;
+use crate::native::attach::feature_projection::non_boolean_feature_definition;
+use crate::native::attach::feature_projection::non_modeling_history_definition;
+use crate::native::attach::feature_projection::sphere_body_projection;
+use crate::native::attach::feature_projection::NewBodyEvidence;
 use crate::native::attach::projects_neutral_feature;
-use crate::native::attach::sew_body_feature_definition;
-use crate::native::attach::sphere_body_projection;
 use crate::native::attach::text_semantic_annotation;
-use crate::native::attach::trim_body_feature_definition;
 use crate::native::attach::BodyId;
 use crate::native::attach::BooleanOp;
 use crate::native::attach::CadIr;
@@ -21,14 +16,98 @@ use crate::native::attach::FeatureDefinition;
 use crate::native::attach::FeatureId;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
-use crate::native::attach::NewBodyEvidence;
-use crate::native::attach::Point3;
-use crate::native::attach::UnresolvedFamily;
 use crate::native::history::BodyWriterHistory;
 use crate::native::segments::BooleanOffsetStoreResolution;
+use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
+
+fn boolean_feature_definition(
+    operation: &crate::native::features::FeatureBooleanOperation,
+    roots: &BTreeMap<u32, u32>,
+    resolution: &BooleanOffsetStoreResolution,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::attach::boolean_feature_definition(ctx, operation, roots, resolution, bodies)
+    })
+}
+
+fn delete_body_feature_definition(
+    field: DeleteBodyField<'_>,
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> FeatureDefinition {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::attach::delete_body_feature_definition(ctx, field, roots, bodies)
+            .expect("resource admission")
+    })
+}
+
+fn extract_body_feature_definition(
+    body: Option<u32>,
+    offset_bodies: &[(u32, String)],
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> FeatureDefinition {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::attach::extract_body_feature_definition(
+            ctx,
+            body,
+            offset_bodies,
+            roots,
+            bodies,
+        )
+        .expect("resource admission")
+    })
+}
+
+fn offset_store_trim_body_feature_definition(
+    offset_bodies: &[(u32, String)],
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
+) -> Option<FeatureDefinition> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::attach::offset_store_trim_body_feature_definition(
+            ctx,
+            offset_bodies,
+            operands,
+        )
+        .expect("resource admission")
+    })
+}
+
+fn sew_body_feature_definition(
+    primary: Option<u32>,
+    offset_bodies: &[(u32, String)],
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> Option<FeatureDefinition> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::attach::sew_body_feature_definition(
+            ctx,
+            primary,
+            offset_bodies,
+            operands,
+            roots,
+            bodies,
+        )
+        .expect("resource admission")
+    })
+}
+
+fn trim_body_feature_definition(
+    target: u32,
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::attach::trim_body_feature_definition(ctx, target, operands, roots, bodies)
+    })
+}
 
 #[test]
 fn nx_boolean_keeps_body_namespace_proofs_atomic() {
@@ -178,7 +257,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         operand: crate::om::compact::LocatedCompactIndex {
             atom: crate::om::compact::CompactIndexAtom::from_wire(
                 object_index,
-                &[object_index as u8],
+                &[u8::try_from(object_index).expect("fixture value fits u8")],
             )
             .unwrap(),
             offset: u64::from(ordinal),
@@ -292,7 +371,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
             operand: crate::om::compact::LocatedCompactIndex {
                 atom: crate::om::compact::CompactIndexAtom::from_wire(
                     object_index,
-                    &[object_index as u8],
+                    &[u8::try_from(object_index).expect("fixture value fits u8")],
                 )
                 .unwrap(),
                 offset: u64::from(ordinal),
@@ -860,25 +939,91 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
-    let annotation = text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
-        .expect("valid text annotation");
-    assert_eq!(annotation.object, "nx:test:text#1");
-    assert_eq!(
-        annotation.kind,
-        cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
-    );
-    assert_eq!(annotation.text, ["plate label"]);
-    assert_eq!(annotation.parameters["font_family"], "Arial");
-    assert_eq!(annotation.native_ref, "nx:test:text#1");
-    assert_eq!(annotation.order, 7);
+    crate::test_support::with_decode_context(|ctx| {
+        let annotation =
+            text_semantic_annotation(ctx, "nx:test:text#1", 7, &["plate label", "Arial"])
+                .expect("annotation admission")
+                .expect("valid text annotation");
+        assert_eq!(annotation.object, "nx:test:text#1");
+        assert_eq!(
+            annotation.kind,
+            cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
+        );
+        assert_eq!(annotation.text, ["plate label"]);
+        assert_eq!(annotation.parameters["font_family"], "Arial");
+        assert_eq!(annotation.native_ref, "nx:test:text#1");
+        assert_eq!(annotation.order, 7);
 
-    let empty = text_semantic_annotation("nx:test:text#empty", 8, &["", ""])
-        .expect("empty text fields remain a valid annotation");
-    assert_eq!(empty.text, [""]);
-    assert_eq!(empty.parameters["font_family"], "");
+        let empty = text_semantic_annotation(ctx, "nx:test:text#empty", 8, &["", ""])
+            .expect("annotation admission")
+            .expect("empty text fields remain a valid annotation");
+        assert_eq!(empty.text, [""]);
+        assert_eq!(empty.parameters["font_family"], "");
 
+        assert!(text_semantic_annotation(
+            ctx,
+            "nx:test:text#2",
+            0,
+            &["ambiguous", "Arial", "extra"],
+        )
+        .unwrap()
+        .is_none());
+    });
+}
+
+fn text_annotation_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let annotation =
+                text_semantic_annotation(ctx, "nx:test:text#1", 7, &["plate label", "Arial"])?;
+            assert!(annotation.is_some());
+            Ok(())
+        },
+    )
+}
+
+#[test]
+fn text_annotation_refuses_collection_limit() {
+    let error =
+        text_annotation_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
     assert!(
-        text_semantic_annotation("nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],).is_none()
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn text_annotation_refuses_retained_limit() {
+    let error =
+        text_annotation_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn text_annotation_refuses_scoped_limit() {
+    let error =
+        text_annotation_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn text_annotation_refuses_work_limit() {
+    let error = text_annotation_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -1164,103 +1309,106 @@ fn nx_container_record_is_not_a_modeling_feature() {
 
 #[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let dimensions = [10.0, 20.0, 30.0];
-    for axis in 0..3 {
-        let mut surfaces = ir
+    crate::test_support::with_decode_context(|ctx| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+        let dimensions = [10.0, 20.0, 30.0];
+        for axis in 0..3 {
+            let mut surfaces = ir
+                .model
+                .surfaces
+                .iter_mut()
+                .filter_map(|surface| {
+                    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+                        &mut surface.geometry
+                    else {
+                        return None;
+                    };
+                    let normal = plane_surface.frame().axis().as_raw();
+                    let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
+                    (components[axis] > 0.5).then_some(plane_surface)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(surfaces.len(), 2);
+            surfaces.sort_by(|first, second| {
+                let first = first.origin();
+                let second = second.origin();
+                [first.x, first.y, first.z][axis].total_cmp(&[second.x, second.y, second.z][axis])
+            });
+            for (index, surface) in surfaces.into_iter().enumerate() {
+                let origin = surface.origin();
+                let normal = surface.frame().axis().as_raw();
+                let u_axis = surface.frame().reference().as_raw();
+                let mut origin = *origin;
+                let coordinate = if index == 0 { 0.0 } else { dimensions[axis] };
+                match axis {
+                    0 => origin.x = coordinate,
+                    1 => origin.y = coordinate,
+                    2 => origin.z = coordinate,
+                    _ => unreachable!(),
+                }
+                *surface =
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                        .unwrap();
+            }
+        }
+        let output = ir.model.bodies[0].id.clone();
+        let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
+            block_placement(ctx, ir, dimensions, outputs)
+                .unwrap()
+                .map(|(_, transform)| transform)
+        };
+
+        assert_eq!(
+            placement(&ir, dimensions, std::slice::from_ref(&output)),
+            Some(cadmpeg_ir::transform::Transform::identity())
+        );
+        assert_eq!(
+            block_placement(ctx, &ir, dimensions, &[]).unwrap(),
+            Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
+        );
+        assert_eq!(
+            placement(&ir, dimensions, &[]),
+            Some(cadmpeg_ir::transform::Transform::identity())
+        );
+        assert_eq!(
+            placement(&ir, dimensions, &[output.clone(), output.clone()],),
+            None
+        );
+        assert_eq!(
+            placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
+            None
+        );
+
+        let mut repeated = ir.clone();
+        let high_y = repeated
             .model
             .surfaces
             .iter_mut()
-            .filter_map(|surface| {
+            .find_map(|surface| {
                 let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
                     &mut surface.geometry
                 else {
                     return None;
                 };
+                let origin = plane_surface.origin();
                 let normal = plane_surface.frame().axis().as_raw();
-                let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
-                (components[axis] > 0.5).then_some(plane_surface)
+                (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(plane_surface)
             })
-            .collect::<Vec<_>>();
-        assert_eq!(surfaces.len(), 2);
-        surfaces.sort_by(|first, second| {
-            let first = first.origin();
-            let second = second.origin();
-            [first.x, first.y, first.z][axis].total_cmp(&[second.x, second.y, second.z][axis])
-        });
-        for (index, surface) in surfaces.into_iter().enumerate() {
-            let origin = surface.origin();
-            let normal = surface.frame().axis().as_raw();
-            let u_axis = surface.frame().reference().as_raw();
-            let mut origin = *origin;
-            let coordinate = if index == 0 { 0.0 } else { dimensions[axis] };
-            match axis {
-                0 => origin.x = coordinate,
-                1 => origin.y = coordinate,
-                2 => origin.z = coordinate,
-                _ => unreachable!(),
-            }
-            *surface =
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
-                    .unwrap();
-        }
-    }
-    let output = ir.model.bodies[0].id.clone();
-    let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
-        block_placement(ir, dimensions, outputs).map(|(_, transform)| transform)
-    };
+            .expect("positive y plane");
+        let origin = high_y.origin();
+        let normal = high_y.frame().axis().as_raw();
+        let u_axis = high_y.frame().reference().as_raw();
+        let mut origin = *origin;
+        origin.y = 10.0;
+        *high_y = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+            .unwrap();
+        assert_eq!(
+            placement(&repeated, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
+            None
+        );
 
-    assert_eq!(
-        placement(&ir, dimensions, std::slice::from_ref(&output)),
-        Some(cadmpeg_ir::transform::Transform::identity())
-    );
-    assert_eq!(
-        block_placement(&ir, dimensions, &[]),
-        Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
-    );
-    assert_eq!(
-        placement(&ir, dimensions, &[]),
-        Some(cadmpeg_ir::transform::Transform::identity())
-    );
-    assert_eq!(
-        placement(&ir, dimensions, &[output.clone(), output.clone()],),
-        None
-    );
-    assert_eq!(
-        placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
-        None
-    );
-
-    let mut repeated = ir.clone();
-    let high_y = repeated
-        .model
-        .surfaces
-        .iter_mut()
-        .find_map(|surface| {
-            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-                &mut surface.geometry
-            else {
-                return None;
-            };
-            let origin = plane_surface.origin();
-            let normal = plane_surface.frame().axis().as_raw();
-            (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(plane_surface)
-        })
-        .expect("positive y plane");
-    let origin = high_y.origin();
-    let normal = high_y.frame().axis().as_raw();
-    let u_axis = high_y.frame().reference().as_raw();
-    let mut origin = *origin;
-    origin.y = 10.0;
-    *high_y =
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
-    assert_eq!(
-        placement(&repeated, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
-        None
-    );
-
-    let mut stepped = ir.clone();
-    let mut intermediate_surface = stepped
+        let mut stepped = ir.clone();
+        let mut intermediate_surface = stepped
         .model
         .surfaces
         .iter()
@@ -1273,336 +1421,537 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         })
         .expect("x-normal plane")
         .clone();
-    intermediate_surface.id =
-        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
+        intermediate_surface.id =
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
+                .expect("identity grammar");
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+            &mut intermediate_surface.geometry
+        else {
+            unreachable!()
+        };
+        let origin = plane_surface.origin();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
+        let mut origin = *origin;
+        origin.x = 5.0;
+        *plane_surface =
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                .unwrap();
+        stepped.model.surfaces.push(intermediate_surface);
+        let mut intermediate_face = stepped.model.faces.first().expect("cube face").clone();
+        intermediate_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
             .expect("identity grammar");
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-        &mut intermediate_surface.geometry
-    else {
-        unreachable!()
+        intermediate_face.surface =
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
+                .expect("identity grammar");
+        intermediate_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+        stepped.model.shells[0].add_face(intermediate_face.id.clone());
+        stepped.model.faces.push(intermediate_face);
+        assert_eq!(
+            placement(&stepped, dimensions, std::slice::from_ref(&output)),
+            None
+        );
+
+        let mut nonplanar = ir.clone();
+        nonplanar.model.surfaces[0].geometry =
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
+            ));
+        assert_eq!(
+            placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
+            None
+        );
+
+        let mut missing_surface = ir.clone();
+        let removed = missing_surface.model.surfaces.pop().expect("cube surface");
+        assert!(missing_surface
+            .model
+            .faces
+            .iter()
+            .any(|face| face.surface == removed.id));
+        assert_eq!(placement(&missing_surface, dimensions, &[]), None);
+
+        let mut curved_feature = ir.clone();
+        let mut curved_surface = curved_feature.model.surfaces[0].clone();
+        curved_surface.id =
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
+                .expect("identity grammar");
+        curved_surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .unwrap(),
+        ));
+        curved_feature.model.surfaces.push(curved_surface);
+        let mut curved_face = curved_feature.model.faces[0].clone();
+        curved_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#later-curved-face")
+            .expect("identity grammar");
+        curved_face.surface =
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
+                .expect("identity grammar");
+        curved_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+        curved_feature.model.shells[0].add_face(curved_face.id.clone());
+        curved_feature.model.faces.push(curved_face);
+        assert_eq!(
+            placement(&curved_feature, dimensions, &[]),
+            Some(cadmpeg_ir::transform::Transform::identity())
+        );
+
+        let mut sheet = ir.clone();
+        sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+        assert_eq!(
+            placement(&sheet, dimensions, std::slice::from_ref(&output)),
+            None
+        );
+
+        let mut disconnected = ir.clone();
+        let mut second_region = disconnected.model.regions[0].clone();
+        second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
+            .expect("identity grammar");
+        second_region.shells.clear();
+        disconnected.model.bodies[0]
+            .regions
+            .push(second_region.id.clone());
+        disconnected.model.regions.push(second_region);
+        assert_eq!(
+            placement(&disconnected, dimensions, std::slice::from_ref(&output),),
+            None
+        );
+    });
+}
+
+fn primitive_faces_with_limit(
+    sphere: bool,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        _ => {
+            return Err(cadmpeg_core::CodecError::InvalidInput(
+                "unsupported primitive face test limit".to_string(),
+            ))
+        }
     };
-    let origin = plane_surface.origin();
-    let normal = plane_surface.frame().axis().as_raw();
-    let u_axis = plane_surface.frame().reference().as_raw();
-    let mut origin = *origin;
-    origin.x = 5.0;
-    *plane_surface =
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
-    stepped.model.surfaces.push(intermediate_surface);
-    let mut intermediate_face = stepped.model.faces.first().expect("cube face").clone();
-    intermediate_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
-        .expect("identity grammar");
-    intermediate_face.surface =
-        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
-            .expect("identity grammar");
-    intermediate_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-    stepped.model.shells[0].add_face(intermediate_face.id.clone());
-    stepped.model.faces.push(intermediate_face);
-    assert_eq!(
-        placement(&stepped, dimensions, std::slice::from_ref(&output)),
-        None
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let body = ir.model.bodies[0].id.clone();
+        if sphere {
+            drop(sphere_body_projection(
+                ctx,
+                &ir,
+                std::slice::from_ref(&body),
+            )?);
+        } else {
+            drop(block_placement(
+                ctx,
+                &ir,
+                [1.0, 1.0, 1.0],
+                std::slice::from_ref(&body),
+            )?);
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn block_faces_refuse_collection_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
+    assert!(
+        matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
     );
+}
 
-    let mut nonplanar = ir.clone();
-    nonplanar.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            1.0,
-        )
-        .unwrap(),
-    ));
-    assert_eq!(
-        placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
-        None
+#[test]
+fn block_faces_refuse_scoped_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
+    assert!(
+        matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
     );
+}
 
-    let mut missing_surface = ir.clone();
-    let removed = missing_surface.model.surfaces.pop().expect("cube surface");
-    assert!(missing_surface
-        .model
-        .faces
-        .iter()
-        .any(|face| face.surface == removed.id));
-    assert_eq!(placement(&missing_surface, dimensions, &[]), None);
-
-    let mut curved_feature = ir.clone();
-    let mut curved_surface = curved_feature.model.surfaces[0].clone();
-    curved_surface.id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
-        .expect("identity grammar");
-    curved_surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-            cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            1.0,
-        )
-        .unwrap(),
-    ));
-    curved_feature.model.surfaces.push(curved_surface);
-    let mut curved_face = curved_feature.model.faces[0].clone();
-    curved_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#later-curved-face")
-        .expect("identity grammar");
-    curved_face.surface =
-        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
-            .expect("identity grammar");
-    curved_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-    curved_feature.model.shells[0].add_face(curved_face.id.clone());
-    curved_feature.model.faces.push(curved_face);
-    assert_eq!(
-        placement(&curved_feature, dimensions, &[]),
-        Some(cadmpeg_ir::transform::Transform::identity())
+#[test]
+fn block_faces_refuse_work_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
+    assert!(
+        matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
     );
+}
 
-    let mut sheet = ir.clone();
-    sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
-    assert_eq!(
-        placement(&sheet, dimensions, std::slice::from_ref(&output)),
-        None
+#[test]
+fn block_placement_refuses_retained_limit() {
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            for (axis, extent) in [(1usize, 20.0), (2, 30.0)] {
+                let plane = ir
+                    .model
+                    .surfaces
+                    .iter_mut()
+                    .find_map(|surface| {
+                        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+                            &mut surface.geometry
+                        else {
+                            return None;
+                        };
+                        let origin = plane.origin();
+                        let normal = plane.frame().axis().as_raw();
+                        let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
+                        let coordinates = [origin.x, origin.y, origin.z];
+                        (components[axis] > 0.5 && coordinates[axis] > 0.0).then_some(plane)
+                    })
+                    .unwrap();
+                let mut origin = *plane.origin();
+                let normal = *plane.frame().axis().as_raw();
+                let reference = *plane.frame().reference().as_raw();
+                if axis == 1 {
+                    origin.y = extent;
+                } else {
+                    origin.z = extent;
+                }
+                *plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    origin, normal, reference,
+                )
+                .unwrap();
+            }
+            let body = &ir.model.bodies[0].id;
+            assert!(
+                matches!(block_placement(ctx, &ir, [10.0, 20.0, 30.0], std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
     );
+}
 
-    let mut disconnected = ir.clone();
-    let mut second_region = disconnected.model.regions[0].clone();
-    second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
-        .expect("identity grammar");
-    second_region.shells.clear();
-    disconnected.model.bodies[0]
-        .regions
-        .push(second_region.id.clone());
-    disconnected.model.regions.push(second_region);
-    assert_eq!(
-        placement(&disconnected, dimensions, std::slice::from_ref(&output),),
-        None
+#[test]
+fn sphere_faces_refuse_collection_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
+    assert!(
+        matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
+}
+
+#[test]
+fn sphere_faces_refuse_scoped_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
+    assert!(
+        matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
+}
+
+#[test]
+fn sphere_faces_refuse_work_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
+    assert!(
+        matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
+}
+
+#[test]
+fn sphere_projection_refuses_retained_limit() {
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let face = ir.model.faces[0].id.clone();
+            let surface = ir.model.faces[0].surface.clone();
+            ir.model.shells[0]
+                .edit_topology(|faces, _, _| *faces = vec![face.clone()])
+                .unwrap();
+            ir.model.faces.retain(|candidate| candidate.id == face);
+            ir.model
+                .surfaces
+                .retain(|candidate| candidate.id == surface);
+            ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
+            ));
+            let body = &ir.model.bodies[0].id;
+            assert!(
+                matches!(sphere_body_projection(ctx, &ir, std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
 #[test]
 fn nx_sphere_projection_requires_one_complete_spherical_body() {
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
-    let face = ir.model.faces[0].id.clone();
-    let surface = ir.model.faces[0].surface.clone();
-    {
-        let members = vec![face];
-        ir.model.shells[0].edit_topology(|faces, _, _| *faces = members)
-    }
-    .unwrap();
-    ir.model
-        .faces
-        .retain(|candidate| candidate.id == ir.model.shells[0].faces()[0]);
-    ir.model
-        .surfaces
-        .retain(|candidate| candidate.id == surface);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-            Point3::new(1.0, 2.0, 3.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            f64::EPSILON,
+    crate::test_support::with_decode_context(|ctx| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+        let body = ir.model.bodies[0].id.clone();
+        let face = ir.model.faces[0].id.clone();
+        let surface = ir.model.faces[0].surface.clone();
+        {
+            let members = vec![face];
+            ir.model.shells[0].edit_topology(|faces, _, _| *faces = members)
+        }
+        .unwrap();
+        ir.model
+            .faces
+            .retain(|candidate| candidate.id == ir.model.shells[0].faces()[0]);
+        ir.model
+            .surfaces
+            .retain(|candidate| candidate.id == surface);
+        ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                f64::EPSILON,
+            )
+            .unwrap(),
+        ));
+
+        assert_eq!(
+            sphere_body_projection(ctx, &ir, &[]).unwrap(),
+            Some((
+                body.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
+                    .expect("literal sphere center is finite"),
+                cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
+                    .expect("the sphere radius is positive")
+            ))
+        );
+        assert_eq!(
+            sphere_body_projection(ctx, &ir, std::slice::from_ref(&body)).unwrap(),
+            Some((
+                body.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
+                    .expect("literal sphere center is finite"),
+                cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
+                    .expect("the sphere radius is positive")
+            ))
+        );
+
+        let mut second_body = ir.model.bodies[0].clone();
+        second_body.id = BodyId::mint("test:model:entity#second-body").expect("identity grammar");
+        second_body.regions =
+            vec![
+                cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
+                    .expect("identity grammar"),
+            ];
+        let mut second_region = ir.model.regions[0].clone();
+        second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
+            .expect("identity grammar");
+        second_region.body = second_body.id.clone();
+        second_region.shells =
+            vec![
+                cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
+                    .expect("identity grammar"),
+            ];
+        let mut second_shell = ir.model.shells[0].clone();
+        second_shell.id = cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
+            .expect("identity grammar");
+        second_shell.region = second_region.id.clone();
+        {
+            let members = vec![
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
+                    .expect("identity grammar"),
+            ];
+            second_shell.edit_topology(|faces, _, _| *faces = members)
+        }
+        .unwrap();
+        let mut second_face = ir.model.faces[0].clone();
+        second_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
+            .expect("identity grammar");
+        second_face.shell = second_shell.id.clone();
+        second_face.surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#second-surface")
+            .expect("identity grammar");
+        let mut second_surface = ir.model.surfaces[0].clone();
+        second_surface.id = second_face.surface.clone();
+        ir.model.bodies.push(second_body);
+        ir.model.regions.push(second_region);
+        ir.model.shells.push(second_shell);
+        ir.model.faces.push(second_face);
+        ir.model.surfaces.push(second_surface);
+
+        assert!(sphere_body_projection(ctx, &ir, &[]).unwrap().is_none());
+        assert!(sphere_body_projection(
+            ctx,
+            &ir,
+            &[
+                body,
+                BodyId::mint("test:model:entity#second-body").expect("identity grammar")
+            ]
         )
-        .unwrap(),
-    ));
-
-    assert_eq!(
-        sphere_body_projection(&ir, &[]),
-        Some((
-            body.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
-                .expect("literal sphere center is finite"),
-            cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
-                .expect("the sphere radius is positive")
-        ))
-    );
-    assert_eq!(
-        sphere_body_projection(&ir, std::slice::from_ref(&body)),
-        Some((
-            body.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
-                .expect("literal sphere center is finite"),
-            cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
-                .expect("the sphere radius is positive")
-        ))
-    );
-
-    let mut second_body = ir.model.bodies[0].clone();
-    second_body.id = BodyId::mint("test:model:entity#second-body").expect("identity grammar");
-    second_body.regions = vec![
-        cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
-            .expect("identity grammar"),
-    ];
-    let mut second_region = ir.model.regions[0].clone();
-    second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
-        .expect("identity grammar");
-    second_region.body = second_body.id.clone();
-    second_region.shells = vec![
-        cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
-    ];
-    let mut second_shell = ir.model.shells[0].clone();
-    second_shell.id =
-        cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
-    second_shell.region = second_region.id.clone();
-    {
-        let members = vec![
-            cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
-                .expect("identity grammar"),
-        ];
-        second_shell.edit_topology(|faces, _, _| *faces = members)
-    }
-    .unwrap();
-    let mut second_face = ir.model.faces[0].clone();
-    second_face.id =
-        cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face").expect("identity grammar");
-    second_face.shell = second_shell.id.clone();
-    second_face.surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#second-surface")
-        .expect("identity grammar");
-    let mut second_surface = ir.model.surfaces[0].clone();
-    second_surface.id = second_face.surface.clone();
-    ir.model.bodies.push(second_body);
-    ir.model.regions.push(second_region);
-    ir.model.shells.push(second_shell);
-    ir.model.faces.push(second_face);
-    ir.model.surfaces.push(second_surface);
-
-    assert!(sphere_body_projection(&ir, &[]).is_none());
-    assert!(sphere_body_projection(
-        &ir,
-        &[
-            body,
-            BodyId::mint("test:model:entity#second-body").expect("identity grammar")
-        ]
-    )
-    .is_none());
+        .unwrap()
+        .is_none());
+    });
 }
 
 #[test]
 fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
-    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let provisional =
-        FeatureId::mint("synthetic:test:id#initial-bodies").expect("identity grammar");
-    let mut history = BodyWriterHistory::default();
-    history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
+    crate::test_support::with_decode_context(|ctx| {
+        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+        let provisional =
+            FeatureId::mint("synthetic:test:id#initial-bodies").expect("identity grammar");
+        let mut history = BodyWriterHistory::default();
+        history
+            .record_writer(ctx, None, None, std::slice::from_ref(&body), &provisional)
+            .expect("admitted writer history");
 
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: true,
-            has_complete_primitive_construction: false,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 0,
-            provisional_feature: Some(&provisional),
-            native_primary_body: None,
-            offset_store_primary_body: None,
-            history: &history,
-        }),
-        BooleanOp::NewBody
-    );
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 0,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &history,
+            }),
+            BooleanOp::NewBody
+        );
 
-    let fallback_prior =
-        FeatureId::mint("synthetic:test:id#fallback-prior-feature").expect("identity grammar");
-    let mut fallback_history = BodyWriterHistory::default();
-    fallback_history.record_writer(None, None, std::slice::from_ref(&body), &fallback_prior);
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: true,
-            has_complete_primitive_construction: false,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 0,
-            provisional_feature: Some(&provisional),
-            native_primary_body: None,
-            offset_store_primary_body: None,
-            history: &fallback_history,
-        }),
-        BooleanOp::Unresolved
-    );
+        let fallback_prior =
+            FeatureId::mint("synthetic:test:id#fallback-prior-feature").expect("identity grammar");
+        let mut fallback_history = BodyWriterHistory::default();
+        fallback_history
+            .record_writer(
+                ctx,
+                None,
+                None,
+                std::slice::from_ref(&body),
+                &fallback_prior,
+            )
+            .expect("admitted writer history");
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 0,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &fallback_history,
+            }),
+            BooleanOp::Unresolved
+        );
 
-    let prior = FeatureId::mint("synthetic:test:id#prior-feature").expect("identity grammar");
-    history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: true,
-            has_complete_primitive_construction: false,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 1,
-            provisional_feature: Some(&provisional),
-            native_primary_body: Some(7),
-            offset_store_primary_body: None,
-            history: &history,
-        }),
-        BooleanOp::Unresolved
-    );
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: false,
-            has_complete_primitive_construction: false,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 0,
-            provisional_feature: Some(&provisional),
-            native_primary_body: None,
-            offset_store_primary_body: None,
-            history: &history,
-        }),
-        BooleanOp::Unresolved
-    );
+        let prior = FeatureId::mint("synthetic:test:id#prior-feature").expect("identity grammar");
+        history
+            .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &prior)
+            .expect("admitted writer history");
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: Some(7),
+                offset_store_primary_body: None,
+                history: &history,
+            }),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: false,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 0,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &history,
+            }),
+            BooleanOp::Unresolved
+        );
 
-    let offset_prior =
-        FeatureId::mint("synthetic:test:id#offset-prior-feature").expect("identity grammar");
-    let mut offset_history = BodyWriterHistory::default();
-    offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: true,
-            has_complete_primitive_construction: false,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 1,
-            provisional_feature: Some(&provisional),
-            native_primary_body: None,
-            offset_store_primary_body: Some("store:block#7"),
-            history: &offset_history,
-        }),
-        BooleanOp::Unresolved
-    );
+        let offset_prior =
+            FeatureId::mint("synthetic:test:id#offset-prior-feature").expect("identity grammar");
+        let mut offset_history = BodyWriterHistory::default();
+        offset_history
+            .record_writer(ctx, None, Some("store:block#7"), &[], &offset_prior)
+            .expect("admitted writer history");
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: Some("store:block#7"),
+                history: &offset_history,
+            }),
+            BooleanOp::Unresolved
+        );
 
-    let offset_without_prior = BodyWriterHistory::default();
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: true,
-            has_complete_primitive_construction: false,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 1,
-            provisional_feature: Some(&provisional),
-            native_primary_body: None,
-            offset_store_primary_body: Some("store:block#8"),
-            history: &offset_without_prior,
-        }),
-        BooleanOp::NewBody
-    );
+        let offset_without_prior = BodyWriterHistory::default();
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: Some("store:block#8"),
+                history: &offset_without_prior,
+            }),
+            BooleanOp::NewBody
+        );
 
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: true,
-            has_complete_primitive_construction: false,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 2,
-            provisional_feature: Some(&provisional),
-            native_primary_body: None,
-            offset_store_primary_body: None,
-            history: &offset_without_prior,
-        }),
-        BooleanOp::Unresolved
-    );
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 2,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &offset_without_prior,
+            }),
+            BooleanOp::Unresolved
+        );
 
-    assert_eq!(
-        new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: true,
-            has_complete_primitive_construction: true,
-            outputs: std::slice::from_ref(&body),
-            body_reference_count: 2,
-            provisional_feature: Some(&provisional),
-            native_primary_body: None,
-            offset_store_primary_body: None,
-            history: &offset_without_prior,
-        }),
-        BooleanOp::NewBody
-    );
+        assert_eq!(
+            new_body_boolean_op(&NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: true,
+                outputs: std::slice::from_ref(&body),
+                body_reference_count: 2,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &offset_without_prior,
+            }),
+            BooleanOp::NewBody
+        );
+    });
 }
 mod hole_geometry;

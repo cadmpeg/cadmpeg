@@ -27,7 +27,7 @@ fn staged_document() -> CadIr {
     for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
         ir.model.features.push(Feature {
             id: format!("test:append:feature#{key}").try_into().unwrap(),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: None,
             dependencies: crate::features::DistinctMembers::default(),
@@ -54,10 +54,12 @@ fn staged_document() -> CadIr {
     ] {
         ir.native.namespace_mut(format).arenas_mut().insert(
             arena.into(),
-            vec![
-                NativeRecord::new(format!("test:append:record#{key}"), serde_json::Map::new())
-                    .unwrap(),
-            ],
+            vec![NativeRecord::new(
+                crate::ids::Identity::new(format!("test:append:record#{key}"))
+                    .expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .unwrap()],
         );
     }
     // Exercise the complete-document admission route before the append route.
@@ -69,7 +71,11 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.native.namespace_mut("test").arenas_mut().insert(
         "existing".into(),
-        vec![NativeRecord::new("test:append:record#original", serde_json::Map::new()).unwrap()],
+        vec![NativeRecord::new(
+            crate::ids::Identity::new("test:append:record#original").expect("valid identity"),
+            serde_json::Map::new(),
+        )
+        .unwrap()],
     );
     ir.native.namespace_mut("empty");
     let before = ir.clone();

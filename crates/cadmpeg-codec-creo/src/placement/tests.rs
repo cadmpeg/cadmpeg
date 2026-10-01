@@ -11,9 +11,11 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    definition_local_plane_equation, generated_cylinder_section_transform,
-    generated_planar_section_transform, plane_equation, resolve, FeatureSectionTransform,
-    PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
+    definition_local_plane_equation,
+    generated_cylinder_section_transform as parse_generated_cylinder_section_transform,
+    generated_planar_section_transform as parse_generated_planar_section_transform,
+    generated_planar_table_shape, plane_equation, resolve as parse_resolve,
+    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
 };
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
@@ -35,6 +37,88 @@ use crate::feature::definitions::{
 use crate::feature::entity::FeatureEntityTableEntry;
 use crate::feature::rows::FeatureGeometryTableKind;
 use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
+
+fn generated_cylinder_section_transform(
+    definition: &FeatureDefinition,
+    sources: &PlacementSources<'_>,
+    tables: &[FeatureEntityTable],
+) -> Option<FeatureSectionTransform> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_generated_cylinder_section_transform(ctx, definition, sources, tables)
+    })
+    .expect("test cylinder placement")
+}
+
+fn generated_planar_section_transform(
+    definition: &FeatureDefinition,
+    sources: &PlacementSources<'_>,
+    tables: &[FeatureEntityTable],
+) -> Option<FeatureSectionTransform> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_generated_planar_section_transform(ctx, definition, sources, tables)
+    })
+    .expect("test planar placement")
+}
+
+#[test]
+fn generated_planar_table_entry_nodes_refuse_collection_limit() {
+    let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+        entity_id,
+        prefixed: false,
+        offset: usize::try_from(entity_id).expect("small fixture ID"),
+        end_offset: usize::try_from(entity_id).expect("small fixture ID") + 1,
+    };
+    let table = FeatureEntityTable::new(
+        10,
+        79,
+        vec![
+            entry(13, 204, None),
+            entry(18, 203, None),
+            entry(23, 200, Some(4)),
+        ],
+        &std::collections::BTreeSet::new(),
+        200,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = generated_planar_table_shape(&ctx, &table)
+        .expect_err("first entry node exceeds collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo generated planar table entry nodes")
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(generated_planar_table_shape(ctx, &table)?);
+        let duplicate = FeatureEntityTable::new(
+            10,
+            79,
+            vec![
+                entry(13, 204, None),
+                entry(18, 203, None),
+                entry(13, 200, Some(4)),
+            ],
+            &std::collections::BTreeSet::new(),
+            200,
+        );
+        assert!(!generated_planar_table_shape(ctx, &duplicate)?);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("service profile admits table shape");
+}
+
+fn resolve(
+    definitions: &[FeatureDefinition],
+    sources: &PlacementSources<'_>,
+    tables: &[FeatureEntityTable],
+) -> Vec<FeatureSectionTransform> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_resolve(ctx, definitions, sources, tables))
+        .expect("test placement")
+}
 
 #[test]
 fn normalization_rejects_overflowed_feature_frame_vectors() {
@@ -76,6 +160,41 @@ fn blank_definition() -> FeatureDefinition {
         saved_section: None,
         offset: 0,
     }
+}
+
+#[test]
+fn placement_reference_ids_refuse_before_growth() {
+    let mut definition = blank_definition();
+    definition.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(2),
+        sketch_plane_flip: None,
+        reference_planes: ReferencePlanes::Named(vec![3]),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 10,
+    });
+    let sources = PlacementSources {
+        datums: &[],
+        surface_rows: &[],
+        model_planes: &[],
+        outline_planes: &[],
+        plane_envelopes: &[],
+        surface_parameters: &[],
+        geometry_tables: &[],
+        affected_ids: &[],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input admitted");
+    assert!(
+        matches!(parse_resolve(&ctx, &[definition.clone()], &sources, &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "creo placement reference IDs")
+    );
+    assert!(resolve(&[definition], &sources, &[]).is_empty());
 }
 
 fn finite_frame(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
@@ -925,7 +1044,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1132,7 +1251,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1206,7 +1325,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         } else {
             cadmpeg_ir::units::UnitVector3::X_AXIS
         },
-        offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     let outlines = [
         outline(13, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
@@ -1221,8 +1340,8 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
 
         entity_id,
         prefixed: false,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize + 1,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize") + 1,
     };
     let tables = [FeatureEntityTable::new(
         10,

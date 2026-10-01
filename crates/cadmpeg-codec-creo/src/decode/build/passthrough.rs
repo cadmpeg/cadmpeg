@@ -33,15 +33,22 @@ pub(super) fn preserve_passthrough_sections(
         section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
     }) {
         let Some(section_bytes) = container::section_region(&scan.framing.data, section) else {
-            return Err(CodecError::malformed(format!(
-                "creo section `{}` declares the region {}..{}, past the scanned file length {}",
-                section.name(),
-                section.offset(),
-                section.end(),
-                scan.framing.data.len(),
-            )));
+            return Err(CodecError::malformed(ctx.format_retained(
+                format_args!(
+                    "creo section `{}` declares the region {}..{}, past the scanned file length {}",
+                    section.name(),
+                    section.offset(),
+                    section.end(),
+                    scan.framing.data.len(),
+                ),
+                "creo passthrough section bounds error",
+            )?));
         };
-        let payload_start = section.raw_name.len().saturating_add(2);
+        let payload_start = section
+            .raw_name
+            .len()
+            .checked_add(2)
+            .ok_or_else(|| CodecError::malformed("section payload start exceeds usize"))?;
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
@@ -87,20 +94,27 @@ pub(super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let namespace = cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section")
-            .map_err(CodecError::malformed)?;
-        let id = UnknownId::compose(&namespace, offset);
+        let namespace = crate::identity::section_namespace(section.name())
+            .ok_or_else(|| CodecError::malformed("invalid Creo passthrough section namespace"))?;
+        let id = crate::identity::compose_checked::<UnknownId>(
+            ctx,
+            &namespace,
+            offset,
+            "creo passthrough section identity",
+        )?;
         annotate(
+            ctx,
             annotations,
             &id,
             section.name(),
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             tag,
             exactness,
-        );
+        )?;
+        ctx.reserve_vec(&mut unknowns, 1, "creo passthrough unknown records")?;
         unknowns.push(UnknownRecord::retained(
             id,
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             ctx.copy_retained(bytes, "retain Creo passthrough section")?,
             Vec::new(),
         ));
@@ -130,13 +144,15 @@ where
 {
     emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
         annotate(
+            ctx,
             annotations,
             record.id(),
             legacy_source_stream(scan, record.offset),
-            record.offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             Exactness::ByteExact,
-        );
+        )?;
+        Ok(())
     })
 }
 
@@ -157,13 +173,15 @@ pub(super) fn emit_legacy_arenas(
         &legacy.persistence.objects,
         |annotations, record| {
             annotate(
+                ctx,
                 annotations,
                 record.id(),
                 legacy_source_stream(scan, record.offset),
-                record.offset as u64,
+                cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
                 Exactness::ByteExact,
-            );
+            )?;
+            Ok(())
         },
     )?;
     emit_legacy_value_arena(
@@ -265,15 +283,90 @@ pub(super) fn emit_legacy_arenas(
             std::slice::from_ref(table),
             |annotations, record| {
                 annotate(
+                    ctx,
                     annotations,
                     record.id(),
                     legacy_source_stream(scan, record.offset),
-                    record.offset as u64,
+                    cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",
                     Exactness::ByteExact,
-                );
+                )?;
+                Ok(())
             },
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preserve_passthrough_sections;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn passthrough_unknown_record_refuses_collection_limit() {
+        let mut scan = crate::container::scan_bytes_ok(vec![0u8; 48]);
+        scan.framing.sections.push(
+            crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 0, 48, None, &[0u8; 48])
+                .expect("section extent")
+                .section,
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Each feature annotation owns handles, provenance, and exactness nodes.
+        policy.limits.max_collection_items = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error =
+            preserve_passthrough_sections(&ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+                .expect_err("fourth collection item is the unknown record");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "creo passthrough unknown records")
+        );
+        let records = crate::decode::with_test_decode_ctx(|ctx| {
+            preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+        })
+        .expect("service records");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id().as_str(), "creo:VisibGeom:section#0");
+    }
+
+    #[test]
+    fn passthrough_section_bounds_error_refuses_retained_limit() {
+        let section = crate::container::Section::scan(
+            "ND:0:VisibGeom:0".to_owned(),
+            32,
+            48,
+            None,
+            &[0u8; 48],
+        )
+        .expect("section extent")
+        .section;
+        let mut scan = crate::container::scan_bytes_ok(vec![0u8; 16]);
+        scan.framing.sections.push(section);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error =
+            preserve_passthrough_sections(&ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+                .expect_err("bounds error text exceeds retained limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo passthrough section bounds error")
+        );
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let error = preserve_passthrough_sections(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+            )
+            .expect_err("declared section exceeds scanned bytes");
+            assert!(error.to_string().contains("VisibGeom"));
+            Ok::<(), cadmpeg_core::CodecError>(())
+        })
+        .expect("service error text admitted");
+    }
 }

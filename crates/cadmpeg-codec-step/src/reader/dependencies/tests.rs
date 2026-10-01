@@ -13,6 +13,128 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
+const DEPENDENCY_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DOCUMENT_TYPE('type');#2=DOCUMENT('id','name','',#1);#3=APPLIED_DOCUMENT_REFERENCE(#2,'source',(#4));#4=ITEM();#5=EXTERNAL_SOURCE('uri');#6=EXTERNALLY_DEFINED_ITEM('item',#5);ENDSEC;END-ISO-10303-21;";
+
+fn dependency_collection_refusal(operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::test_support::with_service_context(
+        DEPENDENCY_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..128).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits collection policy");
+        matches!(
+            super::decode(&exchange, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no collection limit refused {operation}");
+}
+
+macro_rules! dependency_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            dependency_collection_refusal($operation);
+        }
+    };
+}
+
+dependency_collection_test!(
+    dependency_documents_refuse_limit,
+    "step_dependency_documents"
+);
+dependency_collection_test!(dependency_sources_refuse_limit, "step_dependency_sources");
+dependency_collection_test!(dependency_claims_refuse_limit, "step_dependency_claims");
+dependency_collection_test!(
+    dependency_note_set_refuses_limit,
+    "step_dependency_note_set"
+);
+dependency_collection_test!(
+    dependency_note_vector_refuses_limit,
+    "step_dependency_note_vector"
+);
+
+#[test]
+fn dependency_note_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::test_support::with_service_context(
+        DEPENDENCY_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..2048).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            super::decode(&exchange, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_dependency_note_text"
+        )
+    });
+    assert!(refused, "no retained limit refused dependency note text");
+}
+
+#[test]
+fn dependency_string_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::test_support::with_service_context(
+        DEPENDENCY_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::decode(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn dependency_invalid_string_loss_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DOCUMENT_TYPE('type');#2=DOCUMENT('\\X\\GG','name','',#1);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
+    assert!(matches!(
+        super::decode(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_invalid_string_loss_text"
+    ));
+}
+
 #[test]
 pub(crate) fn decode_reports_data_section_external_dependencies() {
     let bytes = include_bytes!("../../../tests/fixtures/ap242_external_documents.p21");
@@ -150,7 +272,7 @@ fn bind_entity_reference(
     if resource_uri.is_empty() || anchor_name.is_empty() {
         return Err("reference has an incomplete resource identity");
     }
-    if root.schema_identifiers() != target.schema_identifiers() {
+    if !root.schema_identifiers().eq(target.schema_identifiers()) {
         return Err("resource schemas differ");
     }
     let root_units = unit_signatures(root);
@@ -223,9 +345,12 @@ fn context_signature(
 fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
     let root_bytes = include_bytes!("tests/data/er05_distributed_root.p21");
     let target_bytes = include_bytes!("tests/data/er05_distributed_subsidiary.p21");
-    let (root, root_diagnostics) = crate::parse::parse(root_bytes).expect("parse distributed root");
+    let (root, root_diagnostics) =
+        crate::test_support::with_service_context(root_bytes, crate::parse::parse_inner)
+            .expect("parse distributed root");
     let (target, target_diagnostics) =
-        crate::parse::parse(target_bytes).expect("parse distributed subsidiary");
+        crate::test_support::with_service_context(target_bytes, crate::parse::parse_inner)
+            .expect("parse distributed subsidiary");
     assert!(root_diagnostics.is_empty());
     assert!(target_diagnostics.is_empty());
 
@@ -288,8 +413,11 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
     let mismatched_units = String::from_utf8(target_bytes.to_vec())
         .unwrap()
         .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)");
-    let (mismatched_units, _) =
-        crate::parse::parse(mismatched_units.as_bytes()).expect("parse mismatched-unit target");
+    let (mismatched_units, _) = crate::test_support::with_service_context(
+        mismatched_units.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("parse mismatched-unit target");
     assert_eq!(
         bind_entity_reference(&root, &mismatched_units),
         Err("resource units differ")
@@ -299,8 +427,11 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         "REPRESENTATION_CONTEXT('model','3D')",
         "REPRESENTATION_CONTEXT('other','3D')",
     );
-    let (mismatched_context, _) = crate::parse::parse(mismatched_context.as_bytes())
-        .expect("parse mismatched-context target");
+    let (mismatched_context, _) = crate::test_support::with_service_context(
+        mismatched_context.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("parse mismatched-context target");
     assert_eq!(
         bind_entity_reference(&root, &mismatched_context),
         Err("resource coordinate contexts differ")
@@ -493,7 +624,7 @@ fn part21_point_coordinates(exchange: &crate::parse::Exchange, id: u64) -> Optio
     let coordinates = values
         .iter()
         .map(|value| match value {
-            crate::parse::Value::Integer(value) => Some(*value as f64),
+            crate::parse::Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             crate::parse::Value::Real(value) => Some(*value),
             _ => None,
         })
@@ -526,7 +657,7 @@ fn compose_part26_point(
     if source.mapping_edition != "ISO/TS 10303-26:2011" {
         return Part26Composition::Unbound("Part 26 mapping edition is not selected");
     }
-    if source.schema_id != target.schema_identifiers().join(",") {
+    if source.schema_id != target.schema_identifiers().collect::<Vec<_>>().join(",") {
         return Part26Composition::Unbound("resource schemas differ");
     }
     if source.unit_signature != part21_unit_signature(target) {
@@ -587,7 +718,9 @@ fn caller_composition_binds_part26_row_to_part21_anchor_only_with_explicit_polic
     let part26 = decode_part26_composition_source();
     let target_bytes = include_bytes!("tests/data/er05_distributed_subsidiary.p21");
     let target_resource_uri = "https://example.invalid/er05/subsidiary.p21";
-    let (target, diagnostics) = crate::parse::parse(target_bytes).expect("parse Part 21 target");
+    let (target, diagnostics) =
+        crate::test_support::with_service_context(target_bytes, crate::parse::parse_inner)
+            .expect("parse Part 21 target");
     assert!(diagnostics.is_empty());
     let relation = Part26Part21Relation {
         part26_resource_uri: part26.resource_uri.clone(),
@@ -656,8 +789,11 @@ fn caller_composition_binds_part26_row_to_part21_anchor_only_with_explicit_polic
     let mismatched_units = String::from_utf8(target_bytes.to_vec())
         .expect("Part 21 target text")
         .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)");
-    let (mismatched_units, _) =
-        crate::parse::parse(mismatched_units.as_bytes()).expect("parse mismatched units");
+    let (mismatched_units, _) = crate::test_support::with_service_context(
+        mismatched_units.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("parse mismatched units");
     assert_eq!(
         compose_part26_point(
             &part26,
@@ -674,8 +810,11 @@ fn caller_composition_binds_part26_row_to_part21_anchor_only_with_explicit_polic
             "REPRESENTATION_CONTEXT('model','3D')",
             "REPRESENTATION_CONTEXT('other','3D')",
         );
-    let (mismatched_context, _) =
-        crate::parse::parse(mismatched_context.as_bytes()).expect("parse mismatched context");
+    let (mismatched_context, _) = crate::test_support::with_service_context(
+        mismatched_context.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("parse mismatched context");
     assert_eq!(
         compose_part26_point(
             &part26,
@@ -689,8 +828,11 @@ fn caller_composition_binds_part26_row_to_part21_anchor_only_with_explicit_polic
     let mismatched_schema = String::from_utf8(target_bytes.to_vec())
         .expect("Part 21 target text")
         .replace("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", "AP214");
-    let (mismatched_schema, _) =
-        crate::parse::parse(mismatched_schema.as_bytes()).expect("parse mismatched schema");
+    let (mismatched_schema, _) = crate::test_support::with_service_context(
+        mismatched_schema.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("parse mismatched schema");
     assert_eq!(
         compose_part26_point(
             &part26,
@@ -704,8 +846,11 @@ fn caller_composition_binds_part26_row_to_part21_anchor_only_with_explicit_polic
     let conflicting_coordinates = String::from_utf8(target_bytes.to_vec())
         .expect("Part 21 target text")
         .replace("(25.4,0.,0.)", "(25.5,0.,0.)");
-    let (conflicting_coordinates, _) = crate::parse::parse(conflicting_coordinates.as_bytes())
-        .expect("parse conflicting coordinates");
+    let (conflicting_coordinates, _) = crate::test_support::with_service_context(
+        conflicting_coordinates.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("parse conflicting coordinates");
     let Part26Composition::Conflict {
         binding: conflict_binding,
         part26_coordinates,
@@ -729,7 +874,9 @@ fn caller_composition_binds_part26_row_to_part21_anchor_only_with_explicit_polic
 #[test]
 fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
     let bytes = include_bytes!("tests/data/er04_cache_identity.p21");
-    let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse cache witness");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(bytes, crate::parse::parse_inner)
+            .expect("parse cache witness");
     assert!(diagnostics.is_empty());
     let population = exchange
         .header()
@@ -792,11 +939,14 @@ fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
 fn signed_resource_digest_and_timestamp_are_retained_without_cache_identity() {
     let bytes = include_bytes!("tests/data/er04_cache_identity_signed.p21");
     let signed_resource = include_bytes!("../../signature/tests/data/sg04_openssl_detached.p21");
-    let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse signed cache witness");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(bytes, crate::parse::parse_inner)
+            .expect("parse signed cache witness");
     assert!(diagnostics.is_empty());
-    let signed_exchange = crate::parse::parse(signed_resource)
-        .expect("parse signed resource")
-        .0;
+    let signed_exchange =
+        crate::test_support::with_service_context(signed_resource, crate::parse::parse_inner)
+            .expect("parse signed resource")
+            .0;
     assert_eq!(signed_exchange.signatures().len(), 1);
 
     let population = exchange

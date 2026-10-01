@@ -66,17 +66,17 @@ fn coil_scope_borrowed_wire_matches_owned_wire_bytes() {
     for scope in [
         super::DesignCoilScope::default(),
         super::DesignCoilScope {
-            coil_operation: Some(crate::records::identity::RecordedValue {
+            operation: Some(crate::records::identity::RecordedValue {
                 value: super::DesignExtrudeOperation::NewBody,
                 offset: 10,
             }),
-            coil_extent: Some(crate::records::identity::MaybeRecordedValue::Located(
+            extent: Some(crate::records::identity::MaybeRecordedValue::Located(
                 crate::records::identity::RecordedValue {
                     value: super::DesignCoilExtent::Spiral,
                     offset: 11,
                 },
             )),
-            coil_placement: Some(placement(true)),
+            placement: Some(placement(true)),
             ..Default::default()
         },
     ] {
@@ -91,7 +91,7 @@ fn coil_scope_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn coil_scope_native_retained_limit_refuses_before_clone() {
     let scope = super::DesignCoilScope {
-        coil_placement: Some(placement(true)),
+        placement: Some(placement(true)),
         ..Default::default()
     };
     let record = NestedRecord {

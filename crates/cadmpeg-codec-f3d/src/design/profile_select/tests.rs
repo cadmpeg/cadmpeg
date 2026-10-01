@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_test_support::edit;
 
 use super::{
@@ -41,6 +43,12 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+mod extrude_bind_allocation;
+mod historical_allocation;
+mod historical_candidate_allocation;
+mod loft_bind_allocation;
+mod path_allocation;
+mod region_allocation;
 mod spatial_transition;
 
 fn group() -> DesignConstructionOperandGroup {
@@ -246,162 +254,171 @@ fn spatial_profile(
 
 #[test]
 fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
-    let sketch_id =
-        cadmpeg_ir::sketches::SpatialSketchId::mint("f3d:model:spatial-sketch#selection").unwrap();
-    let sketch = SpatialSketch {
-        id: sketch_id.clone(),
-        name: None,
-        configuration: None,
-        visible: None,
-        profiles: vec![
-            spatial_profile(&sketch_id, &[100, 101, 102]),
-            spatial_profile(&sketch_id, &[200, 201, 202]),
-        ],
-        native_ref: None,
-    };
-    let group = DesignExtrudeSelectionGroup::try_from(
-        crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
-            id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
-            scope_record_index: 7,
-            scope_reference_ordinal: 0,
-            record_index: 9,
-            byte_offset: 0,
-            class_tag: "277".to_owned(),
-            member_count_offset: 32,
-            members: vec![10],
-            member_offsets: vec![37],
-            opaque_index: 1,
-            opaque_index_offset: 47,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 51,
-            variant: false,
-            paired_class_tag: "277".to_owned(),
-            paired_byte_offset: 100,
-        },
-    )
-    .unwrap();
-    let mut member = DesignExtrudeSelectionMember::try_new(
-        crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
-            id: "f3d:Design/BulkStream.dat:selection-member#10".into(),
-            group_record_index: group.record_index,
-            group_member_ordinal: 0,
-            record_index: 10,
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("278".to_owned())
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let sketch_id =
+            cadmpeg_ir::sketches::SpatialSketchId::mint("f3d:model:spatial-sketch#selection")
+                .unwrap();
+        let sketch = SpatialSketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            profiles: vec![
+                spatial_profile(&sketch_id, &[100, 101, 102]),
+                spatial_profile(&sketch_id, &[200, 201, 202]),
+            ],
+            native_ref: None,
+        };
+        let group = DesignExtrudeSelectionGroup::try_from(
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
+                id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
+                scope_record_index: 7,
+                scope_reference_ordinal: 0,
+                record_index: 9,
+                byte_offset: 0,
+                class_tag: "277".to_owned(),
+                member_count_offset: 32,
+                members: vec![10],
+                member_offsets: vec![37],
+                opaque_index: 1,
+                opaque_index_offset: 47,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 51,
+                variant: false,
+                paired_class_tag: "277".to_owned(),
+                paired_byte_offset: 100,
+            },
+        )
+        .unwrap();
+        let mut member = DesignExtrudeSelectionMember::try_new(
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
+                id: "f3d:Design/BulkStream.dat:selection-member#10".into(),
+                group_record_index: group.record_index,
+                group_member_ordinal: 0,
+                record_index: 10,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("278".to_owned())
+                    .unwrap(),
+                local_id: 200,
+                local_id_offset: 21,
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
                 .unwrap(),
-            local_id: 200,
-            local_id_offset: 21,
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                asset_id_offset: 33,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 109,
+                tail_slot_present: false,
+                tail_slot_offset: 0,
+                resolved_geometry: Some(SketchRelationOperand::Curve {
+                    record_index: 20,
+                    primary_id: 200,
+                    secondary_id: 0,
+                }),
+                operand_identity_ids: Vec::new(),
+                historical: None,
+                next_record_index: 11,
+                next_byte_offset: 190,
+            },
+        )
+        .unwrap();
+        let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+        let scope_histories = HashMap::new();
+        let resolution = ExtrudeProfileResolution {
+            entities: &[],
+            spatial_sketches: &[],
+            spatial_entities: &[],
+            histories: &[],
+            scope_histories: &scope_histories,
+            linear_tolerance: 1.0e-6,
+            angular_tolerance: 1.0e-9,
+            arrangement_budget: &arrangement_budget,
+            ctx: decode_ctx,
+        };
+        let scoped_resolution = resolution.scoped(&[]);
+
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &group,
+                std::slice::from_ref(&member),
+                &sketch,
+                &[],
+                scoped_resolution,
+                None,
+                None,
             )
             .unwrap(),
-            asset_id_offset: 33,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            Some(1)
+        );
+
+        let mut conflicting_group = group.clone();
+        conflicting_group.try_set_members(vec![10, 11]).unwrap();
+        let mut conflicting_member = member.clone();
+        conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
+        conflicting_member.group_member_ordinal = 1;
+        let mut draft = conflicting_member.into_draft();
+        draft.record_index = 11;
+
+        conflicting_member =
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
+                draft,
             )
-            .unwrap(),
-            context_id_offset: 109,
-            tail_slot_present: false,
-            tail_slot_offset: 0,
-            resolved_geometry: Some(SketchRelationOperand::Curve {
-                record_index: 20,
-                primary_id: 200,
-                secondary_id: 0,
-            }),
-            operand_identity_ids: Vec::new(),
-            historical: None,
-            next_record_index: 11,
-            next_byte_offset: 190,
-        },
-    )
-    .unwrap();
-    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
-    let scope_histories = HashMap::new();
-    let resolution = ExtrudeProfileResolution {
-        entities: &[],
-        spatial_sketches: &[],
-        spatial_entities: &[],
-        histories: &[],
-        scope_histories: &scope_histories,
-        linear_tolerance: 1.0e-6,
-        angular_tolerance: 1.0e-9,
-        arrangement_budget: &arrangement_budget,
-        ctx: None,
-    };
-    let scoped_resolution = resolution.scoped(&[]);
-
-    assert_eq!(
-        resolved_spatial_extrude_profile_selection(
-            &group,
-            std::slice::from_ref(&member),
-            &sketch,
-            &[],
-            scoped_resolution,
-            None,
-            None,
-        ),
-        Some(1)
-    );
-
-    let mut conflicting_group = group.clone();
-    conflicting_group.try_set_members(vec![10, 11]).unwrap();
-    let mut conflicting_member = member.clone();
-    conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
-    conflicting_member.group_member_ordinal = 1;
-    let mut draft = conflicting_member.into_draft();
-    draft.record_index = 11;
-
-    conflicting_member =
-        crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(draft)
             .unwrap();
-    conflicting_member.local_id = 100;
-    conflicting_member.resolved_geometry = Some(SketchRelationOperand::Curve {
-        record_index: 21,
-        primary_id: 100,
-        secondary_id: 0,
-    });
-    assert_eq!(
-        resolved_spatial_extrude_profile_selection(
-            &conflicting_group,
-            &[member.clone(), conflicting_member],
-            &sketch,
-            &[],
-            scoped_resolution,
-            None,
-            None,
-        ),
-        None
-    );
+        conflicting_member.local_id = 100;
+        conflicting_member.resolved_geometry = Some(SketchRelationOperand::Curve {
+            record_index: 21,
+            primary_id: 100,
+            secondary_id: 0,
+        });
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &conflicting_group,
+                &[member.clone(), conflicting_member],
+                &sketch,
+                &[],
+                scoped_resolution,
+                None,
+                None,
+            )
+            .unwrap(),
+            None
+        );
 
-    member.resolved_geometry = None;
-    assert_eq!(
-        resolved_spatial_extrude_profile_selection(
-            &group,
-            std::slice::from_ref(&member),
-            &sketch,
-            &[],
-            scoped_resolution,
-            None,
-            None,
-        ),
-        None
-    );
-    let single_profile = SpatialSketch {
-        profiles: vec![sketch.profiles[0].clone()],
-        ..sketch
-    };
-    assert_eq!(
-        resolved_spatial_extrude_profile_selection(
-            &group,
-            &[member],
-            &single_profile,
-            &[],
-            scoped_resolution,
-            None,
-            None,
-        ),
-        Some(0)
-    );
+        member.resolved_geometry = None;
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &group,
+                std::slice::from_ref(&member),
+                &sketch,
+                &[],
+                scoped_resolution,
+                None,
+                None,
+            )
+            .unwrap(),
+            None
+        );
+        let single_profile = SpatialSketch {
+            profiles: vec![sketch.profiles[0].clone()],
+            ..sketch
+        };
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &group,
+                &[member],
+                &single_profile,
+                &[],
+                scoped_resolution,
+                None,
+                None,
+            )
+            .unwrap(),
+            Some(0)
+        );
+    });
 }
 
 #[test]
@@ -511,12 +528,16 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     };
 
     assert_eq!(
-        resolved_spatial_sketch_profile_regions(
-            "stream",
-            &profile_operand,
-            &spatial_sketches[0],
-            &resolution,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            resolved_spatial_sketch_profile_regions(
+                "stream",
+                &profile_operand,
+                &spatial_sketches[0],
+                &resolution,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(vec![0, 1])
     );
 
@@ -528,12 +549,16 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     )
     .unwrap();
     assert_eq!(
-        resolved_spatial_sketch_profile_regions(
-            "stream",
-            &whole_sketch_operand,
-            &spatial_sketches[0],
-            &resolution,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            resolved_spatial_sketch_profile_regions(
+                "stream",
+                &whole_sketch_operand,
+                &spatial_sketches[0],
+                &resolution,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(vec![0, 1, 2])
     );
     assert_eq!(
@@ -569,12 +594,16 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         ..resolution
     };
     assert_eq!(
-        resolved_spatial_sketch_profile_regions(
-            "stream",
-            &profile_operand,
-            &spatial_sketches[0],
-            &noncoincident_resolution,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            resolved_spatial_sketch_profile_regions(
+                "stream",
+                &profile_operand,
+                &spatial_sketches[0],
+                &noncoincident_resolution,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 }
@@ -624,7 +653,12 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         &sketch_entities,
     );
     assert_eq!(
-        resolved_loft_entity_selection_path(&group, &resolution),
+        crate::test_support::with_decode_context(|decode_ctx| resolved_loft_entity_selection_path(
+            &group,
+            &resolution,
+            decode_ctx
+        ))
+        .unwrap(),
         Some(
             PathRef::sketch_curves(
                 sketch.clone(),
@@ -646,7 +680,11 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         &sketches,
         &sketch_entities,
     );
-    assert!(resolved_loft_entity_selection_path(&group, &mixed_resolution).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        resolved_loft_entity_selection_path(&group, &mixed_resolution, decode_ctx)
+    })
+    .unwrap()
+    .is_none());
 
     let incomplete_resolution = planar_resolution(
         &operands,
@@ -655,7 +693,11 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         &sketches,
         &sketch_entities,
     );
-    assert!(resolved_loft_entity_selection_path(&group, &incomplete_resolution).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        resolved_loft_entity_selection_path(&group, &incomplete_resolution, decode_ctx)
+    })
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -704,7 +746,12 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
     };
 
     assert_eq!(
-        resolve_entity_selection_path(&group, &resolution),
+        crate::test_support::with_decode_context(|decode_ctx| resolve_entity_selection_path(
+            &group,
+            &resolution,
+            decode_ctx
+        ))
+        .unwrap(),
         Some(
             PathRef::spatial_sketch_curves(
                 spatial_sketch.clone(),
@@ -801,7 +848,12 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         spatial_sketch_entities: &[],
     };
     assert_eq!(
-        resolve_entity_selection_profile(&group, &resolution),
+        crate::test_support::with_decode_context(|decode_ctx| resolve_entity_selection_profile(
+            &group,
+            &resolution,
+            decode_ctx
+        ))
+        .unwrap(),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![1])
                 .unwrap()
@@ -826,7 +878,11 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         spatial_sketches: &[],
         spatial_sketch_entities: &[],
     };
-    assert!(resolve_entity_selection_profile(&group, &ambiguous_resolution).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        resolve_entity_selection_profile(&group, &ambiguous_resolution, decode_ctx)
+    })
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -865,7 +921,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -882,7 +938,12 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     };
 
     assert_eq!(
-        resolve_entity_selection_profile(&group, &resolution),
+        crate::test_support::with_decode_context(|decode_ctx| resolve_entity_selection_profile(
+            &group,
+            &resolution,
+            decode_ctx
+        ))
+        .unwrap(),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_entities(sketch, vec![entity_id])
                 .unwrap()
@@ -982,7 +1043,15 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
     .unwrap();
 
     assert_eq!(
-        resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities,),
+        crate::test_support::with_decode_context(|decode_ctx| resolved_sketch_profile_regions(
+            "stream",
+            &operand,
+            &source,
+            &curves,
+            &sketch_entities,
+            decode_ctx
+        ))
+        .unwrap(),
         Some(vec![1, 0])
     );
 
@@ -994,13 +1063,17 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         .regions[0]
         .members
         .push(profile_region_member(100));
-    assert!(resolved_sketch_profile_regions(
-        "stream",
-        &mixed_region,
-        &source,
-        &curves,
-        &sketch_entities,
+    assert!(crate::test_support::with_decode_context(
+        |decode_ctx| resolved_sketch_profile_regions(
+            "stream",
+            &mixed_region,
+            &source,
+            &curves,
+            &sketch_entities,
+            decode_ctx
+        )
     )
+    .unwrap()
     .is_none());
 
     source
@@ -1012,13 +1085,17 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             });
         })
         .unwrap();
-    assert!(resolved_sketch_profile_regions(
-        "stream",
-        &operand,
-        &source,
-        &curves,
-        &sketch_entities,
+    assert!(crate::test_support::with_decode_context(
+        |decode_ctx| resolved_sketch_profile_regions(
+            "stream",
+            &operand,
+            &source,
+            &curves,
+            &sketch_entities,
+            decode_ctx
+        )
     )
+    .unwrap()
     .is_none());
 }
 
@@ -1056,25 +1133,27 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
     let point = Point3::new(11.0, 20.0, 9.0);
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             std::slice::from_ref(&entity),
             &[point],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::profile_select::selection_containing_points(
-            &sketch,
-            std::slice::from_ref(&entity),
-            &[point],
-            1.0e-6,
-            &arrangement_budget,
-            None,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::selection_containing_points(
+                &sketch,
+                std::slice::from_ref(&entity),
+                &[point],
+                1.0e-6,
+                &arrangement_budget,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
@@ -1115,14 +1194,16 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
     ];
     let endpoints = [Point3::new(10.0, 20.0, 5.0), Point3::new(12.0, 20.0, 5.0)];
     assert_eq!(
-        crate::design::profile_select::selection_containing_points(
-            &branched_sketch,
-            &branched_entities,
-            &endpoints,
-            1.0e-6,
-            &arrangement_budget,
-            None,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::selection_containing_points(
+                &branched_sketch,
+                &branched_entities,
+                &endpoints,
+                1.0e-6,
+                &arrangement_budget,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
@@ -1132,25 +1213,27 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         .try_push(sketch.profiles[0].clone())
         .unwrap();
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             std::slice::from_ref(&entity),
             &[point],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::profile_select::selection_containing_points(
-            &sketch,
-            std::slice::from_ref(&entity),
-            &[point],
-            1.0e-6,
-            &arrangement_budget,
-            None,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::selection_containing_points(
+                &sketch,
+                std::slice::from_ref(&entity),
+                &[point],
+                1.0e-6,
+                &arrangement_budget,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         None
     );
@@ -1160,12 +1243,34 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
 fn historical_selection_preserves_first_member_region_order() {
     let region = |outer| SketchProfileRegion::loops(outer, Vec::new()).unwrap();
     assert_eq!(
-        crate::design::profile_select::ordered_unique_profile_selections([
-            Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3)])),
-            Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(1)])),
-            Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3)])),
-            Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(2)])),
-        ]),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::ordered_unique_profile_selections(
+                [
+                    Some(
+                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+                            region(3),
+                        ]),
+                    ),
+                    Some(
+                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+                            region(1),
+                        ]),
+                    ),
+                    Some(
+                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+                            region(3),
+                        ]),
+                    ),
+                    Some(
+                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+                            region(2),
+                        ]),
+                    ),
+                ],
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
                 region(3),
@@ -1175,10 +1280,20 @@ fn historical_selection_preserves_first_member_region_order() {
         )
     );
     assert_eq!(
-        crate::design::profile_select::ordered_unique_profile_selections([
-            Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3)])),
-            None,
-        ]),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::ordered_unique_profile_selections(
+                [
+                    Some(
+                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+                            region(3),
+                        ]),
+                    ),
+                    None,
+                ],
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 }
@@ -1197,7 +1312,12 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::merge_resolved_profile_selections(
+                &sketch, &loops, decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![3, 1, 2])
                 .unwrap()
@@ -1221,7 +1341,12 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::merge_resolved_profile_selections(
+                &sketch, &regions, decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
@@ -1235,26 +1360,34 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     );
 
     assert_eq!(
-        crate::design::profile_select::merge_resolved_profile_selections(
-            &sketch,
-            &[loops[0].clone(), regions[0].clone()]
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::merge_resolved_profile_selections(
+                &sketch,
+                &[loops[0].clone(), regions[0].clone()],
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::profile_select::merge_resolved_profile_selections(
-            &sketch,
-            &[
-                loops[0].clone(),
-                cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::sketch_selection(
-                        sketch.clone(),
-                        vec!["native-group".into()]
-                    )
-                    .unwrap()
-                ),
-            ]
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::merge_resolved_profile_selections(
+                &sketch,
+                &[
+                    loops[0].clone(),
+                    cadmpeg_ir::features::ProfileRef::Planar(
+                        cadmpeg_ir::features::PlanarProfileRef::sketch_selection(
+                            sketch.clone(),
+                            vec!["native-group".into()],
+                        )
+                        .unwrap(),
+                    ),
+                ],
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 }
@@ -1314,15 +1447,33 @@ fn historical_profile_members_resolve_through_topology_ownership() {
     };
 
     assert_eq!(
-        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Pcurve), 50, &topology,),
+        crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
+            Some(AsmHistoricalEntityKind::Pcurve),
+            50,
+            &topology,
+            decode_ctx
+        ))
+        .unwrap(),
         HashSet::from([10])
     );
     assert_eq!(
-        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Surface), 40, &topology,),
+        crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
+            Some(AsmHistoricalEntityKind::Surface),
+            40,
+            &topology,
+            decode_ctx
+        ))
+        .unwrap(),
         HashSet::from([10])
     );
     assert_eq!(
-        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Edge), 30, &topology,),
+        crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
+            Some(AsmHistoricalEntityKind::Edge),
+            30,
+            &topology,
+            decode_ctx
+        ))
+        .unwrap(),
         HashSet::from([10, 20])
     );
 }
@@ -1418,7 +1569,10 @@ fn historical_face_points_require_complete_boundary_topology() {
         ..crate::history_records::AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::design::profile_select::historical_face_points(10, &topology),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)
+        })
+        .unwrap(),
         Some(vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
@@ -1428,7 +1582,10 @@ fn historical_face_points_require_complete_boundary_topology() {
 
     topology.point_positions.pop();
     assert_eq!(
-        crate::design::profile_select::historical_face_points(10, &topology),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)
+        })
+        .unwrap(),
         None
     );
 }
@@ -1570,27 +1727,35 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
     };
 
     assert_eq!(
-        crate::design::profile_select::inserted_cylindrical_profile_selection(
-            &sketch,
-            std::slice::from_ref(&circle),
-            &topology,
-            10,
-            1.0e-6,
-            1.0e-9,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::inserted_cylindrical_profile_selection(
+                &sketch,
+                std::slice::from_ref(&circle),
+                &topology,
+                10,
+                1.0e-6,
+                1.0e-9,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
     let mut tilted = topology;
     tilted.surface_cylinders[0].axis = Vector3::new(0.0, 1.0, 0.0);
     assert_eq!(
-        crate::design::profile_select::inserted_cylindrical_profile_selection(
-            &sketch,
-            std::slice::from_ref(&circle),
-            &tilted,
-            10,
-            1.0e-6,
-            1.0e-9,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::inserted_cylindrical_profile_selection(
+                &sketch,
+                std::slice::from_ref(&circle),
+                &tilted,
+                10,
+                1.0e-6,
+                1.0e-9,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 }
@@ -1617,17 +1782,25 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-            &[20, 11, 10],
-            &topology
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[20, 11, 10],
+                &topology,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(vec![10, 11])
     );
     assert_eq!(
-        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-            &[10, 10],
-            &topology
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[10, 10],
+                &topology,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 
@@ -1643,10 +1816,14 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
         },
     ]);
     assert_eq!(
-        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-            &[10, 11, 30, 31],
-            &ambiguous
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[10, 11, 30, 31],
+                &ambiguous,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 
@@ -1655,10 +1832,14 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
         .face_surfaces
         .retain(|binding| binding.entity != 20);
     assert_eq!(
-        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-            &[10, 11, 20],
-            &incomplete
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[10, 11, 20],
+                &incomplete,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 }
@@ -1719,9 +1900,11 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
     };
     let transition_selection =
         |selections: Vec<Option<crate::design::profile_select::ResolvedProfileSelection>>| {
-            crate::design::profile_select::transition_inserted_profile_selection(
-                &sketch, &entities, 1.0e-6, selections, None,
-            )
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::profile_select::transition_inserted_profile_selection(
+                    &sketch, &entities, 1.0e-6, selections, decode_ctx,
+                )
+            })
             .unwrap()
         };
 

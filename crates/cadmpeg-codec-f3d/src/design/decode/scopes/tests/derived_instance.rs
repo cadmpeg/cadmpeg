@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::component_constructions::exact_derived_instance_construction;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::identity_matrix;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,
@@ -16,7 +17,7 @@ const OCCURRENCE: &str = "f867facf-edec-4109-9553-b3703c4e0caf";
 #[test]
 fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     let (mut bytes, mut scope, occurrence) = fixture();
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
     let construction = exact_derived_instance_construction(
         &bytes,
@@ -36,7 +37,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     );
     assert_eq!(
         construction.transform_offset,
-        425 + scope_279::TRANSFORM as u64
+        425 + u64_from_index(scope_279::TRANSFORM)
     );
 
     scope.paired_class_tag =
@@ -52,7 +53,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     bytes[425 + scope_279::TRANSFORM + 6] = 0;
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(exact_derived_instance_construction(
         &bytes,
         &records,
@@ -111,7 +112,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
     );
     scope
         .try_edit(|draft| {
-            draft.byte_offset = SCOPE_AT as u64;
+            draft.byte_offset = u64_from_index(SCOPE_AT);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -124,7 +125,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         crate::records::references::DesignClassTag::try_from("279".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = scope_279::LEN as u64;
+            draft.frame_length = u64_from_index(scope_279::LEN);
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![383]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();

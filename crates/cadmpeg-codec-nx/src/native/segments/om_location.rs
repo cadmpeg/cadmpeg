@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub(in crate::native) struct OmLocation {
     source_offset: u64,
     section_offset: u64,
+    separator_byte_len: u32,
 }
 
 impl OmLocation {
@@ -13,6 +14,7 @@ impl OmLocation {
         Some(Self {
             source_offset,
             section_offset: source_offset.checked_add(u64::from(separator_byte_len))?,
+            separator_byte_len,
         })
     }
 
@@ -25,7 +27,7 @@ impl OmLocation {
     }
 
     pub(super) fn separator_byte_len(self) -> u32 {
-        (self.section_offset - self.source_offset) as u32
+        self.separator_byte_len
     }
 }
 

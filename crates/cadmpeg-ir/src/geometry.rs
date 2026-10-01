@@ -16,10 +16,47 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
+
+/// Charge a decode copy of `count` values of `T` as collection items and retained bytes.
+pub(super) fn charge_decode_copy<T>(
+    count: usize,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64_from_index(count);
+    let bytes = count
+        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count))?;
+    ctx.charge_collection_items(count, operation)?;
+    ctx.charge_retained(bytes, operation)
+}
+
+pub(super) fn copy_decode_slice<T: Copy>(
+    values: &[T],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    charge_decode_copy::<T>(values.len(), ctx, operation)?;
+    let mut copied = Vec::new();
+    copied.try_reserve_exact(values.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(values.len()),
+                operation,
+            ),
+        )
+    })?;
+    copied.extend_from_slice(values);
+    Ok(copied)
+}
 
 pub mod analytic;
 pub mod nurbs;
@@ -82,8 +119,6 @@ pub enum LegacyExtensionFlags {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum OffsetExtension<R = f64> {
     /// Pre-revision conditional flag sequence.
@@ -101,7 +136,7 @@ pub enum OffsetExtension<R = f64> {
     /// Revision-gated fields with the required four-boolean carrier run.
     Revision {
         /// Revision-gated form whose carrier run is exactly four booleans.
-        form: RevisionSurfaceForm<[bool; 4], R>,
+        form: Box<RevisionSurfaceForm<[bool; 4], R>>,
     },
 }
 
@@ -226,6 +261,38 @@ impl SolvedSurfaceGeometry {
                 Ok(Self::Unknown { record })
             }
         }
+    }
+
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Plane(value) => Self::Plane(*value),
+            Self::Cylinder(value) => Self::Cylinder(*value),
+            Self::Cone(value) => Self::Cone(*value),
+            Self::Sphere(value) => Self::Sphere(*value),
+            Self::Torus(value) => Self::Torus(*value),
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Transformed(PlacedSurface {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record
+                    .as_ref()
+                    .map(|id| id.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+        })
     }
 
     /// Placements enclosing the leaf of this carrier's inline basis chain.
@@ -376,6 +443,27 @@ impl SurfaceGeometry {
                 })
             }
         }
+    }
+
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
+                construction: construction.try_clone_for_decode(ctx, operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
+        })
     }
 
     /// Construction that owns this carrier, when it is procedural.
@@ -595,6 +683,68 @@ impl SolvedCurveGeometry {
         }
     }
 
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Line(value) => Self::Line(*value),
+            Self::Circle(value) => Self::Circle(*value),
+            Self::Ellipse(value) => Self::Ellipse(*value),
+            Self::Parabola(value) => Self::Parabola(*value),
+            Self::Hyperbola(value) => Self::Hyperbola(*value),
+            Self::Degenerate(value) => Self::Degenerate(*value),
+            Self::Composite {
+                segments,
+                self_intersect,
+            } => {
+                charge_decode_copy::<CompositeCurveSegment>(segments.len(), ctx, operation)?;
+                let mut copy = Vec::new();
+                copy.try_reserve_exact(segments.len()).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                            0,
+                            u64_from_index(segments.len()),
+                            operation,
+                        ),
+                    )
+                })?;
+                for segment in segments {
+                    copy.push(CompositeCurveSegment {
+                        curve: segment.curve.try_clone_for_decode(ctx, operation)?,
+                        same_sense: segment.same_sense,
+                        transition: segment.transition,
+                    });
+                }
+                Self::Composite {
+                    segments: CompositeCurveSegments::try_from(copy)
+                        .map_err(CodecError::malformed)?,
+                    self_intersect: *self_intersect,
+                }
+            }
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Transformed(PlacedCurve {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record
+                    .as_ref()
+                    .map(|id| id.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+        })
+    }
+
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedCurve`] stores its own depth, so this reads one field and
@@ -745,6 +895,27 @@ impl CurveGeometry {
                 })
             }
         }
+    }
+
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
+                construction: construction.try_clone_for_decode(ctx, operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
+        })
     }
 
     /// Construction that owns this carrier, when it is procedural.
@@ -1031,8 +1202,6 @@ pub enum SplineSurfaceParameters<R = f64> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum ExactSpline<R = f64> {
     /// Legacy solved-cache layout with ordered U/V ranges.
@@ -1056,7 +1225,7 @@ pub enum ExactSpline<R = f64> {
         /// Native ASM extension enum following the intervals.
         extension: i64,
         /// Required revision-gated form.
-        form: RevisionSurfaceForm<Vec<bool>, R>,
+        form: Box<RevisionSurfaceForm<Vec<bool>, R>>,
     },
 }
 
@@ -3914,6 +4083,8 @@ pub enum LoftSubdata<R = f64> {
 pub struct LoftSubdataTable<R = f64> {
     type_code: i64,
     rows: Vec<LoftSubdataRow<R>>,
+    row_count: i64,
+    column_count: i64,
 }
 
 #[derive(Deserialize)]
@@ -3952,18 +4123,18 @@ pub struct RaggedLoftTable;
 impl<R> LoftSubdataTable<R> {
     /// Admit a table whose rows share one column width.
     pub fn new(type_code: i64, rows: Vec<LoftSubdataRow<R>>) -> Result<Self, RaggedLoftTable> {
-        if rows.len() > i64::MAX as usize
-            || rows
-                .first()
-                .is_some_and(|row| row.columns.len() > i64::MAX as usize)
-        {
-            return Err(RaggedLoftTable);
-        }
+        let row_count = i64::try_from(rows.len()).map_err(|_| RaggedLoftTable)?;
         let column_count = rows.first().map_or(0, |row| row.columns.len());
+        let column_count_i64 = i64::try_from(column_count).map_err(|_| RaggedLoftTable)?;
         if rows.iter().any(|row| row.columns.len() != column_count) {
             return Err(RaggedLoftTable);
         }
-        Ok(Self { type_code, rows })
+        Ok(Self {
+            type_code,
+            rows,
+            row_count,
+            column_count: column_count_i64,
+        })
     }
 }
 
@@ -4004,7 +4175,7 @@ impl<R> LoftSubdata<R> {
     pub fn row_count(&self) -> i64 {
         match self {
             Self::Type211 { dimensions, .. } => dimensions[0],
-            Self::Table(table) => table.rows.len() as i64,
+            Self::Table(table) => table.row_count,
         }
     }
 
@@ -4013,7 +4184,7 @@ impl<R> LoftSubdata<R> {
     pub fn column_count(&self) -> i64 {
         match self {
             Self::Type211 { dimensions, .. } => dimensions[1],
-            Self::Table(table) => table.rows.first().map_or(0, |row| row.columns.len() as i64),
+            Self::Table(table) => table.column_count,
         }
     }
 
@@ -4983,7 +5154,12 @@ pub enum VariableBlendBareCrossSection {
 impl VariableBlendBareCrossSection {
     /// Numeric selector stored in the native variable-blend record.
     pub const fn native_selector(self) -> i64 {
-        self as i64
+        match self {
+            Self::Selector2 => 2,
+            Self::Selector4 => 4,
+            Self::Selector5 => 5,
+            Self::Selector6 => 6,
+        }
     }
 }
 
@@ -6405,10 +6581,16 @@ pub enum SkinSurfaceLayout<R = f64, V = Vector3> {
 
 impl<R, V> SkinSurfaceLayout<R, V> {
     /// Native inner count, derived from the profile list in the expanded form.
-    pub fn inner_count(&self) -> i64 {
+    pub fn inner_count(&self) -> Result<i64, cadmpeg_core::CodecError> {
         match self {
-            Self::Profiles { profiles, .. } => profiles.len() as i64,
-            Self::Compact { inner_count, .. } => *inner_count,
+            Self::Profiles { profiles, .. } => i64::try_from(profiles.len()).map_err(|_| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "skin surface profile count",
+                    9_223_372_036_854_775_807,
+                    cadmpeg_core::decode::u64_from_index(profiles.len()),
+                )
+            }),
+            Self::Compact { inner_count, .. } => Ok(*inner_count),
         }
     }
 }
@@ -7111,20 +7293,30 @@ impl IntcurveSupportContext {
         self.sides[side].pcurve = geometry.map(SupportPcurve::from);
     }
 
-    /// Copy a pcurve mapping between support sides of this context.
-    pub fn copy_pcurve(&mut self, source: usize, target: usize) {
-        let (source, target) = match source.cmp(&target) {
-            std::cmp::Ordering::Less => {
-                let (before, after) = self.sides.split_at_mut(target);
-                (&before[source], &mut after[0])
-            }
-            std::cmp::Ordering::Greater => {
-                let (before, after) = self.sides.split_at_mut(source);
-                (&after[0], &mut before[target])
-            }
-            std::cmp::Ordering::Equal => return,
-        };
-        target.pcurve.clone_from(&source.pcurve);
+    /// Copy a support pcurve under a decoder's allocation limits.
+    pub fn try_copy_pcurve_for_decode(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: usize,
+        target: usize,
+    ) -> Result<(), CodecError> {
+        if source == target {
+            return Ok(());
+        }
+        let copied = self.sides[source]
+            .pcurve
+            .as_ref()
+            .map(|pcurve| {
+                Ok::<_, CodecError>(SupportPcurve::new(
+                    pcurve
+                        .geometry
+                        .try_clone_for_decode(ctx, "intersection support pcurve copy")?,
+                    pcurve.parameter_range,
+                ))
+            })
+            .transpose()?;
+        self.sides[target].pcurve = copied;
+        Ok(())
     }
 
     /// Return the ordered support sides.
@@ -7346,8 +7538,6 @@ pub enum SpringPcurve<R = f64> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
 #[cfg_attr(
     feature = "schema",
     schemars(bound = "R: JsonSchema + Serialize, I: JsonSchema + Serialize")
@@ -7358,7 +7548,7 @@ pub enum SpringLayout<R = f64, I = [f64; 2]> {
         /// Two ordered support slots.
         supports: [SpringSupport<R>; 2],
         /// First pcurve or its null replacement range.
-        first_pcurve: SpringPcurve<R>,
+        first_pcurve: Box<SpringPcurve<R>>,
         /// Nullable second pcurve slot.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         second_pcurve: Option<PcurveGeometry>,

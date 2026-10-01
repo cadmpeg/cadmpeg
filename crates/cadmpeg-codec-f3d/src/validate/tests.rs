@@ -24,6 +24,63 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
+mod act_limits;
+mod arithmetic;
+mod body_recipe_limits;
+mod construction_group_limits;
+mod construction_identity_limits;
+mod dimension_validation_limits;
+mod edge_identity_limits;
+mod edge_operand_limits;
+mod edge_treatment_limits;
+mod edge_treatment_vertex_limits;
+mod entity_limits;
+mod extrude_group_limits;
+mod extrude_member_limits;
+mod extrude_parameter_limits;
+mod face_group_limits;
+mod face_operand_limits;
+mod face_source_limits;
+mod fillet_group_limits;
+mod image_limits;
+mod link_limits;
+mod mesh_feature_limits;
+mod operand_group_carrier_limits;
+mod parameter_scope_collection_limits;
+mod parameter_scope_limits;
+mod path_feature_limits;
+mod resource_limits;
+mod timeline_limits;
+
+#[test]
+fn native_validation_refuses_decode_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "asm_bulletin_boards",
+            &[board],
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = F3dCodec.validate_native(&ctx, &ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
 fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
     crate::records::dimensions::DesignRecipeReference {
         selector: 1,
@@ -140,7 +197,9 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
         native.design_parameter_scopes.push(scope);
     }
 
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     assert!(!findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(scope_id.as_str())
             && finding.message == "Fusion Design parameter scope has an invalid paired frame"
@@ -148,7 +207,9 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
 
     f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag =
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     assert!(findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(scope_id.as_str())
             && finding.message == "Fusion Design parameter scope has an invalid paired frame"
@@ -222,7 +283,11 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
         native.design_parameter_scopes.push(scope.clone());
     }
     let has_invalid_frame = |ir: &cadmpeg_ir::CadIr| {
-        crate::validate::validate_native(ir).iter().any(|finding| {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native_charged(ctx, ir).expect("service native validation")
+        })
+        .iter()
+        .any(|finding| {
             finding.entity.as_deref() == Some(scope_id.as_str())
                 && finding.message == "Fusion Design parameter scope has an invalid paired frame"
         })
@@ -358,7 +423,9 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     assert!(
         !findings.iter().any(|finding| {
             finding.message.contains("feature timeline")
@@ -385,7 +452,11 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(|finding| {
         finding.entity.as_deref()
             == Some(
                 duplicate_type_owner.design_feature_timelines[0]
@@ -421,7 +492,11 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(|finding| {
         finding.entity.as_deref() == Some(native.design_feature_timelines[0].id().as_str())
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
     }));
@@ -460,7 +535,9 @@ fn validation_accepts_carrier_local_component_references() {
         ]);
     }
 
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     assert!(!findings.iter().any(|finding| {
         finding.message == "Fusion Design component occurrence has an invalid fixed frame"
     }));
@@ -634,7 +711,9 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         native.design_body_recipe_operands = operands;
     }
 
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     let invalid_operands = findings
         .iter()
         .filter(|finding| {
@@ -762,17 +841,21 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     let invalid_frame = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.message == "Fusion Design construction operand group has an invalid frame"
     };
-    assert!(!crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_frame));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
         );
-    assert!(crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_frame));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_frame));
 
     {
         let mut native = f3d_native_mut(&mut ir);
@@ -788,17 +871,21 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                 DesignOperandRole::ROLE_0X21,
             );
     }
-    assert!(!crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_frame));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
         );
-    assert!(crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_frame));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_frame));
 }
 
 #[test]
@@ -919,7 +1006,11 @@ fn validation_checks_pipe_path_group_roles() {
     }
 
     let has_role_finding = |ir: &cadmpeg_ir::CadIr| {
-        crate::validate::validate_native(ir).iter().any(|finding| {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native_charged(ctx, ir).expect("service native validation")
+        })
+        .iter()
+        .any(|finding| {
             finding.entity.as_deref() == Some(scope_id.as_str())
                 && finding.message
                     == "Fusion Design path-feature operand roles conflict with its construction"
@@ -928,14 +1019,16 @@ fn validation_checks_pipe_path_group_roles() {
     assert!(has_role_finding(&ir));
 
     let group_native_finding_count = |ir: &cadmpeg_ir::CadIr| {
-        crate::validate::validate_native(ir)
-            .iter()
-            .filter(|finding| {
-                finding.entity.as_deref()
-                    == Some("f3d:Design/BulkStream.dat:design-construction-operand-group#20")
-                    && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-            })
-            .count()
+        crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native_charged(ctx, ir).expect("service native validation")
+        })
+        .iter()
+        .filter(|finding| {
+            finding.entity.as_deref()
+                == Some("f3d:Design/BulkStream.dat:design-construction-operand-group#20")
+                && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+        })
+        .count()
     };
     // The empty group violates both its counted frame and its typed-member
     // carrier invariant. The validator reports those independent failures.
@@ -1006,7 +1099,9 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         )
     };
 
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     assert!(findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(point_id.as_str())
@@ -1055,14 +1150,16 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
         )
     };
 
-    assert!(
-        !crate::validate::validate_native(&ir).iter().any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && (finding.entity.as_deref() == Some(point_id.as_str())
-                    || finding.entity.as_deref() == Some(curve_id.as_str()))
-                && finding.message.contains("persistent identity")
-        })
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+            && (finding.entity.as_deref() == Some(point_id.as_str())
+                || finding.entity.as_deref() == Some(curve_id.as_str()))
+            && finding.message.contains("persistent identity")
+    }));
 }
 
 #[test]
@@ -1097,12 +1194,14 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
         native.sketch_curve_identities[1].owner_reference = None;
     }
 
-    assert!(
-        !crate::validate::validate_native(&ir).iter().any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && finding.message.contains("persistent identity")
-        })
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+            && finding.message.contains("persistent identity")
+    }));
 }
 
 #[test]
@@ -1119,7 +1218,11 @@ fn validation_rejects_aliased_sketch_geometry_records() {
         native.sketch_curve_identities[0].id.clone()
     };
 
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding
@@ -1152,7 +1255,11 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
         id
     };
 
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(duplicate_id.as_str())
             && finding.message.contains("entity suffix is duplicated")
@@ -1196,7 +1303,10 @@ fn validation_accepts_user_design_parameter_frame() {
     )
     .unwrap();
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
-    assert!(crate::validate::validate_native(&ir).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .is_empty());
 }
 
 #[test]
@@ -1256,7 +1366,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         })
         .unwrap();
     let companion = DesignParameterCompanion::unbound(
-        crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
+        format!(
+            "{}:design-parameter-companion#1200",
+            crate::ids::native_scope(DESIGN_STREAM)
+        ),
         1_200,
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
         102,
@@ -1327,7 +1440,9 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         ]);
     }
 
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     assert!(
         findings.iter().all(|finding| {
             !finding
@@ -1492,7 +1607,9 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     let profile_message = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.message == "Fusion Design Extrude profile conflicts with its profile operand group"
     };
-    let findings = crate::validate::validate_native(&ir);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    });
     assert!(!findings.iter().any(profile_message));
     assert!(!findings
         .iter()
@@ -1501,18 +1618,22 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .push(group);
-    assert!(crate::validate::validate_native(&ir)
-        .iter()
-        .any(profile_message));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(profile_message));
 
     let profile = f3d_native_mut(&mut ir).design_parameter_scopes[0]
         .extrude_mut()
         .unwrap()
         .extrude_profile
         .take();
-    assert!(!crate::validate::validate_native(&ir)
-        .iter()
-        .any(profile_message));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(profile_message));
     f3d_native_mut(&mut ir).design_parameter_scopes[0]
         .extrude_mut()
         .unwrap()
@@ -1521,17 +1642,21 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .clear();
-    assert!(!crate::validate::validate_native(&ir)
-        .iter()
-        .any(profile_message));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(profile_message));
 
     f3d_native_mut(&mut ir).design_parameter_scopes[0]
         .extrude_profile_mut()
         .expect("test Extrude profile")
         .scope_reference_ordinal = 1;
-    assert!(crate::validate::validate_native(&ir)
-        .iter()
-        .any(profile_message));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(profile_message));
 }
 
 #[test]
@@ -1663,9 +1788,11 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         finding.entity.as_deref() == Some(identity_id.as_str())
             && finding.message.contains("invalid nested frame")
     };
-    assert!(!crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_identity));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_identity));
 
     let mut native = crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap();
     native.design_record_headers.push(DesignRecordHeader {
@@ -1680,9 +1807,11 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    assert!(crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_identity));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_identity));
 }
 
 #[test]
@@ -1798,133 +1927,11 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             && finding.message
                 == "Fusion Design entity-selection operand has an invalid nested frame"
     };
-    assert!(!crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_entity_selection));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_entity_selection));
 }
 
-#[test]
-fn only_a_face_recipe_kind_states_a_program_operand_length() {
-    use crate::records::recipes::ConstructionRecipeKind;
-
-    assert_eq!(
-        super::recipe_program_operand_length(ConstructionRecipeKind::Face),
-        Some(16)
-    );
-    assert_eq!(
-        super::recipe_program_operand_length(ConstructionRecipeKind::BoundedFace),
-        Some(24)
-    );
-    for kind in [
-        ConstructionRecipeKind::Body,
-        ConstructionRecipeKind::Edge,
-        ConstructionRecipeKind::Vertex,
-    ] {
-        assert_eq!(super::recipe_program_operand_length(kind), None);
-    }
-}
-
-/// The face-operand route refuses a recipe kind that states no face operand.
-///
-/// `validate_face_operands` reads the operand length through
-/// `recipe_program_operand_length`, so a `Body`, `Edge` or `Vertex` recipe
-/// states no program offset and the operand is invalid. The `Face` fixture is
-/// the control: it differs only in the recipe kind and the operand length that
-/// kind states, and it raises no finding.
-#[test]
-fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
-    use crate::records::{
-        decal::DesignRecordHeader,
-        feature::scope::{DesignFeatureKind, DesignParameterScope},
-        recipes::{ConstructionRecipe, ConstructionRecipeKind},
-        references::DesignClassTag,
-        topology::{face::DesignFaceOperand, face::DesignFaceOperandDraft},
-    };
-
-    let stream = "f3d:Design/BulkStream.dat";
-    let operand_id = format!("{stream}:design-face-operand#100");
-    let recipe_id = format!("{stream}:construction-recipe#0");
-    let findings_for = |kind: ConstructionRecipeKind, operand_length: u64| {
-        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        let mut scope = DesignParameterScope::empty(
-            &format!("{stream}:design-parameter-scope#10"),
-            DesignFeatureKind::OffsetFaces,
-            10,
-        );
-        scope
-            .try_edit(|draft| {
-                draft.reference_members =
-                    crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 100]);
-                draft.layout_fixture_references();
-                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        let class_tag = DesignClassTag::try_from("365".to_owned()).unwrap();
-        let recipe_byte_offset = 1_047;
-        let recipe_program_offset = recipe_byte_offset + operand_length;
-        let operand = DesignFaceOperand::try_new(DesignFaceOperandDraft {
-            id: operand_id.clone(),
-            scope_record_index: 10,
-            scope_reference_ordinal: 2,
-            group: None,
-            record_index: 100,
-            byte_offset: 1_000,
-            class_tag: class_tag.clone(),
-            paired_byte_offset: 1_016,
-            paired_class_tag: DesignClassTag::try_from("366".to_owned()).unwrap(),
-            recipe_record_index: 103,
-            recipe_record_byte_offset: 1_032,
-            recipe_id: recipe_id.clone(),
-            recipe_prefix_offset: 1_043,
-            recipe_prefix_bytes: Vec::new(),
-            recipe_references: Vec::new(),
-            recipe_kind: kind,
-            recipe_program_offset,
-            recipe_program: vec![0, -1],
-            recipe_nodes: Vec::new(),
-            candidate_faces: Vec::new(),
-            unreferenced_candidate_faces: Vec::new(),
-            alternate_selector_candidate_faces: Vec::new(),
-            preceding_candidate_faces: Vec::new(),
-            changed_candidate_faces: Vec::new(),
-            historical_support_contexts: Vec::new(),
-            resolved_face_slots: Vec::new(),
-            resolved_active_face: None,
-            next_record_index: 105,
-            next_byte_offset: recipe_program_offset + 8,
-        })
-        .unwrap();
-        {
-            let mut native = f3d_native_mut(&mut ir);
-            native.design_parameter_scopes = vec![scope];
-            native.design_record_headers = vec![DesignRecordHeader {
-                id: format!("{stream}:design-record-header#100"),
-                record_index: 100,
-                class_tag,
-                byte_offset: 1_000,
-            }];
-            native.construction_recipes = vec![ConstructionRecipe {
-                id: recipe_id.clone(),
-                byte_offset: recipe_byte_offset,
-                kind,
-                design: None,
-                recipe_index: 0,
-                record_index: None,
-            }];
-            native.design_face_operands = vec![operand];
-        }
-        crate::validate::validate_native(&ir)
-            .into_iter()
-            .filter(|finding| {
-                finding.message == "Fusion Design face operand has an invalid scope or recipe frame"
-                    && finding.entity.as_deref() == Some(operand_id.as_str())
-            })
-            .collect::<Vec<_>>()
-    };
-
-    let admitted = findings_for(ConstructionRecipeKind::Face, 16);
-    assert!(admitted.is_empty(), "{admitted:#?}");
-    assert_eq!(findings_for(ConstructionRecipeKind::Body, 16).len(), 1);
-}
+mod face_recipe_lengths;

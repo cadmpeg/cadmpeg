@@ -82,13 +82,35 @@ impl ArchiveSession<'_> {
     }
 }
 
+fn insert_member_charged<'a>(
+    ctx: &DecodeContext<'_>,
+    members: &mut BTreeMap<String, ClassifiedMember<'a>>,
+    path: &str,
+    member: ClassifiedMember<'a>,
+) -> Result<(), CodecError> {
+    if let Some(existing) = members.get_mut(path) {
+        *existing = member;
+        return Ok(());
+    }
+    let key = ctx.copy_retained_text(path, "retain F3Z member index path")?;
+    let previous = ctx.insert_btree_map(members, key, member, "index F3Z archive members")?;
+    drop(previous);
+    Ok(())
+}
+
 /// Resolves the archive manifest to the F3D member that owns the model.
-pub(super) fn model_root(scan: &ContainerScan<'_>) -> Result<(String, Option<String>), CodecError> {
-    let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
-        })?;
-    model_root_member(scan, &manifest.root)
+pub(super) fn model_root(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<(String, Option<String>), CodecError> {
+    let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
+    let bytes = u64::try_from(manifest_bytes.len())
+        .map_err(|_| ctx.refuse_codec_limit("parse F3Z manifest JSON", 0, u64::MAX))?;
+    let _reservation = ctx.reserve_scoped(bytes, "parse F3Z manifest JSON")?;
+    let manifest = serde_json::from_slice::<ManifestJson>(manifest_bytes).map_err(|error| {
+        CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+    })?;
+    model_root_member(ctx, scan, &manifest.root)
 }
 
 /// Classifies all F3D members and attaches each nested layer to its archive path.
@@ -97,7 +119,8 @@ pub(super) fn classify_members<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ArchiveSession<'a>, CodecError> {
     let mut members = BTreeMap::new();
-    let mut layers = DialectLayers::of(scan.kind.dialect().clone());
+    let primary = scan.kind.dialect().try_clone_for_decode(ctx)?;
+    let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     for member_path in scan
         .entries
@@ -112,34 +135,60 @@ pub(super) fn classify_members<'a>(
         })?;
         let member_scan = match crate::container::scan(ctx, member_view) {
             Ok(member_scan) => member_scan,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let message = error.to_string();
-                losses.push(F3dLossCode::XrefMemberUndecoded.note(format!(
-                    "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
-                )));
-                members.insert(
-                    member_path.to_owned(),
+                let message = ctx.format_retained(
+                    format_args!("{error}"),
+                    "retain F3Z unreadable member error",
+                )?;
+                super::push_loss(
+                    ctx,
+                    &mut losses,
+                    F3dLossCode::XrefMemberUndecoded,
+                    format_args!(
+                        "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
+                    ),
+                )?;
+                insert_member_charged(
+                    ctx,
+                    &mut members,
+                    member_path,
                     ClassifiedMember::Unreadable(message),
-                );
+                )?;
                 continue;
             }
         };
-        let (member_layers, member_losses) = crate::dialect::classify_layers(&member_scan);
-        losses.extend(member_losses.into_iter().map(|mut loss| {
-            loss.message = format!("archive member {member_path}: {}", loss.message);
-            loss
-        }));
-        losses.extend(merge_member_layers(
-            &mut layers,
-            &member_layers,
+        let (member_layers, mut member_losses) =
+            crate::dialect::classify_layers(ctx, &member_scan)?;
+        for loss in &mut member_losses {
+            loss.message = ctx.format_retained(
+                format_args!("archive member {member_path}: {}", loss.message),
+                "prefix F3Z member classification loss",
+            )?;
+        }
+        ctx.append_vec(
+            &mut losses,
+            &mut { member_losses },
+            "append F3Z report losses",
+        )?;
+        ctx.append_vec(
+            &mut losses,
+            &mut { merge_member_layers(ctx, &mut layers, &member_layers, member_path)? },
+            "append F3Z report losses",
+        )?;
+        ctx.charge_collection_items(1, "retain F3Z member scan")?;
+        insert_member_charged(
+            ctx,
+            &mut members,
             member_path,
-        ));
-        members.insert(
-            member_path.to_owned(),
             ClassifiedMember::Scanned(Box::new(member_scan)),
-        );
+        )?;
     }
-    losses.extend(crate::dialect::dialect_losses(&layers));
+    ctx.append_vec(
+        &mut losses,
+        &mut { crate::dialect::dialect_losses(ctx, &layers)? },
+        "append F3Z report losses",
+    )?;
     Ok(ArchiveSession {
         members,
         layers,
@@ -149,43 +198,74 @@ pub(super) fn classify_members<'a>(
 
 /// Attaches one archive member's identity and nested layers to its archive path.
 pub(super) fn merge_member_layers(
+    ctx: &DecodeContext<'_>,
     target: &mut DialectLayers,
     member: &DialectLayers,
     member_path: &str,
-) -> Vec<LossNote> {
+) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for matched in member.iter().cloned() {
-        let instance = matched.instance().map_or_else(
-            || member_path.to_owned(),
-            |nested| format!("{member_path}/{nested}"),
-        );
-        let collision_instance = instance.clone();
-        let mut declared = matched.declared().clone();
-        declared.insert(
-            cadmpeg_core::nonblank_const!(crate::dialect::DECLARED_ARCHIVE_MEMBER),
-            member_path.to_owned(),
-        );
-        let matched = matched.with_declared(declared).with_instance(instance);
-        let format = matched.format().to_owned();
-        if target.insert(matched).is_err() {
-            losses.push(F3dLossCode::DialectLayerCollision.note(format!(
-                "archive member {member_path} produced a duplicate {format} dialect layer at instance {collision_instance}; the later layer was omitted",
-            )));
+    for matched in member.iter() {
+        let matched = matched.try_clone_for_decode(ctx)?;
+        let instance = match matched.instance() {
+            Some(nested) => ctx.format_retained(
+                format_args!("{member_path}/{nested}"),
+                "retain F3Z dialect layer instance",
+            )?,
+            None => ctx.copy_retained_text(member_path, "retain F3Z dialect layer instance")?,
+        };
+        let matched = matched
+            .with_declared_entry_charged(
+                ctx,
+                cadmpeg_core::nonblank_const!(crate::dialect::DECLARED_ARCHIVE_MEMBER),
+                member_path,
+                "declare F3Z archive member",
+            )?
+            .with_instance(instance);
+        if let Err(rejected) =
+            target.insert_charged(ctx, matched, "collect F3Z member dialect layers")?
+        {
+            let format = rejected.format();
+            let collision_instance = rejected.instance().unwrap_or("unidentified");
+            super::push_loss(
+                ctx,
+                &mut losses,
+                F3dLossCode::DialectLayerCollision,
+                format_args!(
+                    "archive member {member_path} produced a duplicate {format} dialect layer at instance {collision_instance}; the later layer was omitted"
+                ),
+            )?;
         }
     }
-    losses
+    Ok(losses)
 }
 
 fn model_root_member(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     archive_root: &str,
 ) -> Result<(String, Option<String>), CodecError> {
     if crate::container::is_f3d_name(archive_root) {
-        return Ok((archive_root.to_owned(), None));
+        return Ok((
+            ctx.copy_retained_text(archive_root, "retain F3Z model root")?,
+            None,
+        ));
     }
 
+    let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
+    let description_len = u64::try_from(description_bytes.len()).map_err(|_| {
+        ctx.refuse_codec_limit("preflight F3Z design description JSON", 0, u64::MAX)
+    })?;
+    let _reservation =
+        ctx.reserve_scoped(description_len, "preflight F3Z design description JSON")?;
+    crate::json_budget::preflight(
+        ctx,
+        description_bytes,
+        "preflight F3Z design description JSON",
+        "match F3Z derived model reference",
+        "collect F3Z model candidates",
+    )?;
     let description: DesignDescriptionJson =
-        serde_json::from_slice(scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?).map_err(|error| {
+        serde_json::from_slice(description_bytes).map_err(|error| {
             CodecError::malformed(format_args!(
                 "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
             ))
@@ -197,29 +277,92 @@ fn model_root_member(
         }) else {
             continue;
         };
-        let derived_ids = root
-            .references
-            .iter()
-            .filter(|reference| reference.reference_type == "DERIVED")
-            .flat_map(|reference| reference.ids.iter().copied())
-            .collect::<Vec<_>>();
         for object in &graph.design_objects {
-            if derived_ids.contains(&object.id)
-                && object.content_type.eq_ignore_ascii_case("f3d")
-                && crate::container::is_f3d_name(&object.relative_path)
-                && scan.entry_view(&object.relative_path).is_some()
+            if !object.content_type.eq_ignore_ascii_case("f3d")
+                || !crate::container::is_f3d_name(&object.relative_path)
+                || scan.entry_view(&object.relative_path).is_none()
             {
-                candidates.push(object.relative_path.clone());
+                continue;
+            }
+            let mut derived = false;
+            for reference in root
+                .references
+                .iter()
+                .filter(|reference| reference.reference_type == "DERIVED")
+            {
+                for id in &reference.ids {
+                    ctx.charge_work(1, "match F3Z derived model reference")?;
+                    if *id == object.id {
+                        derived = true;
+                        break;
+                    }
+                }
+                if derived {
+                    break;
+                }
+            }
+            if derived {
+                ctx.reserve_vec(&mut candidates, 1, "collect F3Z model candidates")?;
+                candidates.push(ctx.copy_retained_text(
+                    &object.relative_path,
+                    "retain F3Z model candidate name",
+                )?);
             }
         }
     }
     candidates.sort();
     candidates.dedup();
     match candidates.as_slice() {
-        [model_root] => Ok((model_root.clone(), Some(archive_root.to_owned()))),
+        [model_root] => Ok((
+            ctx.copy_retained_text(model_root, "retain F3Z selected model root")?,
+            Some(ctx.copy_retained_text(archive_root, "retain F3Z drawing root")?),
+        )),
         _ => Err(CodecError::malformed(format_args!(
             "f3z root member {archive_root} is not an f3d document and has {} unambiguous derived f3d model members",
             candidates.len()
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn f3z_member_index_refuses_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::insert_member_charged(
+            &ctx,
+            &mut std::collections::BTreeMap::new(),
+            "part.f3d",
+            super::ClassifiedMember::Unreadable("bad member".to_owned()),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3Z archive members")
+        );
+    }
+
+    #[test]
+    fn f3z_member_index_path_refuses_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::insert_member_charged(
+            &ctx,
+            &mut std::collections::BTreeMap::new(),
+            "part.f3d",
+            super::ClassifiedMember::Unreadable("bad member".to_owned()),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3Z member index path")
+        );
     }
 }

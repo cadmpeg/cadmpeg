@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native `THRU_CURVE` groups with one source frame.
 
-use super::{unique_offset_data_block, visit_feature_history_operation_records};
+use super::{
+    charged_unique_offset_data_block, format_feature_history_id,
+    visit_feature_history_operation_records,
+};
 use crate::container::Container;
 use crate::om::branch_items::BranchItems;
 use crate::om::reference_index::PayloadIndexToken;
@@ -77,20 +80,20 @@ impl From<FeatureThruCurveConstructionBranchGroup> for GroupWire {
                     .zip(branch.member_positions())
                     .enumerate()
                     .map(|(ordinal, ((token, data_block), position))| ReferenceWire {
-                        ordinal: ordinal as u32,
+                        ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                         token: *token,
                         data_block: data_block.clone(),
                         source_offset: source_offset + position,
                     })
                     .collect();
                 BranchWire {
-                    ordinal: ordinal as u32,
+                    ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                     mode: branch.mode,
                     declared_count: branch.members.declared_count(),
                     state_lane: branch.members.state_lane(),
                     members,
                     terminal: ReferenceWire {
-                        ordinal: branch.members.len() as u32,
+                        ordinal: u32::from(branch.members.declared_count() - 1),
                         token: branch.terminal.0,
                         data_block: branch.terminal.1.clone(),
                         source_offset: source_offset + branch.terminal_position(),
@@ -115,25 +118,41 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
     type Error = &'static str;
 
     fn try_from(wire: GroupWire) -> Result<Self, Self::Error> {
-        let mut branches = Vec::with_capacity(wire.branches.len());
-        let mut locations = Vec::with_capacity(wire.branches.len());
+        let mut branches = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.branches.len(),
+            "NX thru-curve wire branches",
+        )
+        .map_err(|_| "branches: allocation failed")?;
+        let mut locations = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.branches.len(),
+            "NX thru-curve wire locations",
+        )
+        .map_err(|_| "locations: allocation failed")?;
         for (ordinal, branch) in wire.branches.into_iter().enumerate() {
-            if branch.ordinal as usize != ordinal {
+            if cadmpeg_core::decode::index_from_u32(branch.ordinal) != ordinal {
                 return Err("branches.ordinal must equal branch order");
             }
             if usize::from(branch.declared_count) != branch.members.len() + 1 {
                 return Err("declared_count must equal members length plus one");
             }
-            let mut members = Vec::with_capacity(branch.members.len());
-            let mut positions = Vec::with_capacity(branch.members.len());
+            let mut members = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                branch.members.len(),
+                "NX thru-curve wire members",
+            )
+            .map_err(|_| "members: allocation failed")?;
+            let mut positions = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                branch.members.len(),
+                "NX thru-curve wire positions",
+            )
+            .map_err(|_| "positions: allocation failed")?;
             for (ordinal, reference) in branch.members.into_iter().enumerate() {
-                if reference.ordinal as usize != ordinal {
+                if cadmpeg_core::decode::index_from_u32(reference.ordinal) != ordinal {
                     return Err("members.ordinal must equal member order");
                 }
                 positions.push(reference.source_offset);
                 members.push((reference.token, reference.data_block));
             }
-            if branch.terminal.ordinal as usize != members.len() {
+            if cadmpeg_core::decode::index_from_u32(branch.terminal.ordinal) != members.len() {
                 return Err("terminal.ordinal must equal members length");
             }
             branches.push(ThruCurveBranch {
@@ -183,37 +202,145 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
 }
 
 pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureThruCurveConstructionBranchGroup> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureThruCurveConstructionBranchGroup>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut groups = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = thru_curve_payload_branch_group(record.payload_view()) else {
+            if failure.is_some() {
                 return;
+            }
+            let group = match thru_curve_payload_branch_group(ctx, record.payload_view()) {
+                Ok(Some(group)) => group,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
-            let Ok(frame) = group.resolve(entry_offset, |token| {
-                unique_offset_data_block(&indexed, token.value())
-            }) else {
-                return;
+            let frame = match group.resolve(ctx, entry_offset, |token| {
+                charged_unique_offset_data_block(ctx, &indexed, token.value())
+            }) {
+                Ok(Some(frame)) => frame,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
-            let operation_key = format!("{section_key}-{operation_ordinal:010}");
-            groups.push(FeatureThruCurveConstructionBranchGroup {
-                id: format!(
-                    "nx:feature-history:thru-curve-construction-branch-group#{operation_key}"
-                ),
-                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
-                frame,
-            });
+            let projected = (|| -> Result<_, cadmpeg_core::CodecError> {
+                let id = format_feature_history_id(
+                    ctx,
+                    "thru-curve-construction-branch-group",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                let operation_label = format_feature_history_id(
+                    ctx,
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                ctx.reserve_retained_vec(
+                    &mut groups,
+                    1,
+                    "NX thru-curve construction branch groups",
+                )?;
+                Ok(FeatureThruCurveConstructionBranchGroup {
+                    id,
+                    operation_label,
+                    frame,
+                })
+            })();
+            match projected {
+                Ok(group) => groups.push(group),
+                Err(error) => failure = Some(error),
+            }
         },
-    );
-    groups
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(groups)
 }
 
 #[cfg(test)]
 mod tests {
     use super::FeatureThruCurveConstructionBranchGroup;
+
+    fn branch_group_container() -> crate::container::Container<'static> {
+        let mut branch = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01".to_vec();
+        branch.extend([2, 0x15, 1, 2, 0xf0, 0x31, 1, 2]);
+        branch.extend([0; 5]);
+        branch.extend([0xff, 1, 2, 0xf0, 0x32, 0, 0x81, 0x58]);
+        branch.extend([0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
+        let payload = crate::test_support::test_om::composed_feature_history_payload(
+            &[(&[0xff; 4], "THRU_CURVE", branch)],
+            &[],
+        );
+        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            payload,
+        )]);
+        crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+            .expect("synthetic THRU_CURVE branch group container")
+    }
+
+    fn branch_group_route_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let container = branch_group_container();
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            super::feature_thru_curve_construction_branch_groups(ctx, &container)
+        })
+        .expect("admitted THRU_CURVE branch group");
+        assert_eq!(groups.len(), 1);
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                super::feature_thru_curve_construction_branch_groups(ctx, &container)
+                    .expect_err("THRU_CURVE branch group resource limit")
+            },
+        )
+    }
+
+    #[test]
+    fn thru_curve_branch_group_route_refuses_collection_limit() {
+        let error = branch_group_route_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn thru_curve_branch_group_route_refuses_retained_limit() {
+        let error = branch_group_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
+    fn thru_curve_branch_group_route_refuses_work_limit() {
+        let error = branch_group_route_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
+    }
 
     // Group count at 100. The standard branch occupies 24 bytes and the
     // extended branch occupies 40 bytes. The adjacent terminator occupies 9.

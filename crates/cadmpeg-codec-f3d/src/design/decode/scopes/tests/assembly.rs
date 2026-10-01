@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::assembly_operand_frame_fixture;
-use crate::records::feature::assembly::{
-    DesignAssemblyAlignment, DesignAssemblyLimitKind, DesignAssemblyOperandFrame,
-};
+use crate::records::feature::assembly::DesignAssemblyAlignment;
+use crate::records::feature::assembly::DesignAssemblyAlignmentForm;
+use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly_features::DesignComponentInsertConstruction;
+use crate::records::feature::assembly_features::DesignComponentInsertMatrix;
+use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::{
-    feature::{
-        assembly::DesignAssemblyAlignmentForm,
-        assembly_features::DesignComponentInsertMatrix,
-        scope::{DesignFeatureKind, DesignScopePayloadMut},
-    },
-    identity::{Located, ReferenceRun},
-    parameters::{DesignParameterOwner, DesignParameterOwnerWire},
-    references::DesignClassTag,
-    sketch_placement::SketchPlacementMatrix,
-};
+use crate::records::feature::scope::DesignScopePayloadMut;
+use crate::records::identity::Located;
+use crate::records::identity::ReferenceRun;
+use crate::records::parameters::DesignParameterOwner;
+use crate::records::parameters::DesignParameterOwnerWire;
+use crate::records::references::DesignClassTag;
+use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::test_support::indexed_header;
 use crate::test_support::push_reference_u64;
 
@@ -115,10 +114,14 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         bytes.extend_from_slice(b"329");
         bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        bytes.extend_from_slice(&(guids.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(guids.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for guid in guids {
             let encoded = guid.encode_utf16().collect::<Vec<_>>();
-            bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
             bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
         }
     };
@@ -128,16 +131,22 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             bytes.extend_from_slice(b"390");
             bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
             bytes.extend_from_slice(&[0; 6]);
-            bytes.extend_from_slice(&(path.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u32::try_from(path.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
             for guid in path.iter().chain(&identities[..2]) {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(
+                    &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+                );
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u64.to_le_bytes());
             for guid in &identities[2..] {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(
+                    &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+                );
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -174,12 +183,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     identity_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     identity_path_bytes.extend_from_slice(b"396");
     identity_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
-    let identity_paths = exact_assembly_alignment(
-        &identity_path_bytes,
-        &IndexedRecordOffsets::build(&identity_path_bytes),
-        &scope,
-        &rectangular_owners,
-    )
+    let identity_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &identity_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified assembly occurrence paths");
     assert_eq!(identity_paths[0].class_tag().as_str(), "390");
@@ -195,12 +208,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"386");
     }
-    let compact_identity_paths = exact_assembly_alignment(
-        &identity_path_bytes,
-        &IndexedRecordOffsets::build(&identity_path_bytes),
-        &scope,
-        &rectangular_owners,
-    )
+    let compact_identity_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &identity_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("compact identity-qualified assembly occurrence paths");
     assert!(compact_identity_paths
@@ -209,12 +226,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"329");
     }
-    let extended_class_329_paths = exact_assembly_alignment(
-        &identity_path_bytes,
-        &IndexedRecordOffsets::build(&identity_path_bytes),
-        &scope,
-        &rectangular_owners,
-    )
+    let extended_class_329_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &identity_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified class-329 assembly occurrence paths");
     assert!(extended_class_329_paths.iter().all(|path| {
@@ -236,13 +257,19 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let mut malformed_class_329_identity = identity_path_bytes.clone();
     malformed_class_329_identity[first_identity_length_at..first_identity_length_at + 4]
         .copy_from_slice(&35_u32.to_le_bytes());
-    assert!(exact_assembly_alignment(
-        &malformed_class_329_identity,
-        &IndexedRecordOffsets::build(&malformed_class_329_identity),
-        &scope,
-        &rectangular_owners,
-    )
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed_class_329_identity,
+            &crate::design::test_support::indexed_record_offsets_for_test(
+                &malformed_class_329_identity
+            ),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     let first_locator_at = assembly_bytes.len();
     push_path_locator(&mut assembly_bytes, 64, 66);
@@ -265,12 +292,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
     assembly_bytes.extend_from_slice(b"396");
     assembly_bytes.extend_from_slice(&70_u32.to_le_bytes());
-    let paths = exact_assembly_alignment(
-        &assembly_bytes,
-        &IndexedRecordOffsets::build(&assembly_bytes),
-        &scope,
-        &rectangular_owners,
-    )
+    let paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("exact assembly occurrence paths");
     assert_eq!(paths[0].link().locator_record_index, 64);
@@ -303,60 +334,84 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let mut reversed_path_assignment = assembly_bytes.clone();
     reversed_path_assignment[367..371].copy_from_slice(&67_u32.to_le_bytes());
     reversed_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
-    let reversed_paths = exact_assembly_alignment(
-        &reversed_path_assignment,
-        &IndexedRecordOffsets::build(&reversed_path_assignment),
-        &scope,
-        &rectangular_owners,
-    )
+    let reversed_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &reversed_path_assignment,
+            &crate::design::test_support::indexed_record_offsets_for_test(
+                &reversed_path_assignment,
+            ),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("scope locator order assigns paths to operand frames");
     assert_eq!(reversed_paths.map(|path| path.record_index), [68, 65]);
 
     let mut duplicate_path_assignment = assembly_bytes.clone();
     duplicate_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
-    assert!(exact_assembly_alignment(
-        &duplicate_path_assignment,
-        &IndexedRecordOffsets::build(&duplicate_path_assignment),
-        &scope,
-        &rectangular_owners,
-    )
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &duplicate_path_assignment,
+            &crate::design::test_support::indexed_record_offsets_for_test(
+                &duplicate_path_assignment
+            ),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     for locator_zero_at in [first_locator_at + 32, first_locator_at + 161] {
         let mut invalid_locator = assembly_bytes.clone();
         invalid_locator[locator_zero_at] = 1;
-        assert!(exact_assembly_alignment(
-            &invalid_locator,
-            &IndexedRecordOffsets::build(&invalid_locator),
-            &scope,
-            &rectangular_owners,
-        )
-        .is_some_and(|alignment| alignment.operand_paths().is_none()));
+        assert!(
+            crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+                ctx,
+                &invalid_locator,
+                &crate::design::test_support::indexed_record_offsets_for_test(&invalid_locator),
+                &scope,
+                &rectangular_owners,
+            )
+            .unwrap())
+            .is_some_and(|alignment| alignment.operand_paths().is_none())
+        );
     }
     let first_wrapper_at =
         usize::try_from(paths[0].link().wrapper_byte_offset).expect("wrapper offset fits usize");
     for (relative_offset, value) in [(21, 0), (22, 2), (26, 0)] {
         let mut invalid_wrapper = assembly_bytes.clone();
         invalid_wrapper[first_wrapper_at + relative_offset] = value;
-        assert!(exact_assembly_alignment(
-            &invalid_wrapper,
-            &IndexedRecordOffsets::build(&invalid_wrapper),
-            &scope,
-            &rectangular_owners,
-        )
-        .is_some_and(|alignment| alignment.operand_paths().is_none()));
+        assert!(
+            crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+                ctx,
+                &invalid_wrapper,
+                &crate::design::test_support::indexed_record_offsets_for_test(&invalid_wrapper),
+                &scope,
+                &rectangular_owners,
+            )
+            .unwrap())
+            .is_some_and(|alignment| alignment.operand_paths().is_none())
+        );
     }
     let first_wrapper_end = first_wrapper_at + 37;
     let mut extended_wrapper = assembly_bytes.clone();
     extended_wrapper.insert(first_wrapper_end, 0);
-    assert!(exact_assembly_alignment(
-        &extended_wrapper,
-        &IndexedRecordOffsets::build(&extended_wrapper),
-        &scope,
-        &rectangular_owners,
-    )
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &extended_wrapper,
+            &crate::design::test_support::indexed_record_offsets_for_test(&extended_wrapper),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     let push_class_294_path =
         |bytes: &mut Vec<u8>, record_index: u32, occurrence: &str, identities: &[&str; 4]| {
@@ -367,13 +422,17 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             bytes.extend_from_slice(&[1, 0, 0, 0]);
             for guid in [occurrence, identities[0], identities[1]] {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(
+                    &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+                );
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u64.to_le_bytes());
             for guid in &identities[2..] {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(
+                    &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+                );
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -407,12 +466,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     class_294_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     class_294_path_bytes.extend_from_slice(b"396");
     class_294_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
-    let class_294_paths = exact_assembly_alignment(
-        &class_294_path_bytes,
-        &IndexedRecordOffsets::build(&class_294_path_bytes),
-        &scope,
-        &rectangular_owners,
-    )
+    let class_294_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &class_294_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-294 identity-qualified assembly occurrence paths");
     assert!(class_294_paths.iter().all(|path| {
@@ -427,12 +490,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     for path_at in [first_class_294_path_at, second_class_294_path_at] {
         class_294_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"299");
     }
-    let class_299_paths = exact_assembly_alignment(
-        &class_294_path_bytes,
-        &IndexedRecordOffsets::build(&class_294_path_bytes),
-        &scope,
-        &rectangular_owners,
-    )
+    let class_299_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &class_294_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-299 identity-qualified assembly occurrence paths");
     assert!(class_299_paths.iter().all(|path| {
@@ -446,22 +513,30 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     }));
 
     assembly_bytes[25] = 0;
-    assert!(exact_assembly_alignment(
-        &assembly_bytes,
-        &IndexedRecordOffsets::build(&assembly_bytes),
-        &scope,
-        &rectangular_owners
-    )
-    .and_then(|alignment| alignment.operand_frames())
-    .is_some());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+            &scope,
+            &rectangular_owners
+        )
+        .unwrap())
+        .and_then(|alignment| alignment.operand_frames())
+        .is_some()
+    );
     assembly_bytes[25] = 2;
-    assert!(exact_assembly_alignment(
-        &assembly_bytes,
-        &IndexedRecordOffsets::build(&assembly_bytes),
-        &scope,
-        &rectangular_owners
-    )
-    .is_some_and(|alignment| alignment.operand_frames().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+            &scope,
+            &rectangular_owners
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_frames().is_none())
+    );
 
     scope
         .try_edit(|draft| {
@@ -477,12 +552,14 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         })
         .unwrap();
     assert_eq!(
-        exact_assembly_alignment(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
             &assembly_bytes,
-            &IndexedRecordOffsets::build(&assembly_bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
             &scope,
             &rectangular_owners
-        ),
+        )
+        .unwrap()),
         None
     );
 }
@@ -498,7 +575,8 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     scope.class_tag = DesignClassTag::try_from("383".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
+            draft.frame_length =
+                u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_tail();
         })
@@ -524,12 +602,12 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
                     "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
                     100 + ordinal
                 ),
-                byte_offset: (2_000 + ordinal as u64) - 40,
+                byte_offset: (2_000 + u64_from_index(ordinal)) - 40,
                 frame_length: 103,
                 class_tag: DesignClassTag::try_from("284".to_owned()).unwrap(),
-                record_index: 100 + ordinal as u32,
+                record_index: 100 + u32::try_from(ordinal).expect("fixture value fits u32"),
                 scope_record_index,
-                local_ordinal: ordinal as u32,
+                local_ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 evaluated_value: match ordinal {
                     8 => 0.25,
                     9 => 1.0,
@@ -537,11 +615,15 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
                     11 => 3.0,
                     _ => 0.0,
                 },
-                evaluated_value_offset: 2_000 + ordinal as u64,
-                parameter_record_index: 100 + ordinal as u32 + 1,
-                owned_ordinal: ordinal as u32,
+                evaluated_value_offset: 2_000 + u64_from_index(ordinal),
+                parameter_record_index: 100
+                    + u32::try_from(ordinal).expect("fixture value fits u32")
+                    + 1,
+                owned_ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 variant: None,
-                companion_record_index: 100 + ordinal as u32 + 2,
+                companion_record_index: 100
+                    + u32::try_from(ordinal).expect("fixture value fits u32")
+                    + 2,
             })
             .unwrap()
         })
@@ -554,12 +636,16 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             .copied()
             .collect::<Vec<_>>(),
     );
-    let alignment = exact_assembly_alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-    )
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("legacy class-383 alignment");
 
     assert_eq!(alignment.angle(), 0.25);
@@ -618,12 +704,16 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             + crate::layout::assembly_class_383_258_frame_378_carrier::SCOPE_REFERENCE
             + 8]
         .copy_from_slice(&999_u64.to_le_bytes());
-    let malformed_alignment = exact_assembly_alignment(
-        &malformed,
-        &IndexedRecordOffsets::build(&malformed),
-        &scope,
-        &owners,
-    )
+    let malformed_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &malformed,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("alignment scalar grammar remains exact");
     assert!(malformed_alignment.operand_paths().is_none());
 }
@@ -640,7 +730,8 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     scope.paired_class_tag = DesignClassTag::try_from("266".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+            draft.frame_length =
+                u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN);
             draft.paired_byte_offset = draft.frame_length;
             draft.layout_fixture_tail();
         })
@@ -740,12 +831,16 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     }
     bytes[891..895].copy_from_slice(&scope.feature_ordinal.get().to_le_bytes());
 
-    let alignment = exact_assembly_alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-    )
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("legacy class-388 alignment");
     assert_eq!(alignment.angle(), 0.25);
     assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
@@ -778,7 +873,9 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
 
     let write_guid = |bytes: &mut [u8], at: usize, guid: &str| {
         let encoded = guid.encode_utf16().collect::<Vec<_>>();
-        bytes[at..at + 4].copy_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes[at..at + 4].copy_from_slice(
+            &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (ordinal, code_unit) in encoded.into_iter().enumerate() {
             bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2]
                 .copy_from_slice(&code_unit.to_le_bytes());
@@ -835,7 +932,10 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
             wrapper[4..7].copy_from_slice(b"369");
             wrapper[7..11].copy_from_slice(&wrapper_record_index.to_le_bytes());
             wrapper[21] = 1;
-            wrapper[22..26].copy_from_slice(&(path_record_indices.len() as u32).to_le_bytes());
+            wrapper[22..26].copy_from_slice(
+                &(u32::try_from(path_record_indices.len()).expect("fixture value fits u32"))
+                    .to_le_bytes(),
+            );
             for (ordinal, path_record_index) in path_record_indices.iter().copied().enumerate() {
                 write_reference(&mut wrapper, 26 + ordinal * 11, path_record_index);
             }
@@ -867,23 +967,33 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     path_bytes.extend_from_slice(b"396");
     path_bytes.extend_from_slice(&5_200_u32.to_le_bytes());
-    let paths = exact_assembly_alignment(
-        &path_bytes,
-        &IndexedRecordOffsets::build(&path_bytes),
-        &scope,
-        &owners,
-    )
+    let paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&path_bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("legacy class-388 occurrence paths");
     assert_eq!(paths[0].link().locator_record_index, 5_001);
     assert_eq!(paths[0].link().locator_class_tag.as_str(), "451");
-    assert_eq!(paths[0].link().locator_byte_offset, first_locator_at as u64);
+    assert_eq!(
+        paths[0].link().locator_byte_offset,
+        u64_from_index(first_locator_at)
+    );
     assert_eq!(paths[0].link().wrapper_record_index, 5_004);
     assert_eq!(paths[0].link().wrapper_class_tag.as_str(), "369");
-    assert_eq!(paths[0].link().wrapper_byte_offset, first_wrapper_at as u64);
+    assert_eq!(
+        paths[0].link().wrapper_byte_offset,
+        u64_from_index(first_wrapper_at)
+    );
     assert_eq!(paths[0].record_index, 5_003);
     assert_eq!(paths[0].class_tag().as_str(), "412");
-    assert_eq!(paths[0].byte_offset(), (first_path_at + 425) as u64);
+    assert_eq!(paths[0].byte_offset(), u64_from_index(first_path_at + 425));
     assert_eq!(
         paths[0]
             .occurrence_guids()
@@ -904,32 +1014,44 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     let mut malformed_wrapper = path_bytes.clone();
     malformed_wrapper[first_wrapper_at + 22..first_wrapper_at + 26]
         .copy_from_slice(&3_u32.to_le_bytes());
-    assert!(exact_assembly_alignment(
-        &malformed_wrapper,
-        &IndexedRecordOffsets::build(&malformed_wrapper),
-        &scope,
-        &owners,
-    )
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed_wrapper,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed_wrapper),
+            &scope,
+            &owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
     let mut malformed_path = path_bytes.clone();
     malformed_path[first_path_at + 417] = 1;
-    assert!(exact_assembly_alignment(
-        &malformed_path,
-        &IndexedRecordOffsets::build(&malformed_path),
-        &scope,
-        &owners,
-    )
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed_path,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed_path),
+            &scope,
+            &owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     let mut malformed = bytes;
     malformed[25] = 0;
-    assert!(exact_assembly_alignment(
-        &malformed,
-        &IndexedRecordOffsets::build(&malformed),
-        &scope,
-        &owners,
-    )
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
+            &scope,
+            &owners,
+        )
+        .unwrap())
+        .is_none()
+    );
 }
 
 #[test]
@@ -1019,12 +1141,16 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     bytes.extend_from_slice(b"396");
     bytes.extend_from_slice(&90_u32.to_le_bytes());
 
-    let alignment = exact_assembly_alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-    )
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("exact As-built alignment");
     assert_eq!(alignment.angle(), 0.25);
     assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
@@ -1073,246 +1199,35 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     let mut invalid_transform = bytes.clone();
     invalid_transform[first_locator_at + 33..first_locator_at + 41]
         .copy_from_slice(&2.0_f64.to_le_bytes());
-    let incomplete = exact_assembly_alignment(
-        &invalid_transform,
-        &IndexedRecordOffsets::build(&invalid_transform),
-        &scope,
-        &owners,
-    )
+    let incomplete = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &invalid_transform,
+            &crate::design::test_support::indexed_record_offsets_for_test(&invalid_transform),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("alignment scalars remain exact");
     assert_eq!(incomplete.operand_frames(), None);
     assert_eq!(incomplete.operand_paths(), None);
 
     let mut duplicate_reference = bytes;
     duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
-    let incomplete = exact_assembly_alignment(
-        &duplicate_reference,
-        &IndexedRecordOffsets::build(&duplicate_reference),
-        &scope,
-        &owners,
-    )
-    .expect("alignment scalars remain exact");
-    assert_eq!(incomplete.operand_frames(), None);
-    assert_eq!(incomplete.operand_paths(), None);
-}
-
-#[test]
-fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projection() {
-    let owner = |scope_record_index: u32,
-                 record_index: u32,
-                 local_ordinal: u32,
-                 class_tag: &str,
-                 value: f64,
-                 offset: u64| {
-        DesignParameterOwner::try_from(DesignParameterOwnerWire {
-            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: (offset) - 40,
-            frame_length: 103,
-            class_tag: DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: value,
-            evaluated_value_offset: offset,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: record_index + 2,
-        })
-        .unwrap()
-    };
-    for (class_tag, paired_class_tag, owner_class, expected_limit_kind, reverse_limit_order) in [
-        ("364", "272", "293", DesignAssemblyLimitKind::Angular, false),
-        ("420", "262", "378", DesignAssemblyLimitKind::Linear, true),
-        ("417", "263", "318", DesignAssemblyLimitKind::Linear, true),
-        ("457", "258", "418", DesignAssemblyLimitKind::Linear, false),
-    ] {
-        let generation = crate::design::assembly::legacy_as_built_421_generation(
-            421,
-            class_tag,
-            paired_class_tag,
-        )
-        .expect("fixture generation is admitted");
-        assert_eq!(generation.owner_class_tag(), owner_class);
-        assert_eq!(generation.limit_kind(), expected_limit_kind);
-        assert_eq!(generation.reverse_limit_order(), reverse_limit_order);
-        let scope_record_index = 10_u32;
-        let owner_record_indices = [100, 101, 102, 103, 104, 105, 106];
-        let reference_members = [
-            20,
-            21,
-            22,
-            23,
-            owner_record_indices[0],
-            owner_record_indices[1],
-            owner_record_indices[2],
-            owner_record_indices[3],
-            200,
-            owner_record_indices[5],
-            owner_record_indices[6],
-        ];
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-            DesignFeatureKind::AsBuilt,
-            scope_record_index,
-        );
-        scope.class_tag = DesignClassTag::try_from(class_tag.to_owned()).unwrap();
-        scope.paired_class_tag = DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
-        scope
-            .try_edit(|draft| {
-                draft.frame_length = 421;
-                draft.paired_byte_offset = 421;
-                draft.reference_count_offset = 185;
-                draft.reference_members = ReferenceRun::from_columns(
-                    reference_members.to_vec(),
-                    (0..11)
-                        .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
-                        .collect(),
-                    "reference_members",
-                )
-                .unwrap();
-                draft.feature_ordinal_offset = 334;
-                draft.layout_fixture_references();
-                draft.previous_history_state_id_offset =
-                    draft.previous_history_state_id.map(|previous| {
-                        draft.history_state_id.get_or_insert(previous + 1);
-                        draft.feature_ordinal_offset + 30
-                    });
-            })
-            .unwrap();
-
-        let mut bytes = vec![0_u8; 421];
-        bytes[185..189].copy_from_slice(&11_u32.to_le_bytes());
-        for (ordinal, record_index) in reference_members.into_iter().enumerate() {
-            let at = 189 + ordinal * 11;
-            bytes[at] = 1;
-            bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-        }
-        bytes[310..314].copy_from_slice(&u32::MAX.to_le_bytes());
-        bytes[314..318].copy_from_slice(&8_u32.to_le_bytes());
-        for (ordinal, value) in "As-built".encode_utf16().enumerate() {
-            bytes[318 + ordinal * 2..320 + ordinal * 2].copy_from_slice(&value.to_le_bytes());
-        }
-        bytes[334..338].copy_from_slice(&2_u32.to_le_bytes());
-        indexed_header(
-            &mut bytes,
-            paired_class_tag.as_bytes().try_into().unwrap(),
-            scope_record_index,
-        );
-        let frame_start = bytes.len();
-        let frame_class_tag = generation.frame_class_tag();
-        indexed_header(
-            &mut bytes,
-            frame_class_tag.as_bytes().try_into().unwrap(),
-            200,
-        );
-        let matrix_prefix = generation.matrix_prefix();
-        let transform_offset = generation.matrix_offset();
-        let frame_length = generation.frame_length();
-        bytes.resize(frame_start + frame_length, 0);
-        bytes[frame_start + matrix_prefix..frame_start + transform_offset]
-            .copy_from_slice(&[1, 1, 0, 0]);
-        let mut solved_transform = SketchPlacementMatrix::IDENTITY.rows();
-        solved_transform[0][3] = 9.0;
-        solved_transform[1][3] = 8.0;
-        solved_transform[2][3] = 7.0;
-        for (ordinal, value) in solved_transform.into_iter().flatten().enumerate() {
-            let at = frame_start + transform_offset + ordinal * 8;
-            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-        }
-        indexed_header(
-            &mut bytes,
-            paired_class_tag.as_bytes().try_into().unwrap(),
-            200,
-        );
-
-        let (limit_first_value, limit_second_value) = if reverse_limit_order {
-            (1.5, -1.0)
-        } else {
-            (-1.0, 1.5)
-        };
-        let owners = [
-            owner(scope_record_index, 100, 0, owner_class, 1.0, 1_000),
-            owner(scope_record_index, 101, 1, owner_class, 2.0, 1_001),
-            owner(scope_record_index, 102, 2, owner_class, 3.0, 1_002),
-            owner(scope_record_index, 103, 3, owner_class, 0.25, 1_003),
-            owner(
-                scope_record_index,
-                105,
-                4,
-                owner_class,
-                limit_first_value,
-                1_005,
-            ),
-            owner(
-                scope_record_index,
-                106,
-                5,
-                owner_class,
-                limit_second_value,
-                1_006,
-            ),
-        ];
-        let alignment = exact_assembly_alignment(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+    let incomplete = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &duplicate_reference,
+            &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_reference),
             &scope,
             &owners,
         )
-        .expect("exact 421-byte As-built alignment");
-        assert!((alignment.angle() - 0.25).abs() <= EPS_EXACT_FIXTURE);
-        for (actual, expected) in alignment.offset().into_iter().zip([1.0, 2.0, 3.0]) {
-            assert!((actual - expected).abs() <= EPS_EXACT_FIXTURE);
-        }
-        assert_eq!(
-            alignment
-                .owners
-                .iter()
-                .map(|owner| owner.value)
-                .collect::<Vec<_>>(),
-            [103, 100, 101, 102]
-        );
-        assert_eq!(
-            alignment
-                .owners
-                .iter()
-                .map(|owner| owner.offset)
-                .collect::<Vec<_>>(),
-            [1_003, 1_000, 1_001, 1_002]
-        );
-        let limits = alignment.limits().expect("assembly limits");
-        assert_eq!(limits.kind, expected_limit_kind);
-        assert!((limits.minimum() - -1.0).abs() <= EPS_EXACT_FIXTURE);
-        assert!((limits.maximum() - 1.5).abs() <= EPS_EXACT_FIXTURE);
-        assert_eq!(
-            limits.owner_record_indices,
-            if reverse_limit_order {
-                [106, 105]
-            } else {
-                [105, 106]
-            }
-        );
-        assert_eq!(
-            limits.value_offsets,
-            if reverse_limit_order {
-                [1_006, 1_005]
-            } else {
-                [1_005, 1_006]
-            }
-        );
-        assert!(alignment.operand_frames().is_none());
-        assert!(alignment.operand_paths().is_none());
-        let solved_frame = alignment.solved_frame().expect("solved frame carrier");
-        assert_eq!(solved_frame.reference_record_index, 200);
-        assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
-        assert_eq!(solved_frame.record_byte_offset, frame_start as u64);
-        assert_eq!(solved_frame.class_tag.as_str(), frame_class_tag);
-        assert!((solved_frame.transform[0][3] - 9.0).abs() <= EPS_EXACT_FIXTURE);
-        assert_eq!(
-            solved_frame.transform_offset,
-            (frame_start + transform_offset) as u64
-        );
-    }
+        .unwrap()
+    })
+    .expect("alignment scalars remain exact");
+    assert_eq!(incomplete.operand_frames(), None);
+    assert_eq!(incomplete.operand_paths(), None);
 }
 
 fn legacy_class_383_258_fixture(scope_record_index: u32, members: &[u32]) -> Vec<u8> {
@@ -1662,7 +1577,9 @@ fn write_legacy_class_383_reference(bytes: &mut [u8], at: usize, record_index: u
 
 fn write_legacy_class_383_guid(bytes: &mut [u8], at: usize, guid: &str) {
     let encoded = guid.encode_utf16().collect::<Vec<_>>();
-    bytes[at..at + 4].copy_from_slice(&(encoded.len() as u32).to_le_bytes());
+    bytes[at..at + 4].copy_from_slice(
+        &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (ordinal, code_unit) in encoded.into_iter().enumerate() {
         bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
     }
@@ -1742,13 +1659,17 @@ fn append_as_built_path_envelope(
     ];
     for guid in &identities[..3] {
         let encoded = guid.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
     }
     bytes.extend_from_slice(&2_u64.to_le_bytes());
     for guid in &identities[3..] {
         let encoded = guid.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
     }
     bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -1767,7 +1688,10 @@ fn append_as_built_path_envelope(
 }
 
 fn append_axial_test_utf16(bytes: &mut Vec<u8>, value: &str) {
-    bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(value.encode_utf16().count()).expect("fixture value fits u32"))
+            .to_le_bytes(),
+    );
     bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
 }
 
@@ -1935,3 +1859,5 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
 }
 
 mod axial;
+
+mod legacy_alignment;

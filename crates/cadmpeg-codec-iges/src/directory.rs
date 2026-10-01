@@ -2,12 +2,16 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
+
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
+use std::fmt;
 
 /// The stored directory fields shared by Binary and Compressed ASCII.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +36,23 @@ pub(crate) enum DirectoryFieldSlot {
 
 impl DirectoryFieldSlot {
     pub(crate) const fn slot(self) -> usize {
-        self as usize
+        match self {
+            Self::EntityType => 0,
+            Self::Structure => 1,
+            Self::LineFont => 2,
+            Self::Level => 3,
+            Self::View => 4,
+            Self::Transform => 5,
+            Self::LabelDisplay => 6,
+            Self::Status => 7,
+            Self::LineWeight => 8,
+            Self::Color => 9,
+            Self::Form => 10,
+            Self::ReservedFirst => 11,
+            Self::ReservedSecond => 12,
+            Self::Label => 13,
+            Self::Subscript => 14,
+        }
     }
 }
 
@@ -215,6 +235,24 @@ pub(crate) struct DirectoryEntry {
 }
 
 impl DirectoryEntry {
+    pub(crate) fn admitted_loss_provenance(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<cadmpeg_ir::SourceProvenance, CodecError> {
+        let format = ctx.format_retained(format_args!("iges"), "iges loss source format")?;
+        let tag = ctx.format_retained(
+            format_args!("directory_entry:D{}", self.sequence),
+            "iges loss directory tag",
+        )?;
+        Ok(cadmpeg_ir::SourceProvenance::in_stream(
+            format,
+            cadmpeg_ir::stream_name!("iges"),
+            self.source_offset,
+        )
+        .with_tag(tag))
+    }
+
+    #[cfg(test)]
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
         cadmpeg_ir::SourceProvenance::in_stream(
             "iges",
@@ -253,24 +291,27 @@ impl DirectoryDefect {
             Self::UnpairedCard => "unpaired-card",
         }
     }
+}
 
-    fn describe(self) -> String {
-        match self {
-            Self::FieldNotAscii(name) => format!("the {name} field is not ASCII"),
+impl fmt::Display for DirectoryDefect {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::FieldNotAscii(name) => write!(formatter, "the {name} field is not ASCII"),
             Self::FieldNotAnInteger(name) => {
-                format!("the {name} field is not a decimal integer")
+                write!(formatter, "the {name} field is not a decimal integer")
             }
-            Self::FieldBlankNotAllowed(name) => {
-                format!("the {name} field is blank and IGES 4.0 defines no default")
-            }
-            Self::StatusNumberInvalid => {
-                "the status number is neither blank nor an eight-digit decimal integer".to_owned()
-            }
-            Self::RepeatedEntityTypeMismatch { declared, repeated } => format!(
+            Self::FieldBlankNotAllowed(name) => write!(
+                formatter,
+                "the {name} field is blank and IGES 4.0 defines no default"
+            ),
+            Self::StatusNumberInvalid => formatter
+                .write_str("the status number is neither blank nor an eight-digit decimal integer"),
+            Self::RepeatedEntityTypeMismatch { declared, repeated } => write!(
+                formatter,
                 "the repeated entity type {repeated} does not equal the entity type {declared}"
             ),
             Self::UnpairedCard => {
-                "the Directory Entry section ends with an unpaired card".to_owned()
+                formatter.write_str("the Directory Entry section ends with an unpaired card")
             }
         }
     }
@@ -291,22 +332,38 @@ impl QuarantinedDirectoryRecord {
     }
 
     /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:directory#{}", self.sequence)
+    pub(crate) fn identity(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        ctx.format_retained(
+            format_args!("iges:quarantine:directory#{}", self.sequence),
+            "iges directory quarantine identity",
+        )
     }
 
-    pub(crate) fn loss_note(&self) -> LossNote {
-        IgesLossCode::DirectoryRecordQuarantined
-            .note(format!(
+    pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
+        let message = ctx.format_retained(format_args!(
                 "IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
                 self.sequence,
-                self.defect.describe(),
+                self.defect,
                 self.cards()
-            ))
-        .with_provenance(
-            SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), self.source_offset)
-                .with_tag(format!("directory_entry:D{}", self.sequence)),
-        )
+            ), "iges directory quarantine loss message")?;
+        let tag = ctx.format_retained(
+            format_args!("directory_entry:D{}", self.sequence),
+            "iges directory quarantine loss tag",
+        )?;
+        let code = IgesLossCode::DirectoryRecordQuarantined;
+        ctx.charge_retained(
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+            "iges directory quarantine loss kind",
+        )?;
+        ctx.charge_retained(4, "iges directory quarantine loss source format")?;
+        Ok(code.note(message).with_provenance(
+            SourceProvenance::in_stream(
+                "iges",
+                cadmpeg_ir::stream_name!("iges"),
+                self.source_offset,
+            )
+            .with_tag(tag),
+        ))
     }
 }
 
@@ -439,49 +496,91 @@ fn quarantine(
     first: (u32, &PhysicalLine),
     rest: &[(u32, &PhysicalLine)],
     defect: DirectoryDefect,
-) -> QuarantinedDirectoryRecord {
-    QuarantinedDirectoryRecord {
+    ctx: &DecodeContext<'_>,
+) -> Result<QuarantinedDirectoryRecord, CodecError> {
+    let bytes_len = std::iter::once(first.1)
+        .chain(rest.iter().map(|(_, line)| *line))
+        .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
+        .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
+    let mut bytes = ctx.retained_admitted_vec(bytes_len, "iges quarantined directory bytes")?;
+
+    for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
+        bytes.extend_from_slice(&line.payload);
+    }
+    Ok(QuarantinedDirectoryRecord {
         sequence: first.0,
         source_offset: first.1.offset,
-        bytes: std::iter::once(first.1)
-            .chain(rest.iter().map(|(_, line)| *line))
-            .flat_map(|line| line.payload.iter().copied())
-            .collect(),
+        bytes,
         defect,
-    }
+    })
 }
 
 /// Split the Directory Entry section into typed records and quarantined ones.
 pub(crate) fn parse(
     scan: &CardScan,
     global_table: GlobalTable,
-) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
-    let lines = scan.section(Section::Directory).collect::<Vec<_>>();
+    ctx: &DecodeContext<'_>,
+) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
+    let line_count = scan.section(Section::Directory).count();
+    let mut lines = ctx.collection_vec(line_count, "iges directory lines")?;
+
+    lines.extend(scan.section(Section::Directory));
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
+        ctx.charge_entities(1, "iges_directory_entries")?;
         match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
-            Ok(entry) => entries.push(entry),
-            Err(defect) => quarantined.push(quarantine(pair[0], &pair[1..], defect)),
+            Ok(entry) => {
+                ctx.reserve_vec(&mut entries, 1, "iges directory entries")?;
+                entries.push(entry);
+            }
+            Err(defect) => {
+                ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
+                quarantined.push(quarantine(pair[0], &pair[1..], defect, ctx)?);
+            }
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
-        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard));
+        ctx.charge_entities(1, "iges_directory_entries")?;
+        ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
+        quarantined.push(quarantine(
+            *unpaired,
+            &[],
+            DirectoryDefect::UnpairedCard,
+            ctx,
+        )?);
     }
-    (entries, quarantined)
+    Ok((entries, quarantined))
 }
 
-pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
+pub(crate) fn summary_notes(
+    entries: &[DirectoryEntry],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<String>, CodecError> {
     let mut census = BTreeMap::<(i64, i64), usize>::new();
     for entry in entries {
+        if !census.contains_key(&(entry.entity_type, entry.form)) {
+            ctx.charge_collection_items(1, "iges directory summary groups")?;
+        }
         *census.entry((entry.entity_type, entry.form)).or_default() += 1;
     }
-    std::iter::once(format!("entities={}", entries.len()))
-        .chain(census.into_iter().map(|((entity_type, form), count)| {
-            format!("entity.{entity_type}.form.{form}={count}")
-        }))
-        .collect()
+    let mut notes = Vec::new();
+    ctx.push_formatted_retained(
+        &mut notes,
+        format_args!("entities={}", entries.len()),
+        "iges directory summary notes",
+        "iges directory summary text",
+    )?;
+    for ((entity_type, form), count) in census {
+        ctx.push_formatted_retained(
+            &mut notes,
+            format_args!("entity.{entity_type}.form.{form}={count}"),
+            "iges directory summary notes",
+            "iges directory summary text",
+        )?;
+    }
+    Ok(notes)
 }
 
 #[cfg(test)]

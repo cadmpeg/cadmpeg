@@ -2,6 +2,9 @@
 //!
 //! Callers map their domain onto `0..len` node indices.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 /// A disjoint-set forest with path compression on `find`.
 #[derive(Debug, Clone)]
 pub(crate) struct UnionFind {
@@ -9,11 +12,34 @@ pub(crate) struct UnionFind {
 }
 
 impl UnionFind {
+    pub(crate) fn charged(
+        ctx: &DecodeContext<'_>,
+        length: usize,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let mut parents = ctx.alloc_filled(length, 0usize, operation)?;
+        for (node, parent) in parents.iter_mut().enumerate() {
+            *parent = node;
+        }
+        Ok(Self { parents })
+    }
+
     /// Creates `length` singleton sets, one per node `0..length`.
+    #[cfg(test)]
     pub(crate) fn new(length: usize) -> Self {
         Self {
             parents: (0..length).collect(),
         }
+    }
+
+    pub(crate) fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            parents: ctx.copy_retained_slice(&self.parents, operation)?,
+        })
     }
 
     /// Returns the number of nodes.
@@ -22,10 +48,21 @@ impl UnionFind {
     }
 
     /// Appends a new singleton node and returns its index.
+    #[cfg(test)]
     pub(crate) fn push(&mut self) -> usize {
         let index = self.parents.len();
         self.parents.push(index);
         index
+    }
+
+    pub(crate) fn push_charged(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<usize, CodecError> {
+        let index = self.parents.len();
+        ctx.push_vec(&mut self.parents, index, operation)?;
+        Ok(index)
     }
 
     /// Returns the representative of `node`, compressing the path to it.
@@ -60,6 +97,58 @@ impl UnionFind {
 #[cfg(test)]
 mod tests {
     use super::UnionFind;
+
+    #[test]
+    fn charged_union_parents_refuse_below_node_count() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let mut union = UnionFind::charged(&ctx, 2, "catia_union_test_parents")
+            .expect("service resource budget");
+        assert_eq!(union.find(1), 1);
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        assert!(
+            matches!(UnionFind::charged(&ctx, 2, "catia_union_test_parents"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "catia_union_test_parents")
+        );
+    }
+
+    #[test]
+    fn union_clone_refuses_retained_parent_bytes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        let union = UnionFind::new(1);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits retained limit");
+        assert!(matches!(
+            union.clone_charged(&ctx, "catia_union_clone_bytes"),
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_union_clone_bytes"
+        ));
+        crate::test_support::with_service_context(|ctx| {
+            assert_eq!(
+                union
+                    .clone_charged(ctx, "catia_union_clone_bytes")
+                    .expect("service budget")
+                    .len(),
+                1
+            );
+        });
+    }
 
     #[test]
     fn long_chain_compression_preserves_left_root_selection() {

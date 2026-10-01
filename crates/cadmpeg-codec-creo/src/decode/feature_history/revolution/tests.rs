@@ -7,6 +7,164 @@ use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::AnnotationBuilder;
 
+#[test]
+fn revolution_axis_error_refuses_retained_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let direction =
+        cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(2.0, 0.0, 0.0))
+            .expect("finite nonzero direction");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::revolution_unit_axis(&ctx, 40, direction)
+        .expect_err("axis error text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo revolution axis error text"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::revolution_unit_axis(ctx, 40, direction)
+            .expect_err("nonunit direction is malformed");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "feature 40 revolution axis direction does not have unit length"));
+        Ok::<(), CodecError>(())
+    })
+    .expect("service error text admitted");
+}
+
+#[test]
+fn revolution_knot_error_refuses_retained_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::directrix_parameter_range(&ctx, 17, &[])
+        .expect_err("knot error text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo revolution knot error text"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::directrix_parameter_range(ctx, 17, &[])
+            .expect_err("empty knot list is malformed");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "FeatDefs saved spline at offset 17 has no knots"));
+        assert_eq!(
+            super::directrix_parameter_range(ctx, 17, &[0.0, 1.0])?,
+            [0.0, 1.0]
+        );
+        Ok::<(), CodecError>(())
+    })
+    .expect("service error text admitted");
+}
+
+#[test]
+fn revolved_saved_spline_loss_refuses_text_and_row_below_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for (bytes, items, dimension, operation) in [
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::RetainedBytes,
+            "creo revolved saved spline loss text",
+        ),
+        (
+            u64::MAX,
+            0,
+            ResourceDimension::CollectionItems,
+            "creo revolved saved spline losses",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = bytes;
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error =
+            super::push_revolution_surface_loss(&ctx, &mut Vec::new(), "saved spline refused")
+                .expect_err("below-need loss cap");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    super::push_revolution_surface_loss(&ctx, &mut losses, "saved spline refused")
+        .expect("service loss");
+    assert_eq!(losses[0].message, "saved spline refused");
+}
+
+#[test]
+fn revolution_generating_ids_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut ids = std::collections::BTreeSet::new();
+    let error = super::insert_generating_segment_id(&ctx, &mut ids, 9)
+        .expect_err("one generating ID exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo revolution generating segment IDs"),
+        "{error:?}"
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::insert_generating_segment_id(ctx, &mut ids, 9)
+    })
+    .expect("service profile admits one generating ID");
+    assert_eq!(ids, std::collections::BTreeSet::from([9]));
+}
+
+#[test]
+fn revolution_profile_id_merge_refuses_second_node() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+        directions: [None; 3],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 9,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let profiles = [vec![cadmpeg_ir::sketches::SketchEntityUse {
+        entity: cadmpeg_ir::sketches::SketchEntityId::mint(
+            "creo:featdefs:sketch_entity#2:9".to_string(),
+        )
+        .expect("profile entity identity"),
+        reversed: false,
+    }]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let profile_ids =
+        crate::decode::feature_history::link::profile_segment_ids(&ctx, 2, &[&segment], &profiles)
+            .expect("one profile ID is admitted");
+    let mut generating_ids = std::collections::BTreeSet::new();
+    let error = super::insert_generating_segment_id(
+        &ctx,
+        &mut generating_ids,
+        *profile_ids.first().expect("one profile ID"),
+    )
+    .expect_err("a second BTreeSet node exceeds the limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo revolution generating segment IDs"),
+        "{error:?}"
+    );
+}
+
 fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
     crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -132,6 +290,69 @@ fn transfer_with_curve_count_and_scale(
     curve_count: usize,
     length_scale_mm: Option<cadmpeg_ir::scalar::PositiveReal>,
 ) -> (usize, CadIr) {
+    let scan = saved_spline_revolution_scan();
+
+    let mut ir = CadIr::empty();
+    let mut source_carriers =
+        crate::decode::source_carriers::SourceUnitCarriers::new(length_scale_mm);
+    for curve in (0..curve_count).map(|_| saved_spline_curve()) {
+        if length_scale_mm.is_some() {
+            crate::decode::with_test_decode_ctx(|ctx| {
+                source_carriers.admit_curve(ctx, &mut ir, curve)
+            })
+            .expect("saved spline admission");
+        } else {
+            ir.model.curves.push(curve);
+        }
+    }
+    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_resolved_revolution_surfaces(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut source_carriers,
+        )
+    })
+    .expect("valid source object identity");
+    (transferred, ir)
+}
+
+#[test]
+fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
+    let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
+    let (transferred, ir) = transfer_with_curve_count_and_scale(1, Some(scale));
+    assert_eq!(transferred, 1);
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.model.curves[0].geometry.solved() else {
+        panic!("saved directrix changed family");
+    };
+    assert_eq!(
+        directrix.control_points()[0].get(),
+        Point3::new(50.8, 0.0, 0.0)
+    );
+    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
+        ir.model.surfaces[0].geometry.solved()
+    else {
+        panic!("revolved surface changed family");
+    };
+    assert_eq!(surface.poles()[0].get(), Point3::new(50.8, 0.0, 0.0));
+}
+
+#[test]
+fn saved_spline_revolution_rejects_duplicate_model_curve_ids() {
+    let (transferred, ir) = transfer_with_curve_count(1);
+    assert_eq!(transferred, 1);
+    assert_eq!(ir.model.surfaces.len(), 1);
+    assert_eq!(ir.model.procedural_surfaces.len(), 1);
+
+    let (transferred, ir) = transfer_with_curve_count(2);
+    assert_eq!(transferred, 0);
+    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.model.procedural_surfaces.is_empty());
+}
+
+fn saved_spline_revolution_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(saved_spline_definition());
     scan.features.section_transforms.push(
@@ -191,61 +412,26 @@ fn transfer_with_curve_count_and_scale(
         .with_surface_ids([20]),
     );
 
-    let mut ir = CadIr::empty();
-    let mut source_carriers =
-        crate::decode::source_carriers::SourceUnitCarriers::new(length_scale_mm);
-    for curve in (0..curve_count).map(|_| saved_spline_curve()) {
-        if length_scale_mm.is_some() {
-            source_carriers
-                .admit_curve(&mut ir, curve)
-                .expect("saved spline admission");
-        } else {
-            ir.model.curves.push(curve);
-        }
-    }
-    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
-        transfer_resolved_revolution_surfaces(
-            ctx,
-            &scan,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &mut Vec::new(),
-            &mut source_carriers,
-        )
-    })
-    .expect("valid source object identity");
-    (transferred, ir)
+    scan
 }
 
 #[test]
-fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
-    let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
-    let (transferred, ir) = transfer_with_curve_count_and_scale(1, Some(scale));
-    assert_eq!(transferred, 1);
-    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.model.curves[0].geometry.solved() else {
-        panic!("saved directrix changed family");
-    };
-    assert_eq!(
-        directrix.control_points()[0].get(),
-        Point3::new(50.8, 0.0, 0.0)
+fn saved_spline_revolution_refuses_construction_surface_identity_copy() {
+    let scan = saved_spline_revolution_scan();
+    let count = crate::test_support::assert_retained_boundaries(
+        &["creo construction surface identity copy"],
+        |ctx| {
+            let mut ir = CadIr::empty();
+            ir.model.curves.push(saved_spline_curve());
+            transfer_resolved_revolution_surfaces(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
     );
-    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
-        ir.model.surfaces[0].geometry.solved()
-    else {
-        panic!("revolved surface changed family");
-    };
-    assert_eq!(surface.poles()[0].get(), Point3::new(50.8, 0.0, 0.0));
-}
-
-#[test]
-fn saved_spline_revolution_rejects_duplicate_model_curve_ids() {
-    let (transferred, ir) = transfer_with_curve_count(1);
-    assert_eq!(transferred, 1);
-    assert_eq!(ir.model.surfaces.len(), 1);
-    assert_eq!(ir.model.procedural_surfaces.len(), 1);
-
-    let (transferred, ir) = transfer_with_curve_count(2);
-    assert_eq!(transferred, 0);
-    assert!(ir.model.surfaces.is_empty());
-    assert!(ir.model.procedural_surfaces.is_empty());
+    assert_eq!(count, 1);
 }

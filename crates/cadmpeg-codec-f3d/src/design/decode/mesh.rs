@@ -6,15 +6,18 @@
 //! optional texture resources, and Scene state ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 
 use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::decode::DecodeContext;
+use std::fmt::Write;
 
-use crate::bytes::{lp_ascii_strict, lp_utf16_bounded, take_reference};
+use crate::bytes::{lp_ascii_strict, take_reference};
 use crate::container::ContainerScan;
+use crate::design::decode::image::neutral_asset_id_charged;
 use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::ids;
+use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
 use crate::layout::paramesh_collection_owner_backlink_prefix as collection_owner;
@@ -39,7 +42,7 @@ use crate::records::mesh::{
     DesignMeshSceneState, DesignMeshScope, DesignMeshTextureResource, DesignMeshTextureTable,
     MeshAffineTransform,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
@@ -256,7 +259,7 @@ struct MeshTextureTableRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshWrapperRecord {
-    identity: DesignMeshFixedRecord<{ body_wrapper::LEN as u64 }>,
+    identity: DesignMeshFixedRecord<{ u64_from_index(body_wrapper::LEN) }>,
     body_record_index: u32,
 }
 
@@ -282,6 +285,7 @@ struct MeshCollectionOwnerRecord {
 impl MeshBody {
     /// Project one decoded container through its joined Design body record.
     fn from_container(
+        ctx: &DecodeContext<'_>,
         entry_name: &str,
         body_byte_offset: u64,
         transform: MeshAffineTransform,
@@ -298,24 +302,33 @@ impl MeshBody {
             texture_ids,
             attributes,
         } = container;
+        let mut id = native_scope_charged(ctx, entry_name)?;
+        ctx.append_formatted_retained(
+            &mut id,
+            format_args!(":mesh-body#{body_byte_offset}"),
+            "f3d mesh body identifier",
+        )?;
+        let mut placed_vertices = ctx.collection_vec(vertices.len(), "f3d placed mesh vertices")?;
+        for point in vertices {
+            placed_vertices.push(transform.transform_point(point)?);
+        }
+        let placed_normals = if let Some(normals) = corner_normals {
+            let mut placed = ctx.collection_vec(normals.len(), "f3d placed mesh normals")?;
+            for normal in normals {
+                placed.push(transform.transform_normal(normal)?);
+            }
+            Some(placed)
+        } else {
+            None
+        };
         Ok(Self {
-            id: ids::native_mesh_body_id(entry_name, body_byte_offset),
-            vertices: vertices
-                .into_iter()
-                .map(|point| transform.transform_point(point))
-                .collect::<Result<_, _>>()?,
+            id,
+            vertices: placed_vertices,
             // Placement does not change indexing. Triangle tuples, feature
             // edges, and corner selectors remain in serialized order.
             triangles,
             feature_edges,
-            corner_normals: corner_normals
-                .map(|normals| {
-                    normals
-                        .into_iter()
-                        .map(|normal| transform.transform_normal(normal))
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
+            corner_normals: placed_normals,
             triangle_groups,
             texture_ids,
             attributes,
@@ -324,6 +337,7 @@ impl MeshBody {
 }
 
 fn validate_mesh_registration(
+    ctx: &DecodeContext<'_>,
     frame: TypedPrimaryFrame<'_>,
     expected_version: u32,
     expected_base_type_guid: &str,
@@ -331,10 +345,13 @@ fn validate_mesh_registration(
     record_kind: &str,
 ) -> Result<(), CodecError> {
     if frame.design_type.version != expected_version {
-        return Err(CodecError::NotImplemented(format!(
-            "F3D Design {record_kind} record version {} is unsupported",
-            frame.design_type.version
-        )));
+        return Err(CodecError::NotImplemented(ctx.format_retained(
+            format_args!(
+                "F3D Design {record_kind} record version {} is unsupported",
+                frame.design_type.version
+            ),
+            "f3d Design unsupported diagnostic",
+        )?));
     }
     if frame.design_type.module != expected_module
         || !frame
@@ -344,15 +361,19 @@ fn validate_mesh_registration(
             .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
     {
-        return Err(CodecError::malformed(format_args!(
-            "F3D Design {record_kind} entity {} has incompatible registration metadata",
-            frame.entity_id
-        )));
+        return Err(crate::design::text::malformed_design(
+            ctx,
+            format_args!(
+                "F3D Design {record_kind} entity {} has incompatible registration metadata",
+                frame.entity_id
+            ),
+        ));
     }
     Ok(())
 }
 
 fn exact_record_index(
+    ctx: &DecodeContext<'_>,
     record: &[u8],
     frame: TypedPrimaryFrame<'_>,
     record_kind: &str,
@@ -360,17 +381,21 @@ fn exact_record_index(
     View::u32_le_at(record, 7)
         .filter(|record_index| u64::from(*record_index) == frame.entity_id)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D Design {record_kind} entity {} has an invalid record index",
-                frame.entity_id
-            ))
+            crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design {record_kind} entity {} has an invalid record index",
+                    frame.entity_id
+                ),
+            )
         })
 }
 
-fn malformed_frame(record_kind: &str, entity_id: u64) -> CodecError {
-    CodecError::malformed(format_args!(
-        "F3D Design {record_kind} entity {entity_id} has an invalid primary frame"
-    ))
+fn malformed_frame(ctx: &DecodeContext<'_>, record_kind: &str, entity_id: u64) -> CodecError {
+    crate::design::text::malformed_design(
+        ctx,
+        format_args!("F3D Design {record_kind} entity {entity_id} has an invalid primary frame"),
+    )
 }
 
 fn source_offset(frame_start: usize, relative: usize) -> Option<u64> {
@@ -387,21 +412,28 @@ fn indexed_class_tag(
 }
 
 fn record_identity(
+    ctx: &DecodeContext<'_>,
     record: &[u8],
     frame: TypedPrimaryFrame<'_>,
     record_kind: &str,
 ) -> Result<DesignMeshRecordIdentity, CodecError> {
-    let record_index = exact_record_index(record, frame, record_kind)?;
+    let record_index = exact_record_index(ctx, record, frame, record_kind)?;
     let class_tag = indexed_class_tag(record, 0)
-        .ok_or_else(|| malformed_frame(record_kind, frame.entity_id))?;
+        .ok_or_else(|| malformed_frame(ctx, record_kind, frame.entity_id))?;
     DesignMeshRecordIdentity::new(
         class_tag,
         record_index,
-        u64::try_from(frame.start).map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
-        u64::try_from(frame.end.saturating_sub(frame.start))
-            .map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
+        u64::try_from(frame.start)
+            .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
+        u64::try_from(
+            frame
+                .end
+                .checked_sub(frame.start)
+                .ok_or_else(|| malformed_frame(ctx, record_kind, frame.entity_id))?,
+        )
+        .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
     )
-    .map_err(|_| malformed_frame(record_kind, frame.entity_id))
+    .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))
 }
 
 fn validate_design_type(
@@ -424,19 +456,40 @@ fn validate_design_type(
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn nested_record_identity(
-    record: &[u8],
+#[derive(Clone, Copy)]
+struct MeshRecordType<'a> {
+    type_guid: &'a str,
+    base_type_guid: &'a str,
+    version: u32,
+    module: &'a str,
+}
+
+#[derive(Clone, Copy)]
+struct NestedMeshRecordFrame {
     frame_start: usize,
     at: usize,
     end: usize,
     record_index: u32,
+}
+
+fn nested_record_identity(
+    record: &[u8],
+    frame: NestedMeshRecordFrame,
     meta: &crate::metastream::MetaStream,
-    expected_type_guid: &str,
-    expected_base_type_guid: &str,
-    expected_version: u32,
-    expected_module: &str,
+    input: MeshRecordType<'_>,
 ) -> Option<DesignMeshRecordIdentity> {
+    let NestedMeshRecordFrame {
+        frame_start,
+        at,
+        end,
+        record_index,
+    } = frame;
+    let MeshRecordType {
+        type_guid: expected_type_guid,
+        base_type_guid: expected_base_type_guid,
+        version: expected_version,
+        module: expected_module,
+    } = input;
     let class_tag = indexed_class_tag(record, at)?;
     (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
         .then_some(())?;
@@ -470,23 +523,49 @@ fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
         .filter(|target| *target != 0)
 }
 
-fn counted_local_record_indices(record: &[u8], count_at: usize) -> Option<(Vec<u32>, usize)> {
-    let count = usize::try_from(View::u32_le_at(record, count_at)?).ok()?;
-    let mut at = count_at.checked_add(4)?;
-    (count <= record.len().saturating_sub(at) / SAME_SEGMENT_REFERENCE_BYTES).then_some(())?;
-    let mut references = Vec::with_capacity(count);
+fn counted_local_record_indices(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    count_at: usize,
+) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
+    let Some(raw_count) = View::u32_le_at(record, count_at) else {
+        return Ok(None);
+    };
+    let Some(mut at) = count_at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(count) = record.len().checked_sub(at).and_then(|remaining| {
+        bounded_len(
+            u64::from(raw_count),
+            SAME_SEGMENT_REFERENCE_BYTES,
+            remaining,
+        )
+    }) else {
+        return Ok(None);
+    };
+
+    let mut references = Vec::new();
+    ctx.reserve_vec(&mut references, count, "f3d mesh local record references")?;
     for _ in 0..count {
-        references.push(exact_local_record_index(record, at)?);
-        at = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
+        let Some(index) = exact_local_record_index(record, at) else {
+            return Ok(None);
+        };
+        references.push(index);
+        let Some(next_at) = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES) else {
+            return Ok(None);
+        };
+        at = next_at;
     }
-    Some((references, at))
+    Ok(Some((references, at)))
 }
 
 fn parse_mesh_entry_name_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshEntryNameRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_ENTRY_NAME_TYPE_VERSION,
         MESH_ENTRY_NAME_BASE_TYPE_GUID,
@@ -494,27 +573,31 @@ fn parse_mesh_entry_name_record(
         "mesh-entry-name",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-entry-name")?;
-    let parsed = (|| {
-        (record.get(entry_name_prefix::ZERO_RUN_10..entry_name_prefix::GUID_RECORD_REFERENCE)
-            == Some(&[0; 10]))
-        .then_some(())?;
-        let guid_record_index =
-            exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)?;
-        let (entry_name, _) = lp_utf16_bounded(record, entry_name_prefix::LEN, 1..=1024)?;
-        Some(MeshEntryNameRecord {
-            entry: DesignMeshEntryName::new(identity, entry_name).ok()?,
-            guid_record_index,
-        })
-    })();
-    parsed.ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))
+    let identity = record_identity(ctx, record, frame, "mesh-entry-name")?;
+    if record.get(entry_name_prefix::ZERO_RUN_10..entry_name_prefix::GUID_RECORD_REFERENCE)
+        != Some(&[0; 10])
+    {
+        return Err(malformed_frame(ctx, "mesh-entry-name", frame.entity_id));
+    }
+    let guid_record_index =
+        exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)
+            .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
+    let (entry_name, _) = lp_utf16_bounded_charged(ctx, record, entry_name_prefix::LEN, 1..=1024)?
+        .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
+    Ok(MeshEntryNameRecord {
+        entry: DesignMeshEntryName::new(identity, entry_name)
+            .map_err(|_| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?,
+        guid_record_index,
+    })
 }
 
 fn parse_mesh_guid_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshGuidRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_GUID_TYPE_VERSION,
         MESH_GUID_BASE_TYPE_GUID,
@@ -522,7 +605,7 @@ fn parse_mesh_guid_record(
         "mesh-GUID",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-GUID")?;
+    let identity = record_identity(ctx, record, frame, "mesh-GUID")?;
     let parsed = (|| {
         (record.get(guid_join::ZERO_RUN_21..guid_join::FUSION_UUID) == Some(&[0; 21]))
             .then_some(())?;
@@ -536,14 +619,16 @@ fn parse_mesh_guid_record(
             entry_name_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-GUID", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-GUID", frame.entity_id))
 }
 
 fn parse_mesh_body_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshBodyRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_BODY_TYPE_VERSION,
         MESH_BODY_BASE_TYPE_GUID,
@@ -551,7 +636,7 @@ fn parse_mesh_body_record(
         "mesh-body",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-body")?;
+    let identity = record_identity(ctx, record, frame, "mesh-body")?;
     let parsed = (|| {
         (record.get(mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10) == Some(&[0; 10]))
             .then_some(())?;
@@ -577,15 +662,17 @@ fn parse_mesh_body_record(
             collection_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-body", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-body", frame.entity_id))
 }
 
 fn parse_mesh_collection_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshCollectionRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_COLLECTION_TYPE_VERSION,
         MESH_COLLECTION_BASE_TYPE_GUID,
@@ -593,7 +680,12 @@ fn parse_mesh_collection_record(
         "mesh-collection",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-collection")?;
+    let identity = record_identity(ctx, record, frame, "mesh-collection")?;
+    let counted_bodies = counted_local_record_indices(
+        ctx,
+        record,
+        mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
+    )?;
     let parsed = (|| {
         (record.get(mesh_collection::ZERO_RUN_10..mesh_collection::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
@@ -606,25 +698,26 @@ fn parse_mesh_collection_record(
             exact_local_record_index(record, mesh_collection::TEXTURE_TABLE_REFERENCE)?;
         let base_record = nested_record_identity(
             record,
-            frame.start,
-            mesh_collection::LEN,
-            record.len(),
-            identity.record_index(),
+            crate::design::decode::mesh::NestedMeshRecordFrame {
+                frame_start: frame.start,
+                at: mesh_collection::LEN,
+                end: record.len(),
+                record_index: identity.record_index(),
+            },
             meta,
-            MESH_COLLECTION_BASE_TYPE_GUID,
-            MESH_COLLECTION_BASE_BASE_TYPE_GUID,
-            MESH_COLLECTION_BASE_TYPE_VERSION,
-            COMMON_DATA_MODULE,
+            crate::design::decode::mesh::MeshRecordType {
+                type_guid: MESH_COLLECTION_BASE_TYPE_GUID,
+                base_type_guid: MESH_COLLECTION_BASE_BASE_TYPE_GUID,
+                version: MESH_COLLECTION_BASE_TYPE_VERSION,
+                module: COMMON_DATA_MODULE,
+            },
         )?;
         (record.get(
             mesh_collection::LEN + mesh_collection_base::ZERO_RUN_9
                 ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
         ) == Some(&[0; 9]))
         .then_some(())?;
-        let (body_records, owner_at) = counted_local_record_indices(
-            record,
-            mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
-        )?;
+        let (body_records, owner_at) = counted_bodies?;
         (first_count == body_records.len()).then_some(())?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
@@ -635,14 +728,16 @@ fn parse_mesh_collection_record(
             owner_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-collection", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-collection", frame.entity_id))
 }
 
 fn parse_mesh_texture_table_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshTextureTableRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_TEXTURE_TABLE_TYPE_VERSION,
         MESH_TEXTURE_TABLE_BASE_TYPE_GUID,
@@ -650,64 +745,129 @@ fn parse_mesh_texture_table_record(
         "mesh-texture-table",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-texture-table")?;
-    let parsed = (|| {
-        (record.get(texture_table::ZERO_RUN_10..texture_table::FLAGS_MAP_COUNT) == Some(&[0; 10]))
-            .then_some(())?;
-        let flags_count =
-            usize::try_from(View::u32_le_at(record, texture_table::FLAGS_MAP_COUNT)?).ok()?;
-        let mut at = texture_table::FLAGS_MAP_COUNT.checked_add(4)?;
-        let mut flags = Vec::with_capacity(flags_count);
-        let mut flag_keys = HashSet::with_capacity(flags_count);
+    let identity = record_identity(ctx, record, frame, "mesh-texture-table")?;
+    let parsed = (|| -> Result<Option<MeshTextureTableRecord>, CodecError> {
+        if record.get(texture_table::ZERO_RUN_10..texture_table::FLAGS_MAP_COUNT)
+            != Some(&[0; 10][..])
+        {
+            return Ok(None);
+        }
+        let Some(raw_flags_count) = View::u32_le_at(record, texture_table::FLAGS_MAP_COUNT) else {
+            return Ok(None);
+        };
+        let Some(mut at) = texture_table::FLAGS_MAP_COUNT.checked_add(4) else {
+            return Ok(None);
+        };
+        let Some(flags_count) = record
+            .len()
+            .checked_sub(at)
+            .and_then(|remaining| bounded_len(u64::from(raw_flags_count), 44, remaining))
+        else {
+            return Ok(None);
+        };
+
+        let mut flags = Vec::new();
+        ctx.reserve_vec(&mut flags, flags_count, "f3d mesh texture flags")?;
+
+        let mut flag_keys = HashSet::new();
+        ctx.reserve_set(&mut flag_keys, flags_count, "f3d mesh texture flag keys")?;
         for ordinal in 0..flags_count {
-            let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
-            let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
-            flag_keys
-                .insert(resource_guid.as_str().to_ascii_uppercase())
-                .then_some(())?;
+            let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
+                return Ok(None);
+            };
+            let Ok(resource_guid) = DesignGuidText::try_from(resource_guid) else {
+                return Ok(None);
+            };
+            if !flag_keys.insert(resource_guid.as_str().to_ascii_uppercase()) {
+                return Ok(None);
+            }
             at = end;
-            let value = View::u32_le_at(record, at)?;
-            at = at.checked_add(4)?;
+            let Some(value) = View::u32_le_at(record, at) else {
+                return Ok(None);
+            };
+            let Some(next_at) = at.checked_add(4) else {
+                return Ok(None);
+            };
+            at = next_at;
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return Ok(None);
+            };
             flags.push(MeshTextureMapEntry {
-                ordinal: u32::try_from(ordinal).ok()?,
+                ordinal,
                 resource_guid,
                 value,
             });
         }
-        let filename_count = usize::try_from(View::u32_le_at(record, at)?).ok()?;
-        at = at.checked_add(4)?;
-        let mut filenames = Vec::with_capacity(filename_count);
-        let mut filename_keys = HashSet::with_capacity(filename_count);
+        let Some(raw_filename_count) = View::u32_le_at(record, at) else {
+            return Ok(None);
+        };
+        let Some(next_at) = at.checked_add(4) else {
+            return Ok(None);
+        };
+        at = next_at;
+        let Some(filename_count) = record
+            .len()
+            .checked_sub(at)
+            .and_then(|remaining| bounded_len(u64::from(raw_filename_count), 51, remaining))
+        else {
+            return Ok(None);
+        };
+
+        let mut filenames = Vec::new();
+        ctx.reserve_vec(&mut filenames, filename_count, "f3d mesh texture filenames")?;
+
+        let mut filename_keys = HashSet::new();
+        ctx.reserve_set(
+            &mut filename_keys,
+            filename_count,
+            "f3d mesh texture filename keys",
+        )?;
         for ordinal in 0..filename_count {
-            let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
-            let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
-            filename_keys
-                .insert(resource_guid.as_str().to_ascii_uppercase())
-                .then_some(())?;
+            let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
+                return Ok(None);
+            };
+            let Ok(resource_guid) = DesignGuidText::try_from(resource_guid) else {
+                return Ok(None);
+            };
+            if !filename_keys.insert(resource_guid.as_str().to_ascii_uppercase()) {
+                return Ok(None);
+            }
             at = end;
-            let filename_record_index = exact_local_record_index(record, at)?;
-            at = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
+            let Some(filename_record_index) = exact_local_record_index(record, at) else {
+                return Ok(None);
+            };
+            let Some(next_at) = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES) else {
+                return Ok(None);
+            };
+            at = next_at;
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return Ok(None);
+            };
             filenames.push(MeshTextureFilenameEntry {
-                ordinal: u32::try_from(ordinal).ok()?,
+                ordinal,
                 resource_guid,
                 filename_record_index,
             });
         }
-        (at == record.len() && flag_keys == filename_keys).then_some(())?;
-        Some(MeshTextureTableRecord {
+        if at != record.len() || flag_keys != filename_keys {
+            return Ok(None);
+        }
+        Ok(Some(MeshTextureTableRecord {
             identity,
             flags,
             filenames,
-        })
-    })();
-    parsed.ok_or_else(|| malformed_frame("mesh-texture-table", frame.entity_id))
+        }))
+    })()?;
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-texture-table", frame.entity_id))
 }
 
 fn parse_mesh_wrapper_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshWrapperRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_WRAPPER_TYPE_VERSION,
         MESH_WRAPPER_BASE_TYPE_GUID,
@@ -715,8 +875,9 @@ fn parse_mesh_wrapper_record(
         "mesh-wrapper",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-wrapper")?)
-        .map_err(|_| malformed_frame("mesh-wrapper", frame.entity_id))?;
+    let identity =
+        DesignMeshFixedRecord::try_from(record_identity(ctx, record, frame, "mesh-wrapper")?)
+            .map_err(|_| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))?;
     let parsed = (|| {
         (record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE) == Some(&[0; 10]))
             .then_some(())?;
@@ -727,7 +888,7 @@ fn parse_mesh_wrapper_record(
             body_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-wrapper", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))
 }
 
 fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
@@ -743,37 +904,61 @@ fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
         })
 }
 
-#[allow(clippy::option_option)] // Distinguish an invalid footer from a valid footer without bounds.
-fn parse_scene_footer(record: &[u8], at: usize) -> Option<Option<DesignMeshSceneBounds>> {
-    (at.checked_add(SCENE_FOOTER_BYTES) == Some(record.len()) && record.get(at) == Some(&1))
-        .then_some(())?;
-    parse_scene_bounds_payload(record, at.checked_add(1)?)
+enum SceneBoundsPayload {
+    Invalid,
+    Absent,
+    Present(DesignMeshSceneBounds),
 }
 
-#[allow(clippy::option_option)] // Distinguish an invalid payload from the exact no-bounds state mask.
-fn parse_scene_bounds_payload(
-    record: &[u8],
-    payload_at: usize,
-) -> Option<Option<DesignMeshSceneBounds>> {
-    let payload = record.get(payload_at..)?;
-    if scene_state_mask_is_exact(payload) {
-        return Some(None);
+fn parse_scene_footer(record: &[u8], at: usize) -> SceneBoundsPayload {
+    if at.checked_add(SCENE_FOOTER_BYTES) != Some(record.len()) || record.get(at) != Some(&1) {
+        return SceneBoundsPayload::Invalid;
     }
-    (payload.len() == 49 && payload[48] == 1).then_some(())?;
+    let Some(payload_at) = at.checked_add(1) else {
+        return SceneBoundsPayload::Invalid;
+    };
+    parse_scene_bounds_payload(record, payload_at)
+}
+
+fn parse_scene_bounds_payload(record: &[u8], payload_at: usize) -> SceneBoundsPayload {
+    let Some(payload) = record.get(payload_at..) else {
+        return SceneBoundsPayload::Invalid;
+    };
+    if scene_state_mask_is_exact(payload) {
+        return SceneBoundsPayload::Absent;
+    }
+    if payload.len() != 49 || payload[48] != 1 {
+        return SceneBoundsPayload::Invalid;
+    }
     let mut values = [0.0; 6];
     for (ordinal, value) in values.iter_mut().enumerate() {
-        *value = View::f64_le_at(record, payload_at.checked_add(ordinal.checked_mul(8)?)?)?;
+        let Some(offset) = ordinal
+            .checked_mul(8)
+            .and_then(|relative| payload_at.checked_add(relative))
+        else {
+            return SceneBoundsPayload::Invalid;
+        };
+        let Some(parsed) = View::f64_le_at(record, offset) else {
+            return SceneBoundsPayload::Invalid;
+        };
+        *value = parsed;
     }
-    let maximum = [values[0], values[1], values[2]];
-    let minimum = [values[3], values[4], values[5]];
-    Some(Some(DesignMeshSceneBounds::new(maximum, minimum).ok()?))
+    match DesignMeshSceneBounds::new(
+        [values[0], values[1], values[2]],
+        [values[3], values[4], values[5]],
+    ) {
+        Ok(bounds) => SceneBoundsPayload::Present(bounds),
+        Err(_) => SceneBoundsPayload::Invalid,
+    }
 }
 
 fn parse_mesh_scene_state_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<DesignMeshSceneState, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_SCENE_STATE_TYPE_VERSION,
         MESH_SCENE_STATE_BASE_TYPE_GUID,
@@ -782,21 +967,28 @@ fn parse_mesh_scene_state_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity =
-        DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-scene-state")?)
-            .map_err(|_| malformed_frame("mesh-scene-state", frame.entity_id))?;
-    let bounds = (record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER)
-        == Some(&[0; 34]))
-    .then(|| parse_scene_footer(record, scene_state::FOOTER_MARKER))
-    .flatten()
-    .ok_or_else(|| malformed_frame("mesh-scene-state", frame.entity_id))?;
+        DesignMeshFixedRecord::try_from(record_identity(ctx, record, frame, "mesh-scene-state")?)
+            .map_err(|_| malformed_frame(ctx, "mesh-scene-state", frame.entity_id))?;
+    if record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER) != Some(&[0; 34]) {
+        return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id));
+    }
+    let bounds = match parse_scene_footer(record, scene_state::FOOTER_MARKER) {
+        SceneBoundsPayload::Invalid => {
+            return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id))
+        }
+        SceneBoundsPayload::Absent => None,
+        SceneBoundsPayload::Present(bounds) => Some(bounds),
+    };
     Ok(DesignMeshSceneState::new(identity, bounds))
 }
 
 fn parse_scene_node_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshSceneNodeRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         SCENE_NODE_TYPE_VERSION,
         SCENE_NODE_BASE_TYPE_GUID,
@@ -804,7 +996,7 @@ fn parse_scene_node_record(
         "mesh-scene-node",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-scene-node")?;
+    let identity = record_identity(ctx, record, frame, "mesh-scene-node")?;
     let parsed = (|| {
         (record.get(scene_node::ZERO_RUN_14..scene_node::CONSTANT_TWO_A) == Some(&[0; 14])
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_A) == Some(2)
@@ -814,13 +1006,13 @@ fn parse_scene_node_record(
         let (bounds, transform) = if record.len() == scene_node::LEN
             && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24])
         {
-            (parse_scene_footer(record, scene_node::FOOTER_MARKER)?, None)
+            (parse_scene_footer(record, scene_node::FOOTER_MARKER), None)
         } else if record.len() == placed_scene_node::LEN
             && record.get(placed_scene_node::ZERO_RUN_25..placed_scene_node::TRANSFORM)
                 == Some(&[0; 25])
         {
             (
-                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK)?,
+                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK),
                 Some(MeshAffineTransform::parse(
                     record,
                     placed_scene_node::TRANSFORM,
@@ -828,6 +1020,11 @@ fn parse_scene_node_record(
             )
         } else {
             return None;
+        };
+        let bounds = match bounds {
+            SceneBoundsPayload::Invalid => return None,
+            SceneBoundsPayload::Absent => None,
+            SceneBoundsPayload::Present(bounds) => Some(bounds),
         };
         Some(MeshSceneNodeRecord {
             node: DesignMeshSceneNode::new(identity, bounds, transform).ok()?,
@@ -841,10 +1038,11 @@ fn parse_scene_node_record(
             )?,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-scene-node", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-scene-node", frame.entity_id))
 }
 
 fn parse_typed_identity(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
     expected_version: u32,
@@ -853,22 +1051,25 @@ fn parse_typed_identity(
     record_kind: &str,
 ) -> Result<DesignMeshRecordIdentity, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         expected_version,
         expected_base_type_guid,
         expected_module,
         record_kind,
     )?;
-    record_identity(&bytes[frame.start..frame.end], frame, record_kind)
+    record_identity(ctx, &bytes[frame.start..frame.end], frame, record_kind)
 }
 
 fn parse_mesh_scope_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     records: &IndexedRecordOffsets,
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshScopeRecord, CodecError> {
     validate_mesh_registration(
+        ctx,
         frame,
         MESH_FEATURE_SCOPE_TYPE_VERSION,
         MESH_FEATURE_SCOPE_BASE_TYPE_GUID,
@@ -876,19 +1077,24 @@ fn parse_mesh_scope_record(
         "mesh-feature-scope",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-feature-scope")?;
+    let identity = record_identity(ctx, record, frame, "mesh-feature-scope")?;
+    let counted_bodies = counted_local_record_indices(ctx, record, feature_scope::BODY_COUNT)?;
     let parsed = (|| {
         (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
-        let (body_records, body_list_end) =
-            counted_local_record_indices(record, feature_scope::BODY_COUNT)?;
-        let scope = parse_parameter_scope(
+        let (body_records, body_list_end) = counted_bodies?;
+        let scope = match parse_parameter_scope(
+            ctx,
             bytes,
             records,
             identity.record_index(),
             identity.class_tag(),
             u64::try_from(frame.start).ok()?,
-        )?;
+        ) {
+            Ok(Some(scope)) => scope,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         (scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
             && scope.byte_offset() == u64::try_from(frame.start).ok()?)
         .then_some(())?;
@@ -899,15 +1105,19 @@ fn parse_mesh_scope_record(
         .then_some(())?;
         let base_record = nested_record_identity(
             record,
-            frame.start,
-            paired_relative,
-            record.len(),
-            identity.record_index(),
+            crate::design::decode::mesh::NestedMeshRecordFrame {
+                frame_start: frame.start,
+                at: paired_relative,
+                end: record.len(),
+                record_index: identity.record_index(),
+            },
             meta,
-            MESH_SCOPE_BASE_RECORD_TYPE_GUID,
-            MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID,
-            MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
-            DATA_MODEL_MODULE,
+            crate::design::decode::mesh::MeshRecordType {
+                type_guid: MESH_SCOPE_BASE_RECORD_TYPE_GUID,
+                base_type_guid: MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID,
+                version: MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
+                module: DATA_MODEL_MODULE,
+            },
         )?;
         (record.get(
             paired_relative + feature_scope_base::ZERO_RUN_8
@@ -916,15 +1126,18 @@ fn parse_mesh_scope_record(
         .then_some(())?;
         let owner_at = paired_relative.checked_add(feature_scope_base::SCOPE_OWNER_REFERENCE)?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
-        Some(MeshScopeRecord {
+        Some(Ok(MeshScopeRecord {
             scope: DesignMeshScope::new(identity, base_record, owner_record_index).ok()?,
             body_records,
-        })
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
+    parsed
+        .transpose()?
+        .ok_or_else(|| malformed_frame(ctx, "mesh-feature-scope", frame.entity_id))
 }
 
 fn parse_mesh_collection_owner_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<Option<MeshCollectionOwnerRecord>, CodecError> {
@@ -935,6 +1148,7 @@ fn parse_mesh_collection_owner_record(
             MESH_COLLECTION_OWNER_TYPE_VERSIONS[2]
         };
     let identity = parse_typed_identity(
+        ctx,
         bytes,
         frame,
         admitted_version,
@@ -960,18 +1174,20 @@ fn parse_mesh_collection_owner_record(
         owner: DesignMeshCollectionOwner::new(
             identity,
             source_offset(frame.start, backlink_at)
-                .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+                .ok_or_else(|| malformed_frame(ctx, "mesh-collection-owner", frame.entity_id))?,
         )
-        .map_err(|_| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+        .map_err(|_| malformed_frame(ctx, "mesh-collection-owner", frame.entity_id))?,
         collection_record_index,
     }))
 }
 
 fn parse_mesh_texture_filename_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<(DesignMeshRecordIdentity, String), CodecError> {
     let identity = parse_typed_identity(
+        ctx,
         bytes,
         frame,
         MESH_TEXTURE_FILENAME_TYPE_VERSION,
@@ -980,62 +1196,142 @@ fn parse_mesh_texture_filename_record(
         "mesh-texture-filename",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let parsed = (|| {
-        (record.get(texture_filename::ZERO_RUN_10..texture_filename::BASENAME_CODE_UNIT_COUNT)
-            == Some(&[0; 10]))
-        .then_some(())?;
-        let (filename, end) =
-            lp_utf16_bounded(record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024)?;
-        (end == record.len()).then_some((identity, filename))
-    })();
-    parsed.ok_or_else(|| malformed_frame("mesh-texture-filename", frame.entity_id))
+    if record.get(texture_filename::ZERO_RUN_10..texture_filename::BASENAME_CODE_UNIT_COUNT)
+        != Some(&[0; 10])
+    {
+        return Err(malformed_frame(
+            ctx,
+            "mesh-texture-filename",
+            frame.entity_id,
+        ));
+    }
+    let (filename, end) = lp_utf16_bounded_charged(
+        ctx,
+        record,
+        texture_filename::BASENAME_CODE_UNIT_COUNT,
+        1..=1024,
+    )?
+    .ok_or_else(|| malformed_frame(ctx, "mesh-texture-filename", frame.entity_id))?;
+    if end != record.len() {
+        return Err(malformed_frame(
+            ctx,
+            "mesh-texture-filename",
+            frame.entity_id,
+        ));
+    }
+    Ok((identity, filename))
 }
 
 fn unique_record_map<T>(
+    ctx: &DecodeContext<'_>,
     records: Vec<T>,
     record_index: impl Fn(&T) -> u32,
     record_kind: &str,
 ) -> Result<HashMap<u32, T>, CodecError> {
-    let mut out = HashMap::with_capacity(records.len());
+    let mut out = HashMap::new();
+
+    ctx.reserve_map(&mut out, records.len(), "f3d mesh record-map entries")?;
     for record in records {
         let index = record_index(&record);
         if out.insert(index, record).is_some() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design {record_kind} record index {index} is not unique"
-            )));
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!("F3D Design {record_kind} record index {index} is not unique"),
+            ));
         }
     }
     Ok(out)
 }
 
 fn typed_frame_map<'a>(
+    ctx: &DecodeContext<'_>,
     frames: Vec<TypedPrimaryFrame<'a>>,
     record_kind: &str,
 ) -> Result<HashMap<u32, TypedPrimaryFrame<'a>>, CodecError> {
-    let mut out = HashMap::with_capacity(frames.len());
+    let mut out = HashMap::new();
+
+    ctx.reserve_map(&mut out, frames.len(), "f3d mesh frame-map entries")?;
     for frame in frames {
         let index = u32::try_from(frame.entity_id).map_err(|_| {
-            CodecError::malformed(format_args!(
-                "F3D Design {record_kind} entity {} exceeds the indexed-record domain",
-                frame.entity_id
-            ))
+            crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design {record_kind} entity {} exceeds the indexed-record domain",
+                    frame.entity_id
+                ),
+            )
         })?;
         if out.insert(index, frame).is_some() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design {record_kind} record index {index} is not unique"
-            )));
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!("F3D Design {record_kind} record index {index} is not unique"),
+            ));
         }
     }
     Ok(out)
 }
 
-fn malformed_mesh_graph(stream: &str, invariant: &str) -> CodecError {
-    CodecError::malformed(format_args!(
-        "F3D Design mesh feature graph violates `{invariant}` in {stream}"
-    ))
+fn malformed_mesh_graph(ctx: &DecodeContext<'_>, stream: &str, invariant: &str) -> CodecError {
+    crate::design::text::malformed_design(
+        ctx,
+        format_args!("F3D Design mesh feature graph violates `{invariant}` in {stream}"),
+    )
+}
+
+struct MeshDiagnosticLength(usize);
+
+impl std::fmt::Write for MeshDiagnosticLength {
+    fn write_str(&mut self, value: &str) -> std::fmt::Result {
+        self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+
+fn charged_mesh_diagnostic(
+    ctx: &DecodeContext<'_>,
+    message: std::fmt::Arguments<'_>,
+) -> Result<CodecError, CodecError> {
+    let mut length = MeshDiagnosticLength(0);
+    std::fmt::write(&mut length, message).map_err(|_| {
+        ctx.refuse_codec_limit("f3d mesh graph diagnostic length", u64::MAX - 1, u64::MAX)
+    })?;
+
+    let mut text = ctx.retained_string(length.0, "f3d mesh graph diagnostic")?;
+    text.write_fmt(message)
+        .map_err(|_| CodecError::Malformed("F3D mesh graph diagnostic formatting failed".into()))?;
+    Ok(CodecError::Malformed(text))
+}
+
+fn mesh_collection_indices(
+    ctx: &DecodeContext<'_>,
+    collections: &[MeshCollectionRecord],
+) -> Result<HashSet<u32>, CodecError> {
+    let mut indices = HashSet::new();
+    ctx.reserve_set(
+        &mut indices,
+        collections.len(),
+        "f3d mesh collection indices",
+    )?;
+    for collection in collections {
+        indices.insert(collection.collection.record().record_index());
+    }
+    Ok(indices)
+}
+
+fn mesh_filename_entries<'a>(
+    ctx: &DecodeContext<'_>,
+    filenames: &'a [MeshTextureFilenameEntry],
+) -> Result<HashMap<String, &'a MeshTextureFilenameEntry>, CodecError> {
+    let mut entries = HashMap::new();
+    ctx.reserve_map(&mut entries, filenames.len(), "f3d mesh filename entries")?;
+    for entry in filenames {
+        entries.insert(entry.resource_guid.as_str().to_ascii_uppercase(), entry);
+    }
+    Ok(entries)
 }
 
 fn parse_mesh_design_records<F>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     source_entry_name: &str,
@@ -1044,103 +1340,145 @@ fn parse_mesh_design_records<F>(
 where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
-    let stream = ids::native_scope(source_entry_name);
-    let records = IndexedRecordOffsets::build(bytes);
-    let collection_frames =
-        typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+    let stream = native_scope_charged(ctx, source_entry_name)?;
+    let records = IndexedRecordOffsets::build(ctx, bytes)?;
+    let collection_frames = typed_primary_frames(
+        ctx,
+        bytes,
+        meta,
+        MESH_COLLECTION_TYPE_GUID,
+        "mesh-collection",
+    )?;
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
-    let collections = collection_frames
-        .into_iter()
-        .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|collection| !collection.body_records.is_empty())
-        .collect::<Vec<_>>();
+    let mut collections = ctx.try_collect_vec(
+        collection_frames
+            .into_iter()
+            .map(|frame| parse_mesh_collection_record(ctx, bytes, meta, frame)),
+        "f3d mesh collection records",
+    )?;
+    collections.retain(|collection| !collection.body_records.is_empty());
     if collections.is_empty() {
         return Ok(Vec::new());
     }
     let mut entry_names = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(
+                ctx,
+                bytes,
+                meta,
+                MESH_ENTRY_NAME_TYPE_GUID,
+                "mesh-entry-name",
+            )?
             .into_iter()
-            .map(|frame| parse_mesh_entry_name_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+            .map(|frame| parse_mesh_entry_name_record(ctx, bytes, frame)),
+            "f3d mesh entry-name records",
+        )?,
         |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
-            .into_iter()
-            .map(|frame| parse_mesh_guid_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(ctx, bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+                .into_iter()
+                .map(|frame| parse_mesh_guid_record(ctx, bytes, frame)),
+            "f3d mesh GUID records",
+        )?,
         |record| record.guid.record().record_index(),
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
-            .into_iter()
-            .map(|frame| parse_mesh_body_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(ctx, bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+                .into_iter()
+                .map(|frame| parse_mesh_body_record(ctx, bytes, frame)),
+            "f3d mesh body records",
+        )?,
         |record| record.placement.record().record_index(),
         "mesh-body",
     )?;
-    let collection_record_indices = collections
-        .iter()
-        .map(|collection| collection.collection.record().record_index())
-        .collect::<HashSet<_>>();
+    let collection_record_indices = mesh_collection_indices(ctx, &collections)?;
     let mut texture_tables = unique_record_map(
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_TEXTURE_TABLE_TYPE_GUID,
-            "mesh-texture-table",
-        )?
-        .into_iter()
-        .map(|frame| parse_mesh_texture_table_record(bytes, frame))
-        .collect::<Result<Vec<_>, _>>()?,
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(
+                ctx,
+                bytes,
+                meta,
+                MESH_TEXTURE_TABLE_TYPE_GUID,
+                "mesh-texture-table",
+            )?
+            .into_iter()
+            .map(|frame| parse_mesh_texture_table_record(ctx, bytes, frame)),
+            "f3d mesh texture-table records",
+        )?,
         |record| record.identity.record_index(),
         "mesh-texture-table",
     )?;
     let mut wrappers = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
-            .into_iter()
-            .map(|frame| parse_mesh_wrapper_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(ctx, bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
+                .into_iter()
+                .map(|frame| parse_mesh_wrapper_record(ctx, bytes, frame)),
+            "f3d mesh wrapper records",
+        )?,
         |record| record.identity.record_index(),
         "mesh-wrapper",
     )?;
     let mut scopes = unique_record_map(
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_FEATURE_SCOPE_TYPE_GUID,
-            "mesh-feature-scope",
-        )?
-        .into_iter()
-        .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
-        .collect::<Result<Vec<_>, _>>()?,
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(
+                ctx,
+                bytes,
+                meta,
+                MESH_FEATURE_SCOPE_TYPE_GUID,
+                "mesh-feature-scope",
+            )?
+            .into_iter()
+            .map(|frame| parse_mesh_scope_record(ctx, bytes, meta, &records, frame)),
+            "f3d mesh feature-scope records",
+        )?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(
+                ctx,
+                bytes,
+                meta,
+                MESH_SCENE_STATE_TYPE_GUID,
+                "mesh-scene-state",
+            )?
             .into_iter()
-            .map(|frame| parse_mesh_scene_state_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+            .map(|frame| parse_mesh_scene_state_record(ctx, bytes, frame)),
+            "f3d mesh scene-state records",
+        )?,
         |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
-        typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
-            .into_iter()
-            .map(|frame| parse_scene_node_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        ctx,
+        ctx.try_collect_vec(
+            typed_primary_frames(ctx, bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
+                .into_iter()
+                .map(|frame| parse_scene_node_record(ctx, bytes, frame)),
+            "f3d mesh scene-node records",
+        )?,
         |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
-    let scene_auxiliary_frames = typed_frame_map(
+    let mut scene_auxiliary_frames = typed_frame_map(
+        ctx,
         typed_primary_frames(
+            ctx,
             bytes,
             meta,
             SCENE_AUXILIARY_TYPE_GUID,
@@ -1149,7 +1487,9 @@ where
         "mesh-scene-auxiliary",
     )?;
     let filename_frames = typed_frame_map(
+        ctx,
         typed_primary_frames(
+            ctx,
             bytes,
             meta,
             MESH_TEXTURE_FILENAME_TYPE_GUID,
@@ -1157,34 +1497,42 @@ where
         )?,
         "mesh-texture-filename",
     )?;
-    let collection_owners = unique_record_map(
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_COLLECTION_OWNER_TYPE_GUID,
-            "mesh-collection-owner",
-        )?
-        .into_iter()
-        .map(|frame| parse_mesh_collection_owner_record(bytes, frame))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .filter(|owner| collection_record_indices.contains(&owner.collection_record_index))
-        .collect(),
+    let mut owner_records = Vec::new();
+    for frame in typed_primary_frames(
+        ctx,
+        bytes,
+        meta,
+        MESH_COLLECTION_OWNER_TYPE_GUID,
+        "mesh-collection-owner",
+    )? {
+        if let Some(owner) = parse_mesh_collection_owner_record(ctx, bytes, frame)? {
+            if collection_record_indices.contains(&owner.collection_record_index) {
+                ctx.push_vec(&mut owner_records, owner, "f3d mesh collection owners")?;
+            }
+        }
+    }
+    let mut collection_owners = unique_record_map(
+        ctx,
+        owner_records,
         |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
     let body_owner_frames = typed_frame_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
+        ctx,
+        typed_primary_frames(
+            ctx,
+            bytes,
+            meta,
+            MESH_BODY_OWNER_TYPE_GUID,
+            "mesh-body-owner",
+        )?,
         "mesh-body-owner",
     )?;
 
-    let mut features = Vec::with_capacity(collections.len());
-    let mut used_collection_owners = HashSet::new();
-    let mut used_scene_auxiliaries = HashSet::new();
+    let mut features = ctx.collection_vec(collections.len(), "f3d mesh graph features")?;
     for collection in collections {
-        let stream_error = |invariant| malformed_mesh_graph(&stream, invariant);
-        let candidate_scopes = scopes
+        let stream_error = |invariant| malformed_mesh_graph(ctx, &stream, invariant);
+        let mut candidate_scopes = scopes
             .iter()
             .filter(|(_, scope)| scope.body_records == collection.body_records)
             .filter(|(scope_index, _)| {
@@ -1196,35 +1544,44 @@ where
                     })
                 })
             })
-            .map(|(record_index, _)| *record_index)
-            .collect::<Vec<_>>();
-        let [scope_record_index] = candidate_scopes.as_slice() else {
-            let scope_lists = scopes
-                .iter()
-                .map(|(index, scope)| (*index, scope.body_records.clone()))
-                .collect::<Vec<_>>();
-            let body_links = collection
-                .body_records
-                .iter()
-                .filter_map(|index| {
-                    bodies.get(index).map(|body| {
+            .map(|(record_index, _)| *record_index);
+        let candidate = candidate_scopes.next();
+        let second_candidate = candidate_scopes.next();
+        let Some(scope_record_index) = candidate.filter(|_| second_candidate.is_none()) else {
+            let mut scope_lists = Vec::new();
+            for (index, scope) in &scopes {
+                let mut body_records = ctx
+                    .collection_vec(scope.body_records.len(), "f3d mesh diagnostic scope bodies")?;
+                body_records.extend_from_slice(&scope.body_records);
+                ctx.push_vec(
+                    &mut scope_lists,
+                    (*index, body_records),
+                    "f3d mesh diagnostic scope lists",
+                )?;
+            }
+            let mut body_links = Vec::new();
+            for index in &collection.body_records {
+                if let Some(body) = bodies.get(index) {
+                    ctx.push_vec(
+                        &mut body_links,
                         (
                             *index,
                             body.scope_record_index,
                             body.collection_record_index,
-                        )
-                    })
-                })
-                .collect::<Vec<_>>();
-            return Err(CodecError::malformed(format_args!(
+                        ),
+                        "f3d mesh diagnostic body links",
+                    )?;
+                }
+            }
+            return Err(charged_mesh_diagnostic(ctx, format_args!(
                 "F3D Design mesh feature graph violates `each mesh collection has exactly one scope with the same ordered body list` in {stream}: collection {} bodies {:?}, scope lists {:?}, body links {:?}",
                 collection.collection.record().record_index(),
                 collection.body_records,
                 scope_lists,
                 body_links,
-            )));
+            ))?);
         };
-        let scope = scopes.remove(scope_record_index).ok_or_else(|| {
+        let scope = scopes.remove(&scope_record_index).ok_or_else(|| {
             stream_error("a mesh feature scope belongs to exactly one mesh collection")
         })?;
         let texture_table = texture_tables
@@ -1233,21 +1590,17 @@ where
                 stream_error("a mesh texture table belongs to exactly one mesh collection")
             })?;
         let collection_owner = collection_owners
-            .get(&collection.owner_record_index)
+            .remove(&collection.owner_record_index)
             .filter(|owner| {
                 owner.collection_record_index == collection.collection.record().record_index()
-                    && used_collection_owners.insert(owner.owner.record().record_index())
             })
             .ok_or_else(|| {
                 stream_error("each mesh collection has one unused owner with a reciprocal backlink")
             })?;
 
-        let mut filename_entries = texture_table
-            .filenames
-            .iter()
-            .map(|entry| (entry.resource_guid.as_str().to_ascii_uppercase(), entry))
-            .collect::<HashMap<_, _>>();
-        let mut textures = Vec::with_capacity(texture_table.flags.len());
+        let mut filename_entries = mesh_filename_entries(ctx, &texture_table.filenames)?;
+        let mut textures =
+            ctx.collection_vec(texture_table.flags.len(), "f3d mesh texture resources")?;
         for flag in &texture_table.flags {
             let filename_entry = filename_entries
                 .remove(&flag.resource_guid.as_str().to_ascii_uppercase())
@@ -1261,7 +1614,7 @@ where
                     stream_error("each texture filename reference targets a filename record")
                 })?;
             let (filename_record, filename) =
-                parse_mesh_texture_filename_record(bytes, filename_frame)?;
+                parse_mesh_texture_filename_record(ctx, bytes, filename_frame)?;
             let (archive_entry_name, asset) = asset_for_filename(&filename)?;
             textures.push(DesignMeshTextureResource {
                 ordinal: flag.ordinal,
@@ -1273,7 +1626,7 @@ where
                     &filename,
                     archive_entry_name,
                 )
-                .map_err(|message| malformed_mesh_graph(&stream, &message))?,
+                .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
                 asset,
             });
         }
@@ -1283,7 +1636,8 @@ where
             ));
         }
 
-        let mut feature_bodies = Vec::with_capacity(collection.body_records.len());
+        let mut feature_bodies =
+            ctx.collection_vec(collection.body_records.len(), "f3d mesh feature bodies")?;
         for body_record_index in &collection.body_records {
             let body = bodies.remove(body_record_index).ok_or_else(|| {
                 stream_error("each collection body reference targets one unused mesh body")
@@ -1310,13 +1664,12 @@ where
                 .remove(&scene_node.state_record_index)
                 .ok_or_else(|| stream_error("each Scene node has one unused Scene state"))?;
             let scene_auxiliary_frame = scene_auxiliary_frames
-                .get(&scene_node.auxiliary_record_index)
-                .copied()
-                .filter(|_| used_scene_auxiliaries.insert(scene_node.auxiliary_record_index))
+                .remove(&scene_node.auxiliary_record_index)
                 .ok_or_else(|| {
                     stream_error("each Scene node has one unused Scene auxiliary record")
                 })?;
             let scene_auxiliary = parse_typed_identity(
+                ctx,
                 bytes,
                 scene_auxiliary_frame,
                 SCENE_AUXILIARY_TYPE_VERSION,
@@ -1329,6 +1682,7 @@ where
                 .copied()
                 .ok_or_else(|| stream_error("each mesh body references a typed Body owner"))?;
             let body_owner = parse_typed_identity(
+                ctx,
                 bytes,
                 body_owner_frame,
                 MESH_BODY_OWNER_TYPE_VERSION,
@@ -1354,15 +1708,20 @@ where
         })?;
         features.push(
             DesignMeshFeature::new(
-                ids::native_design_mesh_feature_id(source_entry_name, scope_offset),
+                mesh_feature_id_charged(ctx, &stream, scope_offset)?,
                 scope.scope,
                 collection.collection,
-                DesignMeshTextureTable::new(texture_table.identity, textures)
-                    .map_err(|message| malformed_mesh_graph(&stream, &message))?,
-                collection_owner.owner.clone(),
+                DesignMeshTextureTable::new_charged(ctx, texture_table.identity, textures)
+                    .map_err(|error| match error {
+                        CodecError::Malformed(message) => {
+                            malformed_mesh_graph(ctx, &stream, &message)
+                        }
+                        other => other,
+                    })?,
+                collection_owner.owner,
                 feature_bodies,
             )
-            .map_err(|message| malformed_mesh_graph(&stream, &message))?,
+            .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
         );
     }
     if !entry_names.is_empty()
@@ -1373,6 +1732,7 @@ where
         || !scopes.is_empty()
     {
         return Err(malformed_mesh_graph(
+            ctx,
             &stream,
             "all typed mesh graph records belong to exactly one feature",
         ));
@@ -1381,6 +1741,7 @@ where
 }
 
 fn decode_mesh_design_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<Vec<DesignMeshFeature>>, CodecError> {
     let mut out = Vec::new();
@@ -1389,35 +1750,77 @@ fn decode_mesh_design_records(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
-        let mut asset_for_filename = |filename: &str| {
-            let mut matches = scan.entries.iter().filter(|candidate| {
-                scan.is_design_asset_entry(candidate, ContainerRole::Image)
-                    && candidate.name.rsplit('/').next() == Some(filename)
-            });
-            let (Some(asset), None) = (matches.next(), matches.next()) else {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D Design mesh texture `{filename}` does not resolve to one embedded image"
-                )));
-            };
-            Ok((
-                asset.name.clone(),
-                crate::ids::neutral_asset_id(&asset.name),
-            ))
-        };
+        let mut asset_for_filename = |filename: &str| mesh_image_asset(ctx, scan, filename);
         let records = parse_mesh_design_records(
+            ctx,
             scan.entry_bytes(&entry.name)?,
             &meta,
             &entry.name,
             &mut asset_for_filename,
         )?;
         if !records.is_empty() {
-            out.push(records);
+            ctx.push_vec(&mut out, records, "f3d mesh design streams")?;
         }
     }
     Ok(out)
+}
+
+fn mesh_image_asset(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    filename: &str,
+) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError> {
+    let mut matches = scan.entries.iter().filter(|candidate| {
+        scan.is_design_asset_entry(candidate, ContainerRole::Image)
+            && candidate.name.rsplit('/').next() == Some(filename)
+    });
+    let (Some(asset), None) = (matches.next(), matches.next()) else {
+        return Err(crate::design::text::malformed_design(
+            ctx,
+            format_args!(
+                "F3D Design mesh texture `{filename}` does not resolve to one embedded image"
+            ),
+        ));
+    };
+    Ok((
+        ctx.copy_retained_text(&asset.name, "f3d mesh image entry name")?,
+        neutral_asset_id_charged(ctx, &asset.name)?,
+    ))
+}
+
+fn flatten_mesh_features(
+    ctx: &DecodeContext<'_>,
+    design_records: Vec<Vec<DesignMeshFeature>>,
+) -> Result<Vec<DesignMeshFeature>, CodecError> {
+    let feature_count = design_records.iter().try_fold(0_usize, |count, design| {
+        count
+            .checked_add(design.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("f3d mesh feature count", u64::MAX - 1, u64::MAX))
+    })?;
+
+    let mut features = Vec::new();
+    ctx.reserve_vec(&mut features, feature_count, "f3d mesh decoded features")?;
+    for design in design_records {
+        features.extend(design);
+    }
+    Ok(features)
+}
+
+fn mesh_feature_id_charged(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    offset: usize,
+) -> Result<String, CodecError> {
+    let mut id = ctx.copy_retained_text(stream, "f3d mesh feature ID prefix")?;
+    ctx.append_formatted_retained(
+        &mut id,
+        format_args!(":design-mesh-feature#{offset}"),
+        "f3d mesh feature ID suffix",
+    )?;
+    Ok(id)
 }
 
 fn resolve_mesh_body(
@@ -1425,7 +1828,7 @@ fn resolve_mesh_body(
     entry_name: &str,
     fusion_uuid: &str,
 ) -> Option<(usize, usize, usize)> {
-    let mut matches = Vec::new();
+    let mut joined = None;
     for (design_ordinal, design) in records.iter().enumerate() {
         for (feature_ordinal, feature) in design.iter().enumerate() {
             for (body_ordinal, body) in feature.bodies().iter().enumerate() {
@@ -1433,21 +1836,24 @@ fn resolve_mesh_body(
                     && body.entry.name() == entry_name
                     && body.guid.value().eq_ignore_ascii_case(fusion_uuid)
                 {
-                    matches.push((design_ordinal, feature_ordinal, body_ordinal));
+                    if joined.is_some() {
+                        return None;
+                    }
+                    joined = Some((design_ordinal, feature_ordinal, body_ordinal));
                 }
             }
         }
     }
-    let [joined] = matches.as_slice() else {
-        return None;
-    };
-    Some(*joined)
+    joined
 }
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
 /// mesh-body record that names its GUID record.
-pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, CodecError> {
-    let mut design_records = decode_mesh_design_records(scan)?;
+pub(crate) fn decode_mesh_bodies(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<MeshDecode, CodecError> {
+    let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
     for entry in scan
         .entries
@@ -1456,14 +1862,20 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
     {
         let container = match scan
             .entry_bytes(&entry.name)
-            .and_then(decode_mesh_container)
+            .and_then(|bytes| decode_mesh_container(ctx, bytes))
         {
             Ok(container) => container,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                outcomes.push(MeshContainerOutcome::Failed {
-                    entry_name: entry.name.clone(),
-                    error,
-                });
+                ctx.push_vec(
+                    &mut outcomes,
+                    MeshContainerOutcome::Failed {
+                        entry_name: ctx
+                            .copy_retained_text(&entry.name, "f3d failed mesh entry name")?,
+                        error,
+                    },
+                    "f3d mesh container outcomes",
+                )?;
                 continue;
             }
         };
@@ -1472,32 +1884,49 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
         let Some((design_ordinal, feature_ordinal, body_ordinal)) =
             resolve_mesh_body(&design_records, base, &container.fusion_uuid)
         else {
-            outcomes.push(MeshContainerOutcome::Unjoined {
-                entry_name: entry.name.clone(),
-            });
+            ctx.push_vec(
+                &mut outcomes,
+                MeshContainerOutcome::Unjoined {
+                    entry_name: ctx
+                        .copy_retained_text(&entry.name, "f3d unjoined mesh entry name")?,
+                },
+                "f3d mesh container outcomes",
+            )?;
             continue;
         };
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
             .container_mesh_uuid = Some(container.mesh_uuid.clone());
         let body = &design_records[design_ordinal][feature_ordinal].bodies()[body_ordinal];
         let projected = match MeshBody::from_container(
+            ctx,
             &entry.name,
             body.placement.record().byte_offset(),
             body.placement.transform(),
             container,
         ) {
             Ok(projected) => projected,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                outcomes.push(MeshContainerOutcome::Failed {
-                    entry_name: entry.name.clone(),
-                    error,
-                });
+                ctx.push_vec(
+                    &mut outcomes,
+                    MeshContainerOutcome::Failed {
+                        entry_name: ctx
+                            .copy_retained_text(&entry.name, "f3d failed mesh entry name")?,
+                        error,
+                    },
+                    "f3d mesh container outcomes",
+                )?;
                 continue;
             }
         };
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
-            .tessellation_id = Some(projected.id.clone());
-        outcomes.push(MeshContainerOutcome::Joined(projected));
+            .tessellation_id =
+            Some(ctx.copy_retained_text(&projected.id, "f3d mesh tessellation reference")?);
+        ctx.push_vec(
+            &mut outcomes,
+            MeshContainerOutcome::Joined(projected),
+            "f3d mesh container outcomes",
+        )?;
     }
     for body in design_records
         .iter()
@@ -1505,25 +1934,31 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
         .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
         .filter(|body| body.tessellation_id.is_none())
     {
-        outcomes.push(MeshContainerOutcome::Missing {
-            entry_name: body.entry.name().to_owned(),
-        });
+        ctx.push_vec(
+            &mut outcomes,
+            MeshContainerOutcome::Missing {
+                entry_name: ctx
+                    .copy_retained_text(body.entry.name(), "f3d missing mesh entry name")?,
+            },
+            "f3d mesh container outcomes",
+        )?;
     }
-    Ok(MeshDecode {
-        outcomes,
-        features: design_records.into_iter().flatten().collect(),
-    })
+    let features = flatten_mesh_features(ctx, design_records)?;
+    Ok(MeshDecode { outcomes, features })
 }
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::u64_from_index;
+
+    mod placement;
     use super::{
-        mesh_body_transform, parse_mesh_collection_owner_record, parse_mesh_design_records,
-        parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record,
-        parse_scene_node_record, resolve_mesh_body, MeshBody, COMMON_DATA_MODULE,
-        DATA_MODEL_MODULE, FUSION_MODULE, MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID,
-        MESH_BODY_OWNER_BASE_TYPE_GUID, MESH_BODY_OWNER_TYPE_GUID, MESH_BODY_OWNER_TYPE_VERSION,
-        MESH_BODY_TYPE_GUID, MESH_BODY_TYPE_VERSION, MESH_COLLECTION_BASE_BASE_TYPE_GUID,
+        parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
+        parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,
+        resolve_mesh_body, MeshBody, COMMON_DATA_MODULE, DATA_MODEL_MODULE, FUSION_MODULE,
+        MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID, MESH_BODY_OWNER_BASE_TYPE_GUID,
+        MESH_BODY_OWNER_TYPE_GUID, MESH_BODY_OWNER_TYPE_VERSION, MESH_BODY_TYPE_GUID,
+        MESH_BODY_TYPE_VERSION, MESH_COLLECTION_BASE_BASE_TYPE_GUID,
         MESH_COLLECTION_BASE_TYPE_GUID, MESH_COLLECTION_BASE_TYPE_VERSION,
         MESH_COLLECTION_OWNER_BASE_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_GUID,
         MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID,
@@ -1541,7 +1976,9 @@ mod tests {
         SCENE_AUXILIARY_BASE_TYPE_GUID, SCENE_AUXILIARY_TYPE_GUID, SCENE_AUXILIARY_TYPE_VERSION,
         SCENE_MODULE, SCENE_NODE_BASE_TYPE_GUID, SCENE_NODE_TYPE_GUID, SCENE_NODE_TYPE_VERSION,
     };
-    use crate::design::decode::meta::{typed_primary_frames, TypedPrimaryFrame};
+    use crate::design::decode::meta::{
+        typed_primary_frames as typed_primary_frames_with_context, TypedPrimaryFrame,
+    };
     use crate::design::test_support::{design_type, primary_record};
     use crate::layout::{
         paramesh_collection_owner_backlink_prefix as collection_owner,
@@ -1557,6 +1994,127 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
+
+    fn typed_primary_frames<'a>(
+        bytes: &[u8],
+        meta: &'a crate::metastream::MetaStream,
+        type_guid: &str,
+        record_kind: &str,
+    ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            typed_primary_frames_with_context(ctx, bytes, meta, type_guid, record_kind)
+        })
+    }
+
+    fn parse_mesh_design_records<F>(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+        source_entry_name: &str,
+        asset_for_filename: &mut F,
+    ) -> Result<Vec<crate::records::mesh::DesignMeshFeature>, CodecError>
+    where
+        F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
+    {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            super::parse_mesh_design_records(
+                ctx,
+                bytes,
+                meta,
+                source_entry_name,
+                asset_for_filename,
+            )
+        })
+    }
+
+    #[test]
+    fn mesh_record_map_refuses_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::unique_record_map(&ctx, vec![7_u32], |record| *record, "test"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
+    fn mesh_typed_frame_map_refuses_collection_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frames = typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            super::MESH_COLLECTION_TYPE_GUID,
+            "mesh-collection",
+        )
+        .unwrap();
+        assert!(!frames.is_empty());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::typed_frame_map(&ctx, frames, "mesh-collection"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
+    fn mesh_collection_body_references_refuse_collection_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frames = typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            super::MESH_COLLECTION_TYPE_GUID,
+            "mesh-collection",
+        )
+        .unwrap();
+        let [frame] = frames.as_slice() else {
+            panic!("one mesh collection frame");
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::parse_mesh_collection_record(&ctx, &graph.bytes, &graph.meta, *frame),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
+    fn mesh_scope_body_references_refuse_collection_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frames = typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            super::MESH_FEATURE_SCOPE_TYPE_GUID,
+            "mesh-feature-scope",
+        )
+        .unwrap();
+        let [frame] = frames.as_slice() else {
+            panic!("one mesh feature scope frame");
+        };
+        crate::design::test_support::with_test_decode_context(|default_ctx| {
+            let records = super::IndexedRecordOffsets::build(default_ctx, &graph.bytes).unwrap();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                super::parse_mesh_scope_record(&ctx, &graph.bytes, &graph.meta, &records, *frame),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            ));
+        });
+    }
 
     #[test]
     fn anisotropic_mesh_normal_preserves_orientation_without_cofactor_overflow() {
@@ -1596,14 +2154,6 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes
-    }
-
-    fn mesh_body_payload(cells: [f64; 16]) -> Vec<u8> {
-        let mut payload = vec![0; mesh_body::FIRST_TRANSFORM];
-        payload.extend_from_slice(&matrix(cells));
-        payload.push(0);
-        payload.extend_from_slice(&matrix(cells));
-        payload
     }
 
     fn push_indexed_header(bytes: &mut Vec<u8>, class_tag: u32, record_index: u32) {
@@ -1729,12 +2279,18 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(body_record_indices.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         bytes.extend_from_slice(&[1, 1]);
         push_reference(&mut bytes, texture_table_record_index);
         push_indexed_header(&mut bytes, base_class_tag, record_index);
         bytes.extend_from_slice(&[0; 9]);
-        bytes.extend_from_slice(&(body_record_indices.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
         }
@@ -1751,12 +2307,16 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(flags.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(flags.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (guid, value) in flags {
             lp_ascii(&mut bytes, guid);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        bytes.extend_from_slice(&(filenames.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(filenames.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (guid, target) in filenames {
             lp_ascii(&mut bytes, guid);
             push_reference(&mut bytes, *target);
@@ -1838,7 +2398,10 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(body_record_indices.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
         }
@@ -2404,6 +2967,83 @@ mod tests {
     }
 
     #[test]
+    fn mesh_entry_and_texture_filename_refuse_retained_text_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        const ENTRY_NAME: &str = "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh";
+        let graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_ENTRY_NAME_TYPE_GUID);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(ENTRY_NAME.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_mesh_entry_name_record(&ctx, &graph.bytes, frame)
+            .err()
+            .unwrap();
+        assert!(matches!(error, CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
+
+        let graph = synthetic_mesh_graph(true);
+        let frames = typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            MESH_TEXTURE_FILENAME_TYPE_GUID,
+            "mesh-texture-filename",
+        )
+        .unwrap();
+        let frame = frames[0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from("mesh-a.png".len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_mesh_texture_filename_record(&ctx, &graph.bytes, frame)
+            .err()
+            .unwrap();
+        assert!(matches!(error, CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
+    }
+
+    #[test]
+    fn mesh_image_asset_identifier_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use std::io::{Cursor, Write};
+        use zip::CompressionMethod;
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(b"PNG").unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let expected = crate::ids::neutral_asset_id(ENTRY);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes =
+                u64::try_from(ENTRY.len() + expected.as_str().len() - 1).unwrap();
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let refusal = super::mesh_image_asset(&limited, scan, "mark.png");
+            assert!(matches!(
+                refusal,
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == "f3d asset identifier"
+            ));
+            let admitted = super::mesh_image_asset(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                "mark.png",
+            )
+            .unwrap();
+            assert_eq!(admitted.0, ENTRY);
+            assert_eq!(admitted.1, expected);
+        });
+    }
+
+    #[test]
     fn mesh_texture_resources_can_share_one_filename_record() {
         let mut graph = synthetic_mesh_graph(true);
         let frames = typed_primary_frames(
@@ -2416,15 +3056,17 @@ mod tests {
         let [frame] = frames.as_slice() else {
             panic!("one texture-table frame");
         };
-        let table =
-            parse_mesh_texture_table_record(&graph.bytes, *frame).expect("original texture table");
+        let table = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_mesh_texture_table_record(ctx, &graph.bytes, *frame)
+        })
+        .expect("original texture table");
         let [first, second] = table.filenames.as_slice() else {
             panic!("two texture resources");
         };
         let second_reference = usize::try_from(
             table.identity.byte_offset()
-                + texture_table::LEN as u64
-                + table.flags.len() as u64 * 44
+                + u64_from_index(texture_table::LEN)
+                + u64_from_index(table.flags.len()) * 44
                 + 4
                 + u64::from(second.ordinal) * 51
                 + 40,
@@ -2488,9 +3130,233 @@ mod tests {
             design_type: &graph.meta.types[5],
         };
         assert!(matches!(
-            parse_mesh_texture_table_record(&bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                parse_mesh_texture_table_record(ctx, &bytes, frame)
+            }),
             Err(CodecError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn mesh_texture_table_charges_each_input_sized_collection() {
+        const RESOURCE: &str = "10000000-0000-4000-8000-000000000001";
+        let graph = synthetic_mesh_graph(false);
+        let bytes = mesh_texture_table_record(261, 101, &[(RESOURCE, 2)], &[(RESOURCE, 113)]);
+        let frame = TypedPrimaryFrame {
+            entity_id: 101,
+            start: 0,
+            end: bytes.len(),
+            design_type: &graph.meta.types[5],
+        };
+        for max_collection_items in 0..4 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = max_collection_items;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                parse_mesh_texture_table_record(&ctx, &bytes, frame),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            ));
+        }
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let table = parse_mesh_texture_table_record(ctx, &bytes, frame).unwrap();
+            assert_eq!(table.flags.len(), 1);
+            assert_eq!(table.filenames.len(), 1);
+        });
+    }
+
+    #[test]
+    fn mesh_graph_collection_builders_refuse_caller_limits() {
+        let graph = synthetic_mesh_graph(true);
+        let collection = crate::design::test_support::with_test_decode_context(|ctx| {
+            super::parse_mesh_collection_record(
+                ctx,
+                &graph.bytes,
+                &graph.meta,
+                sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID),
+            )
+            .unwrap()
+        });
+        let texture_table = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_mesh_texture_table_record(
+                ctx,
+                &graph.bytes,
+                sole_typed_frame(&graph, MESH_TEXTURE_TABLE_TYPE_GUID),
+            )
+            .unwrap()
+        });
+        for operation in [
+            "f3d mesh graph features",
+            "f3d mesh texture resources",
+            "f3d mesh feature bodies",
+            "f3d mesh diagnostic scope bodies",
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                ctx.collection_vec::<u32>(1, operation),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.operation == operation
+            ));
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (indices_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::mesh_collection_indices(&indices_ctx, &[collection]),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "f3d mesh collection indices"
+        ));
+        let (filenames_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::mesh_filename_entries(&filenames_ctx, &texture_table.filenames),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "f3d mesh filename entries"
+        ));
+        let owner = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_mesh_collection_owner_record(
+                ctx,
+                &graph.bytes,
+                sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID),
+            )
+        })
+        .unwrap()
+        .unwrap();
+        let (owners_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            owners_ctx.push_vec(&mut Vec::new(), owner, "f3d mesh collection owners"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "f3d mesh collection owners"
+        ));
+        let mut no_asset = no_texture_asset;
+        let mut retained_policy = cadmpeg_core::decode::DecodePolicy::default();
+        retained_policy.limits.max_retained_bytes = 0;
+        let (stream_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &retained_policy)
+                .unwrap();
+        assert!(matches!(
+            super::parse_mesh_design_records(
+                &stream_ctx,
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_asset,
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d native stream key"
+        ));
+    }
+
+    #[test]
+    fn mesh_parsed_record_vectors_refuse_caller_limit() {
+        for operation in [
+            "f3d mesh collection records",
+            "f3d mesh entry-name records",
+            "f3d mesh GUID records",
+            "f3d mesh body records",
+            "f3d mesh texture-table records",
+            "f3d mesh wrapper records",
+            "f3d mesh feature-scope records",
+            "f3d mesh scene-state records",
+            "f3d mesh scene-node records",
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                &ctx.try_collect_vec([Ok(7_u32)], operation),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.operation == operation
+            ));
+        }
+    }
+
+    #[test]
+    fn mesh_graph_diagnostic_lists_refuse_collection_limit() {
+        for operation in [
+            "f3d mesh diagnostic scope lists",
+            "f3d mesh diagnostic body links",
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                ctx.push_vec(&mut Vec::new(), 7_u32, operation),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.operation == operation
+            ));
+        }
+    }
+
+    #[test]
+    fn mesh_graph_diagnostic_text_refuses_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::charged_mesh_diagnostic(&ctx, format_args!("mesh links {:?}", [1, 2])),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d mesh graph diagnostic"
+        ));
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let error =
+                super::charged_mesh_diagnostic(ctx, format_args!("mesh links {:?}", [1, 2]))
+                    .unwrap();
+            assert!(
+                matches!(error, CodecError::Malformed(message) if message == "mesh links [1, 2]")
+            );
+        });
+    }
+
+    #[test]
+    fn mesh_feature_identifier_refuses_prefix_and_suffix_limits() {
+        let stream = crate::ids::native_scope("Synthetic/BulkStream.dat");
+        for (limit, operation) in [
+            (0, "f3d mesh feature ID prefix"),
+            (u64_from_index(stream.len()), "f3d mesh feature ID suffix"),
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                super::mesh_feature_id_charged(&ctx, &stream, 100),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ));
+        }
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let id = super::mesh_feature_id_charged(ctx, &stream, 100).unwrap();
+            assert_eq!(
+                id,
+                crate::ids::native_design_mesh_feature_id("Synthetic/BulkStream.dat", 100)
+            );
+        });
     }
 
     #[test]
@@ -2504,7 +3370,9 @@ mod tests {
             design_type: &graph.meta.types[6],
         };
         assert!(matches!(
-            parse_mesh_wrapper_record(&bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| parse_mesh_wrapper_record(
+                ctx, &bytes, frame
+            )),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -2517,7 +3385,9 @@ mod tests {
         let frame = sole_typed_frame(&graph, MESH_SCENE_STATE_TYPE_GUID);
 
         assert!(matches!(
-            parse_mesh_scene_state_record(&graph.bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                parse_mesh_scene_state_record(ctx, &graph.bytes, frame)
+            }),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -2530,7 +3400,11 @@ mod tests {
         let frame = sole_typed_frame(&graph, SCENE_NODE_TYPE_GUID);
 
         assert!(matches!(
-            parse_scene_node_record(&graph.bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| parse_scene_node_record(
+                ctx,
+                &graph.bytes,
+                frame
+            )),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -2548,7 +3422,10 @@ mod tests {
         graph.bytes[payload_at + 48] = 1;
         let frame = sole_typed_frame(&graph, SCENE_NODE_TYPE_GUID);
 
-        let parsed = parse_scene_node_record(&graph.bytes, frame).expect("finite Scene bounds");
+        let parsed = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_scene_node_record(ctx, &graph.bytes, frame)
+        })
+        .expect("finite Scene bounds");
         let bounds = parsed.node.bounds().expect("present bounds");
         assert_eq!(bounds.maximum(), [1.0, 2.0, 3.0]);
         assert_eq!(bounds.minimum(), [-4.0, -5.0, -6.0]);
@@ -2592,7 +3469,10 @@ mod tests {
                 .expect("Scene-node type"),
         };
 
-        let parsed = parse_scene_node_record(&bytes, frame).expect("placed Scene node");
+        let parsed = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_scene_node_record(ctx, &bytes, frame)
+        })
+        .expect("placed Scene node");
         assert_eq!(
             parsed
                 .node
@@ -2604,7 +3484,7 @@ mod tests {
         );
         assert_eq!(
             parsed.node.transform().map(|located| located.offset),
-            Some(placed_scene_node::TRANSFORM as u64)
+            Some(u64_from_index(placed_scene_node::TRANSFORM))
         );
         let bounds = parsed.node.bounds().expect("placed bounds");
         assert_eq!(bounds.maximum(), [4.0, 5.0, 6.0]);
@@ -2622,6 +3502,34 @@ mod tests {
         );
         let mut no_asset = no_texture_asset;
 
+        assert!(matches!(
+            parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_asset,
+            ),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn mesh_graph_rejects_reused_scene_auxiliary() {
+        let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
+        let frames = typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            SCENE_NODE_TYPE_GUID,
+            "mesh-scene-node",
+        )
+        .unwrap();
+        let second = frames.iter().find(|frame| frame.entity_id == 120).unwrap();
+        put_reference(
+            &mut graph.bytes,
+            second.start + scene_node::AUXILIARY_RECORD_REFERENCE,
+            106,
+        );
+        let mut no_asset = no_texture_asset;
         assert!(matches!(
             parse_mesh_design_records(
                 &graph.bytes,
@@ -2671,9 +3579,11 @@ mod tests {
             design_type,
         };
 
-        let owner = parse_mesh_collection_owner_record(&bytes, frame)
-            .expect("valid legacy owner frame")
-            .expect("legacy collection owner");
+        let owner = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_mesh_collection_owner_record(ctx, &bytes, frame)
+        })
+        .expect("valid legacy owner frame")
+        .expect("legacy collection owner");
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
         assert_eq!(owner.owner.backlink_offset(), 859);
     }
@@ -2706,13 +3616,15 @@ mod tests {
             design_type,
         };
 
-        let owner = parse_mesh_collection_owner_record(&bytes, frame)
-            .expect("valid version-17 owner frame")
-            .expect("version-17 collection owner");
+        let owner = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_mesh_collection_owner_record(ctx, &bytes, frame)
+        })
+        .expect("valid version-17 owner frame")
+        .expect("version-17 collection owner");
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
         assert_eq!(
             owner.owner.backlink_offset(),
-            collection_owner_v17::COLLECTION_BACKLINK as u64
+            u64_from_index(collection_owner_v17::COLLECTION_BACKLINK)
         );
     }
 
@@ -2741,9 +3653,13 @@ mod tests {
             design_type,
         };
 
-        assert!(parse_mesh_collection_owner_record(&bytes, frame)
+        assert!(
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                parse_mesh_collection_owner_record(ctx, &bytes, frame)
+            })
             .expect("valid generic owner frame")
-            .is_none());
+            .is_none()
+        );
     }
 
     #[test]
@@ -2784,135 +3700,207 @@ mod tests {
     }
 
     #[test]
-    fn mesh_body_transform_applies_nonuniform_scale_and_translation() {
-        let cells = [
-            0.175, 0.0, 0.0, 0.4, 0.0, 0.06, 0.0, 0.7, 0.0, 0.0, 0.125, 0.3, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
-        assert_eq!(
-            transform
-                .transform_point(
-                    FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 5.0, 8.0)).unwrap(),
-                )
-                .expect("transformed point")
-                .get(),
-            cadmpeg_ir::math::Point3::new(7.5, 10.0, 13.0)
-        );
-    }
-
-    #[test]
-    fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
-        let cells = [
-            -0.5, 0.0, 0.0, 1.0, 0.0, 0.25, 0.0, -2.0, 0.0, 0.0, 2.0, 0.5, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("reflected map");
-        let container = MeshContainer {
+    fn mesh_body_projection_refuses_identifier_and_collection_limits() {
+        let transform = crate::records::mesh::MeshAffineTransform::new([
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ])
+        .unwrap();
+        let container = || MeshContainer {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
             mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
                 "11111111-2222-4333-8444-555555555555".to_owned(),
             )
             .unwrap(),
-            vertices: vec![
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 8.0, 3.0)).unwrap(),
-                FinitePoint3::ZERO,
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(4.0, 4.0, -1.0)).unwrap(),
-            ],
-            triangles: vec![[2, 0, 1]],
-            feature_edges: vec![[0, 2]],
-            corner_normals: None,
-            triangle_groups: Vec::new(),
-            texture_ids: None,
-            attributes: vec![crate::paramesh::MeshAttribute {
-                role: 4,
-                resource_guid: None,
-                authored_name: None,
-                groups: Vec::new(),
-                elements: crate::paramesh::MeshElements::Float {
-                    width: crate::paramesh::FloatWidth::Quad,
-                    values: (0..80).collect(),
-                },
-                addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
-            }],
-        };
-        let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
-            .expect("projected mesh");
-
-        assert_eq!(
-            body.vertices
-                .iter()
-                .map(|point| point.get())
-                .collect::<Vec<_>>(),
-            [
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 65.0),
-                cadmpeg_ir::math::Point3::new(10.0, -20.0, 5.0),
-                cadmpeg_ir::math::Point3::new(-10.0, -10.0, -15.0),
-            ]
-        );
-        assert_eq!(body.triangles, [[2, 0, 1]]);
-        assert_eq!(body.feature_edges, [[0, 2]]);
-        assert!(matches!(
-            &body.attributes[0].addressing,
-            crate::paramesh::MeshAttributeAddressing::Corner(positions) if positions == &[0, 2]
-        ));
-    }
-
-    #[test]
-    fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
-        let cells = [
-            -2.0, 0.5, 0.2, 1.0, 0.1, 3.0, 0.25, -2.0, 0.3, -0.2, 4.0, 0.5, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
-        let container = MeshContainer {
-            fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
-            mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
-                "11111111-2222-4333-8444-555555555555".to_owned(),
-            )
-            .unwrap(),
-            vertices: vec![
-                FinitePoint3::ZERO,
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)).unwrap(),
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)).unwrap(),
-            ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: vec![[0, 1]],
-            corner_normals: Some(vec![UnitVector3::Z_AXIS; 3]),
+            vertices: vec![FinitePoint3::ZERO],
+            triangles: Vec::new(),
+            feature_edges: Vec::new(),
+            corner_normals: Some(vec![UnitVector3::Z_AXIS]),
             triangle_groups: Vec::new(),
             texture_ids: None,
             attributes: Vec::new(),
         };
-        let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
-            .expect("projected mesh");
-        let geometric_normal = body.vertices[1]
-            .get()
-            .vector_from(body.vertices[0].get())
-            .cross(body.vertices[2].get().vector_from(body.vertices[0].get()))
-            .unit()
-            .expect("triangle normal");
-        let corner_normals = body
-            .corner_normals
-            .expect("a stated corner-normal channel reaches the body");
-        assert_eq!(corner_normals.len(), 3);
-        for normal in corner_normals {
-            assert!((normal.as_raw().dot(geometric_normal) - 1.0).abs() < 1.0e-12);
+        let native_scope_bytes = u64_from_index(crate::ids::native_scope("mesh.paramesh").len());
+        for (collection_limit, retained_limit, dimension, operation) in [
+            (
+                0,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                "f3d placed mesh vertices",
+            ),
+            (
+                1,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                "f3d placed mesh normals",
+            ),
+            (
+                2,
+                0,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "f3d native stream key",
+            ),
+            (
+                2,
+                native_scope_bytes,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "f3d mesh body identifier",
+            ),
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = collection_limit;
+            policy.limits.max_retained_bytes = retained_limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                MeshBody::from_container(&ctx, "mesh.paramesh", 100, transform, container()),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ));
         }
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let body = MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container())
+                .unwrap();
+            assert_eq!(
+                body.id,
+                crate::ids::native_mesh_body_id("mesh.paramesh", 100)
+            );
+            assert_eq!(body.vertices.len(), 1);
+            assert_eq!(body.corner_normals.unwrap().len(), 1);
+        });
     }
 
     #[test]
-    fn mesh_body_transform_refuses_mismatched_projective_and_singular_pairs() {
-        let identity = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let mut mismatched = mesh_body_payload(identity);
-        mismatched[mesh_body::SECOND_TRANSFORM..mesh_body::SECOND_TRANSFORM + 8]
-            .copy_from_slice(&2.0f64.to_le_bytes());
-        assert!(mesh_body_transform(&mismatched).is_none());
+    fn mesh_design_stream_and_feature_vectors_refuse_collection_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let mut no_asset = no_texture_asset;
+        let design = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .unwrap();
+        assert_eq!(design.len(), 1);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            ctx.push_vec(&mut Vec::new(), design, "f3d mesh design streams"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "f3d mesh design streams"
+        ));
+        let mut no_asset = no_texture_asset;
+        let design = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .unwrap();
+        let (flatten_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::flatten_mesh_features(&flatten_ctx, vec![design]),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "f3d mesh decoded features"
+        ));
+    }
 
-        let mut projective = identity;
-        projective[12] = 1.0;
-        assert!(mesh_body_transform(&mesh_body_payload(projective)).is_none());
+    #[test]
+    fn mesh_outcome_and_text_copy_refuse_caller_limits() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut collection_policy = cadmpeg_core::decode::DecodePolicy::default();
+        collection_policy.limits.max_collection_items = 0;
+        let (collection_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &collection_policy)
+                .unwrap();
+        assert!(matches!(
+            collection_ctx.push_vec(&mut Vec::new(), super::MeshContainerOutcome::Missing { entry_name: String::new() }, "f3d mesh container outcomes"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "f3d mesh container outcomes"
+        ));
+        let mut retained_policy = cadmpeg_core::decode::DecodePolicy::default();
+        retained_policy.limits.max_retained_bytes = 0;
+        let (retained_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &retained_policy)
+                .unwrap();
+        assert!(matches!(
+            retained_ctx.copy_retained_text("mesh.paramesh", "f3d test mesh text"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d test mesh text"
+        ));
+    }
 
-        let mut singular = identity;
-        singular[0] = 0.0;
-        assert!(mesh_body_transform(&mesh_body_payload(singular)).is_none());
+    #[test]
+    fn mesh_frame_diagnostic_refuses_retained_limit() {
+        let expected = "F3D Design mesh-wrapper entity 108 has an invalid primary frame";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::malformed_frame(&ctx, "mesh-wrapper", 108),
+            CodecError::ResourceLimit(failure) if failure.operation == "f3d Design diagnostic"));
+    }
+
+    #[test]
+    fn mesh_graph_invariant_diagnostic_refuses_retained_limit() {
+        let expected =
+            "F3D Design mesh feature graph violates `member` in Synthetic/BulkStream.dat";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(super::malformed_mesh_graph(&ctx, "Synthetic/BulkStream.dat", "member"),
+            CodecError::ResourceLimit(failure) if failure.operation == "f3d Design diagnostic")
+        );
+    }
+
+    #[test]
+    fn mesh_invalid_record_index_diagnostic_refuses_retained_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_WRAPPER_TYPE_GUID);
+        let expected = format!(
+            "F3D Design mesh-wrapper entity {} has an invalid record index",
+            frame.entity_id
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(super::exact_record_index(&ctx, &[], frame, "mesh-wrapper"),
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d Design diagnostic")
+        );
+    }
+
+    #[test]
+    fn mesh_unsupported_version_diagnostic_refuses_retained_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_WRAPPER_TYPE_GUID);
+        let expected = format!(
+            "F3D Design mesh-wrapper record version {} is unsupported",
+            frame.design_type.version
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(super::validate_mesh_registration(&ctx, frame, frame.design_type.version + 1,
+            MESH_WRAPPER_BASE_TYPE_GUID, PARAMESH_MODULE, "mesh-wrapper"),
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d Design unsupported diagnostic")
+        );
     }
 }

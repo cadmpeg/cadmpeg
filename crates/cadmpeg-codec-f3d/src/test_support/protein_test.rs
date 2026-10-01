@@ -2,6 +2,8 @@
 //! Synthetic Protein instance-property payloads.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::index_from_u32;
+
 use crate::test_support::lp_ascii;
 use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
@@ -59,7 +61,9 @@ pub(crate) fn generated_prism_instance_properties(schema: &str, guid: &str) -> V
 
 fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&(PAGE_SIZE as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(PAGE_SIZE).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.extend_from_slice(&[0xff; 8]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
 
@@ -76,7 +80,9 @@ fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
     }
     if !rest.is_empty() {
         bytes.extend_from_slice(TERMINAL_MARKER);
-        bytes.extend_from_slice(&(rest.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u16::try_from(rest.len()).expect("fixture value fits u16")).to_le_bytes(),
+        );
         bytes.extend_from_slice(&0u16.to_le_bytes());
         bytes.extend_from_slice(rest);
         let page_end =
@@ -87,7 +93,7 @@ fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
 }
 
 pub(super) fn generated_schema_from_paged(properties: &[u8]) -> &str {
-    let length = u32::from_le_bytes(properties[24..28].try_into().unwrap()) as usize;
+    let length = index_from_u32(u32::from_le_bytes(properties[24..28].try_into().unwrap()));
     std::str::from_utf8(&properties[28..28 + length]).unwrap()
 }
 

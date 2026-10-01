@@ -4,9 +4,12 @@
 use crate::document::{ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
+
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
@@ -16,6 +19,140 @@ use serde::{de::DeserializeOwned, Serialize};
 mod append;
 mod feature_parents;
 mod unknowns;
+
+#[test]
+fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
+    let build = || {
+        let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
+        let mut model = Model::default();
+        model.curves.push(Curve {
+            id: owner.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let procedural = ProceduralCurve::new(
+            ProceduralCurveId::mint("test:model:construction#charged")
+                .expect("valid construction identity"),
+            ProceduralCurveDefinition::Exact { cache: None },
+        );
+        (model, owner, procedural)
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("input admitted");
+    let (mut model, owner, procedural) = build();
+    let refused = model.add_procedural_curve_charged(&ctx, &owner, procedural);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "ir_procedural_curve_construction_id")
+    );
+    assert!(matches!(model.curves[0].geometry, CurveGeometry::Solved(_)));
+    assert!(model.procedural_curves.is_empty());
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("input admitted");
+    let (mut model, owner, procedural) = build();
+    assert!(model
+        .add_procedural_curve_charged(&ctx, &owner, procedural)
+        .expect("service budget admits construction copy")
+        .is_ok());
+    assert!(matches!(
+        model.curves[0].geometry,
+        CurveGeometry::Procedural {
+            cache: Some(SolvedCurveGeometry::Unknown { record: None }),
+            ..
+        }
+    ));
+    assert_eq!(model.procedural_curves.len(), 1);
+}
+
+#[test]
+fn procedural_surface_attachment_moves_the_solved_knot_storage() {
+    let surface_id = SurfaceId::mint("test:model:surface#move-cache").unwrap();
+    let procedural_id =
+        ProceduralSurfaceId::mint("test:model:surface-construction#move-cache").unwrap();
+    let carrier = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    let original_knot_storage = carrier.u_knots().as_ptr();
+    let mut model = Model::default();
+    model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(carrier)),
+        source_object: None,
+    });
+    model
+        .add_procedural_surface(
+            &surface_id,
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Unknown {
+                    record: None,
+                    cache: None,
+                },
+                None,
+            ),
+        )
+        .unwrap();
+    let Some(SolvedSurfaceGeometry::Nurbs(cached)) = model.surfaces[0].geometry.solved_cache()
+    else {
+        panic!("expected the attached NURBS cache");
+    };
+    assert_eq!(cached.u_knots().as_ptr(), original_knot_storage);
+}
+
+#[test]
+fn procedural_curve_attachment_moves_the_solved_knot_storage() {
+    let curve_id = CurveId::mint("test:model:curve#move-cache").unwrap();
+    let procedural_id =
+        ProceduralCurveId::mint("test:model:curve-construction#move-cache").unwrap();
+    let carrier = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let original_knot_storage = carrier.knots().as_ptr();
+    let mut model = Model::default();
+    model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(carrier)),
+        source_object: None,
+    });
+    model
+        .add_procedural_curve(
+            &curve_id,
+            ProceduralCurve::new(
+                procedural_id,
+                ProceduralCurveDefinition::Unknown {
+                    native_kind: None,
+                    record: None,
+                    cache: None,
+                },
+            ),
+        )
+        .unwrap();
+    let Some(SolvedCurveGeometry::Nurbs(cached)) = model.curves[0].geometry.solved_cache() else {
+        panic!("expected the attached NURBS cache");
+    };
+    assert_eq!(cached.knots().as_ptr(), original_knot_storage);
+}
 
 struct SerdeIdentity;
 
@@ -59,7 +196,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
     };
     macro_rules! visit_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.model.$field {
                 crate::schema::EntitySchema::visit_references(entity, &mut visit)
                     .expect("every entity states its typed references");
@@ -347,7 +484,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_surface(
-            surface.clone(),
+            &surface,
             ProceduralSurface::new(
                 surface_construction,
                 ProceduralSurfaceDefinition::Unknown {
@@ -372,7 +509,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_curve(
-            curve.clone(),
+            &curve,
             ProceduralCurve::new(
                 curve_construction,
                 ProceduralCurveDefinition::Exact { cache: None },
@@ -395,6 +532,137 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         .extend_rewritten(ir.model, &mut SerdeIdentity)
         .unwrap();
     assert!(rewritten.surfaces[0].geometry.solved_cache().is_some());
+}
+
+#[test]
+fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let owner = SurfaceId::mint("test:model:surface#1").unwrap();
+    let construction = ProceduralSurfaceId::mint("test:model:surface-construction#1").unwrap();
+    let mut base = CadIr::empty();
+    base.model.surfaces.push(Surface {
+        id: owner.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let procedural = ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Unknown {
+            record: None,
+            cache: None,
+        },
+        None,
+    );
+    let arena = DecodeArena::new();
+    let mut byte_policy = DecodePolicy::service();
+    byte_policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
+    let mut refused = base.clone();
+    let error = refused
+        .model
+        .add_procedural_surface_charged(&ctx, &owner, procedural.clone())
+        .expect_err("owner identity exceeds retained limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "procedural surface owner identity"),
+        "{error:?}"
+    );
+    assert_eq!(refused, base);
+    let mut cached = base.clone();
+    cached.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+        record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
+    });
+    let mut cache_policy = DecodePolicy::service();
+    cache_policy.limits.max_retained_bytes = procedural.id.as_str().len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
+    let solved = cached.model.surfaces[0].geometry.clone();
+    cached
+        .model
+        .add_procedural_surface_charged(&ctx, &owner, procedural.clone())
+        .unwrap()
+        .unwrap();
+    assert_eq!(cached.model.procedural_surfaces.len(), 1);
+    assert_eq!(
+        cached.model.surfaces[0].geometry.solved_cache(),
+        solved.solved()
+    );
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    refused
+        .model
+        .add_procedural_surface_charged(&ctx, &owner, procedural.clone())
+        .unwrap()
+        .unwrap();
+    base.model
+        .add_procedural_surface(&owner, procedural)
+        .unwrap();
+    assert_eq!(refused, base);
+}
+
+#[test]
+fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let owner = CurveId::mint("test:model:curve#1").unwrap();
+    let construction = ProceduralCurveId::mint("test:model:curve-construction#1").unwrap();
+    let mut base = CadIr::empty();
+    base.model.curves.push(Curve {
+        id: owner.clone(),
+        geometry: CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown {
+            record: None,
+        }),
+        source_object: None,
+    });
+    let procedural = ProceduralCurve::new(
+        construction,
+        ProceduralCurveDefinition::Exact { cache: None },
+    );
+    let arena = DecodeArena::new();
+    let mut byte_policy = DecodePolicy::service();
+    byte_policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
+    let mut refused = base.clone();
+    let error = refused
+        .model
+        .add_procedural_curve_charged(&ctx, &owner, procedural.clone())
+        .expect_err("owner identity exceeds retained limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "ir_procedural_curve_construction_id"),
+        "{error:?}"
+    );
+    assert_eq!(refused, base);
+    let mut cached = base.clone();
+    cached.model.curves[0].geometry =
+        CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown {
+            record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
+        });
+    let mut cache_policy = DecodePolicy::service();
+    cache_policy.limits.max_retained_bytes = procedural.id.as_str().len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
+    let solved = cached.model.curves[0].geometry.clone();
+    cached
+        .model
+        .add_procedural_curve_charged(&ctx, &owner, procedural.clone())
+        .unwrap()
+        .unwrap();
+    assert_eq!(cached.model.procedural_curves.len(), 1);
+    assert_eq!(
+        cached.model.curves[0].geometry.solved_cache(),
+        solved.solved()
+    );
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    refused
+        .model
+        .add_procedural_curve_charged(&ctx, &owner, procedural.clone())
+        .unwrap()
+        .unwrap();
+    base.model.add_procedural_curve(&owner, procedural).unwrap();
+    assert_eq!(refused, base);
 }
 
 #[test]
@@ -735,4 +1003,36 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     let json = serde_json::to_string(&value).unwrap();
     let error = CadIr::from_json(&json).unwrap_err().to_string();
     assert!(error.contains("missing field `suppressed`"), "{error}");
+}
+
+#[test]
+fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
+    let model = super::Model::default();
+    let mut baseline = serde_json::to_value(&model).expect("model serializes");
+    let object = baseline.as_object_mut().expect("model is an object");
+    object.retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "bodies"
+                | "regions"
+                | "shells"
+                | "faces"
+                | "loops"
+                | "coedges"
+                | "edges"
+                | "vertices"
+                | "points"
+                | "surfaces"
+                | "curves"
+                | "procedural_curves"
+                | "procedural_surfaces"
+                | "pcurves"
+                | "tessellations"
+        )
+    });
+    object.insert("kind".into(), serde_json::json!("brep"));
+    assert_eq!(
+        serde_json::to_string(&model.geometry_snapshot("brep")).expect("snapshot serializes"),
+        serde_json::to_string(&baseline).expect("baseline serializes"),
+    );
 }

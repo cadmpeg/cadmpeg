@@ -30,14 +30,13 @@ fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
-    let mut visited = 0;
     surface
-        .edit_control_points(|point| {
-            if visited == 3 {
-                point.z = 1.0;
+        .try_map_control_points(|index, point| {
+            let mut mapped = point.get();
+            if index == 3 {
+                mapped.z = 1.0;
             }
-            visited += 1;
-            Ok(())
+            crate::features::FinitePoint3::new(mapped).ok_or(())
         })
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];

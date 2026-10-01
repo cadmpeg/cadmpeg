@@ -2,6 +2,8 @@
 //! Source-less pre-write validators for the neutral `CadIr` and its F3D native
 //! extension.
 
+use cadmpeg_core::decode::index_from_u32;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
@@ -816,7 +818,7 @@ pub(super) fn validate_source_less_design_links(
     for (target, mut tags) in subentity_groups {
         tags.sort_by_key(|tag| tag.ordinal);
         for (ordinal, tag) in tags.iter().enumerate() {
-            if tag.ordinal as usize != ordinal {
+            if index_from_u32(tag.ordinal) != ordinal {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D persistent subentity tags for {target:?} require contiguous ordinals"
                 )));
@@ -826,7 +828,7 @@ pub(super) fn validate_source_less_design_links(
     for (target, mut links) in groups {
         links.sort_by_key(|link| link.ordinal);
         for (ordinal, link) in links.iter().enumerate() {
-            if link.ordinal as usize != ordinal {
+            if index_from_u32(link.ordinal) != ordinal {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D persistent design links for {target:?} require contiguous ordinals"
                 )));
@@ -1180,6 +1182,13 @@ impl WireOwnershipValidated {
 pub(super) fn validate_source_less_wire_ownership(
     target: &CadIr,
 ) -> Result<WireOwnershipValidated, CodecError> {
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+
     let model = &target.model;
     let inconsistent =
         || CodecError::Malformed("source-less F3D wire ownership is inconsistent".into());
@@ -1188,7 +1197,8 @@ pub(super) fn validate_source_less_wire_ownership(
     let shell_ordinal =
         |id: &cadmpeg_ir::ids::ShellId| model.shells.iter().position(|shell| shell.id == *id);
 
-    let mut regions = Vec::with_capacity(model.regions.len());
+    let mut regions =
+        ctx.collection_vec(model.regions.len(), "collect F3D wire region ownership")?;
     for region in &model.regions {
         let (body, owner, position) = model
             .bodies
@@ -1229,7 +1239,7 @@ pub(super) fn validate_source_less_wire_ownership(
         });
     }
 
-    let mut bodies = Vec::with_capacity(model.bodies.len());
+    let mut bodies = ctx.collection_vec(model.bodies.len(), "collect F3D wire body ownership")?;
     for body in &model.bodies {
         let first_region = body
             .regions
@@ -1250,7 +1260,7 @@ pub(super) fn validate_source_less_wire_ownership(
         });
     }
 
-    let mut shells = Vec::with_capacity(model.shells.len());
+    let mut shells = ctx.collection_vec(model.shells.len(), "collect F3D wire shell ownership")?;
     for shell in &model.shells {
         let (region, owner, position) = model
             .regions

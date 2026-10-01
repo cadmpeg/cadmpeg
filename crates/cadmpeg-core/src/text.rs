@@ -6,6 +6,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::decode::DecodeContext;
+use crate::CodecError;
+
 /// A character that is not whitespace.
 ///
 /// The type exists so [`NonBlankString::prefixed`] is total: a prefix of this
@@ -19,7 +22,11 @@ impl NonWhitespaceChar {
     #[must_use]
     pub const fn from_ascii(byte: u8) -> Option<Self> {
         if byte.is_ascii() && !matches!(byte, b'\t'..=b'\r' | b' ') {
-            Some(Self(byte as char))
+            // endian-exception: reconstructed-scalar
+            match char::from_u32(u32::from_be_bytes([0, 0, 0, byte])) {
+                Some(character) => Some(Self(character)),
+                None => None,
+            }
         } else {
             None
         }
@@ -30,11 +37,11 @@ impl NonWhitespaceChar {
     /// Every hexadecimal digit is non-whitespace, and the mask makes the four
     /// bits total over `u8`, so this constructor refuses nothing.
     #[must_use]
-    pub const fn hex_digit(nibble: u8) -> Self {
+    pub fn hex_digit(nibble: u8) -> Self {
         const DIGITS: [char; 16] = [
             '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
         ];
-        Self(DIGITS[(nibble & 0x0f) as usize])
+        Self(DIGITS[usize::from(nibble & 0x0f)])
     }
 }
 
@@ -100,6 +107,16 @@ impl NonBlankString {
     /// Returns the source string.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Copy a previously admitted non-blank value into decoder-retained storage.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &crate::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, crate::CodecError> {
+        let text = ctx.copy_retained_text(self.as_str(), operation)?;
+        Self::new(text).ok_or_else(|| crate::CodecError::malformed("non-blank text copy changed"))
     }
 
     /// Consumes the value and returns the source string.
@@ -240,6 +257,65 @@ pub fn named_entries_reporting<V>(
     (kept, refused)
 }
 
+/// Keys named entries after the caller admits each new map node and refusal.
+///
+/// The `BTreeMap` keeps the same order and first-value rule as
+/// [`named_entries_reporting`]. The caller context charges one collection item
+/// before each vacant map node, and one item before each refused-entry Vec
+/// append. Refusal text and restated keys are copied after retained-byte
+/// admission. Input names and values must be admitted by their caller before
+/// they are supplied to this function.
+pub fn named_entries_reporting_checked<V>(
+    ctx: &DecodeContext<'_>,
+    record: impl std::fmt::Display,
+    entries: impl IntoIterator<Item = (String, V)>,
+) -> Result<(BTreeMap<NonBlankString, V>, Vec<NamedEntryError>), CodecError> {
+    let mut kept = BTreeMap::new();
+    let mut refused = Vec::new();
+    for (name, value) in entries {
+        match NonBlankString::new(name) {
+            Some(key) => match kept.entry(key) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    ctx.charge_collection_items(1, "named entry map nodes")?;
+                    slot.insert(value);
+                }
+                std::collections::btree_map::Entry::Occupied(slot) => {
+                    let record = ctx
+                        .format_retained(format_args!("{record}"), "named entry refused record")?;
+                    let key = NonBlankString(
+                        ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
+                    );
+                    ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
+                    refused.push(NamedEntryError::Restated { record, key });
+                }
+            },
+            None => {
+                let record =
+                    ctx.format_retained(format_args!("{record}"), "named entry refused record")?;
+                ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
+                refused.push(NamedEntryError::Blank { record });
+            }
+        }
+    }
+    Ok((kept, refused))
+}
+
+/// Keys a named set through the caller's decode budget.
+///
+/// The first blank or restated key is returned as a malformed-container error.
+/// A budget refusal stays a resource-limit error.
+pub fn named_entries_checked<V>(
+    ctx: &DecodeContext<'_>,
+    record: impl std::fmt::Display,
+    entries: impl IntoIterator<Item = (String, V)>,
+) -> Result<BTreeMap<NonBlankString, V>, CodecError> {
+    let (kept, refused) = named_entries_reporting_checked(ctx, record, entries)?;
+    match refused.into_iter().next() {
+        Some(error) => Err(error.into()),
+        None => Ok(kept),
+    }
+}
+
 /// Keys a map by the entry names, refusing a name that is blank or restated.
 ///
 /// Codecs that read an open set of native names route the whole set through
@@ -327,8 +403,52 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        named_entries, named_entries_reporting, NamedEntryError, NonBlankString, NonWhitespaceChar,
+        named_entries, named_entries_checked, named_entries_reporting,
+        named_entries_reporting_checked, NamedEntryError, NonBlankString, NonWhitespaceChar,
     };
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn checked_reporting(
+        entries: Vec<(String, i32)>,
+        collection_limit: u64,
+        retained_limit: u64,
+    ) -> Result<
+        (
+            std::collections::BTreeMap<NonBlankString, i32>,
+            Vec<NamedEntryError>,
+        ),
+        crate::CodecError,
+    > {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        named_entries_reporting_checked(&ctx, "f", entries)
+    }
+
+    #[test]
+    fn nonblank_copy_refuses_retained_bytes_before_duplication() {
+        let value = NonBlankString::new("abc").expect("nonblank fixture");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = value
+            .try_clone_for_decode(&ctx, "nonblank copy")
+            .expect_err("three bytes exceed two");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "nonblank copy"));
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        assert_eq!(
+            value
+                .try_clone_for_decode(&ctx, "nonblank copy")
+                .expect("service copy"),
+            value
+        );
+    }
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
@@ -469,5 +589,81 @@ mod tests {
         let kept = named_entries("feature 7", entries.clone()).unwrap();
         assert_eq!(kept.len(), 2);
         assert!(named_entries_reporting("feature 7", entries).1.is_empty());
+    }
+
+    #[test]
+    fn checked_named_entry_map_refuses_before_btree_insertion() {
+        let entries = vec![("width".to_owned(), 1)];
+        assert_eq!(
+            checked_reporting(entries.clone(), 1, 100).unwrap().0.len(),
+            1
+        );
+        assert!(matches!(
+            checked_reporting(entries, 0, 100),
+            Err(crate::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "named entry map nodes"
+        ));
+    }
+
+    #[test]
+    fn checked_named_entry_refusals_refuse_before_vec_growth() {
+        let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
+        assert_eq!(
+            checked_reporting(entries.clone(), 2, 100).unwrap().1.len(),
+            1
+        );
+        assert!(matches!(
+            checked_reporting(entries, 1, 100),
+            Err(crate::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "named entry refusals"
+        ));
+    }
+
+    #[test]
+    fn checked_named_entry_record_refuses_before_text_growth() {
+        let entries = vec![(" ".to_owned(), 1)];
+        assert!(matches!(
+            checked_reporting(entries, 10, 0),
+            Err(crate::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "named entry refused record"
+        ));
+    }
+
+    #[test]
+    fn checked_named_entry_restated_key_refuses_before_text_growth() {
+        let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
+        assert!(matches!(
+            checked_reporting(entries, 10, 1),
+            Err(crate::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "named entry refused key"
+        ));
+    }
+
+    #[test]
+    fn checked_named_entries_keep_order_and_first_value() {
+        let entries = vec![
+            ("width".to_owned(), 1),
+            ("width".to_owned(), 2),
+            ("depth".to_owned(), 3),
+        ];
+        let (kept, refused) = checked_reporting(entries.clone(), 10, 100).unwrap();
+        assert_eq!(kept.get("width"), Some(&1));
+        assert_eq!(
+            kept.keys().map(NonBlankString::as_str).collect::<Vec<_>>(),
+            ["depth", "width"]
+        );
+        assert_eq!(refused, named_entries_reporting("f", entries).1);
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            named_entries_checked(&ctx, "f", [(" ".to_owned(), 1)]),
+            Err(crate::CodecError::Malformed(_))
+        ));
     }
 }

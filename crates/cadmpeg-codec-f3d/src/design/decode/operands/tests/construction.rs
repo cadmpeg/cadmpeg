@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::operands::construction_operand_group_is_retained;
-use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
-use crate::design::feature_project::project_parameter_design;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::design::feature_project::project_split;
 use crate::records::decal::DesignRecordHeader;
@@ -26,6 +26,84 @@ use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
+
+fn parse_construction_operand_group(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    ordinal: u32,
+    header: &RecordFrame,
+) -> ConstructionOperandGroupParse {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    crate::design::decode::operands::parse_construction_operand_group(
+        &ctx, bytes, scope, ordinal, header,
+    )
+}
+
+fn construction_group_parse_refuses_collection_limit(bytes: &[u8], operation: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let scope = DesignParameterScope::empty(
+        "f3d:test:construction-group-scope#12",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        12,
+    );
+    let header = RecordFrame {
+        record_index: 100,
+        class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+    };
+    assert!(matches!(
+        crate::design::decode::operands::parse_construction_operand_group(&ctx, bytes, &scope, 0, &header),
+        ConstructionOperandGroupParse::Refused(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == operation
+    ));
+}
+
+#[test]
+fn construction_group_members_refuse_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand members");
+}
+
+#[test]
+fn construction_group_auxiliary_refuses_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(
+        &bytes,
+        "f3d construction operand auxiliary record",
+    );
+}
+
+#[test]
+fn construction_group_trailing_refuses_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(
+        &bytes,
+        "f3d construction operand trailing records",
+    );
+}
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
@@ -127,6 +205,61 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
         .expect("counted Extrude operand group");
+    let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
+        + ":design-construction-operand-group#".len()
+        + 1;
+    for (collection_limit, retained_limit, dimension, operation) in [
+        (
+            0,
+            u64::MAX,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "f3d construction operand group output",
+        ),
+        (
+            u64::MAX,
+            0,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d native stream key",
+        ),
+        (
+            u64::MAX,
+            u64::try_from(id_len - 1).unwrap(),
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d construction operand group ID",
+        ),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parsed =
+            parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
+                .complete()
+                .expect("counted Extrude operand group");
+        let mut out = Vec::new();
+        assert!(matches!(
+            crate::design::decode::operands::push_construction_operand_group(
+                &ctx, &mut out, Box::new(parsed), "Design/BulkStream.dat", 0,
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+        assert!(out.is_empty());
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut unclosed = Vec::new();
+    assert!(matches!(
+        ctx.push_vec(&mut unclosed, 100, "f3d unclosed construction operand group"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d unclosed construction operand group"
+    ));
     assert_eq!(
         group
             .members()
@@ -159,10 +292,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(group.frame.opaque_index.get(), 180);
     assert_eq!(group.frame.opaque_scalar().get(), 0.125);
     assert!(group.frame.variant);
-    assert_eq!(group.paired_byte_offset, paired_at as u64);
+    assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
 
     let mut whole_body_bytes = bytes.clone();
-    whole_body_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
+    whole_body_bytes[usize::try_from(group.role_offset())
+        .expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
     let whole_body =
         parse_construction_operand_group(&whole_body_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -192,7 +327,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         parse_construction_operand_group(&flagged, &scope, 0, &RecordFrame::from(&record))
             .complete()
             .expect("operation-flagged counted operand group");
-    assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
+    assert_eq!(
+        flagged.frame.member_count_offset,
+        u64_from_index(flagged_count_at)
+    );
     assert_eq!(
         flagged
             .members()
@@ -204,7 +342,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(flagged.role(), DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
-    start_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
+    start_face_bytes[usize::try_from(group.role_offset())
+        .expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let retained_role_five =
         parse_construction_operand_group(&start_face_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -284,7 +424,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             });
     }
     let mut to_face_bytes = bytes.clone();
-    to_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
+    to_face_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
     let mut legacy_to_face = parse_construction_operand_group(
         &to_face_bytes,
@@ -442,7 +583,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignExtrudeFaceRole::Termination
         ))
     );
-    assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
+    assert_eq!(
+        auxiliary.paired_byte_offset,
+        u64_from_index(auxiliary_paired_at)
+    );
 
     let mut split_scope = scope.clone();
     split_scope
@@ -484,16 +628,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::ROLE_0X10,
         );
     let split_groups = [tool_group, target_group];
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&split_scope),
-        &split_groups,
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&split_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: &split_groups,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -516,16 +664,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (compact_features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&compact_split_scope),
-        &split_groups,
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (compact_features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&compact_split_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: &split_groups,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         compact_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace { .. })
@@ -625,29 +777,18 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    let (plane_features, _) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
-            scopes: &plane_scopes,
-            timelines: std::slice::from_ref(&plane_timeline),
-            construction_groups: &split_groups,
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &plane_selections,
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        },
-    )
+    let (plane_features, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_parameter_design_with_edge_identities(
+            decode_ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes: &plane_scopes,
+                timelines: std::slice::from_ref(&plane_timeline),
+                construction_groups: &split_groups,
+                entity_selection_operands: &plane_selections,
+                ..Default::default()
+            },
+        )
+    })
     .expect("exact synthetic feature timeline");
     let plane_split = plane_features
         .iter()
@@ -664,16 +805,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     compact_split_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
-    let (mismatched_features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&compact_split_scope),
-        &split_groups,
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (mismatched_features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&compact_split_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: &split_groups,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         mismatched_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -769,11 +914,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     let split_groups = [split_target_group.clone(), split_tool_group.clone()];
     assert!(matches!(
-        project_split(
-            &split_body_scope,
-            &split_groups,
-            std::slice::from_ref(&split_tool)
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &split_body_scope, &split_groups, std::slice::from_ref(&split_tool))).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
             tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
@@ -805,11 +946,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         alternate_selector_edges: Vec::new(),
     }];
     assert!(matches!(
-        project_split(
-            &historical_split_scope,
-            &split_groups,
-            std::slice::from_ref(&historical_split_tool)
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &historical_split_scope, &split_groups, std::slice::from_ref(&historical_split_tool))).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tools: FaceSelection::Historical { faces, native, .. },
             ..
@@ -835,17 +972,19 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
         .unwrap();
     assert!(matches!(
-        project_split(
+        crate::test_support::with_decode_context(|decode_ctx| project_split(
+            decode_ctx,
             &multiple_targets_scope,
             &[split_tool_group.clone(), multiple_targets],
             std::slice::from_ref(&split_tool)
-        ),
+        ))
+        .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::SplitBody { .. }
         ))
@@ -874,18 +1013,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
         .unwrap();
     split_target_group.scope_reference_ordinal = 3;
     assert!(matches!(
-        project_split(
-            &construction_tool_scope,
-            &[split_target_group.clone(), construction_tool],
-            &[]
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &construction_tool_scope, &[split_target_group.clone(), construction_tool], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
             ..
@@ -903,7 +1038,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -954,20 +1089,30 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }
         invalid_groups.push(vec![split_tool_group.clone(), target]);
     }
-    assert!(invalid_groups.iter().all(|groups| project_split(
-        &split_body_scope,
-        groups,
-        std::slice::from_ref(&split_tool)
-    )
-    .is_none()));
+    assert!(invalid_groups
+        .iter()
+        .all(
+            |groups| crate::test_support::with_decode_context(|decode_ctx| project_split(
+                decode_ctx,
+                &split_body_scope,
+                groups,
+                std::slice::from_ref(&split_tool)
+            ))
+            .unwrap()
+            .is_none()
+        ));
     let mut nonterminal_tool = split_tool.clone();
     nonterminal_tool.recipe_program = vec![0, -1, 2];
-    assert!(project_split(
-        &split_body_scope,
-        &split_groups,
-        std::slice::from_ref(&nonterminal_tool)
-    )
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| project_split(
+            decode_ctx,
+            &split_body_scope,
+            &split_groups,
+            std::slice::from_ref(&nonterminal_tool)
+        ))
+        .unwrap()
+        .is_none()
+    );
 
     let mut delete_scope = scope.clone();
     delete_scope
@@ -985,7 +1130,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1016,16 +1161,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     delete_face_operand =
         crate::records::topology::face::DesignFaceOperand::try_new(draft).unwrap();
     delete_face_operand.resolved_face_slots = vec![7];
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&delete_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&delete_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1033,16 +1182,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             heal: true,
         })
     );
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&delete_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        std::slice::from_ref(&delete_face_operand),
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&delete_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                face_operands: std::slice::from_ref(&delete_face_operand),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1059,21 +1213,25 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = 1165;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&delete_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&delete_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: true, .. })
@@ -1085,16 +1243,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&delete_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&delete_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1104,7 +1266,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut surface_scope = delete_scope.clone();
-    let reference_bytes = 11 * surface_scope.reference_members().len() as u64;
+    let reference_bytes = 11 * u64_from_index(surface_scope.reference_members().len());
     surface_scope
         .try_edit(|draft| {
             draft.payload = crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
@@ -1114,21 +1276,25 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 140 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&surface_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&surface_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1136,16 +1302,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             heal: false,
         })
     );
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&surface_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        std::slice::from_ref(&delete_face_operand),
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&surface_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                face_operands: std::slice::from_ref(&delete_face_operand),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1162,21 +1333,25 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&surface_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&surface_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: false, .. })
@@ -1187,21 +1362,25 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&surface_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&surface_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1231,21 +1410,25 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.kind_offset = draft.byte_offset + base_kind + reference_bytes;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset =
-                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                    draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let (features, _) = project_parameter_design(
-            &[],
-            &[],
-            std::slice::from_ref(&surface_scope),
-            std::slice::from_ref(&delete_group),
-            &[],
-            &[],
-            &[],
-            &[],
-        );
+        let (features, _) = crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&surface_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
         assert!(matches!(
             features[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: false, .. })
@@ -1262,21 +1445,25 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&surface_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&surface_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1304,21 +1491,25 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.kind_offset = draft.byte_offset + 135 + reference_bytes;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset =
-                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                    draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let (features, _) = project_parameter_design(
-            &[],
-            &[],
-            std::slice::from_ref(&delete_scope),
-            std::slice::from_ref(&delete_group),
-            &[],
-            &[],
-            &[],
-            &[],
-        );
+        let (features, _) = crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&delete_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
         assert!(matches!(
             features[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: true, .. })
@@ -1329,16 +1520,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
     delete_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&delete_scope),
-        std::slice::from_ref(&delete_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&delete_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: std::slice::from_ref(&delete_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1362,10 +1557,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::BODIES_A,
         );
     assert_eq!(
-        crate::design::feature_project::project_remove_body(
-            &remove_scope,
-            std::slice::from_ref(&remove_group)
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_remove_body(
+                decode_ctx,
+                &remove_scope,
+                std::slice::from_ref(&remove_group),
+            )
+        })
+        .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DeleteBody {
                 bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
@@ -1401,7 +1600,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -1411,10 +1610,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::ROLE_0X5,
         );
     assert_eq!(
-        crate::design::feature_project::project_surface_stitch(
-            &stitch_scope,
-            std::slice::from_ref(&stitch_group)
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_surface_stitch(
+                decode_ctx,
+                &stitch_scope,
+                std::slice::from_ref(&stitch_group),
+            )
+        })
+        .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
@@ -1544,7 +1747,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         );
         assert_eq!(group.role(), DesignOperandRole::BODIES_A);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
-        assert_eq!(group.paired_byte_offset, paired_at as u64);
+        assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
     }
 }
 

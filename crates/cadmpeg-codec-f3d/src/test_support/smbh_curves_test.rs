@@ -436,7 +436,7 @@ pub(crate) fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str
         .windows(modern.len())
         .position(|window| window == modern.as_bytes())
         .expect("generated modern subtype");
-    bytes[position - 1] = legacy.len() as u8;
+    bytes[position - 1] = u8::try_from(legacy.len()).expect("fixture value fits u8");
     bytes.splice(
         position..position + modern.len(),
         legacy.as_bytes().iter().copied(),
@@ -695,7 +695,7 @@ pub(crate) fn synthetic_geometry_with_projection_smbh() -> Vec<u8> {
         .windows(b"off_int_cur".len())
         .position(|window| window == b"off_int_cur")
         .expect("generated offset subtype");
-    bytes[subtype - 1] = b"proj_int_cur".len() as u8;
+    bytes[subtype - 1] = u8::try_from(b"proj_int_cur".len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"off_int_cur".len(),
         b"proj_int_cur".iter().copied(),
@@ -766,7 +766,7 @@ pub(crate) fn synthetic_geometry_with_surface_curve_smbh(name: &str) -> Vec<u8> 
         .windows(b"int_int_cur".len())
         .position(|window| window == b"int_int_cur")
         .expect("generated intersection subtype");
-    bytes[subtype - 1] = name.len() as u8;
+    bytes[subtype - 1] = u8::try_from(name.len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"int_int_cur".len(),
         name.as_bytes().iter().copied(),
@@ -788,7 +788,7 @@ pub(crate) fn synthetic_geometry_with_silhouette_smbh(
         .windows(b"int_int_cur".len())
         .position(|window| window == b"int_int_cur")
         .expect("generated intersection subtype");
-    bytes[subtype - 1] = name.len() as u8;
+    bytes[subtype - 1] = u8::try_from(name.len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"int_int_cur".len(),
         name.as_bytes().iter().copied(),
@@ -818,7 +818,7 @@ pub(crate) fn synthetic_geometry_with_surface_offset_smbh() -> Vec<u8> {
         .windows(b"off_int_cur".len())
         .position(|window| window == b"off_int_cur")
         .expect("generated offset subtype");
-    bytes[subtype - 1] = b"off_surf_int_cur".len() as u8;
+    bytes[subtype - 1] = u8::try_from(b"off_surf_int_cur".len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"off_int_cur".len(),
         b"off_surf_int_cur".iter().copied(),
@@ -847,7 +847,7 @@ pub(crate) fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
         .windows(b"int_int_cur".len())
         .position(|window| window == b"int_int_cur")
         .expect("generated intersection subtype");
-    bytes[subtype - 1] = b"spring_int_cur".len() as u8;
+    bytes[subtype - 1] = u8::try_from(b"spring_int_cur".len()).expect("fixture value fits u8");
     bytes.splice(
         subtype..subtype + b"int_int_cur".len(),
         b"spring_int_cur".iter().copied(),

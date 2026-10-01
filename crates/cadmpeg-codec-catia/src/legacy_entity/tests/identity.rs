@@ -79,16 +79,19 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .all(|identity| u8::from(identity.lead) == 0x81));
     assert_eq!(
         native.legacy_entity_runs[0].catalog_offset,
-        catalog_offset as u64
+        cadmpeg_core::decode::u64_from_index(catalog_offset)
     );
     let schema_program = native.legacy_entity_runs[0]
         .schema_program
         .as_ref()
         .expect("complete compact schema program");
-    assert_eq!(schema_program.byte_offset, schema_program_offset as u64);
+    assert_eq!(
+        schema_program.byte_offset,
+        cadmpeg_core::decode::u64_from_index(schema_program_offset)
+    );
     assert_eq!(
         schema_program.boundary_byte_offset,
-        schema_footer_offset as u64
+        cadmpeg_core::decode::u64_from_index(schema_footer_offset)
     );
     assert_eq!(
         schema_program.boundary,
@@ -101,7 +104,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     assert_eq!(schema_program.identifiers.len(), 1);
     assert_eq!(
         schema_program.identifiers[0].byte_offset,
-        schema_program_offset as u64 + 1
+        cadmpeg_core::decode::u64_from_index(schema_program_offset) + 1
     );
     assert_eq!(schema_program.identifiers[0].value, "Foo");
     assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 5);
@@ -353,7 +356,9 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
     let run = native
         .legacy_entity_runs
         .iter()
-        .find(|run| run.byte_offset == stream_offset + legacy_offset as u64)
+        .find(|run| {
+            run.byte_offset == stream_offset + cadmpeg_core::decode::u64_from_index(legacy_offset)
+        })
         .expect("declared-stream legacy run");
     assert_eq!(
         run.outer_container.as_ref(),

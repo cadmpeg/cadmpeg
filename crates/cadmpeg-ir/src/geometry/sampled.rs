@@ -4,6 +4,8 @@
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -84,6 +86,29 @@ impl PolygonalSurface {
         Ok(Self {
             vertices,
             triangles,
+            chordal_deflection: self.chordal_deflection,
+        })
+    }
+
+    /// Admitted polygon vertices in source order.
+    pub fn vertices(&self) -> &[FinitePoint3] {
+        &self.vertices
+    }
+
+    /// Triangle vertex indexes in source order.
+    pub fn triangles(&self) -> &[[u32; 3]] {
+        &self.triangles
+    }
+
+    /// Copy both sampled lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            vertices: super::copy_decode_slice(&self.vertices, ctx, operation)?,
+            triangles: super::copy_decode_slice(&self.triangles, ctx, operation)?,
             chordal_deflection: self.chordal_deflection,
         })
     }
@@ -532,6 +557,30 @@ impl PolylineCurve {
         })
     }
 
+    /// Copy the sample lane through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let samples = match &self.samples {
+            PolylineSamples::Unparameterized { points } => PolylineSamples::Unparameterized {
+                points: super::copy_decode_slice(points, ctx, operation)?
+                    .try_into()
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
+            },
+            PolylineSamples::Parameterized { vertices } => PolylineSamples::Parameterized {
+                vertices: super::copy_decode_slice(vertices, ctx, operation)?
+                    .try_into()
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
+            },
+        };
+        Ok(Self {
+            samples,
+            chordal_deflection: self.chordal_deflection,
+        })
+    }
+
     /// Build from admitted sample scalars and points, checking only the
     /// sample count, computed deviation, and parameter order.
     pub fn from_checked_samples(
@@ -654,9 +703,9 @@ impl PolylineCurve {
     #[must_use]
     pub fn parameter_at(&self, index: usize) -> Option<FiniteReal> {
         match &self.samples {
-            PolylineSamples::Unparameterized { points } => {
-                points.get(index).map(|_| FiniteReal::from_index(index))
-            }
+            PolylineSamples::Unparameterized { points } => points
+                .get(index)
+                .and_then(|_| FiniteReal::from_index(index)),
             PolylineSamples::Parameterized { vertices } => {
                 vertices.get(index).map(|row| row.parameter)
             }
@@ -722,6 +771,81 @@ impl PolylineCurve {
             samples,
             chordal_deflection: scaled_chordal_deflection(self.chordal_deflection, scale)?,
         })
+    }
+}
+
+fn scale_admitted_points<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    points: impl Iterator<Item = &'a mut FinitePoint3>,
+    scale: PositiveReal,
+    message: &'static str,
+) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+    for point in points {
+        ctx.charge_work(1, "IR sampled unit scaling work")?;
+        let Some(scaled) = point.scaled(scale) else {
+            return Ok(Err(GeometryLayoutError::Layout(
+                ctx.copy_retained_text(message, "IR sampled refusal text")?,
+            )));
+        };
+        *point = scaled;
+    }
+    Ok(Ok(()))
+}
+
+fn scale_admitted_deflection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    deflection: &mut NonNegativeReal,
+    scale: PositiveReal,
+) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+    let Some(scaled) = deflection.scaled(scale) else {
+        return Ok(Err(GeometryLayoutError::Layout(ctx.copy_retained_text(
+            "chordal_deflection must be finite and non-negative",
+            "IR sampled refusal text",
+        )?)));
+    };
+    *deflection = scaled;
+    Ok(Ok(()))
+}
+
+impl PolygonalSurface {
+    pub(crate) fn scale_points_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+        if let Err(error) = scale_admitted_points(
+            ctx,
+            self.vertices.iter_mut(),
+            scale,
+            "vertices must be finite",
+        )? {
+            return Ok(Err(error));
+        }
+        scale_admitted_deflection(ctx, &mut self.chordal_deflection, scale)
+    }
+}
+
+impl PolylineCurve {
+    pub(crate) fn scale_points_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+        let result = match &mut self.samples {
+            PolylineSamples::Unparameterized { points } => {
+                scale_admitted_points(ctx, points.iter_mut(), scale, "points must be finite")
+            }
+            PolylineSamples::Parameterized { vertices } => scale_admitted_points(
+                ctx,
+                vertices.iter_mut().map(|vertex| &mut vertex.point),
+                scale,
+                "points must be finite",
+            ),
+        }?;
+        if let Err(error) = result {
+            return Ok(Err(error));
+        }
+        scale_admitted_deflection(ctx, &mut self.chordal_deflection, scale)
     }
 }
 

@@ -13,7 +13,7 @@ pub(super) struct TransmitHeaderWire {
     #[serde(flatten)]
     state: TransmitState,
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     inflated_offset: u64,
 }
 
@@ -24,7 +24,7 @@ struct TransmitHeaderRef<'a> {
     #[serde(flatten)]
     state: &'a TransmitState,
     byte_len: u64,
-    sha256: &'a crate::native::hex::Sha256Hex,
+    sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     inflated_offset: u64,
 }
 

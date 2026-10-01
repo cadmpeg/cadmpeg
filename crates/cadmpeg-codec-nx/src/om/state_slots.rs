@@ -23,8 +23,8 @@ impl<T> StateSlots<T> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (u32, &T)> {
         self.0
             .iter()
-            .enumerate()
-            .map(|(ordinal, slot)| (ordinal as u32, slot))
+            .zip(0u32..=u32::MAX)
+            .map(|(slot, ordinal)| (ordinal, slot))
     }
 
     #[cfg(test)]
@@ -39,8 +39,8 @@ impl<T> StateSlots<T> {
         Ok(StateSlots(
             self.0
                 .into_iter()
-                .enumerate()
-                .map(|(ordinal, slot)| map(ordinal as u32, slot))
+                .zip(0u32..=u32::MAX)
+                .map(|(slot, ordinal)| map(ordinal, slot))
                 .collect::<Result<_, _>>()?,
         ))
     }
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn slot_count_bounds_the_last_ordinal_without_allocating_elements() {
-        let maximum_count = u32::MAX as usize + 1;
+        let maximum_count = cadmpeg_core::decode::index_from_u32(u32::MAX) + 1;
         let maximum = StateSlots::new(vec![(); maximum_count]).unwrap();
         assert_eq!(maximum.len(), maximum_count);
         assert!(StateSlots::new(vec![(); maximum_count + 1]).is_err());

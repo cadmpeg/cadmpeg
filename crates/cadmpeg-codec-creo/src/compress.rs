@@ -65,14 +65,7 @@ pub(crate) fn decode(
     }
     output.write(&[final_byte])?;
     let mut written = 1;
-    let mut stack = Vec::new();
-    stack.try_reserve_exact(dictionary_limit).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate Creo LZW stack",
-            u64_from_index(dictionary_limit),
-            u64_from_index(dictionary_limit) + 1,
-        )
-    })?;
+    let mut stack = ctx.collection_vec(dictionary_limit, "creo LZW stack slots")?;
 
     if written == expected_length {
         return finish_expansion(ctx, output, reservation).map(Some);
@@ -218,7 +211,7 @@ impl<'a> CodeReader<'a> {
             if self.cursor >= self.data.len() {
                 return None;
             }
-            let end = self.cursor.saturating_add(self.width).min(self.data.len());
+            let end = self.cursor.checked_add(self.width)?.min(self.data.len());
             self.block = &self.data[self.cursor..end];
             self.cursor = end;
             self.bit_offset = 0;
@@ -331,6 +324,35 @@ mod tests {
             CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::DecompressedBytes
                     && limit.operation == "begin_expand"
+        ));
+    }
+
+    #[test]
+    fn lzw_stack_slots_refuse_at_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &service)
+            .expect("service profile admits input");
+        assert_eq!(
+            super::decode(&ctx, &stream, 3).expect("service profile admits LZW stack"),
+            Some(b"ABC".to_vec())
+        );
+
+        let mut limited = service;
+        limited.limits.max_collection_items = 2 * (1 << 16);
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &limited)
+            .expect("root bytes are within the limit");
+        let err = super::decode(&ctx, &stream, 3)
+            .expect_err("the dictionary fills the item budget before the stack");
+        assert!(matches!(
+            err,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo LZW stack slots"
         ));
     }
 

@@ -13,7 +13,6 @@ use cadmpeg_ir::{
     },
     scalar::Length,
 };
-use std::collections::BTreeSet;
 
 pub(super) fn hole_feature_is_incomplete(
     profile: Option<&PlanarProfileRef>,
@@ -466,7 +465,11 @@ pub(super) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
 }
 
 fn selection_ids_are_incomplete<T: Ord>(ids: &[T]) -> bool {
-    ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len()
+    ids.is_empty()
+        || ids
+            .iter()
+            .enumerate()
+            .any(|(index, id)| ids[..index].contains(id))
 }
 
 pub(in crate::decode) fn path_ref_is_incomplete(path: &PathRef) -> bool {
@@ -480,5 +483,17 @@ pub(in crate::decode) fn path_ref_is_incomplete(path: &PathRef) -> bool {
         PathRef::SpatialSketchCurves { .. } => false,
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selection_ids_are_incomplete;
+
+    #[test]
+    fn selection_completeness_detects_nonadjacent_duplicate_ids() {
+        assert!(selection_ids_are_incomplete::<u32>(&[]));
+        assert!(!selection_ids_are_incomplete(&[2, 1, 3]));
+        assert!(selection_ids_are_incomplete(&[2, 1, 2]));
     }
 }

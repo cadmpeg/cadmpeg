@@ -153,13 +153,17 @@ pub(crate) fn read_detection_input(
 
 /// Read a UTF-8 text file, refusing payloads above `max_bytes`.
 pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
-    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let mut limited = file.take(max_bytes.saturating_add(1));
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut text = String::new();
-    limited
-        .read_to_string(&mut text)
-        .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
-    if text.len() as u64 > max_bytes {
+    if let Some(cap) = max_bytes.checked_add(1) {
+        file.take(cap)
+            .read_to_string(&mut text)
+            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
+    } else {
+        file.read_to_string(&mut text)
+            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
+    }
+    if cadmpeg_core::decode::u64_from_index(text.len()) > max_bytes {
         return Err(anyhow!(
             "{} exceeds the configured {}-byte input limit",
             path.display(),
@@ -324,8 +328,11 @@ pub(super) fn persist_decode_sidecar(
             report, fidelity, ..
         }
         | LoadOrigin::Restored { report, fidelity } => {
-            let sidecar =
-                DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity.clone());
+            let sidecar = DecodeSidecar::bind_sha256(
+                cadir_sha256.clone(),
+                report.clone(),
+                fidelity.as_ref().clone(),
+            );
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
             bytes.push(b'\n');
             write_bytes_atomic(&path, &bytes)?;
@@ -565,8 +572,12 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("remote-directory.prt");
         std::fs::write(&path, &bytes).unwrap();
-        let cli_prefix =
-            read_detection_input(&path, DETECTION_PREFIX_LEN, bytes.len() as u64).unwrap();
+        let cli_prefix = read_detection_input(
+            &path,
+            DETECTION_PREFIX_LEN,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+        )
+        .unwrap();
         assert_eq!(cli_prefix, bytes);
 
         let cli_candidates = InputCatalog::with_builtins()
@@ -620,7 +631,11 @@ mod tests {
         put_u16(&mut file, 30, 9);
         put_u16(&mut file, 32, 6);
         put_u32(&mut file, 44, 3);
-        put_u32(&mut file, 48, DIRECTORY_SECTOR as u32);
+        put_u32(
+            &mut file,
+            48,
+            u32::try_from(DIRECTORY_SECTOR).expect("test directory sector fits u32"),
+        );
         put_u32(&mut file, 56, 4096);
         put_u32(&mut file, 60, END);
         put_u32(&mut file, 68, END);
@@ -628,7 +643,11 @@ mod tests {
             put_u32(&mut file, 76 + index * 4, FREE);
         }
         for index in 0..3 {
-            put_u32(&mut file, 76 + index * 4, index as u32);
+            put_u32(
+                &mut file,
+                76 + index * 4,
+                u32::try_from(index).expect("test FAT index fits u32"),
+            );
             file[SECTOR * (index + 1)..SECTOR * (index + 2)].fill(0xff);
             put_u32(&mut file, SECTOR + index * 4, FAT);
         }
@@ -678,7 +697,11 @@ mod tests {
         for (offset, word) in encoded.iter().enumerate() {
             put_u16(entry, offset * 2, *word);
         }
-        put_u16(entry, 64, (encoded.len() * 2) as u16);
+        put_u16(
+            entry,
+            64,
+            u16::try_from(encoded.len() * 2).expect("test name length fits u16"),
+        );
         entry[66] = kind;
         entry[67] = 1;
         put_u32(entry, 68, FREE);

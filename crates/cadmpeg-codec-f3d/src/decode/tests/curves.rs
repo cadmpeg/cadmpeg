@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::convert::f64_from_index;
+
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -209,15 +211,18 @@ fn decode_retains_generated_helix_construction() {
     let SolvedCurveGeometry::Nurbs(mut edited_cache) = solved_cache.clone() else {
         panic!("expected helix NURBS cache")
     };
-    let mut pole_index = 0usize;
     edited_cache
-        .edit_control_points(|point| {
-            if pole_index == 1 {
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
                 point.x = 17.0;
                 point.z = -2.0;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);
@@ -305,7 +310,8 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Procedural { construction, .. }) if *construction == procedural.id
     ));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",
@@ -1108,7 +1114,11 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .expect("compound component curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
+                cadmpeg_ir::math::Point3::new(
+                    f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                    -1.0,
+                    2.0,
+                ),
                 cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0)
                     .unit()
                     .unwrap(),
@@ -1159,7 +1169,10 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             panic!("compound line component was not lowered to NURBS")
         };
         assert_eq!(curve.degree(), 1);
-        let range = [ordinal as f64 * 0.5, (ordinal + 1) as f64 * 0.5];
+        let range = [
+            f64_from_index(ordinal).expect("fixture index is exact in f64") * 0.5,
+            f64_from_index(ordinal + 1).expect("fixture index is exact in f64") * 0.5,
+        ];
         assert_eq!(
             curve.knots().as_slice(),
             [range[0], range[0], range[1], range[1]]
@@ -1340,7 +1353,9 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
                 (*context_parameter_range) = [-2.0, 5.0];
                 for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate() {
                     for (ordinal, value) in discontinuities.iter_mut().enumerate() {
-                        *value = 0.125 * (side + ordinal + 1) as f64;
+                        *value = 0.125
+                            * f64_from_index(side + ordinal + 1)
+                                .expect("fixture index is exact in f64");
                     }
                 }
                 *discontinuity_flag = false;

@@ -241,7 +241,7 @@ fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
         policy: DecodePolicy::service(),
     };
     options.policy.limits.max_retained_bytes =
-        u64::try_from(jpeg.len() - 1).expect("fixture length fits the resource limit");
+        u64::try_from(4237 + jpeg.len() - 1).expect("fixture length fits the resource limit");
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("thumbnail copy exceeds the retained-byte limit");
@@ -253,10 +253,21 @@ fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
     ));
 
     options.policy.limits.max_retained_bytes =
-        u64::try_from(jpeg.len()).expect("fixture length fits the resource limit");
+        u64::try_from(9223usize).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("the retained thumbnail also needs a copied native identity");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "native unknown product identity"
+    ));
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(9311usize).expect("fixture length fits the resource limit");
     CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect("the exact retained-byte limit admits the thumbnail");
+        .expect("the service retained-byte limit admits the thumbnail");
 }
 
 #[test]
@@ -271,7 +282,7 @@ fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
         policy: DecodePolicy::service(),
     };
     options.policy.limits.max_retained_bytes =
-        u64::try_from(section_len - 1).expect("fixture length fits the resource limit");
+        u64::try_from(4294 + section_len - 1).expect("fixture length fits the resource limit");
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("geometry copy exceeds the retained-byte limit");
@@ -283,10 +294,21 @@ fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
     ));
 
     options.policy.limits.max_retained_bytes =
-        u64::try_from(section_len).expect("fixture length fits the resource limit");
+        u64::try_from(9314usize).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("the retained section also needs a copied native identity");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "native unknown product identity"
+    ));
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(9390usize).expect("fixture length fits the resource limit");
     CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect("the exact retained-byte limit admits the geometry section");
+        .expect("the service retained-byte limit admits the geometry section");
 }
 
 #[test]
@@ -299,11 +321,16 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
     assert!(container::has_thumbnail(&scan));
-    let classification = crate::dialect::classify(&scan);
-    assert!(container::summarize(&scan, &classification)
-        .notes
-        .iter()
-        .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
+    let classification =
+        crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
+            .expect("dialect classification admitted");
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
+            .expect("container summary admitted")
+            .notes
+            .iter()
+            .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview"))
+    );
 
     let source_offset = scan.framing.expanded_sections[0].source_offset;
     let result = EditableDecodeResult::from(
@@ -328,7 +355,7 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         &result.source_fidelity().annotations,
         unknowns[0].id.as_str(),
         "creo:THMB_IMG_MAIN",
-        source_offset as u64,
+        cadmpeg_core::decode::u64_from_index(source_offset),
         "jpeg_thumbnail",
         Exactness::Derived,
     );
@@ -376,7 +403,7 @@ fn decode_propagates_spline_grid_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_collection_items = 5;
+    options.policy.limits.max_collection_items = 45;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("six scalar slots exceed the five-item limit");
@@ -412,7 +439,7 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_collection_items = 3;
+    options.policy.limits.max_collection_items = 43;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("four scalar slots exceed the three-item limit");
@@ -440,7 +467,7 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
 fn exact_collection_limit_for_decode(data: &[u8], options: &mut DecodeOptions) -> u64 {
     use cadmpeg_core::decode::ResourceDimension;
 
-    for _ in 0..256 {
+    for _ in 0..512 {
         match CreoCodec.decode(&mut Cursor::new(data), options) {
             Ok(_) => return options.policy.limits.max_collection_items,
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
@@ -608,8 +635,9 @@ fn decode_annotations_cover_every_emitted_entity() {
             ("ActDatums", datum),
         ],
     );
-    let datum_offset =
-        container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload as u64;
+    let datum_offset = cadmpeg_core::decode::u64_from_index(
+        container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload,
+    );
     let mut reader = Cursor::new(data);
     let result = EditableDecodeResult::from(
         CreoCodec
@@ -731,7 +759,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|byte| byte.as_u64().unwrap() as u8)
+            .map(|byte| u8::try_from(byte.as_u64().unwrap()).expect("fixture value fits u8"))
             .collect::<Vec<_>>(),
         b"xProtrusion id 40"
     );
@@ -760,7 +788,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         &result.source_fidelity().annotations,
         "creo:model:feature#40",
         "creo:MdlStatus",
-        scan.features.operations[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.operations[0].offset),
         "feature_operation_state_consensus",
         Exactness::Derived,
     );
@@ -789,7 +817,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         &result.source_fidelity().annotations,
         "creo:model:feature#41",
         "creo:MdlStatus",
-        scan.features.operations[1].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.operations[1].offset),
         "feature_operation_name",
         Exactness::ByteExact,
     );

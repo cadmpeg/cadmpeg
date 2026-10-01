@@ -11,6 +11,7 @@ use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
     MATERIALIZED_PER_INPUT_BYTE, RETAINED_BASE, RETAINED_PER_INPUT_BYTE,
 };
+use super::view::u64_from_index;
 
 #[derive(Debug)]
 pub(super) struct DecodeBudget {
@@ -53,12 +54,14 @@ impl DecodeBudget {
     }
 
     pub(super) fn decompression_allowance(&self) -> u64 {
-        let proportional = DECOMPRESSED_TOTAL_BASE
-            .saturating_add(DECOMPRESSED_TOTAL_PER_INPUT_BYTE.saturating_mul(self.input_bytes));
-        self.policy
-            .limits
-            .max_decompressed_bytes_total
-            .min(proportional)
+        let policy_limit = self.policy.limits.max_decompressed_bytes_total;
+        let Some(proportional) = DECOMPRESSED_TOTAL_PER_INPUT_BYTE
+            .checked_mul(self.input_bytes)
+            .and_then(|bytes| DECOMPRESSED_TOTAL_BASE.checked_add(bytes))
+        else {
+            return policy_limit;
+        };
+        policy_limit.min(proportional)
     }
 
     pub(super) fn input_bytes(&self) -> u64 {
@@ -77,6 +80,7 @@ impl DecodeBudget {
             amount,
             operation,
         )
+        .map_err(Into::into)
     }
 
     pub(super) fn decompressed_used(&self) -> u64 {
@@ -84,31 +88,28 @@ impl DecodeBudget {
     }
 
     fn materialized_allowance(&self) -> u64 {
-        self.policy.limits.max_materialized_bytes.min(
-            MATERIALIZED_BASE
-                .saturating_add(MATERIALIZED_PER_INPUT_BYTE.saturating_mul(self.input_bytes)),
-        )
+        let policy_limit = self.policy.limits.max_materialized_bytes;
+        let Some(proportional) = MATERIALIZED_PER_INPUT_BYTE
+            .checked_mul(self.input_bytes)
+            .and_then(|bytes| MATERIALIZED_BASE.checked_add(bytes))
+        else {
+            return policy_limit;
+        };
+        policy_limit.min(proportional)
     }
 
     fn retained_allowance(&self) -> u64 {
-        self.policy.limits.max_retained_bytes.min(
-            RETAINED_BASE.saturating_add(RETAINED_PER_INPUT_BYTE.saturating_mul(self.input_bytes)),
-        )
+        let policy_limit = self.policy.limits.max_retained_bytes;
+        let Some(proportional) = RETAINED_PER_INPUT_BYTE
+            .checked_mul(self.input_bytes)
+            .and_then(|bytes| RETAINED_BASE.checked_add(bytes))
+        else {
+            return policy_limit;
+        };
+        policy_limit.min(proportional)
     }
 
     fn charge(
-        &self,
-        dimension: ResourceDimension,
-        used: &Cell<u64>,
-        limit: u64,
-        amount: u64,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_resource(dimension, used, limit, amount, operation)
-            .map_err(Into::into)
-    }
-
-    fn charge_resource(
         &self,
         dimension: ResourceDimension,
         used: &Cell<u64>,
@@ -120,8 +121,11 @@ impl DecodeBudget {
             return Err(resource);
         }
         let before = used.get();
-        if before > limit || amount > limit - before {
-            return Err(self.refuse_resource(
+        if limit
+            .checked_sub(before)
+            .is_none_or(|remaining| amount > remaining)
+        {
+            return Err(self.refuse_limit(
                 dimension,
                 ResourceFailure::BudgetExceeded,
                 limit,
@@ -134,20 +138,7 @@ impl DecodeBudget {
         Ok(())
     }
 
-    pub(super) fn refuse(
-        &self,
-        dimension: ResourceDimension,
-        reason: ResourceFailure,
-        limit: u64,
-        used: u64,
-        additional: u64,
-        operation: &'static str,
-    ) -> CodecError {
-        self.refuse_resource(dimension, reason, limit, used, additional, operation)
-            .into()
-    }
-
-    fn refuse_resource(
+    fn refuse_limit(
         &self,
         dimension: ResourceDimension,
         reason: ResourceFailure,
@@ -168,12 +159,34 @@ impl DecodeBudget {
         resource
     }
 
-    pub(super) fn reserve_scoped_resource(
+    pub(super) fn refuse(
+        &self,
+        dimension: ResourceDimension,
+        reason: ResourceFailure,
+        limit: u64,
+        used: u64,
+        additional: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.refuse_limit(dimension, reason, limit, used, additional, operation)
+            .into()
+    }
+
+    pub(super) fn reserve_scoped(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, CodecError> {
+        self.reserve_scoped_limit(bytes, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn reserve_scoped_limit(
         &self,
         bytes: u64,
         operation: &'static str,
     ) -> Result<ScopedReservation<'_>, ResourceLimit> {
-        self.charge_resource(
+        self.charge(
             ResourceDimension::MaterializedBytes,
             &self.materialized,
             self.materialized_allowance(),
@@ -187,13 +200,12 @@ impl DecodeBudget {
         })
     }
 
-    pub(super) fn reserve_scoped(
+    pub(super) fn reserve_scoped_resource(
         &self,
         bytes: u64,
         operation: &'static str,
-    ) -> Result<ScopedReservation<'_>, CodecError> {
-        self.reserve_scoped_resource(bytes, operation)
-            .map_err(Into::into)
+    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
+        self.reserve_scoped_limit(bytes, operation)
     }
 
     /// Report allocator refusal after a scoped-byte reservation was recorded.
@@ -218,6 +230,15 @@ impl DecodeBudget {
         bytes: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_retained_limit(bytes, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn charge_retained_limit(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::RetainedBytes,
             &self.retained,
@@ -256,11 +277,31 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.refuse(
+        self.retained_allocation_failed_limit(charged, operation)
+            .into()
+    }
+
+    pub(super) fn retained_allocation_failed_limit(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> ResourceLimit {
+        let current = self.retained.get();
+        let Some(prior) = current.checked_sub(charged) else {
+            return self.refuse_limit(
+                ResourceDimension::RetainedBytes,
+                ResourceFailure::AllocationFailed,
+                self.retained_allowance(),
+                current,
+                charged,
+                operation,
+            );
+        };
+        self.refuse_limit(
             ResourceDimension::RetainedBytes,
             ResourceFailure::AllocationFailed,
             self.retained_allowance(),
-            self.retained.get().saturating_sub(charged),
+            prior,
             charged,
             operation,
         )
@@ -278,6 +319,7 @@ impl DecodeBudget {
             count,
             operation,
         )
+        .map_err(Into::into)
     }
 
     pub(super) fn charge_collection_items(
@@ -285,6 +327,15 @@ impl DecodeBudget {
         count: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_collection_items_limit(count, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn charge_collection_items_limit(
+        &self,
+        count: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::CollectionItems,
             &self.collection_items,
@@ -294,8 +345,23 @@ impl DecodeBudget {
         )
     }
 
-    /// Report allocator refusal after a collection-item charge was recorded.
     pub(super) fn collection_allocation_failed(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.refuse(
+            ResourceDimension::CollectionItems,
+            ResourceFailure::AllocationFailed,
+            self.policy.limits.max_collection_items,
+            self.collection_items.get() - charged,
+            charged,
+            operation,
+        )
+    }
+
+    /// Report allocator refusal after a collection-item charge was recorded.
+    pub(super) fn collection_allocation_failed_requested(
         &self,
         charged: u64,
         requested: u64,
@@ -338,6 +404,7 @@ impl DecodeBudget {
             units,
             operation,
         )
+        .map_err(Into::into)
     }
 }
 
@@ -351,15 +418,23 @@ pub struct ScopedReservation<'a> {
 
 impl ScopedReservation<'_> {
     pub(super) fn grow_resource(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
-        self.budget.charge_resource(
+        self.budget.charge(
             ResourceDimension::MaterializedBytes,
             &self.budget.materialized,
             self.budget.materialized_allowance(),
             bytes,
             self.operation,
         )?;
-        // The total live materialized charge includes this reservation.
-        self.bytes += bytes;
+        self.bytes = self.bytes.checked_add(bytes).ok_or_else(|| {
+            self.budget.refuse_limit(
+                ResourceDimension::MaterializedBytes,
+                ResourceFailure::BudgetExceeded,
+                self.budget.materialized_allowance(),
+                self.bytes,
+                bytes,
+                self.operation,
+            )
+        })?;
         Ok(())
     }
 
@@ -376,9 +451,18 @@ impl ScopedReservation<'_> {
 
 impl Drop for ScopedReservation<'_> {
     fn drop(&mut self) {
-        self.budget
-            .materialized
-            .set(self.budget.materialized.get().saturating_sub(self.bytes));
+        let Some(remaining) = self.budget.materialized.get().checked_sub(self.bytes) else {
+            self.budget.refuse_limit(
+                ResourceDimension::MaterializedBytes,
+                ResourceFailure::BudgetExceeded,
+                self.budget.materialized_allowance(),
+                self.budget.materialized.get(),
+                self.bytes,
+                self.operation,
+            );
+            return;
+        };
+        self.budget.materialized.set(remaining);
     }
 }
 
@@ -390,9 +474,10 @@ pub struct DepthGuard<'a> {
 
 impl Drop for DepthGuard<'_> {
     fn drop(&mut self) {
-        self.budget
-            .recursion_depth
-            .set(self.budget.recursion_depth.get().saturating_sub(1));
+        let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) else {
+            return;
+        };
+        self.budget.recursion_depth.set(depth);
     }
 }
 
@@ -414,9 +499,10 @@ pub struct WorkBudgetRecursionGuard<'budget, 'session> {
 
 impl Drop for WorkBudgetRecursionGuard<'_, '_> {
     fn drop(&mut self) {
-        self.budget
-            .recursion_depth
-            .set(self.budget.recursion_depth.get().saturating_sub(1));
+        let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) else {
+            return;
+        };
+        self.budget.recursion_depth.set(depth);
     }
 }
 
@@ -435,10 +521,22 @@ impl WorkBudget<'static> {
 
 impl<'a> WorkBudget<'a> {
     pub(super) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
-        let limit = if limit > usize::MAX as u64 {
-            usize::MAX
-        } else {
-            limit as usize
+        let Ok(limit) = usize::try_from(limit) else {
+            drop(session.refuse(
+                ResourceDimension::WorkUnits,
+                ResourceFailure::BudgetExceeded,
+                u64_from_index(usize::MAX),
+                0,
+                limit,
+                "work_budget",
+            ));
+            return Self {
+                limit: 0,
+                remaining: Cell::new(None),
+                recursion_depth: Cell::new(0),
+                session: Some(session),
+                session_work_scale: NonZeroU64::MIN,
+            };
         };
         Self {
             limit,
@@ -487,7 +585,7 @@ impl<'a> WorkBudget<'a> {
         } else {
             if let Some(session) = session {
                 let Some(scaled) =
-                    super::view::u64_from_index(work).checked_mul(self.session_work_scale.get())
+                    u64_from_index(work).checked_mul(self.session_work_scale.get())
                 else {
                     // The sticky session keeps the refusal for finish_session.
                     let _failure = session.refuse(
@@ -528,7 +626,12 @@ impl<'a> WorkBudget<'a> {
 
     /// Returns charged work and the remainder forfeited by exhaustion.
     pub fn consumed(&self) -> usize {
-        self.limit.saturating_sub(self.remaining())
+        let remaining = self.remaining();
+        if remaining > self.limit {
+            self.exhaust();
+            return self.limit;
+        }
+        self.limit - remaining
     }
 
     /// Enters one recursive geometry-evaluation frame.
@@ -542,8 +645,7 @@ impl<'a> WorkBudget<'a> {
             self.exhaust();
             return None;
         }
-        self.recursion_depth
-            .set(self.recursion_depth.get().saturating_add(1));
+        self.recursion_depth.set(self.recursion_depth.get() + 1);
         Some(WorkBudgetRecursionGuard { budget: self })
     }
 
@@ -622,9 +724,17 @@ pub fn alloc_filled<T: Clone>(
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
-    out.try_reserve_exact(count)
-        .map_err(|_| refuse_local_limit(operation, count as u64, count as u64))?;
-    out.resize(count, value);
+    out.try_reserve_exact(count).map_err(|_| {
+        crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
+            crate::decode::ResourceDimension::Codec(operation),
+            u64_from_index(count),
+            u64_from_index(count),
+            operation,
+        ))
+    })?;
+    for _ in 0..count {
+        out.push(value.clone());
+    }
     Ok(out)
 }
 
@@ -634,12 +744,16 @@ fn local_limit_error(
     requested: u64,
     operation: &'static str,
 ) -> CodecError {
+    let (used, additional) = match requested.checked_sub(limit) {
+        Some(excess) => (limit, excess),
+        None => (requested, 0),
+    };
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::Codec(what),
         reason: ResourceFailure::BudgetExceeded,
         limit,
-        used: requested.min(limit),
-        additional: requested.saturating_sub(limit),
+        used,
+        additional,
         operation,
     })
 }
@@ -732,5 +846,31 @@ mod tests {
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 3);
         assert_eq!(session.fused(), Some(limit));
+    }
+
+    #[test]
+    fn zero_charge_refuses_when_usage_already_exceeds_limit() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_entities = 1;
+        let session = DecodeBudget::new(policy, 1);
+        session.entities.set(2);
+        let error = session.charge_entities(0, "entities");
+        assert!(matches!(
+            error,
+            Err(crate::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.reason == ResourceFailure::BudgetExceeded
+                    && limit.used == 2
+                    && limit.additional == 0
+        ));
+    }
+
+    #[test]
+    fn retained_allocation_refusal_reports_existing_usage_when_charge_exceeds_it() {
+        let session = DecodeBudget::new(DecodePolicy::default(), 1);
+        session.retained.set(2);
+        let limit = session.retained_allocation_failed_limit(3, "retain");
+        assert_eq!(limit.used, 2);
+        assert_eq!(limit.additional, 3);
     }
 }

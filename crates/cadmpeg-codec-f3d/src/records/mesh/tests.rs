@@ -235,7 +235,7 @@ fn mesh_feature_native_retained_limit_refuses_before_clone() {
 fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
     let wire = r#"{"maximum":[1.0,2.0,3.0],"minimum":[-4.0,-5.0,-6.0],"offsets":[100,124]}"#;
     let bounds = crate::records::mesh::DesignMeshSceneBounds::from_wire(
-        serde_json::from_str(wire).unwrap(),
+        &serde_json::from_str(wire).unwrap(),
         [100, 124],
     )
     .unwrap();
@@ -253,7 +253,7 @@ fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
         let mut invalid = serde_json::to_value(bounds.into_wire([100, 124])).unwrap();
         invalid[field] = bad;
         assert!(crate::records::mesh::DesignMeshSceneBounds::from_wire(
-            serde_json::from_value(invalid).unwrap(),
+            &serde_json::from_value(invalid).unwrap(),
             [100, 124]
         )
         .unwrap_err()
@@ -719,9 +719,15 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
         )
     };
     let table = parse(rows.clone()).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
     assert_eq!(
         table
-            .resources_in_flags_order()
+            .resources_in_flags_order(&ctx)
+            .unwrap()
             .iter()
             .map(|resource| resource.resource_guid.as_str())
             .collect::<Vec<_>>(),
@@ -773,7 +779,90 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
         serde_json::from_value(rows).unwrap()
     )
     .is_err());
-    assert!(crate::records::mesh::DesignMeshTextureTable::new(record(29), Vec::new()).is_ok());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::records::mesh::DesignMeshTextureTable::new_charged(ctx, record(29), Vec::new())
+    })
+    .is_ok());
+}
+
+#[test]
+fn mesh_texture_table_indexes_and_order_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let record = crate::records::mesh::DesignMeshRecordIdentity::new(
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        4,
+        0,
+        219,
+    )
+    .unwrap();
+    let row = |ordinal, filename_ordinal, guid, flags_guid, filename_guid| {
+        serde_json::json!({
+            "ordinal": ordinal, "resource_guid": guid, "flags_guid_offset": flags_guid,
+            "flags": 7, "flags_offset": flags_guid + 36,
+            "filename_ordinal": filename_ordinal, "filename_guid_offset": filename_guid,
+            "filename_record": {"class_tag": "256", "record_index": 8, "byte_offset": 300, "frame_length": 35},
+            "filename_record_reference_offset": filename_guid + 36,
+            "filename": "a.png", "filename_offset": 325,
+            "archive_entry_name": "Textures/a.png", "asset": "test:model:asset#texture"
+        })
+    };
+    let rows = serde_json::json!([
+        row(1, 0, "BBBBBBBB-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 73, 121),
+        row(0, 1, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 29, 172),
+    ]);
+    let table = crate::records::mesh::DesignMeshTextureTable::from_wire(
+        record,
+        21,
+        113,
+        serde_json::from_value(rows).unwrap(),
+    )
+    .unwrap();
+    for (limit, operation) in [
+        (0, "index F3D texture flag ordinals"),
+        (1, "index F3D texture filename ordinals"),
+        (2, "index F3D texture GUIDs"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap()
+            .0;
+        let error = crate::records::mesh::DesignMeshTextureTable::new_charged(
+            &ctx,
+            table.record.clone(),
+            table.resources.clone(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == operation)
+        );
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
+    let error = table.resources_in_flags_order(&ctx).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "order F3D mesh texture resources")
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
+    let error = table.resources_in_flags_order(&ctx).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "order F3D mesh texture resources")
+    );
 }
 
 #[test]

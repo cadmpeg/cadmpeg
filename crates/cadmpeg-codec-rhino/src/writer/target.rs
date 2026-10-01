@@ -42,9 +42,9 @@ pub(crate) fn plan(
             .iter()
             .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
             .any(|point| {
-                f64::from(point.x as f32) != point.x
-                    || f64::from(point.y as f32) != point.y
-                    || f64::from(point.z as f32) != point.z
+                cadmpeg_core::convert::f32_from_f64(point.x).map(f64::from) != Some(point.x)
+                    || cadmpeg_core::convert::f32_from_f64(point.y).map(f64::from) != Some(point.y)
+                    || cadmpeg_core::convert::f32_from_f64(point.z).map(f64::from) != Some(point.z)
             });
     let normal_quantization = input
         .ir
@@ -53,9 +53,9 @@ pub(crate) fn plan(
         .iter()
         .flat_map(cadmpeg_ir::tessellation::Tessellation::vertex_normals)
         .any(|normal| {
-            f64::from(normal.x as f32) != normal.x
-                || f64::from(normal.y as f32) != normal.y
-                || f64::from(normal.z as f32) != normal.z
+            cadmpeg_core::convert::f32_from_f64(normal.x).map(f64::from) != Some(normal.x)
+                || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
+                || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let mut losses = Vec::new();
     if let Some(message) = target.displacement_message() {

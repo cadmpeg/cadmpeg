@@ -20,6 +20,10 @@ fn sidecar_wire() -> serde_json::Value {
 
 #[test]
 fn invalid_product_link_cannot_partially_attach_but_source_retention_accepts_evidence() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let invalid =
         UnknownRecord::retained(id("bad-link"), 0, vec![1], vec!["raw target text".into()]);
     let mut fidelity = SourceFidelity::default();
@@ -29,9 +33,9 @@ fn invalid_product_link_cannot_partially_attach_but_source_retention_accepts_evi
         invalid.clone(),
     ];
     let error = fidelity
-        .attach_native_unknown_records(&mut ir, "synthetic", incoming)
+        .attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx)
         .unwrap_err();
-    assert!(error.to_string().contains(invalid.id().as_str()), "{error}");
+    assert!(error.to_string().contains("raw target text"), "{error}");
     assert_eq!(fidelity, SourceFidelity::default());
     assert_eq!(ir, CadIr::empty());
     fidelity
@@ -48,6 +52,10 @@ fn invalid_product_link_cannot_partially_attach_but_source_retention_accepts_evi
 
 #[test]
 fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let mut ir = CadIr::empty();
     ir.set_native_unknowns(
         "other",
@@ -66,7 +74,9 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
             [
                 UnknownRecord::retained(id("first"), 0, vec![1], vec![]),
                 UnknownRecord::retained(id("occupied"), 0, vec![2], vec![]),
-            ],
+            ]
+            .into(),
+            &ctx,
         )
         .unwrap_err();
     assert!(
@@ -75,6 +85,144 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
     );
     assert_eq!(ir, before);
     assert_eq!(fidelity, SourceFidelity::default());
+}
+
+#[test]
+fn charged_native_unknown_attachment_preserves_product_and_retained_wire() {
+    let mut prior = CadIr::empty();
+    prior
+        .set_native_unknowns(
+            "synthetic",
+            &[crate::NativeUnknownRecord {
+                id: id("prior"),
+                links: vec![],
+            }],
+        )
+        .expect("prior native unknown");
+    let incoming = vec![
+        UnknownRecord::retained(id("a"), 2, vec![1, 2], vec![id("prior").to_string()]),
+        UnknownRecord::retained(id("b"), 5, vec![3], vec![]),
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let mut expected_ir = prior.clone();
+    let mut expected_fidelity = SourceFidelity::default();
+    expected_fidelity
+        .attach_native_unknown_records(&mut expected_ir, "synthetic", incoming.clone(), &ctx)
+        .expect("plain attachment");
+
+    let mut actual_ir = prior;
+    let mut actual_fidelity = SourceFidelity::default();
+    actual_fidelity
+        .attach_native_unknown_records(&mut actual_ir, "synthetic", incoming, &ctx)
+        .expect("charged attachment");
+    assert_eq!(actual_ir, expected_ir);
+    assert_eq!(actual_fidelity, expected_fidelity);
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_retained_limit_atomically() {
+    let mut ir = CadIr::empty();
+    let mut fidelity = SourceFidelity::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let error = fidelity
+        .attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            vec![UnknownRecord::retained(id("a"), 0, vec![1], vec![])],
+            &ctx,
+        )
+        .expect_err("retained identity refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert_eq!(ir, CadIr::empty());
+    assert_eq!(fidelity, SourceFidelity::default());
+}
+
+#[test]
+fn native_unknown_identity_copy_refuses_one_byte_below_its_length() {
+    let identity = id("identity");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(identity.as_str().len()).expect("identity length") - 1;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let mut ir = CadIr::empty();
+    let mut fidelity = SourceFidelity::default();
+    let error = fidelity
+        .attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            vec![UnknownRecord::retained(identity, 0, vec![1], vec![])],
+            &ctx,
+        )
+        .expect_err("identity copy must be charged before allocation");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert_eq!(ir, CadIr::empty());
+    assert_eq!(fidelity, SourceFidelity::default());
+}
+
+fn charged_unknown_limit_error(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::CodecError {
+    let mut ir = CadIr::empty();
+    ir.set_native_unknowns(
+        "synthetic",
+        &[crate::NativeUnknownRecord {
+            id: id("prior"),
+            links: vec![
+                crate::ids::Identity::new(id("target").to_string()).expect("identity grammar")
+            ],
+        }],
+    )
+    .expect("prior native unknown");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+        .expect("test context");
+    SourceFidelity::default()
+        .attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            vec![UnknownRecord::retained(id("a"), 0, vec![1], vec![])],
+            &ctx,
+        )
+        .expect_err("native unknown budget refusal")
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(
+        charged_unknown_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_nesting_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    assert!(matches!(
+        charged_unknown_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(
+        charged_unknown_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
 }
 
 #[test]
@@ -198,6 +346,10 @@ fn complete_sidecar_admission_checks_inline_and_digest_extents() {
 
 #[test]
 fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let invalid_records = [
         UnknownRecord::retained(id("inline-overflow"), u64::MAX, vec![1], vec![]),
         UnknownRecord::unavailable(
@@ -219,7 +371,8 @@ fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
                         .attach_native_unknown_records(
                             &mut ir,
                             "synthetic",
-                            [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])],
+                            [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])].into(),
+                            &ctx,
                         )
                         .unwrap();
                 }
@@ -230,12 +383,16 @@ fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
                     invalid.clone(),
                 ];
                 let error = if attach {
-                    fidelity.attach_native_unknown_records(&mut ir, "synthetic", incoming)
+                    fidelity
+                        .attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx)
+                        .map_err(|error| error.to_string())
                 } else {
-                    fidelity.retain_unknown_records(SourceOwner::Root, incoming)
+                    fidelity
+                        .retain_unknown_records(SourceOwner::Root, incoming)
+                        .map_err(|error| error.to_string())
                 }
                 .unwrap_err();
-                assert!(error.to_string().contains(invalid.id().as_str()), "{error}");
+                assert!(error.contains(invalid.id().as_str()), "{error}");
                 assert_eq!(ir, before_ir);
                 assert_eq!(fidelity, before_fidelity);
             }
@@ -245,6 +402,10 @@ fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
 
 #[test]
 fn retention_and_attachment_refuse_duplicate_batches_without_mutation() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     for attach in [false, true] {
         for collide_with_existing in [false, true] {
             let mut ir = CadIr::empty();
@@ -253,7 +414,8 @@ fn retention_and_attachment_refuse_duplicate_batches_without_mutation() {
                 .attach_native_unknown_records(
                     &mut ir,
                     "synthetic",
-                    [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])],
+                    [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])].into(),
+                    &ctx,
                 )
                 .unwrap();
             let before_ir = ir.clone();
@@ -268,12 +430,16 @@ fn retention_and_attachment_refuse_duplicate_batches_without_mutation() {
                 UnknownRecord::retained(duplicate_id.clone(), 0, vec![2], vec![]),
             ];
             let error = if attach {
-                fidelity.attach_native_unknown_records(&mut ir, "synthetic", incoming)
+                fidelity
+                    .attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx)
+                    .map_err(|error| error.to_string())
             } else {
-                fidelity.retain_unknown_records(SourceOwner::Root, incoming)
+                fidelity
+                    .retain_unknown_records(SourceOwner::Root, incoming)
+                    .map_err(|error| error.to_string())
             }
             .unwrap_err();
-            assert!(error.to_string().contains(duplicate_id.as_str()), "{error}");
+            assert!(error.contains(duplicate_id.as_str()), "{error}");
             assert_eq!(fidelity, before_fidelity);
             assert_eq!(ir, before_ir);
         }
@@ -282,6 +448,10 @@ fn retention_and_attachment_refuse_duplicate_batches_without_mutation() {
 
 #[test]
 fn attachment_preserves_existing_records_and_the_root_owner() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let mut ir = CadIr::empty();
     let mut fidelity = SourceFidelity::default();
     for name in ["a", "b"] {
@@ -289,7 +459,8 @@ fn attachment_preserves_existing_records_and_the_root_owner() {
             .attach_native_unknown_records(
                 &mut ir,
                 "synthetic",
-                [UnknownRecord::retained(id(name), 0, vec![1], vec![])],
+                [UnknownRecord::retained(id(name), 0, vec![1], vec![])].into(),
+                &ctx,
             )
             .unwrap();
     }
@@ -328,6 +499,10 @@ fn attachment_preserves_existing_records_and_the_root_owner() {
 
 #[test]
 fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let mut ir = CadIr::empty();
     ir.native
         .namespace_mut("synthetic")
@@ -343,7 +518,8 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
         .attach_native_unknown_records(
             &mut ir,
             "synthetic",
-            [UnknownRecord::retained(id("new"), 0, vec![1], vec![])],
+            [UnknownRecord::retained(id("new"), 0, vec![1], vec![])].into(),
+            &ctx,
         )
         .unwrap_err();
     assert!(error.to_string().contains("string"), "{error}");

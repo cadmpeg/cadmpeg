@@ -41,7 +41,7 @@ impl Serialize for ParasolidEntity51Record {
             id: &self.id,
             stream_ordinal: self.stream_ordinal,
             xmt: self.xmt.into(),
-            flags: self.trailing_references.values().len() as u32,
+            flags: self.trailing_references.count(),
             sequence: self.sequence.get(),
             definition_xmt: self.definition_xmt,
             leading_references: self.leading_references,
@@ -60,7 +60,7 @@ impl From<ParasolidEntity51Record> for Entity51Wire {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
             xmt: value.xmt.into(),
-            flags: value.trailing_references.values().len() as u32,
+            flags: value.trailing_references.count(),
             sequence: value.sequence.get(),
             definition_xmt: value.definition_xmt,
             leading_references: value.leading_references,
@@ -74,7 +74,7 @@ impl TryFrom<Entity51Wire> for ParasolidEntity51Record {
     type Error = &'static str;
     fn try_from(wire: Entity51Wire) -> Result<Self, Self::Error> {
         let trailing_references = EntityReferences::new(wire.trailing_references)?;
-        if wire.flags != trailing_references.values().len() as u32 {
+        if wire.flags != trailing_references.count() {
             return Err("flags: must equal trailing_references length");
         }
         Ok(Self {
@@ -124,7 +124,7 @@ mod tests {
             if matches!(count, 1 | 32) {
                 assert_eq!(
                     decoded.unwrap().trailing_references.values().len(),
-                    count as usize
+                    cadmpeg_core::decode::index_from_u32(count)
                 );
             } else {
                 assert!(decoded

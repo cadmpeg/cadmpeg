@@ -6,6 +6,8 @@
 //! crate's `src/layout.rs` constants. Neither validates; both assume the table
 //! already passed `validate`.
 
+mod read_set;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
@@ -188,7 +190,7 @@ fn render_into(out: &mut String, file: &LayoutFile) -> std::fmt::Result {
                 }
                 RecordKind::Slot => {
                     rows.push((
-                        index as u64,
+                        cadmpeg_core::decode::u64_from_index(index),
                         format!(
                             "| {index} | `{}` | `{}` | {endian} | {src} | {meaning} |",
                             field.name, field.ty
@@ -355,8 +357,12 @@ fn fence_text(text: &str) -> String {
 }
 
 /// Turn one validated table into the checked-in `layout.rs` source.
-pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
-    emit_layout_source(file).map_err(|failure| match failure {
+pub(crate) fn emit_layout_rs(
+    file: &LayoutFile,
+    source_root: &std::path::Path,
+) -> Result<String, Vec<String>> {
+    let reads = read_set::layout_reads(source_root).map_err(|error| vec![error])?;
+    emit_layout_source(file, &reads).map_err(|failure| match failure {
         EmitFailure::Invalid(errors) => errors,
         EmitFailure::Format(error) => vec![error.to_string()],
     })
@@ -376,7 +382,7 @@ impl From<std::fmt::Error> for EmitFailure {
     }
 }
 
-fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
+fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<String, EmitFailure> {
     let mut errors = Vec::new();
     let mut omitted = Vec::new();
     let mut modules = String::new();
@@ -437,15 +443,20 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
             } else {
                 format!("`{}`", field.ty)
             };
-            writeln!(
-                fields_out,
-                "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
-                field.name, record.section
-            )?;
-            writeln!(
-                fields_out,
-                "    pub(crate) const {const_name}: usize = {offset};"
-            )?;
+            if reads.contains(&record.name, &const_name) {
+                writeln!(
+                    fields_out,
+                    "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
+                    field.name, record.section
+                )?;
+                if reads.test_only(&record.name, &const_name) {
+                    writeln!(fields_out, "    #[cfg(test)]")?;
+                }
+                writeln!(
+                    fields_out,
+                    "    pub(crate) const {const_name}: usize = {offset};"
+                )?;
+            }
             if let Some(raw) = &field.value {
                 let value_name = format!("{const_name}_VALUE");
                 if !seen.insert(value_name.clone()) {
@@ -459,18 +470,26 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
                 let width = type_width(&field.ty, &custom).ok().flatten();
                 match decode_field_value(raw, &field.ty, width) {
                     Ok(binding) => {
-                        writeln!(
-                            fields_out,
-                            "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
-                            field.name, field.ty, record.section
-                        )?;
-                        writeln!(fields_out, "    pub(crate) const {value_name}: {binding};")?;
+                        if reads.contains(&record.name, &value_name) {
+                            writeln!(
+                                fields_out,
+                                "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
+                                field.name, field.ty, record.section
+                            )?;
+                            if reads.test_only(&record.name, &value_name) {
+                                writeln!(fields_out, "    #[cfg(test)]")?;
+                            }
+                            writeln!(fields_out, "    pub(crate) const {value_name}: {binding};")?;
+                        }
                     }
                     Err(message) => errors.push(format!("{at}: {message}")),
                 }
             }
         }
 
+        if fields_out.is_empty() && !reads.contains(&record.name, "LEN") {
+            continue;
+        }
         writeln!(
             modules,
             "/// Byte offsets for the `{}` record.",
@@ -509,12 +528,15 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
             writeln!(modules, "/// ```")?;
         }
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
-        if let Some(size) = record.size {
+        if let Some(size) = record.size.filter(|_| reads.contains(&record.name, "LEN")) {
             writeln!(
                 modules,
                 "    /// Record length in bytes. Spec §{}.",
                 record.section
             )?;
+            if reads.test_only(&record.name, "LEN") {
+                writeln!(modules, "    #[cfg(test)]")?;
+            }
             writeln!(modules, "    pub(crate) const LEN: usize = {size};")?;
         }
         modules.push_str(&fields_out);
@@ -535,7 +557,9 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
         let Some(name) = token_const_name(&token.name) else {
             continue;
         };
-        token_consts.push((name, value, token));
+        if reads.contains("token", &name) {
+            token_consts.push((name, value, token));
+        }
     }
     if !token_consts.is_empty() {
         writeln!(token_mod, "/// Tag constants from the table inventory.")?;
@@ -546,6 +570,9 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
                 "    /// `{}` (`{}`). Spec §{}.",
                 token.name, token.tag, token.section
             )?;
+            if reads.test_only("token", name) {
+                writeln!(token_mod, "    #[cfg(test)]")?;
+            }
             match value {
                 TokenConst::Bytes(bytes) => {
                     writeln!(
@@ -587,11 +614,6 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
     writeln!(
         out,
         "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
-    )?;
-    writeln!(out)?;
-    writeln!(
-        out,
-        "#![allow(dead_code)] // Not every generated constant is referenced yet."
     )?;
     writeln!(out)?;
     if !omitted.is_empty() {
@@ -639,3 +661,77 @@ fn rustfmt_source(src: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::emit_layout_rs;
+    use crate::LayoutFile;
+
+    #[test]
+    fn layout_emission_filters_records_values_tokens_and_test_reads(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file: LayoutFile = toml::from_str(
+            r#"
+schema = 1
+format = "demo"
+spec = "demo.md"
+[[record]]
+name = "header"
+kind = "byte"
+section = "1"
+anchor = "header"
+size = 2
+[[record.field]]
+name = "magic"
+type = "u8"
+offset = 0
+value = 7
+source = "spec"
+anchor = "magic"
+[[record.field]]
+name = "unread"
+type = "u8"
+offset = 1
+source = "spec"
+anchor = "unread"
+[[record]]
+name = "unread_record"
+kind = "byte"
+section = "1"
+anchor = "unread record"
+size = 1
+[[record.field]]
+name = "value"
+type = "u8"
+offset = 0
+source = "spec"
+anchor = "value"
+[[token]]
+tag = "0x01"
+name = "used tag"
+note = "tag"
+section = "1"
+anchor = "tag"
+[[token]]
+tag = "0x02"
+name = "unused tag"
+note = "tag"
+section = "1"
+anchor = "tag"
+"#,
+        )?;
+        let temporary = tempfile::tempdir()?;
+        std::fs::write(temporary.path().join("lib.rs"), "use crate::layout::{header as h, token}; const M: u8 = h::MAGIC_VALUE; const T: u8 = token::USED_TAG; #[cfg(test)] mod tests { const L: usize = super::h::LEN; }")?;
+        let rendered =
+            emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
+        assert!(rendered.contains("pub(crate) const MAGIC_VALUE: u8 = 7;"));
+        assert!(rendered.contains("pub(crate) const USED_TAG: u8 = 1;"));
+        assert!(rendered.contains("#[cfg(test)]\n    pub(crate) const LEN: usize = 2;"));
+        assert!(!rendered.contains("const MAGIC:"));
+        assert!(!rendered.contains("UNREAD"));
+        assert!(!rendered.contains("mod unread_record"));
+        assert!(!rendered.contains("UNUSED_TAG"));
+        assert!(!rendered.contains("allow("));
+        Ok(())
+    }
+}

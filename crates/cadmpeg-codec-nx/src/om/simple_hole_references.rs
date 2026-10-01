@@ -3,6 +3,8 @@
 
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 pub(crate) const FIRST_PREFIX: [u8; 8] = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
 pub(crate) const SECOND_PREFIX: [u8; 8] = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
@@ -57,14 +59,16 @@ impl ReferencePair {
 
 /// Decode both pairs without discarding their tagged token encodings.
 pub(crate) fn simple_hole_repeated_scalar_lane_block_references(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<[ReferencePair; 2]> {
-    let scalars = super::simple_hole_repeated_scalar_lane(record)?;
+) -> Result<Option<[ReferencePair; 2]>, CodecError> {
+    let Some(scalars) = super::simple_hole_repeated_scalar_lane(ctx, record)? else {
+        return Ok(None);
+    };
     let [first, second] = scalars.last().witness_offsets;
-    Some([
-        ReferencePair::read(record, first, FIRST_PREFIX)?,
-        ReferencePair::read(record, second, SECOND_PREFIX)?,
-    ])
+    Ok(ReferencePair::read(record, first, FIRST_PREFIX)
+        .zip(ReferencePair::read(record, second, SECOND_PREFIX))
+        .map(|(first, second)| [first, second]))
 }
 
 #[cfg(test)]

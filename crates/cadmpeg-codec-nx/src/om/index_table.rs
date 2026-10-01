@@ -2,7 +2,8 @@
 //! Borrowed monotone OM indexes retain the bounds needed to enumerate records.
 
 use super::{EntityRecord, FixedEntityRecord};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::CodecError;
 
 /// Source-affine positions where adjacent little-endian words decrease.
 #[derive(Debug)]
@@ -12,20 +13,31 @@ pub(super) struct DescendingU32Edges<'a> {
 }
 
 impl<'a> DescendingU32Edges<'a> {
-    pub(super) fn new(bytes: &'a [u8]) -> Self {
+    pub(super) fn new(
+        ctx: &DecodeContext<'_>,
+        reservation: &mut ScopedReservation<'_>,
+        bytes: &'a [u8],
+    ) -> Result<Self, CodecError> {
         let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
-        for offset in 0..bytes.len().saturating_sub(7) {
+        for offset in bytes
+            .len()
+            .checked_sub(7)
+            .into_iter()
+            .flat_map(|last| 0..last)
+        {
             if View::u32_le_at(bytes, offset)
                 .zip(View::u32_le_at(bytes, offset + 4))
                 .is_some_and(|(current, next)| current > next)
             {
-                offsets_by_alignment[offset % 4].push(offset);
+                let offsets = &mut offsets_by_alignment[offset % 4];
+                ctx.reserve_scoped_vec(reservation, offsets, 1, "nx descending index edges")?;
+                offsets.push(offset);
             }
         }
-        Self {
+        Ok(Self {
             bytes,
             offsets_by_alignment,
-        }
+        })
     }
 
     fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
@@ -35,11 +47,12 @@ impl<'a> DescendingU32Edges<'a> {
         if end - start < 8 {
             return true;
         }
+        let Some(last_word) = end.checked_sub(4) else {
+            return false;
+        };
         let offsets = &self.offsets_by_alignment[start % 4];
         let first = offsets.partition_point(|offset| *offset < start);
-        offsets
-            .get(first)
-            .is_none_or(|offset| *offset >= end.saturating_sub(4))
+        offsets.get(first).is_none_or(|offset| *offset >= last_word)
     }
 
     fn records(&self, start: usize, count: usize, base: usize) -> Option<IndexRecords<'a>> {
@@ -51,8 +64,11 @@ impl<'a> DescendingU32Edges<'a> {
         if !self.is_nondecreasing(start, end) {
             return None;
         }
-        let first = base.checked_add(words.u32_le()? as usize)?;
-        let last = base.checked_add(View::u32_le_at(self.bytes, end - 4)? as usize)?;
+        let first = base.checked_add(cadmpeg_core::decode::index_from_u32(words.u32_le()?))?;
+        let last = base.checked_add(cadmpeg_core::decode::index_from_u32(View::u32_le_at(
+            self.bytes,
+            end - 4,
+        )?))?;
         let source = self.bytes.get(..last)?;
         Some(IndexRecords {
             source,
@@ -78,7 +94,7 @@ impl<'a> IndexRecords<'a> {
         let mut words = self.words;
         let mut start = self.first;
         std::iter::from_fn(move || {
-            let end = self.base + words.u32_le()? as usize;
+            let end = self.base + cadmpeg_core::decode::index_from_u32(words.u32_le()?);
             let record = EntityRecord {
                 offset: start,
                 bytes: &self.source[start..end],
@@ -143,7 +159,8 @@ impl<'a> FixedIndex<'a> {
         let ids_start = self.object_id_table_offset + 8;
         let ids = std::iter::from_fn(move || {
             let offset = ids_start + ids.position();
-            ids.u32_le().map(|value| (value, offset as u64))
+            ids.u32_le()
+                .map(|value| (value, cadmpeg_core::decode::u64_from_index(offset)))
         });
         self.records
             .records()
@@ -178,7 +195,7 @@ impl<'a> OffsetIndex<'a> {
             return None;
         }
         let control_start = records.first;
-        let control_end = records.words.u32_le()? as usize;
+        let control_end = cadmpeg_core::decode::index_from_u32(records.words.u32_le()?);
         let control = EntityRecord {
             offset: control_start,
             bytes: &records.source[control_start..control_end],
@@ -214,57 +231,72 @@ mod tests {
 
     #[test]
     fn fixed_index_pairs_ids_with_empty_and_nonempty_records() {
-        let mut bytes = Vec::new();
-        for word in [0u32, 32, 34, 34, 3, 0, 7, 9] {
-            bytes.extend_from_slice(&word.to_le_bytes());
-        }
-        bytes.extend_from_slice(&[0xaa, 0xbb]);
-        let edges = DescendingU32Edges::new(&bytes);
-        let index = FixedIndex::new(&edges, 0, 3, 0, 16).unwrap();
-        let records = index.records().collect::<Vec<_>>();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].object_id, (7, 24));
-        assert_eq!(records[0].bytes, &[0xaa, 0xbb]);
-        assert_eq!(records[1].object_id, (9, 28));
-        assert_eq!(records[1].offset, 34);
-        assert!(records[1].bytes.is_empty());
-        assert!(FixedIndex::new(&edges, 0, 3, 1, 16).is_none());
-        assert!(FixedIndex::new(&edges, 0, 3, 0, usize::MAX).is_none());
+        crate::test_support::with_decode_context(|ctx| {
+            let mut reservation = ctx.reserve_scoped(0, "test index edges").unwrap();
+            let mut bytes = Vec::new();
+            for word in [0u32, 32, 34, 34, 3, 0, 7, 9] {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+            bytes.extend_from_slice(&[0xaa, 0xbb]);
+            let edges = DescendingU32Edges::new(ctx, &mut reservation, &bytes).unwrap();
+            let index = FixedIndex::new(&edges, 0, 3, 0, 16).unwrap();
+            let records = index.records().collect::<Vec<_>>();
+            assert_eq!(records.len(), 2);
+            assert_eq!(records[0].object_id, (7, 24));
+            assert_eq!(records[0].bytes, &[0xaa, 0xbb]);
+            assert_eq!(records[1].object_id, (9, 28));
+            assert_eq!(records[1].offset, 34);
+            assert!(records[1].bytes.is_empty());
+            assert!(FixedIndex::new(&edges, 0, 3, 1, 16).is_none());
+            assert!(FixedIndex::new(&edges, 0, 3, 0, usize::MAX).is_none());
+        });
     }
 
     #[test]
     fn offset_index_retains_control_and_contiguous_storage() {
-        let mut bytes = Vec::new();
-        for word in [20u32, 22, 24, 24, 2] {
-            bytes.extend_from_slice(&word.to_le_bytes());
-        }
-        bytes.extend_from_slice(&[1, 2, 3, 4]);
-        let edges = DescendingU32Edges::new(&bytes);
-        let index = OffsetIndex::new(&edges, 0, 4, 16).unwrap();
-        assert_eq!(index.control().offset, 20);
-        assert_eq!(index.control().bytes, &[1, 2]);
-        assert_eq!(index.column_storage(), &[3, 4]);
-        let records = index.records().collect::<Vec<_>>();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].bytes, &[3, 4]);
-        assert!(records[1].bytes.is_empty());
-        assert!(OffsetIndex::new(&edges, 0, 4, 17).is_none());
-        bytes[8..12].copy_from_slice(&21u32.to_le_bytes());
-        assert!(OffsetIndex::new(&DescendingU32Edges::new(&bytes), 0, 4, 16).is_none());
+        crate::test_support::with_decode_context(|ctx| {
+            let mut reservation = ctx.reserve_scoped(0, "test index edges").unwrap();
+            let mut bytes = Vec::new();
+            for word in [20u32, 22, 24, 24, 2] {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+            bytes.extend_from_slice(&[1, 2, 3, 4]);
+            let edges = DescendingU32Edges::new(ctx, &mut reservation, &bytes).unwrap();
+            let index = OffsetIndex::new(&edges, 0, 4, 16).unwrap();
+            assert_eq!(index.control().offset, 20);
+            assert_eq!(index.control().bytes, &[1, 2]);
+            assert_eq!(index.column_storage(), &[3, 4]);
+            let records = index.records().collect::<Vec<_>>();
+            assert_eq!(records.len(), 2);
+            assert_eq!(records[0].bytes, &[3, 4]);
+            assert!(records[1].bytes.is_empty());
+            assert!(OffsetIndex::new(&edges, 0, 4, 17).is_none());
+            bytes[8..12].copy_from_slice(&21u32.to_le_bytes());
+            assert!(OffsetIndex::new(
+                &DescendingU32Edges::new(ctx, &mut reservation, &bytes).unwrap(),
+                0,
+                4,
+                16
+            )
+            .is_none());
+        });
     }
 
     #[test]
     fn om_index_monotone_cache_rejects_a_decrease_inside_a_candidate() {
-        let words = [10_u32, 20, 30, 25, 40];
-        let bytes = words
-            .into_iter()
-            .flat_map(u32::to_le_bytes)
-            .collect::<Vec<_>>();
-        let edges = super::DescendingU32Edges::new(&bytes);
+        crate::test_support::with_decode_context(|ctx| {
+            let mut reservation = ctx.reserve_scoped(0, "test index edges").unwrap();
+            let words = [10_u32, 20, 30, 25, 40];
+            let bytes = words
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect::<Vec<_>>();
+            let edges = super::DescendingU32Edges::new(ctx, &mut reservation, &bytes).unwrap();
 
-        assert!(edges.is_nondecreasing(0, 12));
-        assert!(!edges.is_nondecreasing(0, 16));
-        assert!(edges.is_nondecreasing(4, 12));
-        assert!(edges.is_nondecreasing(12, 20));
+            assert!(edges.is_nondecreasing(0, 12));
+            assert!(!edges.is_nondecreasing(0, 16));
+            assert!(edges.is_nondecreasing(4, 12));
+            assert!(edges.is_nondecreasing(12, 20));
+        });
     }
 }

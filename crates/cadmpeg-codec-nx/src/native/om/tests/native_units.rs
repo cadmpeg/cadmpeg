@@ -1,10 +1,10 @@
-use super::super::{evaluate_expression_graphs, Expression, ExpressionUnit};
+use super::super::{evaluate_expression_graphs, ExpressionUnit, ParameterFormula};
 
 #[test]
 fn graph_scopes_equal_names_by_native_unit_label() {
     let expression =
         |id: &str, name: &str, unit: ExpressionUnit, formula: &str, value: Option<f64>| {
-            Expression {
+            ParameterFormula {
                 id: id.into(),
                 owner: None,
                 declaration: None,
@@ -62,7 +62,10 @@ fn graph_scopes_equal_names_by_native_unit_label() {
         ),
     ];
 
-    evaluate_expression_graphs(&mut expressions);
+    crate::test_support::with_decode_context(|ctx| {
+        evaluate_expression_graphs(ctx, &mut expressions)
+    })
+    .unwrap();
 
     assert_eq!(
         expressions[1]

@@ -69,7 +69,7 @@ impl Serialize for ProteinRecord {
                 ProteinRecordState::Package,
                 Some(*directory_id),
                 Some(declared_len.get()),
-                u64::try_from(entries.len()).map_err(serde::ser::Error::custom)?,
+                cadmpeg_core::decode::u64_from_index(entries.len()),
                 None,
             ),
             Self::Malformed {
@@ -129,7 +129,7 @@ impl ProteinRecord {
 
 impl ProteinRecordWire {
     fn into_record(self, entries: Vec<ProteinEntryRecord>) -> Result<ProteinRecord, String> {
-        if self.entry_count != entries.len() as u64 {
+        if self.entry_count != cadmpeg_core::decode::u64_from_index(entries.len()) {
             return Err("Protein entry_count does not match its entry arena".into());
         }
         match self.state {

@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project exact Design assembly alignments into neutral joints.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocument, JointConnector, JointLimits, JointOperand, PairedJointKind,
 };
@@ -86,12 +90,12 @@ impl AssemblyScopeGeneration {
             744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
-            length if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => (
+            length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES + 11,
                 ])),
-            length if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64 => (
+            length if length == u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) => (
                 (class_tag == "383" && paired_class_tag == "258").then_some(Standard), Some((20, 8, 12)), None),
             _ => (None, None, None),
         };
@@ -142,7 +146,7 @@ pub(super) fn legacy_class_383_258_scope(
     class_tag: &str,
     paired_class_tag: &str,
 ) -> bool {
-    frame_length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
+    frame_length == u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN)
         && class_tag == "383"
         && paired_class_tag == "258"
 }
@@ -242,6 +246,7 @@ pub(crate) fn legacy_as_built_421_generation(
 
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
+    ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
@@ -251,13 +256,33 @@ pub(crate) fn project_assembly_joints(
         let Some(stream) = native_stream(&occurrence.id) else {
             continue;
         };
-        occurrences
-            .entry((
-                stream,
-                occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
-            ))
-            .and_modify(|candidate| *candidate = None)
-            .or_insert(Some(occurrence));
+        let source = occurrence.occurrence_guid.as_str();
+        let (reservation, key) = {
+            let mut reservation = ctx.reserve_scoped(0, "f3d assembly occurrence key")?;
+            let mut key =
+                ctx.copy_scoped_text(source, &mut reservation, "f3d assembly occurrence key")?;
+            key.make_ascii_lowercase();
+            (Some(reservation), key)
+        };
+        let key = (stream, key);
+        ctx.admit_btree_entry(&occurrences, &key, "f3d assembly occurrence map entry")?;
+        match occurrences.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                {
+                    ctx.charge_retained(
+                        u64::try_from(source.len()).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d assembly occurrence key length", 0, 1)
+                        })?,
+                        "f3d assembly occurrence key",
+                    )?;
+                }
+                entry.insert(Some(occurrence));
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+        }
+        drop(reservation);
     }
     let mut joints = BTreeMap::new();
     for scope in scopes {
@@ -279,24 +304,27 @@ pub(crate) fn project_assembly_joints(
                 carriers
                     .frames(solved_frame)
                     .map_err(cadmpeg_core::CodecError::NotImplemented)?,
-                carriers.selections().map(|selection| {
-                    JointOperand::root(
-                        crate::ids::neutral_assembly_legacy_object_id(selection),
-                        Vec::new(),
-                    )
-                }),
+                {
+                    let [first, second] = carriers.selections().map(|selection| {
+                        super::identity::neutral_assembly_legacy_object_id(ctx, selection)
+                            .map(|id| JointOperand::root(id, Vec::new()))
+                    });
+                    [first?, second?]
+                },
                 limits.as_ref(),
             ),
             Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(
                 operands,
             )) => {
                 let Some(projected) = project_qualified_operands(
+                    ctx,
                     operands.each_ref().map(|operand| &operand.qualifier),
                     stream,
                     &occurrences,
                     scopes,
                     features,
-                ) else {
+                )?
+                else {
                     continue;
                 };
                 (
@@ -322,7 +350,7 @@ pub(crate) fn project_assembly_joints(
             }
             None => (None, None),
         };
-        let id = crate::ids::neutral_assembly_joint_id(scope);
+        let id = super::identity::neutral_assembly_joint_id(ctx, scope)?;
         let [first_operand, second_operand] = operands;
         let first_frame = super::components::neutral_transform(frames[0].transform)?;
         let second_frame = super::components::neutral_transform(frames[1].transform)?;
@@ -334,7 +362,11 @@ pub(crate) fn project_assembly_joints(
             })
         });
         let translation_offset = [x?, y?, z?];
-        joints.entry(id.as_str().to_owned()).or_insert_with(|| {
+        if !joints.contains_key(id.as_str()) {
+            {}
+            let key = copy_assembly_text(ctx, id.as_str(), false)?;
+            ctx.admit_btree_entry(&joints, &key, "f3d assembly joint map entry")?;
+            let native_ref = copy_assembly_text(ctx, &scope.id, false)?;
             let mut joint = AssemblyJoint::paired(
                 id,
                 PairedJointKind::Fixed {
@@ -357,110 +389,196 @@ pub(crate) fn project_assembly_joints(
                 ],
                 None,
             );
-            joint.native_ref = Some(scope.id.clone());
-            joint
-        });
+            joint.native_ref = Some(native_ref);
+            joints.insert(key, joint);
+        }
     }
-    Ok(joints.into_values().collect())
+    let mut projected = Vec::new();
+    {
+        ctx.reserve_vec(&mut projected, joints.len(), "f3d assembly joint output")?;
+    }
+    projected.extend(joints.into_values());
+    Ok(projected)
 }
 
 fn project_qualified_operands(
+    ctx: &DecodeContext<'_>,
     qualifiers: [&DesignAssemblyOperandQualifier; 2],
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     features: &[Feature],
-) -> Option<[JointOperand; 2]> {
-    let projected = qualifiers.map(|qualifier| match qualifier {
-        DesignAssemblyOperandQualifier::OccurrencePath { path } => {
-            let root_guid = &path.occurrence_guids().first()?.value;
-            let occurrence = occurrences
-                .get(&(stream, root_guid.as_str().to_ascii_lowercase()))
-                .copied()
-                .flatten();
-            if occurrence.is_none() && !matches!(path.class_tag().as_str(), "330" | "386") {
-                return None;
+) -> Result<Option<[JointOperand; 2]>, CodecError> {
+    let project =
+        |qualifier: &DesignAssemblyOperandQualifier| -> Result<Option<JointOperand>, CodecError> {
+            match qualifier {
+                DesignAssemblyOperandQualifier::OccurrencePath { path } => {
+                    let Some(root_guid) = path.occurrence_guids().first().map(|guid| &guid.value)
+                    else {
+                        return Ok(None);
+                    };
+                    let (lookup_reservation, lookup_guid) = {
+                        let source = root_guid.as_str();
+                        let mut reservation =
+                            ctx.reserve_scoped(0, "f3d assembly occurrence lookup")?;
+                        let mut key = ctx.copy_scoped_text(
+                            source,
+                            &mut reservation,
+                            "f3d assembly occurrence lookup",
+                        )?;
+                        key.make_ascii_lowercase();
+                        (Some(reservation), key)
+                    };
+                    let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
+                    drop(lookup_reservation);
+                    if occurrence.is_none() && !matches!(path.class_tag().as_str(), "330" | "386") {
+                        return Ok(None);
+                    }
+                    let object = copy_assembly_text(ctx, root_guid.as_str(), true)?;
+                    let subelement_guids = &path.occurrence_guids()[1..];
+                    {}
+                    let mut subelements = Vec::new();
+                    {
+                        ctx.reserve_vec(
+                            &mut subelements,
+                            subelement_guids.len(),
+                            "f3d assembly path subelements",
+                        )?;
+                    }
+                    for guid in subelement_guids {
+                        subelements.push(copy_assembly_text(ctx, guid.value.as_str(), true)?);
+                    }
+                    Ok(Some(match occurrence {
+                        Some(_) => JointOperand::occurrence(
+                            crate::ids::neutral_component_occurrence_id(root_guid),
+                            object,
+                            subelements,
+                        ),
+                        None => {
+                            let Some(identity_guid) = path.identity_guids().first() else {
+                                return Ok(None);
+                            };
+                            JointOperand::external(
+                                ExternalDocument::document_id(copy_assembly_text(
+                                    ctx,
+                                    identity_guid.value.as_str(),
+                                    false,
+                                )?),
+                                object,
+                                subelements,
+                            )
+                        }
+                    }))
+                }
+                DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
+                    DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                        component_insert_scope_record_index,
+                        selectors,
+                        ..
+                    } => {
+                        let Some(target_scope) = unique_scope(
+                            scopes,
+                            stream,
+                            *component_insert_scope_record_index,
+                            &crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+                        ) else {
+                            return Ok(None);
+                        };
+                        let Some(feature) = unique_feature(features, &target_scope.id) else {
+                            return Ok(None);
+                        };
+                        let FeatureDefinition::Operation(FeatureOperation::InsertComponent {
+                            occurrence,
+                        }) = feature.evaluation.definition()
+                        else {
+                            return Ok(None);
+                        };
+                        Ok(Some(JointOperand::occurrence(
+                            OccurrenceId::mint(copy_assembly_text(
+                                ctx,
+                                occurrence.as_str(),
+                                false,
+                            )?)
+                            .map_err(|error| {
+                                crate::design::text::malformed_design(ctx, format_args!("{error}"))
+                            })?,
+                            super::identity::neutral_assembly_axial_object_id(ctx, &selectors[0])?,
+                            Vec::new(),
+                        )))
+                    }
+                    DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                        scope_record_index,
+                    } => project_joint_origin_operand(
+                        ctx,
+                        *scope_record_index,
+                        stream,
+                        scopes,
+                        features,
+                    ),
+                },
+                DesignAssemblyOperandQualifier::JointOrigin {
+                    scope_record_index, ..
+                } => {
+                    project_joint_origin_operand(ctx, *scope_record_index, stream, scopes, features)
+                }
             }
-            let object = root_guid.as_str().to_ascii_lowercase();
-            let subelements = path.occurrence_guids()[1..]
-                .iter()
-                .map(|guid| guid.value.as_str().to_ascii_lowercase())
-                .collect();
-            Some(match occurrence {
-                Some(_) => JointOperand::occurrence(
-                    crate::ids::neutral_component_occurrence_id(root_guid),
-                    object,
-                    subelements,
-                ),
-                None => JointOperand::external(
-                    ExternalDocument::document_id(path.identity_guids().first()?.value.clone()),
-                    object,
-                    subelements,
-                ),
-            })
-        }
-        DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
-            DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                component_insert_scope_record_index,
-                selectors,
-                ..
-            } => {
-                let target_scope = unique_scope(
-                    scopes,
-                    stream,
-                    *component_insert_scope_record_index,
-                    &crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
-                )?;
-                let feature = unique_feature(features, &target_scope.id)?;
-                let FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence }) =
-                    feature.evaluation.definition()
-                else {
-                    return None;
-                };
-                Some(JointOperand::occurrence(
-                    occurrence.clone(),
-                    crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
-                    Vec::new(),
-                ))
-            }
-            DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index } => {
-                project_joint_origin_operand(*scope_record_index, stream, scopes, features)
-            }
-        },
-        DesignAssemblyOperandQualifier::JointOrigin {
-            scope_record_index, ..
-        } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
-    });
-    let [first, second] = projected;
-    Some([first?, second?])
+        };
+    let Some(first) = project(qualifiers[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = project(qualifiers[1])? else {
+        return Ok(None);
+    };
+    Ok(Some([first, second]))
+}
+
+fn copy_assembly_text(
+    ctx: &DecodeContext<'_>,
+    source: &str,
+    ascii_lowercase: bool,
+) -> Result<String, CodecError> {
+    let operation = "f3d assembly operand text";
+
+    let mut text = ctx.retained_string(source.len(), operation)?;
+    for character in source.chars() {
+        text.push(if ascii_lowercase {
+            character.to_ascii_lowercase()
+        } else {
+            character
+        });
+    }
+    Ok(text)
 }
 
 fn project_joint_origin_operand(
+    ctx: &DecodeContext<'_>,
     scope_record_index: u32,
     stream: &str,
     scopes: &[DesignParameterScope],
     features: &[Feature],
-) -> Option<JointOperand> {
-    let target_scope = unique_scope(
+) -> Result<Option<JointOperand>, CodecError> {
+    let Some(target_scope) = unique_scope(
         scopes,
         stream,
         scope_record_index,
         &crate::records::feature::scope::DesignFeatureKind::JointOrigin,
-    )?;
+    ) else {
+        return Ok(None);
+    };
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
         ) {
-            return None;
+            return Ok(None);
         }
     } else if target_scope.joint_origin_transform().is_none() {
-        return None;
+        return Ok(None);
     }
-    Some(JointOperand::root(
-        crate::ids::neutral_feature_id(target_scope).as_str(),
+    Ok(Some(JointOperand::root(
+        super::identity::neutral_feature_id(ctx, target_scope)?.into_string(),
         Vec::new(),
-    ))
+    )))
 }
 
 fn unique_scope<'a>(
@@ -488,9 +606,15 @@ fn unique_feature<'a>(features: &'a [Feature], native_ref: &str) -> Option<&'a F
 
 #[cfg(test)]
 mod tests {
-    use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
+    use cadmpeg_core::decode::u64_from_index;
+
+    use crate::records::feature::assembly::{
+        DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
+    };
     use std::collections::BTreeMap;
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -502,6 +626,135 @@ mod tests {
         },
         scope::DesignParameterScope,
     };
+
+    fn qualified_occurrence_path(
+        class_tag: &str,
+        occurrence_count: usize,
+        identity_count: usize,
+    ) -> DesignAssemblyOperandQualifier {
+        let tag = |value: &str| {
+            crate::records::references::DesignClassTag::try_from(value.to_owned()).unwrap()
+        };
+        let guid = |index: usize| {
+            crate::records::mesh::DesignRelaxedGuidText::try_from(format!(
+                "{index:08x}-0000-4000-8000-000000000000"
+            ))
+            .unwrap()
+        };
+        let occurrence_guids = (0..occurrence_count)
+            .map(|index| crate::records::identity::Located {
+                value: guid(index),
+                offset: 100 + u64::try_from(index).unwrap(),
+            })
+            .collect();
+        let identity_guids = (0..identity_count)
+            .map(|index| crate::records::identity::Located {
+                value: guid(index + 100),
+                offset: 200 + u64::try_from(index).unwrap(),
+            })
+            .collect();
+        let link = DesignAssemblyOperandPathLink {
+            locator_reference_offset: 1,
+            locator_record_index: 1,
+            locator_class_tag: tag("300"),
+            locator_byte_offset: 2,
+            locator_scope_reference_offset: 3,
+            wrapper_record_index: 2,
+            wrapper_reference_offset: 4,
+            wrapper_class_tag: tag("301"),
+            wrapper_byte_offset: 5,
+            path_reference_offset: 6,
+        };
+        DesignAssemblyOperandQualifier::OccurrencePath {
+            path: DesignAssemblyOperandPath::try_new(
+                link,
+                3,
+                tag(class_tag),
+                10,
+                occurrence_guids,
+                identity_guids,
+            )
+            .unwrap(),
+        }
+    }
+
+    fn qualified_path_refusal(
+        qualifier: &DesignAssemblyOperandQualifier,
+        retained_limit: u64,
+        collection_limit: u64,
+        materialized_limit: u64,
+    ) -> cadmpeg_core::CodecError {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = retained_limit;
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_materialized_bytes = materialized_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::project_qualified_operands(
+            &ctx,
+            [qualifier, qualifier],
+            "design",
+            &BTreeMap::new(),
+            &[],
+            &[],
+        )
+        .expect_err("qualified path must refuse the requested limit")
+    }
+
+    #[test]
+    fn assembly_occurrence_lookup_refuses_materialized_limit() {
+        let qualifier = qualified_occurrence_path("330", 1, 4);
+        let error = qualified_path_refusal(&qualifier, 100, 2, 35);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "f3d assembly occurrence lookup")
+        );
+    }
+
+    #[test]
+    fn assembly_path_object_refuses_retained_limit() {
+        let qualifier = qualified_occurrence_path("330", 2, 4);
+        let error = qualified_path_refusal(&qualifier, 35, 2, u64::MAX);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly operand text")
+        );
+    }
+
+    #[test]
+    fn assembly_path_subelements_refuse_collection_limit() {
+        let qualifier = qualified_occurrence_path("330", 2, 4);
+        let error = qualified_path_refusal(&qualifier, 100, 0, u64::MAX);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d assembly path subelements")
+        );
+    }
+
+    #[test]
+    fn assembly_path_subelement_text_refuses_retained_limit() {
+        let qualifier = qualified_occurrence_path("330", 2, 4);
+        let error = qualified_path_refusal(&qualifier, 71, 2, u64::MAX);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly operand text")
+        );
+    }
+
+    #[test]
+    fn assembly_external_document_refuses_retained_limit() {
+        let qualifier = qualified_occurrence_path("330", 1, 4);
+        let error = qualified_path_refusal(&qualifier, 71, 2, u64::MAX);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly operand text")
+        );
+    }
 
     fn selector() -> DesignAssemblyAxialSelectorIdentity {
         DesignAssemblyAxialSelectorIdentity {
@@ -606,6 +859,226 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         }
+    }
+
+    fn one_native_occurrence(
+    ) -> crate::records::feature::assembly_features::DesignComponentOccurrence {
+        crate::records::feature::assembly_features::DesignComponentOccurrence::try_new(
+            crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
+                id: "f3d:Design/BulkStream.dat:design-component-occurrence#1".into(),
+                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                    .unwrap(),
+                record_index: 1,
+                byte_offset: 0,
+                component_record_index: 1,
+                component_guid: "11111111-2222-4333-8444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                occurrence_guid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn assembly_occurrence_map_refuses_collection_limit() {
+        let occurrence = one_native_occurrence();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
+            .expect_err("one occurrence needs one map entry");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d assembly occurrence map entry"
+        ));
+    }
+
+    #[test]
+    fn assembly_occurrence_key_refuses_materialized_limit() {
+        let occurrence = one_native_occurrence();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_materialized_bytes = 35;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
+            .expect_err("one occurrence key needs 36 temporary bytes");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "f3d assembly occurrence key")
+        );
+    }
+
+    #[test]
+    fn assembly_occurrence_key_refuses_retained_limit() {
+        let occurrence = one_native_occurrence();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 35;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
+            .expect_err("one occurrence key needs 36 retained bytes");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly occurrence key")
+        );
+    }
+
+    fn one_joint_scopes() -> Vec<DesignParameterScope> {
+        use crate::records::feature::{
+            assembly::{
+                DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+            },
+            scope::{DesignFeatureKind, DesignScopePayload},
+        };
+        let mut scopes = Vec::new();
+        for index in [1, 2] {
+            let mut scope = DesignParameterScope::empty(
+                &format!("f3d:synthetic:design-parameter-scope#{index}"),
+                DesignFeatureKind::JointOrigin,
+                index,
+            );
+            scope.with_joint_origin_transform(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            );
+            scopes.push(scope);
+        }
+        let frames = [1, 2].map(|index| DesignAssemblyOperandFrame {
+            reference_record_index: index,
+            reference_offset: 0,
+            transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            transform_offset: 0,
+        });
+        let qualifiers =
+            [1, 2].map(
+                |scope_record_index| DesignAssemblyOperandQualifier::AxialTarget {
+                    target: DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                        scope_record_index,
+                    },
+                },
+            );
+        let mut joint_scope = DesignParameterScope::empty(
+            "f3d:synthetic:design-parameter-scope#3",
+            DesignFeatureKind::Assemble,
+            3,
+        );
+        joint_scope
+            .try_edit(|draft| {
+                draft.payload = DesignScopePayload::Assemble(Some(
+                    DesignAssemblyAlignment::try_new(
+                        0.0,
+                        [0.0; 3],
+                        Vec::new(),
+                        Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+                    )
+                    .unwrap(),
+                ));
+            })
+            .unwrap();
+        scopes.push(joint_scope);
+        scopes
+    }
+
+    #[test]
+    fn assembly_joint_map_refuses_collection_limit() {
+        let scopes = one_joint_scopes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
+            .expect_err("one projected joint needs one map entry");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d assembly joint map entry"
+        ));
+    }
+
+    #[test]
+    fn assembly_joint_key_refuses_retained_limit() {
+        let scopes = one_joint_scopes();
+        let identifier_bytes = scopes[..2]
+            .iter()
+            .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
+            .sum::<usize>()
+            + crate::test_support::with_decode_context(|ctx| {
+                crate::ids::neutral_assembly_joint_id(ctx, &scopes[2])
+            })
+            .expect("joint identifier")
+            .as_str()
+            .len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(identifier_bytes).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
+            .expect_err("the joint map key needs retained text");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly operand text")
+        );
+    }
+
+    #[test]
+    fn assembly_joint_native_reference_refuses_retained_limit() {
+        let scopes = one_joint_scopes();
+        let key_length = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::neutral_assembly_joint_id(ctx, &scopes[2])
+        })
+        .expect("joint identifier")
+        .as_str()
+        .len();
+        let identifier_bytes = scopes[..2]
+            .iter()
+            .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
+            .sum::<usize>()
+            + crate::test_support::with_decode_context(|ctx| {
+                crate::ids::neutral_assembly_joint_id(ctx, &scopes[2])
+            })
+            .expect("joint identifier")
+            .as_str()
+            .len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(identifier_bytes + key_length).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
+            .expect_err("the native reference follows the retained joint key");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly operand text")
+        );
+    }
+
+    #[test]
+    fn assembly_joint_output_refuses_collection_limit() {
+        let scopes = one_joint_scopes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
+            .expect_err("the output vector needs one item after its map entry");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d assembly joint output"
+        ));
     }
 
     #[test]
@@ -810,12 +1283,12 @@ mod tests {
     fn alignment_lane_bounds_require_the_exact_frame_and_owner_count() {
         for (frame_length, owner_count, expected) in [
             (
-                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN),
                 28,
                 (4, 8),
             ),
             (
-                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
                 20,
                 (8, 12),
             ),
@@ -848,7 +1321,7 @@ mod tests {
             for owner_count in [12, 14, 16, 20, 22, 36, 38, 44, 60] {
                 assert_eq!(
                     super::AssemblyScopeGeneration::new(
-                        800 + owner_count as u64,
+                        800 + u64_from_index(owner_count),
                         class_tag,
                         paired_class_tag
                     )
@@ -859,7 +1332,7 @@ mod tests {
             for owner_count in [0, 10, 13, 15] {
                 assert_eq!(
                     super::AssemblyScopeGeneration::new(
-                        800 + owner_count as u64,
+                        800 + u64_from_index(owner_count),
                         class_tag,
                         paired_class_tag
                     )
@@ -876,7 +1349,7 @@ mod tests {
 
     #[test]
     fn operand_path_locator_offsets_follow_the_frame_layout() {
-        let class_388_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+        let class_388_length = u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN);
         assert_eq!(
             super::AssemblyScopeGeneration::new(class_388_length, "388", "266")
                 .operand_path_locator_offsets(),
@@ -925,7 +1398,7 @@ mod tests {
     fn operand_frames_are_scoped_by_class_pair() {
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN),
                 "388",
                 "266"
             )
@@ -934,7 +1407,7 @@ mod tests {
         );
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN),
                 "388",
                 "258"
             )
@@ -943,7 +1416,7 @@ mod tests {
         );
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
                 "383",
                 "258"
             )
@@ -952,7 +1425,7 @@ mod tests {
         );
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
                 "383",
                 "261"
             )
@@ -960,12 +1433,12 @@ mod tests {
             None
         );
         assert!(super::legacy_class_383_258_scope(
-            crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+            u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
             "383",
             "258"
         ));
         assert!(!super::legacy_class_383_258_scope(
-            crate::layout::assembly_class_383_258_scope_1011::LEN as u64 - 1,
+            u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) - 1,
             "383",
             "258"
         ));
@@ -1001,104 +1474,111 @@ mod tests {
 
     #[test]
     fn axial_operands_project_component_and_document_root_qualifiers() {
-        let component_scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:component-insert#200",
-            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
-            200,
-        );
-        let origin_scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:joint-origin#80",
-            crate::records::feature::scope::DesignFeatureKind::JointOrigin,
-            80,
-        );
-        let mut origin_scope = origin_scope;
-        origin_scope.with_joint_origin_transform(
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]
-            .try_into()
-            .unwrap(),
-        );
-        let occurrence =
-            OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
-        let features = [
-            feature(
-                &component_scope.id,
-                FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-                    occurrence: occurrence.clone(),
-                }),
-            ),
-            feature(
-                &origin_scope.id,
-                FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
-                    frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        Vector3::new(0.0, 1.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            let component_scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:component-insert#200",
+                crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+                200,
+            );
+            let origin_scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:joint-origin#80",
+                crate::records::feature::scope::DesignFeatureKind::JointOrigin,
+                80,
+            );
+            let mut origin_scope = origin_scope;
+            origin_scope.with_joint_origin_transform(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+                .try_into()
+                .unwrap(),
+            );
+            let occurrence =
+                OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
+            let features = [
+                feature(
+                    &component_scope.id,
+                    FeatureDefinition::Operation(FeatureOperation::InsertComponent {
+                        occurrence: occurrence.clone(),
+                    }),
+                ),
+                feature(
+                    &origin_scope.id,
+                    FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
+                        frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            Vector3::new(0.0, 1.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                        )
+                        .unwrap(),
+                    }),
+                ),
+            ];
+            let targets = [
+                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                    component_insert_scope_record_index: 200,
+                    construction_record_index: 70,
+                    construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                        "305".to_owned(),
                     )
                     .unwrap(),
-                }),
-            ),
-        ];
-        let targets = [
-            DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                component_insert_scope_record_index: 200,
-                construction_record_index: 70,
-                construction_class_tag: crate::records::references::DesignClassTag::try_from(
-                    "305".to_owned(),
-                )
-                .unwrap(),
-                construction_byte_offset: 1_300,
-                construction_transform_offset: 1_348,
-                axis_record_index_offsets: [1_493, 1_509],
-                construction_paired_class_tag:
-                    crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
-                construction_paired_byte_offset: 1_680,
-                selectors: Box::new([selector(), second_selector()]),
-            },
-            DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
-                scope_record_index: 80,
-            },
-        ];
+                    construction_byte_offset: 1_300,
+                    construction_transform_offset: 1_348,
+                    axis_record_index_offsets: [1_493, 1_509],
+                    construction_paired_class_tag:
+                        crate::records::references::DesignClassTag::try_from("261".to_owned())
+                            .unwrap(),
+                    construction_paired_byte_offset: 1_680,
+                    selectors: Box::new([selector(), second_selector()]),
+                },
+                DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                    scope_record_index: 80,
+                },
+            ];
 
-        let qualifiers =
-            targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
-        let scopes = vec![component_scope, origin_scope.clone()];
-        let operands = super::project_qualified_operands(
-            qualifiers.each_ref(),
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &scopes,
-            &features,
-        )
-        .expect("complete axial operands");
+            let qualifiers =
+                targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
+            let scopes = vec![component_scope, origin_scope.clone()];
+            let operands = super::project_qualified_operands(
+                decode_ctx,
+                qualifiers.each_ref(),
+                "f3d:Design/BulkStream.dat",
+                &BTreeMap::new(),
+                &scopes,
+                &features,
+            )
+            .unwrap()
+            .expect("complete axial operands");
 
-        assert_eq!(
-            operands[0].container,
-            cadmpeg_ir::OperandContainer::Occurrence { occurrence }
-        );
-        assert!(operands[0]
-            .object
-            .starts_with("f3d:feature-input:connector#"));
-        assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root {});
-        assert_eq!(
-            operands[1].object,
-            crate::ids::neutral_feature_id(&origin_scope).as_str()
-        );
+            assert_eq!(
+                operands[0].container,
+                cadmpeg_ir::OperandContainer::Occurrence { occurrence }
+            );
+            assert!(operands[0]
+                .object
+                .starts_with("f3d:feature-input:connector#"));
+            assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root {});
+            assert_eq!(
+                operands[1].object,
+                crate::ids::neutral_feature_id(&origin_scope).as_str()
+            );
 
-        let unlisted_operands = super::project_qualified_operands(
-            qualifiers.each_ref(),
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &scopes,
-            &features[..1],
-        )
-        .expect("frame-resolved unlisted root JointOrigin");
-        assert_eq!(unlisted_operands[1].object, operands[1].object);
+            let unlisted_operands = super::project_qualified_operands(
+                decode_ctx,
+                qualifiers.each_ref(),
+                "f3d:Design/BulkStream.dat",
+                &BTreeMap::new(),
+                &scopes,
+                &features[..1],
+            )
+            .unwrap()
+            .expect("frame-resolved unlisted root JointOrigin");
+            assert_eq!(unlisted_operands[1].object, operands[1].object);
+        });
     }
 
     #[test]
@@ -1135,6 +1615,174 @@ mod tests {
         assert_ne!(
             crate::ids::neutral_assembly_axial_object_id(&first),
             crate::ids::neutral_assembly_axial_object_id(&second)
+        );
+    }
+
+    #[test]
+    fn axial_occurrence_identifier_copy_refuses_retained_limit() {
+        let scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:component-insert#200",
+            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+            200,
+        );
+        let occurrence = OccurrenceId::mint("test:model:occurrence#component").unwrap();
+        let feature = feature(
+            &scope.id,
+            FeatureDefinition::Operation(FeatureOperation::InsertComponent {
+                occurrence: occurrence.clone(),
+            }),
+        );
+        let qualifier = DesignAssemblyOperandQualifier::AxialTarget {
+            target: DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                component_insert_scope_record_index: 200,
+                construction_record_index: 70,
+                construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "305".to_owned(),
+                )
+                .unwrap(),
+                construction_byte_offset: 1_300,
+                construction_transform_offset: 1_348,
+                axis_record_index_offsets: [1_493, 1_509],
+                construction_paired_class_tag:
+                    crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
+                construction_paired_byte_offset: 1_680,
+                selectors: Box::new([selector(), second_selector()]),
+            },
+        };
+        let qualifiers = [qualifier.clone(), qualifier];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(occurrence.as_str().len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::project_qualified_operands(
+            &ctx,
+            qualifiers.each_ref(),
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &[scope],
+            &[feature],
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d assembly operand text"
+        ));
+    }
+    fn assert_connector_identity(
+        expected: &str,
+        operation: &'static str,
+        construct: impl Fn(&DecodeContext<'_>) -> Result<String, CodecError>,
+    ) {
+        let length = u64::try_from(expected.len()).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = length - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(construct(&ctx), Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == operation && failure.used == 0 && failure.additional == length)
+        );
+        policy.limits.max_retained_bytes = length;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(construct(&ctx).unwrap(), expected);
+    }
+
+    #[test]
+    fn assembly_axial_connector_identity_refuses_before_allocation_and_preserves_bytes() {
+        let mut identity = selector();
+        identity.external_link_name = "link:#% \u{2003}ç".to_owned();
+        for version in [
+            None,
+            Some(crate::records::feature::combine::DesignExternalVersion {
+                property_key: crate::records::identity::Located {
+                    value: "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF"
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                    offset: 0,
+                },
+                version_urn: crate::records::identity::Located {
+                    value: "urn:#% \u{a0}ç".to_owned(),
+                    offset: 0,
+                },
+            }),
+        ] {
+            identity.external_version = version;
+            assert_connector_identity(
+                &crate::ids::neutral_assembly_axial_object_id(&identity),
+                "f3d assembly axial connector identifier",
+                |ctx| crate::design::identity::neutral_assembly_axial_object_id(ctx, &identity),
+            );
+        }
+    }
+
+    #[test]
+    fn assembly_legacy_connector_identity_refuses_before_allocation_and_preserves_bytes() {
+        let selection = crate::records::feature::assembly::DesignAssemblyLegacySelection {
+            record_index: u32::MAX,
+            byte_offset: 0,
+            class_tag: "307".to_owned().try_into().unwrap(),
+            asset_id: "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            asset_id_offset: 0,
+            context_id: "BCDEFABC-DEFA-4BCD-8EFA-BCDEFABCDEFA"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            context_id_offset: 0,
+            recipe_record_index: u32::MAX,
+            recipe_record_byte_offset: 0,
+            recipe_id: "Recipe:#% \u{2003}Ç".to_owned(),
+            recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
+            recipe_references: Vec::new(),
+            next_byte_offset: 0,
+        };
+        assert_connector_identity(
+            &crate::ids::neutral_assembly_legacy_object_id(&selection),
+            "f3d assembly legacy connector identifier",
+            |ctx| crate::design::identity::neutral_assembly_legacy_object_id(ctx, &selection),
+        );
+    }
+
+    #[test]
+    fn joint_origin_operand_identity_propagates_retained_refusal() {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:joint-origin#80",
+            crate::records::feature::scope::DesignFeatureKind::JointOrigin,
+            80,
+        );
+        scope.with_joint_origin_transform(
+            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes =
+            u64::try_from(crate::ids::neutral_feature_id(&scope).as_str().len()).unwrap() - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scopes = [scope];
+        let qualifiers = [
+            DesignAssemblyOperandQualifier::JointOrigin {
+                scope_record_index: 80,
+                class_tag: "300".to_owned().try_into().unwrap(),
+                byte_offset: 0,
+                paired_class_tag: "260".to_owned().try_into().unwrap(),
+                paired_byte_offset: 0,
+            },
+            DesignAssemblyOperandQualifier::AxialTarget {
+                target: DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                    scope_record_index: 80,
+                },
+            },
+        ];
+        assert!(
+            matches!(super::project_qualified_operands(&ctx, qualifiers.each_ref(),
+            "f3d:Design/BulkStream.dat", &BTreeMap::new(), &scopes, &[]),
+            Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d feature identifier")
         );
     }
 }

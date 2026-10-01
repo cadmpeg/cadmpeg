@@ -2,6 +2,8 @@
 //! Model-space reference entities from `MdlRefInfo`.
 
 use cadmpeg_core::bytes::find_in;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
@@ -154,7 +156,10 @@ pub(crate) struct ReferenceEllipse {
 
 /// Derive every ellipse whose conic frame, radii, and endpoints independently
 /// satisfy one model-space equation.
-pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
+pub(crate) fn ellipse_carriers(
+    ctx: &DecodeContext<'_>,
+    conics: &[ReferenceConic],
+) -> Result<Vec<ReferenceEllipse>, CodecError> {
     let mut result = Vec::new();
     for conic in conics {
         if conic.type_id != ConicType::Ellipse {
@@ -232,6 +237,7 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             }
         })();
         if let Some(major_direction) = antipodal_major_direction {
+            ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
             result.push(ReferenceEllipse {
                 source_entity_id: conic.entity_id,
                 center: center_checked,
@@ -283,6 +289,7 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         if orientation.is_some_and(f64::is_sign_negative) {
             major_direction = major_direction.reversed();
         }
+        ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
         result.push(ReferenceEllipse {
             source_entity_id: conic.entity_id,
             center: center_checked,
@@ -293,8 +300,13 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             offset: conic.offset,
         });
     }
-    result.sort_by_key(|ellipse| ellipse.offset);
-    result
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |ellipse| ellipse.offset,
+        "creo ellipse carriers result ordering",
+    )?;
+    Ok(result)
 }
 
 fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
@@ -455,19 +467,19 @@ fn conic_local_system(
     if let Some(slots) = scalar::decode_explicit_local_system_slots(body, cache) {
         return Some(slots);
     }
-    let mut values = Vec::with_capacity(12);
+    let mut values = [0.0; 12];
+    let mut count = 0;
     let mut cursor = crate::psb::Cursor::new(body);
-    while cursor.pos() < body.len() && values.len() < 12 {
+    while cursor.pos() < body.len() && count < values.len() {
         let run = cursor.take_with(|data, pos| conic_frame_run(data, pos, cache))?;
-        values.extend_from_slice(run.as_slice());
+        let end = count.checked_add(run.as_slice().len())?;
+        values.get_mut(count..end)?.copy_from_slice(run.as_slice());
+        count = end;
     }
-    if cursor.pos() != body.len() || values.len() != 12 {
+    if cursor.pos() != body.len() || count != values.len() {
         return None;
     }
-    let [a0, a1, a2, b0, b1, b2, c0, c1, c2, x, y, z] = values.as_slice() else {
-        return None;
-    };
-    cadmpeg_ir::units::FiniteVector::new([*a0, *a1, *a2, *b0, *b1, *b2, *c0, *c1, *c2, *x, *y, *z])
+    cadmpeg_ir::units::FiniteVector::new(values)
 }
 
 fn named_conic_local_system(
@@ -515,10 +527,13 @@ fn named_conic_local_system(
 /// The coefficients and parameter fields remain stored conic semantics; this
 /// function does not classify the record as an ellipse, parabola, or
 /// hyperbola.
-pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+pub(crate) fn named_conics(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceConic>, CodecError> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(offset) = find_in(payload, LIST, search, payload.len()) {
@@ -668,6 +683,7 @@ pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             search = block_end.max(fields_start);
             continue;
         }
+        ctx.reserve_vec(&mut result, 1, "creo named reference conics")?;
         result.push(ReferenceConic {
             entity_id,
             type_id: ConicType::from(type_id),
@@ -679,13 +695,21 @@ pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             coefficient_1,
             coefficient_2,
             local_system,
-            body: payload[id_label + CONIC_FIELD_HEADERS[0].len()..local_end].to_vec(),
+            body: ctx.copy_retained(
+                &payload[id_label + CONIC_FIELD_HEADERS[0].len()..local_end],
+                "creo named reference conic body",
+            )?,
             offset,
         });
         search = block_end.max(fields_start);
     }
-    result.sort_by_key(|conic| conic.offset);
-    result
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |conic| conic.offset,
+        "creo named conics result ordering",
+    )?;
+    Ok(result)
 }
 
 fn conic_parameter(
@@ -712,27 +736,31 @@ fn positional_conic_local_system(
 ) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let first_end = local_start.checked_add(1)?;
-    let last_end = local_start.saturating_add(MAX_FRAME_BYTES).min(body.len());
-    let candidates = (first_end..=last_end)
-        .filter_map(|end| {
-            let tail = body.get(end..)?;
-            (tail.is_empty() || tail.first() == Some(&0xe2)).then_some(())?;
-            conic_local_system(&body[local_start..end], cache).map(|frame| (end, frame))
-        })
-        .collect::<Vec<_>>();
-    let [(local_end, local_system)] = candidates.as_slice() else {
-        return None;
-    };
-    Some((*local_end, *local_system))
+    let last_end = local_start.checked_add(MAX_FRAME_BYTES)?.min(body.len());
+    let mut candidate = None;
+    for end in first_end..=last_end {
+        let tail = body.get(end..)?;
+        if !(tail.is_empty() || tail.first() == Some(&0xe2)) {
+            continue;
+        }
+        if let Some(frame) = conic_local_system(&body[local_start..end], cache) {
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some((end, frame));
+        }
+    }
+    candidate
 }
 
 fn positional_conic_body(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     entity_id: u32,
     type_id: u32,
     offset: usize,
     cache: &ScalarCache,
-) -> Option<ReferenceConic> {
+) -> Option<Result<ReferenceConic, CodecError>> {
     const GENERAL_INFO: &[u8] = &[0x02, 0x48, 0x10, 0x00, 0xeb, 0x10, 0, 0, 0, 0];
     (body.get(..GENERAL_INFO.len()) == Some(GENERAL_INFO)).then_some(())?;
     let (flip, mut cursor) = crate::psb::compact_int(body, GENERAL_INFO.len());
@@ -757,7 +785,7 @@ fn positional_conic_body(
     let end = FinitePoint3::new(endpoints[1].into())?;
     let coefficient_1 = FiniteReal::new(coefficient_1)?;
     let coefficient_2 = FiniteReal::new(coefficient_2)?;
-    Some(ReferenceConic {
+    Some(Ok(ReferenceConic {
         entity_id,
         type_id: ConicType::from(type_id),
         flip,
@@ -768,16 +796,22 @@ fn positional_conic_body(
         coefficient_1,
         coefficient_2,
         local_system: Some(local_system),
-        body: body[..local_end].to_vec(),
+        body: match ctx.copy_retained(&body[..local_end], "creo positional reference conic body") {
+            Ok(body) => body,
+            Err(error) => return Some(Err(error)),
+        },
         offset,
-    })
+    }))
 }
 
 /// Decode complete positional rows following an `ent_list(conic)` schema.
-pub(crate) fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+pub(crate) fn positional_conics(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceConic>, CodecError> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(prototype) = find_in(payload, LIST, search, payload.len()) {
@@ -799,6 +833,7 @@ pub(crate) fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             if after_type == after_id || payload.get(after_type) != Some(&0xe2) {
                 continue;
             }
+            ctx.reserve_vec(&mut headers, 1, "creo positional conic headers")?;
             headers.push((close, entity_id, type_id, after_type + 1));
         }
         for (index, &(close, entity_id, type_id, body_start)) in headers.iter().enumerate() {
@@ -806,31 +841,42 @@ pub(crate) fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _, _)| *next_close);
             if let Some(conic) = positional_conic_body(
+                ctx,
                 &payload[body_start..body_end],
                 entity_id,
                 type_id,
                 close + 1,
                 &cache,
             ) {
+                let conic = conic?;
+                ctx.reserve_vec(&mut result, 1, "creo positional reference conics")?;
                 result.push(conic);
             }
         }
         search = block_end.max(rows_start);
     }
-    result.sort_by_key(|conic| conic.offset);
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |conic| conic.offset,
+        "creo positional conics result ordering",
+    )?;
     result.dedup_by_key(|conic| conic.offset);
-    result
+    Ok(result)
 }
 
 /// Decode every complete positional `entity(line)` row.
-pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
+pub(crate) fn lines(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceLine>, CodecError> {
     const PROTOTYPE: &[u8] = b"ent_list(line)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
     const INSTANCE: &[u8] = b"\xe0\x00entity(line)\0";
     const ENTITY: &[u8] = b"\xe0\x00entity(";
     const ROW_START: &[u8] = b"\xf6\xe2";
 
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(prototype) = payload[search..]
@@ -864,6 +910,7 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             .map(|relative| cursor + relative)
         {
             if starts.is_empty() || payload.get(start.wrapping_sub(1)) == Some(&0xe3) {
+                ctx.reserve_vec(&mut starts, 1, "creo reference line starts")?;
                 starts.push(start);
             }
             cursor = start + ROW_START.len();
@@ -889,6 +936,7 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             ) else {
                 continue;
             };
+            ctx.reserve_vec(&mut result, 1, "creo reference lines")?;
             result.push(ReferenceLine {
                 kind: ReferenceLineKind::Line,
                 start: first,
@@ -898,9 +946,14 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
         }
         search = block_end.max(instance_search);
     }
-    result.sort_by_key(|line| line.offset);
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |line| line.offset,
+        "creo lines result ordering",
+    )?;
     result.dedup_by_key(|line| line.offset);
-    result
+    Ok(result)
 }
 
 fn line3d_fields(
@@ -935,28 +988,38 @@ fn line3d_fields(
 }
 
 fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
-    let start = close.saturating_sub(8);
-    (start..close).any(|candidate| {
-        let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
-            return false;
-        };
-        if previous != id {
-            return false;
-        }
-        after == close
-            || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
-                && crate::psb::reference_id(payload, after + 1)
-                    .is_ok_and(|(_, reference_end)| reference_end == close))
-    })
+    let Some(prefix) = payload.get(..close) else {
+        return false;
+    };
+    prefix
+        .iter()
+        .enumerate()
+        .rev()
+        .take(8)
+        .any(|(candidate, _)| {
+            let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
+                return false;
+            };
+            if previous != id {
+                return false;
+            }
+            after == close
+                || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
+                    && crate::psb::reference_id(payload, after + 1)
+                        .is_ok_and(|(_, reference_end)| reference_end == close))
+        })
 }
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals
 /// their stored original length.
-pub(crate) fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
+pub(crate) fn line3d_lines(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceLine>, CodecError> {
     const PROTOTYPE: &[u8] = b"ent_list(line3d)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(prototype) = payload[search..]
@@ -985,6 +1048,7 @@ pub(crate) fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
                 continue;
             }
             let body_start = body_start + 1;
+            ctx.reserve_vec(&mut headers, 1, "creo line3d headers")?;
             headers.push((close, body_start, id));
         }
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
@@ -996,6 +1060,7 @@ pub(crate) fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
             else {
                 continue;
             };
+            ctx.reserve_vec(&mut result, 1, "creo line3d reference lines")?;
             result.push(ReferenceLine {
                 kind: ReferenceLineKind::Line3d {
                     entity_id,
@@ -1008,9 +1073,14 @@ pub(crate) fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
         }
         search = block_end.max(rows_start);
     }
-    result.sort_by_key(|line| line.offset);
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |line| line.offset,
+        "creo line3d lines result ordering",
+    )?;
     result.dedup_by_key(|line| line.offset);
-    result
+    Ok(result)
 }
 
 fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<ReferenceCircle> {
@@ -1125,11 +1195,14 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
 /// Decode complete positional `arc_z` rows whose stored center, radius, and
 /// endpoints satisfy the model-Z circle equation. Diameter-compressed rows
 /// derive the center from their endpoint midpoint.
-pub(crate) fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
+pub(crate) fn arc_z_circles(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ReferenceCircle>, CodecError> {
     const PROTOTYPE: &[u8] = b"ent_list(arc_z)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 
-    let cache = ScalarCache::from_section(payload);
+    let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(prototype) = payload[search..]
@@ -1157,6 +1230,7 @@ pub(crate) fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
             if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
                 continue;
             }
+            ctx.reserve_vec(&mut headers, 1, "creo arc-z headers")?;
             headers.push((close, body_start + 1, id));
         }
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
@@ -1168,13 +1242,19 @@ pub(crate) fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
                 continue;
             };
             circle.offset = close + 1;
+            ctx.reserve_vec(&mut result, 1, "creo arc-z circles")?;
             result.push(circle);
         }
         search = block_end.max(rows_start);
     }
-    result.sort_by_key(|circle| circle.offset);
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |circle| circle.offset,
+        "creo arc z circles result ordering",
+    )?;
     result.dedup_by_key(|circle| circle.offset);
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

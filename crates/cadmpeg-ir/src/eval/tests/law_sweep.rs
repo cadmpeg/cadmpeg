@@ -33,6 +33,18 @@ use crate::math::Vector3;
 use crate::CadIr;
 
 #[test]
+fn law_integer_refuses_an_inexact_f64_value() {
+    let law = LawExpression::Integer {
+        value: 9_007_199_254_740_993,
+    };
+    let law = law.admit().expect("finite law input");
+    assert!(matches!(
+        scalar_sweep_law_differential(&law, finite(0.0)),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    ));
+}
+
+#[test]
 fn sweep_profile_frame_with_overflowing_norm_keeps_its_direction() {
     let frame = (
         FinitePoint3::ZERO,

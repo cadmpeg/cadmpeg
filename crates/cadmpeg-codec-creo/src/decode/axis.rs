@@ -13,7 +13,11 @@ impl Axis {
     pub(crate) const ALL: [Self; 3] = [Self::X, Self::Y, Self::Z];
     /// The array index of the axis.
     pub(crate) const fn index(self) -> usize {
-        self as usize
+        match self {
+            Self::X => 0,
+            Self::Y => 1,
+            Self::Z => 2,
+        }
     }
     /// The two perpendicular model axes.
     pub(crate) const fn complement(self) -> [Self; 2] {

@@ -26,7 +26,7 @@ use crate::pmdc::{
     PmDcReference, PmDcReferenceList,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
-use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
@@ -484,10 +484,13 @@ pub(crate) fn inventory(
                 }
                 ctx.charge_collection_items(1, "admit Inventor PmDc sketch issue")?;
                 ctx.charge_entities(1, "admit Inventor PmDc sketch issue")?;
-                admit_issue_detail(ctx, &error, "retain Inventor PmDc sketch issue detail")?;
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor PmDc sketch issue detail",
+                )?;
                 ctx.charge_retained(32, "retain Inventor PmDc sketch issue type id")?;
                 ctx.charge_retained(
-                    segment.pair.token.as_str().len() as u64,
+                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor PmDc sketch issue segment token",
                 )?;
                 inventory.issues.push(RecordIssue {
@@ -511,7 +514,7 @@ fn parse_sketch(
 ) -> Result<PmDcSketchPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("sketch state")? as i32;
+    let state = cursor.u32("sketch state")?.cast_signed();
     let count_value = cursor.u32("sketch count value")?;
     let entities = reference_list(ctx, &mut cursor, 8, "sketch entity array")?;
     let transform = cursor.reference("sketch transform reference")?;
@@ -684,8 +687,13 @@ fn edge_prefix(
 ) -> Result<(PmDcReferenceList, Vec<PmDcReferenceList>), CodecError> {
     let points = reference_list(ctx, cursor, 2, &format!("{field} point list"))?;
     let mut auxiliary = Vec::new();
-    if cursor.remaining() >= fixed_tail.saturating_add(8)
-        && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
+    let tail8 = fixed_tail
+        .checked_add(8)
+        .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
+    let tail16 = fixed_tail
+        .checked_add(16)
+        .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
+    if cursor.remaining() >= tail8 && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
     {
         auxiliary.push(reference_list(
             ctx,
@@ -693,7 +701,7 @@ fn edge_prefix(
             2,
             &format!("{field} auxiliary list 0"),
         )?);
-    } else if cursor.remaining() >= fixed_tail.saturating_add(16) {
+    } else if cursor.remaining() >= tail16 {
         let gate = [
             cursor.u32("edge list gate 0")?,
             cursor.u32("edge list gate 1")?,
@@ -709,7 +717,7 @@ fn edge_prefix(
             2,
             &format!("{field} auxiliary list 0"),
         )?);
-        if cursor.remaining() >= fixed_tail.saturating_add(8)
+        if cursor.remaining() >= tail8
             && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
         {
             auxiliary.push(reference_list(
@@ -852,8 +860,12 @@ fn map_header(
             "Inventor PmDc {field} marker is {marker:?}"
         )));
     }
-    let count = cursor.u32("constraint map count")? as usize;
-    ctx.charge_collection_items(count as u64, "admit Inventor sketch constraint map")?;
+    let count = usize::try_from(cursor.u32("constraint map count")?)
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor sketch constraint map",
+    )?;
     let metadata = (count != 0)
         .then(|| {
             Ok::<_, CodecError>([
@@ -870,7 +882,7 @@ fn reference_scalar_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferenceScalarMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint scalar map")?;
-    let mut entries = Vec::with_capacity(count);
+    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
     for index in 0..count {
         entries.push((
             cursor.reference("constraint scalar-map key")?,
@@ -887,7 +899,7 @@ fn reference_pair_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferencePairMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint reference map")?;
-    let mut entries = Vec::with_capacity(count);
+    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
     for _ in 0..count {
         entries.push((
             cursor.reference("constraint reference-map key")?,
@@ -905,7 +917,7 @@ fn parse_constraint_header(
     version: u8,
 ) -> Result<PmDcConstraintHeader, CodecError> {
     let content = content_header(cursor)?;
-    let state = cursor.u32("constraint state")? as i32;
+    let state = cursor.u32("constraint state")?.cast_signed();
     let group = cursor.reference("constraint group reference")?;
     let (scalar_map, reference_map) = if version <= 16 {
         (
@@ -1021,6 +1033,21 @@ fn distance_constraint_fields(
     Ok((first, second, parameter, values))
 }
 
+fn count_removed(
+    ctx: &DecodeContext<'_>,
+    unresolved: usize,
+    before: usize,
+    after: usize,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
+    let removed = before
+        .checked_sub(after)
+        .ok_or_else(|| CodecError::malformed("Inventor projected count exceeds prior count"))?;
+    unresolved
+        .checked_add(removed)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+}
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     inventory: &SketchInventory,
@@ -1086,11 +1113,11 @@ pub(crate) fn project(
         if let Some(native) = &parameter.native_ref {
             ctx.charge_collection_items(1, "index Inventor sketch parameter")?;
             ctx.charge_retained(
-                native.len() as u64,
+                cadmpeg_core::decode::u64_from_index(native.len()),
                 "retain Inventor sketch parameter native id",
             )?;
             ctx.charge_retained(
-                parameter.id.as_str().len() as u64,
+                cadmpeg_core::decode::u64_from_index(parameter.id.as_str().len()),
                 "retain Inventor sketch parameter id",
             )?;
             parameter_index.insert(native.clone(), parameter.id.clone());
@@ -1118,12 +1145,13 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        if !sketch
-            .entities
-            .references()
-            .iter()
-            .any(|reference| reference.index == entity.identity.record_ordinal.saturating_add(1))
-        {
+        if !sketch.entities.references().iter().any(|reference| {
+            entity
+                .identity
+                .record_ordinal
+                .checked_add(1)
+                .is_some_and(|next| reference.index == next)
+        }) {
             unresolved_entities += 1;
             continue;
         }
@@ -1132,19 +1160,29 @@ pub(crate) fn project(
             continue;
         };
         ctx.charge_retained(
-            projected_id_len(
-                "inventor:design:sketch-entity#",
-                entity.identity.segment_token.as_str(),
-                entity.identity.record_ordinal,
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                projected_id_len(
+                    "inventor:design:sketch-entity#",
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain projected Inventor sketch entity id",
         )?;
         ctx.charge_retained(
-            projected_id_len(
-                "inventor:design:sketch#",
-                sketch.identity.segment_token.as_str(),
-                sketch.identity.record_ordinal,
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                projected_id_len(
+                    "inventor:design:sketch#",
+                    sketch.identity.segment_token.as_str(),
+                    sketch.identity.record_ordinal,
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain projected Inventor sketch owner id",
         )?;
         let (Some(entity_id), Some(sketch_id)) = (entity_id(entity), sketch_id(sketch)) else {
@@ -1154,11 +1192,16 @@ pub(crate) fn project(
         ctx.charge_collection_items(1, "project Inventor sketch entity")?;
         ctx.charge_entities(1, "project Inventor sketch entity")?;
         ctx.charge_retained(
-            record_id_len(
-                entity.identity.segment_token.as_str(),
-                entity.identity.record_ordinal,
-                "sketch-entity",
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                record_id_len(
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                    "sketch-entity",
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain projected Inventor sketch entity native reference",
         )?;
         projected_entities.push(
@@ -1170,7 +1213,7 @@ pub(crate) fn project(
     }
 
     ctx.charge_collection_items(
-        projected_entities.len() as u64,
+        cadmpeg_core::decode::u64_from_index(projected_entities.len()),
         "index projected Inventor sketch entities",
     )?;
     let projected_by_native = projected_entities
@@ -1202,11 +1245,18 @@ pub(crate) fn project(
         let mut referenced_entities = Vec::new();
         for raw in &raw_referenced_entities {
             let _native_reservation = ctx.reserve_scoped(
-                record_id_len(
-                    raw.identity.segment_token.as_str(),
-                    raw.identity.record_ordinal,
-                    "sketch-entity",
-                ) as u64,
+                cadmpeg_core::decode::u64_from_index(
+                    record_id_len(
+                        raw.identity.segment_token.as_str(),
+                        raw.identity.record_ordinal,
+                        "sketch-entity",
+                    )
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "Inventor identifier length exceeds address space".into(),
+                        )
+                    })?,
+                ),
                 "resolve Inventor sketch entity native id",
             )?;
             let native = raw.id();
@@ -1224,11 +1274,16 @@ pub(crate) fn project(
             continue;
         };
         ctx.charge_retained(
-            projected_id_len(
-                "inventor:design:sketch#",
-                sketch.identity.segment_token.as_str(),
-                sketch.identity.record_ordinal,
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                projected_id_len(
+                    "inventor:design:sketch#",
+                    sketch.identity.segment_token.as_str(),
+                    sketch.identity.record_ordinal,
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain projected Inventor sketch id",
         )?;
         let Some(id) = sketch_id(sketch) else {
@@ -1245,11 +1300,16 @@ pub(crate) fn project(
         ctx.charge_collection_items(1, "project Inventor sketch")?;
         ctx.charge_entities(1, "project Inventor sketch")?;
         ctx.charge_retained(
-            record_id_len(
-                sketch.identity.segment_token.as_str(),
-                sketch.identity.record_ordinal,
-                "sketch",
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                record_id_len(
+                    sketch.identity.segment_token.as_str(),
+                    sketch.identity.record_ordinal,
+                    "sketch",
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain projected Inventor sketch native reference",
         )?;
         sketches.push(Sketch {
@@ -1264,12 +1324,12 @@ pub(crate) fn project(
     }
     drop(projected_by_native);
     ctx.charge_collection_items(
-        sketches.len() as u64,
+        cadmpeg_core::decode::u64_from_index(sketches.len()),
         "collect projected Inventor sketch ids",
     )?;
     for sketch in &sketches {
         ctx.charge_retained(
-            sketch.id.as_str().len() as u64,
+            cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len()),
             "retain Inventor projected sketch id copy",
         )?;
     }
@@ -1279,10 +1339,15 @@ pub(crate) fn project(
         .collect::<HashSet<_>>();
     let previous_entity_count = projected_entities.len();
     projected_entities.retain(|entity| projected_sketch_ids.contains(&entity.sketch));
-    unresolved_entities = unresolved_entities
-        .saturating_add(previous_entity_count.saturating_sub(projected_entities.len()));
+    unresolved_entities = count_removed(
+        ctx,
+        unresolved_entities,
+        previous_entity_count,
+        projected_entities.len(),
+        "Inventor unresolved sketch entities",
+    )?;
     ctx.charge_collection_items(
-        projected_entities.len() as u64,
+        cadmpeg_core::decode::u64_from_index(projected_entities.len()),
         "reindex projected Inventor sketch entities",
     )?;
     let projected_by_native = projected_entities
@@ -1292,11 +1357,16 @@ pub(crate) fn project(
     let mut projected_entity_by_key = HashMap::new();
     for raw in &inventory.entities {
         let _native_reservation = ctx.reserve_scoped(
-            record_id_len(
-                raw.identity.segment_token.as_str(),
-                raw.identity.record_ordinal,
-                "sketch-entity",
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                record_id_len(
+                    raw.identity.segment_token.as_str(),
+                    raw.identity.record_ordinal,
+                    "sketch-entity",
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "resolve projected Inventor sketch native id",
         )?;
         if let Some(projected) = projected_by_native.get(raw.id().as_str()) {
@@ -1334,9 +1404,10 @@ pub(crate) fn project(
     let mut unresolved_constraints = inventory
         .constraints
         .len()
-        .saturating_sub(constraints.len());
+        .checked_sub(constraints.len())
+        .ok_or_else(|| CodecError::malformed("Inventor constraints exceed inventory"))?;
     ctx.charge_collection_items(
-        projected_entity_by_key.len() as u64,
+        cadmpeg_core::decode::u64_from_index(projected_entity_by_key.len()),
         "index projected Inventor sketch entity closure keys",
     )?;
     let projected_entity_keys = projected_entity_by_key
@@ -1347,11 +1418,16 @@ pub(crate) fn project(
     for sketch in &inventory.sketches {
         ctx.charge_collection_items(1, "index Inventor raw sketch native refs")?;
         ctx.charge_retained(
-            record_id_len(
-                sketch.identity.segment_token.as_str(),
-                sketch.identity.record_ordinal,
-                "sketch",
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                record_id_len(
+                    sketch.identity.segment_token.as_str(),
+                    sketch.identity.record_ordinal,
+                    "sketch",
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain Inventor raw sketch native id",
         )?;
         raw_sketch_by_native.insert(sketch.id(), sketch);
@@ -1406,12 +1482,20 @@ pub(crate) fn project(
             projected_entity_keys.contains(&key) || projected_constraint_keys.contains(&key)
         })
     });
-    unresolved_sketches =
-        unresolved_sketches.saturating_add(previous_sketch_count.saturating_sub(sketches.len()));
-    ctx.charge_collection_items(sketches.len() as u64, "index closed Inventor sketch ids")?;
+    unresolved_sketches = count_removed(
+        ctx,
+        unresolved_sketches,
+        previous_sketch_count,
+        sketches.len(),
+        "Inventor unresolved sketches",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(sketches.len()),
+        "index closed Inventor sketch ids",
+    )?;
     for sketch in &sketches {
         ctx.charge_retained(
-            sketch.id.as_str().len() as u64,
+            cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len()),
             "retain closed Inventor sketch id",
         )?;
     }
@@ -1421,17 +1505,27 @@ pub(crate) fn project(
         .collect::<HashSet<_>>();
     let previous_entity_count = projected_entities.len();
     projected_entities.retain(|entity| closed_sketch_ids.contains(&entity.sketch));
-    unresolved_entities = unresolved_entities
-        .saturating_add(previous_entity_count.saturating_sub(projected_entities.len()));
+    unresolved_entities = count_removed(
+        ctx,
+        unresolved_entities,
+        previous_entity_count,
+        projected_entities.len(),
+        "Inventor unresolved sketch entities",
+    )?;
     let mut raw_constraint_by_native = HashMap::new();
     for constraint in &inventory.constraints {
         ctx.charge_collection_items(1, "index Inventor raw constraint native refs")?;
         ctx.charge_retained(
-            record_id_len(
-                constraint.identity.segment_token.as_str(),
-                constraint.identity.record_ordinal,
-                "sketch-constraint",
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                record_id_len(
+                    constraint.identity.segment_token.as_str(),
+                    constraint.identity.record_ordinal,
+                    "sketch-constraint",
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain Inventor raw constraint native id",
         )?;
         raw_constraint_by_native.insert(constraint.id(), constraint);
@@ -1439,11 +1533,16 @@ pub(crate) fn project(
     let mut raw_sketch_by_id = HashMap::new();
     for sketch in &inventory.sketches {
         ctx.charge_retained(
-            projected_id_len(
-                "inventor:design:sketch#",
-                sketch.identity.segment_token.as_str(),
-                sketch.identity.record_ordinal,
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                projected_id_len(
+                    "inventor:design:sketch#",
+                    sketch.identity.segment_token.as_str(),
+                    sketch.identity.record_ordinal,
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain Inventor raw sketch projected id",
         )?;
         if let Some(id) = sketch_id(sketch) {
@@ -1467,12 +1566,21 @@ pub(crate) fn project(
             .get(&constraint.sketch)
             .is_some_and(|sketch| {
                 sketch.entities.references().iter().any(|reference| {
-                    reference.index == raw_constraint.identity.record_ordinal.saturating_add(1)
+                    raw_constraint
+                        .identity
+                        .record_ordinal
+                        .checked_add(1)
+                        .is_some_and(|next| reference.index == next)
                 })
             })
     });
-    unresolved_constraints = unresolved_constraints
-        .saturating_add(previous_constraint_count.saturating_sub(constraints.len()));
+    unresolved_constraints = count_removed(
+        ctx,
+        unresolved_constraints,
+        previous_constraint_count,
+        constraints.len(),
+        "Inventor unresolved sketch constraints",
+    )?;
     Ok(SketchProjection {
         sketches,
         entities: projected_entities,
@@ -1500,7 +1608,7 @@ fn project_constraint(
         ($members:expr) => {
             for member in $members {
                 admit!(ctx.charge_retained(
-                    member.id().as_str().len() as u64,
+                    cadmpeg_core::decode::u64_from_index(member.id().as_str().len()),
                     "retain Inventor sketch constraint entity id",
                 ));
             }
@@ -1691,7 +1799,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::CircleCenter { entity, center } => {
             let members = [resolve(entity)?, resolve(center)?];
             admit!(ctx.charge_retained(
-                "circle_center_alignment".len() as u64,
+                cadmpeg_core::decode::u64_from_index("circle_center_alignment".len()),
                 "retain Inventor circle center kind"
             ));
             admit!(ctx.charge_collection_items(2, "collect Inventor circle center entities"));
@@ -1702,7 +1810,7 @@ fn project_constraint(
                     native_kind: cadmpeg_core::text::NonBlankString::new(
                         "circle_center_alignment",
                     )?,
-                    native_state: Some(constraint.header.state as u32 as u64),
+                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),
                     entities: members.iter().map(|entity| entity.id().clone()).collect(),
@@ -1743,23 +1851,23 @@ fn project_constraint(
         return None;
     }
     admit!(ctx.charge_retained(
-        projected_id_len(
+        cadmpeg_core::decode::u64_from_index(projected_id_len(
             "inventor:design:sketch-constraint#",
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal
-        ) as u64,
+        )?),
         "retain projected Inventor sketch constraint id",
     ));
     admit!(ctx.charge_retained(
-        members[0].sketch.as_str().len() as u64,
+        cadmpeg_core::decode::u64_from_index(members[0].sketch.as_str().len()),
         "retain Inventor sketch constraint owner id",
     ));
     admit!(ctx.charge_retained(
-        record_id_len(
+        cadmpeg_core::decode::u64_from_index(record_id_len(
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
             "sketch-constraint"
-        ) as u64,
+        )?),
         "retain projected Inventor sketch constraint native reference",
     ));
     admit!(ctx.charge_entities(1, "project Inventor sketch constraint"));
@@ -1792,11 +1900,11 @@ fn resolve_parameter(
 ) -> Option<Result<ParameterId, CodecError>> {
     let ordinal = reference.index.checked_sub(1)?;
     let reservation = ctx.reserve_scoped(
-        record_id_len(
+        cadmpeg_core::decode::u64_from_index(record_id_len(
             constraint.identity.segment_token.as_str(),
             ordinal,
             "parameter",
-        ) as u64,
+        )?),
         "resolve Inventor sketch constraint parameter",
     );
     let _reservation = match reservation {
@@ -1810,7 +1918,7 @@ fn resolve_parameter(
     let parameter = parameters.get(&native)?;
     Some(
         ctx.charge_retained(
-            parameter.as_str().len() as u64,
+            cadmpeg_core::decode::u64_from_index(parameter.as_str().len()),
             "retain Inventor sketch constraint parameter id",
         )
         .map(|()| parameter.clone()),
@@ -1825,11 +1933,16 @@ fn native_operand(
 ) -> Result<SketchNativeOperand, CodecError> {
     if let Some(ordinal) = reference.index.checked_sub(1) {
         ctx.charge_retained(
-            record_id_len(
-                constraint.identity.segment_token.as_str(),
-                ordinal,
-                "sketch-entity",
-            ) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                record_id_len(
+                    constraint.identity.segment_token.as_str(),
+                    ordinal,
+                    "sketch-entity",
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor identifier length exceeds address space".into())
+                })?,
+            ),
             "retain Inventor sketch constraint operand native id",
         )?;
     }
@@ -2044,11 +2157,18 @@ fn entity_endpoint_refs(
         {
             ctx.charge_collection_items(1, "collect Inventor sketch endpoint reference")?;
             ctx.charge_retained(
-                record_id_len(
-                    value.identity.segment_token.as_str(),
-                    value.identity.record_ordinal,
-                    "sketch-entity",
-                ) as u64,
+                cadmpeg_core::decode::u64_from_index(
+                    record_id_len(
+                        value.identity.segment_token.as_str(),
+                        value.identity.record_ordinal,
+                        "sketch-entity",
+                    )
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "Inventor identifier length exceeds address space".into(),
+                        )
+                    })?,
+                ),
                 "retain Inventor sketch endpoint native id",
             )?;
             endpoint_refs.push(value.id());
@@ -2112,7 +2232,7 @@ fn build_profiles(
     entities: &[&SketchEntity],
 ) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
     ctx.charge_collection_items(
-        entities.len() as u64,
+        cadmpeg_core::decode::u64_from_index(entities.len()),
         "index Inventor profile source positions",
     )?;
     let source_positions = entities
@@ -2134,7 +2254,7 @@ fn build_profiles(
         ctx.charge_collection_items(1, "project Inventor circular profile")?;
         ctx.charge_collection_items(1, "project Inventor circular profile use")?;
         ctx.charge_retained(
-            entity.id().as_str().len() as u64,
+            cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()),
             "retain Inventor circular profile entity id",
         )?;
         profiles.push(vec![SketchEntityUse {
@@ -2153,7 +2273,10 @@ fn build_profiles(
         })
         .filter(|entity| entity.endpoint_refs.len() == 2)
         .count();
-    ctx.charge_collection_items(line_count as u64, "collect Inventor profile lines")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(line_count),
+        "collect Inventor profile lines",
+    )?;
     let lines = entities
         .iter()
         .copied()
@@ -2203,7 +2326,7 @@ fn build_profiles(
         let mut current = start_index;
         ctx.charge_collection_items(1, "collect Inventor profile use")?;
         ctx.charge_retained(
-            first.id().as_str().len() as u64,
+            cadmpeg_core::decode::u64_from_index(first.id().as_str().len()),
             "retain Inventor profile use id",
         )?;
         let mut loop_uses = vec![SketchEntityUse {
@@ -2239,7 +2362,7 @@ fn build_profiles(
             }
             ctx.charge_collection_items(1, "collect Inventor profile use")?;
             ctx.charge_retained(
-                line.id().as_str().len() as u64,
+                cadmpeg_core::decode::u64_from_index(line.id().as_str().len()),
                 "retain Inventor profile use id",
             )?;
             loop_uses.push(SketchEntityUse {
@@ -2291,7 +2414,7 @@ fn line_component(
         for point in &lines[index].endpoint_refs {
             if let Some(neighbours) = adjacency.get(point.as_str()) {
                 ctx.charge_collection_items(
-                    neighbours.len() as u64,
+                    cadmpeg_core::decode::u64_from_index(neighbours.len()),
                     "queue Inventor profile neighbours",
                 )?;
                 pending.extend(neighbours);
@@ -2301,12 +2424,12 @@ fn line_component(
     Ok(component)
 }
 
-fn projected_id_len(prefix: &str, token: &str, ordinal: u32) -> usize {
-    prefix.len() + token.len() + 1 + ordinal.max(1).ilog10() as usize + 1
+fn projected_id_len(prefix: &str, token: &str, ordinal: u32) -> Option<usize> {
+    Some(prefix.len() + token.len() + 1 + usize::try_from(ordinal.max(1).ilog10()).ok()? + 1)
 }
 
-fn record_id_len(token: &str, ordinal: u32, kind: &str) -> usize {
-    projected_id_len("inventor:pmdc:", token, ordinal) + kind.len() + 1
+fn record_id_len(token: &str, ordinal: u32, kind: &str) -> Option<usize> {
+    Some(projected_id_len("inventor:pmdc:", token, ordinal)? + kind.len() + 1)
 }
 
 fn sketch_id(sketch: &PmDcSketch) -> Option<SketchId> {
@@ -2575,6 +2698,47 @@ mod tests {
     }
 
     #[test]
+    fn sketch_reference_cannot_name_the_maximum_record_ordinal() {
+        let mut sketch_bytes = content(0);
+        sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&1_u32.to_le_bytes());
+        sketch_bytes.extend(list(8, &[u32::MAX]));
+        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&[0; 8]);
+        sketch_bytes.extend(list(2, &[]));
+        let sketch = parse(&sketch_bytes, |ctx, source| {
+            parse_sketch(ctx, source, 22).expect("sketch record")
+        });
+        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
+        });
+        let inventory = SketchInventory {
+            sketches: vec![Located::new(
+                sketch,
+                type_id_string(SKETCH_TYPE),
+                &cadmpeg_ir::identity_key!("segment"),
+                0,
+            )],
+            entities: vec![Located::new(
+                point,
+                type_id_string(POINT_TYPE),
+                &cadmpeg_ir::identity_key!("segment"),
+                u32::MAX,
+            )],
+            transforms: Vec::new(),
+            directions: Vec::new(),
+            constraints: Vec::new(),
+            issues: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projection = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projection.unresolved_entities, 1);
+    }
+
+    #[test]
     fn sketch_projection_refuses_entity_limit_before_sketch_creation() {
         let mut transform = parse(
             &{
@@ -2684,7 +2848,8 @@ mod tests {
         let parameters = std::collections::HashMap::new();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = entity.id().as_str().len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()) - 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
@@ -2882,13 +3047,13 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit_bytes as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
             assert!(matches!(
                 inventory_with_record(TRANSFORM_TYPE, &[], policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                        && limit.used == used as u64
+                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
             ));
         }
     }
@@ -2950,7 +3115,9 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&marker.to_le_bytes());
         bytes.extend_from_slice(&0x3000u16.to_le_bytes());
-        bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         if !references.is_empty() {
             if marker == 8 {
                 bytes.extend_from_slice(&0u16.to_le_bytes());
@@ -3087,9 +3254,13 @@ mod tests {
             let mut bytes = constraint_header(9, 0);
             for (index, value) in tail.into_iter().enumerate() {
                 if index == 2 && matches!(expected, "parallel" | "perpendicular") {
-                    bytes.extend_from_slice(&(value as u16).to_le_bytes());
+                    bytes.extend_from_slice(
+                        &(u16::try_from(value).expect("fixture value fits u16")).to_le_bytes(),
+                    );
                 } else {
-                    bytes.extend_from_slice(&(value as u32).to_le_bytes());
+                    bytes.extend_from_slice(
+                        &(u32::try_from(value).expect("fixture value fits u32")).to_le_bytes(),
+                    );
                 }
             }
             let parsed = parse(&bytes, |ctx, source| {
@@ -3226,7 +3397,11 @@ mod tests {
             .enumerate()
             .map(|(index, position)| {
                 parse(
-                    &point_bytes(index as u32 + 3, 3, position),
+                    &point_bytes(
+                        u32::try_from(index).expect("fixture value fits u32") + 3,
+                        3,
+                        position,
+                    ),
                     |ctx, source| {
                         parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
                     },
@@ -3235,11 +3410,15 @@ mod tests {
             .collect::<Vec<_>>();
         for (index, endpoints) in [[4, 5], [5, 6], [6, 7], [7, 4]].into_iter().enumerate() {
             let mut line = parse(
-                &line_bytes(index as u32 + 7, 3, endpoints),
+                &line_bytes(
+                    u32::try_from(index).expect("fixture value fits u32") + 7,
+                    3,
+                    endpoints,
+                ),
                 |ctx, source| parse_entity(ctx, SketchEntityTag::Line, source, 22).expect("line"),
             );
-            let start = points[endpoints[0] as usize - 4];
-            let end = points[endpoints[1] as usize - 4];
+            let start = points[cadmpeg_core::decode::index_from_u32(endpoints[0]) - 4];
+            let end = points[cadmpeg_core::decode::index_from_u32(endpoints[1]) - 4];
             let PmDcSketchEntityKind::Line {
                 origin, direction, ..
             } = &mut line.kind
@@ -3278,7 +3457,7 @@ mod tests {
                     value,
                     type_id_string(type_id),
                     &cadmpeg_ir::identity_key!("segment"),
-                    index as u32 + 3,
+                    u32::try_from(index).expect("fixture value fits u32") + 3,
                 )
             })
             .collect();

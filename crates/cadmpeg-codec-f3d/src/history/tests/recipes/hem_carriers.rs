@@ -14,19 +14,19 @@ fn hem_bend_carriers_prove_directional_gap_forms() {
     let flat_inner = cylinder(0.01);
     let flat_outer = cylinder(2.51);
     assert_eq!(
-        super::super::super::hem_gap_length_form(&[&flat_inner, &flat_outer]),
+        super::super::super::hem_gap_length_form([&flat_inner, &flat_outer].into_iter()),
         Some(super::super::super::HemGapLengthForm::Flat)
     );
 
     let open_inner = cylinder(1.25);
     let open_outer = cylinder(3.75);
     assert_eq!(
-        super::super::super::hem_gap_length_form(&[&open_inner, &open_outer]),
+        super::super::super::hem_gap_length_form([&open_inner, &open_outer].into_iter()),
         Some(super::super::super::HemGapLengthForm::Open)
     );
 
     assert_eq!(
-        super::super::super::hem_gap_length_form(&[&flat_inner]),
+        super::super::super::hem_gap_length_form([&flat_inner].into_iter()),
         None
     );
 }
@@ -89,35 +89,47 @@ fn hem_carrier_offsets_prove_fold_direction() {
     let forward_first = cylinder(Point3::new(1.0, 0.0, 0.0));
     let forward_second = cylinder(Point3::new(2.0, 0.0, 0.0));
     assert_eq!(
-        super::super::super::hem_direction_from_transition(
-            7,
-            &[&forward_first, &forward_second],
-            &previous,
-            &transition,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::super::hem_direction_from_transition(
+                decode_ctx,
+                7,
+                &[&forward_first, &forward_second].into_iter(),
+                &previous,
+                &transition,
+            )
+        })
+        .unwrap(),
         Some(SheetMetalHemDirection::Forward)
     );
 
     let reverse_first = cylinder(Point3::new(-1.0, 0.0, 0.0));
     let reverse_second = cylinder(Point3::new(-2.0, 0.0, 0.0));
     assert_eq!(
-        super::super::super::hem_direction_from_transition(
-            7,
-            &[&reverse_first, &reverse_second],
-            &previous,
-            &transition,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::super::hem_direction_from_transition(
+                decode_ctx,
+                7,
+                &[&reverse_first, &reverse_second].into_iter(),
+                &previous,
+                &transition,
+            )
+        })
+        .unwrap(),
         Some(SheetMetalHemDirection::Reverse)
     );
 
     let zero_offset = cylinder(Point3::new(0.0, 0.0, 0.0));
     assert_eq!(
-        super::super::super::hem_direction_from_transition(
-            7,
-            &[&zero_offset, &forward_second],
-            &previous,
-            &transition,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::super::hem_direction_from_transition(
+                decode_ctx,
+                7,
+                &[&zero_offset, &forward_second].into_iter(),
+                &previous,
+                &transition,
+            )
+        })
+        .unwrap(),
         None
     );
 }

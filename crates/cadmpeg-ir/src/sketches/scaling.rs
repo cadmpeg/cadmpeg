@@ -46,37 +46,42 @@ impl SketchConstraintDefinition {
     /// scalar fields retain their admission.
     pub fn scale_lengths(&mut self, scale: PositiveReal) -> Result<(), SketchConstraintScaleError> {
         use SketchConstraintDefinitionInput as Kind;
-        let mut kind = self.0.clone();
-        match &mut kind {
+        match &mut self.0 {
             Kind::PointCoordinateValues { values, .. } => {
-                for value in values {
+                let mut scaled = *values;
+                for value in &mut scaled {
                     constraint_length(value, scale)?;
                 }
+                *values = scaled;
+            }
+            Kind::PolarDistance {
+                distance, angle, ..
+            } => {
+                let mut scaled = *distance;
+                constraint_length(&mut scaled, scale)?;
+                if (scaled.get() <= EPS_POLAR_DISTANCE_ZERO) == angle.is_some() {
+                    return Err(SketchConstraintScaleError::InvalidLocalValue);
+                }
+                *distance = scaled;
+            }
+            Kind::Offset { distance, .. } => {
+                let mut scaled = *distance;
+                constraint_length(&mut scaled, scale)?;
+                if scaled.get() <= 0.0 {
+                    return Err(SketchConstraintScaleError::InvalidLocalValue);
+                }
+                *distance = scaled;
             }
             Kind::MidpointCoordinate { value, .. }
             | Kind::DistanceLociValue {
                 distance: value, ..
-            }
-            | Kind::PolarDistance {
-                distance: value, ..
-            }
-            | Kind::Offset {
-                distance: value, ..
-            } => constraint_length(value, scale)?,
-            _ => {}
-        }
-        match &kind {
-            Kind::PolarDistance {
-                distance, angle, ..
-            } if (distance.get() <= EPS_POLAR_DISTANCE_ZERO) == angle.is_some() => {
-                return Err(SketchConstraintScaleError::InvalidLocalValue);
-            }
-            Kind::Offset { distance, .. } if distance.get() <= 0.0 => {
-                return Err(SketchConstraintScaleError::InvalidLocalValue);
+            } => {
+                let mut scaled = *value;
+                constraint_length(&mut scaled, scale)?;
+                *value = scaled;
             }
             _ => {}
         }
-        self.0 = kind;
         Ok(())
     }
 }
@@ -123,8 +128,13 @@ impl SketchGeometry {
     /// Scale length-bearing fields while carrying stored directions, angles,
     /// bounds unrelated to length, and text attributes unchanged.
     pub fn scaled_lengths(&self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
+        self.clone().scaled_lengths_owned(scale)
+    }
+
+    /// Scale an owned carrier without copying its retained text or NURBS lanes.
+    pub fn scaled_lengths_owned(self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
         use SketchGeometryDefinition as Definition;
-        let mut definition = self.definition().clone();
+        let mut definition = self.0;
         match &mut definition {
             Definition::Point { position } => {
                 *position = planar_point(*position, scale).ok_or(SketchLengthScaleError::Field(
@@ -210,10 +220,12 @@ impl SketchGeometry {
             }
             Definition::Nurbs { curve } => {
                 curve
-                    .edit_control_points(|point| {
-                        point.u *= scale.get();
-                        point.v *= scale.get();
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        planar_point(point, scale).ok_or_else(|| {
+                            NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
                     })
                     .map_err(SketchLengthScaleError::CurveControlPoints)?;
             }
@@ -245,6 +257,24 @@ impl SketchGeometry {
             ))?;
         }
         Ok(Self(definition))
+    }
+}
+
+impl SketchGeometry {
+    /// Scale an owned planar carrier through the caller's work and refusal-text budget.
+    pub fn scaled_lengths_owned_admitted(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "IR sketch unit scaling work")?;
+        if let SketchGeometryDefinition::Nurbs { curve } = &mut self.0 {
+            return Ok(match curve.scale_points_admitted(ctx, scale)? {
+                Ok(()) => Ok(self),
+                Err(error) => Err(SketchLengthScaleError::CurveControlPoints(error)),
+            });
+        }
+        Ok(self.scaled_lengths_owned(scale))
     }
 }
 
@@ -292,21 +322,31 @@ impl SpatialSketchGeometry {
             }
             Definition::Nurbs { curve } => {
                 curve
-                    .edit_control_points(|point| {
-                        point.x *= scale.get();
-                        point.y *= scale.get();
-                        point.z *= scale.get();
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        let mut scaled = point.get();
+                        scaled.x *= scale.get();
+                        scaled.y *= scale.get();
+                        scaled.z *= scale.get();
+                        FinitePoint3::new(scaled).ok_or_else(|| {
+                            NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
                     })
                     .map_err(SketchLengthScaleError::CurveControlPoints)?;
             }
             Definition::NurbsSurface { surface } => {
                 surface
-                    .edit_control_points(|point| {
-                        point.x *= scale.get();
-                        point.y *= scale.get();
-                        point.z *= scale.get();
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        let mut scaled = point.get();
+                        scaled.x *= scale.get();
+                        scaled.y *= scale.get();
+                        scaled.z *= scale.get();
+                        FinitePoint3::new(scaled).ok_or_else(|| {
+                            NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
                     })
                     .map_err(SketchLengthScaleError::SurfaceControlPoints)?;
             }
@@ -391,6 +431,54 @@ mod tests {
                 center: Point2::new(1.0e300, 0.0),
                 radius: Length::new(1.0e300).unwrap(),
             }
+        );
+    }
+
+    #[test]
+    fn owned_planar_nurbs_scaling_preserves_knots_and_weights() {
+        use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+
+        let original = SketchGeometry::nurbs(
+            PcurveNurbs::from_lanes(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point2::new(1.0, 2.0),
+                    Point2::new(3.0, 4.0),
+                    Point2::new(5.0, 6.0),
+                ],
+                Some(vec![1.0, 2.0, 3.0]),
+                false,
+            )
+            .expect("rational source sketch curve"),
+        );
+        let scaled = original
+            .scaled_lengths_owned(PositiveReal::new(10.0).expect("positive scale"))
+            .expect("finite scaled sketch curve");
+        let SketchGeometryDefinition::Nurbs { curve } = scaled.definition() else {
+            panic!("scaled sketch curve changed family");
+        };
+        assert_eq!(curve.knots().to_vec(), vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        let PcurveNurbsPoles::Rational { points } = curve.pole_rows() else {
+            panic!("scaled sketch curve changed rational form");
+        };
+        assert_eq!(
+            points
+                .iter()
+                .map(|pole| pole.point.get())
+                .collect::<Vec<_>>(),
+            vec![
+                Point2::new(10.0, 20.0),
+                Point2::new(30.0, 40.0),
+                Point2::new(50.0, 60.0),
+            ]
+        );
+        assert_eq!(
+            points
+                .iter()
+                .map(|pole| pole.weight.get())
+                .collect::<Vec<_>>(),
+            vec![1.0, 2.0, 3.0]
         );
     }
 
@@ -487,5 +575,92 @@ mod tests {
             Err(SketchConstraintScaleError::InvalidLocalValue)
         );
         assert_eq!(definition, before_failure);
+    }
+    #[test]
+    fn admitted_owned_sketch_nurbs_scaling_refuses_work_and_retained_text() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let make = |x: f64, rational: bool| {
+            SketchGeometry::nurbs(
+                crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(x, 0.0); 2],
+                    rational.then(|| vec![1.0, 2.0]),
+                    false,
+                )
+                .expect("curve"),
+            )
+        };
+        for rational in [false, true] {
+            for cap in [1, 2] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                assert!(
+                    matches!(make(1.0, rational).scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale")),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sketch NURBS unit scaling work")
+                );
+            }
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert!(
+                matches!(make(f64::MAX, rational).scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale")),
+                Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS refusal text")
+            );
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let actual = make(1.0, rational)
+                .scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale"))
+                .expect("no copy")
+                .expect("finite");
+            assert_eq!(
+                actual,
+                make(1.0, rational)
+                    .scaled_lengths_owned(PositiveReal::new(2.0).expect("scale"))
+                    .expect("reference")
+            );
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("root");
+            let actual = make(f64::MAX, rational)
+                .scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale"))
+                .expect("admitted refusal");
+            assert!(
+                matches!(actual, Err(SketchLengthScaleError::CurveControlPoints(crate::geometry::nurbs::NurbsError::Structure(message))) if message == "control_points contains a non-finite point")
+            );
+        }
+    }
+
+    #[test]
+    fn point_coordinate_scaling_keeps_operands_and_refuses_atomically() {
+        use crate::sketches::{SketchEntityId, SketchLocus};
+        let mut definition = SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::PointCoordinateValues {
+                point: SketchLocus::Start(
+                    SketchEntityId::mint("test:test:sketch-entity#a").expect("ID"),
+                ),
+                values: [
+                    Length::new(1.0).expect("length"),
+                    Length::new(f64::MAX).expect("length"),
+                ],
+            },
+        )
+        .expect("constraint");
+        let original = definition.clone();
+        assert_eq!(
+            definition.scale_lengths(PositiveReal::new(2.0).expect("scale")),
+            Err(SketchConstraintScaleError::LengthOverflow)
+        );
+        assert_eq!(definition, original);
+        definition
+            .scale_lengths(PositiveReal::new(0.5).expect("scale"))
+            .expect("finite");
+        assert!(
+            matches!(definition.kind(), SketchConstraintDefinitionInput::PointCoordinateValues { point, values }
+            if point == match original.kind() { SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => point, _ => panic!("fixture") }
+                && values[0].get() == 0.5 && values[1].get() == f64::MAX * 0.5)
+        );
     }
 }

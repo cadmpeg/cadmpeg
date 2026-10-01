@@ -113,7 +113,9 @@ pub(crate) fn external_reference_stream() -> Vec<u8> {
     p.push(1);
     p.extend_from_slice(&4u32.to_le_bytes());
     for value in ["child.prt", "dirA", "dirB", "extra"] {
-        p.extend_from_slice(&(value.len() as u16).to_le_bytes());
+        p.extend_from_slice(
+            &(u16::try_from(value.len()).expect("fixture value fits u16")).to_le_bytes(),
+        );
         p.extend_from_slice(value.as_bytes());
     }
     p
@@ -136,7 +138,8 @@ pub(crate) fn display_jt_basic_stream() -> Vec<u8> {
     inflated.extend_from_slice(&[0xff; 16]);
     inflated.extend_from_slice(&[6, 5]);
     let compressed = zlib_compress_at_level(&inflated, 1);
-    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
 
     let mut data = Vec::new();
     // Outer index: version 9, one row.
@@ -166,7 +169,9 @@ pub(crate) fn display_jt_basic_stream() -> Vec<u8> {
     data.extend_from_slice(&1_u32.to_le_bytes()); // segment type
     data.extend_from_slice(&segment_byte_len.to_le_bytes()); // header byte len
     data.extend_from_slice(&2_u32.to_le_bytes()); // compression flag
-    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2); // algorithm
     data.extend_from_slice(&compressed);
     data
@@ -198,7 +203,7 @@ pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
     payload.extend_from_slice(&[0xff; 16]);
     payload.extend_from_slice(&[1, 0, 0, 0, 0, 0]); // segment tail
 
-    let segment_byte_len = 24 + payload.len() as u32;
+    let segment_byte_len = 24 + u32::try_from(payload.len()).expect("fixture value fits u32");
     let mut segment = Vec::new();
     segment.extend_from_slice(&[2; 16]); // segment id
     segment.extend_from_slice(&7u32.to_le_bytes()); // segment type
@@ -249,7 +254,8 @@ pub(crate) fn display_jt_string_property_stream() -> Vec<u8> {
     inflated.extend_from_slice(&[0xff; 16]);
 
     let compressed = zlib_compress_at_level(&inflated, 1);
-    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
 
     let mut data = Vec::new();
     data.extend_from_slice(&9_u32.to_le_bytes());
@@ -275,7 +281,9 @@ pub(crate) fn display_jt_string_property_stream() -> Vec<u8> {
     data.extend_from_slice(&31_u32.to_le_bytes()); // segment type 31
     data.extend_from_slice(&segment_byte_len.to_le_bytes());
     data.extend_from_slice(&2_u32.to_le_bytes());
-    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2);
     data.extend_from_slice(&compressed);
     data
@@ -286,7 +294,9 @@ pub(crate) fn display_jt_string_property_stream() -> Vec<u8> {
 fn jt_scene_element(type_id: [u8; 16], base_type: u8, object_id: u32, body: &[u8]) -> Vec<u8> {
     let mut element = Vec::new();
     let byte_len = 16 + 1 + 4 + body.len();
-    element.extend_from_slice(&(byte_len as u32).to_le_bytes());
+    element.extend_from_slice(
+        &(u32::try_from(byte_len).expect("fixture value fits u32")).to_le_bytes(),
+    );
     element.extend_from_slice(&type_id);
     element.push(base_type);
     element.extend_from_slice(&object_id.to_le_bytes());
@@ -434,7 +444,8 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
     inflated.extend_from_slice(&[0xff; 16]);
 
     let compressed = zlib_compress_at_level(&inflated, 1);
-    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
 
     let mut data = Vec::new();
     data.extend_from_slice(&9_u32.to_le_bytes());
@@ -460,7 +471,9 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
     data.extend_from_slice(&1_u32.to_le_bytes());
     data.extend_from_slice(&segment_byte_len.to_le_bytes());
     data.extend_from_slice(&2_u32.to_le_bytes());
-    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2);
     data.extend_from_slice(&compressed);
     data
@@ -1079,31 +1092,49 @@ pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec
 }
 
 pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
-    let chart = crate::intersection::chart_source_records(
-        ext11,
-        crate::intersection::ChartPointLayout::Ext11,
-    )
+    let chart = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::chart_source_records(
+            ctx,
+            ext11,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+    })
+    .unwrap()
     .into_iter()
     .next()
     .expect("ext11 chart record");
-    let (_, chart_end) = crate::intersection::chart_source_record_at(
-        ext11,
-        chart.pos,
-        crate::intersection::ChartPointLayout::Ext11,
-    )
+    let (_, chart_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::chart_source_record_at(
+            ctx,
+            ext11,
+            chart.pos,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+    })
+    .unwrap()
     .expect("ext11 chart bounds");
     let mut deltas = DELTAS_PREAMBLE.to_vec();
     deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
-    for term in crate::intersection::term_use_records(ext11) {
+    for term in crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::term_use_records(ctx, ext11)
+    })
+    .unwrap()
+    {
         let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
         deltas.extend_from_slice(&ext11[term.pos..end]);
     }
-    let support_uv = crate::intersection::support_uv_records(ext11)
-        .into_iter()
-        .next()
-        .expect("ext11 support UV");
-    let (_, support_uv_end) =
-        crate::intersection::support_uv_record_at(ext11, support_uv.pos).expect("UV bounds");
+    let support_uv = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_records(ctx, ext11)
+    })
+    .unwrap()
+    .into_iter()
+    .next()
+    .expect("ext11 support UV");
+    let (_, support_uv_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_record_at(ctx, ext11, support_uv.pos)
+    })
+    .unwrap()
+    .expect("UV bounds");
     deltas.extend_from_slice(&ext11[support_uv.pos..support_uv_end]);
     deltas
 }
@@ -1184,7 +1215,16 @@ pub(crate) fn inline_descriptor_intersection_curve_stream() -> Vec<u8> {
     stream.splice(uv..uv + 41, inline_uv);
 
     for (xmt, point) in [(22u16, [0.01_f64, 0.0, 0.0]), (21, [0.0, 0.0, 0.0])] {
-        let marker = [0, 41, 0, 0, 0, 1, (xmt >> 8) as u8, xmt as u8];
+        let marker = [
+            0,
+            41,
+            0,
+            0,
+            0,
+            1,
+            u8::try_from(xmt >> 8).expect("fixture value fits u8"),
+            u8::try_from(xmt & 0xff).expect("fixture value fits u8"),
+        ];
         let term = stream
             .windows(marker.len())
             .position(|window| window == marker)

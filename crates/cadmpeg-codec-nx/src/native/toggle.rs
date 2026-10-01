@@ -341,15 +341,7 @@ pub(super) fn saved_toggle_records(
     let Some(parsed) = parse_saved_toggle_stream(ctx, bytes, source_offset)? else {
         return Ok((Vec::new(), Vec::new()));
     };
-    ctx.charge_collection_items(1, "store NX saved toggle stream")?;
-    ctx.charge_retained(
-        std::mem::size_of::<SavedToggleStream>() as u64,
-        "retain NX saved toggle stream",
-    )?;
-    let mut streams = Vec::new();
-    streams
-        .try_reserve_exact(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX saved toggle stream", 0, 1))?;
+    let mut streams = ctx.retained_vec(1, "store NX saved toggle stream")?;
     streams.push(parsed.stream);
     Ok((streams, parsed.entries))
 }
@@ -429,26 +421,7 @@ fn parse_saved_toggle_stream(
     let count = usize::try_from(entry_count).map_err(|_| {
         ctx.refuse_codec_limit("index NX saved toggle entries", 0, u64::from(entry_count))
     })?;
-    ctx.charge_collection_items(u64::from(entry_count), "store NX saved toggle entries")?;
-    let entry_bytes = count
-        .checked_mul(std::mem::size_of::<SavedToggleEntry>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("size NX saved toggle entries", 0, u64::from(entry_count))
-        })?;
-    ctx.charge_retained(
-        u64::try_from(entry_bytes).map_err(|_| {
-            ctx.refuse_codec_limit("size NX saved toggle entries", 0, u64::from(entry_count))
-        })?,
-        "retain NX saved toggle entries",
-    )?;
-    let mut entries = Vec::new();
-    entries.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX saved toggle entries",
-            0,
-            u64::from(entry_count),
-        )
-    })?;
+    let mut entries = ctx.retained_vec(count, "store NX saved toggle entries")?;
     let mut view = View::over_retained(bytes);
     let Some(_version) = view.u8() else {
         return Ok(None);
@@ -473,15 +446,8 @@ fn parse_saved_toggle_stream(
         let Some((toggle_id, state)) = value.rsplit_once(':') else {
             return Ok(None);
         };
-        ctx.charge_retained(toggle_id.len() as u64, "retain NX saved toggle identity")?;
-        let mut owned_id = String::new();
-        owned_id.try_reserve_exact(toggle_id.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX saved toggle identity",
-                0,
-                toggle_id.len() as u64,
-            )
-        })?;
+        let mut owned_id =
+            ctx.retained_string(toggle_id.len(), "retain NX saved toggle identity")?;
         owned_id.push_str(toggle_id);
         let Ok(toggle_id) = ToggleId::try_from(owned_id) else {
             return Ok(None);
@@ -500,14 +466,10 @@ fn parse_saved_toggle_stream(
         let digits = if ordinal == 0 {
             1
         } else {
-            ordinal.ilog10() as usize + 1
+            cadmpeg_core::decode::index_from_u32(ordinal.ilog10()) + 1
         };
         let id_len = PREFIX.len() + digits;
-        ctx.charge_retained(id_len as u64, "retain NX saved toggle entry id")?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX saved toggle entry id", 0, id_len as u64)
-        })?;
+        let mut id = ctx.retained_string(id_len, "retain NX saved toggle entry id")?;
         id.push_str(PREFIX);
         if write!(&mut id, "{ordinal}").is_err() {
             return Ok(None);
@@ -555,7 +517,11 @@ fn assign_stable_toggle_identities(
         .checked_mul(std::mem::size_of::<(&ToggleId, usize)>() * 4)
         .and_then(|len| u64::try_from(len).ok())
         .ok_or_else(|| {
-            ctx.refuse_codec_limit("size NX saved toggle index", 0, entries.len() as u64)
+            ctx.refuse_codec_limit(
+                "size NX saved toggle index",
+                0,
+                cadmpeg_core::decode::u64_from_index(entries.len()),
+            )
         })?;
     let _reservation = ctx.reserve_scoped(scratch_bytes, "index NX saved toggle identities")?;
     let mut counts = BTreeMap::<ToggleId, usize>::new();
@@ -573,11 +539,7 @@ fn assign_stable_toggle_identities(
         if counts.get(&entry.toggle_id) == Some(&1) {
             const PREFIX: &str = "nx:saved-toggle:identity#";
             let byte_len = PREFIX.len() + 32;
-            ctx.charge_retained(byte_len as u64, "retain NX stable toggle identity")?;
-            let mut identity = String::new();
-            identity.try_reserve_exact(byte_len).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX stable toggle identity", 0, byte_len as u64)
-            })?;
+            let mut identity = ctx.retained_string(byte_len, "retain NX stable toggle identity")?;
             identity.push_str(PREFIX);
             identity.push_str(entry.toggle_id.as_str());
             entry.stable_identity = Some(identity);
@@ -592,20 +554,23 @@ mod tests {
         SavedToggleEntryWire, SavedToggleState, SavedToggleStreamWire, ENTRY_CLONE_COUNT,
         ENTRY_INTO_WIRE_COUNT, STREAM_INTO_WIRE_COUNT,
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     fn parse_service(bytes: &[u8], source_offset: u64) -> Option<super::ParsedToggleStream> {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        super::parse_saved_toggle_stream(&ctx, bytes, source_offset).unwrap()
+        crate::test_support::with_decode_context(|ctx| {
+            super::parse_saved_toggle_stream(ctx, bytes, source_offset).unwrap()
+        })
     }
 
     fn stream(members: &[&str], trailer: [u8; 4]) -> Vec<u8> {
         let mut bytes = vec![1];
-        bytes.extend_from_slice(&(members.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(members.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for member in members {
-            bytes.extend_from_slice(&(member.len() as u16).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+            );
             bytes.extend_from_slice(member.as_bytes());
         }
         bytes.extend_from_slice(&trailer);
@@ -808,138 +773,190 @@ mod tests {
     #[test]
     fn saved_toggle_entry_count_refuses_before_vector_reservation() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "store NX saved toggle entries")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]
     fn saved_toggle_identity_copy_refuses_before_string_allocation() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = std::mem::size_of::<super::SavedToggleEntry>() as u64;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        super::SavedToggleEntry,
+                    >());
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain NX saved toggle identity")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]
     fn saved_toggle_index_refuses_before_tree_insertion() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "index NX saved toggle identities")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]
     fn saved_toggle_lookup_refuses_before_index_work() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "index NX saved toggle identities")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]
     fn saved_toggle_entries_refuse_before_retained_vector_allocation() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            std::mem::size_of::<super::SavedToggleEntry>() as u64 - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        super::SavedToggleEntry,
+                    >()) - 1;
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain NX saved toggle entries")
+                && limit.operation == "store NX saved toggle entries")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]
     fn saved_toggle_entry_id_refuses_before_string_allocation() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = std::mem::size_of::<super::SavedToggleEntry>() as u64
-            + 32
-            + "nx:saved-toggle:entry#0".len() as u64
-            - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        super::SavedToggleEntry,
+                    >()) + 32
+                        + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
+                        - 1;
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain NX saved toggle entry id")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]
     fn saved_toggle_index_refuses_before_scoped_tree_allocation() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            (std::mem::size_of::<(&super::ToggleId, usize)>() * 4 - 1) as u64;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(&super::ToggleId, usize)>() * 4 - 1,
+                );
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "index NX saved toggle identities")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]
     fn saved_toggle_stable_identity_refuses_before_string_allocation() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = std::mem::size_of::<super::SavedToggleEntry>() as u64
-            + 32
-            + "nx:saved-toggle:entry#0".len() as u64
-            + "nx:saved-toggle:identity#0123456789abcdef0123456789abcdef".len() as u64
-            - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        super::SavedToggleEntry,
+                    >()) + 32
+                        + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
+                        + cadmpeg_core::decode::u64_from_index(
+                            "nx:saved-toggle:identity#0123456789abcdef0123456789abcdef".len(),
+                        )
+                        - 1;
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain NX stable toggle identity")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 }
 

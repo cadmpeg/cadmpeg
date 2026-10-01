@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino 3DM headers, chunks, checksums, and bounded readers.
 
+use std::borrow::Borrow;
 use std::fmt;
 
 use cadmpeg_core::decode::View;
@@ -147,6 +148,15 @@ pub(crate) enum FramingError {
     Resource(cadmpeg_core::decode::ResourceLimit),
 }
 
+impl From<cadmpeg_core::CodecError> for FramingError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            other => Self::unpositioned(other.to_string()),
+        }
+    }
+}
+
 impl FramingError {
     pub(crate) fn structural(offset: usize, message: impl Into<String>) -> Self {
         Self::Structural {
@@ -190,14 +200,17 @@ impl std::error::Error for FramingError {}
 
 /// Parses the exact 32-byte file header.
 pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
-    let search_end = bytes
-        .len()
-        .min(33_554_432_usize.saturating_add(MAGIC.len()));
+    const MAX_HEADER_SEARCH: usize = 33_554_432 + MAGIC.len();
+    let search_end = bytes.len().min(MAX_HEADER_SEARCH);
     let start_offset = bytes[..search_end]
         .windows(MAGIC.len())
         .position(|window| window == MAGIC)
         .ok_or(FramingError::InvalidHeader)?;
-    let header_end = start_offset.saturating_add(file_header::LEN);
+    let header_end = start_offset
+        .checked_add(file_header::LEN)
+        .ok_or(FramingError::Overflow {
+            offset: start_offset,
+        })?;
     if bytes.len() < header_end {
         return Err(FramingError::Truncated {
             offset: bytes.len(),
@@ -402,25 +415,27 @@ pub(crate) fn checked_count_bytes(
     if count < 0 {
         return Err(FramingError::InvalidLength {
             offset,
-            value: count as i128,
+            value: i128::from(count),
         });
     }
     let count = usize::try_from(count).map_err(|_| FramingError::Overflow { offset })?;
     if count > allocation_limit {
         return Err(FramingError::InvalidLength {
             offset,
-            value: count as i128,
+            value: i128::from(cadmpeg_core::decode::u64_from_index(count)),
         });
     }
     let bytes = count
         .checked_mul(element_size)
         .ok_or(FramingError::Overflow { offset })?;
     if bytes > remaining {
-        return Err(FramingError::OutOfBounds {
-            offset,
-            end: offset.saturating_add(bytes),
-            bound: offset + remaining,
-        });
+        let end = offset
+            .checked_add(bytes)
+            .ok_or(FramingError::Overflow { offset })?;
+        let bound = offset
+            .checked_add(remaining)
+            .ok_or(FramingError::Overflow { offset })?;
+        return Err(FramingError::OutOfBounds { offset, end, bound });
     }
     Ok(bytes)
 }
@@ -504,12 +519,14 @@ impl Chunk {
     }
 
     /// Returns the short value, or the declared long-body length.
-    pub(crate) fn value(&self) -> i64 {
+    pub(crate) fn value(&self) -> Result<i64, FramingError> {
         match &self.form {
-            ChunkBody::Short { value, .. } => *value,
+            ChunkBody::Short { value, .. } => Ok(*value),
             ChunkBody::Long { body, checksum } => {
                 // chunk_at derives this span from a nonnegative i64 length.
-                (body.len() + checksum.map_or(0, ChecksumKind::width)) as i64
+                i64::try_from(body.len() + checksum.map_or(0, ChecksumKind::width)).map_err(|_| {
+                    FramingError::structural(self.header_start, "chunk length exceeds i64")
+                })
             }
         }
     }
@@ -591,7 +608,7 @@ pub(crate) fn chunk_at(
     if typecode == TCODE_ENDOFFILE && declared_length < width {
         return Err(FramingError::InvalidLength {
             offset,
-            value: value as i128,
+            value: i128::from(value),
         });
     }
     let kind = checksum_kind(archive, typecode, class_uuid);
@@ -643,6 +660,7 @@ pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
 
 /// Checks a chunk and records an integrity diagnostic for a checksum mismatch.
 pub(crate) fn warn_checksum(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     label: &str,
@@ -652,10 +670,11 @@ pub(crate) fn warn_checksum(
         verify_checksum(data, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
-            format!("{label} CRC mismatch at offset {}", chunk.header_start),
-        );
+            format_args!("{label} CRC mismatch at offset {}", chunk.header_start),
+        )?;
     }
     Ok(())
 }
@@ -670,11 +689,15 @@ pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumSta
 ///
 /// Container checksums exclude complete nested chunks. Callers pass the
 /// ordered ranges written directly at the container's nesting level.
-pub(crate) fn verify_checksum_ranges(
+pub(crate) fn verify_checksum_ranges<I>(
     bytes: &[u8],
     chunk: &Chunk,
-    ranges: &[std::ops::Range<usize>],
-) -> Result<ChecksumStatus, FramingError> {
+    ranges: I,
+) -> Result<ChecksumStatus, FramingError>
+where
+    I: Clone + IntoIterator,
+    I::Item: std::borrow::Borrow<std::ops::Range<usize>>,
+{
     let ChunkBody::Long {
         body,
         checksum: Some(kind),
@@ -684,10 +707,10 @@ pub(crate) fn verify_checksum_ranges(
     };
     let checksum = body.end..body.end + kind.width();
     let stored = &bytes[checksum.clone()];
-    if ranges
-        .iter()
-        .any(|range| range.start < body.start || range.end > body.end)
-    {
+    if ranges.clone().into_iter().any(|range| {
+        let range = range.borrow();
+        range.start < body.start || range.end > body.end
+    }) {
         return Err(FramingError::Structural {
             offset: body.start,
             message: "checksum range escapes chunk body".to_string(),
@@ -701,8 +724,8 @@ pub(crate) fn verify_checksum_ranges(
             })?);
             let expected = u32::from(
                 ranges
-                    .iter()
-                    .fold(1, |crc, range| crc16(crc, &bytes[range.clone()])),
+                    .into_iter()
+                    .fold(1, |crc, range| crc16(crc, &bytes[range.borrow().clone()])),
             );
             Ok(if expected == actual {
                 ChecksumStatus::Valid
@@ -717,7 +740,7 @@ pub(crate) fn verify_checksum_ranges(
             })?;
             let mut hasher = crc32fast::Hasher::new();
             for range in ranges {
-                hasher.update(&bytes[range.clone()]);
+                hasher.update(&bytes[range.borrow().clone()]);
             }
             let expected = hasher.finalize();
             Ok(if expected == actual {
@@ -729,35 +752,118 @@ pub(crate) fn verify_checksum_ranges(
     }
 }
 
+/// Parent-level checksum bytes without materializing an input-sized range vector.
+#[derive(Clone)]
+pub(crate) struct DirectChecksumRanges<'a> {
+    body: std::ops::Range<usize>,
+    children: &'a [std::ops::Range<usize>],
+    sorted: bool,
+}
+
+impl DirectChecksumRanges<'_> {
+    fn next_child(
+        &self,
+        index: usize,
+        last: Option<(usize, usize)>,
+    ) -> Option<(usize, &std::ops::Range<usize>)> {
+        if self.sorted {
+            self.children.get(index).map(|child| (index, child))
+        } else {
+            self.children
+                .iter()
+                .enumerate()
+                .filter(|(index, child)| last.is_none_or(|key| (child.start, *index) > key))
+                .min_by_key(|(index, child)| (child.start, *index))
+        }
+    }
+}
+
+pub(crate) struct DirectChecksumRangeIter<'a> {
+    ranges: DirectChecksumRanges<'a>,
+    index: usize,
+    last: Option<(usize, usize)>,
+    cursor: usize,
+    complete: bool,
+}
+
+impl Iterator for DirectChecksumRangeIter<'_> {
+    type Item = std::ops::Range<usize>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.complete {
+            return None;
+        }
+        while let Some((index, child)) = self.ranges.next_child(self.index, self.last) {
+            let start = self.cursor;
+            self.cursor = child.end;
+            self.index += 1;
+            self.last = Some((child.start, index));
+            if start < child.start {
+                return Some(start..child.start);
+            }
+        }
+        self.complete = true;
+        (self.cursor < self.ranges.body.end).then_some(self.cursor..self.ranges.body.end)
+    }
+}
+
+impl<'a> IntoIterator for DirectChecksumRanges<'a> {
+    type Item = std::ops::Range<usize>;
+    type IntoIter = DirectChecksumRangeIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DirectChecksumRangeIter {
+            cursor: self.body.start,
+            ranges: self,
+            index: 0,
+            last: None,
+            complete: false,
+        }
+    }
+}
+
+impl<'a> IntoIterator for &DirectChecksumRanges<'a> {
+    type Item = std::ops::Range<usize>;
+    type IntoIter = DirectChecksumRangeIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (*self).clone().into_iter()
+    }
+}
+
 /// Returns the parent-level byte ranges after complete child chunks are removed.
-pub(crate) fn direct_checksum_ranges(
+pub(crate) fn direct_checksum_ranges<'a>(
     body: &std::ops::Range<usize>,
-    children: &[std::ops::Range<usize>],
-) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut children = children.to_vec();
-    children.sort_by_key(|range| range.start);
+    children: &'a [std::ops::Range<usize>],
+) -> Result<DirectChecksumRanges<'a>, FramingError> {
+    let ranges = DirectChecksumRanges {
+        body: body.clone(),
+        children,
+        sorted: children
+            .windows(2)
+            .all(|pair| pair[0].start <= pair[1].start),
+    };
     let mut cursor = body.start;
-    let mut direct = Vec::with_capacity(children.len() + 1);
-    for child in children {
+    let mut last = None;
+    for index in 0..children.len() {
+        let Some((child_index, child)) = ranges.next_child(index, last) else {
+            break;
+        };
         if child.start < cursor || child.end < child.start || child.end > body.end {
             return Err(FramingError::Structural {
                 offset: child.start,
                 message: "nested checksum range overlaps or escapes its parent".to_string(),
             });
         }
-        if cursor < child.start {
-            direct.push(cursor..child.start);
-        }
         cursor = child.end;
+        last = Some((child.start, child_index));
     }
-    if cursor < body.end {
-        direct.push(cursor..body.end);
-    }
-    Ok(direct)
+    Ok(ranges)
 }
 
 /// Frames complete nested chunks through a short zero class-end marker.
 pub(crate) fn checksum_children_through_class_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -777,13 +883,15 @@ pub(crate) fn checksum_children_through_class_end(
         if children.len() >= CHECKSUM_CHILD_CAP {
             return Err(FramingError::InvalidLength {
                 offset: start,
-                value: children.len() as i128,
+                value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
             });
         }
+        ctx.reserve_vec(&mut children, 1, "Rhino class-end checksum children")
+            .map_err(crate::chunks::FramingError::from)?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {
-            if !child.short() || child.value() != 0 {
+            if !child.short() || child.value()? != 0 {
                 return Err(FramingError::structural(
                     start,
                     format!("{context} class end must be a short zero chunk"),
@@ -841,7 +949,10 @@ mod direct_range_tests {
     #[test]
     fn direct_checksum_ranges_exclude_complete_sorted_children() {
         assert_eq!(
-            direct_checksum_ranges(&(10..50), &[30..40, 15..20]).expect("valid nesting"),
+            direct_checksum_ranges(&(10..50), &[30..40, 15..20])
+                .expect("valid nesting")
+                .into_iter()
+                .collect::<Vec<_>>(),
             vec![10..15, 20..30, 40..50]
         );
     }

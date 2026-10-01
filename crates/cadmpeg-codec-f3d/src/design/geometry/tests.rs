@@ -1,11 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    analytic_segment_intersections, angle_strictly_inside_arc,
-    arrangement_region_containing_points, closed_sketch_profiles, point_on_sketch_entity,
-    region_containing_points, sketch_arrangement_faces, ProfileBoundary, ProfileBoundarySegment,
-    MAX_ARRANGEMENT_WALK_WORK,
-};
+use cadmpeg_core::decode::u64_from_index;
+
+mod cast_limits;
+
+use super::analytic_segment_intersections;
+use super::angle_strictly_inside_arc;
+use super::arrangement_region_containing_points;
+use super::closed_sketch_profiles;
+use super::point_on_sketch_entity;
+use super::region_containing_points;
+use super::sketch_arrangement_faces;
+use super::ProfileBoundary;
+use super::ProfileBoundarySegment;
+use super::MAX_ARRANGEMENT_WALK_WORK;
+use crate::design::dimensions::point_lies_on_sketch_geometry;
+use cadmpeg_core::decode::DecodeArena;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchEntityUse;
+use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
+use cadmpeg_ir::sketches::SketchId;
+
+mod evaluator_refusal;
+mod historical_allocation;
 
 #[test]
 fn subdivision_count_requires_positive_target_error() {
@@ -13,17 +44,6 @@ fn subdivision_count_requires_positive_target_error() {
     assert_eq!(super::subdivision_count(0.0, 0.0), None);
     assert_eq!(super::subdivision_count(100.0, 10.0), Some(10));
 }
-use crate::design::dimensions::point_lies_on_sketch_geometry;
-use cadmpeg_core::decode::WorkBudget;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::SketchProfileRegion;
-use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
-use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchGeometryDefinition, SketchId,
-};
 
 fn local_arrangement_budget() -> WorkBudget<'static> {
     WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK)
@@ -49,9 +69,11 @@ fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01, None)
-        .unwrap()
-        .expect("finite wide NURBS profile samples");
+    let points = crate::test_support::with_decode_context(|decode_ctx| {
+        super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01, decode_ctx)
+    })
+    .unwrap()
+    .expect("finite wide NURBS profile samples");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
     assert!(points.iter().all(Point2::is_finite));
@@ -67,9 +89,11 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
         false,
     )
     .expect("wide finite NURBS pcurve");
-    let tubes = super::certified_nurbs_tubes(&curve, 0.5, None)
-        .unwrap()
-        .expect("finite wide-domain tubes");
+    let tubes = crate::test_support::with_decode_context(|decode_ctx| {
+        super::certified_nurbs_tubes(&curve, 0.5, decode_ctx)
+    })
+    .unwrap()
+    .expect("finite wide-domain tubes");
     assert_eq!(
         tubes.first().map(|tube| tube.start),
         Some(Point2::new(0.0, 0.0))
@@ -81,6 +105,30 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
     assert!(tubes
         .iter()
         .all(|tube| { tube.start.is_finite() && tube.end.is_finite() && tube.error.is_finite() }));
+}
+
+#[test]
+fn certified_nurbs_tubes_refuse_collection_limit() {
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(error) = super::certified_nurbs_tubes(&curve, 0.5, &ctx) else {
+        panic!("one certified span needs a tube");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "f3d certified nurbs tube")
+    );
 }
 
 #[test]
@@ -100,9 +148,11 @@ fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01, None)
-        .unwrap()
-        .expect("finite midpoint near the float limit");
+    let points = crate::test_support::with_decode_context(|decode_ctx| {
+        super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01, decode_ctx)
+    })
+    .unwrap()
+    .expect("finite midpoint near the float limit");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
     assert!(points.iter().any(|point| point.u > 0.0 && point.u < 1.0));
@@ -170,19 +220,21 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
     let Some(SketchProfileRegion::Trimmed {
         outer_boundary,
         hole_boundaries,
-    }) = arrangement_region_containing_points(
-        &sketch,
-        &entities,
-        &[
-            Point2::new(0.0, 0.0),
-            Point2::new(31.0, 0.0),
-            Point2::new(31.0, 19.0),
-            Point2::new(0.0, 19.0),
-        ],
-        1.0e-6,
-        &arrangement_budget,
-        None,
-    )
+    }) = crate::test_support::with_decode_context(|decode_ctx| {
+        arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[
+                Point2::new(0.0, 0.0),
+                Point2::new(31.0, 0.0),
+                Point2::new(31.0, 19.0),
+                Point2::new(0.0, 19.0),
+            ],
+            1.0e-6,
+            &arrangement_budget,
+            decode_ctx,
+        )
+    })
     .expect("arrangement collection admitted")
     else {
         panic!("selected face must resolve from raw sketch geometry")
@@ -269,24 +321,24 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
     };
 
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(12.0, 21.0, 12.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
     );
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(15.0, 21.0, 12.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
@@ -318,13 +370,13 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         .unwrap(),
     ));
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &incomplete,
             &entities,
             &[Point3::new(12.0, 21.0, 12.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
@@ -387,57 +439,57 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
     };
 
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(1.0, 1.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(3.0, 3.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
     );
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(5.0, 5.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
     );
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
@@ -530,13 +582,13 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
     };
 
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(1.0, 1.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
@@ -614,22 +666,26 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
 fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     let (sketch, entities, line_id, arc_id) = coincident_circle_arc_arrangement();
     let arrangement_budget = local_arrangement_budget();
-    let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, None)
-        .expect("arrangement collection admitted")
-        .expect("endpoint arrangement faces");
+    let faces = crate::test_support::with_decode_context(|decode_ctx| {
+        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, decode_ctx)
+    })
+    .expect("arrangement collection admitted")
+    .expect("endpoint arrangement faces");
     assert_eq!(faces.len(), 2);
-    let selected = arrangement_region_containing_points(
-        &sketch,
-        &entities,
-        &[
-            Point2::new(0.0, -1.0),
-            Point2::new(0.0, 1.0),
-            Point2::new(-1.0, 0.0),
-        ],
-        1.0e-7,
-        &arrangement_budget,
-        None,
-    )
+    let selected = crate::test_support::with_decode_context(|decode_ctx| {
+        arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[
+                Point2::new(0.0, -1.0),
+                Point2::new(0.0, 1.0),
+                Point2::new(-1.0, 0.0),
+            ],
+            1.0e-7,
+            &arrangement_budget,
+            decode_ctx,
+        )
+    })
     .expect("arrangement collection admitted")
     .expect("left half-disk arrangement face");
     let SketchProfileRegion::Trimmed {
@@ -653,10 +709,10 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("root context for session work budget");
-    let budget = ctx.work_budget(MAX_ARRANGEMENT_WALK_WORK as u64);
+    let budget = ctx.work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK));
 
     assert!(
-        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, &ctx)
             .expect("work refusal remains an absent arrangement")
             .is_none()
     );
@@ -669,7 +725,7 @@ fn arrangement_visit_marks_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::arrangement_has_alternate_path(&[], 0, 0, 0, 2, Some(&ctx))
+    let error = super::arrangement_has_alternate_path(&[], 0, 0, 0, 2, &ctx)
         .expect_err("two visit marks exceed one admitted item");
     assert!(matches!(
         error,
@@ -687,35 +743,67 @@ fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::Code
     policy.limits.max_collection_items = maximum;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let budget = local_arrangement_budget();
-    sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+    sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, &ctx)
         .err()
         .expect("arrangement exceeds the selected collection limit")
 }
 
+fn arrangement_refusal_at_operation(
+    operation: &'static str,
+    mut maximum: u64,
+) -> (cadmpeg_core::decode::ResourceLimit, u64) {
+    for _ in 0..10_000 {
+        let error = arrangement_refusal_with_collection_limit(maximum);
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("arrangement refused for a reason other than resource use");
+        };
+        if limit.operation == operation {
+            return (limit, maximum);
+        }
+        maximum = limit.used.checked_add(limit.additional).unwrap();
+    }
+    panic!("arrangement did not reach the requested resource operation");
+}
+
 #[test]
 fn arrangement_outgoing_refuses_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(1826);
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d_arrangement_outgoing", 0);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
+    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.additional, 2);
+}
+
+#[test]
+fn arrangement_outgoing_entries_refuse_materialized_limit() {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 143;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let budget = local_arrangement_budget();
+    let error = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, &ctx)
+        .err()
+        .expect("six outgoing entries require 144 temporary bytes");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d_arrangement_outgoing"
-                && limit.used == 1825
-                && limit.additional == 2
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "f3d arrangement outgoing entries"
     ));
 }
 
 #[test]
 fn arrangement_edge_visits_refuse_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(1829);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d arrangement edge visits"
-                && limit.used == 1827
-                && limit.additional == 3
-    ));
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d arrangement edge visits", 0);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
+    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.additional, 3);
 }
 
 #[test]
@@ -734,7 +822,9 @@ fn analytic_arrangement_intersections_include_hidden_second_crossing() {
     assert_eq!(
         analytic_segment_intersections(&line, &circle)
             .expect("analytic intersection family")
-            .len(),
+            .into_iter()
+            .flatten()
+            .count(),
         2
     );
 }
@@ -800,24 +890,24 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
     let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
 
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(4.0, 0.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(expected.clone())
     );
     assert_eq!(
-        region_containing_points(
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             &entities,
             &[Point3::new(0.0, 0.0, 0.0)],
             1.0e-6,
-            None
-        )
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
     );
@@ -847,7 +937,10 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
     assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-    assert!(boundary.strictly_contains(&hole));
+    assert!(
+        crate::test_support::with_decode_context(|ctx| boundary.strictly_contains(&hole, ctx))
+            .unwrap()
+    );
 }
 
 #[test]
@@ -871,8 +964,14 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
     ]);
 
-    assert!(polygon.strictly_contains(&arc_loop));
-    assert!(!arc_loop.strictly_contains(&polygon));
+    assert!(crate::test_support::with_decode_context(
+        |ctx| polygon.strictly_contains(&arc_loop, ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| arc_loop.strictly_contains(&polygon, ctx)
+    )
+    .unwrap());
 
     let crossing = ProfileBoundary::CircularArcLoop(vec![
         ProfileBoundarySegment::Line {
@@ -886,8 +985,14 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
             end_angle: std::f64::consts::PI,
         },
     ]);
-    assert!(!polygon.strictly_contains(&crossing));
-    assert!(!crossing.strictly_contains(&polygon));
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| polygon.strictly_contains(&crossing, ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| crossing.strictly_contains(&polygon, ctx)
+    )
+    .unwrap());
 }
 
 #[test]
@@ -911,10 +1016,22 @@ fn arc_loop_containment_rejects_crossing_and_touching_segments() {
     let crossing = d_loop(-1.5, 1.0);
     let touching = d_loop(-1.0, 1.0);
 
-    assert!(outer.strictly_contains(&inner));
-    assert!(!inner.strictly_contains(&outer));
-    assert!(!outer.strictly_contains(&crossing));
-    assert!(!outer.strictly_contains(&touching));
+    assert!(
+        crate::test_support::with_decode_context(|ctx| outer.strictly_contains(&inner, ctx))
+            .unwrap()
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|ctx| inner.strictly_contains(&outer, ctx))
+            .unwrap()
+    );
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| outer.strictly_contains(&crossing, ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| outer.strictly_contains(&touching, ctx)
+    )
+    .unwrap());
 }
 
 #[test]
@@ -951,20 +1068,28 @@ fn historical_edge_positions_require_a_complete_state_chain() {
         ..crate::history_records::AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::design::geometry::historical_entity_positions(
-            crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
-            7,
-            &topology,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_entity_positions(
+                crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),])
     );
     topology.point_positions.pop();
     assert_eq!(
-        crate::design::geometry::historical_entity_positions(
-            crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
-            7,
-            &topology,
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_entity_positions(
+                crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
 }
@@ -997,27 +1122,39 @@ fn historical_region_faces_follow_complete_ownership_hierarchy() {
     };
 
     assert_eq!(
-        crate::design::geometry::historical_owned_faces(
-            AsmHistoricalEntityKind::Body,
-            1,
-            &topology
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Body,
+                1,
+                &topology,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
-        crate::design::geometry::historical_owned_faces(
-            AsmHistoricalEntityKind::Region,
-            2,
-            &topology
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Region,
+                2,
+                &topology,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
-        crate::design::geometry::historical_owned_faces(
-            AsmHistoricalEntityKind::Shell,
-            3,
-            &topology
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Shell,
+                3,
+                &topology,
+                decode_ctx,
+            )
+        })
+        .unwrap(),
         Some(vec![5, 7])
     );
 }
@@ -1041,11 +1178,23 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6)
-        .expect("resource allocation did not fail"));
     assert!(
-        !point_on_sketch_entity(Point2::new(-2.0, 0.0), &arc, 1.0e-6)
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(0.0, 2.0),
+            &arc,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(-2.0, 0.0),
+            &arc,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -1056,14 +1205,21 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_lies_on_sketch_geometry(
-        Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
-        &clockwise_arc.geometry
-    )
-    .expect("resource allocation did not fail"));
     assert!(
-        !point_lies_on_sketch_geometry(Point2::new(-2.0, 0.0), &clockwise_arc.geometry)
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
+            decode_ctx,
+            Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
+            &clockwise_arc.geometry
+        ))
+        .expect("resource allocation did not fail")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
+            decode_ctx,
+            Point2::new(-2.0, 0.0),
+            &clockwise_arc.geometry
+        ))
+        .expect("resource allocation did not fail")
     );
 
     let ellipse = entity(
@@ -1082,16 +1238,31 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     );
     assert!(
-        point_on_sketch_entity(Point2::new(-1.0, -1.0), &ellipse, 1.0e-6)
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(-1.0, -1.0),
+            &ellipse,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     assert!(
-        !point_on_sketch_entity(Point2::new(3.0, -1.0), &ellipse, 1.0e-6)
-            .expect("resource allocation did not fail")
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(3.0, -1.0),
+            &ellipse,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     assert!(
-        !point_on_sketch_entity(Point2::new(-1.0, -0.9), &ellipse, 1.0e-6)
-            .expect("resource allocation did not fail")
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(-1.0, -0.9),
+            &ellipse,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
 
     let nurbs = entity(SketchGeometry::nurbs(
@@ -1109,12 +1280,22 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     ));
     assert!(
-        point_on_sketch_entity(Point2::new(3.0, 2.0), &nurbs, 1.0e-6)
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(3.0, 2.0),
+            &nurbs,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     assert!(
-        !point_on_sketch_entity(Point2::new(2.0, 4.0), &nurbs, 1.0e-6)
-            .expect("resource allocation did not fail")
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(2.0, 4.0),
+            &nurbs,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
@@ -1129,8 +1310,15 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9)
-        .expect("resource allocation did not fail"));
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            *interior.as_raw(),
+            &nurbs,
+            EPS_CONTAINMENT_DISTANCE
+        ))
+        .expect("resource allocation did not fail")
+    );
 }
 
 #[test]
@@ -1180,12 +1368,15 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles_and_refuse_vi
         ),
     ];
 
-    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)
+    })
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = closed_sketch_profiles(Some(&ctx), &sketch, &entities, 1.0e-6)
+    let error = closed_sketch_profiles(&ctx, &sketch, &entities, 1.0e-6)
         .expect_err("five edge visit marks exceed four admitted collection items");
     assert!(matches!(
         error,
@@ -1236,7 +1427,10 @@ fn branched_line_graph_projects_each_bounded_face() {
         line("synthetic:test:id#divider", (1.0, 0.0), (1.0, 1.0)),
     ];
 
-    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)
+    })
+    .unwrap();
     assert_eq!(profiles.len(), 2);
     assert!(profiles.iter().all(|profile| profile.len() == 4));
     assert!(profiles.iter().all(|profile| profile
@@ -1269,7 +1463,10 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
         line("synthetic:test:id#inner-left", (0.0, 41.0), (0.0, 47.0)),
     ];
 
-    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)
+    })
+    .unwrap();
     assert_eq!(
         profiles
             .iter()
@@ -1359,13 +1556,17 @@ fn numerical_audit_line_circle_intersections_are_scale_invariant() {
             &circle
         )
         .unwrap()
-        .is_empty());
+        .iter()
+        .all(Option::is_none));
         let tangent = super::line_arc_intersection_points(
             (Point2::new(-radius, radius), Point2::new(radius, radius)),
             &circle,
         )
         .unwrap();
-        assert_eq!(tangent, vec![Point2::new(0.0, radius)]);
+        assert_eq!(
+            tangent.into_iter().flatten().collect::<Vec<_>>(),
+            vec![Point2::new(0.0, radius)]
+        );
     }
 }
 
@@ -1455,9 +1656,9 @@ fn scaled_planar_intersections_preserve_separation_and_witnesses() {
             end_angle: std::f64::consts::TAU,
         };
         let points = super::arc_intersection_points(&arc(0.), &arc(r)).unwrap();
-        assert_eq!(points.len(), 2);
+        assert_eq!(points.iter().flatten().count(), 2);
         assert!(super::boundary_segments_intersect(&arc(0.), &arc(r)));
-        for point in points {
+        for point in points.into_iter().flatten() {
             assert!((point.u / r - 0.5).abs() <= 4. * f64::EPSILON);
         }
     }
@@ -1481,7 +1682,8 @@ fn disparate_segment_and_point_scales_preserve_distance() {
         &arc
     )
     .unwrap()
-    .is_empty());
+    .iter()
+    .all(Option::is_none));
 }
 
 const LARGE_LINE_TOLERANCE: f64 = 1e-6;
@@ -1501,7 +1703,7 @@ fn numerical_0922b_line_arc_crossings() {
         .unwrap();
         println!("Fusion line[-{half},{half}],r=.001 => {points:?}");
         assert_eq!(
-            points,
+            points.into_iter().flatten().collect::<Vec<_>>(),
             vec![Point2::new(-0.001, 0.), Point2::new(0.001, 0.)]
         );
     }
@@ -1519,7 +1721,10 @@ fn numerical_0922b_large_line_crossing() {
         };
         let r = analytic_segment_intersections(&a, &b).unwrap();
         println!("Fusion crossing scale{s:e}: {r:?}");
-        assert_eq!(r, vec![Point2::new(0., 0.)]);
+        assert_eq!(
+            r.into_iter().flatten().collect::<Vec<_>>(),
+            vec![Point2::new(0., 0.)]
+        );
     }
 }
 #[test]
@@ -1530,13 +1735,15 @@ fn numerical_0922b_large_line_split() {
             end: Point2::new(scale, 0.),
         })
         .unwrap();
-        let r = super::arrangement_split_parameters(
-            &line,
-            [0., 1.],
-            &[Point2::new(0.5 * scale, 0.)],
-            LARGE_LINE_TOLERANCE,
-            None,
-        )
+        let r = crate::test_support::with_decode_context(|decode_ctx| {
+            super::arrangement_split_parameters(
+                &line,
+                [0., 1.],
+                &[Point2::new(0.5 * scale, 0.)],
+                LARGE_LINE_TOLERANCE,
+                decode_ctx,
+            )
+        })
         .unwrap()
         .unwrap();
         println!("Fusion split scale{scale:e}: {r:?}");
@@ -1555,4 +1762,39 @@ fn numerical_0922b_wide_segment_incidence() {
     }
 }
 
+mod arrangement_allocation;
+mod certified_allocation;
 mod predicates;
+mod region_allocation;
+const EPS_CONTAINMENT_LINEAR: f64 = 1.0e-6;
+const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
+
+mod containment_limits;
+
+mod sort_limits;
+
+mod profile_limits;
+
+#[test]
+fn arrangement_cycle_work_rejects_unrepresentable_edge_square() {
+    let edge_count = 1usize << (usize::BITS / 2);
+    let error = crate::test_support::with_decode_context(|ctx| {
+        super::arrangement_cycle_work(edge_count, ctx)
+    })
+    .expect_err("the squared work count cannot be represented");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "F3D arrangement cycle work")
+    );
+}
+
+#[test]
+fn arrangement_cycle_work_preserves_representable_square() {
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| {
+            super::arrangement_cycle_work(1_000, ctx)
+        })
+        .unwrap(),
+        1_000_000
+    );
+}

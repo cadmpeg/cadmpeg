@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::exact_path_feature_construction;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
@@ -36,7 +35,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
             .unwrap();
         let construction = exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &[],
         )
@@ -55,7 +54,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         assert_eq!(
             exact_path_feature_construction(
                 &bytes,
-                &IndexedRecordOffsets::build(&bytes),
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &scope,
                 &[],
             ),

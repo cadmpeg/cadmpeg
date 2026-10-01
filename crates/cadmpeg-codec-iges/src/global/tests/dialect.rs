@@ -99,7 +99,9 @@ fn fixed_ascii_verified_versions_decode_under_their_versioned_profiles() {
             "{version_name}: {:#?}",
             result.report().losses
         );
-        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -377,8 +379,8 @@ fn the_5_0_global_defaults_resolve_receiver_units_and_coordinate_metadata() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.receiver_product().as_deref(), Some("product"));
-    assert_eq!(parsed.units_name().as_deref(), Some("MM"));
+    assert_eq!(parsed.receiver_product(), Some("product"));
+    assert_eq!(parsed.units_name(), Some("MM"));
     assert!(losses.is_empty(), "{losses:#?}");
 }
 

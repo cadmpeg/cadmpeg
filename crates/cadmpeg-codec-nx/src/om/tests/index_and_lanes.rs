@@ -4,28 +4,277 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::om::construction_payload_scalar_fields;
-use crate::om::data_block_object_frames;
-use crate::om::data_block_object_references;
+fn data_block_object_frames(bytes: &[u8]) -> Vec<crate::om::compact::LocatedCompactIndex> {
+    crate::test_support::with_decode_context(|ctx| crate::om::data_block_object_frames(ctx, bytes))
+        .unwrap()
+}
+
+fn data_block_frame_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = [
+        0xaa, 0x81, 0x72, 0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80,
+        0x86, 0x02, 0x01, 0x02, 0x80, 0xa4, 0xff,
+    ];
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::data_block_object_frames(ctx, &bytes).unwrap_err(),
+    )
+}
+
+#[test]
+fn data_block_object_frames_refuse_collection_limit() {
+    let error = data_block_frame_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn data_block_object_frames_refuse_retained_limit() {
+    let error = data_block_frame_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn data_block_object_frames_refuse_work_limit() {
+    let error = data_block_frame_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
 use crate::om::datum_csys_descriptor_block;
-use crate::om::datum_csys_payload_fixed_pairs;
+fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<crate::om::DatumCsysPayloadFixedPair> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::datum_csys_payload_fixed_pairs(ctx, bytes)
+    })
+    .unwrap()
+}
+
+fn datum_csys_pair_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut bytes = vec![
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+        0x30,
+    ];
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x00, 0x30]);
+    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::datum_csys_payload_fixed_pairs(ctx, &bytes).unwrap_err(),
+    )
+}
+
+#[test]
+fn datum_csys_pairs_refuse_collection_limit() {
+    let error = datum_csys_pair_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn datum_csys_pairs_refuse_retained_limit() {
+    let error = datum_csys_pair_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn datum_csys_pairs_refuse_work_limit() {
+    let error = datum_csys_pair_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
 use crate::om::datum_plane_descriptor_block;
-use crate::om::draft_construction_binary32_lanes;
-use crate::om::draft_construction_fixed_lanes;
+fn draft_construction_binary32_lanes(
+    bytes: &[u8],
+) -> Vec<crate::om::scalar_run::FramedScalarRun<crate::om::discriminators::DraftBinary32Branch, ()>>
+{
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::draft_construction_binary32_lanes(ctx, bytes)
+    })
+    .unwrap()
+}
+fn draft_construction_fixed_lanes(
+    bytes: &[u8],
+) -> Vec<crate::om::scalar_run::FramedScalarRun<crate::om::fixed::Q155LaneFrame, ()>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::draft_construction_fixed_lanes(ctx, bytes)
+    })
+    .unwrap()
+}
+
+fn draft_scalar_lane_refusal(
+    fixed: bool,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = if fixed {
+        vec![
+            0xff, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80,
+            0x86, 0x02, 0x00, 0x01, 0x00, 0x30, 0x40, 0, 0, 0, 0, 0, 0, 0xb0, 0xc0, 0, 0, 0, 0, 0,
+            0, 0,
+        ]
+    } else {
+        vec![
+            0xff, 0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x04, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80,
+            0x86, 0x02, 0x00, 0x03, 0x00, 0x4f, 0x80, 0, 0, 0xcf, 0x80, 0, 0, 0,
+        ]
+    };
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            if fixed {
+                crate::om::draft_construction_fixed_lanes(ctx, &bytes).unwrap_err()
+            } else {
+                crate::om::draft_construction_binary32_lanes(ctx, &bytes).unwrap_err()
+            }
+        },
+    )
+}
+
+#[test]
+fn draft_fixed_lanes_refuse_collection_limit() {
+    let error = draft_scalar_lane_refusal(true, |policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn draft_fixed_lanes_refuse_retained_limit() {
+    let error = draft_scalar_lane_refusal(true, |policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn draft_fixed_lanes_refuse_work_limit() {
+    let error = draft_scalar_lane_refusal(true, |policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn draft_binary32_lanes_refuse_collection_limit() {
+    let error = draft_scalar_lane_refusal(false, |policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn draft_binary32_lanes_refuse_retained_limit() {
+    let error = draft_scalar_lane_refusal(false, |policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn draft_binary32_lanes_refuse_work_limit() {
+    let error = draft_scalar_lane_refusal(false, |policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
 use crate::om::draft_construction_identity_frames;
+
+fn draft_construction_identity_frames_test(
+    bytes: &[u8],
+) -> Vec<crate::om::draft_identity::DraftIdentityFrame> {
+    crate::test_support::with_decode_context(|ctx| draft_construction_identity_frames(ctx, bytes))
+        .unwrap()
+}
 use crate::om::hole_package_construction_group_lane;
 use crate::om::indexed_sections;
 use crate::om::offset_store_named_point;
+
+fn construction_payload_scalar_fields_test(
+    bytes: &[u8],
+) -> Vec<crate::om::ConstructionPayloadScalarField> {
+    crate::test_support::with_decode_context(|ctx| construction_payload_scalar_fields(ctx, bytes))
+        .unwrap()
+}
+
+fn offset_store_named_point_test<'a>(
+    blocks: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<crate::om::OffsetStoreNamedPoint> {
+    crate::test_support::with_decode_context(|ctx| offset_store_named_point(ctx, blocks)).unwrap()
+}
 use crate::om::operation_body_reference;
-use crate::om::operation_body_references;
-use crate::om::operation_body_write_frames;
-use crate::om::operation_common_frames;
-use crate::om::operation_labels;
-use crate::om::operation_payload_strings;
-use crate::om::operation_payload_text_frames;
-use crate::om::operation_records_with_labels_and_ordinals;
-use crate::om::operation_terminal_frame;
+fn operation_body_references(
+    record: crate::om::operation_record::OperationBodyInput<'_>,
+) -> Vec<crate::om::OperationBodyReference> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::operation_body_references(ctx, record)
+    })
+    .unwrap()
+}
+
+fn operation_body_reference_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationBodyInput::new(&bytes, 100, 0, "EXTRUDE")
+                    .unwrap();
+            crate::om::operation_body_references(ctx, record).unwrap_err()
+        },
+    )
+}
+
+#[test]
+fn om_operation_body_references_refuse_collection_limit() {
+    let error = operation_body_reference_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn om_operation_body_references_refuse_retained_limit() {
+    let error = operation_body_reference_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn om_operation_body_references_refuse_work_limit() {
+    let error = operation_body_reference_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
 use crate::om::sections;
-use crate::om::simple_hole_repeated_scalar_lane;
 use crate::om::DataBlockObjectReference;
 use crate::om::OperationBodyReference;
 use crate::om::OperationPayloadTextFrame;
@@ -38,17 +287,299 @@ use crate::test_support::test_om::size_framed_om_section_with_record_area;
 const EPS_NAMED_POINT_ROUNDING: f64 = 1.0e-12;
 const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;
 
+fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::OperationLabel<'_>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::operation_labels(ctx, bytes, base_offset)
+    })
+    .unwrap()
+}
+
+fn operation_records_with_labels_and_ordinals<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    labels: &[crate::om::OperationLabel<'a>],
+) -> Vec<(usize, crate::om::operation_record::OperationRecord<'a>)> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::operation_records_with_labels_and_ordinals(ctx, bytes, base_offset, labels)
+    })
+    .unwrap()
+}
+
+fn operation_payload_strings(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Vec<crate::om::OperationPayloadString<'_>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::operation_payload_strings(ctx, record)
+    })
+    .unwrap()
+}
+
+fn operation_payload_text_frames(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Vec<crate::om::OperationPayloadTextFrame<'_>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::operation_payload_text_frames(ctx, record)
+    })
+    .unwrap()
+}
+
+fn operation_common_frames(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Vec<crate::om::common_frame::CommonFrame<usize>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_common_frames(ctx, record))
+        .unwrap()
+}
+
+fn operation_body_write_frames(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Vec<crate::om::body_write::BodyWriteFrame<usize>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::operation_body_write_frames(ctx, record)
+    })
+    .unwrap()
+}
+
+fn data_block_object_references(bytes: &[u8]) -> Vec<crate::om::DataBlockObjectReference> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::data_block_object_references(ctx, bytes)
+    })
+    .unwrap()
+}
+
+#[test]
+fn om_data_block_object_references_refuse_collection_limit() {
+    let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = crate::om::data_block_object_references(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
+    );
+}
+
+#[test]
+fn om_data_block_object_references_refuse_retained_limit() {
+    let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = crate::om::data_block_object_references(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
+    );
+}
+
+#[test]
+fn om_data_block_object_references_refuse_work_limit() {
+    let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = crate::om::data_block_object_references(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+            );
+        },
+    );
+}
+
+fn operation_terminal_frame(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Option<crate::om::OperationTerminalFrame> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_terminal_frame(ctx, record))
+        .unwrap()
+}
+
+fn one_common_frame_payload() -> &'static [u8] {
+    &[
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
+    ]
+}
+
+#[test]
+fn om_common_frame_route_refuses_collection_limit() {
+    let bytes = one_common_frame_payload();
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
+    );
+}
+
+#[test]
+fn om_common_frame_route_refuses_retained_limit() {
+    let bytes = one_common_frame_payload();
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
+    );
+}
+
+#[test]
+fn om_common_frame_route_refuses_work_limit() {
+    let bytes = one_common_frame_payload();
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+            );
+        },
+    );
+}
+
+fn simple_hole_repeated_scalar_lane(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Option<crate::om::nonempty::NonEmpty<crate::om::scalar::RepeatedScalar<usize>>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::simple_hole_repeated_scalar_lane(ctx, record)
+    })
+    .unwrap()
+}
+
+fn simple_hole_references_test(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Option<[crate::om::simple_hole_references::ReferencePair; 2]> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+            ctx, record,
+        )
+    })
+    .unwrap()
+}
+
+fn one_simple_hole_scalar_payload() -> Vec<u8> {
+    let mut scalar = 25.4f64.to_be_bytes();
+    scalar[0] -= 0x10;
+    let mut payload = scalar.to_vec();
+    payload.push(0x7f);
+    payload.extend_from_slice(&scalar);
+    payload.extend_from_slice(b"\x04\x08Hole_X\0");
+    payload
+}
+
+#[test]
+fn om_simple_hole_text_and_scalar_route_refuses_collection_limit() {
+    let bytes = one_simple_hole_scalar_payload();
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 2;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE")
+                    .unwrap();
+            let error = crate::om::simple_hole_repeated_scalar_lane(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
+    );
+}
+
+#[test]
+fn om_simple_hole_text_and_scalar_route_refuses_retained_limit() {
+    let bytes = one_simple_hole_scalar_payload();
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE")
+                    .unwrap();
+            let error = crate::om::simple_hole_repeated_scalar_lane(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
+    );
+}
+
+#[test]
+fn om_simple_hole_text_and_scalar_route_refuses_work_limit() {
+    let bytes = one_simple_hole_scalar_payload();
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE")
+                    .unwrap();
+            let error = crate::om::simple_hole_repeated_scalar_lane(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+            );
+        },
+    );
+}
+
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
-    let sections = indexed_sections(&bytes);
+    let sections =
+        crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 8);
     let records = sections[0].as_fixed().expect("fixed store");
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].object_id.0, 0x101);
     assert_eq!(
-        records[0].object_id.1 as usize,
+        cadmpeg_core::decode::index_from_u64(records[0].object_id.1)
+            .expect("fixture offset fits usize"),
         sections[0].object_id_table_offset + 8
     );
     assert_eq!(
@@ -57,7 +588,8 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     );
     assert_eq!(records[1].object_id.0, 0x102);
     assert_eq!(
-        records[1].object_id.1 as usize,
+        cadmpeg_core::decode::index_from_u64(records[1].object_id.1)
+            .expect("fixture offset fits usize"),
         sections[0].object_id_table_offset + 12
     );
     assert!(sections[0].as_offset_only().is_none());
@@ -126,7 +658,7 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     let bytes = [
         0xaa, 0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72, 0xbb,
     ];
-    let fields = construction_payload_scalar_fields(&bytes);
+    let fields = construction_payload_scalar_fields_test(&bytes);
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
@@ -134,10 +666,30 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
 
     let mut malformed = bytes;
     malformed[5] = 1;
-    assert!(construction_payload_scalar_fields(&malformed).is_empty());
+    assert!(construction_payload_scalar_fields_test(&malformed).is_empty());
     malformed = bytes;
     malformed[6] = 0x70;
-    assert!(construction_payload_scalar_fields(&malformed).is_empty());
+    assert!(construction_payload_scalar_fields_test(&malformed).is_empty());
+}
+
+#[test]
+fn construction_scalar_scan_refuses_collection_limit() {
+    let bytes = [
+        0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72,
+    ];
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = construction_payload_scalar_fields(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
+    );
 }
 
 #[test]
@@ -150,7 +702,7 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
         0x45, 0x04, 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33,
         0x07,
     ];
-    let point = offset_store_named_point([&first[..], &second[..]]).unwrap();
+    let point = offset_store_named_point_test([&first[..], &second[..]]).unwrap();
     assert_eq!(point.name, "Point7");
     assert!(point
         .values
@@ -167,13 +719,13 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let mut same_block = first.to_vec();
     same_block.extend_from_slice(&second);
     assert_eq!(
-        offset_store_named_point([&same_block[..]])
+        offset_store_named_point_test([&same_block[..]])
             .unwrap()
             .block_count,
         1
     );
     assert_eq!(
-        offset_store_named_point([&first[..9], &first[9..], &second[..]])
+        offset_store_named_point_test([&first[..9], &first[9..], &second[..]])
             .unwrap()
             .block_count,
         3
@@ -181,22 +733,40 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let third = [
         0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
     ];
-    assert!(offset_store_named_point([&first[..], &second[..], &third[..]]).is_none());
+    assert!(offset_store_named_point_test([&first[..], &second[..], &third[..]]).is_none());
     let next_name = [
         0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00,
     ];
     let next_name_blocks = [&first[..], &second[..], &next_name[..]];
-    assert!(offset_store_named_point(next_name_blocks).is_some());
+    assert!(offset_store_named_point_test(next_name_blocks).is_some());
     let next_point = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00];
     assert_eq!(
-        offset_store_named_point([&first[..], &second[..], &next_point[..]])
+        offset_store_named_point_test([&first[..], &second[..], &next_point[..]])
             .unwrap()
             .block_count,
         2
     );
     let mut zero = first;
     zero[7] = b'0';
-    assert!(offset_store_named_point([&zero[..], &second[..]]).is_none());
+    assert!(offset_store_named_point_test([&zero[..], &second[..]]).is_none());
+}
+
+#[test]
+fn offset_store_named_point_refuses_scoped_limit() {
+    let first = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00];
+
+    crate::test_support::with_decode_context_over(
+        &first,
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = offset_store_named_point(ctx, [&first[..]]).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+            );
+        },
+    );
 }
 
 #[test]
@@ -258,7 +828,7 @@ fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     payload.extend_from_slice(&shifted);
     payload.push(0xbb);
 
-    let fields = construction_payload_scalar_fields(&payload);
+    let fields = construction_payload_scalar_fields_test(&payload);
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
@@ -365,11 +935,7 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     payload.push(0x00);
     let label = "SIMPLE HOLE";
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
-    let references =
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
-            record,
-        )
-        .unwrap();
+    let references = simple_hole_references_test(record).unwrap();
     assert_eq!(
         references[0].references().map(|(token, _)| token.value()),
         [231, 232]
@@ -400,16 +966,15 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     wrapped.extend_from_slice(&[0xf0, 0xe9, 0xf0, 0xea]);
     wrapped.extend_from_slice(&[0x04, 0x08]);
     wrapped.extend_from_slice(b"Hole_X\0");
-    let wrapped_references =
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
-            crate::om::operation_record::OperationPayload::new(
-                &wrapped,
-                record.payload_offset(),
-                record.name(),
-            )
-            .unwrap(),
+    let wrapped_references = simple_hole_references_test(
+        crate::om::operation_record::OperationPayload::new(
+            &wrapped,
+            record.payload_offset(),
+            record.name(),
         )
-        .unwrap();
+        .unwrap(),
+    )
+    .unwrap();
     assert_eq!(
         wrapped_references[0]
             .references()
@@ -432,31 +997,27 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     );
     let mut malformed_wrapper = wrapped.clone();
     malformed_wrapper[16] ^= 1;
-    assert!(
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
-            crate::om::operation_record::OperationPayload::new(
-                &malformed_wrapper,
-                record.payload_offset(),
-                record.name()
-            )
-            .unwrap(),
+    assert!(simple_hole_references_test(
+        crate::om::operation_record::OperationPayload::new(
+            &malformed_wrapper,
+            record.payload_offset(),
+            record.name()
         )
-        .is_none()
-    );
+        .unwrap(),
+    )
+    .is_none());
 
     let mut null = payload.clone();
     null[16] = 0xff;
-    assert!(
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
-            crate::om::operation_record::OperationPayload::new(
-                &null,
-                record.payload_offset(),
-                record.name()
-            )
-            .unwrap()
+    assert!(simple_hole_references_test(
+        crate::om::operation_record::OperationPayload::new(
+            &null,
+            record.payload_offset(),
+            record.name()
         )
-        .is_none()
-    );
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
@@ -702,27 +1263,66 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
 #[test]
 fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
-    let descriptor = datum_plane_descriptor_block(&bytes).unwrap();
+    let descriptor =
+        crate::test_support::with_decode_context(|ctx| datum_plane_descriptor_block(ctx, &bytes))
+            .unwrap()
+            .unwrap();
     assert_eq!(descriptor.identity(), "793487222121a5474a9125451b8e31f5");
     assert_eq!(descriptor.suffix(), b"?A\xf0\x1e\xff\x02\x01\x33");
     assert_eq!(descriptor.schema_index(), 28_702);
     assert_eq!(descriptor.label(), "3");
 
     let short_bytes = *b"a75c5f0ed880dd1443b3c5c57908aae?A\xf0\x1f\xff\x02\x01\x66\x33";
-    let short = datum_plane_descriptor_block(&short_bytes).unwrap();
+    let short = crate::test_support::with_decode_context(|ctx| {
+        datum_plane_descriptor_block(ctx, &short_bytes)
+    })
+    .unwrap()
+    .unwrap();
     assert_eq!(short.identity().len(), 31);
     assert_eq!(short.schema_index(), 28_703);
     assert_eq!(short.label(), "f3");
 
     bytes[0] = b'G';
-    assert!(datum_plane_descriptor_block(&bytes).is_none());
-    assert!(datum_plane_descriptor_block(&bytes[..39]).is_none());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| datum_plane_descriptor_block(ctx, &bytes))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        crate::test_support::with_decode_context(|ctx| datum_plane_descriptor_block(
+            ctx,
+            &bytes[..39]
+        ))
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[test]
+fn om_datum_plane_descriptor_route_refuses_retained_limit() {
+    let bytes = b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 1;
+        },
+        |ctx| {
+            assert!(matches!(
+                datum_plane_descriptor_block(ctx, bytes),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        },
+    );
 }
 
 #[test]
 fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
-    let descriptor = datum_csys_descriptor_block(bytes).unwrap();
+    let descriptor =
+        crate::test_support::with_decode_context(|ctx| datum_csys_descriptor_block(ctx, bytes))
+            .unwrap()
+            .unwrap();
     assert_eq!(descriptor.prefix(), [0x02, 0x01]);
     assert_eq!(
         descriptor.identity().as_str(),
@@ -733,13 +1333,37 @@ fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
 
     let mut ambiguous = bytes.to_vec();
     ambiguous.extend_from_slice(b"012345678901234567890123456789");
-    assert!(datum_csys_descriptor_block(&ambiguous).is_none());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| datum_csys_descriptor_block(
+            ctx, &ambiguous
+        ))
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[test]
+fn om_datum_csys_descriptor_route_refuses_retained_limit() {
+    let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 1;
+        },
+        |ctx| {
+            assert!(matches!(
+                datum_csys_descriptor_block(ctx, bytes),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        },
+    );
 }
 
 #[test]
 fn om_draft_identity_frames_require_complete_typed_framing() {
     let bytes = b"\x00A\x81\x54\xf0\x38\x02\x01abc123?A\xf0\x27\xff\x02\x01def456?\x00";
-    let frames = draft_construction_identity_frames(bytes);
+    let frames = draft_construction_identity_frames_test(bytes);
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0].offset(), 1);
     assert_eq!(frames[0].prefix(), b"A\x81\x54\xf0\x38\x02\x01");
@@ -761,9 +1385,11 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
     );
     assert_eq!(frames[1].identity(), "def456");
 
-    assert!(draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x02\x01abc123").is_empty());
-    assert!(draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x04\x01abc123?").is_empty());
-    assert!(draft_construction_identity_frames(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty());
+    assert!(draft_construction_identity_frames_test(b"A\x81\x54\xf0\x38\x02\x01abc123").is_empty());
+    assert!(
+        draft_construction_identity_frames_test(b"A\x81\x54\xf0\x38\x04\x01abc123?").is_empty()
+    );
+    assert!(draft_construction_identity_frames_test(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty());
 }
 
 #[test]
@@ -1242,7 +1868,7 @@ fn om_data_block_object_references_require_complete_field_frames() {
 #[test]
 fn om_size_frame_bounds_its_type_declarations() {
     let bytes = size_framed_om_section();
-    let sections = sections(&bytes);
+    let sections = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].offset, 0);
     assert_eq!(sections[0].byte_len, bytes.len());
@@ -1260,7 +1886,11 @@ fn om_size_frame_bounds_its_type_declarations() {
 
     let mut truncated = bytes;
     truncated.pop();
-    assert!(crate::om::sections(&truncated).is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &truncated))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1268,19 +1898,25 @@ fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
     let mut bytes = size_framed_om_section();
     let payload_len = u32::try_from(bytes.len() - 12).expect("short OM fixture");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
-    let sections = sections(&bytes);
+    let sections = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].byte_len, bytes.len());
     assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
 
     bytes.push(0);
-    assert!(crate::om::sections(&bytes).is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &bytes))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
 fn om_size_frame_uses_validated_internal_record_area_pointer() {
     let bytes = size_framed_om_section_with_record_area();
-    let section = sections(&bytes).remove(0);
+    let section = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes))
+        .unwrap()
+        .remove(0);
     let offset = section.record_area.expect("record area").offset;
     assert_eq!(offset, size_framed_om_section().len() + 20);
     assert_eq!(
@@ -1291,181 +1927,12 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
 
     let mut invalid = bytes;
     invalid[offset + 12] = 1;
-    assert_eq!(sections(&invalid)[0].record_area, None);
-}
-
-fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
-    let mut bytes = vec![0xff; 16];
-    bytes[12..14].copy_from_slice(b"OM");
-    bytes.extend_from_slice(&[0, 1, 2]);
-    let class_name = b"UGS::FEATURE_RECORD";
-    bytes.push((class_name.len() + 1) as u8);
-    bytes.extend_from_slice(class_name);
-    bytes.push(0xa0);
-    bytes.extend_from_slice(&[0x81, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x06]);
-    let pointer_offset = bytes.len();
-    let record_area_offset = pointer_offset + 20;
-    bytes.push(0x01);
-    bytes.extend_from_slice(&((record_area_offset - 1) as u32).to_le_bytes());
-    bytes.resize(record_area_offset, 0);
-    bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-    bytes.extend_from_slice(b"\x01\x0eNX 1980.1700\0");
-    bytes.extend_from_slice(
-        b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0",
-    );
-    let payload_len = (bytes.len() - 16) as u32;
-    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
-    bytes
-}
-
-#[test]
-fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame() {
-    let bytes = legacy_feature_om_section_with_record_area();
-    let section = sections(&bytes).remove(0);
-    let record_area_offset = section.record_area.expect("record area").offset;
     assert_eq!(
-        record_area_offset,
-        16 + 3 + 1 + b"UGS::FEATURE_RECORD".len() + 1 + 12 + 20
-    );
-    assert_eq!(
-        section
-            .record_area_header()
-            .expect("record header")
-            .product
-            .value
-            .as_str(),
-        "NX 1980.1700"
-    );
-    assert_eq!(section.operation_labels().len(), 1);
-    assert_eq!(section.operation_labels()[0].value, "UNITE");
-
-    let mut invalid = bytes;
-    invalid[record_area_offset + 13] = 0x02;
-    assert!(sections(&invalid)[0].record_area.is_none());
-}
-
-#[test]
-fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
-    let mut bytes = size_framed_om_section();
-    bytes.extend(std::iter::repeat_n(0xa5, 4097));
-    bytes.extend_from_slice(&[
-        (b"m_lateField".len() + 1) as u8,
-        b'm',
-        b'_',
-        b'l',
-        b'a',
-        b't',
-        b'e',
-        b'F',
-        b'i',
-        b'e',
-        b'l',
-        b'd',
-        0x82,
-    ]);
-    let pointer_offset = bytes.len();
-    let record_area_offset = pointer_offset + 20;
-    bytes.extend_from_slice(&(record_area_offset as u32).to_le_bytes());
-    bytes.resize(record_area_offset, 0);
-    bytes.extend_from_slice(&[13, 0, 0, 0, 14, 0, 0, 0, 44, 0, 0, 0]);
-    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
-    let payload_len = u32::try_from(bytes.len() - 16).expect("synthetic section fits");
-    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
-
-    let section = sections(&bytes).remove(0);
-    assert_eq!(
-        section.fields.last().expect("late field").name,
-        "m_lateField"
-    );
-    assert_eq!(
-        section.record_area.map(|area| area.offset),
-        Some(record_area_offset)
+        crate::test_support::with_decode_context(|ctx| sections(ctx, &invalid)).unwrap()[0]
+            .record_area,
+        None
     );
 }
 
-#[test]
-fn om_operation_labels_require_the_complete_frame() {
-    let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x02\x03\xff\xff\x03\x08SKETCH\0";
-    let labels = operation_labels(bytes, 100);
-    assert_eq!(labels.len(), 2);
-    assert_eq!(labels[0].header.end_offset(), 122);
-    assert_eq!(labels[0].header.offset(), 100);
-    assert_eq!(labels[0].value, "UNITE");
-    assert_eq!(
-        labels[0].header.objects().values(),
-        [Some(1), Some(576), Some(6099), None]
-    );
-    assert_eq!(labels[1].value, "SKETCH");
-    assert_eq!(
-        labels[1].header.objects().values(),
-        [Some(2), Some(3), None, None]
-    );
-
-    assert!(operation_labels(b"\xff\xff\x03\x07UNITE\0", 0).is_empty());
-    let mut invalid = bytes.to_vec();
-    invalid[15] = 0x91;
-    assert_eq!(operation_labels(&invalid, 0).len(), 1);
-}
-
-#[test]
-fn om_operation_records_use_consecutive_validated_headers() {
-    let bytes = b"prefix\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0payload\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x08SKETCH\0tail";
-    let labels = operation_labels(bytes, 10);
-    let records_with_ordinals = operation_records_with_labels_and_ordinals(bytes, 10, &labels);
-    let records = records_with_ordinals
-        .iter()
-        .map(|(_, record)| record)
-        .collect::<Vec<_>>();
-    assert_eq!(records_with_ordinals[0].0, 0);
-    assert_eq!(records_with_ordinals[1].0, 1);
-    assert_eq!(records.len(), 2);
-    assert_eq!(records[0].offset(), 16);
-    assert_eq!(records[0].label().value, "UNITE");
-    assert!(records[0].bytes().ends_with(b"payload"));
-    assert_eq!(records[0].payload(), b"payload");
-    assert_eq!(records[0].payload_offset(), 43);
-    assert_eq!(records[1].label().value, "SKETCH");
-    assert!(records[1].bytes().ends_with(b"tail"));
-    assert_eq!(records[1].payload(), b"tail");
-}
-
-#[test]
-fn om_operation_payload_strings_require_complete_utf8_frames() {
-    let label = "SIMPLE HOLE";
-    let payload = b"\x00\x04\x07BLOCK\0\x04\x04\xc3\x97\0\x04\x07BROKEN";
-    let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let strings = operation_payload_strings(record);
-    assert_eq!(strings.len(), 2);
-    assert_eq!(strings[0].offset, 201);
-    assert_eq!(strings[0].value.as_str(), "BLOCK");
-    assert_eq!(strings[1].value.as_str(), "×");
-}
-
-#[test]
-fn om_operation_payload_text_frames_retain_marker_and_order() {
-    let label = "SYMBOLIC_THREAD";
-    let payload = b"\x03\x05CUT\0\x04\x06DONE\0\x03\x0bM Profile\0";
-    let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let frames = operation_payload_text_frames(record);
-    assert_eq!(
-        frames,
-        vec![
-            OperationPayloadTextFrame {
-                marker: OperationTextMarker::Text,
-                offset: 200,
-                value: crate::payload_text::PayloadText::new("CUT").unwrap(),
-            },
-            OperationPayloadTextFrame {
-                marker: OperationTextMarker::String,
-                offset: 206,
-                value: crate::payload_text::PayloadText::new("DONE").unwrap(),
-            },
-            OperationPayloadTextFrame {
-                marker: OperationTextMarker::Text,
-                offset: 213,
-                value: crate::payload_text::PayloadText::new("M Profile").unwrap(),
-            },
-        ]
-    );
-}
 mod operation_reference_lanes;
+mod record_area_and_operation_frames;

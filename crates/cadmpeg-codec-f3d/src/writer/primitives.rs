@@ -19,16 +19,28 @@ pub(super) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    let mut projected =
-        crate::design::configurations::project_configurations(&native.design_configurations)?;
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let decode_ctx = &decode_ctx;
+
+    let mut projected = crate::design::configurations::project_configurations(
+        decode_ctx,
+        &native.design_configurations,
+    )?;
     crate::design::configurations::bind_configuration_parameter_overrides(
+        decode_ctx,
         &mut projected,
         &target.model.parameters,
-    );
+    )?;
     crate::design::configurations::bind_configuration_suppressed_features(
+        decode_ctx,
         &mut projected,
         &target.model.features,
-    );
+    )?;
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
@@ -42,6 +54,14 @@ pub(crate) fn validate_assembly_projection(
     target: &CadIr,
     native: Option<&F3dNative>,
 ) -> Result<(), CodecError> {
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let decode_ctx = &decode_ctx;
+
     let Some(native) = native else {
         return target
             .model
@@ -55,6 +75,7 @@ pub(crate) fn validate_assembly_projection(
             });
     };
     let projected = crate::design::assembly::project_assembly_joints(
+        decode_ctx,
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &target.model.features,

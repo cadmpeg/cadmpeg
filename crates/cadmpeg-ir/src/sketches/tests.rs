@@ -123,7 +123,11 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
                 id.clone(),
                 sketch.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: Point2::new(ordinal as f64, 0.0),
+                    position: Point2::new(
+                        cadmpeg_core::convert::f64_from_index(ordinal)
+                            .expect("test ordinal is exactly representable"),
+                        0.0,
+                    ),
                 })
                 .unwrap(),
             )
@@ -1933,6 +1937,7 @@ fn native_constraint_kind_rejects_empty_text_at_input_admission() {
 }
 
 mod admitted_records;
+mod allocation;
 mod frames;
 mod spatial;
 

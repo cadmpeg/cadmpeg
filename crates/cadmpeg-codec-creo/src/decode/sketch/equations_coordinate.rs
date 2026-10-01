@@ -63,49 +63,62 @@ impl SectionFunctionSixDistance {
 }
 
 pub(super) fn section_equation_function_six_distance_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(SectionScalarVariable, f64)> {
-    section_equation_function_six_distance_rows(definition, coordinates, ambiguous_point_ids)
+) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
+    crate::decode::collect_items(
+        ctx,
+        section_equation_function_six_distance_rows(
+            ctx,
+            definition,
+            coordinates,
+            ambiguous_point_ids,
+        )?
         .into_iter()
-        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?)))
-        .collect()
+        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?))),
+        "creo section equation six distance values",
+    )
 }
 
 pub(in crate::decode) fn section_equation_function_six_distance_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionFunctionSixDistance> {
+) -> Result<Vec<SectionFunctionSixDistance>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    equations
-        .rows
-        .iter()
-        .filter_map(|equation| {
+    crate::decode::collect_items(
+        ctx,
+        equations.rows.iter().filter_map(|equation| {
             if equation.function_id != 6 {
                 return None;
             }
@@ -186,8 +199,9 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
                 equation_id: equation.equation_id,
                 offset: equation.offset,
             })
-        })
-        .collect()
+        }),
+        "creo section equation function six distance rows",
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -244,180 +258,201 @@ fn section_equation_dimension_scalar_value(
 }
 
 pub(super) fn section_equation_unsigned_coordinate_distances(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionUnsignedCoordinateDistance> {
-    section_equation_unsigned_coordinate_distance_rows(definition, ambiguous_point_ids)
-        .into_iter()
-        .filter(|constraint| constraint.active)
-        .collect()
+) -> Result<Vec<SectionUnsignedCoordinateDistance>, CodecError> {
+    crate::decode::collect_items(
+        ctx,
+        section_equation_unsigned_coordinate_distance_rows(ctx, definition, ambiguous_point_ids)?
+            .into_iter()
+            .filter(|constraint| constraint.active),
+        "creo section unsigned coordinate distances",
+    )
 }
 
 pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionUnsignedCoordinateDistance> {
+) -> Result<Vec<SectionUnsignedCoordinateDistance>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(dimensions) = definition
         .dimensions
         .as_ref()
         .filter(|table| feature_dimension_table_complete(table))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    equations
-        .rows
-        .iter()
-        .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
-        .filter_map(|equation| {
-            let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
-                return None;
-            };
-            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
-            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
-            let dimension = variables.rows.get(usize::try_from(*dimension).ok()?)?;
-            if first.variable_type != second.variable_type
-                || !matches!(first.variable_type, VariableType::U | VariableType::V)
-                || dimension.variable_type != VariableType::Dimension
-                || ambiguous_point_ids.contains(&first.key)
-                || ambiguous_point_ids.contains(&second.key)
-                || first.key == second.key
-            {
-                return None;
-            }
-            let dimension_row = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
-            if !matches!(dimension_row.dimension_type, 1..=5) {
-                return None;
-            }
-            let equality_value = scalar_equality_values
-                .get(&(dimension.variable_type, dimension.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let value = section_equation_dimension_scalar_value(
-                dimension,
-                equality_value,
-                dimension_row.value.resolved()?.abs(),
-                false,
-            )?;
-            Some(SectionUnsignedCoordinateDistance {
-                first: first.key,
-                second: second.key,
-                coordinate: SectionAxis::from_variable(first.variable_type)?,
-                scalar: (dimension.variable_type, dimension.key),
-                value,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        })
-        .collect()
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(
+        ctx,
+        equations
+            .rows
+            .iter()
+            .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
+            .filter_map(|equation| {
+                let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice()
+                else {
+                    return None;
+                };
+                let first = variables.rows.get(usize::try_from(*first).ok()?)?;
+                let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+                let dimension = variables.rows.get(usize::try_from(*dimension).ok()?)?;
+                if first.variable_type != second.variable_type
+                    || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                    || dimension.variable_type != VariableType::Dimension
+                    || ambiguous_point_ids.contains(&first.key)
+                    || ambiguous_point_ids.contains(&second.key)
+                    || first.key == second.key
+                {
+                    return None;
+                }
+                let dimension_row = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
+                if !matches!(dimension_row.dimension_type, 1..=5) {
+                    return None;
+                }
+                let equality_value = scalar_equality_values
+                    .get(&(dimension.variable_type, dimension.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let value = section_equation_dimension_scalar_value(
+                    dimension,
+                    equality_value,
+                    dimension_row.value.resolved()?.abs(),
+                    false,
+                )?;
+                Some(SectionUnsignedCoordinateDistance {
+                    first: first.key,
+                    second: second.key,
+                    coordinate: SectionAxis::from_variable(first.variable_type)?,
+                    scalar: (dimension.variable_type, dimension.key),
+                    value,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                })
+            }),
+        "creo section equation unsigned coordinate distance rows",
+    )
 }
 
 pub(in crate::decode) fn section_equation_radius_dimensions(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<SectionRadiusDimension> {
+) -> Result<Vec<SectionRadiusDimension>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(dimensions) = definition
         .dimensions
         .as_ref()
         .filter(|table| feature_dimension_table_complete(table))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    equations
-        .rows
-        .iter()
-        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
-        .filter_map(|equation| {
-            let [Some(first), Some(second)] = equation.arguments.as_slice() else {
-                return None;
-            };
-            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
-            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
-            let (radius, scalar) = match (first.variable_type, second.variable_type) {
-                (VariableType::Radius, VariableType::Dimension) => (first, second),
-                (VariableType::Dimension, VariableType::Radius) => (second, first),
-                _ => return None,
-            };
-            let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
-            let dimension_value = dimension.value.resolved()?;
-            let radius_equality = scalar_equality_values
-                .get(&(radius.variable_type, radius.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let radius_value =
-                reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
-            if dimension.dimension_type != 3
-                || radius_value.is_some_and(|value| {
-                    !value.is_finite()
-                        || value <= 0.0
-                        || (value - dimension_value).abs()
-                            > EPS_DIMENSION_BINDING
-                                * value.abs().max(dimension_value.abs()).max(1.0)
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(
+        ctx,
+        equations
+            .rows
+            .iter()
+            .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
+            .filter_map(|equation| {
+                let [Some(first), Some(second)] = equation.arguments.as_slice() else {
+                    return None;
+                };
+                let first = variables.rows.get(usize::try_from(*first).ok()?)?;
+                let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+                let (radius, scalar) = match (first.variable_type, second.variable_type) {
+                    (VariableType::Radius, VariableType::Dimension) => (first, second),
+                    (VariableType::Dimension, VariableType::Radius) => (second, first),
+                    _ => return None,
+                };
+                let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
+                let dimension_value = dimension.value.resolved()?;
+                let radius_equality = scalar_equality_values
+                    .get(&(radius.variable_type, radius.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let radius_value =
+                    reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
+                if dimension.dimension_type != 3
+                    || radius_value.is_some_and(|value| {
+                        !value.is_finite()
+                            || value <= 0.0
+                            || (value - dimension_value).abs()
+                                > EPS_DIMENSION_BINDING
+                                    * value.abs().max(dimension_value.abs()).max(1.0)
+                    })
+                {
+                    return None;
+                }
+                let equality_value = scalar_equality_values
+                    .get(&(scalar.variable_type, scalar.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let value = section_equation_dimension_scalar_value(
+                    scalar,
+                    equality_value,
+                    dimension_value,
+                    true,
+                )?;
+                Some(SectionRadiusDimension {
+                    radius_variable: (radius.variable_type, radius.key),
+                    radius: radius.key,
+                    scalar: (scalar.variable_type, scalar.key),
+                    value: PositiveLength::new(value)?,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
                 })
-            {
-                return None;
-            }
-            let equality_value = scalar_equality_values
-                .get(&(scalar.variable_type, scalar.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let value = section_equation_dimension_scalar_value(
-                scalar,
-                equality_value,
-                dimension_value,
-                true,
-            )?;
-            Some(SectionRadiusDimension {
-                radius_variable: (radius.variable_type, radius.key),
-                radius: radius.key,
-                scalar: (scalar.variable_type, scalar.key),
-                value: PositiveLength::new(value)?,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        })
-        .collect()
+            }),
+        "creo section equation radius dimensions",
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -431,39 +466,49 @@ pub(in crate::decode) struct SectionPointOnLineConstraint {
 }
 
 pub(super) fn section_equation_point_on_line_constraints(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(u32, u32, u32)> {
-    section_equation_point_on_line_constraint_rows(definition, ambiguous_point_ids)
-        .into_iter()
-        .filter(|constraint| constraint.active)
-        .map(|constraint| (constraint.target, constraint.first, constraint.second))
-        .collect()
+) -> Result<Vec<(u32, u32, u32)>, CodecError> {
+    crate::decode::collect_items(
+        ctx,
+        section_equation_point_on_line_constraint_rows(ctx, definition, ambiguous_point_ids)?
+            .into_iter()
+            .filter(|constraint| constraint.active)
+            .map(|constraint| (constraint.target, constraint.first, constraint.second)),
+        "creo section point on line constraints",
+    )
 }
 
 pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionPointOnLineConstraint> {
+) -> Result<Vec<SectionPointOnLineConstraint>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -535,7 +580,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation point on line constraint rows")
 }
 
 #[derive(Clone, Copy)]
@@ -548,49 +593,59 @@ pub(in crate::decode) struct SectionEqualLengthConstraint {
 }
 
 pub(super) fn section_equation_equal_length_constraints(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionEqualLengthConstraint> {
-    section_equation_equal_length_constraint_rows(definition, ambiguous_point_ids)
-        .into_iter()
-        .filter(|constraint| constraint.active)
-        .collect()
+) -> Result<Vec<SectionEqualLengthConstraint>, CodecError> {
+    crate::decode::collect_items(
+        ctx,
+        section_equation_equal_length_constraint_rows(ctx, definition, ambiguous_point_ids)?
+            .into_iter()
+            .filter(|constraint| constraint.active),
+        "creo section equal length constraints",
+    )
 }
 
 pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionEqualLengthConstraint> {
+) -> Result<Vec<SectionEqualLengthConstraint>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
         .filter_map(|equation| {
-            let mut rows = Vec::with_capacity(equation.arguments.len());
-            for ordinal in &equation.arguments {
-                rows.push(variables.rows.get(usize::try_from((*ordinal)?).ok()?)?);
-            }
-            let [first_u, first_v, second_u, second_v, third_u, third_v, fourth_u, fourth_v, auxiliary] =
-                rows.as_slice()
+            let rows: [Option<&crate::feature::definitions::FeatureVariableRow>; 9] =
+                std::array::from_fn(|index| {
+                    let ordinal = equation.arguments[index]?;
+                    variables.rows.get(usize::try_from(ordinal).ok()?)
+                });
+            let [Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(third_u), Some(third_v), Some(fourth_u), Some(fourth_v), Some(auxiliary)] = rows
             else {
                 return None;
             };
@@ -632,7 +687,7 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation equal length constraint rows")
 }
 
 pub(super) type SectionCoordinateVariable = (u32, SectionAxis);
@@ -644,59 +699,185 @@ pub(in crate::decode) struct SectionCoordinateEquation {
 }
 
 impl SectionCoordinateEquation {
-    pub(in crate::decode) fn point_value(point: u32, coordinate: SectionAxis, value: f64) -> Self {
+    pub(in crate::decode) fn point_value(
+        ctx: &DecodeContext<'_>,
+        point: u32,
+        coordinate: SectionAxis,
+        value: f64,
+    ) -> Result<Self, CodecError> {
         let mut equation = Self::default();
-        equation.add_point(point, coordinate, 1.0);
+        equation.add_point(ctx, point, coordinate, 1.0)?;
         equation.rhs = value;
-        equation
+        Ok(equation)
     }
 
     pub(in crate::decode) fn point_difference(
+        ctx: &DecodeContext<'_>,
         first: u32,
         second: u32,
         coordinate: SectionAxis,
         delta: f64,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
+        Self::point_difference_with_operation(
+            ctx,
+            first,
+            second,
+            coordinate,
+            delta,
+            "creo coordinate equation term nodes",
+        )
+    }
+
+    fn point_difference_with_operation(
+        ctx: &DecodeContext<'_>,
+        first: u32,
+        second: u32,
+        coordinate: SectionAxis,
+        delta: f64,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         let mut equation = Self::default();
-        equation.add_point(first, coordinate, -1.0);
-        equation.add_point(second, coordinate, 1.0);
+        ctx.charge_collection_items(1, operation)?;
+        equation.terms.insert((first, coordinate), -1.0);
+        if first != second {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        *equation.terms.entry((second, coordinate)).or_default() += 1.0;
         equation.rhs = delta;
-        equation
+        Ok(equation)
     }
 
     pub(super) fn source_difference(
+        ctx: &DecodeContext<'_>,
         first: SectionPointSource,
         second: SectionPointSource,
         coordinate: SectionAxis,
         delta: f64,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut equation = Self::default();
-        equation.add_source(first, coordinate, -1.0);
-        equation.add_source(second, coordinate, 1.0);
+        equation.add_source(ctx, first, coordinate, -1.0)?;
+        equation.add_source(ctx, second, coordinate, 1.0)?;
         equation.rhs += delta;
-        equation
+        Ok(equation)
     }
 
     pub(in crate::decode) fn add_point(
         &mut self,
+        ctx: &DecodeContext<'_>,
         point: u32,
         coordinate: SectionAxis,
         coefficient: f64,
-    ) {
+    ) -> Result<(), CodecError> {
+        if !self.terms.contains_key(&(point, coordinate)) {
+            ctx.charge_collection_items(1, "creo coordinate equation term nodes")?;
+        }
         *self.terms.entry((point, coordinate)).or_default() += coefficient;
+        Ok(())
     }
 
     pub(super) fn add_source(
         &mut self,
+        ctx: &DecodeContext<'_>,
         source: SectionPointSource,
         coordinate: SectionAxis,
         coefficient: f64,
-    ) {
+    ) -> Result<(), CodecError> {
         match source {
-            SectionPointSource::Point(point) => self.add_point(point, coordinate, coefficient),
+            SectionPointSource::Point(point) => {
+                self.add_point(ctx, point, coordinate, coefficient)?;
+            }
             SectionPointSource::Value(value) => self.rhs -= coefficient * value[coordinate.index()],
         }
+        Ok(())
     }
+}
+
+fn admitted_coordinate_variables(
+    ctx: &DecodeContext<'_>,
+    candidates: impl IntoIterator<Item = SectionCoordinateVariable>,
+) -> Result<
+    (
+        Vec<SectionCoordinateVariable>,
+        BTreeMap<SectionCoordinateVariable, usize>,
+    ),
+    CodecError,
+> {
+    let mut unique = BTreeSet::new();
+    for variable in candidates {
+        if !unique.contains(&variable) {
+            ctx.charge_collection_items(1, "creo section unique variables")?;
+            unique.insert(variable);
+        }
+    }
+    let mut variables = Vec::new();
+    ctx.reserve_vec(
+        &mut variables,
+        unique.len(),
+        "creo section ordered variables",
+    )?;
+    variables.extend(unique);
+    let mut indices = BTreeMap::new();
+    for (index, variable) in variables.iter().enumerate() {
+        ctx.charge_collection_items(1, "creo section variable indices")?;
+        indices.insert(*variable, index);
+    }
+    Ok((variables, indices))
+}
+
+fn section_remaining_variables(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+) -> Result<BTreeSet<usize>, CodecError> {
+    let mut remaining = BTreeSet::new();
+    for index in 0..count {
+        ctx.charge_collection_items(1, "creo section remaining variables")?;
+        remaining.insert(index);
+    }
+    Ok(remaining)
+}
+
+fn next_section_component(
+    ctx: &DecodeContext<'_>,
+    remaining: &mut BTreeSet<usize>,
+    adjacency: &[BTreeSet<usize>],
+) -> Result<Option<BTreeSet<usize>>, CodecError> {
+    let Some(seed) = remaining.pop_first() else {
+        return Ok(None);
+    };
+    let mut component = BTreeSet::new();
+    ctx.charge_collection_items(1, "creo section component seed")?;
+    component.insert(seed);
+    let mut pending = std::collections::VecDeque::new();
+    ctx.push_back(&mut pending, seed, "creo section pending seed")?;
+    while let Some(variable) = pending.pop_front() {
+        for &neighbor in &adjacency[variable] {
+            if !component.contains(&neighbor) {
+                ctx.charge_collection_items(1, "creo section component neighbors")?;
+                component.insert(neighbor);
+                remaining.remove(&neighbor);
+                ctx.push_back(&mut pending, neighbor, "creo section pending neighbors")?;
+            }
+        }
+    }
+    Ok(Some(component))
+}
+
+fn insert_solved_coordinate(
+    ctx: &DecodeContext<'_>,
+    solved: &mut BTreeMap<SectionCoordinateVariable, f64>,
+    variable: SectionCoordinateVariable,
+    value: f64,
+) -> Result<(), CodecError> {
+    match solved.entry(variable) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "creo section solved coordinates")?;
+            entry.insert(value);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            entry.insert(value);
+        }
+    }
+    Ok(())
 }
 
 pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
@@ -710,96 +891,120 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         return Ok(BTreeMap::new());
     }
 
-    let variables = equations
-        .iter()
-        .flat_map(|equation| equation.terms.keys().copied())
-        .chain(
-            distances
-                .iter()
-                .flat_map(|&(first, second, coordinate, _)| {
-                    [(first, coordinate), (second, coordinate)]
-                }),
-        )
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let indices = variables
-        .iter()
-        .enumerate()
-        .map(|(index, variable)| (*variable, index))
-        .collect::<BTreeMap<_, _>>();
+    let (variables, indices) = admitted_coordinate_variables(
+        ctx,
+        equations
+            .iter()
+            .flat_map(|equation| equation.terms.keys().copied())
+            .chain(
+                distances
+                    .iter()
+                    .flat_map(|&(first, second, coordinate, _)| {
+                        [(first, coordinate), (second, coordinate)]
+                    }),
+            ),
+    )?;
     let mut adjacency = ctx.alloc_filled(
         variables.len(),
         BTreeSet::new(),
         "creo section equation adjacency",
     )?;
-    let connect = |members: Vec<usize>, adjacency: &mut [BTreeSet<usize>]| {
-        for &first in &members {
-            adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
-        }
-    };
-    for equation in equations {
-        connect(
-            equation
-                .terms
-                .keys()
-                .filter_map(|variable| indices.get(variable).copied())
-                .collect(),
-            &mut adjacency,
-        );
-    }
-    for &(first, second, coordinate, _) in distances {
-        connect(
-            [
-                indices[&(first, coordinate)],
-                indices[&(second, coordinate)],
-            ]
-            .into_iter()
-            .collect(),
-            &mut adjacency,
-        );
-    }
-
-    let mut remaining = (0..variables.len()).collect::<BTreeSet<_>>();
-    let mut resolved = BTreeMap::new();
-    while let Some(seed) = remaining.pop_first() {
-        let mut component = BTreeSet::from([seed]);
-        let mut pending = std::collections::VecDeque::from([seed]);
-        while let Some(variable) = pending.pop_front() {
-            for &neighbor in &adjacency[variable] {
-                if component.insert(neighbor) {
-                    remaining.remove(&neighbor);
-                    pending.push_back(neighbor);
+    let connect =
+        |members: &[usize], adjacency: &mut [BTreeSet<usize>]| -> Result<(), CodecError> {
+            for &first in members {
+                for &second in members {
+                    if second != first && !adjacency[first].contains(&second) {
+                        ctx.charge_collection_items(1, "creo section equation adjacency links")?;
+                        adjacency[first].insert(second);
+                    }
                 }
             }
+            Ok(())
+        };
+    for equation in equations {
+        let mut members = Vec::new();
+        for variable in equation.terms.keys() {
+            if let Some(&index) = indices.get(variable) {
+                ctx.reserve_vec(&mut members, 1, "creo section equation members")?;
+                members.push(index);
+            }
         }
-        let component_distances = distances
-            .iter()
-            .copied()
-            .filter(|&(first, second, coordinate, _)| {
-                component.contains(&indices[&(first, coordinate)])
-                    && component.contains(&indices[&(second, coordinate)])
-            })
-            .collect::<Vec<_>>();
+        connect(&members, &mut adjacency)?;
+    }
+    for &(first, second, coordinate, _) in distances {
+        let members = [
+            indices[&(first, coordinate)],
+            indices[&(second, coordinate)],
+        ];
+        connect(&members, &mut adjacency)?;
+    }
+
+    let mut remaining = section_remaining_variables(ctx, variables.len())?;
+    let mut resolved = BTreeMap::new();
+    while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
+        let mut component_distances = Vec::new();
+        for &(first, second, coordinate, magnitude) in distances {
+            if component.contains(&indices[&(first, coordinate)])
+                && component.contains(&indices[&(second, coordinate)])
+            {
+                ctx.reserve_vec(
+                    &mut component_distances,
+                    1,
+                    "creo section component distances",
+                )?;
+                component_distances.push((first, second, coordinate, magnitude));
+            }
+        }
         if component_distances.is_empty()
-            || component_distances.len() >= usize::BITS as usize
+            || cadmpeg_core::decode::u64_from_index(component_distances.len())
+                >= u64::from(usize::BITS)
             || (1usize << component_distances.len()) > MAX_SIGNED_BRANCHES
         {
             continue;
         }
-        let component_equations = equations
-            .iter()
-            .filter(|equation| {
-                equation
-                    .terms
-                    .keys()
-                    .any(|variable| component.contains(&indices[variable]))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut component_equations = Vec::new();
+        for equation in equations {
+            if equation
+                .terms
+                .keys()
+                .any(|variable| component.contains(&indices[variable]))
+            {
+                ctx.reserve_vec(
+                    &mut component_equations,
+                    1,
+                    "creo section component equation rows",
+                )?;
+                let mut terms = BTreeMap::new();
+                for (variable, coefficient) in &equation.terms {
+                    ctx.charge_collection_items(1, "creo section component equation terms")?;
+                    terms.insert(*variable, *coefficient);
+                }
+                component_equations.push(SectionCoordinateEquation {
+                    terms,
+                    rhs: equation.rhs,
+                });
+            }
+        }
         let mut solutions = Vec::new();
         for signs in 0..(1usize << component_distances.len()) {
-            let mut branched = component_equations.clone();
+            ctx.charge_work(1, "explore Creo section distance signs")?;
+            let mut branched = Vec::new();
+            ctx.reserve_vec(
+                &mut branched,
+                component_equations.len(),
+                "creo section branch equation rows",
+            )?;
+            for equation in &component_equations {
+                let mut terms = BTreeMap::new();
+                for (variable, coefficient) in &equation.terms {
+                    ctx.charge_collection_items(1, "creo section branch equation terms")?;
+                    terms.insert(*variable, *coefficient);
+                }
+                branched.push(SectionCoordinateEquation {
+                    terms,
+                    rhs: equation.rhs,
+                });
+            }
             for (index, &(first, second, coordinate, magnitude)) in
                 component_distances.iter().enumerate()
             {
@@ -808,19 +1013,37 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 } else {
                     -magnitude
                 };
-                branched.push(SectionCoordinateEquation::point_difference(
-                    first, second, coordinate, delta,
-                ));
+                ctx.reserve_vec(&mut branched, 1, "creo section signed equation rows")?;
+                branched.push(SectionCoordinateEquation::point_difference_with_operation(
+                    ctx,
+                    first,
+                    second,
+                    coordinate,
+                    delta,
+                    "creo section signed equation terms",
+                )?);
             }
             let candidate = solve_section_coordinate_equations(ctx, &branched, stored_coordinates)?;
-            let mut values = stored_coordinates.clone();
+            let mut values = BTreeMap::new();
+            for (variable, value) in stored_coordinates {
+                ctx.charge_collection_items(1, "creo section stored coordinate copies")?;
+                values.insert(*variable, *value);
+            }
             for (point, coordinates) in &candidate {
                 for (coordinate, value) in SectionAxis::ALL
                     .into_iter()
                     .zip(coordinates.iter().copied())
                 {
                     if let Some(value) = value {
-                        values.insert((*point, coordinate), value);
+                        match values.entry((*point, coordinate)) {
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                ctx.charge_collection_items(1, "creo section branch values")?;
+                                entry.insert(value);
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                entry.insert(value);
+                            }
+                        }
                     }
                 }
             }
@@ -857,11 +1080,13 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                             if component.contains(global)
                                 && !stored_coordinates.contains_key(&variable)
                             {
+                                ctx.charge_collection_items(1, "creo section candidate values")?;
                                 candidate_values.insert(variable, value);
                             }
                         }
                     }
                 }
+                ctx.reserve_vec(&mut solutions, 1, "creo section candidate solutions")?;
                 solutions.push(candidate_values);
             }
         }
@@ -880,6 +1105,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     (*candidate - value).abs() <= EPS_DISTANCE_AGREEMENT * scale
                 })
             }) {
+                ctx.charge_collection_items(1, "creo section resolved values")?;
                 resolved.insert(variable, value);
             }
         }
@@ -888,34 +1114,40 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
 }
 
 pub(super) fn section_equal_length_coordinate_values(
+    ctx: &DecodeContext<'_>,
     constraints: &[SectionEqualLengthConstraint],
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> BTreeMap<SectionCoordinateVariable, Option<f64>> {
+) -> Result<BTreeMap<SectionCoordinateVariable, Option<f64>>, CodecError> {
     let mut candidates = BTreeMap::<SectionCoordinateVariable, Option<f64>>::new();
     for constraint in constraints {
-        let variables = constraint
+        let mut missing = None;
+        let mut ambiguous = false;
+        for variable in constraint
             .first
             .into_iter()
             .chain(constraint.second)
             .flat_map(|point| [(point, SectionAxis::U), (point, SectionAxis::V)])
-            .collect::<BTreeSet<_>>();
-        let missing = variables
-            .iter()
-            .copied()
-            .filter(|variable| {
-                coordinates
-                    .get(&variable.0)
-                    .and_then(|point| point[variable.1.index()])
-                    .is_none()
-            })
-            .collect::<Vec<_>>();
-        let [missing] = missing.as_slice() else {
+        {
+            if coordinates
+                .get(&variable.0)
+                .and_then(|point| point[variable.1.index()])
+                .is_some()
+            {
+                continue;
+            }
+            if missing.is_some_and(|earlier| earlier != variable) {
+                ambiguous = true;
+                break;
+            }
+            missing = Some(variable);
+        }
+        let Some(missing) = missing.filter(|_| !ambiguous) else {
             continue;
         };
 
         let component = |first: u32, second: u32, coordinate: SectionAxis| -> Option<(f64, f64)> {
             let value = |point: u32| {
-                if (point, coordinate) == *missing {
+                if (point, coordinate) == missing {
                     Some((1.0, 0.0))
                 } else {
                     coordinates
@@ -984,8 +1216,11 @@ pub(super) fn section_equal_length_coordinate_values(
         let [value] = roots.as_slice() else {
             continue;
         };
+        if !candidates.contains_key(&missing) {
+            ctx.charge_collection_items(1, "creo equal-length coordinate candidates")?;
+        }
         candidates
-            .entry(*missing)
+            .entry(missing)
             .and_modify(|candidate| {
                 if candidate.is_some_and(|candidate| {
                     !(FiniteReal::new(candidate))
@@ -997,10 +1232,14 @@ pub(super) fn section_equal_length_coordinate_values(
             })
             .or_insert(Some(*value));
     }
-    candidates
+    Ok(candidates)
 }
 
-fn quadratic_roots(quadratic: Coefficient, linear: Coefficient, constant: Coefficient) -> Vec<f64> {
+fn quadratic_roots(
+    quadratic: Coefficient,
+    linear: Coefficient,
+    constant: Coefficient,
+) -> crate::decode::quadratic::QuadraticRoots {
     let mut roots = crate::decode::quadratic::real_roots(quadratic, linear, constant);
     let quadratic = quadratic.stated();
     let linear = linear.stated();
@@ -1038,17 +1277,12 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
 ) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
-    let variables = equations
-        .iter()
-        .flat_map(|equation| equation.terms.keys().copied())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let indices = variables
-        .iter()
-        .enumerate()
-        .map(|(index, variable)| (*variable, index))
-        .collect::<BTreeMap<_, _>>();
+    let (variables, indices) = admitted_coordinate_variables(
+        ctx,
+        equations
+            .iter()
+            .flat_map(|equation| equation.terms.keys().copied()),
+    )?;
     let mut adjacency = ctx.alloc_filled(
         variables.len(),
         BTreeSet::new(),
@@ -1060,74 +1294,97 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         "creo section coordinate equation membership",
     )?;
     for (equation_index, equation) in equations.iter().enumerate() {
-        let members = equation
-            .terms
-            .keys()
-            .filter_map(|variable| indices.get(variable).copied())
-            .collect::<Vec<_>>();
+        let mut members = Vec::new();
+        for variable in equation.terms.keys() {
+            if let Some(&index) = indices.get(variable) {
+                ctx.reserve_vec(&mut members, 1, "creo section coordinate members")?;
+                members.push(index);
+            }
+        }
         for &first in &members {
-            adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
-            variable_equations[first].insert(equation_index);
+            for &second in &members {
+                if second != first && !adjacency[first].contains(&second) {
+                    ctx.charge_collection_items(1, "creo section coordinate adjacency links")?;
+                    adjacency[first].insert(second);
+                }
+            }
+            if !variable_equations[first].contains(&equation_index) {
+                ctx.charge_collection_items(1, "creo section coordinate equation links")?;
+                variable_equations[first].insert(equation_index);
+            }
         }
     }
     let mut solved = BTreeMap::<SectionCoordinateVariable, f64>::new();
-    let mut remaining = (0..variables.len()).collect::<BTreeSet<_>>();
-    while let Some(seed) = remaining.pop_first() {
-        let mut component = BTreeSet::from([seed]);
-        let mut pending = std::collections::VecDeque::from([seed]);
-        while let Some(variable) = pending.pop_front() {
-            for &neighbor in &adjacency[variable] {
-                if component.insert(neighbor) {
-                    remaining.remove(&neighbor);
-                    pending.push_back(neighbor);
+    let mut remaining = section_remaining_variables(ctx, variables.len())?;
+    while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
+        let mut columns = Vec::new();
+        ctx.reserve_vec(
+            &mut columns,
+            component.len(),
+            "creo section component columns",
+        )?;
+        columns.extend(component.iter().copied());
+        let mut local_columns = BTreeMap::new();
+        for (local, global) in columns.iter().enumerate() {
+            ctx.charge_collection_items(1, "creo section local columns")?;
+            local_columns.insert(*global, local);
+        }
+        let mut component_equations = BTreeSet::new();
+        for variable in &component {
+            for &equation_index in &variable_equations[*variable] {
+                if !component_equations.contains(&equation_index) {
+                    ctx.charge_collection_items(1, "creo section component equations")?;
+                    component_equations.insert(equation_index);
                 }
             }
         }
-        let columns = component.iter().copied().collect::<Vec<_>>();
-        let local_columns = columns
-            .iter()
-            .enumerate()
-            .map(|(local, global)| (*global, local))
-            .collect::<BTreeMap<_, _>>();
-        let component_equations = component
-            .iter()
-            .flat_map(|variable| variable_equations[*variable].iter().copied())
-            .collect::<BTreeSet<_>>();
-        let mut matrix = component_equations
-            .into_iter()
-            .map(|equation_index| &equations[equation_index])
-            .map(|equation| {
-                let mut row = SectionLinearRow {
-                    coefficients: BTreeMap::new(),
-                    rhs: equation.rhs,
-                };
-                for (variable, coefficient) in &equation.terms {
-                    let global = indices[variable];
-                    if *coefficient != 0.0 {
-                        row.coefficients
-                            .insert(local_columns[&global], *coefficient);
-                    }
+        let mut matrix = Vec::new();
+        ctx.reserve_vec(
+            &mut matrix,
+            component_equations.len(),
+            "creo section matrix rows",
+        )?;
+        for equation_index in component_equations {
+            let equation = &equations[equation_index];
+            let mut row = SectionLinearRow {
+                coefficients: BTreeMap::new(),
+                rhs: equation.rhs,
+            };
+            for (variable, coefficient) in &equation.terms {
+                let global = indices[variable];
+                if *coefficient != 0.0 {
+                    ctx.charge_collection_items(1, "creo section matrix coefficients")?;
+                    row.coefficients
+                        .insert(local_columns[&global], *coefficient);
                 }
-                row
-            })
-            .collect::<Vec<_>>();
-        let Some(component_solution) = uniquely_solved_linear_variables(&mut matrix, columns.len())
+            }
+            matrix.push(row);
+        }
+        let Some(component_solution) =
+            uniquely_solved_linear_variables(ctx, &mut matrix, columns.len())?
         else {
             for global in columns {
                 let variable = variables[global];
                 if let Some(value) = stored_coordinates.get(&variable) {
-                    solved.insert(variable, *value);
+                    insert_solved_coordinate(ctx, &mut solved, variable, *value)?;
                 }
             }
             continue;
         };
         for (local, value) in component_solution {
-            solved.insert(variables[columns[local]], value);
+            insert_solved_coordinate(ctx, &mut solved, variables[columns[local]], value)?;
         }
     }
     let mut points = BTreeMap::<u32, [Option<f64>; 2]>::new();
     for ((point, coordinate), value) in solved {
-        points.entry(point).or_insert([None; 2])[coordinate.index()] = Some(value);
+        let values = match points.entry(point) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo section solved points")?;
+                entry.insert([None; 2])
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
+        values[coordinate.index()] = Some(value);
     }
     Ok(points)
 }
@@ -1138,9 +1395,10 @@ struct SectionLinearRow {
 }
 
 fn uniquely_solved_linear_variables(
+    ctx: &DecodeContext<'_>,
     matrix: &mut [SectionLinearRow],
     variable_count: usize,
-) -> Option<Vec<(usize, f64)>> {
+) -> Result<Option<Vec<(usize, f64)>>, CodecError> {
     let coefficient_scale = matrix
         .iter()
         .flat_map(|row| row.coefficients.values())
@@ -1183,18 +1441,24 @@ fn uniquely_solved_linear_variables(
             *value /= divisor;
         }
         matrix[pivot_row].rhs /= divisor;
-        let pivot_coefficients = matrix[pivot_row].coefficients.clone();
-        let pivot_rhs = matrix[pivot_row].rhs;
-        for (row, target) in matrix.iter_mut().enumerate() {
-            if row == pivot_row {
-                continue;
-            }
+        let (before, pivot_and_after) = matrix.split_at_mut(pivot_row);
+        let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
+            return Ok(None);
+        };
+        let pivot_rhs = pivot.rhs;
+        for target in before.iter_mut().chain(after.iter_mut()) {
             let factor = target.coefficients.get(&column).copied().unwrap_or(0.0);
             if factor.abs() <= coefficient_tolerance {
                 continue;
             }
-            for (&index, &pivot_value) in &pivot_coefficients {
-                let value = target.coefficients.entry(index).or_default();
+            for (&index, &pivot_value) in &pivot.coefficients {
+                let value = match target.coefficients.entry(index) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo section elimination coefficients")?;
+                        entry.insert(0.0)
+                    }
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                };
                 *value -= factor * pivot_value;
                 if value.abs() <= coefficient_tolerance {
                     target.coefficients.remove(&index);
@@ -1202,6 +1466,7 @@ fn uniquely_solved_linear_variables(
             }
             target.rhs -= factor * pivot_rhs;
         }
+        ctx.charge_collection_items(1, "creo section pivot rows")?;
         pivot_rows.insert(column, pivot_row);
         pivot_row += 1;
     }
@@ -1209,172 +1474,68 @@ fn uniquely_solved_linear_variables(
         .iter()
         .any(|row| row.coefficients.is_empty() && row.rhs.abs() > residual_tolerance)
     {
-        return None;
+        return Ok(None);
     }
-    let free_columns = (0..variable_count)
-        .filter(|column| !pivot_rows.contains_key(column))
-        .collect::<Vec<_>>();
-    Some(
-        pivot_rows
-            .into_iter()
-            .filter_map(|(column, row)| {
-                free_columns
-                    .iter()
-                    .all(|free| !matrix[row].coefficients.contains_key(free))
-                    .then_some((column, matrix[row].rhs))
-            })
-            .collect(),
-    )
+    let mut free_columns = Vec::new();
+    for column in 0..variable_count {
+        if !pivot_rows.contains_key(&column) {
+            ctx.reserve_vec(&mut free_columns, 1, "creo section free columns")?;
+            free_columns.push(column);
+        }
+    }
+    let mut solution = Vec::new();
+    for (column, row) in pivot_rows {
+        if free_columns
+            .iter()
+            .all(|free| !matrix[row].coefficients.contains_key(free))
+        {
+            ctx.reserve_vec(&mut solution, 1, "creo section solved columns")?;
+            solution.push((column, matrix[row].rhs));
+        }
+    }
+    Ok(Some(solution))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::axis::SectionAxis;
-    use super::{
-        SectionCoordinateEquation, SectionCoordinateVariable, SectionEqualLengthConstraint,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::collections::BTreeMap;
+pub(in crate::decode) struct SectionEquationFixture;
 
-    fn with_collection_limit<T>(limit: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-        run(&ctx)
-    }
-
-    #[test]
-    fn section_coordinate_adjacency_reports_collection_limit() {
-        let equations = [SectionCoordinateEquation::point_value(
-            1,
-            SectionAxis::U,
-            1.0,
-        )];
-        let error = with_collection_limit(0, |ctx| {
-            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+#[cfg(test)]
+impl SectionEquationFixture {
+    pub(in crate::decode) fn point_value(
+        point: u32,
+        coordinate: SectionAxis,
+        value: f64,
+    ) -> SectionCoordinateEquation {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            SectionCoordinateEquation::point_value(ctx, point, coordinate, value)
         })
-        .expect_err("one adjacency row exceeds the collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section coordinate adjacency")
-        );
+        .expect("test coordinate equation")
     }
 
-    #[test]
-    fn section_coordinate_equation_membership_reports_collection_limit() {
-        let equations = [SectionCoordinateEquation::point_value(
-            1,
-            SectionAxis::U,
-            1.0,
-        )];
-        let error = with_collection_limit(1, |ctx| {
-            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+    pub(in crate::decode) fn point_difference(
+        first: u32,
+        second: u32,
+        coordinate: SectionAxis,
+        delta: f64,
+    ) -> SectionCoordinateEquation {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, delta)
         })
-        .expect_err("membership row exceeds the remaining collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section coordinate equation membership")
-        );
+        .expect("test coordinate equation")
     }
 
-    #[test]
-    fn unsigned_dimension_adjacency_reports_collection_limit() {
-        let error = with_collection_limit(1, |ctx| {
-            super::solve_unsigned_dimension_coordinates(
-                ctx,
-                &[],
-                &BTreeMap::new(),
-                &[(1, 2, SectionAxis::U, 1.0)],
-            )
+    pub(in crate::decode) fn add_point(
+        equation: &mut SectionCoordinateEquation,
+        point: u32,
+        coordinate: SectionAxis,
+        coefficient: f64,
+    ) {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            equation.add_point(ctx, point, coordinate, coefficient)
         })
-        .expect_err("two adjacency rows exceed the collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo section equation adjacency")
-        );
-    }
-
-    #[test]
-    fn numerical_followup_equal_length_tangency_keeps_its_single_coordinate() {
-        // Segment 1-2 spans (0.3, 0.4). Segment 3-4 is vertical and spans 0.5,
-        // so the equal-length constraint has the single solution u3 = 0.0. The
-        // squared lengths cancel to -2.7755575615628914e-17 instead of zero,
-        // which without the cancellation rule splits the double root into
-        // -5.268356063861754e-09 and 5.2683560638617535e-09 and states no
-        // coordinate.
-        let coordinates = BTreeMap::from([
-            (1, [Some(0.0), Some(0.0)]),
-            (2, [Some(0.3), Some(0.4)]),
-            (3, [None, Some(0.0)]),
-            (4, [Some(0.0), Some(0.5)]),
-        ]);
-        let constraints = [SectionEqualLengthConstraint {
-            first: [1, 2],
-            second: [3, 4],
-            equation_id: 7,
-            offset: 0,
-            active: true,
-        }];
-        let expected: BTreeMap<SectionCoordinateVariable, Option<f64>> =
-            BTreeMap::from([((3, SectionAxis::U), Some(0.0))]);
-        assert_eq!(
-            super::section_equal_length_coordinate_values(&constraints, &coordinates),
-            expected
-        );
-    }
-
-    /// The single U coordinate an equal-length tangency states.
-    ///
-    /// Point 1 sits at the origin and point 2 at `segment`. Point 3 carries the
-    /// missing U coordinate and sits on the U axis; point 4 sits at
-    /// `(partner_u, length)`, where `length` is the length of segment 1-2. The
-    /// equal-length constraint 1-2 against 3-4 is then tangent, with the single
-    /// solution u3 = `partner_u`.
-    fn equal_length_tangency_u(
-        segment: [f64; 2],
-        partner_u: f64,
-        length: f64,
-    ) -> BTreeMap<SectionCoordinateVariable, Option<f64>> {
-        let coordinates = BTreeMap::from([
-            (1, [Some(0.0), Some(0.0)]),
-            (2, [Some(segment[0]), Some(segment[1])]),
-            (3, [None, Some(0.0)]),
-            (4, [Some(partner_u), Some(length)]),
-        ]);
-        let constraints = [SectionEqualLengthConstraint {
-            first: [1, 2],
-            second: [3, 4],
-            equation_id: 7,
-            offset: 0,
-            active: true,
-        }];
-        super::section_equal_length_coordinate_values(&constraints, &coordinates)
-    }
-
-    #[test]
-    fn numerical_followup_equal_length_tangency_states_its_off_axis_root() {
-        // The exact constant of the quadratic is partner_u^2, and the two
-        // squared segment lengths cancel on top of it. That residue is far
-        // larger than a discriminant band read from the coefficient values
-        // alone admits: the first and third witnesses stated no root at all and
-        // the second split the double root into 0.000999992616836453 and
-        // 0.0010000073831635471, which no longer agree to one coordinate.
-        for (segment, partner_u, length) in [
-            ([3.3, 4.3], 0.001, 5.420_332_093_147_061),
-            ([0.3, 0.4], 0.001, 0.5),
-            ([1.1, 2.2], 0.01, 2.459_674_775_249_769),
-        ] {
-            let expected: BTreeMap<SectionCoordinateVariable, Option<f64>> =
-                BTreeMap::from([((3, SectionAxis::U), Some(partner_u))]);
-            assert_eq!(
-                equal_length_tangency_u(segment, partner_u, length),
-                expected
-            );
-        }
+        .expect("test coordinate equation term");
     }
 }
+
+#[cfg(test)]
+mod tests;

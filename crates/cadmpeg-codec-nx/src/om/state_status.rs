@@ -4,6 +4,8 @@
 use super::state_index::{OperationStateIndex, StateIndexToken};
 use super::state_link::StateLinkCode;
 use super::state_message::{OperationStateMessage, StateMessage};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StateStatusPayload<S, B> {
@@ -45,7 +47,10 @@ impl<S: AsRef<str>, B: AsRef<[u8]>> StateStatus<S, B> {
 }
 
 impl StateStatus<&str, &[u8]> {
-    pub(crate) fn into_owned(self) -> StateStatus<String, Vec<u8>> {
+    pub(crate) fn into_owned(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<StateStatus<String, Vec<u8>>, CodecError> {
         let payload = match self.payload {
             StateStatusPayload::Plain => StateStatusPayload::Plain,
             StateStatusPayload::Linked {
@@ -56,15 +61,17 @@ impl StateStatus<&str, &[u8]> {
                 object_index,
             },
             StateStatusPayload::Diagnostic(message) => {
-                StateStatusPayload::Diagnostic(message.into_owned())
+                StateStatusPayload::Diagnostic(message.into_owned(ctx)?)
             }
-            StateStatusPayload::Opaque { raw } => StateStatusPayload::Opaque { raw: raw.to_vec() },
+            StateStatusPayload::Opaque { raw } => StateStatusPayload::Opaque {
+                raw: ctx.copy_retained(raw, "NX state status opaque payload")?,
+            },
         };
-        StateStatus {
+        Ok(StateStatus {
             status_code: self.status_code,
             object_index: self.object_index,
             payload,
-        }
+        })
     }
 }
 
@@ -107,8 +114,8 @@ fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Op
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
         return Some(at + 3);
     }
-    let search_end = end.min(at.saturating_add(MAX_OPAQUE_STATUS_BYTES));
-    for cursor in at..search_end.saturating_sub(1) {
+    let search_end = end.min(at.checked_add(MAX_OPAQUE_STATUS_BYTES)?);
+    for cursor in at..search_end.checked_sub(1)? {
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
             return Some(cursor + 2);
         }

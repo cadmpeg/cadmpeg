@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record patchers that apply validated edit sets to archive bytes.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::records::{
@@ -12,8 +14,8 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use super::edits::{
-    BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, Edit, EntityHeaderEdit, HistoryEdits,
-    PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
+    BodyMemberEdit, ByteEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
+    HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
 };
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -114,7 +116,7 @@ pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
     Ok(())
 }
 
-pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[Edit<Vec<u8>>]) -> Result<(), CodecError> {
+pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[ByteEdit]) -> Result<(), CodecError> {
     for edit in edits {
         patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
@@ -175,9 +177,21 @@ fn patch_utf16_if_changed(
 }
 
 pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {
-    id.strip_prefix(crate::ids::SCHEME_PREFIX)
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let Some((stream, _)) = id
+        .strip_prefix(crate::ids::SCHEME_PREFIX)
         .and_then(|id| id.rsplit_once(delimiter))
-        .and_then(|(stream, _)| crate::ids::decode_identity_key_component(stream))
+    else {
+        return Err(CodecError::malformed(format_args!(
+            "invalid native record id {id}"
+        )));
+    };
+    crate::ids::decode_identity_key_component(&ctx, stream)?
         .ok_or_else(|| CodecError::malformed(format_args!("invalid native record id {id}")))
 }
 
@@ -492,7 +506,7 @@ pub(super) fn patch_persistent_references(
         let value = edit.identity;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|offset| offset.checked_add(value_offset as usize))
+            .and_then(|offset| offset.checked_add(index_from_u32(value_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("persistent-reference offset exceeds address space".into())
             })?;
@@ -513,7 +527,7 @@ pub(super) fn patch_history_states(
     if let Some(history) = &edits.preamble {
         let start = history
             .byte_offset
-            .checked_add(PREAMBLE_LEN as u64)
+            .checked_add(u64_from_index(PREAMBLE_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM preamble offset exceeds address space".into())
             })?;
@@ -526,7 +540,7 @@ pub(super) fn patch_history_states(
     for state in &edits.states {
         let first_tag = state
             .byte_offset
-            .checked_add(DELTA_HEADER_LEN as u64)
+            .checked_add(u64_from_index(DELTA_HEADER_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM history offset exceeds address space".into())
             })?;
@@ -577,7 +591,7 @@ pub(super) fn patch_sketch_points(
         let coordinates = &edit.coordinates;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(coordinate_offset as usize))
+            .and_then(|record| record.checked_add(index_from_u32(coordinate_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-point offset exceeds address space".into())
             })?;
@@ -600,7 +614,7 @@ pub(crate) fn patch_sketch_curves(
         let geometry = &edit.geometry;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(geometry_offset as usize))
+            .and_then(|record| record.checked_add(index_from_u32(geometry_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-curve offset exceeds address space".into())
             })?;
@@ -674,7 +688,7 @@ pub(crate) fn patch_sketch_curves(
                     bytes,
                     start,
                     geometry.fit_tolerance().get(),
-                    &knots,
+                    knots,
                     geometry.poles(),
                 )?;
                 continue;
@@ -760,7 +774,7 @@ fn patch_sketch_nurbs(
 
 pub(super) fn patch_sketch_relations(
     bytes: &mut [u8],
-    edits: &[Vec<Edit<Vec<u8>>>],
+    edits: &[Vec<ByteEdit>],
 ) -> Result<(), CodecError> {
     for edit in edits {
         for member in edit {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact legacy As-built assembly alignment frames.
 
-use crate::bytes::lp_ascii_filtered;
 use crate::design::decode::operands::{parse_entity_selection_prefix, parse_face_operand};
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::layout::assembly_as_built_421_frame_297 as as_built_421_frame_297;
 use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
@@ -17,7 +17,6 @@ use crate::records::{
             DesignAssemblySolvedFrame,
         },
         scope::DesignParameterScope,
-        work_geometry::DesignWorkPointRule,
     },
     parameters::DesignParameterOwner,
     recipes::ConstructionRecipe,
@@ -242,13 +241,15 @@ const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 /// Decode the two ordered construction/face-selection pairs of a 421-byte
 /// `As-built` scope and derive their local frames from the stored solved frame.
 pub(super) fn exact_legacy_as_built_421_operands(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
-) -> Option<DesignAssemblyLegacyOperands> {
+) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
+    (|| {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length(),
         scope.class_tag.as_str(),
@@ -269,21 +270,35 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let first_selection_record_index = first_selection_reference.value;
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
-    let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
-    let mut hole_scope = scope.clone();
-    hole_scope
-        .try_edit(|draft| {
-            draft.payload = crate::records::feature::scope::DesignScopePayload::Hole(None);
-        })
-        .ok()?;
-    let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
+    let point = match exact_point_data_construction(ctx, bytes, records, &[point_record_index], stream_types) {
+        Ok(Some(point)) => point,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let hole = match exact_hole_construction(
+ctx,
+bytes,
+records,
+scope,
+stream_types,
+&crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+) {
+        Ok(Some(hole)) => hole,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if hole.point_record_index != hole_record_index
         || !hole
             .input_records
             .iter()
             .map(|reference| reference.value)
             .eq([second_selection_record_index])
-        || point_rule_input_indices(&point.rule).as_slice() != [first_selection_record_index]
+        || !point
+            .rule
+            .inputs()
+            .iter()
+            .map(crate::records::feature::work_geometry::DesignWorkPointInput::record_index)
+            .eq([first_selection_record_index])
     {
         return None;
     }
@@ -306,27 +321,35 @@ pub(super) fn exact_legacy_as_built_421_operands(
         crate::design::assembly::LegacyAsBuilt421Generation::Class417 => "332",
         crate::design::assembly::LegacyAsBuilt421Generation::Class457 => "264",
     };
-    let first_selection = exact_legacy_as_built_face_selection(
-        bytes,
-        records,
-        scope,
-        1,
-        first_selection_record_index,
-        selection_class_tag,
-        recipes,
-    )?;
-    let second_selection = exact_legacy_as_built_face_selection(
-        bytes,
-        records,
-        scope,
-        3,
-        second_selection_record_index,
-        selection_class_tag,
-        recipes,
-    )?;
+    let first_selection = match exact_legacy_as_built_face_selection(
+ctx,
+bytes,
+records,
+scope,
+1,
+(first_selection_record_index, selection_class_tag),
+recipes,
+) {
+        Ok(Some(selection)) => selection,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let second_selection = match exact_legacy_as_built_face_selection(
+ctx,
+bytes,
+records,
+scope,
+3,
+(second_selection_record_index, selection_class_tag),
+recipes,
+) {
+        Ok(Some(selection)) => selection,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
     let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
-    Some(
+    Some(Ok(
         crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
             DesignAssemblyLegacyOperand {
                 construction_class_tag: point_class_tag.try_into().ok()?,
@@ -341,52 +364,47 @@ pub(super) fn exact_legacy_as_built_421_operands(
                 reference_offset: hole_reference.offset,
             },
         ),
-    )
-}
-
-fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
-    rule.inputs()
-        .iter()
-        .map(crate::records::feature::work_geometry::DesignWorkPointInput::record_index)
-        .collect()
+    ))
+    })().transpose()
 }
 
 fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
     let start = usize::try_from(byte_offset).ok()?;
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-    (after_tag == start.checked_add(7)?
-        && class_tag.len() == 3
-        && class_tag.bytes().all(|byte| byte.is_ascii_digit()))
-    .then_some(class_tag)
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    (after_tag == start.checked_add(7)?).then(|| class_tag.to_owned())
 }
 
 fn exact_legacy_as_built_face_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
-    record_index: u32,
-    expected_class_tag: &str,
+    (record_index, expected_class_tag): (u32, &str),
     recipes: &[ConstructionRecipe],
-) -> Option<DesignAssemblyLegacySelection> {
-    let scope_start = usize::try_from(scope.byte_offset()).ok()?;
-    let next_byte_offset = scope
-        .reference_members()
-        .values()
-        .nth(
-            usize::try_from(scope_reference_ordinal)
-                .ok()?
-                .checked_add(1)?,
-        )
-        .and_then(|record_index| {
-            records
-                .offsets(*record_index)
-                .iter()
-                .copied()
-                .find(|offset| *offset > scope_start)
-        })
-        .and_then(|offset| u64::try_from(offset).ok());
-    let candidates = records
+) -> Result<Option<DesignAssemblyLegacySelection>, cadmpeg_core::CodecError> {
+    let Some(scope_start) = usize::try_from(scope.byte_offset()).ok() else {
+        return Ok(None);
+    };
+    let next_byte_offset = (|| {
+        scope
+            .reference_members()
+            .values()
+            .nth(
+                usize::try_from(scope_reference_ordinal)
+                    .ok()?
+                    .checked_add(1)?,
+            )
+            .and_then(|record_index| {
+                records
+                    .offsets(*record_index)
+                    .iter()
+                    .copied()
+                    .find(|offset| *offset > scope_start)
+            })
+            .and_then(|offset| u64::try_from(offset).ok())
+    })();
+    let mut candidates = records
         .offsets(record_index)
         .iter()
         .copied()
@@ -395,25 +413,51 @@ fn exact_legacy_as_built_face_selection(
             if class_tag != expected_class_tag {
                 return None;
             }
+            let copied_id = match ctx.copy_retained(
+                scope.id.as_bytes(),
+                "f3d legacy AsBuilt selection header ID",
+            ) {
+                Ok(copied) => copied,
+                Err(error) => return Some(Err(error)),
+            };
+            let id = match String::from_utf8(copied_id) {
+                Ok(id) => id,
+                Err(error) => {
+                    return Some(Err(cadmpeg_core::CodecError::NotImplemented(
+                        error.to_string(),
+                    )))
+                }
+            };
             let header = DesignRecordHeader {
-                id: scope.id.clone(),
+                id,
                 record_index,
                 class_tag: class_tag.clone().try_into().ok()?,
                 byte_offset: u64::try_from(byte_offset).ok()?,
             };
             let operand = parse_face_operand(
+                ctx,
                 bytes,
                 records,
-                scope,
-                scope_reference_ordinal,
-                None,
-                next_byte_offset,
-                &header,
+                crate::design::decode::operands::FaceOperandFrame {
+                    scope,
+                    scope_reference_ordinal,
+                    group_ownership: None,
+                    next_byte_offset,
+                    header: &header,
+                },
                 recipes,
             )?;
-            let prefix = parse_entity_selection_prefix(bytes, byte_offset, record_index)?;
+            let operand = match operand {
+                Ok(operand) => operand,
+                Err(error) => return Some(Err(error)),
+            };
+            let prefix = match parse_entity_selection_prefix(ctx, bytes, byte_offset, record_index)?
+            {
+                Ok(prefix) => prefix,
+                Err(error) => return Some(Err(error)),
+            };
             let next_byte_offset = operand.next_byte_offset();
-            Some(DesignAssemblyLegacySelection {
+            Some(Ok(DesignAssemblyLegacySelection {
                 record_index,
                 byte_offset: u64::try_from(byte_offset).ok()?,
                 class_tag: header.class_tag,
@@ -427,11 +471,55 @@ fn exact_legacy_as_built_face_selection(
                 recipe_kind: operand.recipe_kind,
                 recipe_references: operand.recipe_references,
                 next_byte_offset,
-            })
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
+            }))
+        });
+    let Some(candidate) = candidates.next() else {
+        return Ok(None);
     };
-    Some(candidate.clone())
+    let candidate = candidate?;
+    if candidates.next().transpose()?.is_some() {
+        return Ok(None);
+    }
+    Ok(Some(candidate))
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::u64_from_index;
+
+    use super::exact_legacy_as_built_face_selection;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn legacy_as_built_selection_header_id_refuses_retained_limit() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"307");
+        bytes.extend_from_slice(&77u32.to_le_bytes());
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+            crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+            42,
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64_from_index(scope.id.len()) - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = exact_legacy_as_built_face_selection(
+            &ctx,
+            &bytes,
+            &records,
+            &scope,
+            0,
+            (77, "307"),
+            &[],
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d legacy AsBuilt selection header ID"
+        ));
+    }
 }

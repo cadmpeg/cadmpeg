@@ -2,6 +2,15 @@
 use crate::design::decode::sketch::parse_sketch_surface;
 use cadmpeg_ir::math::Point3;
 
+fn tested_parse_sketch_surface(
+    payload: &[u8],
+    record_at: usize,
+) -> Result<Option<crate::design::decode::sketch::ParsedSketchSurface>, cadmpeg_core::CodecError> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_sketch_surface(ctx, payload, record_at)
+    })
+}
+
 fn canonical_surface_payload() -> Vec<u8> {
     let mut payload = vec![0; 315];
     payload[20] = 1;
@@ -48,7 +57,7 @@ fn canonical_surface_payload() -> Vec<u8> {
 #[test]
 fn sketch_surface_parser_recovers_tensor_product_grid() {
     let payload = canonical_surface_payload();
-    let surface = parse_sketch_surface(&payload, 0)
+    let surface = tested_parse_sketch_surface(&payload, 0)
         .expect("surface admission")
         .expect("canonical surface payload");
     assert_eq!(surface.entity_genesis, Some(17));
@@ -92,9 +101,37 @@ fn sketch_surface_parser_recovers_tensor_product_grid() {
 fn sketch_surface_parser_refuses_scaled_coordinate_overflow() {
     let mut payload = canonical_surface_payload();
     payload[131..139].copy_from_slice(&f64::MAX.to_le_bytes());
-    let error = parse_sketch_surface(&payload, 0).expect_err("scaled coordinate overflow");
+    let error = tested_parse_sketch_surface(&payload, 0).expect_err("scaled coordinate overflow");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(error
         .to_string()
         .contains("control point 0 overflows millimetres"));
+}
+
+#[test]
+fn sketch_surface_collections_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = canonical_surface_payload();
+    for (limit, operation) in [
+        (11, "f3d sketch surface scalar values"),
+        (15, "f3d sketch surface scalar values"),
+        (19, "f3d sketch surface scalar values"),
+        (23, "f3d sketch surface scaled points"),
+        (25, "f3d sketch surface rows"),
+        (27, "f3d sketch surface row points"),
+        (29, "f3d sketch surface row points"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = parse_sketch_surface(&ctx, &payload, 0)
+            .expect_err("collection limit must refuse surface geometry");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation)
+        );
+    }
 }

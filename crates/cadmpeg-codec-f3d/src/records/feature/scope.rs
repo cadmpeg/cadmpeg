@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The parameter scope every feature record carries: its feature kind, its payload, and the frames and bindings the payload states.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::assembly::DesignAssemblyAlignment;
+#[cfg(test)]
+use crate::records::identity::serialize_absent_u64_offset;
+
 use super::assembly_features::{
     DesignComponentInsertConstruction, DesignCopyPasteComponentOperation,
     DesignDerivedInstanceConstruction,
@@ -43,9 +48,7 @@ use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
     DesignWorkAxisConstruction, DesignWorkPlaneConstruction, DesignWorkPointConstruction,
 };
-use crate::records::identity::{
-    deserialize_absent_u64_offset, serialize_absent_u64_offset, DesignEntityId, ReferenceRun,
-};
+use crate::records::identity::{deserialize_absent_u64_offset, DesignEntityId, ReferenceRun};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -388,6 +391,7 @@ macro_rules! design_feature_kinds {
         /// Mutable construction fields with a fixed feature family.
         pub(crate) enum DesignScopePayloadMut<'a> {
             $($variant(&'a mut $payload),)+
+            $($fixed(&'a mut $fixed_payload),)+
             Other,
         }
 
@@ -395,6 +399,7 @@ macro_rules! design_feature_kinds {
             fn fields_mut(&mut self) -> DesignScopePayloadMut<'_> {
                 match self {
                     $(Self::$variant(value) => DesignScopePayloadMut::$variant(value),)+
+                    $(Self::$fixed(value) => DesignScopePayloadMut::$fixed(value),)+
                     _ => DesignScopePayloadMut::Other,
                 }
             }
@@ -650,7 +655,8 @@ pub(crate) struct DesignParameterScopeDraft {
 }
 
 /// Wire form of [`DesignParameterScope`] with the historical flat field set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DesignParameterScopeSerde {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -668,12 +674,12 @@ struct DesignParameterScopeSerde {
     kind_offset: u64,
     /// Extrude prologue, fixed parameters, and profile.
     #[serde(flatten)]
-    #[serde(default, skip_serializing_if = "extrude_scope_is_absent")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
     extrude: Option<DesignExtrudeScope>,
     /// Coil discriminators, placement, and transform.
     #[serde(flatten)]
-    #[serde(default, skip_serializing_if = "coil_scope_is_absent")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
     coil: Option<DesignCoilScope>,
     /// One-based ordinal among scopes of the same feature family.
@@ -767,7 +773,7 @@ struct DesignParameterScopeSerde {
     ruled_surface_operation: Option<DesignRuledSurfaceOperation>,
     /// `BaseFlange` operation and sketch profile.
     #[serde(flatten)]
-    #[serde(default, skip_serializing_if = "base_flange_scope_is_absent")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
     base_flange: Option<DesignBaseFlangeScope>,
     /// Per-boundary-component settings carried by a `SurfacePatch` scope, in
@@ -805,7 +811,7 @@ struct DesignParameterScopeSerde {
     fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
     /// Path-feature construction and Sweep sketch profile.
     #[serde(flatten)]
-    #[serde(default, skip_serializing_if = "path_feature_scope_is_absent")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
     path_feature: Option<DesignPathFeatureWire>,
     /// Exact Boolean construction carried by a `Combine` scope.
@@ -951,18 +957,22 @@ where
 
 #[derive(Deserialize)]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 struct WorkPlaneFrameWire {
     #[serde(default, deserialize_with = "deserialize_work_plane_transform")]
-    work_plane_transform: Option<SketchPlacementMatrix>,
+    #[serde(rename = "work_plane_transform")]
+    transform: Option<SketchPlacementMatrix>,
     #[serde(default, deserialize_with = "deserialize_work_plane_transform_offset")]
-    work_plane_transform_offset: Option<u64>,
+    #[serde(rename = "work_plane_transform_offset")]
+    transform_offset: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_work_plane_reference")]
-    work_plane_reference: Option<u32>,
+    #[serde(rename = "work_plane_reference")]
+    reference: Option<u32>,
     #[serde(default, deserialize_with = "deserialize_work_plane_reference_offset")]
-    work_plane_reference_offset: Option<u64>,
+    #[serde(rename = "work_plane_reference_offset")]
+    reference_offset: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_work_plane_construction")]
-    work_plane_construction: Option<DesignWorkPlaneConstruction>,
+    #[serde(rename = "work_plane_construction")]
+    construction: Option<DesignWorkPlaneConstruction>,
 }
 
 fn deserialize_work_plane_frame<'de, D>(
@@ -972,7 +982,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = WorkPlaneFrameWire::deserialize(deserializer)?;
-    let reference = match (wire.work_plane_reference, wire.work_plane_reference_offset) {
+    let reference = match (wire.reference, wire.reference_offset) {
         (None, None) => None,
         (Some(work_plane_reference), Some(work_plane_reference_offset)) => {
             Some(DesignWorkPlaneReference {
@@ -986,13 +996,13 @@ where
             ))
         }
     };
-    match (wire.work_plane_transform, wire.work_plane_transform_offset) {
-        (None, None) if reference.is_none() && wire.work_plane_construction.is_none() => Ok(None),
+    match (wire.transform, wire.transform_offset) {
+        (None, None) if reference.is_none() && wire.construction.is_none() => Ok(None),
         (Some(work_plane_transform), Some(work_plane_transform_offset)) => Ok(Some(DesignWorkPlaneTransform {
             work_plane_transform,
             work_plane_transform_offset,
             reference,
-            work_plane_construction: wire.work_plane_construction,
+            work_plane_construction: wire.construction,
         })),
         _ => Err(serde::de::Error::custom("work_plane_transform and work_plane_transform_offset are required for work_plane frame data")),
     }
@@ -1007,22 +1017,25 @@ impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
 
 #[derive(Deserialize)]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 struct JointOriginFrameWire {
     #[serde(default, deserialize_with = "deserialize_joint_origin_transform")]
-    joint_origin_transform: Option<SketchPlacementMatrix>,
+    #[serde(rename = "joint_origin_transform")]
+    transform: Option<SketchPlacementMatrix>,
     #[serde(
         default,
         deserialize_with = "deserialize_joint_origin_transform_offset"
     )]
-    joint_origin_transform_offset: Option<u64>,
+    #[serde(rename = "joint_origin_transform_offset")]
+    transform_offset: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_joint_origin_reference")]
-    joint_origin_reference: Option<u32>,
+    #[serde(rename = "joint_origin_reference")]
+    reference: Option<u32>,
     #[serde(
         default,
         deserialize_with = "deserialize_joint_origin_reference_offset"
     )]
-    joint_origin_reference_offset: Option<u64>,
+    #[serde(rename = "joint_origin_reference_offset")]
+    reference_offset: Option<u64>,
 }
 
 fn deserialize_joint_origin_frame<'de, D>(
@@ -1032,10 +1045,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = JointOriginFrameWire::deserialize(deserializer)?;
-    let reference = match (
-        wire.joint_origin_reference,
-        wire.joint_origin_reference_offset,
-    ) {
+    let reference = match (wire.reference, wire.reference_offset) {
         (None, None) => None,
         (Some(joint_origin_reference), Some(joint_origin_reference_offset)) => {
             Some(DesignJointOriginReference {
@@ -1049,7 +1059,7 @@ where
             ))
         }
     };
-    match (wire.joint_origin_transform, wire.joint_origin_transform_offset) {
+    match (wire.transform, wire.transform_offset) {
         (None, None) if reference.is_none() => Ok(None),
         (Some(joint_origin_transform), Some(joint_origin_transform_offset)) => Ok(Some(DesignJointOriginTransform {
             joint_origin_transform,
@@ -1069,14 +1079,16 @@ impl<'de> Deserialize<'de> for DesignJointOriginTransform {
 
 #[derive(Deserialize)]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 struct SketchEntityWire {
     #[serde(default, deserialize_with = "deserialize_entity_id")]
-    entity_id: Option<String>,
+    #[serde(rename = "entity_id")]
+    id: Option<String>,
     #[serde(default, deserialize_with = "deserialize_entity_suffix")]
-    entity_suffix: Option<u64>,
+    #[serde(rename = "entity_suffix")]
+    suffix: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_entity_reference_offset")]
-    entity_reference_offset: Option<u64>,
+    #[serde(rename = "entity_reference_offset")]
+    reference_offset: Option<u64>,
 }
 
 fn deserialize_sketch_entity<'de, D>(
@@ -1086,17 +1098,13 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = SketchEntityWire::deserialize(deserializer)?;
-    match (
-        wire.entity_id,
-        wire.entity_suffix,
-        wire.entity_reference_offset,
-    ) {
+    match (wire.id, wire.suffix, wire.reference_offset) {
         (None, None, None) => Ok(None),
         (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => {
             DesignSketchEntityBinding::try_from(DesignSketchEntityBindingWire {
-                entity_id,
-                entity_suffix,
-                entity_reference_offset,
+                id: entity_id,
+                suffix: entity_suffix,
+                reference_offset: entity_reference_offset,
             })
             .map(Some)
             .map_err(serde::de::Error::custom)
@@ -1107,9 +1115,7 @@ where
     }
 }
 
-// The wire adapter receives the optional field by reference, including its absence.
-#[allow(clippy::ref_option)]
-fn base_flange_scope_is_absent(base_flange: &Option<DesignBaseFlangeScope>) -> bool {
+fn base_flange_scope_is_absent(base_flange: Option<&DesignBaseFlangeScope>) -> bool {
     match base_flange {
         None => true,
         Some(base_flange) => {
@@ -1118,26 +1124,22 @@ fn base_flange_scope_is_absent(base_flange: &Option<DesignBaseFlangeScope>) -> b
     }
 }
 
-// The wire adapter receives the optional field by reference, including its absence.
-#[allow(clippy::ref_option)]
-fn coil_scope_is_absent(coil: &Option<DesignCoilScope>) -> bool {
+fn coil_scope_is_absent(coil: Option<&DesignCoilScope>) -> bool {
     match coil {
         None => true,
         Some(coil) => {
-            coil.coil_operation.is_none()
-                && coil.coil_extent.is_none()
-                && coil.coil_section.is_none()
-                && coil.coil_section_placement.is_none()
-                && coil.coil_clockwise.is_none()
-                && coil.coil_placement.is_none()
-                && coil.coil_transform.is_none()
+            coil.operation.is_none()
+                && coil.extent.is_none()
+                && coil.section.is_none()
+                && coil.section_placement.is_none()
+                && coil.clockwise.is_none()
+                && coil.placement.is_none()
+                && coil.transform.is_none()
         }
     }
 }
 
-// The wire adapter receives the optional field by reference, including its absence.
-#[allow(clippy::ref_option)]
-fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
+fn extrude_scope_is_absent(extrude: Option<&DesignExtrudeScope>) -> bool {
     match extrude {
         None => true,
         Some(extrude) => {
@@ -1148,9 +1150,7 @@ fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
     }
 }
 
-// The wire adapter receives the optional field by reference, including its absence.
-#[allow(clippy::ref_option)]
-fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureWire>) -> bool {
+fn path_feature_scope_is_absent(path_feature: Option<&DesignPathFeatureWire>) -> bool {
     match path_feature {
         None => true,
         Some(path_feature) => {
@@ -1273,14 +1273,16 @@ impl Clone for DesignSketchEntityBinding {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 struct DesignSketchEntityBindingWire {
     /// Full Design entity id of a sketch scope.
-    entity_id: String,
+    #[serde(rename = "entity_id")]
+    id: String,
     /// Numeric suffix of `entity_id`.
-    entity_suffix: u64,
+    #[serde(rename = "entity_suffix")]
+    suffix: u64,
     /// Byte offset of the sketch entity suffix.
-    entity_reference_offset: u64,
+    #[serde(rename = "entity_reference_offset")]
+    reference_offset: u64,
 }
 
 impl Serialize for DesignSketchEntityBinding {
@@ -1307,13 +1309,13 @@ impl TryFrom<DesignSketchEntityBindingWire> for DesignSketchEntityBinding {
     type Error = String;
 
     fn try_from(wire: DesignSketchEntityBindingWire) -> Result<Self, Self::Error> {
-        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        if entity_id.suffix() != wire.entity_suffix {
+        let entity_id = DesignEntityId::try_from(wire.id)?;
+        if entity_id.suffix() != wire.suffix {
             return Err("entity_suffix disagrees with entity_id".into());
         }
         Ok(Self {
             entity_id,
-            entity_reference_offset: wire.entity_reference_offset,
+            entity_reference_offset: wire.reference_offset,
         })
     }
 }
@@ -1323,9 +1325,9 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
     fn from(value: DesignSketchEntityBinding) -> Self {
         let entity_suffix = value.entity_id.suffix();
         Self {
-            entity_id: value.entity_id.text,
-            entity_suffix,
-            entity_reference_offset: value.entity_reference_offset,
+            id: value.entity_id.text,
+            suffix: entity_suffix,
+            reference_offset: value.entity_reference_offset,
         }
     }
 }
@@ -1381,16 +1383,16 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
     type Error = DesignParameterScopePayloadError;
 
     fn try_from(mut wire: DesignParameterScopeSerde) -> Result<Self, Self::Error> {
-        if extrude_scope_is_absent(&wire.extrude) {
+        if extrude_scope_is_absent(wire.extrude.as_ref()) {
             wire.extrude = None;
         }
-        if coil_scope_is_absent(&wire.coil) {
+        if coil_scope_is_absent(wire.coil.as_ref()) {
             wire.coil = None;
         }
-        if base_flange_scope_is_absent(&wire.base_flange) {
+        if base_flange_scope_is_absent(wire.base_flange.as_ref()) {
             wire.base_flange = None;
         }
-        if path_feature_scope_is_absent(&wire.path_feature) {
+        if path_feature_scope_is_absent(wire.path_feature.as_ref()) {
             wire.path_feature = None;
         }
         let mut present = Vec::new();
@@ -1887,6 +1889,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
     }
 }
 
+#[cfg(test)]
 impl From<DesignParameterScope> for DesignParameterScopeSerde {
     fn from(scope: DesignParameterScope) -> Self {
         let kind = scope.kind();
@@ -2069,6 +2072,18 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::Face
             | DesignScopePayload::Native(_) => {}
         }
+        if base_flange_scope_is_absent(wire.base_flange.as_ref()) {
+            wire.base_flange = None;
+        }
+        if coil_scope_is_absent(wire.coil.as_ref()) {
+            wire.coil = None;
+        }
+        if extrude_scope_is_absent(wire.extrude.as_ref()) {
+            wire.extrude = None;
+        }
+        if path_feature_scope_is_absent(wire.path_feature.as_ref()) {
+            wire.path_feature = None;
+        }
         wire
     }
 }
@@ -2113,7 +2128,10 @@ impl DesignParameterScope {
                         kind, tail,
                     )
                     .ok_or_else(|| fail("previous_history_state_id_offset"))?;
-                if draft.feature_ordinal_offset.checked_add(relative as u64) != Some(offset)
+                if draft
+                    .feature_ordinal_offset
+                    .checked_add(u64_from_index(relative))
+                    != Some(offset)
                     || draft.history_state_id.is_some() != draft.previous_history_state_id.is_some()
                 {
                     return Err(fail("previous_history_state_id_offset/history_state_id/previous_history_state_id"));
@@ -2180,6 +2198,7 @@ impl DesignParameterScope {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
         DesignParameterScopeDraft {
             id: self.id,
@@ -2202,6 +2221,7 @@ impl DesignParameterScope {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn try_edit(
         &mut self,
         edit: impl FnOnce(&mut DesignParameterScopeDraft),
@@ -2649,64 +2669,64 @@ impl DesignParameterScope {
 
     pub(crate) fn coil_operation(&self) -> Option<DesignExtrudeOperation> {
         self.coil()
-            .and_then(|coil| coil.coil_operation.map(|field| field.value))
+            .and_then(|coil| coil.operation.map(|field| field.value))
     }
 
     pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_operation.map(|field| field.offset))
+            .and_then(|coil| coil.operation.map(|field| field.offset))
     }
 
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
         self.coil()
-            .and_then(|coil| coil.coil_extent.map(|field| field.value()))
+            .and_then(|coil| coil.extent.map(|field| field.value()))
     }
 
     pub(crate) fn coil_section(&self) -> Option<DesignCoilSection> {
         self.coil()
-            .and_then(|coil| coil.coil_section.map(|field| field.value()))
+            .and_then(|coil| coil.section.map(|field| field.value()))
     }
 
     pub(crate) fn coil_section_placement(&self) -> Option<DesignCoilSectionPlacement> {
         self.coil()
-            .and_then(|coil| coil.coil_section_placement.map(|field| field.value()))
+            .and_then(|coil| coil.section_placement.map(|field| field.value()))
     }
 
     pub(crate) fn coil_clockwise(&self) -> Option<bool> {
         self.coil()
-            .and_then(|coil| coil.coil_clockwise.map(|field| field.value()))
+            .and_then(|coil| coil.clockwise.map(|field| field.value()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_extent_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_extent.and_then(|field| field.offset()))
+            .and_then(|coil| coil.extent.and_then(|field| field.offset()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_section_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_section.and_then(|field| field.offset()))
+            .and_then(|coil| coil.section.and_then(|field| field.offset()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_section_placement_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_section_placement.and_then(|field| field.offset()))
+            .and_then(|coil| coil.section_placement.and_then(|field| field.offset()))
     }
 
     #[cfg(test)]
     pub(crate) fn coil_clockwise_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.coil_clockwise.and_then(|field| field.offset()))
+            .and_then(|coil| coil.clockwise.and_then(|field| field.offset()))
     }
 
     pub(crate) fn coil_placement(&self) -> Option<&DesignCoilPlacement> {
-        self.coil().and_then(|coil| coil.coil_placement.as_ref())
+        self.coil().and_then(|coil| coil.placement.as_ref())
     }
 
     pub(crate) fn coil_transform(&self) -> Option<&DesignCoilTransform> {
-        self.coil().and_then(|coil| coil.coil_transform.as_ref())
+        self.coil().and_then(|coil| coil.transform.as_ref())
     }
 
     pub(crate) fn has_path_construction(&self) -> bool {

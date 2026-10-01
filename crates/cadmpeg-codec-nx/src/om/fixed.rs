@@ -2,32 +2,40 @@
 //! Signed Q1.55 scalars and their exact atom markers.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Q155([u8; 7]);
+pub(crate) struct Q155 {
+    raw: [u8; 7],
+    value_bits: u64,
+}
 
 impl Q155 {
-    pub(super) fn from_raw(raw: [u8; 7]) -> Self {
-        Self(raw)
+    pub(super) fn from_raw(raw: [u8; 7]) -> Option<Self> {
+        let unsigned = raw
+            .into_iter()
+            .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
+        let signed = i64::try_from(unsigned).ok()?;
+        let signed = if unsigned & (1_u64 << 55) == 0 {
+            signed
+        } else {
+            signed - (1_i64 << 56)
+        };
+        let value = cadmpeg_core::convert::f64_from_i64(signed)? / 36_028_797_018_963_968.0;
+        Some(Self {
+            raw,
+            value_bits: value.to_bits(),
+        })
     }
 
     pub(crate) fn raw(self) -> [u8; 7] {
-        self.0
+        self.raw
     }
 
     pub(crate) fn value(self) -> f64 {
-        let unsigned = self
-            .0
-            .into_iter()
-            .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
-        let signed = if unsigned & (1_u64 << 55) == 0 {
-            unsigned as i64
-        } else {
-            (unsigned as i64) - (1_i64 << 56)
-        };
-        signed as f64 / (1_u64 << 55) as f64
+        f64::from_bits(self.value_bits)
     }
 
     pub(crate) fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
-        let scalar = Self(raw);
+        let scalar =
+            Self::from_raw(raw).ok_or("signed Q1.55 raw_values must be exactly representable")?;
         if scalar.value().to_bits() != value.to_bits() {
             return Err("values must match signed Q1.55 raw_values");
         }
@@ -110,6 +118,29 @@ impl Q155LaneFrame {
 impl super::scalar_run::ScalarFrame for Q155LaneFrame {
     type Atom = Q155Atom;
     fn prefix_len(self) -> u64 {
-        Self::DISCRIMINATOR.len() as u64
+        cadmpeg_core::decode::u64_from_index(Self::DISCRIMINATOR.len())
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::Q155;
+
+    fn assert_refused(value: impl Into<Option<Q155>>) {
+        assert!(value.into().is_none());
+    }
+
+    #[test]
+    fn q155_refuses_inexact_positive_numerator() {
+        let raw = [0x20, 0, 0, 0, 0, 0, 1];
+        assert_refused(Q155::from_raw(raw));
+        assert!(Q155::from_wire(0.25, raw).is_err());
+    }
+
+    #[test]
+    fn q155_refuses_inexact_negative_numerator() {
+        let raw = [0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        assert_refused(Q155::from_raw(raw));
+        assert!(Q155::from_wire(-0.25, raw).is_err());
     }
 }

@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use serde::{
     ser::{SerializeSeq, SerializeStruct},
     Deserialize, Deserializer, Serialize, Serializer,
 };
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,11 +20,14 @@ pub(super) struct FeaturePayloadBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FeaturePayloadContent<B> {
     blocks: B,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
-    pub(super) fn new(blocks: B, sha256: crate::native::hex::Sha256Hex) -> Result<Self, String> {
+    pub(super) fn new(
+        blocks: B,
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+    ) -> Result<Self, String> {
         blocks
             .as_ref()
             .iter()
@@ -45,37 +51,48 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
 
 impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
     pub(super) fn from_source(
+        ctx: &DecodeContext<'_>,
         ids: impl IntoIterator<Item = String>,
         blocks: &BTreeMap<String, (&[u8], u64)>,
-    ) -> Option<(Vec<u8>, Self)> {
-        let sources = ids
-            .into_iter()
-            .map(|id| {
-                let (bytes, offset) = *blocks.get(&id)?;
-                Some((id, bytes, offset))
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let byte_len = sources.iter().try_fold(0usize, |total, (_, bytes, _)| {
-            total.checked_add(bytes.len())
-        })?;
-        let mut payload = Vec::new();
-        payload.try_reserve_exact(byte_len).ok()?;
+    ) -> Result<Option<Self>, CodecError> {
+        let mut hash = Sha256::new();
         let mut rows = Vec::new();
-        rows.try_reserve_exact(sources.len()).ok()?;
-        for (id, bytes, source_offset) in sources {
-            payload.extend_from_slice(bytes);
+        let mut reservation = ctx.reserve_scoped(0, "retain NX feature payload blocks")?;
+        let mut byte_len = 0u64;
+        for id in ids {
+            let Some((bytes, source_offset)) = blocks.get(&id).copied() else {
+                return Ok(None);
+            };
+            let length = u64_from_index(bytes.len());
+            byte_len = byte_len
+                .checked_add(length)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
+            ctx.charge_work(
+                length
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1))?,
+                "hash NX feature payload bytes",
+            )?;
+            let record_bytes = std::mem::size_of::<FeaturePayloadBlock>()
+                .checked_add(id.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature payload blocks", 0, 1))?;
+            reservation.grow(u64_from_index(record_bytes))?;
+            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
+            hash.update(bytes);
             rows.push(FeaturePayloadBlock {
                 id,
-                byte_len: bytes.len() as u64,
+                byte_len: length,
                 source_offset,
             });
         }
-        let content = Self::new(
-            B::try_from(rows).ok()?,
-            crate::native::hex::Sha256Hex::digest(&payload),
-        )
-        .ok()?;
-        Some((payload, content))
+        let Ok(blocks) = B::try_from(rows) else {
+            return Ok(None);
+        };
+        reservation.commit()?;
+        ctx.charge_retained(64, "retain NX feature payload digest")?;
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes(hash.finalize().into());
+        let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
+        Ok(Some(content))
     }
 }
 
@@ -83,7 +100,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
 struct PayloadContentWire {
     data_blocks: Vec<String>,
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     block_payload_offsets: Vec<u64>,
     block_byte_lengths: Vec<u64>,
     block_source_offsets: Vec<u64>,
@@ -293,9 +310,10 @@ mod tests {
                 source_offset: 0,
             },
         ];
-        assert!(
-            FeaturePayloadContent::new(blocks, crate::native::hex::Sha256Hex::digest(b"hash"))
-                .is_err()
-        );
+        assert!(FeaturePayloadContent::new(
+            blocks,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash")
+        )
+        .is_err());
     }
 }

@@ -16,7 +16,7 @@ fn model_entity_wins_when_native_id_collides() {
     namespace.arenas_mut().insert(
         "records".into(),
         vec![NativeRecord::new(
-            id.clone(),
+            crate::ids::Identity::new(id.clone()).expect("valid identity"),
             Map::from_iter([("native_only".into(), Value::Bool(true))]),
         )
         .expect("valid native identity")],
@@ -38,8 +38,9 @@ fn annotation_keys_and_field_paths_are_checked() {
         .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")
         .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
-    let findings =
-        crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new()).expect("resource allocation did not fail").findings;
+    let findings = crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Annotations && finding.severity == crate::report::Severity::Error
     }));
@@ -54,13 +55,14 @@ fn native_topology_link_must_resolve() {
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "sketch_curve_links".into(),
         vec![NativeRecord::new(
-            "native:test:link#0",
+            crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
             serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
         )
         .expect("valid native identity")],
     );
     ir.native.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::NativeLinks));
@@ -95,13 +97,15 @@ fn parameter_native_ref_must_resolve() {
         }),
         native_ref: Some("native:missing#0".into()),
     });
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
             finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.as_str())
         }));
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -123,7 +127,9 @@ fn unresolved_unknown_record_link_is_reported_once() {
     )
     .expect("store unknown record");
 
-    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     let reported = findings
         .iter()
         .filter(|finding| {
@@ -153,7 +159,9 @@ fn complete_document_native_link_validation_reports_malformed_shapes() {
             "id": "test:source:unknown#malformed", "links": links
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
-        let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
+        let findings = validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .findings;
         let found = findings
             .iter()
             .filter(|finding| {
@@ -182,7 +190,9 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
             "id": "test:native:property#links", "links": links
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
-        let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
+        let findings = validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .findings;
         assert!(
             findings
                 .iter()

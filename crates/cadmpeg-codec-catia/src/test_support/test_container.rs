@@ -152,7 +152,7 @@ pub(super) fn descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
     b[0x0c..0x10].copy_from_slice(&be32(phys_len)); // logical_length == cum
     let mut np = 0x10;
     for ch in name.chars() {
-        b[np] = ch as u8;
+        b[np] = u8::try_from(ch).expect("fixture value fits u8");
         b[np + 1] = 0x00;
         np += 2;
     }
@@ -179,15 +179,23 @@ pub(crate) fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8>
     //   [16..]   MainDataStream, then SurfacicReps
     //   [A..A+B] directory
     let main_off = 16u32;
-    let surf_off = main_off + main.len() as u32;
-    let dir_rel = surf_off + surf.len() as u32; // == A
+    let surf_off = main_off + u32::try_from(main.len()).expect("fixture value fits u32");
+    let dir_rel = surf_off + u32::try_from(surf.len()).expect("fixture value fits u32"); // == A
 
     let mut dir = Vec::new();
     dir.extend_from_slice(DIR_MAGIC);
-    dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32));
-    dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32));
+    dir.extend_from_slice(&descriptor(
+        "MainDataStream",
+        main_off,
+        u32::try_from(main.len()).expect("fixture value fits u32"),
+    ));
+    dir.extend_from_slice(&descriptor(
+        "SurfacicReps",
+        surf_off,
+        u32::try_from(surf.len()).expect("fixture value fits u32"),
+    ));
     dir.extend_from_slice(b"CB__END");
-    let b_len = dir.len() as u32;
+    let b_len = u32::try_from(dir.len()).expect("fixture value fits u32");
 
     let mut inner = Vec::new();
     inner.extend_from_slice(OUTER_MAGIC);
@@ -201,7 +209,7 @@ pub(crate) fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8>
     // is the file size (the directory here is the inner container's tail).
     let mut f = Vec::new();
     f.extend_from_slice(OUTER_MAGIC);
-    let outer_dir_off = 16u32 + inner.len() as u32; // placed at EOF (zero-length)
+    let outer_dir_off = 16u32 + u32::try_from(inner.len()).expect("fixture value fits u32"); // placed at EOF (zero-length)
     f.extend_from_slice(&be32(outer_dir_off));
     f.extend_from_slice(&be32(0));
     f.extend_from_slice(&inner);
@@ -212,13 +220,21 @@ pub(crate) fn outer_directory_catpart() -> Vec<u8> {
     let payload = b"outer logical stream";
     let mut dir = Vec::new();
     dir.extend_from_slice(DIR_MAGIC);
-    dir.extend_from_slice(&descriptor("RootStorage", 16, payload.len() as u32));
+    dir.extend_from_slice(&descriptor(
+        "RootStorage",
+        16,
+        u32::try_from(payload.len()).expect("fixture value fits u32"),
+    ));
     dir.extend_from_slice(b"CB__END");
 
     let mut file = Vec::new();
     file.extend_from_slice(OUTER_MAGIC);
-    file.extend_from_slice(&be32(16 + payload.len() as u32));
-    file.extend_from_slice(&be32(dir.len() as u32));
+    file.extend_from_slice(&be32(
+        16 + u32::try_from(payload.len()).expect("fixture value fits u32"),
+    ));
+    file.extend_from_slice(&be32(
+        u32::try_from(dir.len()).expect("fixture value fits u32"),
+    ));
     file.extend_from_slice(payload);
     file.extend_from_slice(&dir);
     file
@@ -238,22 +254,30 @@ pub(crate) fn outer_container_catpart(stream: &[u8]) -> (Vec<u8>, u64) {
     declaration.extend_from_slice(&0x0000_1825u32.to_be_bytes());
 
     let data_offset = 16u32;
-    let graph_offset = data_offset + declaration.len() as u32;
+    let graph_offset =
+        data_offset + u32::try_from(declaration.len()).expect("fixture value fits u32");
     let mut dir = Vec::new();
     dir.extend_from_slice(DIR_MAGIC);
-    dir.extend_from_slice(&descriptor("Data", data_offset, declaration.len() as u32));
+    dir.extend_from_slice(&descriptor(
+        "Data",
+        data_offset,
+        u32::try_from(declaration.len()).expect("fixture value fits u32"),
+    ));
     dir.extend_from_slice(&descriptor(
         "1048_62eb7b6f_1825",
         graph_offset,
-        stream.len() as u32,
+        u32::try_from(stream.len()).expect("fixture value fits u32"),
     ));
     dir.extend_from_slice(b"CB__END");
 
-    let directory_offset = graph_offset + stream.len() as u32;
+    let directory_offset =
+        graph_offset + u32::try_from(stream.len()).expect("fixture value fits u32");
     let mut file = Vec::new();
     file.extend_from_slice(OUTER_MAGIC);
     file.extend_from_slice(&be32(directory_offset));
-    file.extend_from_slice(&be32(dir.len() as u32));
+    file.extend_from_slice(&be32(
+        u32::try_from(dir.len()).expect("fixture value fits u32"),
+    ));
     file.extend(declaration);
     file.extend(stream);
     file.extend(dir);
@@ -270,7 +294,9 @@ pub(crate) fn tetrahedron_topology_catpart() -> Vec<u8> {
     ];
     for (face, boundary) in boundaries.into_iter().enumerate() {
         main.extend_from_slice(&[0x01, 0x44, 0x01, 0xff, 11, 0, 0, 0, 11]);
-        main.extend_from_slice(&(500u16 + face as u16).to_be_bytes());
+        main.extend_from_slice(
+            &(500u16 + u16::try_from(face).expect("fixture value fits u16")).to_be_bytes(),
+        );
         for handle in boundary {
             main.extend_from_slice(&handle.to_be_bytes());
         }
@@ -312,7 +338,7 @@ pub(crate) fn tetrahedron_topology_catpart() -> Vec<u8> {
         .enumerate()
     {
         main.push(0x60);
-        main.extend_from_slice(&[(edge + 1) as u8, 0, 0]);
+        main.extend_from_slice(&[u8::try_from(edge + 1).expect("fixture value fits u8"), 0, 0]);
         main.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x36, faces[0], faces[1]]);
     }
 
@@ -330,7 +356,16 @@ pub(crate) fn tetrahedron_topology_catpart() -> Vec<u8> {
             + (points[indices[0]][2] - center[2]).powi(2))
         .sqrt();
         let start = surf.len();
-        surf.extend_from_slice(&[(face + 1) as u8, 0, 0, 0, 0x12, 0, 0x33, 0x35]);
+        surf.extend_from_slice(&[
+            u8::try_from(face + 1).expect("fixture value fits u8"),
+            0,
+            0,
+            0,
+            0x12,
+            0,
+            0x33,
+            0x35,
+        ]);
         for value in [center[0], center[1], center[2], radius] {
             surf.extend_from_slice(&be_f32(value));
         }
@@ -453,9 +488,24 @@ pub(crate) fn zero_entity_nurbs_catpart() -> Vec<u8> {
     f[record + 164..record + 167].copy_from_slice(&[0x08, 0x00, 0x00]);
     for i in 0..49 {
         let at = 167 + i * 24;
-        write_f64(&mut f, at, i as f64);
-        write_f64(&mut f, at + 8, (i / 7) as f64);
-        write_f64(&mut f, at + 16, (i % 7) as f64);
+        write_f64(
+            &mut f,
+            at,
+            cadmpeg_core::convert::f64_from_index(i)
+                .expect("fixture index is exactly representable"),
+        );
+        write_f64(
+            &mut f,
+            at + 8,
+            cadmpeg_core::convert::f64_from_index(i / 7)
+                .expect("fixture index is exactly representable"),
+        );
+        write_f64(
+            &mut f,
+            at + 16,
+            cadmpeg_core::convert::f64_from_index(i % 7)
+                .expect("fixture index is exactly representable"),
+        );
     }
     f
 }
@@ -496,23 +546,35 @@ pub(crate) fn finjpl_stream() -> Vec<u8> {
 pub(crate) fn object_main_catpart(main: &[u8]) -> Vec<u8> {
     let surf = vec![0u8];
     let main_off = 16u32;
-    let surf_off = main_off + main.len() as u32;
-    let dir_rel = surf_off + surf.len() as u32;
+    let surf_off = main_off + u32::try_from(main.len()).expect("fixture value fits u32");
+    let dir_rel = surf_off + u32::try_from(surf.len()).expect("fixture value fits u32");
     let mut dir = Vec::new();
     dir.extend_from_slice(DIR_MAGIC);
-    dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32));
-    dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32));
+    dir.extend_from_slice(&descriptor(
+        "MainDataStream",
+        main_off,
+        u32::try_from(main.len()).expect("fixture value fits u32"),
+    ));
+    dir.extend_from_slice(&descriptor(
+        "SurfacicReps",
+        surf_off,
+        u32::try_from(surf.len()).expect("fixture value fits u32"),
+    ));
     dir.extend_from_slice(b"CB__END");
     let mut inner = Vec::new();
     inner.extend_from_slice(OUTER_MAGIC);
     inner.extend_from_slice(&be32(dir_rel));
-    inner.extend_from_slice(&be32(dir.len() as u32));
+    inner.extend_from_slice(&be32(
+        u32::try_from(dir.len()).expect("fixture value fits u32"),
+    ));
     inner.extend_from_slice(main);
     inner.extend_from_slice(&surf);
     inner.extend_from_slice(&dir);
     let mut file = Vec::new();
     file.extend_from_slice(OUTER_MAGIC);
-    file.extend_from_slice(&be32(16 + inner.len() as u32));
+    file.extend_from_slice(&be32(
+        16 + u32::try_from(inner.len()).expect("fixture value fits u32"),
+    ));
     file.extend_from_slice(&be32(0));
     file.extend_from_slice(&inner);
     file
