@@ -21,6 +21,7 @@ fn token(text: &str) -> cadmpeg_parasolid::OwnedSchemaToken {
 
 #[test]
 fn legacy_stream_boundaries_require_complete_transmit_headers() {
+    crate::test_support::with_decode_context(|ctx| {
     let mut bytes = b"prefix".to_vec();
     bytes.extend_from_slice(b"PS\x00\x00not a header");
     let first = bytes.len();
@@ -39,9 +40,11 @@ fn legacy_stream_boundaries_require_complete_transmit_headers() {
     );
     bytes.extend_from_slice(second_description);
 
-    assert_eq!(super::legacy_stream_start(&bytes, 0), Some(first));
-    assert_eq!(super::legacy_stream_start(&bytes, first + 4), Some(second));
-    assert_eq!(super::legacy_stream_start(&bytes, second + 4), None);
+    assert_eq!(super::legacy_stream_start(ctx, &bytes, 0).unwrap(), Some(first));
+    assert_eq!(super::legacy_stream_start(ctx, &bytes, first + 4).unwrap(), Some(second));
+    assert_eq!(super::legacy_stream_start(ctx, &bytes, second + 4).unwrap(), None);
+
+    });
 }
 
 #[test]
@@ -614,5 +617,33 @@ fn unicode_value_conversion_refuses_scoped_scratch() {
     let bytes = [0, 0x62, 0, 0, 0, 1, 0, 17, 0, 65];
     crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
         assert!(matches!(crate::parasolid::value_records::entity_value_records_at(ctx, &bytes, [0]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX Unicode conversion scratch"));
+    });
+}
+
+#[test]
+fn embedded_stream_scan_refuses_exhausted_work() {
+    let bytes = [0; 64];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
+        let mut streams = Vec::new();
+        assert!(matches!(super::append_all_zlib_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes), 0, &mut streams, false), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX embedded stream bytes"));
+    });
+}
+
+#[test]
+fn legacy_stream_scan_refuses_exhausted_work() {
+    let bytes = [0; 64];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
+        assert!(matches!(super::extract_legacy_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes)), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX legacy stream headers"));
+    });
+}
+
+#[test]
+fn legacy_stream_slots_refuse_exhausted_collection() {
+    let description = b"TRANSMIT FILE";
+    let mut bytes = vec![b'P', b'S'];
+    bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(description);
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_collection_items = 0, |ctx| {
+        assert!(matches!(super::extract_legacy_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes)), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX embedded stream slots"));
     });
 }
