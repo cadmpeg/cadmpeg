@@ -142,10 +142,14 @@ fn path_edge_identity_refuses_retained_limit() {
 
 #[test]
 fn path_edge_validation_refuses_collection_limit() {
-    let error = bind_with_limits(2, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "validate PathRef historical edges edges",
+        |cap| bind_with_limits(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "validate F3D path edge identities")
+        if limit.operation == "validate PathRef historical edges edges")
     );
 }
 

@@ -333,7 +333,10 @@ pub(crate) fn transfer_parameters(
                             TypedParameterEvaluation::Value(value) => {
                                 if let Some(evaluated) = evaluated_expression.as_ref() {
                                     evaluated.agrees_with(&TypedParameterEvaluation::Value(
-                                        (value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?,
+                                        (value).try_clone_for_decode(
+                                            ctx,
+                                            "catia_formula_parameter_value_copy",
+                                        )?,
                                     ))
                                 } else {
                                     false
@@ -1174,7 +1177,8 @@ fn collect_legacy_parameters(
                 continue;
             }
             if let Some(stored) = candidate.parameter.value.as_ref() {
-                let stored = (stored).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?;
+                let stored =
+                    (stored).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?;
                 if !evaluation
                     .evaluated
                     .agrees_with(&TypedParameterEvaluation::Value(stored))
@@ -1746,7 +1750,9 @@ fn relation_program_output_candidate(
         TypedParameterEvaluation::Unset => true,
         TypedParameterEvaluation::Value(value) => {
             if let Some(evaluated) = evaluated_expression.as_ref() {
-                evaluated.agrees_with(&TypedParameterEvaluation::Value((value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?))
+                evaluated.agrees_with(&TypedParameterEvaluation::Value(
+                    (value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?,
+                ))
             } else {
                 false
             }
@@ -1933,7 +1939,11 @@ fn copy_design_parameter(
     if !source.dependencies.is_empty() {
         dependencies.reserve_for_decode(ctx, source.dependencies.len(), operation)?;
         for dependency in &source.dependencies {
-            dependencies.insert_for_decode(ctx, dependency.try_clone_for_decode(ctx, operation)?, operation)?;
+            dependencies.insert_for_decode(
+                ctx,
+                dependency.try_clone_for_decode(ctx, operation)?,
+                operation,
+            )?;
         }
     }
     let mut properties = BTreeMap::new();
@@ -4476,14 +4486,14 @@ mod parser_tests {
     fn formula_string_value_copy_refuses_retained_limit() {
         let value = ParameterValue::String("source string".to_string());
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            (&value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")
+            value.try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_formula_parameter_value_copy")
         );
         let admitted = crate::test_support::with_service_context(|ctx| {
-            (&value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")
+            value.try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")
         })
         .expect("service profile admits string copy");
         assert_eq!(admitted, value);

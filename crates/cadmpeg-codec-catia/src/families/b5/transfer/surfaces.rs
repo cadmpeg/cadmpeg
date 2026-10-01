@@ -228,8 +228,12 @@ pub(in crate::families) fn copy_rolling_ball_definition(
     };
     let stations = ctx.copy_retained_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(jet.degree(), stations, ctx)?
-            .map_err(CodecError::malformed)?,
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
+            jet.degree(),
+            stations,
+            ctx,
+        )?
+        .map_err(CodecError::malformed)?,
     ))
 }
 
@@ -331,15 +335,22 @@ fn profile_nurbs(
             point, direction, ..
         } => crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, ctx.collect_vec(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+                ctx,
+                1,
+                ctx.collect_vec(
                     [interval[0], interval[0], interval[1], interval[1]],
                     "catia_b5_revolution_line_profile_knots",
-                )?, ctx.collect_vec(
+                )?,
+                ctx.collect_vec(
                     interval.into_iter().map(|parameter| {
                         point3(add(coordinates(*point), scale(direction.get(), parameter)))
                     }),
                     "catia_b5_revolution_line_profile_points",
-                )?, None, false)?,
+                )?,
+                None,
+                false,
+            )?,
             refusal,
             format_args!("b5 line profile of a revolution surface: {record}"),
         )?,
@@ -460,7 +471,14 @@ pub(super) fn rational_arc(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 2, knots, control_points, Some(weights), false)?,
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+            ctx,
+            2,
+            knots,
+            control_points,
+            Some(weights),
+            false,
+        )?,
         refusal,
         format_args!("b5 rational arc profile of a revolution surface: {record}"),
     )
@@ -675,11 +693,20 @@ pub(super) fn revolve_nurbs(
         };
         let surface = match crate::nurbs::note_refusal(
             ctx,
-            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+                ctx,
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
                     profile_knots,
                     false,
-                ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(point_rows, Some(weight_rows)), false) { Ok(value) => value, Err(error) => return Some(Err(error)) },
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(point_rows, Some(weight_rows)),
+                false,
+            ) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            },
             refusal,
             format_args!("b5 revolution surface built from its profile: {record}"),
         ) {
@@ -910,7 +937,10 @@ pub(super) fn emit_surfaces(
                     Exactness::Derived,
                 )?;
                 admission.charge()?;
-                let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &id, cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                let _attached = ir.model.add_procedural_surface_for_decode(
+                    admission.context(),
+                    &id,
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
                         (revolution.axis_origin, revolution.axis_direction),
                         revolution.angular_interval,
@@ -926,7 +956,8 @@ pub(super) fn emit_surfaces(
                             None,
                         )
                     })
-                    .map_err(cadmpeg_core::CodecError::malformed)?)?;
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                )?;
             }
             Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
@@ -955,7 +986,11 @@ pub(super) fn emit_surfaces(
                     Exactness::ByteExact,
                 )?;
                 admission.charge()?;
-                let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &id, ProceduralSurface::new(procedural_id, *definition, None))?;
+                let _attached = ir.model.add_procedural_surface_for_decode(
+                    admission.context(),
+                    &id,
+                    ProceduralSurface::new(procedural_id, *definition, None),
+                )?;
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
@@ -990,7 +1025,10 @@ pub(super) fn emit_surfaces(
         )?;
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         admission.charge()?;
-        let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?, ProceduralSurface::new(
+        let _attached = ir.model.add_procedural_surface_for_decode(
+            admission.context(),
+            &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?,
+            ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -1007,7 +1045,8 @@ pub(super) fn emit_surfaces(
                     ),
                 ),
                 Some(record_bounds),
-            ))?;
+            ),
+        )?;
     }
     Ok(surface_ids)
 }
@@ -1236,7 +1275,10 @@ fn emit_extrusion_procedure(
     )?;
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     admission.charge()?;
-    let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), surface_id, ProceduralSurface::new(
+    let _attached = ir.model.add_procedural_surface_for_decode(
+        admission.context(),
+        surface_id,
+        ProceduralSurface::new(
             procedure_id,
             ProceduralSurfaceDefinition::Extrusion(
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
@@ -1248,7 +1290,8 @@ fn emit_extrusion_procedure(
                 ),
             ),
             Some(record_bounds),
-        ))?;
+        ),
+    )?;
     Ok(())
 }
 

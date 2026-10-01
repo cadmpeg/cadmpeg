@@ -1757,7 +1757,11 @@ face_operands,
             }
             let dependency =
                 (candidate).try_clone_for_decode(ctx, "f3d parameter dependency id")?;
-            parameter.dependencies.insert_for_decode(ctx, dependency, "f3d parameter dependency")?;
+            parameter.dependencies.insert_for_decode(
+                ctx,
+                dependency,
+                "f3d parameter dependency",
+            )?;
         }
     }
     normalize_parameter_ordinals(ctx, &mut parameters, &parameter_owners)?;
@@ -1976,12 +1980,17 @@ fn project_work_point_construction(
         let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
         let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
         Ok(Some(
-            match cadmpeg_ir::features::EdgeSelection::historical_for_decode(crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?, vec![crate::design::identity::history_input_edge_id(
+            match cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+                crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
+                vec![crate::design::identity::history_input_edge_id(
                     ctx,
                     &prefix,
                     edge_slot,
                     "f3d historical edge identifier",
-                )?], ctx.copy_retained_text(&operand.id, "f3d WorkPoint historical edge operand id")?, ctx)? {
+                )?],
+                ctx.copy_retained_text(&operand.id, "f3d WorkPoint historical edge operand id")?,
+                ctx,
+            )? {
                 Ok(selection) => selection,
                 Err(_) => EdgeSelection::Native(
                     ctx.copy_retained_text(&operand.id, "f3d WorkPoint fallback edge operand id")?,
@@ -2658,8 +2667,13 @@ fn project_thread_face_selection(
     };
 
     let historical_native = ctx.copy_retained_text(&native, "f3d Thread historical native id")?;
-    Ok(cadmpeg_ir::features::FaceSelection::historical_for_decode(state, faces, historical_native, ctx)?
-        .unwrap_or(FaceSelection::Native(native)))
+    Ok(cadmpeg_ir::features::FaceSelection::historical_for_decode(
+        state,
+        faces,
+        historical_native,
+        ctx,
+    )?
+    .unwrap_or(FaceSelection::Native(native)))
 }
 
 /// Project Fusion's role-`0x4` full-round face construction.
@@ -2773,9 +2787,17 @@ fn design_body_selection(
     }
     if bodies.len() == expected_count {
         match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
-            Ok(bodies) => return Ok(BodySelection::Resolved { bodies, native: ctx.copy_retained_text(&scope.id, "f3d body selection resolved native id")? }),
-            Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {},
-            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => return Err(limit.into()),
+            Ok(bodies) => {
+                return Ok(BodySelection::Resolved {
+                    bodies,
+                    native: ctx
+                        .copy_retained_text(&scope.id, "f3d body selection resolved native id")?,
+                })
+            }
+            Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {}
+            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
+                return Err(limit.into())
+            }
         }
     }
     Ok(BodySelection::Native(ctx.copy_retained_text(
@@ -2916,7 +2938,9 @@ pub(crate) fn bind_sketch_feature_geometry(
                         )?;
                         *profile = match ProfileRef::spatial_sketch_selection_for_decode(
                             sketch_id,
-                            vec![selection], ctx)? {
+                            vec![selection],
+                            ctx,
+                        )? {
                             Ok(profile) => profile,
                             Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
                                 ctx.copy_retained_text(
@@ -2942,7 +2966,9 @@ pub(crate) fn bind_sketch_feature_geometry(
                         spatial
                             .id
                             .try_clone_for_decode(ctx, "f3d extrude spatial sketch id")?,
-                        profiles, ctx)? {
+                        profiles,
+                        ctx,
+                    )? {
                         Ok(profile) => profile,
                         Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
                             ctx.copy_retained_text(&scope.id, "f3d extrude spatial fallback id")?,
@@ -3504,17 +3530,24 @@ fn selected_historical_face_selection(
     let feature_key = crate::design::identity::identity_key(feature.as_str())?;
     let prefix =
         crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
-    Ok(Some(match cadmpeg_ir::features::FaceSelection::historical_for_decode(crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?, vec![crate::design::identity::history_input_face_id(
+    Ok(Some(
+        match cadmpeg_ir::features::FaceSelection::historical_for_decode(
+            crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
+            vec![crate::design::identity::history_input_face_id(
+                ctx,
+                &prefix,
+                face_slot,
+                "f3d historical face identifier",
+            )?],
+            ctx.copy_retained_text(&group.id, "f3d Draft historical face group id")?,
             ctx,
-            &prefix,
-            face_slot,
-            "f3d historical face identifier",
-        )?], ctx.copy_retained_text(&group.id, "f3d Draft historical face group id")?, ctx)? {
-        Ok(selection) => selection,
-        Err(_) => cadmpeg_ir::features::FaceSelection::Native(
-            ctx.copy_retained_text(&group.id, "f3d Draft fallback face group id")?,
-        ),
-    }))
+        )? {
+            Ok(selection) => selection,
+            Err(_) => cadmpeg_ir::features::FaceSelection::Native(
+                ctx.copy_retained_text(&group.id, "f3d Draft fallback face group id")?,
+            ),
+        },
+    ))
 }
 
 fn project_face_selection(
@@ -3745,7 +3778,9 @@ fn resolved_split_face_path(
     Ok(PathRef::historical_edges_for_decode(
         crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
         edges,
-        ctx.copy_retained_text(&group.id, "f3d SplitFace path group id")?, ctx)?
+        ctx.copy_retained_text(&group.id, "f3d SplitFace path group id")?,
+        ctx,
+    )?
     .ok())
 }
 
@@ -4744,7 +4779,12 @@ fn merge_edge_selections(
             }
             let selected_native =
                 ctx.copy_retained_text(&scope.id, "f3d merged historical native id")?;
-            return match cadmpeg_ir::features::EdgeSelection::historical_for_decode(state, resolved, selected_native, ctx)? {
+            return match cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+                state,
+                resolved,
+                selected_native,
+                ctx,
+            )? {
                 Ok(selection) => Ok(selection),
                 Err(_) => native(),
             };
@@ -4867,11 +4907,16 @@ pub(crate) fn direct_face_selection(
                     ctx.push_vec(&mut resolved, face, "f3d direct historical face")?;
                 }
             }
-            match cadmpeg_ir::features::FaceSelection::historical_for_decode(crate::design::identity::feature_input_topology_id(
+            match cadmpeg_ir::features::FaceSelection::historical_for_decode(
+                crate::design::identity::feature_input_topology_id(
                     ctx,
                     &feature_id,
                     previous_state_id,
-                )?, resolved, ctx.copy_retained_text(&scope.id, "f3d direct historical native id")?, ctx)? {
+                )?,
+                resolved,
+                ctx.copy_retained_text(&scope.id, "f3d direct historical native id")?,
+                ctx,
+            )? {
                 Ok(selection) => selection,
                 Err(_) => FaceSelection::Native(
                     ctx.copy_retained_text(&scope.id, "f3d direct historical fallback id")?,
@@ -4895,11 +4940,17 @@ pub(crate) fn direct_face_selection(
                     }
                 }
             }
-            match cadmpeg_ir::features::FaceSelection::historical_partial_for_decode(crate::design::identity::feature_input_topology_id(
+            match cadmpeg_ir::features::FaceSelection::historical_partial_for_decode(
+                crate::design::identity::feature_input_topology_id(
                     ctx,
                     &feature_id,
                     previous_state_id,
-                )?, faces, unresolved, ctx.copy_retained_text(&scope.id, "f3d direct partial native id")?, ctx)? {
+                )?,
+                faces,
+                unresolved,
+                ctx.copy_retained_text(&scope.id, "f3d direct partial native id")?,
+                ctx,
+            )? {
                 Ok(selection) => selection,
                 Err(_) => FaceSelection::Native(
                     ctx.copy_retained_text(&scope.id, "f3d direct partial fallback id")?,
@@ -8324,7 +8375,9 @@ fn project_extrude(
                 }
                 ProfileRef::Planar(match (complete, state) {
                     (true, Some(state)) if !faces.is_empty() => {
-                        match PlanarProfileRef::historical_faces_for_decode(state, faces, native, ctx)? {
+                        match PlanarProfileRef::historical_faces_for_decode(
+                            state, faces, native, ctx,
+                        )? {
                             Ok(profile) => profile,
                             Err(_) => PlanarProfileRef::Native(
                                 ctx.copy_retained_text(&scope.id, "f3d Extrude fallback scope id")?,

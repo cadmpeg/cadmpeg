@@ -890,10 +890,15 @@ fn curve_expression_dependency_validation_charges_comparisons() {
         .expect("service profile admits two dependencies"),
         3
     );
-    let mut limited = DecodePolicy::service();
-    limited.limits.max_work_units = 4;
-    let error = transfer_with_limits(&["a=1", "b=2", "c=a+b"], &dimensions, limited)
-        .expect_err("validating two dependencies needs one comparison");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "validate Creo curve-expression dependency uniqueness",
+        |limit| {
+            let mut limited = DecodePolicy::service();
+            limited.limits.max_work_units = limit;
+            transfer_with_limits(&["a=1", "b=2", "c=a+b"], &dimensions, limited)
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits

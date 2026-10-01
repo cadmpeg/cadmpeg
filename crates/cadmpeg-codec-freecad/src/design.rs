@@ -484,7 +484,11 @@ pub(crate) fn transfer(
             dependencies.len(),
             "fcstd distinct feature dependencies",
         )?;
-        dependency_members.extend_for_decode(ctx, dependencies, "fcstd distinct feature dependencies")?;
+        dependency_members.extend_for_decode(
+            ctx,
+            dependencies,
+            "fcstd distinct feature dependencies",
+        )?;
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(outputs.len()),
             "fcstd distinct feature outputs",
@@ -598,15 +602,17 @@ fn body_definition(
     Ok(
         match cadmpeg_ir::features::TreeChildren::new_for_decode(children, active_child, ctx) {
             Ok(children) => Some(children),
-            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => return Err(limit.into()),
+            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
+                return Err(limit.into())
+            }
             Err(_) => None,
         }
-            .map(|children| {
-                FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                    role: FeatureTreeNodeRole::SolidBodies,
-                    children,
-                })
-            }),
+        .map(|children| {
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::SolidBodies,
+                children,
+            })
+        }),
     )
 }
 

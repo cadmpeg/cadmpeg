@@ -1173,7 +1173,12 @@ pub(crate) fn project(
             for sketch in sketches {
                 if let Some(native) = sketch.native_ref.as_deref() {
                     ctx.charge_collection_items(1, "index Inventor feature sketch ids")?;
-                    ids.insert(native, sketch.id.try_clone_for_decode(ctx, "retain Inventor feature sketch id")?);
+                    ids.insert(
+                        native,
+                        sketch
+                            .id
+                            .try_clone_for_decode(ctx, "retain Inventor feature sketch id")?,
+                    );
                 }
             }
             ids
@@ -1371,7 +1376,8 @@ fn project_extrusion(
         Err(error) => return Some(Err(error)),
     };
     let sketch_id = index.sketch_ids.get(sketch.id().as_str())?;
-    let sketch_id = match sketch_id.try_clone_for_decode(ctx, "retain Inventor extrusion sketch id") {
+    let sketch_id = match sketch_id.try_clone_for_decode(ctx, "retain Inventor extrusion sketch id")
+    {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
@@ -1436,9 +1442,7 @@ fn project_extrusion(
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::Planar(
-                    profile,
-                ),
+                profile: ProfileRef::Planar(profile),
                 direction: ExtrudeDirection::Explicit {
                     vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
                     source: Some(ExtrusionDirectionSource::Custom {}),
@@ -1906,16 +1910,29 @@ fn feature_result(
     ) {
         return Some(Err(error));
     }
-    let mut copied_storage = match ctx.reserve_scoped(0, "compose Inventor feature result key") { Ok(storage) => storage, Err(error) => return Some(Err(error)), };
-    let feature_id = match copied_storage.with_storage(|| Ok::<_, CodecError>(FeatureId::compose(
-        &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
-        source.identity.key(ctx)?,
-    ))) { Ok(value) => value, Err(error) => return Some(Err(error)), };
-    let result = FeatureResultTopology::new(
-        match copied_storage.with_storage(|| Ok::<_, CodecError>(FeatureResultTopologyId::compose(
-            &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-result"),
+    let mut copied_storage = match ctx.reserve_scoped(0, "compose Inventor feature result key") {
+        Ok(storage) => storage,
+        Err(error) => return Some(Err(error)),
+    };
+    let feature_id = match copied_storage.with_storage(|| {
+        Ok::<_, CodecError>(FeatureId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             source.identity.key(ctx)?,
-        ))) { Ok(value) => value, Err(error) => return Some(Err(error)), },
+        ))
+    }) {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let result = FeatureResultTopology::new(
+        match copied_storage.with_storage(|| {
+            Ok::<_, CodecError>(FeatureResultTopologyId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-result"),
+                source.identity.key(ctx)?,
+            ))
+        }) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        },
         match feature_id.try_clone_for_decode(ctx, "retain Inventor feature result identities") {
             Ok(value) => value,
             Err(error) => return Some(Err(error)),
@@ -2546,14 +2563,21 @@ mod tests {
     }
 
     fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
-        Located::new(PmDcFeaturePropertyPayload {
+        Located::new(
+            PmDcFeaturePropertyPayload {
                 save_version_major: 16,
                 header: test_header(),
                 kind,
             },
-format!("{ordinal:032x}"),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-ordinal)
+            format!("{ordinal:032x}"),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            ordinal,
+        )
     }
 
     fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
@@ -2561,7 +2585,8 @@ ordinal)
         for (slot, record_ordinal) in slots {
             references[*slot] = reference(record_ordinal + 1);
         }
-        Located::new(PmDcFeaturePayload {
+        Located::new(
+            PmDcFeaturePayload {
                 save_version_major: 16,
                 header: test_header(),
                 state: 69,
@@ -2577,9 +2602,15 @@ ordinal)
                 .expect("test list metadata matches length"),
                 value: 0,
             },
-type_id_string(FEATURE_TYPE),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-ordinal)
+            type_id_string(FEATURE_TYPE),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            ordinal,
+        )
     }
 
     #[test]
@@ -2615,7 +2646,8 @@ ordinal)
         class_id: ClassId,
         participants: &[u32],
     ) -> PmDcFeatureLabel {
-        Located::new(PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
+        Located::new(
+            PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
                 save_version_major: 16,
                 header: PmDcLinkedHeader {
                     header_value: 0,
@@ -2631,13 +2663,20 @@ ordinal)
                 class_id: class_id.into(),
             })
             .expect("valid label fixture"),
-type_id_string(FEATURE_LABEL_TYPE),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-owner_ordinal + 1000)
+            type_id_string(FEATURE_LABEL_TYPE),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            owner_ordinal + 1000,
+        )
     }
 
     fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
-        Located::new(crate::design::PmDcParameterPayload {
+        Located::new(
+            crate::design::PmDcParameterPayload {
                 save_version_major: 16,
                 header: crate::pmdc::PmDcContentHeader {
                     header_value: 0,
@@ -2656,9 +2695,15 @@ owner_ordinal + 1000)
                 tolerance: 0,
                 terminal_value: 0,
             },
-"264d8790d011f8d10008cabc0663dc09".into(),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-ordinal)
+            "264d8790d011f8d10008cabc0663dc09".into(),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            ordinal,
+        )
     }
 
     fn neutral_parameter(
@@ -3246,7 +3291,8 @@ ordinal)
                 ParameterValue::Angle(Angle::new(0.1).expect("finite angle fixture")),
             ),
         ];
-        let raw_sketch = Located::new(crate::sketch::PmDcSketchPayload {
+        let raw_sketch = Located::new(
+            crate::sketch::PmDcSketchPayload {
                 save_version_major: 16,
                 header: test_header(),
                 state: 0,
@@ -3257,9 +3303,15 @@ ordinal)
                 values: [0; 2],
                 auxiliary: None,
             },
-"114d8790d011f8d10008cabc0663dc09".into(),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-50);
+            "114d8790d011f8d10008cabc0663dc09".into(),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            50,
+        );
         let neutral_sketch = Sketch {
             id: SketchId::mint(format!("inventor:design:sketch#{}-50", segment()))
                 .expect("valid test fixture"),
@@ -3275,7 +3327,8 @@ ordinal)
             profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some(raw_sketch.id()),
         };
-        let direction = Located::new(crate::sketch::PmDcDirectionPayload {
+        let direction = Located::new(
+            crate::sketch::PmDcDirectionPayload {
                 save_version_major: 16,
                 header: test_header(),
                 entity_flags: 0,
@@ -3287,10 +3340,17 @@ ordinal)
                     cadmpeg_ir::scalar::FiniteReal::ONE,
                 ],
             },
-"40df52ced011d0d20008ccbc0663dc09".into(),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-60);
-        let entity_link = Located::new(PmDcEntityStyleLinkPayload {
+            "40df52ced011d0d20008ccbc0663dc09".into(),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            60,
+        );
+        let entity_link = Located::new(
+            PmDcEntityStyleLinkPayload {
                 save_version_major: 16,
                 header: PmDcLinkedHeader {
                     header_value: 0,
@@ -3304,9 +3364,15 @@ ordinal)
                 associative_id: 1,
                 entity_type: 1,
             },
-type_id_string(ENTITY_STYLE_LINK_TYPE),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-51);
+            type_id_string(ENTITY_STYLE_LINK_TYPE),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            51,
+        );
         let properties = vec![
             test_property(
                 1,
@@ -3451,7 +3517,8 @@ type_id_string(ENTITY_STYLE_LINK_TYPE),
         .zip(&raw_parameters)
         .map(|(value, raw)| neutral_parameter(raw, value))
         .collect::<Vec<_>>();
-        let transform = Located::new(crate::sketch::PmDcTransformPayload {
+        let transform = Located::new(
+            crate::sketch::PmDcTransformPayload {
                 save_version_major: 16,
                 header: test_header(),
                 prefix_present: false,
@@ -3467,10 +3534,17 @@ type_id_string(ENTITY_STYLE_LINK_TYPE),
                 )
                 .expect("finite explicit matrix fixture"),
             },
-"184d8790d011f8d10008cabc0663dc09".into(),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-60);
-        let direction = Located::new(crate::sketch::PmDcDirectionPayload {
+            "184d8790d011f8d10008cabc0663dc09".into(),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            60,
+        );
+        let direction = Located::new(
+            crate::sketch::PmDcDirectionPayload {
                 save_version_major: 16,
                 header: test_header(),
                 entity_flags: 0,
@@ -3482,9 +3556,15 @@ type_id_string(ENTITY_STYLE_LINK_TYPE),
                     cadmpeg_ir::scalar::FiniteReal::ONE.negated(),
                 ],
             },
-"40df52ced011d0d20008ccbc0663dc09".into(),
-(&segment()).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-61);
+            "40df52ced011d0d20008ccbc0663dc09".into(),
+            segment()
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            61,
+        );
         let properties = vec![
             test_property(
                 1,

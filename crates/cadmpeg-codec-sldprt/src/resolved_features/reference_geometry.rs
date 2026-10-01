@@ -121,9 +121,17 @@ fn retained_plane_frame_source(
     feature: &crate::records::Feature,
 ) -> Result<String, CodecError> {
     match feature.source_id {
-        Some(crate::records::FeatureSource::Reserved) => ctx.format_retained(format_args!("-1"), "retain SLDPRT plane frame source"),
-        Some(crate::records::FeatureSource::Id(id)) => ctx.format_retained(format_args!("{}", id.value()), "retain SLDPRT plane frame source"),
-        None => ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT plane frame source"),
+        Some(crate::records::FeatureSource::Reserved) => {
+            ctx.format_retained(format_args!("-1"), "retain SLDPRT plane frame source")
+        }
+        Some(crate::records::FeatureSource::Id(id)) => ctx.format_retained(
+            format_args!("{}", id.value()),
+            "retain SLDPRT plane frame source",
+        ),
+        None => ctx.format_retained(
+            format_args!("{}", feature.id),
+            "retain SLDPRT plane frame source",
+        ),
     }
 }
 
@@ -213,11 +221,7 @@ pub(crate) fn enrich_history_reference_planes(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT reference plane features")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(
-                        &mut starts,
-                        1,
-                        "collect SLDPRT reference plane starts",
-                    )?;
+                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference plane starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -267,7 +271,10 @@ pub(crate) fn enrich_history_reference_planes(
                     })?;
                     explicit_reference_indices.insert(index);
                 }
-                let source = ctx.format_retained(format_args!("{source}"), "retain SLDPRT reference plane source")?;
+                let source = ctx.format_retained(
+                    format_args!("{source}"),
+                    "retain SLDPRT reference plane source",
+                )?;
                 push_reference_plane_candidate(
                     ctx,
                     &mut reference_candidates,
@@ -277,12 +284,15 @@ pub(crate) fn enrich_history_reference_planes(
                 )?;
             }
             if let Some((relative_offset, owner)) = legacy_offset_plane_face_alias(bytes) {
-                let native = ctx.format_retained(format_args!(
+                let native = ctx.format_retained(
+                    format_args!(
                         "sldprt:feature-input:legacy-face-alias#{}:{}:{}",
                         lane.id,
                         start + relative_offset,
                         owner,
-                    ), "retain SLDPRT legacy face alias")?;
+                    ),
+                    "retain SLDPRT legacy face alias",
+                )?;
                 push_reference_plane_candidate(
                     ctx,
                     &mut face_native_candidates,
@@ -292,7 +302,10 @@ pub(crate) fn enrich_history_reference_planes(
                 )?;
                 if let Some(&target_index) = features_by_source[history_index].get(&owner) {
                     let target = &histories[history_index].features[target_index].id;
-                    let target = ctx.format_retained(format_args!("{target}"), "retain SLDPRT face feature reference")?;
+                    let target = ctx.format_retained(
+                        format_args!("{target}"),
+                        "retain SLDPRT face feature reference",
+                    )?;
                     push_reference_plane_candidate(
                         ctx,
                         &mut face_feature_candidates,
@@ -305,18 +318,25 @@ pub(crate) fn enrich_history_reference_planes(
             if let Some((relative_offset, components)) =
                 component_face_reference_in_record(ctx, bytes)?
             {
-                let mut native = ctx.format_retained(format_args!(
+                let mut native = ctx.format_retained(
+                    format_args!(
                         "sldprt:feature-input:surface-component-ids#{}:{}:",
                         lane.id,
                         start + relative_offset,
-                    ), "retain SLDPRT component face reference")?;
+                    ),
+                    "retain SLDPRT component face reference",
+                )?;
                 for (position, local_id) in components
                     .iter()
                     .filter_map(|component| component.local_id)
                     .enumerate()
                 {
                     if position > 0 {
-                        ctx.try_reserve_retained_text(&mut native, 1, "retain SLDPRT component face reference")?;
+                        ctx.try_reserve_retained_text(
+                            &mut native,
+                            1,
+                            "retain SLDPRT component face reference",
+                        )?;
                         native.push(',');
                     }
                     let digits =
@@ -327,7 +347,11 @@ pub(crate) fn enrich_history_reference_planes(
                                 u64::MAX,
                             )
                         })? + 1;
-                    ctx.try_reserve_retained_text(&mut native, digits, "retain SLDPRT component face reference")?;
+                    ctx.try_reserve_retained_text(
+                        &mut native,
+                        digits,
+                        "retain SLDPRT component face reference",
+                    )?;
                     std::fmt::Write::write_fmt(&mut native, format_args!("{local_id}")).map_err(
                         |_| {
                             ctx.refuse_codec_limit(
@@ -585,18 +609,17 @@ pub(crate) fn enrich_history_reference_planes(
                     .map(|(source, _, _)| source.as_str()),
             );
             if let Some(source) = selected {
-                ctx.reserve_vec(
-                    &mut sources,
-                    1,
-                    "collect SLDPRT inferred plane sources",
-                )?;
+                ctx.reserve_vec(&mut sources, 1, "collect SLDPRT inferred plane sources")?;
                 sources.push(source);
             }
         }
         sources.sort_unstable();
         sources.dedup();
         if let [source] = sources.as_slice() {
-            let source = ctx.format_retained(format_args!("{source}"), "retain SLDPRT inferred plane source")?;
+            let source = ctx.format_retained(
+                format_args!("{source}"),
+                "retain SLDPRT inferred plane source",
+            )?;
             push_reference_plane_candidate(
                 ctx,
                 &mut reference_candidates,
@@ -634,7 +657,10 @@ pub(crate) fn enrich_history_reference_planes(
                 })
                 .map(|(source, _, _)| source.as_str()),
         ) {
-            let source = ctx.format_retained(format_args!("{source}"), "retain SLDPRT offset plane source")?;
+            let source = ctx.format_retained(
+                format_args!("{source}"),
+                "retain SLDPRT offset plane source",
+            )?;
             push_reference_plane_candidate(
                 ctx,
                 &mut reference_candidates,
@@ -777,11 +803,7 @@ pub(crate) fn enrich_history_reference_points(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT reference point features")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(
-                        &mut starts,
-                        1,
-                        "collect SLDPRT reference point starts",
-                    )?;
+                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference point starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -826,7 +848,10 @@ pub(crate) fn enrich_history_reference_points(
         let Some(point) = point else {
             continue;
         };
-        let value = ctx.format_retained(format_args!("{}mm,{}mm,{}mm", point.x, point.y, point.z), "retain SLDPRT reference point position")?;
+        let value = ctx.format_retained(
+            format_args!("{}mm,{}mm,{}mm", point.x, point.y, point.z),
+            "retain SLDPRT reference point position",
+        )?;
         ctx.charge_collection_items(1, "insert SLDPRT reference point position")?;
         histories[history_index].features[feature_index]
             .properties
@@ -925,11 +950,7 @@ pub(crate) fn enrich_history_coordinate_systems(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT coordinate system features")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(
-                        &mut starts,
-                        1,
-                        "collect SLDPRT coordinate system starts",
-                    )?;
+                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT coordinate system starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -982,7 +1003,10 @@ pub(crate) fn enrich_history_coordinate_systems(
             continue;
         };
         let feature = &mut histories[history_index].features[feature_index];
-        let origin_text = ctx.format_retained(format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z), "retain SLDPRT coordinate system origin")?;
+        let origin_text = ctx.format_retained(
+            format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+            "retain SLDPRT coordinate system origin",
+        )?;
         ctx.charge_collection_items(1, "insert SLDPRT coordinate system origin")?;
         feature
             .properties
@@ -992,7 +1016,10 @@ pub(crate) fn enrich_history_coordinate_systems(
             (cadmpeg_core::nonblank_literal!("YAxis"), y_axis),
             (cadmpeg_core::nonblank_literal!("ZAxis"), z_axis),
         ] {
-            let text = ctx.format_retained(format_args!("{},{},{}", axis.x, axis.y, axis.z), "retain SLDPRT coordinate system axis")?;
+            let text = ctx.format_retained(
+                format_args!("{},{},{}", axis.x, axis.y, axis.z),
+                "retain SLDPRT coordinate system axis",
+            )?;
             ctx.charge_collection_items(1, "insert SLDPRT coordinate system axis")?;
             feature.properties.insert(name, text);
         }
@@ -1880,7 +1907,10 @@ pub(crate) fn enrich_history_sketch_block_references(
             let [source] = sources.as_slice() else {
                 continue;
             };
-            let value = ctx.format_retained(format_args!("{source}"), "retain SLDPRT sketch block definition")?;
+            let value = ctx.format_retained(
+                format_args!("{source}"),
+                "retain SLDPRT sketch block definition",
+            )?;
             let properties = &mut history.features[feature_index].properties;
             if !properties.contains_key("BlockDefinition") {
                 ctx.charge_collection_items(1, "insert SLDPRT sketch block definition")?;
@@ -1904,7 +1934,10 @@ pub(crate) fn enrich_history_sketch_block_references(
             let [origin] = origins.as_slice() else {
                 continue;
             };
-            let value = ctx.format_retained(format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z), "retain SLDPRT sketch block origin")?;
+            let value = ctx.format_retained(
+                format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+                "retain SLDPRT sketch block origin",
+            )?;
             let properties = &mut history.features[feature_index].properties;
             if !properties.contains_key("BlockOrigin") {
                 ctx.charge_collection_items(1, "insert SLDPRT sketch block origin")?;
@@ -2072,11 +2105,7 @@ pub(crate) fn enrich_history_reference_axes(
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(
-                        &mut starts,
-                        1,
-                        "collect SLDPRT reference axis starts",
-                    )?;
+                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference axis starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }

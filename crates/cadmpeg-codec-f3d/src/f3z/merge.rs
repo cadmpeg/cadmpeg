@@ -230,9 +230,12 @@ impl MergeSession<'_, '_> {
                 ctx: self.ctx,
                 occurrence: &occurrence,
             };
-            parent_ir
-                .model
-                .extend_rewritten_for_decode(self.ctx, component_ir.model, &mut scope, "F3Z rewritten model arenas")?;
+            parent_ir.model.extend_rewritten_for_decode(
+                self.ctx,
+                component_ir.model,
+                &mut scope,
+                "F3Z rewritten model arenas",
+            )?;
             reparent_component_roots(
                 self.ctx,
                 &mut parent_ir.model.occurrences[occurrence_start..],
@@ -370,7 +373,8 @@ fn rescope_fidelity(
             "retain F3Z provenance stream",
         )?)
         .map_err(CodecError::malformed)?;
-        let stream = StreamHandle::new_for_decode(ctx, stream, "allocate annotation stream handle")?;
+        let stream =
+            StreamHandle::new_for_decode(ctx, stream, "allocate annotation stream handle")?;
         builder.note_for_decode(
             ctx,
             &id,

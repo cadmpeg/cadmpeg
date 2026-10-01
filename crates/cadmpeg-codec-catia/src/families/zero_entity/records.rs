@@ -984,9 +984,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     Some((pcurve, start.midpoint(end)))
                 });
                 if let Some((pcurve, parameter)) = midpoint_input {
-                    if let Some(uv) =
-                        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?)?
-                    {
+                    if let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
+                        cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?,
+                    )? {
                         support.model_midpoint =
                             zero_entity_surface_point(ctx, &carrier_geometry, [uv.u, uv.v])?;
                     }
@@ -1883,12 +1883,12 @@ fn zero_entity_model_curve(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if { constant_coordinate(0).is_some() } =>
             {
-                let point = match zero_entity_surface_point(ctx, surface, [constant_coordinate(0)?, 0.0])
-                {
-                    Ok(Some(point)) => point,
-                    Ok(None) => return None,
-                    Err(limit) => return Some(Err(limit.into())),
-                };
+                let point =
+                    match zero_entity_surface_point(ctx, surface, [constant_coordinate(0)?, 0.0]) {
+                        Ok(Some(point)) => point,
+                        Ok(None) => return None,
+                        Err(limit) => return Some(Err(limit.into())),
+                    };
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -2357,7 +2357,9 @@ fn zero_entity_surface_point(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            return cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx, surface, u, v)?);
+            return cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx, surface, u, v)?,
+            );
         }
         _ => return Ok(None),
     };
@@ -2672,7 +2674,13 @@ fn zero_entity_nurbs_surface(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(rows, None), false)?,
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(rows, None),
+            false,
+        )?,
         refusal,
         format_args!("zero-entity NURBS surface record at byte {record}"),
     )
@@ -3452,9 +3460,11 @@ mod tests {
                     + radial_scale * (major.z * angle.cos() + minor.z * angle.sin())
                     + pitch.z * revolution_fraction,
             );
-            let surface_point = crate::test_support::with_service_context(|ctx| zero_entity_surface_point(ctx, &surface, [angle, 1.0 + fraction]))
-                .expect("evaluator allocation succeeds")
-                .expect("finite cone point");
+            let surface_point = crate::test_support::with_service_context(|ctx| {
+                zero_entity_surface_point(ctx, &surface, [angle, 1.0 + fraction])
+            })
+            .expect("evaluator allocation succeeds")
+            .expect("finite cone point");
             assert!((construction_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((construction_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((construction_point.z - surface_point.z).abs() < 1.0e-12);
@@ -3494,9 +3504,11 @@ mod tests {
         .expect("cone latitude");
         for index in 0..2 {
             let curve_point = curve_point(&curve, parameters[index].get()).expect("circle point");
-            let surface_point = crate::test_support::with_service_context(|ctx| zero_entity_surface_point(ctx, &surface, endpoints[index]))
-                .expect("evaluator allocation succeeds")
-                .expect("cone point");
+            let surface_point = crate::test_support::with_service_context(|ctx| {
+                zero_entity_surface_point(ctx, &surface, endpoints[index])
+            })
+            .expect("evaluator allocation succeeds")
+            .expect("cone point");
             assert!((curve_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((curve_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((curve_point.z - surface_point.z).abs() < 1.0e-12);
@@ -3624,16 +3636,25 @@ mod tests {
                 .expect("valid TorusSurface fixture"),
         ));
 
-        let cylinder_point = crate::test_support::with_service_context(|ctx| zero_entity_surface_point(ctx, &cylinder, [std::f64::consts::PI, 3.0]))
-            .expect("evaluator allocation succeeds")
-            .expect("cylinder");
-        let cone_point = crate::test_support::with_service_context(|ctx| zero_entity_surface_point(ctx, &cone, [std::f64::consts::FRAC_PI_2, 3.0]))
-            .expect("evaluator allocation succeeds")
-            .expect("cone");
-        let torus_point =
-            crate::test_support::with_service_context(|ctx| zero_entity_surface_point(ctx, &torus, [2.0 * std::f64::consts::PI, std::f64::consts::PI]))
-                .expect("evaluator allocation succeeds")
-                .expect("torus");
+        let cylinder_point = crate::test_support::with_service_context(|ctx| {
+            zero_entity_surface_point(ctx, &cylinder, [std::f64::consts::PI, 3.0])
+        })
+        .expect("evaluator allocation succeeds")
+        .expect("cylinder");
+        let cone_point = crate::test_support::with_service_context(|ctx| {
+            zero_entity_surface_point(ctx, &cone, [std::f64::consts::FRAC_PI_2, 3.0])
+        })
+        .expect("evaluator allocation succeeds")
+        .expect("cone");
+        let torus_point = crate::test_support::with_service_context(|ctx| {
+            zero_entity_surface_point(
+                ctx,
+                &torus,
+                [2.0 * std::f64::consts::PI, std::f64::consts::PI],
+            )
+        })
+        .expect("evaluator allocation succeeds")
+        .expect("torus");
 
         assert!(cylinder_point.x.abs() < 1.0e-12);
         assert!((cylinder_point.y - 2.0).abs() < 1.0e-12);

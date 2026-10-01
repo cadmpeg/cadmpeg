@@ -119,7 +119,10 @@ pub(super) fn classify_members<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ArchiveSession<'a>, CodecError> {
     let mut members = BTreeMap::new();
-    let primary = scan.kind.dialect().try_clone_for_decode(ctx, "copy dialect layers")?;
+    let primary = scan
+        .kind
+        .dialect()
+        .try_clone_for_decode(ctx, "copy dialect layers")?;
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     for member_path in scan
@@ -225,7 +228,9 @@ pub(super) fn merge_member_layers(
             match target.insert_for_decode(ctx, matched, "collect F3Z member dialect layers") {
                 Ok(()) => Ok(()),
                 Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
-                Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => return Err(limit.into()),
+                Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
+                    return Err(limit.into())
+                }
             }
         {
             let format = rejected.format();

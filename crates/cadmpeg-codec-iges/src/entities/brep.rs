@@ -199,9 +199,11 @@ fn source_edge_for_vertices<'a>(
         let Some(range) = edge.param_range() else {
             continue;
         };
-        let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[0]).map_err(SourceEdgeSelectionError::ResourceLimit)?)
-                .map_err(SourceEdgeSelectionError::ResourceLimit)?
+        let Some(start) = finite_or_refusal(
+            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[0])
+                .map_err(SourceEdgeSelectionError::ResourceLimit)?,
+        )
+        .map_err(SourceEdgeSelectionError::ResourceLimit)?
         else {
             continue;
         };
@@ -210,8 +212,11 @@ fn source_edge_for_vertices<'a>(
         if !start_agrees {
             continue;
         }
-        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[1]).map_err(SourceEdgeSelectionError::ResourceLimit)?)
-            .map_err(SourceEdgeSelectionError::ResourceLimit)?
+        let Some(end) = finite_or_refusal(
+            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[1])
+                .map_err(SourceEdgeSelectionError::ResourceLimit)?,
+        )
+        .map_err(SourceEdgeSelectionError::ResourceLimit)?
         else {
             continue;
         };
@@ -308,8 +313,9 @@ fn resolve_pcurve_uses<'a>(
         return Ok(Some(Vec::new()));
     }
     if model_index.is_none() {
-        *model_index =
-            Some(cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(source, ctx)?);
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(
+            source, ctx,
+        )?);
     }
     let Some(index) = model_index.as_ref() else {
         return Ok(None);
@@ -333,24 +339,28 @@ fn resolve_pcurve_uses<'a>(
             return Ok(None);
         };
         let (Some(start), Some(end)) = (
-            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, range[0])?)
-                .map_err(CodecError::from)?
-                .map(|uv| {
-                    surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                        index, support.id, uv.u, uv.v,
-                    ))
-                })
-                .transpose()?
-                .flatten(),
-            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, range[1])?)
-                .map_err(CodecError::from)?
-                .map(|uv| {
-                    surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                        index, support.id, uv.u, uv.v,
-                    ))
-                })
-                .transpose()?
-                .flatten(),
+            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                ctx, &geometry, range[0],
+            )?)
+            .map_err(CodecError::from)?
+            .map(|uv| {
+                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                    index, support.id, uv.u, uv.v,
+                ))
+            })
+            .transpose()?
+            .flatten(),
+            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                ctx, &geometry, range[1],
+            )?)
+            .map_err(CodecError::from)?
+            .map(|uv| {
+                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                    index, support.id, uv.u, uv.v,
+                ))
+            })
+            .transpose()?
+            .flatten(),
         ) else {
             return Ok(None);
         };
@@ -1175,7 +1185,11 @@ pub(super) fn project(
                                     let prior = (use_index + uses.len() - distance) % uses.len();
                                     coedge_by_use.get(&prior)
                                 })
-                            }.map(|id| id.try_clone_for_decode(ctx, "iges loop predecessor identity")).transpose()?;
+                            }
+                            .map(|id| {
+                                id.try_clone_for_decode(ctx, "iges loop predecessor identity")
+                            })
+                            .transpose()?;
                             let expected = vertex_lists[vertex_list][*vertex_index];
                             let Some(resolved) = (match resolve_pcurve_uses(
                                 ir,
@@ -1381,7 +1395,8 @@ pub(super) fn project(
                                 valid = false;
                                 break;
                             };
-                            let source_edge = match source_edge_for_vertices(ctx,
+                            let source_edge = match source_edge_for_vertices(
+                                ctx,
                                 ir,
                                 candidates,
                                 &curve.geometry,
@@ -1546,7 +1561,12 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, vertex_uses).map_err(cadmpeg_core::CodecError::from)?
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(
+                            ctx,
+                            coedge_ids,
+                            vertex_uses,
+                        )
+                        .map_err(cadmpeg_core::CodecError::from)?
                         else {
                             super::push_entity_loss(
                                 ctx,

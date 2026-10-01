@@ -867,8 +867,9 @@ fn linear_model_nurbs_points(
         "iges linear model boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, nurbs, parameter)?)?
+        let Some(point) = finite_or_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, nurbs, parameter)?,
+        )?
         else {
             return Ok(None);
         };
@@ -907,7 +908,9 @@ fn linear_pcurve_points(
         "iges linear parameter boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, geometry, parameter)?)?
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+            ctx, geometry, parameter,
+        )?)?
         else {
             return Ok(None);
         };
@@ -1704,7 +1707,9 @@ fn pcurves_agree(
 ) -> Result<bool, CodecError> {
     let mut mapped = ctx.collection_vec(pcurves.len(), "iges trimmed mapped pcurves")?;
     for (geometry, range) in pcurves {
-        let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, geometry, range[0])?)?
+        let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+            ctx, geometry, range[0],
+        )?)?
         else {
             return Ok(false);
         };
@@ -1714,7 +1719,9 @@ fn pcurves_agree(
         else {
             return Ok(false);
         };
-        let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, geometry, range[1])?)?
+        let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+            ctx, geometry, range[1],
+        )?)?
         else {
             return Ok(false);
         };
@@ -1758,12 +1765,15 @@ fn edge_range_matches_curve(
         return Ok(false);
     }
     let geometry = &curve.geometry;
-    let Some(evaluated_start) =
-        finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, range[0])?)?
+    let Some(evaluated_start) = finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, range[0])?,
+    )?
     else {
         return Ok(false);
     };
-    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, range[1])?)?
+    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+        ctx, geometry, range[1],
+    )?)?
     else {
         return Ok(false);
     };
@@ -2935,7 +2945,8 @@ pub(super) fn project(
                 });
             }
             let Ok(ring) =
-                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
+                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
+                    .map_err(cadmpeg_core::CodecError::from)?
             else {
                 super::push_entity_loss(
                     ctx,
@@ -3031,7 +3042,10 @@ pub(super) fn project(
             };
 
             ctx.charge_entities(1, "iges_geometry_trimming")?;
-            let _attached = candidate.model_mut().add_procedural_surface_for_decode(ctx, &derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?, ProceduralSurface::new(
+            let _attached = candidate.model_mut().add_procedural_surface_for_decode(
+                ctx,
+                &derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
+                ProceduralSurface::new(
                     crate::ids::procedural_surface_admitted(
                         &crate::ids::Stem::directory(entry.sequence)
                             .part(crate::ids::Word::ImplicitOuter),
@@ -3045,7 +3059,8 @@ pub(super) fn project(
                         implicit_outer: true,
                     },
                     record_bounds,
-                ))?;
+                ),
+            )?;
             derived_surface_id
         } else {
             surface_id

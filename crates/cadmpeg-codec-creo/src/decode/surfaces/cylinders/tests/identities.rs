@@ -200,8 +200,11 @@ fn hole_cylinder_identity_refuses_retained_limit() {
 
 #[test]
 fn hole_cylinder_source_id_refuses_retained_limit() {
-    let limit = 125;
-    let error = hole_retained_refusal(limit);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo hole cylinder source IDs",
+        |limit| Err::<(), _>(hole_retained_refusal(limit)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo hole cylinder source IDs"),
@@ -221,8 +224,11 @@ fn circular_sweep_cylinder_identity_refuses_retained_limit() {
 
 #[test]
 fn circular_sweep_cylinder_source_id_refuses_retained_limit() {
-    let limit = 135;
-    let error = circular_sweep_retained_refusal(limit);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo circular sweep cylinder source IDs",
+        |limit| Err::<(), _>(circular_sweep_retained_refusal(limit)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo circular sweep cylinder source IDs"),
@@ -372,8 +378,11 @@ fn cross_section_local_system_identity_refuses_retained_limit() {
 
 #[test]
 fn cross_section_local_system_source_id_refuses_retained_limit() {
-    let limit = 167;
-    let error = cross_section_retained_refusal(true, limit);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo cross-section local-system plane source IDs",
+        |limit| Err::<(), _>(cross_section_retained_refusal(true, limit)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo cross-section local-system plane source IDs")
@@ -391,8 +400,11 @@ fn cross_section_outline_identity_refuses_retained_limit() {
 
 #[test]
 fn cross_section_outline_source_id_refuses_retained_limit() {
-    let limit = 178;
-    let error = cross_section_retained_refusal(false, limit);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo cross-section outline plane source IDs",
+        |limit| Err::<(), _>(cross_section_retained_refusal(false, limit)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo cross-section outline plane source IDs")
@@ -497,8 +509,11 @@ fn positional_cone_identity_refuses_retained_limit() {
 
 #[test]
 fn positional_cone_source_id_refuses_retained_limit() {
-    let limit = 117;
-    let error = positional_cone_retained_refusal(limit);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo positional cone source IDs",
+        |limit| Err::<(), _>(positional_cone_retained_refusal(limit)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo positional cone source IDs")

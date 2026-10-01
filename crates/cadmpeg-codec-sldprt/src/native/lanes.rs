@@ -47,7 +47,8 @@ pub(super) fn admit(
             let length = characters().fold(0usize, |length, character| {
                 length + character.map_or(0, char::len_utf8)
             });
-            let (mut expected, _reservation) = ctx.scoped_string(length, "decode SLDPRT native validation name")?;
+            let (mut expected, _reservation) =
+                ctx.scoped_string(length, "decode SLDPRT native validation name")?;
             expected.extend(characters().filter_map(Result::ok));
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
@@ -62,16 +63,26 @@ pub(super) fn admit(
             .enumerate()
         {
             let Some(entity) = entities.next() else {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
-                        "SolidWorks feature-input lane {} omits marker at offset {position}",
-                        lane.id
-                    ), "format SLDPRT native validation error")?));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    ctx.format_retained(
+                        format_args!(
+                            "SolidWorks feature-input lane {} omits marker at offset {position}",
+                            lane.id
+                        ),
+                        "format SLDPRT native validation error",
+                    )?,
+                ));
             };
             if usize::try_from(entity.ordinal()).ok() != Some(index) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    ctx.format_retained(
+                        format_args!(
                         "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
                         entity.ordinal()
-                    ), "format SLDPRT native validation error")?));
+                    ),
+                        "format SLDPRT native validation error",
+                    )?,
+                ));
             }
             if entity.offset() != position as u64 {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
@@ -85,7 +96,10 @@ pub(super) fn admit(
             ));
         }
     }
-    let (expected, _expected_reservation) = expected_lanes_charged(ctx, native)?;
+    let ExpectedLanes {
+        pairs: expected,
+        storage: _expected_reservation,
+    } = expected_lanes_charged(ctx, native)?;
     for (lane, expected_lane) in expected {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,
@@ -131,71 +145,79 @@ pub(super) fn admit(
     Ok(())
 }
 
+pub(crate) struct ExpectedLanes<'a, 'ctx> {
+    pub(crate) pairs: Vec<(&'a FeatureInputLane, FeatureInputLane)>,
+    pub(crate) storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 pub(crate) fn expected_lanes_charged<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     native: &'a SldprtNative,
-) -> Result<(Vec<(&'a FeatureInputLane, FeatureInputLane)>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_ir::NativeConvertError> {
-    ctx.with_scoped_storage("validate SLDPRT expected lane copies", || {
-    let primary_count = native
-        .feature_input_lanes
-        .iter()
-        .filter(|lane| !is_supplemental_config_lane(lane))
-        .count();
-    let mut expected_primary_lanes = Vec::new();
-    ctx.reserve_retained_vec(
-        &mut expected_primary_lanes,
-        primary_count,
-        "validate SLDPRT expected primary lanes",
-    )?;
-    for lane in native
-        .feature_input_lanes
-        .iter()
-        .filter(|lane| !is_supplemental_config_lane(lane))
-    {
-        expected_primary_lanes
-            .push(lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?);
-    }
-    let supplemental_count = native.feature_input_lanes.len() - primary_count;
-    let mut expected_supplemental_lanes = Vec::new();
-    ctx.reserve_retained_vec(
-        &mut expected_supplemental_lanes,
-        supplemental_count,
-        "validate SLDPRT expected supplemental lanes",
-    )?;
-    for lane in native
-        .feature_input_lanes
-        .iter()
-        .filter(|lane| is_supplemental_config_lane(lane))
-    {
-        expected_supplemental_lanes
-            .push(lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?);
-    }
-    for lane in expected_primary_lanes
-        .iter_mut()
-        .chain(&mut expected_supplemental_lanes)
-    {
-        let scalars = crate::resolved_features::scalars::named_scalars_charged(
-            ctx,
-            &lane.native_payload,
-            &lane.id,
-            &lane.names,
-        )?;
-        rebuild_scalar_relations_charged(ctx, lane, scalars)?;
-    }
-    let mut expected = Vec::new();
-    ctx.reserve_retained_vec(
-        &mut expected,
-        native.feature_input_lanes.len(),
-        "validate SLDPRT expected lane pairs",
-    )?;
-    expected.extend(expected_lane_pairs_impl(
-        native,
-        expected_primary_lanes,
-        expected_supplemental_lanes,
-        ctx,
-    )?);
-    Ok::<_, cadmpeg_ir::NativeConvertError>(expected)
-    })
+) -> Result<ExpectedLanes<'a, 'ctx>, cadmpeg_ir::NativeConvertError> {
+    let (pairs, storage) =
+        ctx.with_scoped_storage("validate SLDPRT expected lane copies", || {
+            let primary_count = native
+                .feature_input_lanes
+                .iter()
+                .filter(|lane| !is_supplemental_config_lane(lane))
+                .count();
+            let mut expected_primary_lanes = Vec::new();
+            ctx.reserve_retained_vec(
+                &mut expected_primary_lanes,
+                primary_count,
+                "validate SLDPRT expected primary lanes",
+            )?;
+            for lane in native
+                .feature_input_lanes
+                .iter()
+                .filter(|lane| !is_supplemental_config_lane(lane))
+            {
+                expected_primary_lanes
+                    .push(lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?);
+            }
+            let supplemental_count = native.feature_input_lanes.len() - primary_count;
+            let mut expected_supplemental_lanes = Vec::new();
+            ctx.reserve_retained_vec(
+                &mut expected_supplemental_lanes,
+                supplemental_count,
+                "validate SLDPRT expected supplemental lanes",
+            )?;
+            for lane in native
+                .feature_input_lanes
+                .iter()
+                .filter(|lane| is_supplemental_config_lane(lane))
+            {
+                expected_supplemental_lanes.push(
+                    lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?,
+                );
+            }
+            for lane in expected_primary_lanes
+                .iter_mut()
+                .chain(&mut expected_supplemental_lanes)
+            {
+                let scalars = crate::resolved_features::scalars::named_scalars_charged(
+                    ctx,
+                    &lane.native_payload,
+                    &lane.id,
+                    &lane.names,
+                )?;
+                rebuild_scalar_relations_charged(ctx, lane, scalars)?;
+            }
+            let mut expected = Vec::new();
+            ctx.reserve_retained_vec(
+                &mut expected,
+                native.feature_input_lanes.len(),
+                "validate SLDPRT expected lane pairs",
+            )?;
+            expected.extend(expected_lane_pairs_impl(
+                native,
+                expected_primary_lanes,
+                expected_supplemental_lanes,
+                ctx,
+            )?);
+            Ok::<_, cadmpeg_ir::NativeConvertError>(expected)
+        })?;
+    Ok(ExpectedLanes { pairs, storage })
 }
 
 fn copy_feature_ref(
@@ -205,7 +227,11 @@ fn copy_feature_ref(
     feature
         .map(|feature| {
             let mut copy = String::new();
-            ctx.try_reserve_retained_text(&mut copy, feature.len(), "retain SLDPRT native lane owner")?;
+            ctx.try_reserve_retained_text(
+                &mut copy,
+                feature.len(),
+                "retain SLDPRT native lane owner",
+            )?;
             copy.push_str(feature);
             Ok(copy)
         })

@@ -494,7 +494,8 @@ pub(crate) fn decode_inner(
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(ctx, &mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(ctx,
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
+                    ctx,
                     &mut reader,
                     scale,
                     None,
@@ -1323,7 +1324,8 @@ pub(crate) fn decode_inner_2d(
         },
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(ctx,
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
+                    ctx,
                     &mut reader,
                     MillimeterScale::IDENTITY,
                     Some(2),
@@ -1552,7 +1554,15 @@ fn read_line(
     {
         return Err(error(reader.position(), "invalid bounded line"));
     }
-    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, vec![domain[0], domain[0], domain[1], domain[1]], vec![from, to], None, false).map_err(GeometryError::from)?
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        ctx,
+        1,
+        vec![domain[0], domain[0], domain[1], domain[1]],
+        vec![from, to],
+        None,
+        false,
+    )
+    .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -1976,8 +1986,16 @@ fn arc_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 2, knots, control_points, Some(weights), false).map_err(GeometryError::from)?
-        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        ctx,
+        2,
+        knots,
+        control_points,
+        Some(weights),
+        false,
+    )
+    .map_err(GeometryError::from)?
+    .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
@@ -2890,8 +2908,17 @@ mod tests {
             }
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve =
-                ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); read_line(&ctx, &mut reader, MillimeterScale::IDENTITY, None) }).expect("valid line");
+            let curve = ({
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &arena,
+                    &cadmpeg_core::decode::DecodePolicy::service(),
+                )
+                .expect("root");
+                read_line(&ctx, &mut reader, MillimeterScale::IDENTITY, None)
+            })
+            .expect("valid line");
             assert_eq!(curve.knots().as_slice(), vec![2.0, 2.0, 5.0, 5.0]);
         }
     }

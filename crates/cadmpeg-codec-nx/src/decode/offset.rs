@@ -431,7 +431,9 @@ impl<'a> HomogeneousSurfaceNet<'a> {
         if !positive_weights(surface) {
             return Ok(None);
         }
-        let mut controls_storage = geometry_budget.charges.reserve_scoped_limit(0, "nx offset net controls")?;
+        let mut controls_storage = geometry_budget
+            .charges
+            .reserve_scoped_limit(0, "nx offset net controls")?;
         let mut controls = Vec::new();
         for u in 0..u_count {
             geometry_budget.charges.reserve_scoped_vec_limit(
@@ -459,8 +461,12 @@ impl<'a> HomogeneousSurfaceNet<'a> {
         {
             return Ok(None);
         }
-        let (u_knots, u_storage) = geometry_budget.charges.copy_temporary_slice(surface.u_knots(), "nx offset net knots")?;
-        let (v_knots, v_storage) = geometry_budget.charges.copy_temporary_slice(surface.v_knots(), "nx offset net knots")?;
+        let (u_knots, u_storage) = geometry_budget
+            .charges
+            .copy_temporary_slice(surface.u_knots(), "nx offset net knots")?;
+        let (v_knots, v_storage) = geometry_budget
+            .charges
+            .copy_temporary_slice(surface.v_knots(), "nx offset net knots")?;
         Ok(Some(Self {
             u_degree,
             v_degree,
@@ -488,7 +494,9 @@ impl<'a> HomogeneousSurfaceNet<'a> {
         }
         let next_u_count = self.u_count - usize::from(u_axis);
         let next_v_count = self.v_count - usize::from(!u_axis);
-        let mut controls_storage = geometry_budget.charges.reserve_scoped_limit(0, "nx offset net controls")?;
+        let mut controls_storage = geometry_budget
+            .charges
+            .reserve_scoped_limit(0, "nx offset net controls")?;
         let mut controls = Vec::new();
         for u in 0..next_u_count {
             geometry_budget.charges.reserve_scoped_vec_limit(
@@ -532,10 +540,22 @@ impl<'a> HomogeneousSurfaceNet<'a> {
                 }));
             }
         }
-        let u_knots = if u_axis { &self.u_knots[1..self.u_knots.len() - 1] } else { &self.u_knots };
-        let v_knots = if u_axis { &self.v_knots } else { &self.v_knots[1..self.v_knots.len() - 1] };
-        let (u_knots, u_storage) = geometry_budget.charges.copy_temporary_slice(u_knots, "nx offset net knots")?;
-        let (v_knots, v_storage) = geometry_budget.charges.copy_temporary_slice(v_knots, "nx offset net knots")?;
+        let u_knots = if u_axis {
+            &self.u_knots[1..self.u_knots.len() - 1]
+        } else {
+            &self.u_knots
+        };
+        let v_knots = if u_axis {
+            &self.v_knots
+        } else {
+            &self.v_knots[1..self.v_knots.len() - 1]
+        };
+        let (u_knots, u_storage) = geometry_budget
+            .charges
+            .copy_temporary_slice(u_knots, "nx offset net knots")?;
+        let (v_knots, v_storage) = geometry_budget
+            .charges
+            .copy_temporary_slice(v_knots, "nx offset net knots")?;
         Ok(Some(Self {
             u_degree: self.u_degree - usize::from(u_axis),
             v_degree: self.v_degree - usize::from(!u_axis),
@@ -665,13 +685,10 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             None => None,
         };
 
-        let (mut u_breaks, mut u_storage) = match geometry_budget
-            .charges
-            .copy_temporary_slice(
-                &support_net.u_knots[support_net.u_degree..=support_net.u_count],
-                "nx offset net knots",
-            )
-        {
+        let (mut u_breaks, mut u_storage) = match geometry_budget.charges.copy_temporary_slice(
+            &support_net.u_knots[support_net.u_degree..=support_net.u_count],
+            "nx offset net knots",
+        ) {
             Ok(breaks) => breaks,
             Err(limit) => return Some(Err(limit)),
         };
@@ -688,13 +705,10 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         u_breaks.extend(candidate_u_breaks);
         u_breaks.sort_by(f64::total_cmp);
         u_breaks.dedup();
-        let (mut v_breaks, mut v_storage) = match geometry_budget
-            .charges
-            .copy_temporary_slice(
-                &support_net.v_knots[support_net.v_degree..=support_net.v_count],
-                "nx offset net knots",
-            )
-        {
+        let (mut v_breaks, mut v_storage) = match geometry_budget.charges.copy_temporary_slice(
+            &support_net.v_knots[support_net.v_degree..=support_net.v_count],
+            "nx offset net knots",
+        ) {
             Ok(breaks) => breaks,
             Err(limit) => return Some(Err(limit)),
         };
@@ -1171,7 +1185,8 @@ pub(super) fn offset_surface_parameters_with_tolerance(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)
+        .expect("decode index allocation succeeds");
     offset_surface_parameters_with_tolerance_with_index(
         ctx,
         &index,
@@ -1922,7 +1937,8 @@ fn continue_surface_intersection_parameters_with_seeds(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
     );
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)
+        .expect("decode index allocation succeeds");
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
         &index,
         surfaces,
@@ -3258,26 +3274,41 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
         let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
-        let surface = NurbsSurface::from_lanes(axis.clone(), axis, NurbsSurfaceLanes::new(
-            vec![vec![Point3::new(0., 0., 0.), Point3::new(0., 1., 0.)],
-                 vec![Point3::new(1., 0., 0.), Point3::new(1., 1., 0.)]], None), false).unwrap();
+        let surface = NurbsSurface::from_lanes(
+            axis.clone(),
+            axis,
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0., 0., 0.), Point3::new(0., 1., 0.)],
+                    vec![Point3::new(1., 0., 0.), Point3::new(1., 1., 0.)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = u64::try_from(
-            4 * std::mem::size_of::<[f64; 4]>() + 8 * std::mem::size_of::<f64>()
-        ).unwrap();
+        policy.limits.max_materialized_bytes =
+            u64::try_from(4 * std::mem::size_of::<[f64; 4]>() + 8 * std::mem::size_of::<f64>())
+                .unwrap();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let budget = super::GeometryWorkBudget::from_context(&ctx, 1000);
-        let first = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &budget).unwrap().unwrap();
+        let first = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &budget)
+            .unwrap()
+            .unwrap();
         assert_eq!(first.controls.len(), 4);
         drop(first);
-        let second = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &budget).unwrap().unwrap();
+        let second = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &budget)
+            .unwrap()
+            .unwrap();
         assert_eq!(second.controls.len(), 4);
-        assert!(matches!(super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &budget),
+        assert!(
+            matches!(super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &budget),
             Err(limit) if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "nx offset net controls"));
-
+                && limit.operation == "nx offset net controls")
+        );
     }
 
     #[test]

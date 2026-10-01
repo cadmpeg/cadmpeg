@@ -453,14 +453,17 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
         },
     ]);
 
-    let source_edge = crate::test_support::with_service_context(&[], |ctx| super::source_edge_for_vertices(ctx,
-        &ir,
-        &[0, 1],
-        &ir.model.curves[0].geometry,
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(2.0, 0.0, 0.0),
-        EPS_EDGE_ENDPOINT_MATCH,
-    ))
+    let source_edge = crate::test_support::with_service_context(&[], |ctx| {
+        super::source_edge_for_vertices(
+            ctx,
+            &ir,
+            &[0, 1],
+            &ir.model.curves[0].geometry,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            EPS_EDGE_ENDPOINT_MATCH,
+        )
+    })
     .expect("matching edge occurrence");
     assert_eq!(
         source_edge.id.as_str(),
@@ -510,14 +513,17 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
         },
     ]);
 
-    let result = crate::test_support::with_service_context(&[], |ctx| super::source_edge_for_vertices(ctx,
-        &ir,
-        &[0, 1],
-        &ir.model.curves[0].geometry,
-        Point3::new(1.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-        EPS_EDGE_ENDPOINT_MATCH,
-    ));
+    let result = crate::test_support::with_service_context(&[], |ctx| {
+        super::source_edge_for_vertices(
+            ctx,
+            &ir,
+            &[0, 1],
+            &ir.model.curves[0].geometry,
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            EPS_EDGE_ENDPOINT_MATCH,
+        )
+    });
     assert!(matches!(
         result,
         Err(super::SourceEdgeSelectionError::Ambiguous)

@@ -4111,8 +4111,16 @@ pub(super) fn feature_operation_records(
                         None,
                     )?,
                     ordinal,
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, record.bytes(), "NX retained record digest")?,
-                    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, record.payload(), "NX retained record digest")?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                        ctx,
+                        record.bytes(),
+                        "NX retained record digest",
+                    )?,
+                    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                        ctx,
+                        record.payload(),
+                        "NX retained record digest",
+                    )?,
                     stable_identity,
                     span,
                 })

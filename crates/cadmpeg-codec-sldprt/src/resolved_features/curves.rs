@@ -194,7 +194,10 @@ pub(super) fn resolve_two_center_semicircle_profile(
         let Some(native_ref) = entity.native_ref.as_deref() else {
             continue;
         };
-        let native_ref = ctx.format_retained(format_args!("{native_ref}"), "copy SLDPRT semicircle point identity")?;
+        let native_ref = ctx.format_retained(
+            format_args!("{native_ref}"),
+            "copy SLDPRT semicircle point identity",
+        )?;
         ctx.reserve_vec(&mut points, 1, "collect SLDPRT semicircle points")?;
         points.push((native_ref, position.get()));
     }
@@ -315,12 +318,11 @@ pub(super) fn resolve_two_center_semicircle_profile(
         };
         let mut endpoint_refs = Vec::new();
         for endpoint in [start_ref, end_ref] {
-            let endpoint = ctx.format_retained(format_args!("{endpoint}"), "copy SLDPRT semicircle endpoint identity")?;
-            ctx.reserve_vec(
-                &mut endpoint_refs,
-                1,
-                "collect SLDPRT semicircle endpoints",
+            let endpoint = ctx.format_retained(
+                format_args!("{endpoint}"),
+                "copy SLDPRT semicircle endpoint identity",
             )?;
+            ctx.reserve_vec(&mut endpoint_refs, 1, "collect SLDPRT semicircle endpoints")?;
             endpoint_refs.push(endpoint);
         }
         Ok(Some((geometry, endpoint_refs)))
@@ -345,7 +347,10 @@ pub(super) fn resolve_two_center_semicircle_profile(
     first_entity.construction = false;
     first_entity.endpoint_refs = first_endpoint_refs;
     first_entity.geometry = first_geometry;
-    let sketch_text = ctx.format_retained(format_args!("{}", first_entity.sketch.as_str()), "copy SLDPRT semicircle sketch identity")?;
+    let sketch_text = ctx.format_retained(
+        format_args!("{}", first_entity.sketch.as_str()),
+        "copy SLDPRT semicircle sketch identity",
+    )?;
     let Ok(sketch) = SketchId::mint(sketch_text) else {
         return Ok(());
     };
@@ -379,7 +384,10 @@ pub(super) fn resolve_two_center_semicircle_profile(
     .into_iter()
     .enumerate()
     {
-        let id_text = ctx.format_retained(format_args!("sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"), "format SLDPRT semicircle line identity")?;
+        let id_text = ctx.format_retained(
+            format_args!("sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"),
+            "format SLDPRT semicircle line identity",
+        )?;
         let Ok(id) = SketchEntityId::mint(id_text) else {
             continue;
         };
@@ -389,7 +397,10 @@ pub(super) fn resolve_two_center_semicircle_profile(
         };
         let mut endpoint_refs = Vec::new();
         for endpoint in [start_ref, end_ref] {
-            let endpoint = ctx.format_retained(format_args!("{endpoint}"), "copy SLDPRT semicircle line endpoint identity")?;
+            let endpoint = ctx.format_retained(
+                format_args!("{endpoint}"),
+                "copy SLDPRT semicircle line endpoint identity",
+            )?;
             ctx.reserve_vec(
                 &mut endpoint_refs,
                 1,
@@ -397,7 +408,10 @@ pub(super) fn resolve_two_center_semicircle_profile(
             )?;
             endpoint_refs.push(endpoint);
         }
-        let sketch_copy = ctx.format_retained(format_args!("{}", sketch.as_str()), "copy SLDPRT semicircle line sketch identity")?;
+        let sketch_copy = ctx.format_retained(
+            format_args!("{}", sketch.as_str()),
+            "copy SLDPRT semicircle line sketch identity",
+        )?;
         let Ok(sketch_copy) = SketchId::mint(sketch_copy) else {
             continue;
         };
@@ -790,7 +804,10 @@ pub(super) fn resolve_slot_marker_arcs(
     };
     let mut endpoint_refs = Vec::new();
     for reference in [start_ref, end_ref] {
-        let reference = ctx.format_retained(format_args!("{reference}"), "copy SLDPRT slot endpoint identity")?;
+        let reference = ctx.format_retained(
+            format_args!("{reference}"),
+            "copy SLDPRT slot endpoint identity",
+        )?;
         ctx.reserve_vec(&mut endpoint_refs, 1, "collect SLDPRT slot endpoints")?;
         endpoint_refs.push(reference);
     }
@@ -965,7 +982,10 @@ pub(super) fn resolve_connected_marker_arcs(
         let Some(native_ref) = entity.native_ref.as_deref() else {
             continue;
         };
-        let retained_ref = ctx.format_retained(format_args!("{native_ref}"), "copy SLDPRT connected arc point identity")?;
+        let retained_ref = ctx.format_retained(
+            format_args!("{native_ref}"),
+            "copy SLDPRT connected arc point identity",
+        )?;
         if !points.contains_key(&retained_ref) {
             ctx.charge_collection_items(1, "index SLDPRT connected arc points")?;
             points.try_reserve(1).map_err(|_| {
@@ -1003,11 +1023,7 @@ pub(super) fn resolve_connected_marker_arcs(
                 && *reference != start_ref.as_str()
                 && *reference != end_ref.as_str()
             {
-                ctx.reserve_vec(
-                    &mut candidates,
-                    1,
-                    "collect SLDPRT connected arc centers",
-                )?;
+                ctx.reserve_vec(&mut candidates, 1, "collect SLDPRT connected arc centers")?;
                 candidates.push(*center);
             }
         }
@@ -1140,11 +1156,7 @@ pub(super) fn resolve_connected_marker_arcs(
                     )
                 })?;
                 visited.insert(candidate);
-                ctx.reserve_vec(
-                    &mut component,
-                    1,
-                    "collect SLDPRT connected arc component",
-                )?;
+                ctx.reserve_vec(&mut component, 1, "collect SLDPRT connected arc component")?;
                 component.push(candidate);
             }
         }
@@ -1286,14 +1298,13 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 SketchGeometryDefinition::Circle { .. }
             )
         {
-            let id_text = ctx.format_retained(format_args!("{}", entity.id().as_str()), "copy SLDPRT closed circle identity")?;
+            let id_text = ctx.format_retained(
+                format_args!("{}", entity.id().as_str()),
+                "copy SLDPRT closed circle identity",
+            )?;
             if let Ok(id) = SketchEntityId::mint(id_text) {
                 let mut profile = Vec::new();
-                ctx.reserve_vec(
-                    &mut profile,
-                    1,
-                    "collect SLDPRT closed circle profile",
-                )?;
+                ctx.reserve_vec(&mut profile, 1, "collect SLDPRT closed circle profile")?;
                 profile.push(SketchEntityUse {
                     entity: id,
                     reversed: false,
@@ -1368,11 +1379,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                             )
                         })?;
                         component.insert(*adjacent);
-                        ctx.reserve_vec(
-                            &mut frontier,
-                            1,
-                            "collect SLDPRT closed curve frontier",
-                        )?;
+                        ctx.reserve_vec(&mut frontier, 1, "collect SLDPRT closed curve frontier")?;
                         frontier.push(*adjacent);
                     }
                 }
@@ -1415,7 +1422,10 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 profile.clear();
                 break;
             };
-            let id_text = ctx.format_retained(format_args!("{}", entities[curve].borrow().id().as_str()), "copy SLDPRT closed curve identity")?;
+            let id_text = ctx.format_retained(
+                format_args!("{}", entities[curve].borrow().id().as_str()),
+                "copy SLDPRT closed curve identity",
+            )?;
             let Ok(id) = SketchEntityId::mint(id_text) else {
                 profile.clear();
                 break;

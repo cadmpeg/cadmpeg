@@ -407,8 +407,7 @@ impl CurveScan {
             constructions: ctx
                 .copy_slice(&self.constructions, "NX intersection construction copy")?,
             curves,
-            uncharted: ctx
-                .copy_slice(&self.uncharted, "NX uncharted intersection copy")?,
+            uncharted: ctx.copy_slice(&self.uncharted, "NX uncharted intersection copy")?,
             rejected: self.rejected,
         })
     }

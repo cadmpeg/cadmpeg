@@ -66,7 +66,11 @@ pub enum RadiusSpec {
 
 impl RadiusSpec {
     /// Copy admitted fields through the caller's decode context.
-    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
     }
 
@@ -261,19 +265,32 @@ impl VariableRadii {
     /// The sample count and the parameter order are kept, and each mapped
     /// radius is nonnegative by type, so only the one positive radius is
     /// tested again. The error identifies conversion or admission failure.
-    pub fn try_map_radii<E>(&self, map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>) -> Result<Self, VariableRadiiMapError<E>> {
+    pub fn try_map_radii<E>(
+        &self,
+        map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
+    ) -> Result<Self, VariableRadiiMapError<E>> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy).map_err(VariableRadiiMapError::Resource)?;
-        self.try_map_radii_for_decode(&ctx, map).map_err(|error| match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => VariableRadiiMapError::Resource(limit),
-            _ => VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII),
-        })?
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
+                .map_err(VariableRadiiMapError::Resource)?;
+        self.try_map_radii_for_decode(&ctx, map)
+            .map_err(|error| match error {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => {
+                    VariableRadiiMapError::Resource(limit)
+                }
+                _ => VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII),
+            })?
     }
 
     /// Copy radius rows before mapping a borrowed law.
-    pub fn try_map_radii_for_decode<E>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
-        Self(ctx.copy_retained_slice(&self.0, "IR variable radius copy")?).try_map_radii_owned(ctx, map)
+    pub fn try_map_radii_for_decode<E>(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
+    ) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
+        Self(ctx.copy_retained_slice(&self.0, "IR variable radius copy")?)
+            .try_map_radii_owned(ctx, map)
     }
     /// Map owned radii in place through the caller's work budget.
     /// Refused candidates are consumed; no sample collection is copied.

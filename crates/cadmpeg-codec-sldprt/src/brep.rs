@@ -387,14 +387,13 @@ fn decode_carrier_values(
 pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()).ok()?;
-    Some(
-        scan_carriers(&ctx, body)
-            .ok()?
-            .curve(attr)?
-            .carrier()
-            .geometry
-            .try_clone_for_decode(&ctx, "SLDPRT patch curve geometry copy").ok()?,
-    )
+    scan_carriers(&ctx, body)
+        .ok()?
+        .curve(attr)?
+        .carrier()
+        .geometry
+        .try_clone_for_decode(&ctx, "SLDPRT patch curve geometry copy")
+        .ok()
 }
 
 /// Replace the scalar run of one compact analytic carrier.

@@ -871,16 +871,42 @@ impl SubdEdge {
     ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "SubD edge endpoints")?;
         if vertices[0] == vertices[1] {
-            return Ok(Err(SubdError::Admission(ctx.copy_retained_text("vertices must name distinct endpoints", "SubD edge admission error")?)));
+            return Ok(Err(SubdError::Admission(ctx.copy_retained_text(
+                "vertices must name distinct endpoints",
+                "SubD edge admission error",
+            )?)));
         }
-        Ok(Ok(Self { vertices, sharpness, tag, knot_interval, sector_coefficients }))
+        Ok(Ok(Self {
+            vertices,
+            sharpness,
+            tag,
+            knot_interval,
+            sector_coefficients,
+        }))
     }
 
     /// Construct an edge with distinct endpoints and admitted numeric controls.
-    pub fn new(vertices: [u32; 2], sharpness: [f64; 2], tag: SubdEdgeTag, knot_interval: Option<f64>, sector_coefficients: [f64; 2]) -> Result<Self, SubdError> {
+    pub fn new(
+        vertices: [u32; 2],
+        sharpness: [f64; 2],
+        tag: SubdEdgeTag,
+        knot_interval: Option<f64>,
+        sector_coefficients: [f64; 2],
+    ) -> Result<Self, SubdError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        match cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).and_then(|(ctx, _)| Self::new_for_decode(vertices, sharpness, tag, knot_interval, sector_coefficients, &ctx)) {
+        match cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).and_then(
+            |(ctx, _)| {
+                Self::new_for_decode(
+                    vertices,
+                    sharpness,
+                    tag,
+                    knot_interval,
+                    sector_coefficients,
+                    &ctx,
+                )
+            },
+        ) {
             Ok(result) => result,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => Err(SubdError::Resource(limit)),
             Err(error) => Err(SubdError::Admission(error.to_string())),
@@ -888,34 +914,99 @@ impl SubdEdge {
     }
 
     /// Admit raw numeric controls under the caller decode policy.
-    pub fn new_for_decode(vertices: [u32; 2], sharpness: [f64; 2], tag: SubdEdgeTag, knot_interval: Option<f64>, sector_coefficients: [f64; 2], ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Self::admit_raw_controls(vertices, sharpness, tag, || match knot_interval {
-            None => Ok(Ok(None)),
-            Some(value) => match PositiveReal::new(value) {
-                Some(value) => Ok(Ok(Some(value))),
-                None => Ok(Err(SubdError::Admission(ctx.copy_retained_text("knot_interval must be finite and positive", "SubD edge admission error")?))),
+    pub fn new_for_decode(
+        vertices: [u32; 2],
+        sharpness: [f64; 2],
+        tag: SubdEdgeTag,
+        knot_interval: Option<f64>,
+        sector_coefficients: [f64; 2],
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+        Self::admit_raw_controls(
+            vertices,
+            sharpness,
+            tag,
+            || match knot_interval {
+                None => Ok(Ok(None)),
+                Some(value) => match PositiveReal::new(value) {
+                    Some(value) => Ok(Ok(Some(value))),
+                    None => Ok(Err(SubdError::Admission(ctx.copy_retained_text(
+                        "knot_interval must be finite and positive",
+                        "SubD edge admission error",
+                    )?))),
+                },
             },
-        }, sector_coefficients, ctx)
+            sector_coefficients,
+            ctx,
+        )
     }
 
     /// Admit raw endpoint controls and an already positive interval.
-    pub fn from_parts(vertices: [u32; 2], sharpness: [f64; 2], tag: SubdEdgeTag, knot_interval: Option<PositiveReal>, sector_coefficients: [f64; 2], ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Self::admit_raw_controls(vertices, sharpness, tag, || Ok(Ok(knot_interval)), sector_coefficients, ctx)
+    pub fn from_parts(
+        vertices: [u32; 2],
+        sharpness: [f64; 2],
+        tag: SubdEdgeTag,
+        knot_interval: Option<PositiveReal>,
+        sector_coefficients: [f64; 2],
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+        Self::admit_raw_controls(
+            vertices,
+            sharpness,
+            tag,
+            || Ok(Ok(knot_interval)),
+            sector_coefficients,
+            ctx,
+        )
     }
 
-    fn admit_raw_controls(vertices: [u32; 2], sharpness: [f64; 2], tag: SubdEdgeTag, interval: impl FnOnce() -> Result<Result<Option<PositiveReal>, SubdError>, cadmpeg_core::CodecError>, sector_coefficients: [f64; 2], ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+    fn admit_raw_controls(
+        vertices: [u32; 2],
+        sharpness: [f64; 2],
+        tag: SubdEdgeTag,
+        interval: impl FnOnce() -> Result<
+            Result<Option<PositiveReal>, SubdError>,
+            cadmpeg_core::CodecError,
+        >,
+        sector_coefficients: [f64; 2],
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "SubD edge endpoints")?;
-        if vertices[0] == vertices[1] { return Ok(Err(SubdError::Admission(ctx.copy_retained_text("vertices must name distinct endpoints", "SubD edge admission error")?))); }
+        if vertices[0] == vertices[1] {
+            return Ok(Err(SubdError::Admission(ctx.copy_retained_text(
+                "vertices must name distinct endpoints",
+                "SubD edge admission error",
+            )?)));
+        }
         ctx.charge_work(2, "SubD edge sharpness")?;
         let [start, end] = sharpness.map(NonNegativeReal::new);
-        let (Some(start), Some(end)) = (start, end) else { return Ok(Err(SubdError::Admission(ctx.copy_retained_text("sharpness must be finite and non-negative", "SubD edge admission error")?))); };
-        let knot_interval = match interval()? { Ok(value) => value, Err(error) => return Ok(Err(error)) };
+        let (Some(start), Some(end)) = (start, end) else {
+            return Ok(Err(SubdError::Admission(ctx.copy_retained_text(
+                "sharpness must be finite and non-negative",
+                "SubD edge admission error",
+            )?)));
+        };
+        let knot_interval = match interval()? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
         ctx.charge_work(2, "SubD edge sector coefficients")?;
         let [first, second] = sector_coefficients.map(FiniteReal::new);
-        let (Some(first), Some(second)) = (first, second) else { return Ok(Err(SubdError::Admission(ctx.copy_retained_text("sector_coefficients must be finite", "SubD edge admission error")?))); };
-        Self::from_controls(vertices, [start, end], tag, knot_interval, [first, second], ctx)
+        let (Some(first), Some(second)) = (first, second) else {
+            return Ok(Err(SubdError::Admission(ctx.copy_retained_text(
+                "sector_coefficients must be finite",
+                "SubD edge admission error",
+            )?)));
+        };
+        Self::from_controls(
+            vertices,
+            [start, end],
+            tag,
+            knot_interval,
+            [first, second],
+            ctx,
+        )
     }
-
 }
 
 /// A control-cage edge tag.

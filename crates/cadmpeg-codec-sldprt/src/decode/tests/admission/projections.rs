@@ -75,7 +75,7 @@ fn metadata_regeneration_parent_refuses_work_limit() {
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(refusal.additional, 3);
+    assert_eq!(refusal.additional, 1);
 }
 
 fn composite_curve_source() -> Vec<u8> {

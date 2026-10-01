@@ -240,31 +240,30 @@ fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
         container_only: true,
         policy: DecodePolicy::service(),
     };
-    options.policy.limits.max_retained_bytes =
-        u64::try_from(4237 + jpeg.len() - 1).expect("fixture length fits the resource limit");
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data.clone()), &options)
-        .expect_err("thumbnail copy exceeds the retained-byte limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain Creo passthrough section",
+        |limit| options_for_limit(&data, &options, limit),
+    );
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Creo passthrough section"
     ));
 
-    options.policy.limits.max_retained_bytes =
-        u64::try_from(9223usize).expect("fixture length fits the resource limit");
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data.clone()), &options)
-        .expect_err("the retained thumbnail also needs a copied native identity");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "native unknown product identity",
+        |limit| options_for_limit(&data, &options, limit),
+    );
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "native unknown product identity"
     ));
-    options.policy.limits.max_retained_bytes =
-        u64::try_from(9311usize).expect("fixture length fits the resource limit");
+    options.policy = DecodePolicy::service();
     CreoCodec
         .decode(&mut Cursor::new(data), &options)
         .expect("the service retained-byte limit admits the thumbnail");
@@ -276,36 +275,34 @@ fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
 
     let geometry = visibgeom_payload(0, 0);
     let data = build_prt("c", &[("VisibGeom", geometry)]);
-    let section_len = container::scan_bytes_ok(data.clone()).framing.sections[0].length();
     let mut options = DecodeOptions {
         container_only: true,
         policy: DecodePolicy::service(),
     };
-    options.policy.limits.max_retained_bytes =
-        u64::try_from(4294 + section_len - 1).expect("fixture length fits the resource limit");
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data.clone()), &options)
-        .expect_err("geometry copy exceeds the retained-byte limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain Creo passthrough section",
+        |limit| options_for_limit(&data, &options, limit),
+    );
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Creo passthrough section"
     ));
 
-    options.policy.limits.max_retained_bytes =
-        u64::try_from(9314usize).expect("fixture length fits the resource limit");
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data.clone()), &options)
-        .expect_err("the retained section also needs a copied native identity");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "native unknown product identity",
+        |limit| options_for_limit(&data, &options, limit),
+    );
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "native unknown product identity"
     ));
-    options.policy.limits.max_retained_bytes =
-        u64::try_from(9390usize).expect("fixture length fits the resource limit");
+    options.policy = DecodePolicy::service();
     CreoCodec
         .decode(&mut Cursor::new(data), &options)
         .expect("the service retained-byte limit admits the geometry section");
@@ -968,4 +965,19 @@ fn container_only_preserves_sections_without_transferring_entities() {
         .losses
         .iter()
         .all(|loss| !loss.message.starts_with("Transferred ")));
+}
+
+fn options_for_limit(
+    data: &[u8],
+    options: &DecodeOptions,
+    limit: u64,
+) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::CodecError> {
+    let mut options = *options;
+    options.policy.limits.max_retained_bytes = limit;
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .map_err(|error| match error {
+            cadmpeg_ir::DecodeFailure::Codec(error) => error,
+            other => panic!("unexpected decode failure: {other:?}"),
+        })
 }

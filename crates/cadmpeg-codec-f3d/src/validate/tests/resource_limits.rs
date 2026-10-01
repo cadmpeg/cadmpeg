@@ -29,8 +29,11 @@ fn validation_native_arena_reload_refuses_collection_limit() {
         .unwrap();
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
-    let result: Result<Vec<crate::history_records::AsmBulletinBoard>, _> =
-        super::super::reload_native_arena(&ctx, &ir, "asm_bulletin_boards");
+    let result = super::super::reload_native_arena::<crate::history_records::AsmBulletinBoard>(
+        &ctx,
+        &ir,
+        "asm_bulletin_boards",
+    );
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "load typed native record")
@@ -398,4 +401,44 @@ fn native_parameter_validator_entity_refuses_retained_limit() {
         if limit.operation == "retain F3D parameter finding entity")
         );
     })
+}
+
+#[test]
+fn validation_native_arena_reload_releases_scoped_storage() {
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "asm_bulletin_boards",
+            &[board],
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (records, storage) = super::super::reload_native_arena::<
+        crate::history_records::AsmBulletinBoard,
+    >(&ctx, &ir, "asm_bulletin_boards")
+    .unwrap();
+    assert_eq!(records[0].id, "f3d:native:bulletin#1");
+    drop(records);
+    drop(storage);
+    let full = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse validation storage",
+        )
+        .unwrap();
+    drop(full);
 }

@@ -1763,18 +1763,33 @@ fn append_legacy_brep(
     let mut draft = cadmpeg_ir::draft::ModelDraft::new();
     let model = draft.model_mut();
     let suffix_key = legacy_identity_key(suffix.to_owned())?;
-    let body_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
-        &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
-        suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-    ))) }?;
-    let region_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::RegionId::compose(
-        &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
-        suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-    ))) }?;
-    let shell_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ShellId::compose(
-        &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
-        suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-    ))) }?;
+    let body_id = {
+        let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+        copied_storage.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+                suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+            ))
+        })
+    }?;
+    let region_id = {
+        let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+        copied_storage.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::RegionId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+                suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+            ))
+        })
+    }?;
+    let shell_id = {
+        let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+        copied_storage.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ShellId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+                suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+            ))
+        })
+    }?;
     let mut trim_paths = {
         let mut values = Vec::new();
         ctx.reserve_scoped_vec::<(usize, usize, usize)>(
@@ -2481,7 +2496,8 @@ fn append_legacy_brep(
                 });
                 global_trim += 1;
             }
-            let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
+            let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
+                .map_err(cadmpeg_core::CodecError::from)?
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
                 id: loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
@@ -2585,7 +2601,9 @@ fn append_legacy_brep(
         color: None,
         visible: None,
     });
-    draft.commit_model_for_decode(ir, ctx)?.map_err(CodecError::malformed)
+    draft
+        .commit_model_for_decode(ir, ctx)?
+        .map_err(CodecError::malformed)
 }
 
 fn legacy_trim(
@@ -3176,22 +3194,42 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             )?;
             let suffix = format!("legacy-{decoded:06}");
             let suffix_key = legacy_identity_key(suffix.clone())?;
-            let body_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
-                suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-            ))) }?;
-            let region_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::RegionId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
-                suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-            ))) }?;
-            let shell_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ShellId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
-                suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-            ))) }?;
-            let vertex_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::VertexId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
-                suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-            ))) }?;
+            let body_id = {
+                let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+                copied_storage.with_storage(|| {
+                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+                        suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    ))
+                })
+            }?;
+            let region_id = {
+                let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+                copied_storage.with_storage(|| {
+                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::RegionId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+                        suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    ))
+                })
+            }?;
+            let shell_id = {
+                let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+                copied_storage.with_storage(|| {
+                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ShellId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+                        suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    ))
+                })
+            }?;
+            let vertex_id = {
+                let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+                copied_storage.with_storage(|| {
+                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::VertexId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
+                        suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    ))
+                })
+            }?;
             let point_id = cadmpeg_ir::ids::PointId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
@@ -3309,10 +3347,23 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         )?;
                         let suffix = format!("legacy-{decoded_curves:06}");
                         let suffix_key = legacy_identity_key(suffix.clone())?;
-                        let curve_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::CurveId::compose(
-                            &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
-                            suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-                        ))) }?;
+                        let curve_id = {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(
+                                    cadmpeg_ir::ids::CurveId::compose(
+                                        &cadmpeg_ir::identity_namespace!(
+                                            "rhino", "object", "curve"
+                                        ),
+                                        suffix_key.try_clone_for_decode(
+                                            ctx,
+                                            "Rhino temporary identity key",
+                                        )?,
+                                    ),
+                                )
+                            })
+                        }?;
                         let body_id = cadmpeg_ir::ids::BodyId::compose(
                             &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
                             legacy_identity_key(format!("curve-{suffix}"))?,
@@ -3325,10 +3376,19 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
                             legacy_identity_key(format!("curve-{suffix}"))?,
                         );
-                        let edge_id = { let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::EdgeId::compose(
-                            &cadmpeg_ir::identity_namespace!("rhino", "object", "edge"),
-                            suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
-                        ))) }?;
+                        let edge_id = {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "Rhino temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::EdgeId::compose(
+                                    &cadmpeg_ir::identity_namespace!("rhino", "object", "edge"),
+                                    suffix_key.try_clone_for_decode(
+                                        ctx,
+                                        "Rhino temporary identity key",
+                                    )?,
+                                ))
+                            })
+                        }?;
                         let start_vertex = cadmpeg_ir::ids::VertexId::compose(
                             &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
                             legacy_identity_key(format!("{suffix}.start"))?,
@@ -3788,10 +3848,7 @@ mod tests {
     fn v1_report_notes_and_coverage_refuse_collection_limit() {
         let data = archive(&[]);
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        for (limit, operation) in [
-            (1, "Rhino V1 report notes"),
-            (2, "Rhino V1 coverage entries"),
-        ] {
+        for (limit, operation) in [(1, "Rhino V1 report notes"), (2, "decode coverage nodes")] {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_collection_items = limit;
             let (ctx, _) =
@@ -4691,9 +4748,9 @@ mod tests {
         )
         .expect("valid V1 Brep payload");
         let trim_count = brep.faces[0].loops[0].trims.len();
-        let prior_bytes = trim_count * std::mem::size_of::<(usize, usize, usize)>()
-            + std::mem::size_of::<Vec<usize>>()
-            + 5 * trim_count * std::mem::size_of::<usize>();
+        let prior_bytes = trim_count.max(4) * std::mem::size_of::<(usize, usize, usize)>()
+            + 4 * std::mem::size_of::<Vec<usize>>()
+            + 5 * trim_count.max(4) * std::mem::size_of::<usize>();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_materialized_bytes =
             u64::try_from(prior_bytes).expect("request fits u64");

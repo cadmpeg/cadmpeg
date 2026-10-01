@@ -70,8 +70,16 @@ pub(crate) fn annotate(
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "catia_annotation_format")?;
-    let tag = ctx.format_scoped_text(&mut scratch, format_args!("{tag}"), "catia_annotation_tag")?;
-    annotations.annotate(ctx, id, format_args!("catia:{stream_name}"), offset, &tag, exactness)
+    let tag =
+        ctx.format_scoped_text(&mut scratch, format_args!("{tag}"), "catia_annotation_tag")?;
+    annotations.annotate(
+        ctx,
+        id,
+        format_args!("catia:{stream_name}"),
+        offset,
+        &tag,
+        exactness,
+    )
 }
 
 /// Judge one candidate neutral model after canonicalizing arena order.
@@ -403,9 +411,13 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     if !midpoint_uv.is_finite() {
         return Ok(None);
     }
-    let Some(surface_midpoint) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, midpoint_uv.u, midpoint_uv.v)?,
-    )?
+    let Some(surface_midpoint) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
+            ctx,
+            surface,
+            midpoint_uv.u,
+            midpoint_uv.v,
+        )?)?
     else {
         return Ok(None);
     };
@@ -615,7 +627,9 @@ pub(crate) fn source_meta(
         )?;
     }
     Ok(SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(matched.try_clone_for_decode(ctx, "catia_dialect_copy")?),
+        cadmpeg_core::dialect::DialectLayers::of(
+            matched.try_clone_for_decode(ctx, "catia_dialect_copy")?,
+        ),
         attributes,
     ))
 }
@@ -1106,7 +1120,7 @@ mod route_tests {
         });
         assert!(
             matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_annotation_id")
+            if limit.operation == "annotation stream name")
         );
         let collection = crate::test_support::with_collection_limit(0, |ctx| {
             super::annotate(
@@ -1121,7 +1135,7 @@ mod route_tests {
         });
         assert!(
             matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_annotation_provenance")
+            if limit.operation == "annotation stream handles")
         );
         let annotations = crate::test_support::with_service_context(|ctx| {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();
@@ -1419,21 +1433,24 @@ mod route_tests {
             )
             .expect("valid PlaneSurface fixture"),
         ));
-        let range = crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
-            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
-                surface: &surface,
-                center: Point3::new(0.0, 0.0, 0.0),
-                radius: 1.0,
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                start: Point3::new(1.0, 0.0, 0.0),
-                end: Point3::new(sweep.cos(), sweep.sin(), 0.0),
-                pcurve_origin: FinitePoint2::new(Point2::new(1.0, 0.0))
-                    .expect("finite pcurve origin"),
-                pcurve_direction: FinitePoint2::new(Point2::new(0.0, sweep))
-                    .expect("finite pcurve direction"),
-            },
-        ))
+        let range = crate::test_support::with_service_context(|ctx| {
+            circle_parameter_range_from_surface_branch(
+                ctx,
+                crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                    surface: &surface,
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    radius: 1.0,
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    start: Point3::new(1.0, 0.0, 0.0),
+                    end: Point3::new(sweep.cos(), sweep.sin(), 0.0),
+                    pcurve_origin: FinitePoint2::new(Point2::new(1.0, 0.0))
+                        .expect("finite pcurve origin"),
+                    pcurve_direction: FinitePoint2::new(Point2::new(0.0, sweep))
+                        .expect("finite pcurve direction"),
+                },
+            )
+        })
         .expect("circle evaluation resources")
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
@@ -1463,49 +1480,58 @@ mod route_tests {
         };
         let (center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction) =
             args();
-        assert!(crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
-            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
-                surface: &surface,
-                center: Point3::new(f64::NAN, center.y, center.z),
-                radius,
-                axis,
-                ref_direction,
-                start,
-                end,
-                pcurve_origin,
-                pcurve_direction
-            }
-        ))
+        assert!(crate::test_support::with_service_context(|ctx| {
+            circle_parameter_range_from_surface_branch(
+                ctx,
+                crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                    surface: &surface,
+                    center: Point3::new(f64::NAN, center.y, center.z),
+                    radius,
+                    axis,
+                    ref_direction,
+                    start,
+                    end,
+                    pcurve_origin,
+                    pcurve_direction,
+                },
+            )
+        })
         .expect("circle evaluation resources")
         .is_none());
-        assert!(crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
-            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
-                surface: &surface,
-                center,
-                radius: 0.0,
-                axis,
-                ref_direction,
-                start,
-                end,
-                pcurve_origin,
-                pcurve_direction
-            }
-        ))
+        assert!(crate::test_support::with_service_context(|ctx| {
+            circle_parameter_range_from_surface_branch(
+                ctx,
+                crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                    surface: &surface,
+                    center,
+                    radius: 0.0,
+                    axis,
+                    ref_direction,
+                    start,
+                    end,
+                    pcurve_origin,
+                    pcurve_direction,
+                },
+            )
+        })
         .expect("circle evaluation resources")
         .is_none());
-        assert!(crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
-            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
-                surface: &surface,
-                center,
-                radius,
-                axis,
-                ref_direction: axis,
-                start,
-                end,
-                pcurve_origin,
-                pcurve_direction
-            }
-        ))
+        assert!(crate::test_support::with_service_context(|ctx| {
+            circle_parameter_range_from_surface_branch(
+                ctx,
+                crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                    surface: &surface,
+                    center,
+                    radius,
+                    axis,
+                    ref_direction: axis,
+                    start,
+                    end,
+                    pcurve_origin,
+                    pcurve_direction,
+                },
+            )
+        })
         .expect("circle evaluation resources")
         .is_none());
     }

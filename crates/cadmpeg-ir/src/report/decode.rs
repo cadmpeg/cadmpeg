@@ -259,7 +259,10 @@ impl TransferLedger {
 
     /// Records one source disposition.
     pub fn record(&mut self, source: impl Into<String>, outcome: TransferOutcome) {
-        self.entries.push(TransferRecord { source: source.into(), outcome });
+        self.entries.push(TransferRecord {
+            source: source.into(),
+            outcome,
+        });
     }
 
     /// Verifies every produced target against a finalized model index.
@@ -314,7 +317,6 @@ impl IndexedCoverageKey {
     pub const fn decimal(prefix: &'static str, suffix: &'static str) -> Self {
         Self { prefix, suffix }
     }
-
 }
 
 impl HexByteCoverageKey {
@@ -324,7 +326,6 @@ impl HexByteCoverageKey {
     pub const fn new(prefix: &'static str, suffix: &'static str) -> Self {
         Self { prefix, suffix }
     }
-
 }
 
 /// Decode coverage whose entries can be written only through declared keys.
@@ -402,9 +403,14 @@ impl Coverage {
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "decode coverage name admission")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(name.len()),
+            "decode coverage name admission",
+        )?;
         if name != key.0 {
-            return Err(cadmpeg_core::CodecError::malformed("coverage name does not match its declared key"));
+            return Err(cadmpeg_core::CodecError::malformed(
+                "coverage name does not match its declared key",
+            ));
         }
         self.insert_name(ctx, name, count)
     }
@@ -421,7 +427,10 @@ impl Coverage {
             return Ok(());
         }
         ctx.charge_collection_items(1, "decode coverage nodes")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, usize)>()), "decode coverage nodes")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, usize)>()),
+            "decode coverage nodes",
+        )?;
         self.entries.insert(name, count);
         Ok(())
     }
@@ -432,10 +441,11 @@ impl Coverage {
         entries: impl IntoIterator<Item = (CoverageKey, usize)>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut coverage = Self::default();
-        for (key, count) in entries { coverage.record(ctx, key, count)?; }
+        for (key, count) in entries {
+            coverage.record(ctx, key, count)?;
+        }
         Ok(coverage)
     }
-
 
     /// Returns all recorded counts by their wire names.
     #[must_use]

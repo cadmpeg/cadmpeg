@@ -103,7 +103,7 @@ pub(super) fn project_pattern(
                     .copied()
                     .unwrap_or(source);
                 ctx.format_retained(format_args!("{text}"), "retain SLDPRT pattern path")
-                .map(PathRef::Native)
+                    .map(PathRef::Native)
             })
             .transpose()?
     } else {

@@ -545,8 +545,10 @@ mod tests {
         bytes.extend_from_slice(&zip);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two three-entry ZIP inventories, one schema parse, and one closure.
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(schema.len()) + 10;
+        // Two ZIP inventories, one schema parse and closure, and both records' strings.
+        let decoded_string_bytes = "SimpleSchema".len() + "asset-guid".len() + "Simple".len() + 160;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(schema.len() + 2 * decoded_string_bytes) + 10;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("package fits the service input limit");
         let ParsedProtein::Package {

@@ -75,9 +75,17 @@ impl FeatureUnlabeledOperationRecord {
             id,
             ordinal,
             header,
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, record.bytes(), "retain source digest")?,
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx,
+                record.bytes(),
+                "retain source digest",
+            )?,
             payload_byte_len,
-            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, record.payload(), "retain source digest")?,
+            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx,
+                record.payload(),
+                "retain source digest",
+            )?,
         }))
     }
 

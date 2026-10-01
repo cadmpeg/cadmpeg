@@ -557,7 +557,9 @@ fn solved_curve(
             .iter()
             .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)),
     );
-    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, knots, controls, None, false)? {
+    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        ctx, 1, knots, controls, None, false,
+    )? {
         Ok(nurbs) => nurbs,
         Err(error) => {
             refusal.note(

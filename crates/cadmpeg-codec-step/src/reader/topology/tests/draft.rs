@@ -52,7 +52,8 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let mut session = CommitSession::new_for_decode(&mut ir, &ctx).unwrap();
 
     session
-        .commit_model_for_decode(surface_draft(committed_id), &ctx).unwrap()
+        .commit_model_for_decode(surface_draft(committed_id), &ctx)
+        .unwrap()
         .expect("first root commit");
     let mut second_root = surface_draft(committed_id);
     drop_committed_surfaces(&mut second_root, &mut session, &ctx).unwrap();
@@ -70,7 +71,10 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
             tolerance: None,
         })
         .expect("insert invalid root reference");
-    assert!(session.commit_model_for_decode(rejected_root, &ctx).unwrap().is_err());
+    assert!(session
+        .commit_model_for_decode(rejected_root, &ctx)
+        .unwrap()
+        .is_err());
 
     let mut later_root = surface_draft(rejected_id);
     drop_committed_surfaces(&mut later_root, &mut session, &ctx).unwrap();

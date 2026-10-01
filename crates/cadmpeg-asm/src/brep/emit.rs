@@ -263,7 +263,10 @@ fn emit_carrier_surface(
                                     ctx,
                                     out.surfaces,
                                     Surface {
-                                        id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                        id: id.try_clone_for_decode(
+                                            ctx,
+                                            "ASM emitted identity copy"
+                                        )?,
                                         geometry: item.component,
                                         source_object: None,
                                     }
@@ -930,12 +933,13 @@ fn emit_loft_member_form(
                         ctx,
                         out.surfaces,
                         Surface {
-                            id: support_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                            id: support_id
+                                .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry,
                             source_object: None,
                         }
                     );
-                    Ok(support_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?)
+                    support_id.try_clone_for_decode(ctx, "ASM emitted identity copy")
                 })
                 .transpose()?;
             Ok(cadmpeg_ir::geometry::LoftMemberForm::Support {
@@ -1047,7 +1051,10 @@ fn emit_loft_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
-                                            id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                            id: curve.try_clone_for_decode(
+                                                ctx,
+                                                "ASM emitted identity copy"
+                                            )?,
                                             geometry: CurveGeometry::Solved(
                                                 SolvedCurveGeometry::Nurbs(member.curve,)
                                             ),
@@ -1099,7 +1106,10 @@ fn emit_loft_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
-                                            id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                            id: id.try_clone_for_decode(
+                                                ctx,
+                                                "ASM emitted identity copy"
+                                            )?,
                                             geometry: CurveGeometry::Solved(
                                                 SolvedCurveGeometry::Nurbs(geometry)
                                             ),
@@ -1169,116 +1179,156 @@ fn emit_compound_loft_surface(
     embedded: EmbeddedCompoundLoft,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
-    let map_scale =
-        |out: &mut AsmBrep,
-         name: cadmpeg_ir::ids::IdentityKey,
-         scale: EmbeddedCompoundLoftScale|
-         -> Result<cadmpeg_ir::geometry::CompoundLoftScale, cadmpeg_core::CodecError> {
-            let members = ctx.try_collect_vec(
-                scale.members.into_iter().enumerate().map(
-                    |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
-                        Ok({
-                            let curve = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                                format,
-                                CurveId,
-                                "procedural_surface",
-                                brep_key!(
-                                    i,
-                                    ":cloft:",
-                                    name.try_clone_for_decode(ctx, "ASM temporary identity key")?,
-                                    ":member:",
-                                    member_index,
-                                    ":curve"
-                                )
-                            ))) }?;
-                            charged_push!(
-                                ctx,
-                                out.curves,
-                                Curve {
-                                    id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                                        member.curve
-                                    )),
-                                    source_object: None,
-                                }
-                            );
-                            let (type_code, data) = emit_classic_loft_data(
-                                ctx,
-                                out,
-                                member.data,
-                                { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+    let map_scale = |out: &mut AsmBrep,
+                     name: cadmpeg_ir::ids::IdentityKey,
+                     scale: EmbeddedCompoundLoftScale|
+     -> Result<
+        cadmpeg_ir::geometry::CompoundLoftScale,
+        cadmpeg_core::CodecError,
+    > {
+        let members = ctx.try_collect_vec(
+            scale.members.into_iter().enumerate().map(
+                |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
+                    Ok({
+                        let curve = {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                    format,
+                                    CurveId,
+                                    "procedural_surface",
+                                    brep_key!(
+                                        i,
+                                        ":cloft:",
+                                        name.try_clone_for_decode(
+                                            ctx,
+                                            "ASM temporary identity key"
+                                        )?,
+                                        ":member:",
+                                        member_index,
+                                        ":curve"
+                                    )
+                                ))
+                            })
+                        }?;
+                        charged_push!(
+                            ctx,
+                            out.curves,
+                            Curve {
+                                id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                                    member.curve
+                                )),
+                                source_object: None,
+                            }
+                        );
+                        let (type_code, data) = emit_classic_loft_data(ctx, out, member.data, {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
                                     format,
                                     SurfaceId,
                                     "procedural_surface",
                                     brep_key!(
                                         i,
                                         ":cloft:",
-                                        name.try_clone_for_decode(ctx, "ASM temporary identity key")?,
+                                        name.try_clone_for_decode(
+                                            ctx,
+                                            "ASM temporary identity key"
+                                        )?,
                                         ":member:",
                                         member_index,
                                         ":surface"
                                     )
-                                ))) }?,
-                            )?;
-                            cadmpeg_ir::geometry::CompoundLoftScaleMember {
-                                type_code,
-                                curve,
-                                data,
-                            }
-                        })
-                    },
-                ),
-                "ASM compound loft scale members",
-            )?;
-            let path = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                format,
-                CurveId,
-                "procedural_surface",
-                brep_key!(i, ":cloft:", name.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":path")
-            ))) }?;
-            charged_push!(
-                ctx,
-                out.curves,
-                Curve {
-                    id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
-                    source_object: None,
-                }
-            );
-            let auxiliaries = ctx.try_collect_vec(
-                scale.auxiliaries.into_iter().enumerate().map(
-                    |(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
-                        Ok({
-                            let id = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                                format,
-                                CurveId,
-                                "procedural_surface",
-                                brep_key!(i, ":cloft:", name.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":auxiliary:", index)
-                            ))) }?;
-                            charged_push!(
-                                ctx,
-                                out.curves,
-                                Curve {
-                                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                                        geometry
-                                    )),
-                                    source_object: None,
-                                }
-                            );
-                            id
-                        })
-                    },
-                ),
-                "ASM compound loft scale auxiliaries",
-            )?;
-            Ok(cadmpeg_ir::geometry::CompoundLoftScale {
-                members,
-                path,
-                auxiliaries,
-                tail: scale.tail,
+                                ))
+                            })
+                        }?)?;
+                        cadmpeg_ir::geometry::CompoundLoftScaleMember {
+                            type_code,
+                            curve,
+                            data,
+                        }
+                    })
+                },
+            ),
+            "ASM compound loft scale members",
+        )?;
+        let path = {
+            let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+            copied_storage.with_storage(|| {
+                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                    format,
+                    CurveId,
+                    "procedural_surface",
+                    brep_key!(
+                        i,
+                        ":cloft:",
+                        name.try_clone_for_decode(ctx, "ASM temporary identity key")?,
+                        ":path"
+                    )
+                ))
             })
-        };
+        }?;
+        charged_push!(
+            ctx,
+            out.curves,
+            Curve {
+                id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
+                source_object: None,
+            }
+        );
+        let auxiliaries = ctx.try_collect_vec(
+            scale.auxiliaries.into_iter().enumerate().map(
+                |(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
+                    Ok({
+                        let id = {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                    format,
+                                    CurveId,
+                                    "procedural_surface",
+                                    brep_key!(
+                                        i,
+                                        ":cloft:",
+                                        name.try_clone_for_decode(
+                                            ctx,
+                                            "ASM temporary identity key"
+                                        )?,
+                                        ":auxiliary:",
+                                        index
+                                    )
+                                ))
+                            })
+                        }?;
+                        charged_push!(
+                            ctx,
+                            out.curves,
+                            Curve {
+                                id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                                    geometry
+                                )),
+                                source_object: None,
+                            }
+                        );
+                        id
+                    })
+                },
+            ),
+            "ASM compound loft scale auxiliaries",
+        )?;
+        Ok(cadmpeg_ir::geometry::CompoundLoftScale {
+            members,
+            path,
+            auxiliaries,
+            tail: scale.tail,
+        })
+    };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
         let name = brep_key!("scale", scale_index);
@@ -1418,116 +1468,156 @@ fn emit_scaled_compound_loft_surface(
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let embedded = *embedded;
-    let map_scale =
-        |out: &mut AsmBrep,
-         name: cadmpeg_ir::ids::IdentityKey,
-         scale: EmbeddedCompoundLoftScale|
-         -> Result<cadmpeg_ir::geometry::CompoundLoftScale, cadmpeg_core::CodecError> {
-            let members = ctx.try_collect_vec(
-                scale.members.into_iter().enumerate().map(
-                    |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
-                        Ok({
-                            let curve = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                                format,
-                                CurveId,
-                                "procedural_surface",
-                                brep_key!(
-                                    i,
-                                    ":scaled_cloft:",
-                                    name.try_clone_for_decode(ctx, "ASM temporary identity key")?,
-                                    ":member:",
-                                    member_index,
-                                    ":curve"
-                                )
-                            ))) }?;
-                            charged_push!(
-                                ctx,
-                                out.curves,
-                                Curve {
-                                    id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                                        member.curve
-                                    )),
-                                    source_object: None,
-                                }
-                            );
-                            let (type_code, data) = emit_classic_loft_data(
-                                ctx,
-                                out,
-                                member.data,
-                                { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+    let map_scale = |out: &mut AsmBrep,
+                     name: cadmpeg_ir::ids::IdentityKey,
+                     scale: EmbeddedCompoundLoftScale|
+     -> Result<
+        cadmpeg_ir::geometry::CompoundLoftScale,
+        cadmpeg_core::CodecError,
+    > {
+        let members = ctx.try_collect_vec(
+            scale.members.into_iter().enumerate().map(
+                |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
+                    Ok({
+                        let curve = {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                    format,
+                                    CurveId,
+                                    "procedural_surface",
+                                    brep_key!(
+                                        i,
+                                        ":scaled_cloft:",
+                                        name.try_clone_for_decode(
+                                            ctx,
+                                            "ASM temporary identity key"
+                                        )?,
+                                        ":member:",
+                                        member_index,
+                                        ":curve"
+                                    )
+                                ))
+                            })
+                        }?;
+                        charged_push!(
+                            ctx,
+                            out.curves,
+                            Curve {
+                                id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                                    member.curve
+                                )),
+                                source_object: None,
+                            }
+                        );
+                        let (type_code, data) = emit_classic_loft_data(ctx, out, member.data, {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
                                     format,
                                     SurfaceId,
                                     "procedural_surface",
                                     brep_key!(
                                         i,
                                         ":scaled_cloft:",
-                                        name.try_clone_for_decode(ctx, "ASM temporary identity key")?,
+                                        name.try_clone_for_decode(
+                                            ctx,
+                                            "ASM temporary identity key"
+                                        )?,
                                         ":member:",
                                         member_index,
                                         ":surface"
                                     )
-                                ))) }?,
-                            )?;
-                            cadmpeg_ir::geometry::CompoundLoftScaleMember {
-                                type_code,
-                                curve,
-                                data,
-                            }
-                        })
-                    },
-                ),
-                "ASM scaled compound loft scale members",
-            )?;
-            let path = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                format,
-                CurveId,
-                "procedural_surface",
-                brep_key!(i, ":scaled_cloft:", name.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":path")
-            ))) }?;
-            charged_push!(
-                ctx,
-                out.curves,
-                Curve {
-                    id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
-                    source_object: None,
-                }
-            );
-            let auxiliaries = ctx.try_collect_vec(
-                scale.auxiliaries.into_iter().enumerate().map(
-                    |(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
-                        Ok({
-                            let id = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                                format,
-                                CurveId,
-                                "procedural_surface",
-                                brep_key!(i, ":scaled_cloft:", name.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":auxiliary:", index)
-                            ))) }?;
-                            charged_push!(
-                                ctx,
-                                out.curves,
-                                Curve {
-                                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                                        geometry
-                                    )),
-                                    source_object: None,
-                                }
-                            );
-                            id
-                        })
-                    },
-                ),
-                "ASM scaled compound loft scale auxiliaries",
-            )?;
-            Ok(cadmpeg_ir::geometry::CompoundLoftScale {
-                members,
-                path,
-                auxiliaries,
-                tail: scale.tail,
+                                ))
+                            })
+                        }?)?;
+                        cadmpeg_ir::geometry::CompoundLoftScaleMember {
+                            type_code,
+                            curve,
+                            data,
+                        }
+                    })
+                },
+            ),
+            "ASM scaled compound loft scale members",
+        )?;
+        let path = {
+            let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+            copied_storage.with_storage(|| {
+                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                    format,
+                    CurveId,
+                    "procedural_surface",
+                    brep_key!(
+                        i,
+                        ":scaled_cloft:",
+                        name.try_clone_for_decode(ctx, "ASM temporary identity key")?,
+                        ":path"
+                    )
+                ))
             })
-        };
+        }?;
+        charged_push!(
+            ctx,
+            out.curves,
+            Curve {
+                id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
+                source_object: None,
+            }
+        );
+        let auxiliaries = ctx.try_collect_vec(
+            scale.auxiliaries.into_iter().enumerate().map(
+                |(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
+                    Ok({
+                        let id = {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                    format,
+                                    CurveId,
+                                    "procedural_surface",
+                                    brep_key!(
+                                        i,
+                                        ":scaled_cloft:",
+                                        name.try_clone_for_decode(
+                                            ctx,
+                                            "ASM temporary identity key"
+                                        )?,
+                                        ":auxiliary:",
+                                        index
+                                    )
+                                ))
+                            })
+                        }?;
+                        charged_push!(
+                            ctx,
+                            out.curves,
+                            Curve {
+                                id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                                    geometry
+                                )),
+                                source_object: None,
+                            }
+                        );
+                        id
+                    })
+                },
+            ),
+            "ASM scaled compound loft scale auxiliaries",
+        )?;
+        Ok(cadmpeg_ir::geometry::CompoundLoftScale {
+            members,
+            path,
+            auxiliaries,
+            tail: scale.tail,
+        })
+    };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
         let name = brep_key!("scale", scale_index);
@@ -1734,17 +1824,32 @@ fn map_law_expression(
             // one, so the two are joined by a colon. `then` concatenates, and
             // using it here read `law` and `primary` as the single component
             // `lawprimary`, which two different component pairs can spell.
-            let id = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(match scope {
-                LawExpressionScope::Surface(prefix) => brep_id!(
-                    format,
-                    CurveId,
-                    "procedural_surface",
-                    prefix.try_clone_for_decode(ctx, "ASM temporary identity key")?.colon(path).then(cadmpeg_ir::identity_key!(":edge"))
-                ),
-                LawExpressionScope::Curve(prefix) => {
-                    brep_id!(format, CurveId, "procedural_curve", prefix.try_clone_for_decode(ctx, "ASM temporary identity key")?.colon(path))
-                }
-            })) }?;
+            let id = {
+                let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                copied_storage.with_storage(|| {
+                    Ok::<_, cadmpeg_core::CodecError>(match scope {
+                        LawExpressionScope::Surface(prefix) => brep_id!(
+                            format,
+                            CurveId,
+                            "procedural_surface",
+                            prefix
+                                .try_clone_for_decode(ctx, "ASM temporary identity key")?
+                                .colon(path)
+                                .then(cadmpeg_ir::identity_key!(":edge"))
+                        ),
+                        LawExpressionScope::Curve(prefix) => {
+                            brep_id!(
+                                format,
+                                CurveId,
+                                "procedural_curve",
+                                prefix
+                                    .try_clone_for_decode(ctx, "ASM temporary identity key")?
+                                    .colon(path)
+                            )
+                        }
+                    })
+                })
+            }?;
             charged_push!(
                 ctx,
                 out.curves,
@@ -1774,16 +1879,19 @@ fn map_law_expression(
             let mut mapped = ctx.collection_vec(operands.len(), "ASM law expression operands")?;
             for (index, operand) in operands.into_iter().enumerate() {
                 mapped.push({
-                    let mut path_copy_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                    let path_copy = path_copy_storage.with_storage(|| path.try_clone_for_decode(ctx, "ASM temporary identity key"))?;
+                    let mut path_copy_storage =
+                        ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                    let path_copy = path_copy_storage.with_storage(|| {
+                        path.try_clone_for_decode(ctx, "ASM temporary identity key")
+                    })?;
                     map_law_expression(
-                    ctx,
-                    out,
-                    format,
-                    scope,
-                    brep_key!(path_copy, ":", index),
-                    operand,
-                )
+                        ctx,
+                        out,
+                        format,
+                        scope,
+                        brep_key!(path_copy, ":", index),
+                        operand,
+                    )
                 }?);
             }
             cadmpeg_ir::geometry::LawExpression::Algebraic {
@@ -1803,23 +1911,23 @@ fn emit_law_surface(
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let prefix = brep_key!(i, ":law");
     let scope = LawExpressionScope::Surface(&prefix);
-    let map_formula =
-        |out: &mut AsmBrep, path: cadmpeg_ir::ids::IdentityKey, formula: EmbeddedLawFormula| {
-            map_law_formula(ctx, formula, |index, expression| {
-                {
-                    let mut path_copy_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                    let path_copy = path_copy_storage.with_storage(|| path.try_clone_for_decode(ctx, "ASM temporary identity key"))?;
-                    map_law_expression(
-                    ctx,
-                    out,
-                    format,
-                    scope,
-                    brep_key!(path_copy, ":", index),
-                    expression,
-                )
-                }
-            })
-        };
+    let map_formula = |out: &mut AsmBrep,
+                       path: cadmpeg_ir::ids::IdentityKey,
+                       formula: EmbeddedLawFormula| {
+        map_law_formula(ctx, formula, |index, expression| {
+            let mut path_copy_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+            let path_copy = path_copy_storage
+                .with_storage(|| path.try_clone_for_decode(ctx, "ASM temporary identity key"))?;
+            map_law_expression(
+                ctx,
+                out,
+                format,
+                scope,
+                brep_key!(path_copy, ":", index),
+                expression,
+            )
+        })
+    };
     let embedded = *embedded;
     let primary = map_formula(
         &mut *out,
@@ -1927,7 +2035,8 @@ fn emit_skin_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
-                                    id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                    id: curve
+                                        .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                         profile.curve
                                     )),
@@ -2084,7 +2193,10 @@ fn emit_net_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
-                                            id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                            id: curve.try_clone_for_decode(
+                                                ctx,
+                                                "ASM emitted identity copy"
+                                            )?,
                                             geometry: CurveGeometry::Solved(
                                                 SolvedCurveGeometry::Nurbs(member.curve,)
                                             ),
@@ -2136,7 +2248,10 @@ fn emit_net_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
-                                            id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                            id: id.try_clone_for_decode(
+                                                ctx,
+                                                "ASM emitted identity copy"
+                                            )?,
                                             geometry: CurveGeometry::Solved(
                                                 SolvedCurveGeometry::Nurbs(geometry)
                                             ),
@@ -2333,7 +2448,8 @@ fn emit_sweep_surface(
                         ctx,
                         out.curves,
                         Curve {
-                            id: guide_curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                            id: guide_curve_id
+                                .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                 guide_curve
                             )),
@@ -2375,7 +2491,8 @@ fn emit_sweep_surface(
                         ctx,
                         out.surfaces,
                         Surface {
-                            id: support_surface_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                            id: support_surface_id
+                                .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: support_surface,
                             source_object: None,
                         }
@@ -2393,7 +2510,10 @@ fn emit_sweep_surface(
                                     ctx,
                                     out.curves,
                                     Curve {
-                                        id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                        id: id.try_clone_for_decode(
+                                            ctx,
+                                            "ASM emitted identity copy"
+                                        )?,
                                         geometry: CurveGeometry::Solved(
                                             SolvedCurveGeometry::Nurbs(geometry)
                                         ),
@@ -2542,12 +2662,22 @@ fn emit_g2_blend_surface(
     let mut add_side = |name: cadmpeg_ir::ids::IdentityKey,
                         side: EmbeddedG2Side|
      -> Result<cadmpeg_ir::geometry::G2BlendSide, cadmpeg_core::CodecError> {
-        let surface = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-            format,
-            SurfaceId,
-            "procedural_surface",
-            brep_key!(i, ":g2:", name.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":surface")
-        ))) }?;
+        let surface = {
+            let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+            copied_storage.with_storage(|| {
+                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                    format,
+                    SurfaceId,
+                    "procedural_surface",
+                    brep_key!(
+                        i,
+                        ":g2:",
+                        name.try_clone_for_decode(ctx, "ASM temporary identity key")?,
+                        ":surface"
+                    )
+                ))
+            })
+        }?;
         charged_push!(
             ctx,
             out.surfaces,
@@ -2601,7 +2731,8 @@ fn emit_g2_blend_surface(
                                 ctx,
                                 out.surfaces,
                                 Surface {
-                                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                    id: id
+                                        .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: SurfaceGeometry::Solved(
                                         SolvedSurfaceGeometry::Nurbs(geometry)
                                     ),
@@ -2694,12 +2825,19 @@ fn emit_rolling_ball_side(
     let surface = side
         .surface
         .map(|support| -> Result<_, cadmpeg_core::CodecError> {
-            let id = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                format,
-                SurfaceId,
-                "procedural_surface",
-                prefix.try_clone_for_decode(ctx, "ASM temporary identity key")?.then(cadmpeg_ir::identity_key!(":surface"))
-            ))) }?;
+            let id = {
+                let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                copied_storage.with_storage(|| {
+                    Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                        format,
+                        SurfaceId,
+                        "procedural_surface",
+                        prefix
+                            .try_clone_for_decode(ctx, "ASM temporary identity key")?
+                            .then(cadmpeg_ir::identity_key!(":surface"))
+                    ))
+                })
+            }?;
             charged_push!(
                 ctx,
                 out.surfaces,
@@ -2865,17 +3003,31 @@ fn emit_revision_compound_loft_surface(
                 profile.into_iter().enumerate().map(
                     |(member_index, member)| -> Result<_, cadmpeg_core::CodecError> {
                         Ok({
-                            let curve = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                                format,
-                                CurveId,
-                                "procedural_surface",
-                                brep_key!(scope.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":profile:", member_index)
-                            ))) }?;
+                            let curve = {
+                                let mut copied_storage =
+                                    ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                                copied_storage.with_storage(|| {
+                                    Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                        format,
+                                        CurveId,
+                                        "procedural_surface",
+                                        brep_key!(
+                                            scope.try_clone_for_decode(
+                                                ctx,
+                                                "ASM temporary identity key"
+                                            )?,
+                                            ":profile:",
+                                            member_index
+                                        )
+                                    ))
+                                })
+                            }?;
                             charged_push!(
                                 ctx,
                                 out.curves,
                                 Curve {
-                                    id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                    id: curve
+                                        .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                         member.curve
                                     )),
@@ -2887,17 +3039,25 @@ fn emit_revision_compound_loft_surface(
                                     id: curve,
                                     endpoints: member.data.endpoints(),
                                 },
-                                form: emit_loft_member_form(
-                                    ctx,
-                                    out,
-                                    member.data,
-                                    { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                                        format,
-                                        SurfaceId,
-                                        "procedural_surface",
-                                        brep_key!(scope.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":support:", member_index)
-                                    ))) }?,
-                                )?,
+                                form: emit_loft_member_form(ctx, out, member.data, {
+                                    let mut copied_storage =
+                                        ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                                    copied_storage.with_storage(|| {
+                                        Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                            format,
+                                            SurfaceId,
+                                            "procedural_surface",
+                                            brep_key!(
+                                                scope.try_clone_for_decode(
+                                                    ctx,
+                                                    "ASM temporary identity key"
+                                                )?,
+                                                ":support:",
+                                                member_index
+                                            )
+                                        ))
+                                    })
+                                }?)?,
                             }
                         })
                     },
@@ -2909,27 +3069,43 @@ fn emit_revision_compound_loft_surface(
                         path: EmbeddedLoftPath,
                         out: &mut AsmBrep|
      -> Result<cadmpeg_ir::geometry::LoftPath, cadmpeg_core::CodecError> {
-        let curve = emit_loft_path_curve(
-            ctx,
-            out,
-            path.layout,
-            { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                format,
-                CurveId,
-                "procedural_surface",
-                brep_key!(scope.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":path")
-            ))) }?,
-        )?;
+        let curve = emit_loft_path_curve(ctx, out, path.layout, {
+            let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+            copied_storage.with_storage(|| {
+                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                    format,
+                    CurveId,
+                    "procedural_surface",
+                    brep_key!(
+                        scope.try_clone_for_decode(ctx, "ASM temporary identity key")?,
+                        ":path"
+                    )
+                ))
+            })
+        }?)?;
         let auxiliaries = ctx.try_collect_vec(
             path.auxiliaries.into_iter().enumerate().map(
                 |(auxiliary_index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
                     Ok({
-                        let id = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                            format,
-                            CurveId,
-                            "procedural_surface",
-                            brep_key!(scope.try_clone_for_decode(ctx, "ASM temporary identity key")?, ":auxiliary:", auxiliary_index)
-                        ))) }?;
+                        let id = {
+                            let mut copied_storage =
+                                ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                            copied_storage.with_storage(|| {
+                                Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                    format,
+                                    CurveId,
+                                    "procedural_surface",
+                                    brep_key!(
+                                        scope.try_clone_for_decode(
+                                            ctx,
+                                            "ASM temporary identity key"
+                                        )?,
+                                        ":auxiliary:",
+                                        auxiliary_index
+                                    )
+                                ))
+                            })
+                        }?;
                         charged_push!(
                             ctx,
                             out.curves,
@@ -2955,7 +3131,8 @@ fn emit_revision_compound_loft_surface(
     };
     let base = brep_key!(i, ":cloft:base");
     let mut base_copy_storage = ctx.reserve_scoped(0, "ASM profile scope identity")?;
-    let base_copy = base_copy_storage.with_storage(|| base.try_clone_for_decode(ctx, "ASM profile scope identity"))?;
+    let base_copy = base_copy_storage
+        .with_storage(|| base.try_clone_for_decode(ctx, "ASM profile scope identity"))?;
     let base_profile = convert_profile(base_copy, construction.base_profile, &mut *out)?;
     let base_path = convert_path(base, construction.base_path, &mut *out)?;
     let entries: Vec<_> = ctx.try_collect_vec(
@@ -2965,8 +3142,11 @@ fn emit_revision_compound_loft_surface(
             .enumerate()
             .map(|(entry_index, entry)| {
                 let scope = brep_key!(i, ":cloft:", entry_index);
-                let mut profile_scope_storage = ctx.reserve_scoped(0, "ASM profile scope identity")?;
-                let profile_scope = profile_scope_storage.with_storage(|| scope.try_clone_for_decode(ctx, "ASM profile scope identity"))?;
+                let mut profile_scope_storage =
+                    ctx.reserve_scoped(0, "ASM profile scope identity")?;
+                let profile_scope = profile_scope_storage.with_storage(|| {
+                    scope.try_clone_for_decode(ctx, "ASM profile scope identity")
+                })?;
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::LoftSectionEntry {
                     parameter: entry.parameter,
                     profile: convert_profile(profile_scope, entry.profile, &mut *out)?,
@@ -3138,12 +3318,19 @@ fn emit_vertex_blend_surface(
                 parameters,
                 sense,
             } => {
-                let id = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                    format,
-                    CurveId,
-                    "procedural_surface",
-                    prefix.try_clone_for_decode(ctx, "ASM temporary identity key")?.then(cadmpeg_ir::identity_key!(":curve"))
-                ))) }?;
+                let id = {
+                    let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                    copied_storage.with_storage(|| {
+                        Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                            format,
+                            CurveId,
+                            "procedural_surface",
+                            prefix
+                                .try_clone_for_decode(ctx, "ASM temporary identity key")?
+                                .then(cadmpeg_ir::identity_key!(":curve"))
+                        ))
+                    })
+                }?;
                 charged_push!(
                     ctx,
                     out.curves,
@@ -3171,12 +3358,19 @@ fn emit_vertex_blend_surface(
                 sense,
                 fit_tolerance,
             } => {
-                let id = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                    format,
-                    SurfaceId,
-                    "procedural_surface",
-                    prefix.try_clone_for_decode(ctx, "ASM temporary identity key")?.then(cadmpeg_ir::identity_key!(":surface"))
-                ))) }?;
+                let id = {
+                    let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                    copied_storage.with_storage(|| {
+                        Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                            format,
+                            SurfaceId,
+                            "procedural_surface",
+                            prefix
+                                .try_clone_for_decode(ctx, "ASM temporary identity key")?
+                                .then(cadmpeg_ir::identity_key!(":surface"))
+                        ))
+                    })
+                }?;
                 charged_push!(
                     ctx,
                     out.surfaces,
@@ -3329,8 +3523,22 @@ fn emit_blend_surface(
                 ];
                 for (side_index, side) in resolved_sides.iter().enumerate() {
                     if resolved_supports[side_index].is_none() {
-                        resolved_supports[side_index] =
-                            side.surface.as_ref().map(|support| support.surface.try_clone_for_decode(ctx, "ASM resolved blend support identity").map(|surface| BlendSupport { surface, reversed: false })).transpose()?;
+                        resolved_supports[side_index] = side
+                            .surface
+                            .as_ref()
+                            .map(|support| {
+                                support
+                                    .surface
+                                    .try_clone_for_decode(
+                                        ctx,
+                                        "ASM resolved blend support identity",
+                                    )
+                                    .map(|surface| BlendSupport {
+                                        surface,
+                                        reversed: false,
+                                    })
+                            })
+                            .transpose()?;
                     }
                 }
                 let slice = brep_id!(
@@ -3353,17 +3561,29 @@ fn emit_blend_surface(
                     .map(|side| -> Result<_, cadmpeg_core::CodecError> {
                         Ok({
                             let prefix = brep_key!(i, ":native_third");
-                            let surface = { let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?; copied_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                                format,
-                                SurfaceId,
-                                "procedural_surface",
-                                prefix.try_clone_for_decode(ctx, "ASM temporary identity key")?.then(cadmpeg_ir::identity_key!(":surface"))
-                            ))) }?;
+                            let surface = {
+                                let mut copied_storage =
+                                    ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                                copied_storage.with_storage(|| {
+                                    Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                        format,
+                                        SurfaceId,
+                                        "procedural_surface",
+                                        prefix
+                                            .try_clone_for_decode(
+                                                ctx,
+                                                "ASM temporary identity key"
+                                            )?
+                                            .then(cadmpeg_ir::identity_key!(":surface"))
+                                    ))
+                                })
+                            }?;
                             charged_push!(
                                 ctx,
                                 out.surfaces,
                                 Surface {
-                                    id: surface.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                    id: surface
+                                        .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: side.surface,
                                     source_object: None,
                                 }
@@ -3378,7 +3598,8 @@ fn emit_blend_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
-                                    id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                    id: curve
+                                        .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                         side.curve
                                     )),
@@ -3549,7 +3770,8 @@ fn emit_carrier_curve(
                             ctx,
                             out.curves,
                             Curve {
-                                id: source_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                id: source_id
+                                    .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
                                 source_object: None,
                             }
@@ -3572,7 +3794,8 @@ fn emit_carrier_curve(
                             ctx,
                             out.curves,
                             Curve {
-                                id: source_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                id: source_id
+                                    .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
                                 source_object: None,
                             }
@@ -3603,7 +3826,8 @@ fn emit_carrier_curve(
                                 ctx,
                                 out.surfaces,
                                 Surface {
-                                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                    id: id
+                                        .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry,
                                     source_object: None,
                                 }
@@ -3651,7 +3875,10 @@ fn emit_carrier_curve(
                                     ctx,
                                     out.surfaces,
                                     Surface {
-                                        id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                        id: id.try_clone_for_decode(
+                                            ctx,
+                                            "ASM emitted identity copy"
+                                        )?,
                                         geometry,
                                         source_object: None,
                                     }
@@ -3689,7 +3916,8 @@ fn emit_carrier_curve(
                                 ctx,
                                 out.surfaces,
                                 Surface {
-                                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                    id: id
+                                        .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry,
                                     source_object: None,
                                 }
@@ -3763,7 +3991,10 @@ fn emit_carrier_curve(
                                     ctx,
                                     out.surfaces,
                                     Surface {
-                                        id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                        id: id.try_clone_for_decode(
+                                            ctx,
+                                            "ASM emitted identity copy"
+                                        )?,
                                         geometry,
                                         source_object: None,
                                     }
@@ -3876,7 +4107,10 @@ fn emit_carrier_curve(
                                             ctx,
                                             out.curves,
                                             Curve {
-                                                id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                                id: id.try_clone_for_decode(
+                                                    ctx,
+                                                    "ASM emitted identity copy"
+                                                )?,
                                                 geometry: CurveGeometry::Solved(
                                                     SolvedCurveGeometry::Nurbs(curve.component,)
                                                 ),
@@ -4445,10 +4679,11 @@ fn emit_law_curve(
          formula: EmbeddedLawFormula|
          -> Result<cadmpeg_ir::geometry::FiniteLawFormula, CarrierCurveError> {
             let mapped = map_law_formula(ctx, formula, |index, expression| {
-                {
-                    let mut path_copy_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                    let path_copy = path_copy_storage.with_storage(|| path.try_clone_for_decode(ctx, "ASM temporary identity key"))?;
-                    map_law_expression(
+                let mut path_copy_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                let path_copy = path_copy_storage.with_storage(|| {
+                    path.try_clone_for_decode(ctx, "ASM temporary identity key")
+                })?;
+                map_law_expression(
                     ctx,
                     &mut *out,
                     format,
@@ -4456,7 +4691,6 @@ fn emit_law_curve(
                     brep_key!(path_copy, ":", index),
                     expression,
                 )
-                }
             })?;
             cadmpeg_ir::geometry::FiniteLawFormula::try_new(mapped).map_err(CarrierCurveError::from)
         };
@@ -5103,7 +5337,8 @@ pub(super) fn emit_coedges(
                             ctx,
                             out.curves,
                             Curve {
-                                id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                id: curve_id
+                                    .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                                 source_object: None,
                             }
@@ -5209,8 +5444,8 @@ pub(super) fn emit_loops(
         if r.head() == "loop" && kept_loops.contains(&i) {
             let Some(owner) = r.ref_at(5) else { continue };
             let coedges = ring_coedges(ctx, r, by_index, kept_coedges, format)?;
-            let Ok(ring) =
-                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new()).map_err(cadmpeg_core::CodecError::from)?
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new())
+                .map_err(cadmpeg_core::CodecError::from)?
             else {
                 continue;
             };
@@ -5489,7 +5724,8 @@ pub(super) fn emit_containers(
                                     crate::brep::records::identity::NativeRecordNamespace::new(
                                         format
                                     ),
-                                body: body_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                                body: body_id
+                                    .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 record_index: u32::try_from(transform.index).map_err(|_| ctx
                                     .refuse_codec_limit(
                                         "ASM native record index",
@@ -5610,7 +5846,13 @@ pub(super) fn emit_attributes(
                 .regions
                 .iter()
                 .find(|entity| entity.id.as_str() == id(format, index).as_str())
-                .map(|entity| entity.body.try_clone_for_decode(ctx, "ASM region attribute owner").map(AttributeTarget::Body)).transpose()?,
+                .map(|entity| {
+                    entity
+                        .body
+                        .try_clone_for_decode(ctx, "ASM region attribute owner")
+                        .map(AttributeTarget::Body)
+                })
+                .transpose()?,
             "face" if kept_faces.contains(&index) => {
                 Some(AttributeTarget::Face(FaceId::from(id(format, index))))
             }

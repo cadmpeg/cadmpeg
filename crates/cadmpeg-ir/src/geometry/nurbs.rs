@@ -23,7 +23,9 @@ fn copy_decode_grid<T: Copy>(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<Vec<T>>, CodecError> {
-    ctx.try_collect_retained_with(rows, operation, |row| super::copy_decode_slice(row, ctx, operation))
+    ctx.try_collect_retained_with(rows, operation, |row| {
+        super::copy_decode_slice(row, ctx, operation)
+    })
 }
 
 /// Knot values that are finite and non-decreasing.
@@ -205,32 +207,40 @@ pub trait PoleValue<T>: Copy {
     /// Admit a curve pole lane, retaining its storage when the poles are admitted.
     fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, NurbsError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
-            .map_err(NurbsError::from)?;
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(NurbsError::from)?;
         Self::admit_curve_poles_for_decode(&ctx, poles)
     }
     /// Admit pole storage with the caller's resource context.
     fn admit_curve_poles_for_decode(
-        ctx: &DecodeContext<'_>, poles: NurbsPoles3<Self>,
+        ctx: &DecodeContext<'_>,
+        poles: NurbsPoles3<Self>,
     ) -> Result<NurbsPoles3<T>, NurbsError> {
         admitted::construction_result(admitted::admit(ctx, poles))
     }
 
-
     /// Admit a surface pole grid, retaining its rows when the poles are admitted.
     fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<T>, NurbsError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
-            .map_err(NurbsError::from)?;
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(NurbsError::from)?;
         Self::admit_surface_poles_for_decode(&ctx, grid)
     }
     /// Admit pole storage with the caller's resource context.
     fn admit_surface_poles_for_decode(
-        ctx: &DecodeContext<'_>, grid: NurbsPoleGrid<Self>,
+        ctx: &DecodeContext<'_>,
+        grid: NurbsPoleGrid<Self>,
     ) -> Result<NurbsPoleGrid<T>, NurbsError> {
         admitted::construction_result(admitted::admit_grid(ctx, grid))
     }
-
 }
 
 impl PoleValue<FinitePoint3> for Point3 {
@@ -246,28 +256,45 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
     }
 
     fn admit_curve_poles_for_decode(
-        _ctx: &DecodeContext<'_>, poles: NurbsPoles3<Self>,
-    ) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> { Ok(poles) }
+        _ctx: &DecodeContext<'_>,
+        poles: NurbsPoles3<Self>,
+    ) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+        Ok(poles)
+    }
 
     fn admit_surface_poles_for_decode(
-        _ctx: &DecodeContext<'_>, grid: NurbsPoleGrid<Self>,
-    ) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> { Ok(grid) }
-
+        _ctx: &DecodeContext<'_>,
+        grid: NurbsPoleGrid<Self>,
+    ) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+        Ok(grid)
+    }
 }
 
 /// Pair each pole of a lane with its weight, after the weight lane has been
 /// found to cover the poles.
 fn weighted_poles<P, W>(
-    points: Vec<P>, weights: Vec<W>,
+    points: Vec<P>,
+    weights: Vec<W>,
     weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
 ) -> Result<Vec<WeightedPole3<P>>, NurbsError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(NurbsError::from)?;
-    weighted_poles_for_decode(&ctx, points, weights, &mut None, "IR weighted poles", weight)
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
+            .map_err(NurbsError::from)?;
+    weighted_poles_for_decode(
+        &ctx,
+        points,
+        weights,
+        &mut None,
+        "IR weighted poles",
+        weight,
+    )
 }
 
 fn weighted_poles_for_decode<P, W, E: From<CodecError>>(
-    ctx: &DecodeContext<'_>, points: Vec<P>, weights: Vec<W>,
+    ctx: &DecodeContext<'_>,
+    points: Vec<P>,
+    weights: Vec<W>,
     storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
     operation: &'static str,
     mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, E>,
@@ -276,13 +303,17 @@ fn weighted_poles_for_decode<P, W, E: From<CodecError>>(
     for (index, (point, value)) in points.into_iter().zip(weights).enumerate() {
         reserve_pole_storage(ctx, &mut output, storage, operation)?;
         ctx.charge_work(1, operation)?;
-        output.push(WeightedPole3 { point, weight: weight(index, value)? });
+        output.push(WeightedPole3 {
+            point,
+            weight: weight(index, value)?,
+        });
     }
     Ok(output)
 }
 
 fn reserve_pole_storage<T>(
-    ctx: &DecodeContext<'_>, values: &mut Vec<T>,
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
     storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
@@ -292,7 +323,6 @@ fn reserve_pole_storage<T>(
         ctx.reserve_retained_vec(values, 1, operation)
     }
 }
-
 
 impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     /// The poles with admitted positions.
@@ -1257,8 +1287,12 @@ impl NurbsSurface {
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
-            .map_err(NurbsError::from)?;
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(NurbsError::from)?;
         Self::from_lanes_for_decode(&ctx, u, v, lanes, normal_reversed).map_err(NurbsError::from)?
     }
 
@@ -1635,9 +1669,14 @@ impl NurbsCurve {
         periodic: bool,
     ) -> Result<Self, NurbsError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
-            .map_err(NurbsError::from)?;
-        Self::from_lanes_for_decode(&ctx, degree, knots, control_points, weights, periodic).map_err(NurbsError::from)?
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(NurbsError::from)?;
+        Self::from_lanes_for_decode(&ctx, degree, knots, control_points, weights, periodic)
+            .map_err(NurbsError::from)?
     }
 
     /// Build from finite knots, poles, and weights. Only relationships and

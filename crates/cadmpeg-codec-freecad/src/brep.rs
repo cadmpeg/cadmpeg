@@ -6316,8 +6316,10 @@ fn append_text_curve(
     ctx.reserve_vec(&mut transfer.curves, 1, "FreeCAD transferred curves")?;
     transfer.curves.push(Curve {
         id,
-        geometry: (&geometry).try_clone_for_decode(ctx, "FreeCAD curve geometry copy")?,
-        source_object: Some((association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?),
+        geometry: geometry.try_clone_for_decode(ctx, "FreeCAD curve geometry copy")?,
+        source_object: Some(
+            (association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?,
+        ),
     });
     Ok(geometry)
 }
@@ -6727,8 +6729,10 @@ fn append_text_surface(
     ctx.reserve_vec(&mut transfer.surfaces, 1, "FreeCAD transferred surfaces")?;
     transfer.surfaces.push(Surface {
         id,
-        geometry: (&geometry).try_clone_for_decode(ctx, "FreeCAD surface geometry copy")?,
-        source_object: Some((association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?),
+        geometry: geometry.try_clone_for_decode(ctx, "FreeCAD surface geometry copy")?,
+        source_object: Some(
+            (association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?,
+        ),
     });
     Ok(geometry)
 }

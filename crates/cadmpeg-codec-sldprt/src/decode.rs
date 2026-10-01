@@ -2637,11 +2637,12 @@ fn bind_opaque_geometry(
     Ok(())
 }
 
-fn append_brep_arena<T>(
-    target: &mut Vec<T>,
-    source: &mut Vec<T>,
-) -> Result<(), CodecError> {
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
+fn append_brep_arena<T>(target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), CodecError> {
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        target,
+        source.len(),
+        "merge SLDPRT B-rep arena",
+    )?;
     target.append(source);
     Ok(())
 }
@@ -2660,7 +2661,10 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     append_brep_arena(&mut target.vertices, &mut source.vertices)?;
     append_brep_arena(&mut target.points, &mut source.points)?;
     append_brep_arena(&mut target.surfaces, &mut source.surfaces)?;
-    append_brep_arena(&mut target.procedural_surfaces, &mut source.procedural_surfaces)?;
+    append_brep_arena(
+        &mut target.procedural_surfaces,
+        &mut source.procedural_surfaces,
+    )?;
     append_brep_arena(&mut target.curves, &mut source.curves)?;
     append_brep_arena(&mut target.pcurves, &mut source.pcurves)?;
     append_brep_arena(&mut target.unknowns, &mut source.unknowns)?;
@@ -2692,7 +2696,9 @@ fn ensure_display_appearance(
         appearance.name.as_deref() == Some(definition.name.as_str())
             && appearance.base_color == Some(definition.color)
     }) {
-        return Ok(existing.id.try_clone_for_decode(ctx, "SLDPRT display appearance identity")?);
+        return existing
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT display appearance identity");
     }
     let id = AppearanceId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
@@ -3373,11 +3379,7 @@ fn build_geometry_ir(
             .iter()
             .any(|appearance| appearance.id == id)
         {
-            ctx.reserve_vec(
-                &mut ir.model.appearances,
-                1,
-                "admit SLDPRT face appearance",
-            )?;
+            ctx.reserve_vec(&mut ir.model.appearances, 1, "admit SLDPRT face appearance")?;
             ir.model.appearances.push(Appearance {
                 id: id.clone(),
                 name: None,
@@ -3568,7 +3570,11 @@ fn build_geometry_ir(
                         )
                     })?;
                 let mut source_entity_id = String::new();
-                ctx.try_reserve_retained_text(&mut source_entity_id, source_id_len, "retain SLDPRT DisplayFace source identity")?;
+                ctx.try_reserve_retained_text(
+                    &mut source_entity_id,
+                    source_id_len,
+                    "retain SLDPRT DisplayFace source identity",
+                )?;
                 source_entity_id.push_str(source_stream);
                 source_entity_id.push_str("::DisplayFace[");
                 source_entity_id.push_str(&table_index_text);
@@ -3663,8 +3669,18 @@ fn build_geometry_ir(
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        annotation_builder.field_exactness_for_decode(ctx, id.as_str(), "body", Exactness::Derived)?;
-        annotation_builder.field_exactness_for_decode(ctx, id.as_str(), "faces", Exactness::Derived)?;
+        annotation_builder.field_exactness_for_decode(
+            ctx,
+            id.as_str(),
+            "body",
+            Exactness::Derived,
+        )?;
+        annotation_builder.field_exactness_for_decode(
+            ctx,
+            id.as_str(),
+            "faces",
+            Exactness::Derived,
+        )?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -3851,7 +3867,9 @@ fn source_meta(
     add_preview_metadata(ctx, scan, &mut attributes)?;
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
     Ok(SourceMeta::classified(
-        classification.layers().try_clone_for_decode(ctx, "copy dialect layers")?,
+        classification
+            .layers()
+            .try_clone_for_decode(ctx, "copy dialect layers")?,
         attributes,
     ))
 }
@@ -4188,7 +4206,9 @@ fn build_metadata_ir(
     }
 
     ir.source = Some(SourceMeta::classified(
-        classification.layers().try_clone_for_decode(ctx, "copy dialect layers")?,
+        classification
+            .layers()
+            .try_clone_for_decode(ctx, "copy dialect layers")?,
         attributes,
     ));
     project_design_history(
@@ -4712,7 +4732,8 @@ fn complete_resolved_configuration_parameter_snapshots(
                 "retain SLDPRT snapshot parameter ID",
             )?)
             .map_err(CodecError::malformed)?;
-            let value = value.try_clone_for_decode(ctx, "retain SLDPRT snapshot parameter value")?;
+            let value =
+                value.try_clone_for_decode(ctx, "retain SLDPRT snapshot parameter value")?;
             ctx.charge_collection_items(1, "complete SLDPRT configuration parameter snapshot")?;
             configuration.parameter_values.insert(id, value);
         }
@@ -4801,7 +4822,8 @@ fn snapshot_active_configuration(
         let Some(value) = &parameter.value else {
             continue;
         };
-        let value = value.try_clone_for_decode(ctx, "retain SLDPRT configuration parameter value")?;
+        let value =
+            value.try_clone_for_decode(ctx, "retain SLDPRT configuration parameter value")?;
         let id = cadmpeg_ir::features::ParameterId::mint(copy_retained_string(
             ctx,
             parameter.id.as_str(),
@@ -4931,7 +4953,16 @@ fn sync_active_configuration_resolutions(
         let copied_placements = if placements.is_none() {
             resolved_placements
                 .as_deref()
-                .map(|source| ctx.try_collect_retained_with(source, "copy SLDPRT active configuration hole", |placement| placement.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")))
+                .map(|source| {
+                    ctx.try_collect_retained_with(
+                        source,
+                        "copy SLDPRT active configuration hole",
+                        |placement| {
+                            placement
+                                .try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")
+                        },
+                    )
+                })
                 .transpose()?
         } else {
             None
@@ -4975,14 +5006,19 @@ fn sync_active_configuration_resolutions(
                     cadmpeg_ir::features::holes::HoleConstruction::Form { .. }
                 )
             ) {
-            Some(resolved_construction.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")?)
+            Some(
+                resolved_construction
+                    .try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")?,
+            )
         } else {
             None
         };
         let copied_extent = if apply_resolution {
             resolved_extent
                 .as_ref()
-                .map(|source| source.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole"))
+                .map(|source| {
+                    source.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")
+                })
                 .transpose()?
         } else {
             None
@@ -5123,7 +5159,8 @@ fn sync_active_configuration_resolutions(
             continue;
         };
         if seeds == resolved_seeds && pattern.is_unresolved() {
-            *pattern = resolved_pattern.try_clone_for_decode(ctx, "copy SLDPRT resolved configuration pattern")?;
+            *pattern = resolved_pattern
+                .try_clone_for_decode(ctx, "copy SLDPRT resolved configuration pattern")?;
         }
     }
 
@@ -5173,7 +5210,11 @@ fn assign_configuration_bodies(
                 "merge SLDPRT configuration bodies",
             )?;
             if !merged.contains(&body) {
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(merged, 1, "merge SLDPRT configuration bodies")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    merged,
+                    1,
+                    "merge SLDPRT configuration bodies",
+                )?;
                 merged.push(body);
             }
         }
@@ -5200,10 +5241,11 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
-            configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
-                partition_map.remove(&source_index).unwrap_or_default(),
-                ctx,
-            )?);
+            configuration.bodies =
+                Some(cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                    partition_map.remove(&source_index).unwrap_or_default(),
+                    ctx,
+                )?);
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
@@ -5886,8 +5928,7 @@ fn append_swift_pmi_losses(
             .checked_add(addition)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
-    let (mut classes, _reservation) =
-        ctx.scoped_string(classes_len, OPERATION)?;
+    let (mut classes, _reservation) = ctx.scoped_string(classes_len, OPERATION)?;
     for (index, (class, class_count)) in unsupported.iter().enumerate() {
         if index > 0 {
             classes.push_str(", ");
@@ -5898,9 +5939,12 @@ fn append_swift_pmi_losses(
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         classes.push(')');
     }
-    let message = ctx.format_retained(format_args!(
+    let message = ctx.format_retained(
+        format_args!(
             "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
-        ), "retain SLDPRT unsupported SWIFT loss")?;
+        ),
+        "retain SLDPRT unsupported SWIFT loss",
+    )?;
     ctx.reserve_vec(losses, 1, "append SLDPRT unsupported SWIFT loss")?;
     losses.push(SldprtLossCode::PmiSwiftAnnotationUnsupported.note(message));
     Ok(())

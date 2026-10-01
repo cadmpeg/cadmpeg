@@ -1706,10 +1706,18 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
             };
             let stations =
                 ctx.copy_retained_slice(jet.stations(), "catia_b5_copied_rolling_ball_stations")?;
-            let jet =
-                cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(jet.degree(), stations, ctx)?
-                    .map_err(CodecError::malformed)?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ProceduralSurfaceDefinition>()), "catia_b5_copied_rolling_ball_definition")?;
+            let jet = cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
+                jet.degree(),
+                stations,
+                ctx,
+            )?
+            .map_err(CodecError::malformed)?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    ProceduralSurfaceDefinition,
+                >()),
+                "catia_b5_copied_rolling_ball_definition",
+            )?;
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,
                 definition: Box::new(ProceduralSurfaceDefinition::RollingBallJet(jet)),
@@ -2690,7 +2698,8 @@ fn lift_parameter_incidence(
             return Ok(None);
         };
         return Ok(
-            lift_pcurve_endpoints(ctx, surface, geometry.profiles, [uv, uv])?.map(|[point, _]| point)
+            lift_pcurve_endpoints(ctx, surface, geometry.profiles, [uv, uv])?
+                .map(|[point, _]| point),
         );
     }
     let Some(opaque) = geometry.opaque_pcurves.get(&pcurve_id) else {
@@ -4975,19 +4984,25 @@ fn lift_pcurve_endpoints(
     endpoints: [[f64; 2]; 2],
 ) -> Result<Option<[FinitePoint3; 2]>, cadmpeg_core::decode::ResourceLimit> {
     if let B5Surface::Nurbs(surface) = surface {
-        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx,
-            surface,
-            endpoints[0][0],
-            endpoints[0][1],
-        )?)?
+        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(
+                ctx,
+                surface,
+                endpoints[0][0],
+                endpoints[0][1],
+            )?,
+        )?
         else {
             return Ok(None);
         };
-        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx,
-            surface,
-            endpoints[1][0],
-            endpoints[1][1],
-        )?)?
+        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(
+                ctx,
+                surface,
+                endpoints[1][0],
+                endpoints[1][1],
+            )?,
+        )?
         else {
             return Ok(None);
         };

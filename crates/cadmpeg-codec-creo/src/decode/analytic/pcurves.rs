@@ -464,7 +464,9 @@ fn pcurve_plane_carrier_status(
             endpoints[0][0].mul_add(1.0 - fraction, endpoints[1][0] * fraction),
             endpoints[0][1].mul_add(1.0 - fraction, endpoints[1][1] * fraction),
         ];
-        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?)?
+        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?,
+        )?
         else {
             return Ok(PcurveCarrierStatus::Rejected);
         };
@@ -503,7 +505,8 @@ fn pcurve_path_carrier_status(
             PcurveCarrierUnknownReason::MissingCarrier,
         ));
     };
-    pcurve_plane_carrier_status(ctx,
+    pcurve_plane_carrier_status(
+        ctx,
         source_carriers.surface_geometry(surface),
         face_carrier,
         other_carrier,
@@ -543,13 +546,14 @@ fn pcurve_endpoint_carrier_status(
         if !valid {
             break;
         }
-        let Some(point) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
+        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::surface_point_for_decode(
                 ctx,
                 source_carriers.surface_geometry(surface),
                 uv[0],
                 uv[1],
-            )?)?
+            )?,
+        )?
         else {
             valid = false;
             break;
@@ -607,7 +611,9 @@ fn support_cone_witness_matches(
     plane: PlaneEquation,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     for uv in endpoints {
-        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, geometry, uv[0], uv[1])?)?
+        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, geometry, uv[0], uv[1])?,
+        )?
         else {
             return Ok(false);
         };
@@ -977,7 +983,8 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                     source_carriers,
                 )?
             } else {
-                pcurve_path_carrier_status(ctx,
+                pcurve_path_carrier_status(
+                    ctx,
                     ir,
                     carriers,
                     faces,
@@ -1288,7 +1295,9 @@ fn linear_pcurve_carrier(
     Ok(match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             let [first, second] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?)
+                cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?,
+                )
                 .map(|point| point.map(|point| [point.x, point.y, point.z]))
             });
             let [Some(first), Some(second)] = [first?, second?] else {
@@ -1348,7 +1357,9 @@ fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) if { start[0] == end[0] } => {
             let [first, second] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?)
+                cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?,
+                )
                 .map(|point| point.map(|point| [point.x, point.y, point.z]))
             });
             let [Some(first), Some(second)] = [first?, second?] else {
@@ -1554,7 +1565,9 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             // evaluable; only an endpoint with no value is not.
             let mut evaluable = true;
             for uv in endpoints {
-                match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, geometry, uv[0], uv[1])? {
+                match cadmpeg_ir::eval::decode::surface_point_for_decode(
+                    ctx, geometry, uv[0], uv[1],
+                )? {
                     Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                         return Err(limit.into())
                     }
@@ -1664,7 +1677,9 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 break;
             }
             for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                let point = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, candidate, parameter)?)?;
+                let point = cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, candidate, parameter)?,
+                )?;
                 if !point.is_some_and(|point| {
                     curve_contains_points(geometry, [[point.x, point.y, point.z]; 2])
                 }) {
@@ -1945,8 +1960,8 @@ pub(super) fn native_pcurve_midpoint(
 ) -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
     // A point outside the finite range, mapped or on the edge, aligns with
     // no point.
-    let [first, second] =
-        endpoints.map(|uv| cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1]));
+    let [first, second] = endpoints
+        .map(|uv| cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1]));
     let ([Some(first), Some(second)], [Some(start), Some(end)]) = (
         [
             cadmpeg_ir::eval::finite_or_refusal(first?)?,
@@ -1999,8 +2014,8 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
             let Some(interior) = native_pcurve_midpoint(ctx, surface, *endpoints, points)? else {
                 continue;
             };
-            let candidate = require_some!(periodic_conic_edge_parameter_range(ctx,
-                geometry, points, interior
+            let candidate = require_some!(periodic_conic_edge_parameter_range(
+                ctx, geometry, points, interior
             )?);
             if selected.is_some_and(|selected: [f64; 2]| {
                 candidate
@@ -2024,8 +2039,8 @@ fn oriented_native_pcurve_endpoints(
 ) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::CodecError> {
     // A point outside the finite range, mapped or traversed, aligns with no
     // point.
-    let [first, second] =
-        endpoints.map(|uv| cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1]));
+    let [first, second] = endpoints
+        .map(|uv| cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1]));
     let mapped = [
         cadmpeg_ir::eval::finite_or_refusal(first?)?,
         cadmpeg_ir::eval::finite_or_refusal(second?)?,
@@ -3331,35 +3346,65 @@ mod tests {
             normal: [1.0, 0.0, 0.0],
         });
         assert_eq!(
-            ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); pcurve_plane_carrier_status(&ctx,
-                &surface,
-                face_carrier,
-                crossing_carrier,
-                [[0.0, 0.0], [0.0, 1.0]],
-            ) })
+            ({
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &arena,
+                    &cadmpeg_core::decode::DecodePolicy::service(),
+                )
+                .expect("root");
+                pcurve_plane_carrier_status(
+                    &ctx,
+                    &surface,
+                    face_carrier,
+                    crossing_carrier,
+                    [[0.0, 0.0], [0.0, 1.0]],
+                )
+            })
             .expect("evaluation resources"),
             PcurveCarrierStatus::Validated,
         );
         assert_eq!(
-            ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); pcurve_plane_carrier_status(&ctx,
-                &surface,
-                face_carrier,
-                crossing_carrier,
-                [[0.0, 0.0], [1.0, 0.0]],
-            ) })
+            ({
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &arena,
+                    &cadmpeg_core::decode::DecodePolicy::service(),
+                )
+                .expect("root");
+                pcurve_plane_carrier_status(
+                    &ctx,
+                    &surface,
+                    face_carrier,
+                    crossing_carrier,
+                    [[0.0, 0.0], [1.0, 0.0]],
+                )
+            })
             .expect("evaluation resources"),
             PcurveCarrierStatus::Rejected,
         );
         assert_eq!(
-            ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); pcurve_plane_carrier_status(&ctx,
-                &surface,
-                face_carrier,
-                CarrierEquation::Plane(PlaneEquation {
-                    origin: [0.0, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0],
-                }),
-                [[0.0, 0.0], [0.0, 1.0]],
-            ) })
+            ({
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &arena,
+                    &cadmpeg_core::decode::DecodePolicy::service(),
+                )
+                .expect("root");
+                pcurve_plane_carrier_status(
+                    &ctx,
+                    &surface,
+                    face_carrier,
+                    CarrierEquation::Plane(PlaneEquation {
+                        origin: [0.0, 0.0, 1.0],
+                        normal: [0.0, 0.0, 1.0],
+                    }),
+                    [[0.0, 0.0], [0.0, 1.0]],
+                )
+            })
             .expect("evaluation resources"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair),
         );
@@ -3459,22 +3504,60 @@ mod tests {
         };
         let endpoints = [[0.0, 0.5], [std::f64::consts::PI, 0.5]];
 
-        assert!(!({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); support_cone_witness_matches(&ctx, &current, endpoints, plane) })
-            .expect("evaluation resources"));
-        assert!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); support_cone_witness_matches(&ctx, &mirrored, endpoints, plane) })
-            .expect("evaluation resources"));
-        let perpendicular_endpoints = [[std::f64::consts::PI, 0.5]; 2];
-        assert!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); support_cone_witness_matches(&ctx,
-            &current,
-            perpendicular_endpoints,
-            perpendicular_plane
-        ) })
+        assert!(!({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            support_cone_witness_matches(&ctx, &current, endpoints, plane)
+        })
         .expect("evaluation resources"));
-        assert!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); support_cone_witness_matches(&ctx,
-            &mirrored,
-            perpendicular_endpoints,
-            perpendicular_plane
-        ) })
+        assert!(({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            support_cone_witness_matches(&ctx, &mirrored, endpoints, plane)
+        })
+        .expect("evaluation resources"));
+        let perpendicular_endpoints = [[std::f64::consts::PI, 0.5]; 2];
+        assert!(({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            support_cone_witness_matches(
+                &ctx,
+                &current,
+                perpendicular_endpoints,
+                perpendicular_plane,
+            )
+        })
+        .expect("evaluation resources"));
+        assert!(({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            support_cone_witness_matches(
+                &ctx,
+                &mirrored,
+                perpendicular_endpoints,
+                perpendicular_plane,
+            )
+        })
         .expect("evaluation resources"));
     }
 

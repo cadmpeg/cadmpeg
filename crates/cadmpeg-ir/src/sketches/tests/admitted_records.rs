@@ -53,8 +53,11 @@ fn polygon_uniqueness_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 2;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result =
-        crate::sketches::SketchPolygon::try_new_for_decode(entities, &ctx, "test polygon uniqueness");
+    let result = crate::sketches::SketchPolygon::try_new_for_decode(
+        entities,
+        &ctx,
+        "test polygon uniqueness",
+    );
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "test polygon uniqueness"));
@@ -319,7 +322,8 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
             unit(0.0, 0.0, 1.0),
             boundary
         )
-        .unwrap_err().to_string(),
+        .unwrap_err()
+        .to_string(),
         "spatial profile normal and u_axis must be unit and orthogonal"
     );
 }
@@ -327,14 +331,32 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
 #[test]
 fn polygon_uniqueness_refuses_scoped_storage_and_work() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
-        let entities = ["first", "second", "third"].map(|suffix| crate::sketches::SketchEntityId::mint(format!("test:model:entity#{suffix}")).unwrap()).into_iter().collect();
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::WorkUnits,
+    ] {
+        let entities = ["first", "second", "third"]
+            .map(|suffix| {
+                crate::sketches::SketchEntityId::mint(format!("test:model:entity#{suffix}"))
+                    .unwrap()
+            })
+            .into_iter()
+            .collect();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        if dimension == ResourceDimension::MaterializedBytes { policy.limits.max_materialized_bytes = 0; }
-        else { policy.limits.max_work_units = 0; }
+        if dimension == ResourceDimension::MaterializedBytes {
+            policy.limits.max_materialized_bytes = 0;
+        } else {
+            policy.limits.max_work_units = 0;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::sketches::SketchPolygon::try_new_for_decode(entities, &ctx, "polygon temporary uniqueness");
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+        let result = crate::sketches::SketchPolygon::try_new_for_decode(
+            entities,
+            &ctx,
+            "polygon temporary uniqueness",
+        );
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+        );
     }
 }

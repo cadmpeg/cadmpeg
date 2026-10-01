@@ -903,7 +903,7 @@ pub(crate) mod tests {
         assert!(
             matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd annotation keyed references")
+                if limit.operation == "named entry map nodes")
         );
     }
 
@@ -926,7 +926,7 @@ pub(crate) mod tests {
         assert!(
             matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd annotation keyed parameters")
+                if limit.operation == "named entry map nodes")
         );
     }
 

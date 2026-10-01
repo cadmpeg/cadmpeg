@@ -102,7 +102,7 @@ fn primary_dialect_clone_refuses_collection_limit() {
     let error = classify_layers(&limited, &scan).unwrap_err();
     assert!(
         matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "dialect declaration copies"),
+        if limit.operation == "copy dialect layers"),
         "{error:?}"
     );
 }
@@ -125,7 +125,7 @@ fn primary_dialect_clone_refuses_retained_limit() {
     let error = classify_layers(&limited, &scan).unwrap_err();
     assert!(
         matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "dialect declaration key"),
+        if limit.operation == "copy dialect layers"),
         "{error:?}"
     );
 }

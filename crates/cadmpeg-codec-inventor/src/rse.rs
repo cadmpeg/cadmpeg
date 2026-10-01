@@ -58,7 +58,11 @@ enum SegmentPrefix {
 }
 
 impl SegmentToken {
-    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         self.0.try_clone_for_decode(ctx, operation).map(Self)
     }
 
@@ -601,7 +605,8 @@ impl<'a> RseInventory<'a> {
         let mut unpaired_metadata = Vec::new();
         for token in metadata.keys().filter(|token| !bulk.contains_key(*token)) {
             ctx.charge_collection_items(1, "collect RSe unpaired metadata")?;
-            unpaired_metadata.push(token.try_clone_for_decode(ctx, "retain RSe unpaired metadata token")?);
+            unpaired_metadata
+                .push(token.try_clone_for_decode(ctx, "retain RSe unpaired metadata token")?);
         }
         let mut unpaired_bulk = Vec::new();
         for token in bulk.keys().filter(|token| !metadata.contains_key(*token)) {

@@ -248,6 +248,12 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
     for _ in 0..140 {
         deep = Value::Array(vec![deep]);
     }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth =
+        cadmpeg_core::decode::u64_from_index(super::super::MAX_NATIVE_NESTING_DEPTH + 2);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut document = crate::CadIr::empty();
     for (json, expected) in [
         (
@@ -263,7 +269,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         document
             .native
             .namespace_mut("future")
-            .set_arena(&crate::native::test_ctx(), "records", &[record])
+            .set_arena(&ctx, "records", &[record])
             .expect("raw fields have ordinary JSON semantics");
         let wire = serde_json::to_value(&document).expect("document writes");
         let admitted: crate::CadIr = serde_json::from_value(wire.clone()).expect("document reads");
@@ -300,7 +306,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
             raw: RawValue::from_string(json.to_owned()).expect("raw JSON retains duplicate keys"),
         };
         let error = namespace
-            .set_arena(&crate::native::test_ctx(), "records", &[record])
+            .set_arena(&ctx, "records", &[record])
             .expect_err("duplicate raw keys");
         assert!(error.to_string().contains("duplicate key a"), "{error}");
         assert_eq!(namespace, before);
@@ -499,7 +505,8 @@ fn raw_native_resource_refusals_keep_the_caller_dimension() {
     let arena = DecodeArena::new();
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-    let stored = super::super::NativeRecord::from_typed_for_decode(&service, &record, None).unwrap();
+    let stored =
+        super::super::NativeRecord::from_typed_for_decode(&service, &record, None).unwrap();
     assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
     for dimension in [
         ResourceDimension::CollectionItems,
@@ -580,19 +587,51 @@ fn raw_native_replay_text_uses_scoped_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use serde_json::value::RawValue;
     #[derive(Serialize)]
-    struct Record { id: &'static str, raw: Box<RawValue> }
+    struct Record {
+        id: &'static str,
+        raw: Box<RawValue>,
+    }
     let json = r#"[["retained"]]"#;
-    let record = Record { id: "test:native:record#raw-storage", raw: RawValue::from_string(json.into()).unwrap() };
+    let record = Record {
+        id: "test:native:record#raw-storage",
+        raw: RawValue::from_string(json.into()).unwrap(),
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(json.len()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
-    assert!(matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "serialize native record"));
+    let error =
+        super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
+    assert!(
+        matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "serialize native record")
+    );
     policy.limits.max_materialized_bytes += 1;
     let (exact, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let stored = super::super::NativeRecord::from_typed_for_decode(&exact, &record, None).unwrap();
     assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
-    let _released = exact.reserve_scoped(policy.limits.max_materialized_bytes, "released raw replay text").unwrap();
+    let _released = exact
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "released raw replay text",
+        )
+        .unwrap();
+}
+
+#[test]
+fn known_sequence_length_reserves_only_its_backing_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(3 * std::mem::size_of::<serde_json::Value>());
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let values = [1u32, 2, 3];
+    let value = values
+        .serialize(CanonValue::for_record(&ctx))
+        .unwrap()
+        .into_value();
+    assert_eq!(value, serde_json::json!([1, 2, 3]));
+    assert_eq!(value.as_array().unwrap().capacity(), 3);
 }

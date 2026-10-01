@@ -77,7 +77,11 @@ impl Serialize for DesignRelaxedGuidText {
 }
 
 impl DesignRelaxedGuidText {
-    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
     }
 

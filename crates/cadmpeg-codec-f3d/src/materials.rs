@@ -78,7 +78,9 @@ fn named_act_channels(
     channels: Option<&BTreeMap<String, String>>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let copied = copy_act_channels(ctx, channels)?;
-    Ok(cadmpeg_core::text::named_entries_for_decode(ctx, owner, copied)?)
+    Ok(cadmpeg_core::text::named_entries_for_decode(
+        ctx, owner, copied,
+    )?)
 }
 
 fn lp_ascii_printable_charged(
@@ -914,7 +916,7 @@ fn appearances_from_schema_records(
             category: None,
             base_color,
             properties: cadmpeg_core::text::named_entries_for_decode(
-        ctx,
+                ctx,
                 format_args!("f3d:design:appearance#{}", record.guid),
                 properties,
             )?,

@@ -409,7 +409,10 @@ mod literal_tests {
             let length = Length::new(value).unwrap();
             assert_eq!(format_length_mm(length), expected);
             assert_eq!(
-                &ctx.format_retained(format_args!("{}", LengthLiteral(length)), "test length literal")
+                &ctx.format_retained(
+                    format_args!("{}", LengthLiteral(length)),
+                    "test length literal"
+                )
                 .unwrap(),
                 expected
             );

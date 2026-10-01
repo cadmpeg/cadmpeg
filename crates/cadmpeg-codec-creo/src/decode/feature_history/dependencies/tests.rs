@@ -589,13 +589,18 @@ fn regeneration_child_id_refuses_retained_limit() {
 
 #[test]
 fn regeneration_edges_refuse_collection_limit() {
-    regeneration_edge_limit_error(Some(9), None, "creo regeneration edges");
+    // The dependency uniqueness index admits one borrowed member first.
+    regeneration_edge_limit_error(Some(10), None, "creo regeneration edges");
 }
 
 #[test]
 fn regeneration_parent_nodes_refuse_collection_limit() {
     // The dependency uniqueness index stores one borrowed member.
-    regeneration_edge_limit_error(Some(11), None, "install decoded feature regeneration parent");
+    regeneration_edge_limit_error(
+        Some(11),
+        None,
+        "install decoded feature regeneration parent",
+    );
 }
 
 #[test]

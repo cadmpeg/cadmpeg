@@ -275,7 +275,7 @@ fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
             super::super::DisplayJtCompressedElementSequence,
         >());
     let before_tail = before_sequence_fields
-        + cadmpeg_core::decode::u64_from_index(segment.len() * 2 + "-inflated-sequence".len() + 64);
+        + cadmpeg_core::decode::u64_from_index(segment.len() * 2 + "-inflated-sequence".len());
     CompressedJtRetainedStages {
         ids: before_ids,
         elements: before_elements,
@@ -354,7 +354,8 @@ fn jt_compressed_sequence_tail_refuses_before_copy() {
 fn jt_compressed_element_hash_refuses_before_body_work() {
     use cadmpeg_core::decode::ResourceDimension;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2) + 2;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2) + 2;
     };
     assert_compressed_jt_limit(
         adjust_policy,
@@ -367,7 +368,13 @@ fn jt_compressed_element_hash_refuses_before_body_work() {
 fn jt_compressed_sequence_hash_refuses_before_tail_work() {
     use cadmpeg_core::decode::ResourceDimension;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2) + 5;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2)
+                + 5
+                + 64
+                + 2
+                + 2
+                + 64;
     };
     assert_compressed_jt_limit(
         adjust_policy,
@@ -380,7 +387,8 @@ fn jt_compressed_sequence_hash_refuses_before_tail_work() {
 fn jt_compressed_sequence_validation_refuses_before_second_hash() {
     use cadmpeg_core::decode::ResourceDimension;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2) + 7 + 2;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2) + 7 + 2 + 64;
     };
     assert_compressed_jt_limit(
         adjust_policy,

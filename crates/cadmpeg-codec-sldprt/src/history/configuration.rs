@@ -764,7 +764,10 @@ pub(crate) fn project_configuration_sketch_states(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
                 let text = if let Some((prefix, suffix)) = id.split_once(":model:feature#") {
-                    ctx.format_retained(format_args!("{prefix}:model:spatial-sketch#{suffix}"), OPERATION)?
+                    ctx.format_retained(
+                        format_args!("{prefix}:model:spatial-sketch#{suffix}"),
+                        OPERATION,
+                    )?
                 } else {
                     ctx.format_retained(format_args!("{id}"), OPERATION)?
                 };
@@ -1123,7 +1126,8 @@ fn inherit_configuration_shared_semantics(
                 | cadmpeg_ir::features::FaceSelection::Native(_) => true,
             };
             if incomplete {
-                *face = base_face.try_clone_for_decode(ctx, "copy SLDPRT configuration datum face")?;
+                *face =
+                    base_face.try_clone_for_decode(ctx, "copy SLDPRT configuration datum face")?;
             }
         }
         return Ok(());
@@ -1201,7 +1205,10 @@ fn inherit_configuration_hole_semantics(
     if inherit_placements && placements.is_none() {
         if let Some(base_placements) = base_placements {
             const OPERATION: &str = "copy SLDPRT configuration hole placements";
-            let copied = ctx.try_collect_retained_with(base_placements, OPERATION, |placement| placement.try_clone_for_decode(ctx, OPERATION))?;
+            let copied =
+                ctx.try_collect_retained_with(base_placements, OPERATION, |placement| {
+                    placement.try_clone_for_decode(ctx, OPERATION)
+                })?;
             *placements = Some(copied);
         }
     }
@@ -1250,7 +1257,9 @@ fn inherit_configuration_hole_semantics(
     {
         *extent = base_extent
             .as_ref()
-            .map(|value| value.try_clone_for_decode(ctx, "copy SLDPRT configuration hole termination"))
+            .map(|value| {
+                value.try_clone_for_decode(ctx, "copy SLDPRT configuration hole termination")
+            })
             .transpose()?;
     }
     if bottom.is_none() {
@@ -1406,7 +1415,7 @@ fn copy_configuration_feature_id(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
     FeatureId::mint(ctx.format_retained(format_args!("{}", id.as_str()), operation)?)
-    .map_err(cadmpeg_core::CodecError::malformed)
+        .map_err(cadmpeg_core::CodecError::malformed)
 }
 
 fn copy_configuration_plane_reference(

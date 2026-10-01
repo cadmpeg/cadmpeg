@@ -89,7 +89,11 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             return Ok(None);
         };
         reservation.commit()?;
-        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(ctx, hash.finalize().into(), "retain NX feature payload digest")?;
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
+            ctx,
+            hash.finalize().into(),
+            "retain NX feature payload digest",
+        )?;
         let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
         Ok(Some(content))
     }

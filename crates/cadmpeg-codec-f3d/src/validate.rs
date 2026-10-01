@@ -546,15 +546,19 @@ fn valid_axial_assembly_targets(
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::{HashMap, HashSet};
 
-fn reload_native_arena<T: serde::de::DeserializeOwned>(
-    decode: &DecodeContext<'_>,
+fn reload_native_arena<'ctx, T: serde::de::DeserializeOwned>(
+    decode: &'ctx DecodeContext<'_>,
     ir: &CadIr,
     name: &str,
-) -> Result<Vec<T>, CodecError> {
-    let Some(namespace) = ir.native.namespace("f3d") else {
-        return Ok(Vec::new());
-    };
-    namespace.arena_as_for_decode(decode, name).map_err(Into::into)
+) -> Result<(Vec<T>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    decode.with_scoped_storage("reload F3D validation records", || {
+        let Some(namespace) = ir.native.namespace("f3d") else {
+            return Ok(Vec::new());
+        };
+        namespace
+            .arena_as_for_decode(decode, name)
+            .map_err(Into::into)
+    })
 }
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
@@ -788,7 +792,10 @@ pub(crate) fn validate_native_charged(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    let native = match native::F3dNative::load_charged(decode, namespace) {
+    let (native, _native_storage) = match decode
+        .with_scoped_storage("load F3D validation records", || {
+            native::F3dNative::load_charged(decode, namespace)
+        }) {
         Ok(native) => native,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -810,7 +817,8 @@ fn validate_loaded(
 ) -> Result<Vec<Finding>, CodecError> {
     let ctx = Ctx::new(ir, native, decode)?;
     let mut findings = Vec::new();
-    let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
+    let (mut expected_face_operands, _expected_face_operands_storage) =
+        reload_native_arena(decode, ir, "design_face_operands")?;
     let scope_histories = history::bind_scope_histories(
         decode,
         &native.design_parameter_scopes,
@@ -6137,7 +6145,7 @@ fn validate_edge_identity_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
     let operand_groups_by_index = &ctx.operand_groups_by_index;
-    let mut expected_edge_identity_operands =
+    let (mut expected_edge_identity_operands, _expected_edge_identity_operands_storage) =
         reload_native_arena(decode, ctx.ir, "design_edge_identity_operands")?;
     let scope_histories = history::bind_scope_histories(
         decode,
@@ -6227,7 +6235,8 @@ fn validate_body_recipe_operands<'a>(
     let scopes_by_index = &ctx.scopes_by_index;
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
-    let mut expected_operands = reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
+    let (mut expected_operands, _expected_operands_storage) =
+        reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
     if let Err(error) = design::decode::operands::bind_body_recipe_operand_candidates(
         ctx.decode,
         &mut expected_operands,
@@ -6878,7 +6887,8 @@ fn validate_edge_operands<'a>(
     let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
-    let mut expected_edge_operands = reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
+    let (mut expected_edge_operands, _expected_edge_operands_storage) =
+        reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
     let scope_histories = history::bind_scope_histories(
         decode,
         &native.design_parameter_scopes,
@@ -7029,8 +7039,12 @@ fn validate_edge_treatment_vertex_operands<'a>(
     findings: &mut Vec<Finding>,
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
-    let mut expected: Vec<records::feature::work_geometry::DesignEdgeTreatmentVertexOperand> =
-        reload_native_arena(decode, ctx.ir, "design_edge_treatment_vertex_operands")?;
+    let (mut expected, _expected_storage) =
+        reload_native_arena::<records::feature::work_geometry::DesignEdgeTreatmentVertexOperand>(
+            decode,
+            ctx.ir,
+            "design_edge_treatment_vertex_operands",
+        )?;
     for operand in &mut expected {
         for reference in &mut operand.recipe.recipe_references {
             design::decode::dimension_frames::bind_recipe_reference_candidates_charged(

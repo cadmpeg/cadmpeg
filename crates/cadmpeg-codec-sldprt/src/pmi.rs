@@ -667,7 +667,8 @@ fn collect_dimensions(
     let DimensionOutput { records, seen } = output;
     ctx.charge_work(payload.len() as u64, "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
-        let (mut normalized, _reservation) = ctx.scoped_string(guid.len(), "normalize SLDPRT PMI candidate GUID")?;
+        let (mut normalized, _reservation) =
+            ctx.scoped_string(guid.len(), "normalize SLDPRT PMI candidate GUID")?;
         normalized.push_str(guid);
         normalized.make_ascii_lowercase();
         if seen.contains(&normalized) {
@@ -703,7 +704,11 @@ fn collect_dimensions(
                     + ") ".len()
                     + message.len();
                 let mut text = String::new();
-                ctx.try_reserve_retained_text(&mut text, capacity, "retain SLDPRT PMI malformed note")?;
+                ctx.try_reserve_retained_text(
+                    &mut text,
+                    capacity,
+                    "retain SLDPRT PMI malformed note",
+                )?;
                 std::fmt::Write::write_fmt(
                     &mut text,
                     format_args!(
@@ -841,7 +846,11 @@ fn extract_dimension(
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
     let mut id = String::new();
-    ctx.try_reserve_retained_text(&mut id, "sldprt:pmi:dimension#".len() + guid.len(), "retain SLDPRT PMI dimension ID")?;
+    ctx.try_reserve_retained_text(
+        &mut id,
+        "sldprt:pmi:dimension#".len() + guid.len(),
+        "retain SLDPRT PMI dimension ID",
+    )?;
     id.push_str("sldprt:pmi:dimension#");
     id.push_str(guid);
     let display_text = match outer.get("dimText") {

@@ -361,11 +361,31 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     ));
 
     assert!(matches!(
-        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &plane, [[1.0, 2.0], [3.0, 4.0]]) }).expect("evaluation resources"),
+        ({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            linear_pcurve_carrier(&ctx, &plane, [[1.0, 2.0], [3.0, 4.0]])
+        })
+        .expect("evaluation resources"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
-        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [1.0, 4.0]]) }).expect("evaluation resources"),
+        ({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [1.0, 4.0]])
+        })
+        .expect("evaluation resources"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(
@@ -376,7 +396,17 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         })
     );
     assert!(matches!(
-        ({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &cone, [[1.0, 2.0], [1.0, 4.0]]) }).expect("evaluation resources"),
+        ({
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("root");
+            linear_pcurve_carrier(&ctx, &cone, [[1.0, 2.0], [1.0, 4.0]])
+        })
+        .expect("evaluation resources"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(
@@ -387,9 +417,18 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                     major_radius > minor_radius
                 })
     );
-    assert!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [2.0, 4.0]]) })
-        .expect("evaluation resources")
-        .is_none());
+    assert!(({
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("root");
+        linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [2.0, 4.0]])
+    })
+    .expect("evaluation resources")
+    .is_none());
     assert!(
         matches!(({ let arena = cadmpeg_core::decode::DecodeArena::new(); let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("root"); linear_pcurve_carrier(&ctx, &sphere, [[1.0, 2.0], [1.0, 4.0]]) }).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {

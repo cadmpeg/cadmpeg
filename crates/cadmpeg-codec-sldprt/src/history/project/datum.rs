@@ -32,7 +32,10 @@ fn copy_reference_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Co
             )
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT datum and curve reference")?;
-    ctx.format_retained(format_args!("{text}"), "retain SLDPRT datum and curve reference")
+    ctx.format_retained(
+        format_args!("{text}"),
+        "retain SLDPRT datum and curve reference",
+    )
 }
 
 pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {

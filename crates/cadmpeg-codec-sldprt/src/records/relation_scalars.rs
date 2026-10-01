@@ -51,7 +51,10 @@ impl RelationScalars {
                 FeatureInputScalarRole::Native => {}
             }
             ctx.reserve_vec(&mut refs, 1, "collect SLDPRT relation scalar references")?;
-            refs.push(ctx.format_retained(format_args!("{}", scalar.id), "retain SLDPRT relation scalar identity")?);
+            refs.push(ctx.format_retained(
+                format_args!("{}", scalar.id),
+                "retain SLDPRT relation scalar identity",
+            )?);
         }
         Ok(Self {
             parameter: if duplicate_parameter { None } else { parameter },
@@ -102,7 +105,10 @@ impl RelationScalars {
             1,
             "collect SLDPRT relation scalar references",
         )?;
-        self.refs.push(ctx.format_retained(format_args!("{id}"), "retain SLDPRT relation scalar identity")?);
+        self.refs.push(ctx.format_retained(
+            format_args!("{id}"),
+            "retain SLDPRT relation scalar identity",
+        )?);
         Ok(())
     }
 

@@ -1431,7 +1431,7 @@ mod tests {
         let payload = primitive_string(b"ab", lengths());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
+        policy.limits.max_retained_bytes = 5;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("valid test fixture");
         let result = super::normalize_start(&payload, lengths(), &ctx);
@@ -1439,7 +1439,7 @@ mod tests {
             result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 2
+                    && limit.used == 4
                     && limit.additional == 2
                     && limit.operation == "iges binary start text"
         ));
@@ -1485,7 +1485,7 @@ mod tests {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
+        policy.limits.max_retained_bytes = 5;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let result = super::parameter_text(116, &[super::BinaryValue::Integer(1)], &ctx);
@@ -1493,7 +1493,7 @@ mod tests {
             result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 3
+                    && limit.used == 5
                     && limit.additional == 1
                     && limit.operation == "iges binary parameter text"
         ));
@@ -2084,7 +2084,7 @@ mod tests {
         let bytes = writer.bytes();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
+        policy.limits.max_retained_bytes = 3;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, &ctx);
@@ -2093,7 +2093,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.used == 0
-                    && limit.additional == 3
+                    && limit.additional == 4
         ));
 
         let arena = DecodeArena::new();
@@ -2164,7 +2164,7 @@ mod tests {
         let bytes = writer.bytes();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
+        policy.limits.max_retained_bytes = 5;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, &ctx);
@@ -2172,7 +2172,7 @@ mod tests {
             stream.next(),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 2
+                    && limit.used == 4
                     && limit.additional == 2
                     && limit.operation == "iges binary repeated string"
         ));

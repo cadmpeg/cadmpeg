@@ -19,7 +19,10 @@ pub(crate) fn validate_native(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
-    let native = match crate::native::SldprtNative::load_charged(ctx, namespace) {
+    let (native, _native_storage) = match ctx
+        .with_scoped_storage("load SLDPRT validation records", || {
+            crate::native::SldprtNative::load_charged(ctx, namespace)
+        }) {
         Ok(native) => native,
         Err(error) => return invalid_namespace(ctx, &error),
     };
@@ -35,7 +38,8 @@ pub(crate) fn validate_native(
                 Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
-                    message: ctx.format_retained(format_args!("{error}"), "format SLDPRT native finding")?,
+                    message: ctx
+                        .format_retained(format_args!("{error}"), "format SLDPRT native finding")?,
                     entity: Some(copy_finding_id(ctx, &history.id)?),
                 },
             )?;
@@ -67,11 +71,17 @@ pub(crate) fn validate_native(
                     crate::records::HistoryContent::Configuration(id) => {
                         reserve_seen_id(ctx, &mut seen_configurations)?;
                         if !configurations.contains(id.as_str()) {
-                            Some(ctx.format_retained(format_args!(
+                            Some(ctx.format_retained(
+                                format_args!(
                                     "SolidWorks history root references missing configuration {id}"
-                                ), "format SLDPRT native finding")?)
+                                ),
+                                "format SLDPRT native finding",
+                            )?)
                         } else if !seen_configurations.insert(id.as_str()) {
-                            Some(ctx.format_retained(format_args!("SolidWorks history root repeats configuration {id}"), "format SLDPRT native finding")?)
+                            Some(ctx.format_retained(
+                                format_args!("SolidWorks history root repeats configuration {id}"),
+                                "format SLDPRT native finding",
+                            )?)
                         } else {
                             None
                         }
@@ -79,15 +89,24 @@ pub(crate) fn validate_native(
                     crate::records::HistoryContent::Feature(id) => {
                         reserve_seen_id(ctx, &mut seen_features)?;
                         if !all_features.contains(id.as_str()) {
-                            Some(ctx.format_retained(format_args!(
+                            Some(ctx.format_retained(
+                                format_args!(
                                     "SolidWorks history root references missing feature {id}"
-                                ), "format SLDPRT native finding")?)
+                                ),
+                                "format SLDPRT native finding",
+                            )?)
                         } else if !root_features.contains(id.as_str()) {
-                            Some(ctx.format_retained(format_args!(
+                            Some(ctx.format_retained(
+                                format_args!(
                                     "SolidWorks history root references nested feature {id}"
-                                ), "format SLDPRT native finding")?)
+                                ),
+                                "format SLDPRT native finding",
+                            )?)
                         } else if !seen_features.insert(id.as_str()) {
-                            Some(ctx.format_retained(format_args!("SolidWorks history root repeats feature {id}"), "format SLDPRT native finding")?)
+                            Some(ctx.format_retained(
+                                format_args!("SolidWorks history root repeats feature {id}"),
+                                "format SLDPRT native finding",
+                            )?)
                         } else {
                             None
                         }
@@ -114,7 +133,10 @@ pub(crate) fn validate_native(
                     Finding {
                         check: Check::NativeLinks,
                         severity: Severity::Error,
-                        message: ctx.format_retained(format_args!("SolidWorks history root omits configuration {missing}"), "format SLDPRT native finding")?,
+                        message: ctx.format_retained(
+                            format_args!("SolidWorks history root omits configuration {missing}"),
+                            "format SLDPRT native finding",
+                        )?,
                         entity: Some(copy_finding_id(ctx, &history.id)?),
                     },
                 )?;
@@ -126,7 +148,10 @@ pub(crate) fn validate_native(
                     Finding {
                         check: Check::NativeLinks,
                         severity: Severity::Error,
-                        message: ctx.format_retained(format_args!("SolidWorks history root omits feature {missing}"), "format SLDPRT native finding")?,
+                        message: ctx.format_retained(
+                            format_args!("SolidWorks history root omits feature {missing}"),
+                            "format SLDPRT native finding",
+                        )?,
                         entity: Some(copy_finding_id(ctx, &history.id)?),
                     },
                 )?;
@@ -134,11 +159,24 @@ pub(crate) fn validate_native(
         }
     }
     let (mut expected_histories, _history_reservation) =
-        ctx.with_scoped_storage("validate SLDPRT expected histories", || ctx.try_collect_retained_with(native.feature_histories.iter(), "validate SLDPRT expected histories", |record| record.clone_charged(ctx, "validate SLDPRT expected histories")))?;
-    let (history_lanes, _lane_reservation) = ctx.with_scoped_storage("validate SLDPRT history lanes", || ctx.try_collect_retained_with(native
-            .feature_input_lanes
-            .iter()
-            .filter(|lane| !is_supplemental_config_lane(lane)), "validate SLDPRT history lanes", |record| record.clone_charged(ctx, "validate SLDPRT history lanes")))?;
+        ctx.with_scoped_storage("validate SLDPRT expected histories", || {
+            ctx.try_collect_retained_with(
+                native.feature_histories.iter(),
+                "validate SLDPRT expected histories",
+                |record| record.clone_charged(ctx, "validate SLDPRT expected histories"),
+            )
+        })?;
+    let (history_lanes, _lane_reservation) =
+        ctx.with_scoped_storage("validate SLDPRT history lanes", || {
+            ctx.try_collect_retained_with(
+                native
+                    .feature_input_lanes
+                    .iter()
+                    .filter(|lane| !is_supplemental_config_lane(lane)),
+                "validate SLDPRT history lanes",
+                |record| record.clone_charged(ctx, "validate SLDPRT history lanes"),
+            )
+        })?;
     crate::resolved_features::classes::bind_history_classes(
         ctx,
         &mut expected_histories,
@@ -158,7 +196,10 @@ pub(crate) fn validate_native(
             }
         }
     }
-    let (expected_lanes, _expected_lanes_reservation) = crate::native::lanes::expected_lanes_charged(ctx, &native)?;
+    let crate::native::lanes::ExpectedLanes {
+        pairs: expected_lanes,
+        storage: _expected_lanes_reservation,
+    } = crate::native::lanes::expected_lanes_charged(ctx, &native)?;
     for (lane, expected_lane) in expected_lanes {
         for (entity, expected_entity) in lane
             .sketch_entities
@@ -204,7 +245,10 @@ fn invalid_namespace(
 ) -> Result<Vec<Finding>, CodecError> {
     ctx.charge_work(0, "validate SLDPRT native namespace")?;
     let mut findings = Vec::new();
-    let message = ctx.format_retained(format_args!("invalid SolidWorks native namespace: {error}"), "format SLDPRT native finding")?;
+    let message = ctx.format_retained(
+        format_args!("invalid SolidWorks native namespace: {error}"),
+        "format SLDPRT native finding",
+    )?;
     push_finding(
         ctx,
         &mut findings,
@@ -229,7 +273,10 @@ fn copy_finding_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecErr
             )
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT native finding identity")?;
-    ctx.format_retained(format_args!("{id}"), "retain SLDPRT native finding identity")
+    ctx.format_retained(
+        format_args!("{id}"),
+        "retain SLDPRT native finding identity",
+    )
 }
 
 fn push_finding(

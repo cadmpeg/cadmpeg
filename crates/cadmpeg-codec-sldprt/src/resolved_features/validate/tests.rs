@@ -261,8 +261,21 @@ fn native_validation_route_refuses_collection_limit() {
 }
 
 #[test]
-fn native_validation_route_refuses_retained_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+fn native_validation_route_keeps_valid_record_copies_in_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let source = sldprt_with_compact_relation_pair(&triangle_body());
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    assert!(SldprtCodec
+        .validate_native(&ctx, decoded.ir())
+        .unwrap()
+        .is_empty());
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]

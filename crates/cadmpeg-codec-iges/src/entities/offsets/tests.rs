@@ -106,7 +106,7 @@ fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
         "iges offset neutral vertex slots",
         "iges offset neutral curve slots",
         "iges offset neutral edge slots",
-        "iges offset procedural curve slots",
+        "store procedural curve constructions",
         "iges offset wire edge slots",
     ] {
         assert_offset_collection_refusal(&linear, operation);
@@ -378,7 +378,8 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
 
     let source = &ir.model.curves[0];
     assert_eq!(
-        crate::test_support::with_service_context(&[], |ctx| super::source_parameter_range(ctx,
+        crate::test_support::with_service_context(&[], |ctx| super::source_parameter_range(
+            ctx,
             &ir,
             &source_id,
             source.geometry.solved().expect("solved carrier"),

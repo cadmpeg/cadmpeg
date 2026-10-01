@@ -33,7 +33,7 @@ fn native_brep_nurbs_subset_evaluation_refuses_scoped_limit() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
     );
-    policy.limits.max_materialized_bytes = 16;
+    policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
     let brep =

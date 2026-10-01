@@ -1191,7 +1191,11 @@ pub(super) fn source_meta(
     }
     Ok((
         SourceMeta::classified(
-            DialectLayers::of(classification.matched().try_clone_for_decode(ctx, "creo source dialect copy")?),
+            DialectLayers::of(
+                classification
+                    .matched()
+                    .try_clone_for_decode(ctx, "creo source dialect copy")?,
+            ),
             cadmpeg_core::text::named_entries_for_decode(ctx, "the creo container", attributes)?,
         ),
         coverage,

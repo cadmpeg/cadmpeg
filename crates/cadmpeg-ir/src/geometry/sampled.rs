@@ -201,7 +201,6 @@ impl PolygonalSurface {
         self.chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
         Ok(())
     }
-
 }
 
 impl<'de> Deserialize<'de> for PolygonalSurface {
@@ -649,7 +648,6 @@ impl PolylineCurve {
         self.chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
         Ok(())
     }
-
 }
 
 fn scale_admitted_points<'a>(

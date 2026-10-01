@@ -95,12 +95,23 @@ pub(crate) struct DesignWorkPointInput {
 }
 
 impl DesignWorkPointInput {
-    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
-        let carrier = self.carrier.as_deref().map(|carrier| {
-            ctx.charge_retained(u64_from_index(std::mem::size_of::<DesignWorkPointInputCarrier>()), operation)?;
-            ctx.charge_collection_items(1, operation)?;
-            Ok::<_, CodecError>(Box::new(carrier.try_clone_for_decode(ctx, operation)?))
-        }).transpose()?;
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let carrier = self
+            .carrier
+            .as_deref()
+            .map(|carrier| {
+                ctx.charge_retained(
+                    u64_from_index(std::mem::size_of::<DesignWorkPointInputCarrier>()),
+                    operation,
+                )?;
+                ctx.charge_collection_items(1, operation)?;
+                Ok::<_, CodecError>(Box::new(carrier.try_clone_for_decode(ctx, operation)?))
+            })
+            .transpose()?;
         Ok(Self {
             #[cfg(test)]
             clone_probe: WorkGeometryCloneProbe,
@@ -241,13 +252,25 @@ impl DesignWorkPointInputCarrierWire {
 }
 
 impl DesignWorkPointInputCarrier {
-    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         ctx.charge_work(1, operation)?;
         Ok(match self {
-            Self::EdgeRecipe { operand_id } => Self::EdgeRecipe { operand_id: ctx.copy_retained_text(operand_id, operation)? },
-            Self::VertexRecipe { recipe } => Self::VertexRecipe { recipe: recipe.try_clone_for_decode(ctx, operation)? },
-            Self::WorkPlane { selection } => Self::WorkPlane { selection: selection.try_clone_for_decode(ctx, operation)? },
-            Self::SketchPoint { selection } => Self::SketchPoint { selection: selection.try_clone_for_decode(ctx, operation)? },
+            Self::EdgeRecipe { operand_id } => Self::EdgeRecipe {
+                operand_id: ctx.copy_retained_text(operand_id, operation)?,
+            },
+            Self::VertexRecipe { recipe } => Self::VertexRecipe {
+                recipe: recipe.try_clone_for_decode(ctx, operation)?,
+            },
+            Self::WorkPlane { selection } => Self::WorkPlane {
+                selection: selection.try_clone_for_decode(ctx, operation)?,
+            },
+            Self::SketchPoint { selection } => Self::SketchPoint {
+                selection: selection.try_clone_for_decode(ctx, operation)?,
+            },
         })
     }
 
@@ -322,7 +345,11 @@ pub(crate) struct DesignVertexRecipe {
 }
 
 impl DesignVertexRecipe {
-    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             #[cfg(test)]
             clone_probe: WorkGeometryCloneProbe,
@@ -333,7 +360,11 @@ impl DesignVertexRecipe {
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: ctx.copy_retained_text(&self.recipe_id, operation)?,
             recipe_prefix_bytes: ctx.copy_retained_slice(&self.recipe_prefix_bytes, operation)?,
-            recipe_references: ctx.try_collect_retained_with(&self.recipe_references, operation, |value| value.try_clone_for_decode(ctx, operation))?,
+            recipe_references: ctx.try_collect_retained_with(
+                &self.recipe_references,
+                operation,
+                |value| value.try_clone_for_decode(ctx, operation),
+            )?,
             recipe_program_offset: self.recipe_program_offset,
             recipe_program: ctx.copy_retained_slice(&self.recipe_program, operation)?,
             resolution: self.resolution,
@@ -743,7 +774,11 @@ pub(crate) struct DesignWorkPointPlaneSelection {
 }
 
 impl DesignWorkPointPlaneSelection {
-    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             class_tag: self.class_tag.try_clone_for_decode(ctx, operation)?,
             asset_id: self.asset_id.try_clone_for_decode(ctx, operation)?,
@@ -877,7 +912,11 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
 }
 
 impl DesignWorkPointSketchPointSelection {
-    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             class_tag: self.class_tag.try_clone_for_decode(ctx, operation)?,
             asset_id: self.asset_id.try_clone_for_decode(ctx, operation)?,

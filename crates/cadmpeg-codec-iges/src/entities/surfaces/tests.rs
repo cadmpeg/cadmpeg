@@ -260,7 +260,7 @@ fn surface_projectors_refuse_procedural_attachment_slots() {
         nurbs_surface_file(),
         offset_plane_file(1.0, 2.0),
     ] {
-        assert_surface_collection_refusal(&bytes, "iges procedural surface slots");
+        assert_surface_collection_refusal(&bytes, "store procedural surface constructions");
     }
 }
 

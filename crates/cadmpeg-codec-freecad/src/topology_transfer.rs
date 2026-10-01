@@ -1343,19 +1343,23 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 id: loop_id.try_clone_for_decode(self.ctx, "FreeCAD loop record identity")?,
                 face: face_id.try_clone_for_decode(self.ctx, "FreeCAD loop face identity")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(self.ctx, coedge_ids, Vec::new()).map_err(cadmpeg_core::CodecError::from)?.map_err(
-                        |error| {
-                            crate::resource::malformed_charged(
-                                self.ctx,
-                                format_args!(
-                                    "FCStd face {} loop {} has invalid ring: {error}",
-                                    face_id,
-                                    loop_index + 1,
-                                ),
-                                "FreeCAD face ring diagnostic",
-                            )
-                        },
-                    )?,
+                    cadmpeg_ir::topology::LoopRing::new_for_decode(
+                        self.ctx,
+                        coedge_ids,
+                        Vec::new(),
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .map_err(|error| {
+                        crate::resource::malformed_charged(
+                            self.ctx,
+                            format_args!(
+                                "FCStd face {} loop {} has invalid ring: {error}",
+                                face_id,
+                                loop_index + 1,
+                            ),
+                            "FreeCAD face ring diagnostic",
+                        )
+                    })?,
                 ),
             });
             self.bind_topology(
@@ -1807,7 +1811,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let source_object = base
                 .source_object
                 .as_ref()
-                .map(|source| (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association"))
+                .map(|source| {
+                    (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association")
+                })
                 .transpose()?;
             self.ctx
                 .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
@@ -1874,7 +1880,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let source_object = base
                 .source_object
                 .as_ref()
-                .map(|source| (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association"))
+                .map(|source| {
+                    (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association")
+                })
                 .transpose()?;
             let has_procedural_construction =
                 ir.model.procedural_surfaces.iter().any(|surface| {
@@ -1889,10 +1897,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             });
             if has_procedural_construction {
                 ir.model
-                    .add_procedural_surface_for_decode(self.ctx, &id.try_clone_for_decode(
+                    .add_procedural_surface_for_decode(
+                        self.ctx,
+                        &id.try_clone_for_decode(
                             self.ctx,
                             "FreeCAD procedural surface owner identity",
-                        )?, ProceduralSurface::new(
+                        )?,
+                        ProceduralSurface::new(
                             ProceduralSurfaceId::compose(
                                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
                                 id.key().colon(cadmpeg_ir::identity_key!("construction")),
@@ -1902,7 +1913,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                                 transform,
                             },
                             None,
-                        ))?
+                        ),
+                    )?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
         }
@@ -2403,7 +2415,10 @@ fn transform_curve(
         cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
     })?;
     let basis = solved.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedCurveGeometry>()), "FreeCAD curve placement basis")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedCurveGeometry>()),
+        "FreeCAD curve placement basis",
+    )?;
     Ok(CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2420,7 +2435,10 @@ fn transform_surface(
         cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
     })?;
     let basis = solved.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedSurfaceGeometry>()), "FreeCAD surface placement basis")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedSurfaceGeometry>()),
+        "FreeCAD surface placement basis",
+    )?;
     Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
             .map_err(cadmpeg_core::CodecError::malformed)?,

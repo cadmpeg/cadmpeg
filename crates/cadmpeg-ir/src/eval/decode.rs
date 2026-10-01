@@ -3,7 +3,9 @@
 
 use std::cell::RefCell;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, DepthGuard, ResourceLimit, ScopedReservation,
+};
 
 use super::{CurveDerivative, EvaluationFailure};
 use crate::features::{FinitePoint3, FiniteVector3};
@@ -100,7 +102,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         value: T,
         operation: &'static str,
     ) -> Option<Vec<T>> {
-        if self.refusal.borrow().is_some() { return None; }
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         let mut values = Vec::new();
         self.reserve(&mut values, count, operation)?;
         values.extend(std::iter::repeat_with(|| value.clone()).take(count));
@@ -112,7 +116,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         values: impl IntoIterator<Item = Option<T>>,
         operation: &'static str,
     ) -> Option<Vec<T>> {
-        if self.refusal.borrow().is_some() { return None; }
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         let mut output = Vec::new();
         for value in values {
             self.reserve(&mut output, 1, operation)?;
@@ -127,17 +133,30 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
             *storage = Some(self.admit(self.context.reserve_scoped_limit(0, operation))?);
         }
         let reservation = storage.as_mut()?;
-        self.admit(self.context.reserve_scoped_vec_limit(reservation, values, count, operation))
+        self.admit(
+            self.context
+                .reserve_scoped_vec_limit(reservation, values, count, operation),
+        )
     }
 
     pub(super) fn work(&self, count: usize, operation: &'static str) -> Option<()> {
-        if self.refusal.borrow().is_some() { return None; }
-        self.admit(self.context.charge_work_limit(u64_from_index(count), operation))
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
+        self.admit(
+            self.context
+                .charge_work_limit(u64_from_index(count), operation),
+        )
     }
 
     pub(super) fn enter(&self) -> Option<DepthGuard<'_>> {
-        if self.refusal.borrow().is_some() { return None; }
-        self.admit(self.context.enter_nested_limit("geometry evaluation nesting"))
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
+        self.admit(
+            self.context
+                .enter_nested_limit("geometry evaluation nesting"),
+        )
     }
 
     pub(super) fn finish<T>(self, value: T) -> Result<T, ResourceLimit> {
@@ -154,6 +173,15 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         result: Result<T, EvaluationFailure<R>>,
     ) -> Result<Result<T, EvaluationFailure<R>>, ResourceLimit> {
         outer_refusal(self.finish(result)?)
+    }
+}
+
+impl<R> From<cadmpeg_core::CodecError> for EvaluationFailure<R> {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
+            _ => Self::NoValue,
+        }
     }
 }
 
@@ -271,19 +299,33 @@ pub struct NurbsPointEvaluator<'curve, 'ctx> {
 
 impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
     /// Admit the basis storage before allocating it.
-    pub fn new(ctx: &'ctx DecodeContext<'_>, curve: &'curve NurbsCurve) -> Result<Self, ResourceLimit> {
+    pub fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        curve: &'curve NurbsCurve,
+    ) -> Result<Self, ResourceLimit> {
         let support = curve.knots().len() - curve.pole_count();
         let (basis, storage) = if support <= 2 {
-            (SupportValues::Inline { values: [0.0; 2], len: support }, None)
+            (
+                SupportValues::Inline {
+                    values: [0.0; 2],
+                    len: support,
+                },
+                None,
+            )
         } else {
             {
-            let mut basis = Vec::new();
-            let storage = ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
-            basis.extend(std::iter::repeat_n(0.0, support));
-            (SupportValues::Heap(basis), Some(storage))
+                let mut basis = Vec::new();
+                let storage =
+                    ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
+                basis.extend(std::iter::repeat_n(0.0, support));
+                (SupportValues::Heap(basis), Some(storage))
             }
         };
-        Ok(Self { curve, basis, _storage: storage })
+        Ok(Self {
+            curve,
+            basis,
+            _storage: storage,
+        })
     }
 
     /// Evaluate in the knot domain without allocating another basis or pole window.
@@ -350,7 +392,9 @@ mod tests;
 
 /// Evaluate a borrowed solved curve with caller-owned scratch admission.
 pub fn curve_point_solved_for_decode(
-    ctx: &DecodeContext<'_>, geometry: &SolvedCurveGeometry, parameter: f64,
+    ctx: &DecodeContext<'_>,
+    geometry: &SolvedCurveGeometry,
+    parameter: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
     let scratch = Scratch::new(ctx);
     let result = super::curve_point_evaluation(&scratch, geometry, parameter);
@@ -359,7 +403,10 @@ pub fn curve_point_solved_for_decode(
 
 /// Evaluate a borrowed solved surface with caller-owned scratch admission.
 pub fn surface_point_solved_for_decode(
-    ctx: &DecodeContext<'_>, geometry: &SolvedSurfaceGeometry, u: f64, v: f64,
+    ctx: &DecodeContext<'_>,
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
     let scratch = Scratch::new(ctx);
     let result = super::surface_point_evaluation(&scratch, geometry, u, v);
@@ -367,8 +414,16 @@ pub fn surface_point_solved_for_decode(
 }
 
 /// Evaluate a NURBS surface with scoped caller storage.
-pub fn nurbs_surface_point_for_decode(ctx: &DecodeContext<'_>, surface: &crate::geometry::nurbs::NurbsSurface, u: f64, v: f64) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
+pub fn nurbs_surface_point_for_decode(
+    ctx: &DecodeContext<'_>,
+    surface: &crate::geometry::nurbs::NurbsSurface,
+    u: f64,
+    v: f64,
+) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
     let scratch = Scratch::new(ctx);
-    let result = super::nurbs_surface_local(&scratch, surface, u, v).map(|local| { let [x,y,z] = local.point; FinitePoint3::from_coordinates(x,y,z) });
+    let result = super::nurbs_surface_local(&scratch, surface, u, v).map(|local| {
+        let [point_x, point_y, point_z] = local.point;
+        FinitePoint3::from_coordinates(point_x, point_y, point_z)
+    });
     scratch.finish_evaluation(result)
 }

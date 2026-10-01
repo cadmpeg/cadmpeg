@@ -720,104 +720,112 @@ pub(crate) fn project_spatial_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let geometry =
-            if let Some([start, end]) = spline_segments
-                .get(&(scope, curve.record_index))
-                .copied()
-                .flatten()
-            {
-                let Ok(geometry) =
-                    SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                        start: transform_point(placement, &start),
-                        end: transform_point(placement, &end),
-                    })
-                else {
-                    continue;
-                };
-                geometry
-            } else {
-                let Some(source) = curve.geometry.as_ref() else {
-                    continue;
-                };
-                match source {
-                    SketchCurveGeometry::Line { start, end, .. } => {
-                        let Ok(geometry) = SpatialSketchGeometry::try_from(
-                            SpatialSketchGeometryDefinition::Line {
-                                start: transform_point(placement, start.as_raw()),
-                                end: transform_point(placement, end.as_raw()),
-                            },
-                        ) else {
-                            continue;
-                        };
-                        geometry
-                    }
-                    SketchCurveGeometry::Arc {
-                        center,
-                        normal,
-                        reference_direction,
-                        radius,
-                        start_angle,
-                        end_angle,
-                    } => {
-                        let center = transform_point(placement, center.as_raw());
-                        let normal = transform_vector(placement, normal.as_raw());
-                        let reference_direction =
-                            transform_vector(placement, reference_direction.as_raw());
-                        let radius = Length::from(*radius);
-                        let definition = if (end_angle.get() - start_angle.get()).abs()
-                            >= std::f64::consts::TAU
-                                - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
-                        {
-                            SpatialSketchGeometryDefinition::Circle {
-                                center,
-                                normal,
-                                reference_direction,
-                                radius,
-                            }
-                        } else {
-                            SpatialSketchGeometryDefinition::Arc {
-                                center,
-                                normal,
-                                reference_direction,
-                                radius,
-                                start_angle: *start_angle,
-                                end_angle: *end_angle,
-                            }
-                        };
-                        let Ok(geometry) = SpatialSketchGeometry::try_from(definition) else {
-                            continue;
-                        };
-                        geometry
-                    }
-                    SketchCurveGeometry::Nurbs { geometry, .. } => {
-                        let poles = geometry.poles();
-                        let transformed_poles = ctx.collect_vec(
-                            poles
-                                .points()
-                                .map(|point| transform_point(placement, point)),
-                            "f3d spatial sketch nurbs poles",
-                        )?;
-                        let weights = poles
-                            .weights()
-                            .next()
-                            .is_some()
-                            .then(|| {
-                                ctx.collect_vec(poles.weights(), "f3d spatial sketch nurbs weights")
-                            })
-                            .transpose()?;
-                        let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, geometry.degree(), geometry.knots_copy(ctx)?, transformed_poles, weights, false)??;
-                        let Ok(curve3d) = curve3d.try_into() else {
-                            continue;
-                        };
-                        let Ok(geometry) = SpatialSketchGeometry::try_from(
-                            SpatialSketchGeometryDefinition::Nurbs { curve: curve3d },
-                        ) else {
-                            continue;
-                        };
-                        geometry
-                    }
-                }
+        let geometry = if let Some([start, end]) = spline_segments
+            .get(&(scope, curve.record_index))
+            .copied()
+            .flatten()
+        {
+            let Ok(geometry) =
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                    start: transform_point(placement, &start),
+                    end: transform_point(placement, &end),
+                })
+            else {
+                continue;
             };
+            geometry
+        } else {
+            let Some(source) = curve.geometry.as_ref() else {
+                continue;
+            };
+            match source {
+                SketchCurveGeometry::Line { start, end, .. } => {
+                    let Ok(geometry) =
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                            start: transform_point(placement, start.as_raw()),
+                            end: transform_point(placement, end.as_raw()),
+                        })
+                    else {
+                        continue;
+                    };
+                    geometry
+                }
+                SketchCurveGeometry::Arc {
+                    center,
+                    normal,
+                    reference_direction,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } => {
+                    let center = transform_point(placement, center.as_raw());
+                    let normal = transform_vector(placement, normal.as_raw());
+                    let reference_direction =
+                        transform_vector(placement, reference_direction.as_raw());
+                    let radius = Length::from(*radius);
+                    let definition = if (end_angle.get() - start_angle.get()).abs()
+                        >= std::f64::consts::TAU
+                            - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
+                    {
+                        SpatialSketchGeometryDefinition::Circle {
+                            center,
+                            normal,
+                            reference_direction,
+                            radius,
+                        }
+                    } else {
+                        SpatialSketchGeometryDefinition::Arc {
+                            center,
+                            normal,
+                            reference_direction,
+                            radius,
+                            start_angle: *start_angle,
+                            end_angle: *end_angle,
+                        }
+                    };
+                    let Ok(geometry) = SpatialSketchGeometry::try_from(definition) else {
+                        continue;
+                    };
+                    geometry
+                }
+                SketchCurveGeometry::Nurbs { geometry, .. } => {
+                    let poles = geometry.poles();
+                    let transformed_poles = ctx.collect_vec(
+                        poles
+                            .points()
+                            .map(|point| transform_point(placement, point)),
+                        "f3d spatial sketch nurbs poles",
+                    )?;
+                    let weights = poles
+                        .weights()
+                        .next()
+                        .is_some()
+                        .then(|| {
+                            ctx.collect_vec(poles.weights(), "f3d spatial sketch nurbs weights")
+                        })
+                        .transpose()?;
+                    let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+                        ctx,
+                        geometry.degree(),
+                        geometry.knots_copy(ctx)?,
+                        transformed_poles,
+                        weights,
+                        false,
+                    )??;
+                    let Ok(curve3d) = curve3d.try_into() else {
+                        continue;
+                    };
+                    let Ok(geometry) =
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
+                            curve: curve3d,
+                        })
+                    else {
+                        continue;
+                    };
+                    geometry
+                }
+            }
+        };
         let sketch = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
         let native_ref =
             ctx.copy_retained_text(&curve.id, "f3d spatial sketch curve native reference")?;

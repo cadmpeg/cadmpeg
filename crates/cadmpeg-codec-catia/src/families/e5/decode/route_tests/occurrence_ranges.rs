@@ -55,7 +55,9 @@ fn e5_boundary_nurbs_cache_refuses_before_copy() {
         )
         .expect("valid linear NURBS"),
     ));
-    let refused = crate::test_support::with_collection_limit(0, |ctx| (&curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy"));
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        curve.try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")
+    });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_e5_boundary_curve_copy")
@@ -138,9 +140,11 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
     .expect("service budget admits context")
     .expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
-    let (cached, cached_range) = crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
-        .expect("evaluation resources")
-        .expect("wide exact carrier cache");
+    let (cached, cached_range) = crate::test_support::with_service_context(|ctx| {
+        e5_occurrence_intersection_cache(ctx, &sides)
+    })
+    .expect("evaluation resources")
+    .expect("wide exact carrier cache");
     assert_eq!(cached, &line);
     assert_eq!(cached_range, range);
 }
@@ -266,9 +270,11 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
             curve: Some((nurbs, [100.0, 110.0])),
         },
     ];
-    let (cache, range) = crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
-        .expect("evaluation resources")
-        .expect("analytic cache");
+    let (cache, range) = crate::test_support::with_service_context(|ctx| {
+        e5_occurrence_intersection_cache(ctx, &sides)
+    })
+    .expect("evaluation resources")
+    .expect("analytic cache");
     assert_eq!(cache, &line);
     assert_eq!(range, [0.0, 1.0]);
 
@@ -284,9 +290,13 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         )),
         [0.0, 1.0],
     ));
-    assert!(crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
+    assert!(
+        crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(
+            ctx, &sides
+        ))
         .expect("evaluation resources")
-        .is_none());
+        .is_none()
+    );
 
     let left_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -311,9 +321,11 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         right_circle,
         [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
     ));
-    let (cache, range) = crate::test_support::with_service_context(|ctx| e5_occurrence_intersection_cache(ctx, &sides))
-        .expect("evaluation resources")
-        .expect("frame-gauged circle cache");
+    let (cache, range) = crate::test_support::with_service_context(|ctx| {
+        e5_occurrence_intersection_cache(ctx, &sides)
+    })
+    .expect("evaluation resources")
+    .expect("frame-gauged circle cache");
     assert_eq!(cache, &left_circle);
     assert_eq!(range, [0.0, std::f64::consts::PI]);
 }

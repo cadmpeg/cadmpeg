@@ -166,7 +166,8 @@ fn composite_point_adjacency_valid(
             let Some(curve_id) = curve_carriers.get(&child_sequences[position - 1]) else {
                 return Ok(false);
             };
-            let Some((_, end)) = curve_endpoints(ctx, ir, curve_id, index, context.tolerance)? else {
+            let Some((_, end)) = curve_endpoints(ctx, ir, curve_id, index, context.tolerance)?
+            else {
                 return Ok(false);
             };
             if !close_with_tolerance(end.get(), point, Some(context.tolerance)) {
@@ -178,7 +179,8 @@ fn composite_point_adjacency_valid(
             let Some(curve_id) = curve_carriers.get(&child_sequences[position + 1]) else {
                 return Ok(false);
             };
-            let Some((start, _)) = curve_endpoints(ctx, ir, curve_id, index, context.tolerance)? else {
+            let Some((start, _)) = curve_endpoints(ctx, ir, curve_id, index, context.tolerance)?
+            else {
                 return Ok(false);
             };
             if !close_with_tolerance(point, start.get(), Some(context.tolerance)) {
@@ -431,13 +433,15 @@ fn select_composite_edge(
             ) else {
                 continue;
             };
-            let Some(evaluated_start) =
-                finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[0])?)?
+            let Some(evaluated_start) = finite_or_refusal(
+                cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[0])?,
+            )?
             else {
                 continue;
             };
-            let Some(evaluated_end) =
-                finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[1])?)?
+            let Some(evaluated_end) = finite_or_refusal(
+                cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[1])?,
+            )?
             else {
                 continue;
             };
@@ -454,11 +458,20 @@ fn select_composite_edge(
             first = Some(edge);
         }
     }
-    first.filter(|_| agreement).map(|edge| Ok(CompositeEdge {
-        start: edge.start.try_clone_for_decode(ctx, "iges composite endpoint identity")?,
-        end: edge.end.try_clone_for_decode(ctx, "iges composite endpoint identity")?,
-        param_range: edge.param_range,
-    })).transpose()
+    first
+        .filter(|_| agreement)
+        .map(|edge| {
+            Ok(CompositeEdge {
+                start: edge
+                    .start
+                    .try_clone_for_decode(ctx, "iges composite endpoint identity")?,
+                end: edge
+                    .end
+                    .try_clone_for_decode(ctx, "iges composite endpoint identity")?,
+                param_range: edge.param_range,
+            })
+        })
+        .transpose()
 }
 
 fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
@@ -1190,9 +1203,10 @@ pub(super) enum CompositeCurveError {
 }
 
 impl From<cadmpeg_core::decode::ResourceLimit> for CompositeCurveError {
-    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self { Self::Budget(limit.into()) }
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Budget(limit.into())
+    }
 }
-
 
 impl CompositeCurveError {
     /// Return a decode resource refusal before a caller considers geometric fallback.
@@ -1649,9 +1663,11 @@ fn concatenate_nurbs<T>(
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
     let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
-        finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, t)?)
-            .map_err(CodecError::from)?
-            .ok_or(CompositeCurveError::EndpointEvaluation { t })
+        finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
+            ctx, &nurbs, t,
+        )?)
+        .map_err(CodecError::from)?
+        .ok_or(CompositeCurveError::EndpointEvaluation { t })
     };
     endpoint(0.0)?;
     endpoint(cursor)?;
@@ -1814,7 +1830,8 @@ fn bounded_nurbs_for_id(
             else {
                 return Ok(None);
             };
-            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(ctx,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                ctx,
                 nurbs,
                 interval,
                 ir,
@@ -1845,7 +1862,8 @@ fn bounded_nurbs_for_id(
             else {
                 return Ok(None);
             };
-            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(ctx,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                ctx,
                 nurbs,
                 interval,
                 ir,
@@ -1874,7 +1892,8 @@ fn bounded_nurbs_for_id(
             else {
                 return Ok(None);
             };
-            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(ctx,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                ctx,
                 nurbs,
                 interval,
                 ir,
@@ -2017,13 +2036,15 @@ fn anchor_analytic_nurbs_endpoint_poles(
     ) else {
         return Ok(None);
     };
-    let Some(evaluated_start) =
-        finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[0])?)?
+    let Some(evaluated_start) = finite_or_refusal(
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[0])?,
+    )?
     else {
         return Ok(None);
     };
-    let Some(evaluated_end) =
-        finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[1])?)?
+    let Some(evaluated_end) = finite_or_refusal(
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[1])?,
+    )?
     else {
         return Ok(None);
     };
@@ -2502,7 +2523,8 @@ fn project_with_type_130_policy(
                 )?;
             }
         }
-        if !composite_point_adjacency_valid(ctx,
+        if !composite_point_adjacency_valid(
+            ctx,
             ir,
             &index,
             &child_sequences,
@@ -2670,7 +2692,9 @@ fn project_with_type_130_policy(
             continue;
         };
         let cursor = segments.end();
-        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, 0.0)?)?
+        let Some(start) = finite_or_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, 0.0)?,
+        )?
         else {
             let edge = project_degraded_composite(
                 ir,
@@ -2693,7 +2717,9 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, cursor)?)?
+        let Some(end) = finite_or_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, cursor)?,
+        )?
         else {
             let edge = project_degraded_composite(
                 ir,
@@ -2817,7 +2843,10 @@ fn project_with_type_130_policy(
         }
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve_id, ProceduralCurve::new(
+        let _attached = ir.model.add_procedural_curve_for_decode(
+            ctx,
+            &curve_id,
+            ProceduralCurve::new(
                 crate::ids::procedural_curve_admitted(&stem, ctx)?,
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
@@ -2825,7 +2854,8 @@ fn project_with_type_130_policy(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-            ))?;
+            ),
+        )?;
         ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
         wire_edges.push(edge);
         ctx.insert_btree_set(

@@ -134,7 +134,11 @@ pub(super) fn project_endpoint_constraints(
             + digits(face_ordinal)
             + digits(constraints.len());
         let mut id_text = String::new();
-        ctx.try_reserve_retained_text(&mut id_text, id_length, "retain SLDPRT shared endpoint constraint ID")?;
+        ctx.try_reserve_retained_text(
+            &mut id_text,
+            id_length,
+            "retain SLDPRT shared endpoint constraint ID",
+        )?;
         std::fmt::Write::write_fmt(
             &mut id_text,
             format_args!(

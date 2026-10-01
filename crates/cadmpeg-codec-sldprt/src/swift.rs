@@ -353,7 +353,10 @@ pub(crate) fn annotations(
             crate::annotations::note(
                 ctx,
                 annotations,
-                ctx.format_retained(format_args!("{}", annotation.id.as_str()), "copy SWIFT provenance ID")?,
+                ctx.format_retained(
+                    format_args!("{}", annotation.id.as_str()),
+                    "copy SWIFT provenance ID",
+                )?,
                 &stream,
                 entity.offset as u64,
                 "swift_gdt_analysis",
@@ -448,7 +451,10 @@ pub(crate) fn pattern_hole_nominal_context(
         let (1, Some(diameter)) = (hole_count, diameter) else {
             continue;
         };
-        let semantic_name = ctx.format_retained(format_args!("Hole Pattern{suffix}"), "swift pattern semantic name")?;
+        let semantic_name = ctx.format_retained(
+            format_args!("Hole Pattern{suffix}"),
+            "swift pattern semantic name",
+        )?;
         if let Some(value) = candidates.get_mut(&semantic_name) {
             *value = None;
         } else {
@@ -474,7 +480,10 @@ pub(crate) fn unsupported_annotation_classes(
         let mut classes = BTreeMap::new();
         if has_root_marker(scan) {
             ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
-            let key = ctx.format_retained(format_args!("GdtAnalysisGraphUnresolved"), "retain SLDPRT unsupported SWIFT class")?;
+            let key = ctx.format_retained(
+                format_args!("GdtAnalysisGraphUnresolved"),
+                "retain SLDPRT unsupported SWIFT class",
+            )?;
             classes.insert(key, 1);
         }
         return Ok(classes);
@@ -482,7 +491,10 @@ pub(crate) fn unsupported_annotation_classes(
     let mut classes = BTreeMap::new();
     if root.annotations.references.len() != root.annotations.entities.len() {
         ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
-        let key = ctx.format_retained(format_args!("GdtAnalysisIncompleteAnnotationRoster"), "retain SLDPRT unsupported SWIFT class")?;
+        let key = ctx.format_retained(
+            format_args!("GdtAnalysisIncompleteAnnotationRoster"),
+            "retain SLDPRT unsupported SWIFT class",
+        )?;
         classes.insert(
             key,
             root.annotations
@@ -514,7 +526,10 @@ pub(crate) fn unsupported_annotation_classes(
                 })?;
             } else {
                 ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
-                let key = ctx.format_retained(format_args!("{class}"), "retain SLDPRT unsupported SWIFT class")?;
+                let key = ctx.format_retained(
+                    format_args!("{class}"),
+                    "retain SLDPRT unsupported SWIFT class",
+                )?;
                 classes.insert(key, 1);
             }
         }
@@ -548,7 +563,10 @@ fn scan_root(
         let Some(entity) = parse_unique_root(ctx, section.payload())? else {
             continue;
         };
-        let source_name = ctx.format_retained(format_args!("{}", section.source_stream().as_str()), "copy SWIFT source stream name")?;
+        let source_name = ctx.format_retained(
+            format_args!("{}", section.source_stream().as_str()),
+            "copy SWIFT source stream name",
+        )?;
         let source_name = cadmpeg_ir::StreamName::try_from(source_name)
             .map_err(|_| CodecError::malformed("invalid SWIFT source stream name"))?;
         let rendered = rendered_dimensions(ctx, section.payload())?;
@@ -780,7 +798,8 @@ fn read_objects(
         };
         references.push(Reference {
             id: ctx.format_retained(format_args!("{id}"), "copy SWIFT object reference ID")?,
-            class: ctx.format_retained(format_args!("{class}"), "copy SWIFT object reference class")?,
+            class: ctx
+                .format_retained(format_args!("{class}"), "copy SWIFT object reference class")?,
         });
     }
     let mut entities = Vec::new();
@@ -1011,7 +1030,10 @@ fn project_with_topology(
             } else if let Some(existing) = existing_system {
                 Some(copy_pmi_id(ctx, &existing.id)?)
             } else {
-                let system_id = ctx.format_retained(format_args!("{}:datum-system", id.as_str()), "format SWIFT datum-system ID")?;
+                let system_id = ctx.format_retained(
+                    format_args!("{}:datum-system", id.as_str()),
+                    "format SWIFT datum-system ID",
+                )?;
                 let system_id = PmiId::mint(system_id)
                     .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
                 let datum_system = copy_pmi_id(ctx, &system_id)?;
@@ -1085,7 +1107,10 @@ fn project_datum(
     else {
         return Ok(None);
     };
-    let identification = ctx.format_retained(format_args!("{identification}"), "copy SWIFT datum identifier")?;
+    let identification = ctx.format_retained(
+        format_args!("{identification}"),
+        "copy SWIFT datum identifier",
+    )?;
     let Some(targets) = targets(ctx, entity, feature_index, topology)? else {
         return Ok(None);
     };
@@ -1157,14 +1182,20 @@ fn project_lower_profile_tier(
     let Some(targets) = targets(ctx, entity, feature_index, topology)? else {
         return Ok(None);
     };
-    let id = ctx.format_retained(format_args!("{}:lower-tier", id.as_str()), "format SWIFT lower-tier ID")?;
+    let id = ctx.format_retained(
+        format_args!("{}:lower-tier", id.as_str()),
+        "format SWIFT lower-tier ID",
+    )?;
     let id = PmiId::mint(id).map_err(|_| CodecError::malformed("invalid SWIFT lower-tier ID"))?;
     let name = entity
         .strings
         .get("ObjectName")
         .filter(|name| !name.is_empty())
         .map(|name| {
-            ctx.format_retained(format_args!("{name} lower tier"), "format SWIFT lower-tier name")
+            ctx.format_retained(
+                format_args!("{name} lower tier"),
+                "format SWIFT lower-tier name",
+            )
         })
         .transpose()?;
     Ok(Some(PmiAnnotation {
@@ -1502,7 +1533,8 @@ fn feature_reaches(
         return Ok(false);
     }
     ctx.charge_collection_items(1, "track SWIFT reachability path")?;
-    let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT reachability path ID")?;
+    let owned_id =
+        ctx.format_retained(format_args!("{id}"), "retain SWIFT reachability path ID")?;
     visited.insert(owned_id);
     let result = (|| {
         let Some(feature) = feature_index.get(id) else {
@@ -2236,7 +2268,8 @@ fn rendered_dimensions(
         let Some(bytes) = units.checked_mul(4) else {
             continue;
         };
-        let (mut text, _text_reservation) = ctx.scoped_string(bytes, "decode SWIFT rendered literal text")?;
+        let (mut text, _text_reservation) =
+            ctx.scoped_string(bytes, "decode SWIFT rendered literal text")?;
         if decode_rendered_utf16(payload, start, units, &mut text).is_none() {
             continue;
         }
@@ -2707,11 +2740,7 @@ fn targets(
                     return Ok(false);
                 }
                 let Some(feature) = feature_index.get(source_id) else {
-                    ctx.reserve_vec(
-                        &mut targets,
-                        1,
-                        "collect SWIFT shape-aspect targets",
-                    )?;
+                    ctx.reserve_vec(&mut targets, 1, "collect SWIFT shape-aspect targets")?;
                     targets.push(shape_aspect_target(ctx, source_id)?);
                     return Ok(true);
                 };
@@ -2734,11 +2763,7 @@ fn targets(
                             .skip(first_target)
                             .any(|existing| existing == target)
                         {
-                            ctx.reserve_vec(
-                                &mut targets,
-                                1,
-                                "collect SWIFT topology targets",
-                            )?;
+                            ctx.reserve_vec(&mut targets, 1, "collect SWIFT topology targets")?;
                             targets.push(copy_pmi_target(ctx, target)?);
                         }
                     } else {
@@ -2747,11 +2772,7 @@ fn targets(
                     Ok(())
                 })?;
                 if !had_identifier || unresolved_identifier || targets.len() == first_target {
-                    ctx.reserve_vec(
-                        &mut targets,
-                        1,
-                        "collect SWIFT shape-aspect targets",
-                    )?;
+                    ctx.reserve_vec(&mut targets, 1, "collect SWIFT shape-aspect targets")?;
                     targets.push(shape_aspect_target(ctx, source_id)?);
                 }
                 Ok(true)
@@ -2764,7 +2785,8 @@ fn targets(
 }
 
 fn shape_aspect_target(ctx: &DecodeContext<'_>, source_id: &str) -> Result<PmiTarget, CodecError> {
-    let source_id = ctx.format_retained(format_args!("{source_id}"), "copy SWIFT shape-aspect ID")?;
+    let source_id =
+        ctx.format_retained(format_args!("{source_id}"), "copy SWIFT shape-aspect ID")?;
     let source_id = cadmpeg_core::text::NonBlankString::new(source_id)
         .ok_or_else(|| CodecError::malformed("invalid SWIFT shape-aspect ID"))?;
     Ok(PmiTarget::ShapeAspect { source_id })
@@ -3014,9 +3036,7 @@ fn object_name(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<Option<String
         .strings
         .get("ObjectName")
         .filter(|name| !name.is_empty())
-        .map(|name| {
-            ctx.format_retained(format_args!("{name}"), "copy SWIFT object name")
-        })
+        .map(|name| ctx.format_retained(format_args!("{name}"), "copy SWIFT object name"))
         .transpose()
 }
 
@@ -3026,7 +3046,10 @@ fn pmi_id(source_id: &str) -> Option<PmiId> {
 }
 
 fn pmi_id_charged(ctx: &DecodeContext<'_>, source_id: &str) -> Result<Option<PmiId>, CodecError> {
-    let text = ctx.format_retained(format_args!("sldprt:model:pmi#{source_id}"), "format SWIFT PMI identity")?;
+    let text = ctx.format_retained(
+        format_args!("sldprt:model:pmi#{source_id}"),
+        "format SWIFT PMI identity",
+    )?;
     Ok(PmiId::mint(text).ok())
 }
 

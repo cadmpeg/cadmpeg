@@ -139,7 +139,10 @@ impl LayerClassification {
             losses.push(loss);
         }
         for loss in &self.losses {
-            let message = ctx.format_retained(format_args!("{}", loss.message), "copy SLDPRT dialect collision loss")?;
+            let message = ctx.format_retained(
+                format_args!("{}", loss.message),
+                "copy SLDPRT dialect collision loss",
+            )?;
             ctx.reserve_vec(losses, 1, "append SLDPRT dialect losses")?;
             losses.push(SldprtLossCode::DialectLayerCollision.note(message));
         }
@@ -170,10 +173,19 @@ pub(crate) fn classify_layers(
             // A nameless section states its absence by omission: the site
             // key and the stream offset already separate two of them.
             let carrier = match section.name() {
-                Some(name) => ctx.format_retained(format_args!("{site_prefix}@{site_ordinal}:{name}+{}", stream.offset), "retain SLDPRT Parasolid carrier")?,
-                None => ctx.format_retained(format_args!("{site_prefix}@{site_ordinal}+{}", stream.offset), "retain SLDPRT Parasolid carrier")?,
+                Some(name) => ctx.format_retained(
+                    format_args!("{site_prefix}@{site_ordinal}:{name}+{}", stream.offset),
+                    "retain SLDPRT Parasolid carrier",
+                )?,
+                None => ctx.format_retained(
+                    format_args!("{site_prefix}@{site_ordinal}+{}", stream.offset),
+                    "retain SLDPRT Parasolid carrier",
+                )?,
             };
-            let schema = ctx.format_retained(format_args!("{}", stream.header.schema.value()), "retain SLDPRT Parasolid schema")?;
+            let schema = ctx.format_retained(
+                format_args!("{}", stream.header.schema.value()),
+                "retain SLDPRT Parasolid schema",
+            )?;
             let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
                 .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
             ctx.reserve_vec(&mut kernels, 1, "collect SLDPRT Parasolid layers")?;
@@ -268,7 +280,8 @@ impl SldprtDialect {
     ) -> Result<DialectMatch, CodecError> {
         let mut declared = BTreeMap::new();
         if let Some(value) = sw_version {
-            let value = ctx.format_retained(format_args!("{value}"), "retain SLDPRT dialect declaration")?;
+            let value =
+                ctx.format_retained(format_args!("{value}"), "retain SLDPRT dialect declaration")?;
             ctx.charge_collection_items(1, "index SLDPRT dialect declaration")?;
             declared.insert(cadmpeg_core::nonblank_const!(DECLARED_SW_VERSION), value);
         }
@@ -303,7 +316,10 @@ fn dialect_loss(
         Admission::Admitted | Admission::Refused => Ok(None),
         Admission::Unverified { .. } | Admission::Residual => {
             if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
-                let message = ctx.format_retained(format_args!("{message}"), "retain SLDPRT kernel dialect loss")?;
+                let message = ctx.format_retained(
+                    format_args!("{message}"),
+                    "retain SLDPRT kernel dialect loss",
+                )?;
                 return Ok(Some(SldprtLossCode::KernelDialectUnverified.note(message)));
             }
             if matched.format() != FORMAT {

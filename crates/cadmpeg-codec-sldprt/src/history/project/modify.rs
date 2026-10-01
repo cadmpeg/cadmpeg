@@ -29,7 +29,10 @@ fn property_text(
         .properties
         .get(name)
         .map(|value| {
-            ctx.format_retained(format_args!("{value}"), "retain SLDPRT edit selection reference")
+            ctx.format_retained(
+                format_args!("{value}"),
+                "retain SLDPRT edit selection reference",
+            )
         })
         .transpose()
 }

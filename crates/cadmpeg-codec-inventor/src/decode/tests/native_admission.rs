@@ -10,14 +10,13 @@ use cadmpeg_ir::topology::Color;
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
 use crate::decode::{
-    admit_assembly_placement, admit_kernel_annotation,
-    admit_kernel_unknown_fidelity, admit_untransferred_carrier, admitted_kernel_attribute,
-    admitted_loss, decode_container, index_asm_face_keys, index_face_colors,
-    index_projected_colors, insert_source_attribute, project_preview_asset,
-    project_property_set_issue, project_protein_records, project_protein_state,
-    project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
-    project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
-    project_ufrx_state, property_set_name, structural_issue,
+    admit_assembly_placement, admit_kernel_annotation, admit_kernel_unknown_fidelity,
+    admit_untransferred_carrier, admitted_kernel_attribute, admitted_loss, decode_container,
+    index_asm_face_keys, index_face_colors, index_projected_colors, insert_source_attribute,
+    project_preview_asset, project_property_set_issue, project_protein_records,
+    project_protein_state, project_root_product, project_ufrx_embedded_reference,
+    project_ufrx_external_reference, project_ufrx_model_state, project_ufrx_occurrence,
+    project_ufrx_representation, project_ufrx_state, property_set_name, structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -485,7 +484,11 @@ fn coverage_map_refuses_before_key_creation() {
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(&ctx, [(crate::coverage::RSE_DATABASES, 0)]).expect("admitted coverage key");
+    cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(
+        &ctx,
+        [(crate::coverage::RSE_DATABASES, 0)],
+    )
+    .expect("admitted coverage key");
 }
 
 #[test]
@@ -573,7 +576,12 @@ fn kernel_annotation_refuses_before_provenance_creation() {
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_kernel_annotation(&ctx, &mut cadmpeg_ir::annotations::AnnotationBuilder::new(), &record).expect("admitted annotation");
+    admit_kernel_annotation(
+        &ctx,
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &record,
+    )
+    .expect("admitted annotation");
 }
 
 #[test]

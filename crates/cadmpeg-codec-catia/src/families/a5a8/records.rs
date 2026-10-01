@@ -627,7 +627,14 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     );
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, A5FreeformCurve::DEGREE, knots, poles, None, false)?,
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+            ctx,
+            A5FreeformCurve::DEGREE,
+            knots,
+            poles,
+            None,
+            false,
+        )?,
         refusal,
         format_args!(
             "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
@@ -829,7 +836,14 @@ fn parse_a5_nurbs_curve(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, degree, knots, control_points, None, false)?,
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+            ctx,
+            degree,
+            knots,
+            control_points,
+            None,
+            false,
+        )?,
         refusal,
         format_args!("a5 NURBS curve record at byte {}", frame.pos),
     )
@@ -1051,9 +1065,15 @@ pub(in crate::families) fn rolling_ball_jet_definition(
                 ),
             }),
     );
-    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(A8FreeformCurve::DEGREE, stations, ctx)?
-    .ok()
-    .map(ProceduralSurfaceDefinition::RollingBallJet))
+    Ok(
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
+            A8FreeformCurve::DEGREE,
+            stations,
+            ctx,
+        )?
+        .ok()
+        .map(ProceduralSurfaceDefinition::RollingBallJet),
+    )
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two

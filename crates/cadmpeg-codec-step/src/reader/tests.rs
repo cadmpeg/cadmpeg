@@ -314,7 +314,7 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
             break;
         }
     }
-    assert_eq!(semantic_operation, Some("step_geometry_decode"));
+    assert_eq!(semantic_operation, Some("step_entity_index_name_storage"));
 }
 
 #[test]
@@ -1283,13 +1283,18 @@ fn opaque_target_map_refuses_collection_limit() {
     let decoded = crate::test_support::exchange::decode_inline(
         "#1=EXAMPLE_RECORD('',#2);#2=LINE('target',#3,#5);#3=CARTESIAN_POINT('',(0.,0.,0.));#4=DIRECTION('',(1.,0.,0.));#5=VECTOR('',#4,1.);",
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"target", &arena, &policy)
-        .expect("root fits collection policy");
-    let error = super::record_targets(decoded.ir(), |id| id == 2, &ctx)
-        .expect_err("curve identity needs a target map entry");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_opaque_target_records",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(b"target", &arena, &policy).expect("root");
+            super::record_targets(decoded.ir(), |id| id == 2, &ctx)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_opaque_target_records"));
@@ -1537,7 +1542,7 @@ fn dialect_match_copy_refuses_collection_limit() {
             session.into_result(cadmpeg_ir::SourceFidelity::default(), BTreeSet::new()),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "step_dialect_match_copy_items"
+                    && refusal.operation == "copy STEP dialect layer"
         )
     });
     assert!(refused, "dialect declaration copy must charge each item");
@@ -1571,7 +1576,7 @@ fn dialect_match_copy_refuses_retained_limit() {
             session.into_result(cadmpeg_ir::SourceFidelity::default(), BTreeSet::new()),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_dialect_match_copy_text"
+                    && refusal.operation == "copy STEP dialect layer"
         )
     });
     assert!(

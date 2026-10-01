@@ -42,7 +42,15 @@ fn unknown_container_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Codec
 
 #[test]
 fn container_unknown_route_refuses_collection_limit() {
-    let error = unknown_container_refusal(|policy| policy.limits.max_collection_items = 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "NX native unknown records",
+        |limit| {
+            Err::<(), _>(unknown_container_refusal(|policy| {
+                policy.limits.max_collection_items = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -53,7 +61,15 @@ fn container_unknown_route_refuses_collection_limit() {
 
 #[test]
 fn container_unknown_route_refuses_retained_limit() {
-    let error = unknown_container_refusal(|policy| policy.limits.max_retained_bytes = 2);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "NX native unknown records",
+        |limit| {
+            Err::<(), _>(unknown_container_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

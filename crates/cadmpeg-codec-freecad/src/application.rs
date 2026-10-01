@@ -29,18 +29,29 @@ pub(crate) fn matches_native(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<bool, NativeConvertError> {
-    let mut expected = wire_records(ctx, objects, properties, entries)?;
+    let (mut expected, _expected_storage) = ctx
+        .with_scoped_storage("FreeCAD expected application records", || {
+            wire_records(ctx, objects, properties, entries)
+        })?;
     expected.sort_by(|left, right| left.id.cmp(&right.id));
     let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
     for record in expected {
-        let Some(actual) = actual.next() else {
+        let (actual, _actual_storage) = ctx
+            .with_scoped_storage("FreeCAD actual application record", || {
+                actual.next().transpose()
+            })?;
+        let Some(actual) = actual else {
             return Ok(false);
         };
-        if actual? != serde_json::to_value(record)? {
+        if actual != serde_json::to_value(record)? {
             return Ok(false);
         }
     }
-    Ok(actual.next().is_none())
+    let (tail, _tail_storage) = ctx
+        .with_scoped_storage("FreeCAD actual application tail", || {
+            actual.next().transpose()
+        })?;
+    Ok(tail.is_none())
 }
 
 // These are serialization views, not independent preservation records. Payload bytes

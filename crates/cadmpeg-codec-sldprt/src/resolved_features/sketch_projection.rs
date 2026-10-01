@@ -324,11 +324,7 @@ fn project_brep(
                     id
                 };
                 if edge.curve().is_some() || edge.start != edge.end {
-                    ctx.reserve_vec(
-                        &mut profile,
-                        1,
-                        "collect SLDPRT sketch profile uses",
-                    )?;
+                    ctx.reserve_vec(&mut profile, 1, "collect SLDPRT sketch profile uses")?;
                     profile.push(SketchEntityUse {
                         entity: entity_id,
                         reversed: coedge.sense == Sense::Reversed,

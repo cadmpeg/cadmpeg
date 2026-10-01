@@ -83,7 +83,10 @@ pub(crate) fn bind_pattern_inputs(
     let mut model_by_native = HashMap::new();
     for (index, feature) in model_features.iter().enumerate() {
         if let Some(native) = feature.native_ref.as_deref() {
-            let native = ctx.format_retained(format_args!("{native}"), "retain SLDPRT pattern native identity")?;
+            let native = ctx.format_retained(
+                format_args!("{native}"),
+                "retain SLDPRT pattern native identity",
+            )?;
             reserve_feature_binding_map(ctx, &mut model_by_native, "index SLDPRT pattern inputs")?;
             model_by_native.insert(native, index);
         }
@@ -669,7 +672,11 @@ pub(crate) fn bind_pattern_inputs(
         };
         if !model_features[index].dependencies.contains(&seed) {
             let dependency = copy_feature_binding_id(ctx, &seed)?;
-            model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT pattern dependencies")?;
+            model_features[index].dependencies.insert_for_decode(
+                ctx,
+                dependency,
+                "collect SLDPRT pattern dependencies",
+            )?;
         }
         let mut edit_result = Ok(());
         model_features[index].evaluation.edit(|definition, _| {
@@ -707,7 +714,11 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(&dependency) {
-            model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT pattern dependencies")?;
+            model_features[index].dependencies.insert_for_decode(
+                ctx,
+                dependency,
+                "collect SLDPRT pattern dependencies",
+            )?;
         }
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
@@ -847,7 +858,11 @@ pub(crate) fn bind_pattern_inputs(
         for seed in &seeds {
             if !model_features[index].dependencies.contains(seed) {
                 let dependency = copy_feature_binding_id(ctx, seed)?;
-                model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT pattern dependencies")?;
+                model_features[index].dependencies.insert_for_decode(
+                    ctx,
+                    dependency,
+                    "collect SLDPRT pattern dependencies",
+                )?;
             }
         }
         let mut edit_result = Ok(());
@@ -1233,11 +1248,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             )?;
             let candidates = assignments.entry(model_index).or_default();
             if !candidates.contains(&candidate) {
-                ctx.reserve_vec(
-                    candidates,
-                    1,
-                    "collect SLDPRT sweep profile assignments",
-                )?;
+                ctx.reserve_vec(candidates, 1, "collect SLDPRT sweep profile assignments")?;
                 candidates.push(candidate);
             }
         }
@@ -1280,11 +1291,19 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 .dependencies
                 .contains(&profile_dependency)
         {
-            model_features[index].dependencies.insert_for_decode(ctx, profile_dependency, "collect SLDPRT sweep profile dependencies")?;
+            model_features[index].dependencies.insert_for_decode(
+                ctx,
+                profile_dependency,
+                "collect SLDPRT sweep profile dependencies",
+            )?;
         }
         if let Some(dependency) = path_dependency {
             if !model_features[index].dependencies.contains(&dependency) {
-                model_features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT sweep profile dependencies")?;
+                model_features[index].dependencies.insert_for_decode(
+                    ctx,
+                    dependency,
+                    "collect SLDPRT sweep profile dependencies",
+                )?;
             }
         }
     }
@@ -1295,7 +1314,10 @@ fn copy_feature_binding_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::features::FeatureId,
 ) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "retain SLDPRT feature binding identity",
+    )?;
     cadmpeg_ir::features::FeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -1303,7 +1325,10 @@ fn copy_feature_binding_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &SketchId,
 ) -> Result<SketchId, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "retain SLDPRT feature binding identity",
+    )?;
     SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -1442,11 +1467,7 @@ pub(crate) fn finalize_lane_bindings(
             if let Some(by_local) = marker_ids.get_mut(feature.as_str()) {
                 reserve_binding_map(ctx, by_local)?;
                 let candidates = by_local.entry(local_id).or_default();
-                ctx.reserve_vec(
-                    candidates,
-                    1,
-                    "collect SLDPRT scalar marker candidates",
-                )?;
+                ctx.reserve_vec(candidates, 1, "collect SLDPRT scalar marker candidates")?;
                 candidates.push((
                     copy_binding_text(ctx, entity.id())?,
                     entity.coordinates_m.is_some(),
@@ -2165,7 +2186,10 @@ fn copy_binding_text(
             )
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT scalar binding identity")?;
-    ctx.format_retained(format_args!("{text}"), "retain SLDPRT scalar binding identity")
+    ctx.format_retained(
+        format_args!("{text}"),
+        "retain SLDPRT scalar binding identity",
+    )
 }
 
 fn reserve_binding_map<K: Eq + std::hash::Hash, V>(

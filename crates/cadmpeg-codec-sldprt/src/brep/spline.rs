@@ -990,7 +990,14 @@ pub(crate) fn scan_curve_carriers(
         if knots.len() != expected {
             continue;
         }
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, descriptor.degree, knots, points, weights, false)? {
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+            ctx,
+            descriptor.degree,
+            knots,
+            points,
+            weights,
+            false,
+        )? {
             Ok(nurbs) => nurbs,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
@@ -1001,7 +1008,11 @@ pub(crate) fn scan_curve_carriers(
                     ctx,
                     format_args!("curve carrier attribute {attr}: {error}"),
                 )?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(refusals, 1, "collect Parasolid spline refusals")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    refusals,
+                    1,
+                    "collect Parasolid spline refusals",
+                )?;
                 refusals.push(note);
                 continue;
             }
@@ -1270,7 +1281,11 @@ pub(crate) fn scan_surface_carriers(
         }
         let mut weights = (descriptor.rational).then(Vec::new);
         if let Some(values) = &mut weights {
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(values, expected_poles, "decode Parasolid surface weights")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                values,
+                expected_poles,
+                "decode Parasolid surface weights",
+            )?;
         }
         for pole in control.chunks_exact(dimension) {
             if pole.iter().any(|value| !value.is_finite()) {
@@ -1325,7 +1340,11 @@ pub(crate) fn scan_surface_carriers(
         )?;
         for row in points.chunks(descriptor.v_count) {
             let mut copy = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut copy, row.len(), "partition Parasolid surface poles")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut copy,
+                row.len(),
+                "partition Parasolid surface poles",
+            )?;
             copy.extend_from_slice(row);
             pole_rows.push(copy);
         }
@@ -1350,15 +1369,21 @@ pub(crate) fn scan_surface_carriers(
         } else {
             None
         };
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,
                 u_knots,
                 descriptor.u_periodic,
-            ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.v_degree,
                 v_knots,
                 descriptor.v_periodic,
-            ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows), false)? {
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
+            false,
+        )? {
             Ok(nurbs) => nurbs,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
@@ -1369,7 +1394,11 @@ pub(crate) fn scan_surface_carriers(
                     ctx,
                     format_args!("surface carrier attribute {attr}: {error}"),
                 )?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(refusals, 1, "collect Parasolid spline refusals")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    refusals,
+                    1,
+                    "collect Parasolid spline refusals",
+                )?;
                 refusals.push(note);
                 continue;
             }
@@ -1727,12 +1756,12 @@ mod tests {
     plain_surface_boundary!(
         parasolid_surface_pole_rows_refuse_before_admission,
         127,
-        "admit Parasolid surface pole rows"
+        "IR NURBS admitted grid rows"
     );
     plain_surface_boundary!(
         parasolid_surface_poles_refuse_before_admission,
         129,
-        "admit Parasolid surface poles"
+        "IR NURBS admitted poles"
     );
     plain_surface_boundary!(
         parasolid_surface_carriers_refuse_before_insertion,
@@ -1755,13 +1784,13 @@ mod tests {
         parasolid_weighted_surface_rows_refuse_before_pairing,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
         150,
-        "pair Parasolid weighted pole rows"
+        "IR NURBS paired grid rows"
     );
     surface_collection_boundary!(
         parasolid_weighted_surface_poles_refuse_before_pairing,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
         152,
-        "pair Parasolid weighted poles"
+        "IR NURBS paired poles"
     );
 
     #[test]

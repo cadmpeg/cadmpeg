@@ -35,12 +35,16 @@ pub(super) enum FeatureBodySelection<'ctx> {
 
 pub(super) fn local_body_selection(
     ctx: &DecodeContext<'_>,
-    bodies: Vec<String>,
+    bodies: &[String],
     native: String,
 ) -> Result<BodySelection, CodecError> {
-    let bodies = ctx.try_collect_retained_with(bodies.iter(), "NX local body selection members", |body| ctx.copy_retained_text(body, "NX local body selection identity"))?;
+    let bodies =
+        ctx.try_collect_retained_with(bodies.iter(), "NX local body selection members", |body| {
+            ctx.copy_retained_text(body, "NX local body selection identity")
+        })?;
     let native_copy = ctx.copy_retained_text(&native, "NX feature projection text")?;
-    Ok(BodySelection::local_for_decode(bodies, native_copy, ctx)?.unwrap_or(BodySelection::Native(native)))
+    Ok(BodySelection::local_for_decode(bodies, native_copy, ctx)?
+        .unwrap_or(BodySelection::Native(native)))
 }
 
 impl FeatureBodySelection<'_> {
@@ -50,15 +54,26 @@ impl FeatureBodySelection<'_> {
     ) -> Result<BodySelection, CodecError> {
         match self {
             Self::Native(native) => Ok(BodySelection::Native(native)),
-            Self::Local { bodies, native, .. } => local_body_selection(ctx, bodies, native),
+            Self::Local { bodies, native, .. } => local_body_selection(ctx, &bodies, native),
             Self::Resolved { bodies, native, .. } => {
-                if bodies.is_empty() { return Ok(BodySelection::Native(native)); }
-                let bodies = ctx.try_collect_retained_with(bodies.iter(), "NX resolved body selection members", |body| body.try_clone_for_decode(ctx, "NX resolved body selection identity"))?;
-                let bodies = match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
-                    Ok(bodies) => bodies,
-                    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => return Err(limit.into()),
-                    Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(BodySelection::Native(native)),
-                };
+                if bodies.is_empty() {
+                    return Ok(BodySelection::Native(native));
+                }
+                let bodies = ctx.try_collect_retained_with(
+                    bodies.iter(),
+                    "NX resolved body selection members",
+                    |body| body.try_clone_for_decode(ctx, "NX resolved body selection identity"),
+                )?;
+                let bodies =
+                    match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
+                        Ok(bodies) => bodies,
+                        Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
+                            return Err(limit.into())
+                        }
+                        Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {
+                            return Ok(BodySelection::Native(native))
+                        }
+                    };
                 Ok(BodySelection::Resolved { bodies, native })
             }
         }
@@ -233,7 +248,10 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
             1,
             "NX feature body resolved candidates",
         )?;
-        resolved.push(reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX resolved body identity"))?);
+        resolved.push(
+            reservation
+                .with_storage(|| body.try_clone_for_decode(ctx, "NX resolved body identity"))?,
+        );
     }
     if all_resolved {
         let mut identity_keys = Vec::new();
@@ -331,7 +349,10 @@ pub(super) fn feature_body_set_selection(
             1,
             "NX feature body set resolved candidates",
         )?;
-        resolved.push(reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX resolved body identity"))?);
+        resolved.push(
+            reservation
+                .with_storage(|| body.try_clone_for_decode(ctx, "NX resolved body identity"))?,
+        );
     }
     if all_resolved && !resolved.is_empty() {
         return FeatureBodySelection::Resolved {

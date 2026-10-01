@@ -1410,8 +1410,7 @@ pub(crate) fn xml_text_charged<'ctx>(
                 .checked_add(value.len_utf8())
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
         })?;
-        let (mut text, scope) =
-            ctx.scoped_string(length, operation)?;
+        let (mut text, scope) = ctx.scoped_string(length, operation)?;
         for value in chars() {
             text.push(value);
         }
@@ -1423,8 +1422,7 @@ pub(crate) fn xml_text_charged<'ctx>(
         let Ok(source) = std::str::from_utf8(bytes) else {
             return Ok(None);
         };
-        let (mut text, scope) =
-            ctx.scoped_string(source.len(), operation)?;
+        let (mut text, scope) = ctx.scoped_string(source.len(), operation)?;
         text.push_str(source);
         Ok(Some(EnvelopeText {
             text,

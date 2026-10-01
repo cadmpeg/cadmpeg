@@ -19,8 +19,8 @@ fn b5_annotation_admits_retained_strings_and_map_entries() {
             cadmpeg_ir::Exactness::Derived,
         )
     });
-    assert!(operations.contains("catia_b5_annotation_provenance"));
-    assert!(operations.contains("catia_b5_annotation_exactness"));
+    assert!(operations.contains("collect source provenance"));
+    assert!(operations.contains("collect source exactness entities"));
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -38,7 +38,7 @@ fn b5_annotation_admits_retained_strings_and_map_entries() {
     .expect_err("an annotation identity must fit the retained byte limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "catia_b5_annotation_id"));
+            && limit.operation == "annotation stream name"));
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn b5_derived_field_admits_both_exactness_entries() {
             "catia_b5_vertex_annotation",
         )
     });
-    assert!(operations.contains("catia_b5_vertex_annotation"));
+    assert!(operations.contains("collect source exactness entities"));
 
     let annotations = crate::test_support::with_service_context(|ctx| {
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();

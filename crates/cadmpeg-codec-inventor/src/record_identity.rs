@@ -25,7 +25,10 @@ impl RecordIdentity {
 
     /// The identity key of this record: `{segment_token}-{record_ordinal}`.
     pub(crate) fn key(&self, ctx: &DecodeContext<'_>) -> Result<IdentityKey, CodecError> {
-        let key = ctx.format_retained(format_args!("{}-{}", self.segment_token, self.record_ordinal), "Inventor record identity key")?;
+        let key = ctx.format_retained(
+            format_args!("{}-{}", self.segment_token, self.record_ordinal),
+            "Inventor record identity key",
+        )?;
         IdentityKey::try_new(key).map_err(CodecError::malformed)
     }
 }
@@ -49,9 +52,9 @@ impl<T> Located<T> {
     ) -> Self {
         Self {
             identity: RecordIdentity {
-                type_id,
                 segment_token,
                 record_ordinal,
+                type_id,
             },
             payload: value,
         }
@@ -71,10 +74,12 @@ pub(crate) fn push_record<T>(
     ctx.charge_entities(1, operation)?;
     ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
 
-    records.push(Located::new(value,
-type_id_string(type_id),
-segment_token.try_clone_for_decode(ctx, "retain Inventor PmDc record segment token")?,
-ordinal));
+    records.push(Located::new(
+        value,
+        type_id_string(type_id),
+        segment_token.try_clone_for_decode(ctx, "retain Inventor PmDc record segment token")?,
+        ordinal,
+    ));
     Ok(())
 }
 
@@ -168,12 +173,7 @@ impl<'de, T: RecordPayload + Deserialize<'de>> Deserialize<'de> for Located<T> {
         let wire = LocatedWire::<T>::deserialize(deserializer)?;
         let segment_token = IdentityKey::try_new(wire.segment_token)
             .map_err(|error| serde::de::Error::custom(format!("segment_token: {error}")))?;
-        let value = Self::new(
-            wire.value,
-            wire.type_id,
-            segment_token,
-            wire.record_ordinal,
-        );
+        let value = Self::new(wire.value, wire.type_id, segment_token, wire.record_ordinal);
         if wire.id != value.id() {
             return Err(serde::de::Error::custom(
                 "id disagrees with segment_token or record_ordinal",
@@ -201,10 +201,17 @@ mod tests {
         }
 
         let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-        let record = super::Located::new(Payload { value: 7 },
-"type".into(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-1);
+        let record = super::Located::new(
+            Payload { value: 7 },
+            "type".into(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            1,
+        );
         assert_native_limit(
             &record,
             serde_json::json!({

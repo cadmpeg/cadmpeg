@@ -472,7 +472,10 @@ fn transfer_closed_wire_loops(
                             .iter()
                             .find(|candidate| candidate.id == *curve)
                             .map(|candidate| {
-                                (&candidate.geometry).try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy")
+                                candidate.geometry.try_clone_for_decode(
+                                    admission.context(),
+                                    "catia_zero_wire_curve_copy",
+                                )
                             })
                             .transpose()?;
                         admission.context().insert_hash_map(
@@ -488,7 +491,12 @@ fn transfer_closed_wire_loops(
                     let source_geometry = source_curve_geometries
                         .get(curve)
                         .and_then(Option::as_ref)
-                        .map(|geometry| (geometry).try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy"))
+                        .map(|geometry| {
+                            (geometry).try_clone_for_decode(
+                                admission.context(),
+                                "catia_zero_wire_curve_copy",
+                            )
+                        })
                         .transpose()?;
                     let canonical_source_range = match source_geometry.as_ref() {
                         Some(geometry) => crate::nurbs::canonical_model_curve_range(
@@ -619,7 +627,10 @@ fn transfer_closed_wire_loops(
                                 )?
                                 .map(|(definition, edge_range)| {
                                     Ok::<_, cadmpeg_core::CodecError>((
-                                        (&geometry).try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy")?,
+                                        geometry.try_clone_for_decode(
+                                            admission.context(),
+                                            "catia_zero_wire_curve_copy",
+                                        )?,
                                         edge_range,
                                         Some((definition, procedural.cache_fit_tolerance)),
                                     ))
@@ -682,8 +693,10 @@ fn transfer_closed_wire_loops(
                                             .iter_mut()
                                             .find(|candidate| candidate.id == *curve)
                                         {
-                                            candidate.geometry =
-                                                (&geometry).try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy")?;
+                                            candidate.geometry = geometry.try_clone_for_decode(
+                                                admission.context(),
+                                                "catia_zero_wire_curve_copy",
+                                            )?;
                                             true
                                         } else {
                                             false
@@ -1053,7 +1066,7 @@ fn zero_entity_coverage(
             wire_counts.points,
         ),
     ] {
-        (&mut coverage).record(ctx, key, count)?;
+        coverage.record(ctx, key, count)?;
     }
     if let Some(counts) = topology_counts {
         for (key, count) in [
@@ -1090,7 +1103,7 @@ fn zero_entity_coverage(
                 counts.pcurves,
             ),
         ] {
-            (&mut coverage).record(ctx, key, count)?;
+            coverage.record(ctx, key, count)?;
         }
     }
     Ok(coverage)
@@ -1514,7 +1527,7 @@ mod tests {
         let limited = crate::test_support::with_collection_limit(0, build);
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_zero_entity_coverage")
+            if limit.operation == "decode coverage nodes")
         );
     }
 
@@ -1615,14 +1628,15 @@ mod tests {
         .expect("valid linear NURBS");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            (&geometry).try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")
+            geometry.try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_zero_wire_curve_copy")
         );
-        let service =
-            crate::test_support::with_service_context(|ctx| (&geometry).try_clone_for_decode(ctx, "catia_zero_wire_curve_copy"));
+        let service = crate::test_support::with_service_context(|ctx| {
+            geometry.try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")
+        });
         assert_eq!(service.expect("service budget"), geometry);
     }
 

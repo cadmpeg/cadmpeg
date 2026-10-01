@@ -169,43 +169,44 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
 #[test]
 fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-    let geometry = PcurveGeometry::Transformed(
-        crate::geometry::pcurve::PlacedPcurve::try_new(
-            Box::new(PcurveGeometry::Parabola(
-                crate::geometry::pcurve::ParabolaPcurve::try_new(
-                    Point2::new(1.0, 2.0),
-                    Point2::new(1.0, 0.0),
-                    Point2::new(0.0, 1.0),
-                    0.5,
-                )
-                .unwrap(),
-            )),
-            Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]]).expect("affine transform"),
-        )
-        .expect("placed pcurve"),
-    );
+        let geometry = PcurveGeometry::Transformed(
+            crate::geometry::pcurve::PlacedPcurve::try_new(
+                Box::new(PcurveGeometry::Parabola(
+                    crate::geometry::pcurve::ParabolaPcurve::try_new(
+                        Point2::new(1.0, 2.0),
+                        Point2::new(1.0, 0.0),
+                        Point2::new(0.0, 1.0),
+                        0.5,
+                    )
+                    .unwrap(),
+                )),
+                Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]])
+                    .expect("affine transform"),
+            )
+            .expect("placed pcurve"),
+        );
 
-    assert_eq!(
-        pcurve_uv(&geometry, 2.0).map(crate::units::FinitePoint2::get),
-        Ok(Point2::new(2.0, 26.0))
-    );
-    assert_eq!(
-        pcurve_tangent(&geometry, 2.0).map(crate::units::FinitePoint2::get),
-        Ok(Point2::new(-2.0, 4.0))
-    );
-    let differential = pcurve_uv_differential(
-        &super::super::decode::Scratch::new(ctx),
-        &geometry,
-        crate::scalar::FiniteReal::TWO,
-    )
-    .expect("transformed pcurve differential");
-    assert_eq!(
-        differential
-            .acceleration
-            .map(crate::units::FinitePoint2::get),
-        Some(Point2::new(0.0, 2.0))
-    );
-});
+        assert_eq!(
+            pcurve_uv(&geometry, 2.0).map(crate::units::FinitePoint2::get),
+            Ok(Point2::new(2.0, 26.0))
+        );
+        assert_eq!(
+            pcurve_tangent(&geometry, 2.0).map(crate::units::FinitePoint2::get),
+            Ok(Point2::new(-2.0, 4.0))
+        );
+        let differential = pcurve_uv_differential(
+            &super::super::decode::Scratch::new(ctx),
+            &geometry,
+            crate::scalar::FiniteReal::TWO,
+        )
+        .expect("transformed pcurve differential");
+        assert_eq!(
+            differential
+                .acceleration
+                .map(crate::units::FinitePoint2::get),
+            Some(Point2::new(0.0, 2.0))
+        );
+    });
 }
 
 #[test]

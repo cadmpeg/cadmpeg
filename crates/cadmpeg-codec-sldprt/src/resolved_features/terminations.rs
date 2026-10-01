@@ -496,9 +496,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 }
                             };
                             ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                            let reference = ctx.format_retained(format_args!(
+                            let reference = ctx.format_retained(
+                                format_args!(
                                     "sldprt:feature-input:{prefix}:{lane_key}:{reference}"
-                                ), OPERATION)?;
+                                ),
+                                OPERATION,
+                            )?;
                             return Ok(Some(TerminationVote::ToVertex { reference }));
                         }
                         compact_extrusion_to_face_at(
@@ -624,7 +627,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
             {
                 if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
                     ctx.charge_work(1, OPERATION)?;
-                    let value = ctx.format_retained(format_args!("{}", crate::history::literals::LengthLiteral(depth)), OPERATION)?;
+                    let value = ctx.format_retained(
+                        format_args!("{}", crate::history::literals::LengthLiteral(depth)),
+                        OPERATION,
+                    )?;
                     insert_termination_field(ctx, &mut feature.parameters, "D1", value, OPERATION)?;
                 }
             }
@@ -716,7 +722,10 @@ fn compact_termination_face_vote(
 ) -> Result<TerminationVote, cadmpeg_core::CodecError> {
     const OPERATION: &str = "build SLDPRT extrusion face vote";
     ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-    let reference = ctx.format_retained(format_args!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}"), OPERATION)?;
+    let reference = ctx.format_retained(
+        format_args!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}"),
+        OPERATION,
+    )?;
     for selection in &lane.surface_selections {
         let work = u64_from_index(selection.feature_ref.len())
             .checked_add(u64_from_index(feature_ref.len()))
@@ -869,8 +878,14 @@ pub(crate) fn enrich_history_combine_selections(
                         OPERATION,
                     )?;
                     Some(CombineSelection {
-                        target: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"), OPERATION)?,
-                        tools: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{tools}"), OPERATION)?,
+                        target: ctx.format_retained(
+                            format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"),
+                            OPERATION,
+                        )?,
+                        tools: ctx.format_retained(
+                            format_args!("sldprt:feature-input:body-path:{lane_key}:{tools}"),
+                            OPERATION,
+                        )?,
                         operation: operation
                             .map(|operation| copy_termination_text(ctx, operation, OPERATION))
                             .transpose()?,
@@ -1090,7 +1105,10 @@ pub(crate) fn enrich_history_sweep_paths(
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
                 ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                Some(ctx.format_retained(format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"), OPERATION)?)
+                Some(ctx.format_retained(
+                    format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"),
+                    OPERATION,
+                )?)
             } else {
                 None
             };
@@ -1438,9 +1456,12 @@ pub(crate) fn project_surface_sweep_profiles(
                     let feature_id = copy_termination_feature_id(ctx, id, OPERATION)?;
                     let local_id = component_local_ids(ctx, &components, OPERATION)?;
                     ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                    let native = ctx.format_retained(format_args!(
+                    let native = ctx.format_retained(
+                        format_args!(
                             "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
-                        ), OPERATION)?;
+                        ),
+                        OPERATION,
+                    )?;
                     let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else {
                         continue;
                     };
@@ -1540,7 +1561,9 @@ pub(crate) fn project_surface_sweep_profiles(
                 ctx.charge_work(work, OPERATION)?;
             }
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                feature
+                    .dependencies
+                    .insert_for_decode(ctx, dependency, OPERATION)?;
             }
         }
     }
@@ -1776,11 +1799,7 @@ pub(crate) fn project_compact_combine_paths(
             ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
             if let Some(feature) = feature_ids_by_native.get(native.as_str()) {
                 let feature = copy_termination_feature_id(ctx, feature, OPERATION)?;
-                ctx.reserve_vec(
-                    &mut dependencies,
-                    1,
-                    "project SLDPRT combine dependencies",
-                )?;
+                ctx.reserve_vec(&mut dependencies, 1, "project SLDPRT combine dependencies")?;
                 dependencies.push(feature);
             }
         }
@@ -1824,7 +1843,11 @@ pub(crate) fn project_compact_combine_paths(
                     continue;
                 }
             }
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut dependencies, 1, OPERATION)?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut dependencies,
+                1,
+                OPERATION,
+            )?;
             dependencies.push(dependency);
         }
         ctx.charge_work(u64_from_index(history_feature.id.len()), OPERATION)?;
@@ -1874,7 +1897,9 @@ pub(crate) fn project_compact_combine_paths(
                 ctx.charge_work(work, OPERATION)?;
             }
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                feature
+                    .dependencies
+                    .insert_for_decode(ctx, dependency, OPERATION)?;
             }
         }
         for selection in [&projection.target, &projection.tools] {

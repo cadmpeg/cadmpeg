@@ -47,7 +47,7 @@ mod collection_tests {
     fn coverage_entry_refuses_collection_and_retained_limits() {
         let key = cadmpeg_ir::report::decode::CoverageKey::new("decoded_entities");
         let collection = crate::test_support::with_collection_limit(0, |ctx| {
-            (&mut cadmpeg_ir::report::decode::Coverage::default()).record(ctx, key, 3)
+            cadmpeg_ir::report::decode::Coverage::default().record(ctx, key, 3)
         });
         assert!(
             matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -55,7 +55,7 @@ mod collection_tests {
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
         let retained = crate::test_support::with_retained_limit(0, |ctx| {
-            (&mut cadmpeg_ir::report::decode::Coverage::default()).record(ctx, key, 3)
+            cadmpeg_ir::report::decode::Coverage::default().record(ctx, key, 3)
         });
         assert!(
             matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -64,7 +64,8 @@ mod collection_tests {
         );
         let coverage = crate::test_support::with_service_context(|ctx| {
             let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-            (&mut coverage).record(ctx, key, 3)
+            coverage
+                .record(ctx, key, 3)
                 .expect("service budget admits coverage entry");
             coverage
         });
@@ -167,7 +168,9 @@ pub(crate) fn derived_annotation(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(field.len()), operation)?;
-    annotations.derived_for_decode(ctx, id, field).map_err(CodecError::from)?;
+    annotations
+        .derived_for_decode(ctx, id, field)
+        .map_err(CodecError::from)?;
     Ok(())
 }
 
@@ -186,7 +189,7 @@ mod derived_annotation_tests {
         });
         assert!(
             matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_annotation_field")
+            if limit.operation == "collect source exactness entities")
         );
         let collection = crate::test_support::with_collection_limit(0, |ctx| {
             super::derived_annotation(
@@ -199,7 +202,7 @@ mod derived_annotation_tests {
         });
         assert!(
             matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_annotation_field")
+            if limit.operation == "collect source exactness entities")
         );
         let annotations = crate::test_support::with_service_context(|ctx| {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();

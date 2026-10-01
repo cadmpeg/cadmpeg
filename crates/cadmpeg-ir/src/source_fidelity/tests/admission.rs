@@ -562,7 +562,9 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
             9,
         );
         incoming.annotations = annotations.build();
-        let error = crate::test_support::with_service_decode_context(|ctx| target.append(ctx, incoming)).unwrap_err();
+        let error =
+            crate::test_support::with_service_decode_context(|ctx| target.append(ctx, incoming))
+                .unwrap_err();
         let conflicting = id(if record_collision {
             "existing"
         } else {

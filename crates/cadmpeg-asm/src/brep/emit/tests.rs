@@ -27,7 +27,11 @@ fn body_source_stream_copy_refuses_retained_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        super::super::id(crate::asm_format!("f3d"), 1)
+            .as_str()
+            .len(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let records = [Record {
         index: 1,

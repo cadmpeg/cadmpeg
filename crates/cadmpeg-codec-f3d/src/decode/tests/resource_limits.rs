@@ -1107,7 +1107,7 @@ fn archive_member_dialect_clone_refuses_collection_limit() {
         .expect("dialect copy must refuse");
     assert!(
         matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "dialect declaration copies"),
+        if limit.operation == "copy dialect layers"),
         "{error:?}"
     );
 }

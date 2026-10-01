@@ -242,15 +242,20 @@ fn profile_and_path_constructors_propagate_scoped_index_refusals() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let sketch = SketchId::mint("test:test:sketch#one").unwrap();
     let spatial = SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap();
     let entity = SketchEntityId::mint("test:test:sketch-entity#one").unwrap();
     for limit in [
         PlanarProfileRef::sketch_profiles_for_decode(sketch.clone(), vec![0], &ctx).unwrap_err(),
-        ProfileRef::spatial_sketch_selection_for_decode(spatial, vec!["group".into()], &ctx).unwrap_err(),
+        ProfileRef::spatial_sketch_selection_for_decode(spatial, vec!["group".into()], &ctx)
+            .unwrap_err(),
         PathRef::sketch_curves_for_decode(sketch, vec![entity], &ctx).unwrap_err(),
     ] {
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        );
     }
 }

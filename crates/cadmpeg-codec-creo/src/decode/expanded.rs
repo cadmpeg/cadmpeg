@@ -490,10 +490,17 @@ mod tests {
     fn native_surface_replay_id_refuses_retained_limit() {
         let limit =
             cadmpeg_core::decode::u64_from_index("creo:allfeatur:surface_replay#4:0:0:7".len()) - 1;
-        let error = with_replay_limits(limit, 1, 1, |ctx, scan| {
-            let records = feature_surface_replay_associations(ctx, scan)?;
-            Ok(serde_json::json!(records.len()))
-        })
+        let error = with_replay_limits(
+            limit,
+            1,
+            1 + 2 * cadmpeg_core::decode::u64_from_index(
+                "creo:allfeatur:surface_replay#4:0:0:7".len(),
+            ),
+            |ctx, scan| {
+                let records = feature_surface_replay_associations(ctx, scan)?;
+                Ok(serde_json::json!(records.len()))
+            },
+        )
         .expect_err("one association ID needs full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -504,20 +511,34 @@ mod tests {
 
     #[test]
     fn native_surface_replay_row_refuses_collection_limit() {
-        let error = with_replay_limits(u64::MAX, 0, 1, |ctx, scan| {
-            let records = feature_surface_replay_associations(ctx, scan)?;
-            Ok(serde_json::json!(records.len()))
-        })
+        let error = with_replay_limits(
+            u64::MAX,
+            0,
+            1 + 2 * cadmpeg_core::decode::u64_from_index(
+                "creo:allfeatur:surface_replay#4:0:0:7".len(),
+            ),
+            |ctx, scan| {
+                let records = feature_surface_replay_associations(ctx, scan)?;
+                Ok(serde_json::json!(records.len()))
+            },
+        )
         .expect_err("one association needs an output row");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native surface replay records")
         );
-        let record = with_replay_limits(u64::MAX, 1, 1, |ctx, scan| {
-            let records = feature_surface_replay_associations(ctx, scan)?;
-            Ok(serde_json::to_value(&records[0]).expect("record JSON"))
-        })
+        let record = with_replay_limits(
+            u64::MAX,
+            1,
+            1 + 2 * cadmpeg_core::decode::u64_from_index(
+                "creo:allfeatur:surface_replay#4:0:0:7".len(),
+            ),
+            |ctx, scan| {
+                let records = feature_surface_replay_associations(ctx, scan)?;
+                Ok(serde_json::to_value(&records[0]).expect("record JSON"))
+            },
+        )
         .expect("one association record");
         assert_eq!(record["id"], "creo:allfeatur:surface_replay#4:0:0:7");
         assert_eq!(record["visible_surface_id"], 7);

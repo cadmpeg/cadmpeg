@@ -97,7 +97,7 @@ fn dimension_exists_refuses_scoped_lookup_key() {
 #[test]
 fn dimension_search_refuses_scan_work() {
     let error = refuse("search('abc','b')", &BTreeMap::new(), |policy| {
-        policy.limits.max_work_units = 1;
+        policy.limits.max_work_units = 1 + 4;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
@@ -117,7 +117,7 @@ fn dimension_extract_refuses_control_constraint_growth() {
 #[test]
 fn dimension_extract_refuses_scan_work() {
     let error = refuse("extract('abc',2,1)", &BTreeMap::new(), |policy| {
-        policy.limits.max_work_units = 1;
+        policy.limits.max_work_units = 1 + 3;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
@@ -137,7 +137,7 @@ fn dimension_extract_refuses_retained_text() {
 #[test]
 fn dimension_length_refuses_scan_work() {
     let error = refuse("string_length('abc')", &BTreeMap::new(), |policy| {
-        policy.limits.max_work_units = 1;
+        policy.limits.max_work_units = 1 + 3;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits

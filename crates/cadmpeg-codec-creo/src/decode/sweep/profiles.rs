@@ -63,12 +63,12 @@ fn sketch_geometry_endpoints(
             let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let (Some(first), Some(last)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
-                    ctx, &carrier, lower,
-                )?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
-                    ctx, &carrier, upper,
-                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &carrier, lower)?,
+                )?,
+                cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &carrier, upper)?,
+                )?,
             ) else {
                 return Ok(None);
             };
@@ -702,7 +702,8 @@ pub(in super::super) fn resolved_sketch_profiles(
                 }
                 SketchGeometryDefinition::Line { .. }
                 | SketchGeometryDefinition::Arc { .. }
-                | SketchGeometryDefinition::Circle { .. } => source_geometry.try_clone_for_decode(ctx, "creo resolved analytic profile copy")?,
+                | SketchGeometryDefinition::Circle { .. } => source_geometry
+                    .try_clone_for_decode(ctx, "creo resolved analytic profile copy")?,
                 _ => return Ok(None),
             };
             let Some(row) = ProfileEntity::new(ctx, source_geometry, entity_use.reversed)? else {
@@ -1178,12 +1179,12 @@ fn nurbs_profile_signed_area_twice(
         {
             let parameter = middle + half_width * node;
             let (Some(point), Some(tangent)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
-                    ctx, &carrier, parameter,
-                )?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_tangent_for_decode(
-                    ctx, &carrier, parameter,
-                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &carrier, parameter)?,
+                )?,
+                cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::curve_tangent_for_decode(ctx, &carrier, parameter)?,
+                )?,
             ) else {
                 return Ok(None);
             };

@@ -457,7 +457,11 @@ fn bounded_evaluable_curve<'a>(
         return Ok(None);
     }
     for parameter in parameter_interval {
-        if finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter)?)?.is_none() {
+        if finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+            ctx, geometry, parameter,
+        )?)?
+        .is_none()
+        {
             return Ok(None);
         }
     }
@@ -1756,7 +1760,10 @@ pub(super) fn project(
         });
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id, ProceduralSurface::new(
+        let _attached = ir.model.add_procedural_surface_for_decode(
+            ctx,
+            &surface_id,
+            ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(
                     &crate::ids::Stem::directory(entry.sequence),
                     ctx,
@@ -1781,7 +1788,8 @@ pub(super) fn project(
                     ])
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-            ))?;
+            ),
+        )?;
         super::push_attributed_loss(
             ctx,
             &mut losses,
@@ -1923,7 +1931,11 @@ pub(super) fn project(
                 continue;
             };
             let source_interval = source_parameter_interval(directrix_geometry, carrier_interval);
-            let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, directrix_geometry, carrier_interval[0])?)?
+            let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+                ctx,
+                directrix_geometry,
+                carrier_interval[0],
+            )?)?
             else {
                 super::push_entity_loss(
                     ctx,
@@ -2091,7 +2103,12 @@ pub(super) fn project(
                 }
             }
         };
-        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &placed_directrix, cached_interval[0])?)?
+        let Some(start) =
+            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
+                ctx,
+                &placed_directrix,
+                cached_interval[0],
+            )?)?
         else {
             super::push_entity_loss(
                 ctx,
@@ -2274,7 +2291,10 @@ pub(super) fn project(
         })?;
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id, ProceduralSurface::new(
+        let _attached = ir.model.add_procedural_surface_for_decode(
+            ctx,
+            &surface_id,
+            ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(
                     &crate::ids::Stem::directory(entry.sequence),
                     ctx,
@@ -2289,7 +2309,8 @@ pub(super) fn project(
                     ),
                 ),
                 Some(bounds),
-            ))?;
+            ),
+        )?;
         ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
@@ -2533,7 +2554,10 @@ pub(super) fn project(
             });
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id, cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+            let _attached = ir.model.add_procedural_surface_for_decode(
+                ctx,
+                &surface_id,
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
                     procedural_axis,
                     [start_angle, end_angle],
@@ -2561,7 +2585,8 @@ pub(super) fn project(
                         ),
                     ))
                 })
-                .map_err(cadmpeg_core::CodecError::malformed)?)?;
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            )?;
             ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
@@ -2768,7 +2793,6 @@ pub(super) fn project(
             false
         };
         if procedural_is_exact {
-
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             let (admitted_payload, bounds) =
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -2803,7 +2827,9 @@ pub(super) fn project(
                 ProceduralSurfaceDefinition::Revolution(admitted_payload),
                 Some(bounds),
             );
-            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id, procedural)?;
+            let _attached =
+                ir.model
+                    .add_procedural_surface_for_decode(ctx, &surface_id, procedural)?;
         }
         ctx.insert_btree_set(
             &mut decoded,
@@ -3583,7 +3609,9 @@ pub(super) fn project(
             ProceduralSurfaceDefinition::Offset(admitted_payload),
             None,
         );
-        let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id, procedural)?;
+        let _attached = ir
+            .model
+            .add_procedural_surface_for_decode(ctx, &surface_id, procedural)?;
         ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,

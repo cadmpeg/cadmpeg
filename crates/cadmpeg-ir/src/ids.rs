@@ -407,13 +407,19 @@ pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl IdentityKey {
     /// Copy owned key text under the decode budget; retain static borrowed text.
-    pub fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self(match &self.0 {
             std::borrow::Cow::Borrowed(text) => {
                 ctx.charge_work(1, operation)?;
                 std::borrow::Cow::Borrowed(*text)
             }
-            std::borrow::Cow::Owned(text) => std::borrow::Cow::Owned(ctx.copy_retained_text(text, operation)?),
+            std::borrow::Cow::Owned(text) => {
+                std::borrow::Cow::Owned(ctx.copy_retained_text(text, operation)?)
+            }
         }))
     }
 

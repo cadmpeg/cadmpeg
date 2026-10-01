@@ -431,15 +431,15 @@ fn data_block_control_form_route_refuses_collection_limit() {
 
 #[test]
 fn data_block_control_form_route_refuses_retained_limit() {
-    let error = control_form_route_refusal(|policy| {
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(
-                crate::container::entry_ref::EntryRef<'_>,
-                crate::om::IndexedSection<'_>,
-            )>() + std::mem::size_of::<Option<crate::om::control_word::ControlWord24>>()
-                + std::mem::size_of::<crate::om::control_word::ControlWord24>(),
-        );
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control form id",
+        |limit| {
+            Err::<(), _>(control_form_route_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -504,18 +504,15 @@ fn data_block_control_reference_route_refuses_collection_limit() {
 
 #[test]
 fn data_block_control_reference_route_refuses_retained_limit() {
-    let error = control_reference_route_refusal(|policy| {
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(
-                crate::container::entry_ref::EntryRef<'_>,
-                crate::om::IndexedSection<'_>,
-            )>() + 2 * std::mem::size_of::<
-                crate::om::reference_value::LocatedReference<
-                    crate::om::reference_value::DirectReference,
-                >,
-            >(),
-        );
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control reference id",
+        |limit| {
+            Err::<(), _>(control_reference_route_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -585,15 +582,15 @@ fn data_block_control_value_route_refuses_collection_limit() {
 
 #[test]
 fn data_block_control_value_route_refuses_retained_limit() {
-    let error = control_value_route_refusal(|policy| {
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(
-                crate::container::entry_ref::EntryRef<'_>,
-                crate::om::IndexedSection<'_>,
-            )>() + std::mem::size_of::<Option<crate::om::control_word::ControlWord24>>()
-                + std::mem::size_of::<crate::om::control_word::ControlWord24>(),
-        );
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control value id",
+        |limit| {
+            Err::<(), _>(control_value_route_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -930,28 +927,22 @@ fn data_block_control_index_value_target_refuses_retained_limit() {
         Some("nx:om-data-blocks-0:block#1")
     );
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(
-                    crate::container::entry_ref::EntryRef<'_>,
-                    crate::om::IndexedSection<'_>,
-                )>() + std::mem::size_of::<Option<u32>>()
-                    + std::mem::size_of::<u32>()
-                    + "nx:om-data-block-control-index-values-0:value#0".len()
-                    + "nx:om-data-blocks-0:block#0".len(),
-            );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX control index value target block",
+        |limit| {
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_retained_bytes = limit,
+                |ctx| super::data_block_control_index_values(ctx, &container),
+            )
         },
-        |ctx| {
-            let error = super::data_block_control_index_values(ctx, &container).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && limit.operation == "retain NX control index value target block"),
-                "{error:?}"
-            );
-        },
+        "{error:?}"
     );
 }
 

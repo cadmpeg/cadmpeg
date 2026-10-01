@@ -2111,7 +2111,8 @@ mod tests {
             source_id: super::FeatureSource::Id(super::FeatureSourceId::try_from(41).unwrap()),
         };
         let arena_name = "features";
-        let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+        let needed =
+            arena_name.len() + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>() + "id".len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;

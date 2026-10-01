@@ -69,7 +69,11 @@ pub(in super::super) fn link_feature_sketch_history(
         ) else {
             continue;
         };
-        feature.dependencies.insert_for_decode(ctx, sketch_feature, "creo sketch history dependencies")?;
+        feature.dependencies.insert_for_decode(
+            ctx,
+            sketch_feature,
+            "creo sketch history dependencies",
+        )?;
     }
     Ok(())
 }

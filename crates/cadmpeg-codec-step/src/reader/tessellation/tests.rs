@@ -176,20 +176,15 @@ fn tessellation_source_object_id_is_charged_before_formatting() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service)
         .expect("service admits detached source association");
-    let message =
-        "tessellation item #2 is not declared by an exact body container; mesh retained as detached";
-    let prior_bytes = 72
-        + 24
-        + 12
-        + std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>()
-        + message.len()
-        + StepLossCode::TessellationItemUndeclared.code().len()
-        + "step".len()
-        + std::mem::size_of::<cadmpeg_ir::tessellation::Tessellation>();
-    let mut policy = service;
-    policy.limits.max_retained_bytes = u64::try_from(prior_bytes + 1).unwrap();
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE, policy)
-        .expect_err("source object id exceeds the retained byte limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_tessellation_source_object_id",
+        |limit| {
+            let mut policy = service;
+            policy.limits.max_retained_bytes = limit;
+            decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_source_object_id")
     );

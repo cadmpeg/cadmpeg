@@ -1450,9 +1450,11 @@ fn design_body_member_identity_refuses_at_retained_limit() {
         "fcstd body member feature identity",
         |ctx| super::body_definition(ctx, &[&property], &feature_ids),
     );
-    crate::test_support::assert_collection_refusal_at(&[], "fcstd distinct body children", |ctx| {
-        super::body_definition(ctx, &[&property], &feature_ids)
-    });
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "validate distinct decoded members",
+        |ctx| super::body_definition(ctx, &[&property], &feature_ids),
+    );
 }
 
 #[test]
@@ -1769,7 +1771,7 @@ fn design_parameter_dependency_stages_refuse_at_collection_limits() {
         "fcstd unique qualified candidates",
         "fcstd parameter dependencies",
         "fcstd parameter dependency members",
-        "fcstd parameter distinct check",
+        "validate distinct decoded members",
         "fcstd ordinal owner groups",
         "fcstd owner ordinals",
         "fcstd known parameter identities",

@@ -596,19 +596,28 @@ fn active_site_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let body = triangle_body();
-    let stream = parasolid_with_body("partition body", "SCH_SW_33103_11000", &body);
     let source = sldprt_with_body(&body);
     let mut options = DecodeOptions {
         container_only: true,
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_retained_bytes = (stream.len() * 2) as u64 - 1;
-    let error = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &options)
-        .expect_err("active site copy must be admitted");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT active site",
+        |limit| {
+            let mut limited = options;
+            limited.policy.limits.max_retained_bytes = limit;
+            SldprtCodec
+                .decode(&mut Cursor::new(&source), &limited)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
     assert!(
         matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain SLDPRT active site"),
         "{error:?}"
@@ -928,13 +937,13 @@ fn decoded_curve_carrier_copy_refuses_work_limit() {
         .decode(&mut Cursor::new(&source), &options)
         .unwrap();
     assert!(!decoded.ir().model.curves.is_empty());
-    work_refusal_with_options(&source, options, "copy Parasolid NURBS curve");
+    work_refusal_with_options(&source, options, "copy Parasolid curve geometry");
 }
 
 #[test]
 fn decoded_curve_carrier_copy_refuses_collection_limit() {
     let source = sldprt_with_body(&crate::test_support::parasolid::nurbs_sketch_body(true));
-    collection_refusal_at(&source, "copy Parasolid curve poles");
+    collection_refusal_at(&source, "copy Parasolid curve geometry");
 }
 
 mod baseline_hashes;

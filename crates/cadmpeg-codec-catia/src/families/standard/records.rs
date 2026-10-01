@@ -371,7 +371,7 @@ pub(super) fn standard_surface_record_groups(
         while let Some(index) = current {
             ctx.push_vec(
                 &mut group,
-                table.records[index].clone(),
+                table.records[index],
                 "catia_surface_group_records",
             )?;
             current = table.successors[index];
@@ -540,7 +540,7 @@ pub(super) fn standard_surface_records(
     let mut chain = Vec::new();
     ctx.reserve_vec(&mut chain, face_count, "catia_surface_record_chain")?;
     for ordinal in 0..face_count {
-        chain.push(ordered_records[current].clone());
+        chain.push(ordered_records[current]);
         if ordinal + 1 < face_count {
             let Some(next) = successors[current] else {
                 return Ok(None);

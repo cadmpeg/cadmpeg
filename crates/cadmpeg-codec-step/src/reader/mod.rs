@@ -260,7 +260,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         opaque_offsets: BTreeSet<usize>,
     ) -> Result<AnalyzedExchange, CodecError> {
         self.ir.source = Some(SourceMeta::classified(
-            cadmpeg_core::dialect::DialectLayers::of(self.matched.try_clone_for_decode(self.ctx, "copy STEP dialect layer")?),
+            cadmpeg_core::dialect::DialectLayers::of(
+                self.matched
+                    .try_clone_for_decode(self.ctx, "copy STEP dialect layer")?,
+            ),
             self.source_attributes,
         ));
         Ok(AnalyzedExchange {
@@ -529,7 +532,8 @@ fn decode_exchange_mode(
             let unknown_id = &opaque_ids[&id];
 
             opaque_sources.push(OpaqueSourceRecord {
-                unknown_id: unknown_id.try_clone_for_decode(session.ctx, "step_opaque_source_identity")?,
+                unknown_id: unknown_id
+                    .try_clone_for_decode(session.ctx, "step_opaque_source_identity")?,
                 span: record.span.clone(),
                 links,
                 reference_work,

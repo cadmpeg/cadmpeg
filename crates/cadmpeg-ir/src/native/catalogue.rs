@@ -34,7 +34,13 @@ pub enum NotePhase {
 }
 
 /// Annotation function carried by a family row.
-pub type NoteFn<M, A, N, E> = fn(&DecodeContext<'_>, &M, &FamilyRow<M, A, N, E>, Option<&'static str>, &mut A) -> Result<(), cadmpeg_core::CodecError>;
+pub type NoteFn<M, A, N, E> = fn(
+    &DecodeContext<'_>,
+    &M,
+    &FamilyRow<M, A, N, E>,
+    Option<&'static str>,
+    &mut A,
+) -> Result<(), cadmpeg_core::CodecError>;
 
 /// Namespace-emission function carried by a family row.
 pub type EmitFn<M, A, N, E> =
@@ -81,7 +87,13 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     }
 
     /// Emits annotations for every family in one phase.
-    pub fn note_phase(&self, ctx: &DecodeContext<'_>, phase: NotePhase, model: &M, annotations: &mut A) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn note_phase(
+        &self,
+        ctx: &DecodeContext<'_>,
+        phase: NotePhase,
+        model: &M,
+        annotations: &mut A,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         for row in self.rows {
             match (&row.phase, phase) {
                 (Phase::GroupA { tag, note }, NotePhase::GroupA)

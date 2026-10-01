@@ -148,11 +148,18 @@ fn feature_parameter_map_copy_charges_each_owned_allocation_once() {
             value.to_owned(),
         )]),
     });
-    let needed = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>() + key.len() + value.len();
+    let needed = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+        + key.len()
+        + value.len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(definition.try_clone_for_decode(&ctx, OPERATION).unwrap(), definition);
-    assert!(matches!(ctx.charge_retained(1, OPERATION), Err(CodecError::ResourceLimit(limit)) if limit.used == u64::try_from(needed).unwrap()));
+    assert_eq!(
+        definition.try_clone_for_decode(&ctx, OPERATION).unwrap(),
+        definition
+    );
+    assert!(
+        matches!(ctx.charge_retained(1, OPERATION), Err(CodecError::ResourceLimit(limit)) if limit.used == u64::try_from(needed).unwrap())
+    );
 }

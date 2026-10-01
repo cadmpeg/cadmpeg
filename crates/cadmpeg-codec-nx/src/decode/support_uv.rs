@@ -359,7 +359,8 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     fit_tolerance: f64,
     lanes: &SupportUv,
 ) -> Option<SupportUv> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)
+        .expect("decode index allocation succeeds");
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -1062,7 +1063,12 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                         fully_validated = false;
                         break;
                     }
-                    let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &pcurve.geometry, *parameter)?)?
+                    let Some(uv) =
+                        finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                            ctx,
+                            &pcurve.geometry,
+                            *parameter,
+                        )?)?
                     else {
                         fully_validated = false;
                         continue;
@@ -2775,15 +2781,23 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .graph
             .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos));
+        annotations.note_for_decode(
+            ctx,
+            &pcurve_id,
+            &source.source_stream,
+            source_offset,
+            Some("INTERSECTION_PCURVE"),
+        )?;
         annotations
-            .note_for_decode(ctx, &pcurve_id, &source.source_stream, source_offset, Some("INTERSECTION_PCURVE"))?;
+            .derived_for_decode(ctx, &pcurve_id, "geometry")
+            .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived_for_decode(ctx, &pcurve_id, "geometry").map_err(cadmpeg_core::CodecError::from)?;
-        annotations
-            .derived_for_decode(ctx, &pcurve_id, "parameter_range").map_err(cadmpeg_core::CodecError::from)?;
+            .derived_for_decode(ctx, &pcurve_id, "parameter_range")
+            .map_err(cadmpeg_core::CodecError::from)?;
         if metadata.fit_tolerance().is_some() {
             annotations
-                .derived_for_decode(ctx, &pcurve_id, "fit_tolerance").map_err(cadmpeg_core::CodecError::from)?;
+                .derived_for_decode(ctx, &pcurve_id, "fit_tolerance")
+                .map_err(cadmpeg_core::CodecError::from)?;
         }
         ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx completed pcurve records")?;
         ir.model.pcurves.push(Pcurve {

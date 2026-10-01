@@ -55,23 +55,46 @@ pub(crate) struct FeatureRegenerationParents(
 
 impl FeatureRegenerationParents {
     /// Admit the nodes rebuilt when two nonempty parent tables are merged.
-    pub(crate) fn reserve_append(&self, incoming: &Self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    pub(crate) fn reserve_append(
+        &self,
+        incoming: &Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
         if !self.0.is_empty() && !incoming.0.is_empty() {
             for _edge in self.0.iter().chain(incoming.0.iter()) {
                 ctx.charge_collection_items(1, "append feature regeneration parents")?;
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(crate::features::FeatureId, crate::features::FeatureId)>()), "append feature regeneration parents")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                        crate::features::FeatureId,
+                        crate::features::FeatureId,
+                    )>()),
+                    "append feature regeneration parents",
+                )?;
             }
         }
         Ok(())
     }
 
-    pub(crate) fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut parents = BTreeMap::new();
         for (child, parent) in &self.0 {
             ctx.charge_work(1, operation)?;
             ctx.charge_collection_items(1, operation)?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(crate::features::FeatureId, crate::features::FeatureId)>()), operation)?;
-            parents.insert(child.try_clone_for_decode(ctx, operation)?, parent.try_clone_for_decode(ctx, operation)?);
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                    crate::features::FeatureId,
+                    crate::features::FeatureId,
+                )>()),
+                operation,
+            )?;
+            parents.insert(
+                child.try_clone_for_decode(ctx, operation)?,
+                parent.try_clone_for_decode(ctx, operation)?,
+            );
         }
         Ok(Self(parents))
     }
@@ -544,7 +567,10 @@ pub enum ModelRewriteError<E> {
 
 impl From<ModelRewriteError<CodecError>> for CodecError {
     fn from(error: ModelRewriteError<CodecError>) -> Self {
-        match error { ModelRewriteError::Rewrite(error) => error, ModelRewriteError::Resource(error) => error.into() }
+        match error {
+            ModelRewriteError::Rewrite(error) => error,
+            ModelRewriteError::Resource(error) => error.into(),
+        }
     }
 }
 
@@ -954,17 +980,30 @@ pub(crate) enum FeatureParentValidationError {
 
 impl From<cadmpeg_core::CodecError> for FeatureParentValidationError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
-        match error { cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit), error => Self::Admission(error.to_string()) }
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            error => Self::Admission(error.to_string()),
+        }
     }
 }
 
-pub(crate) fn validate_feature_parents(models: &[&Model]) -> Result<(), FeatureParentValidationError> {
+pub(crate) fn validate_feature_parents(
+    models: &[&Model],
+) -> Result<(), FeatureParentValidationError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
-    validate_feature_parents_for_decode(models, &ctx)?.map_err(FeatureParentValidationError::Invalid)
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    validate_feature_parents_for_decode(models, &ctx)?
+        .map_err(FeatureParentValidationError::Invalid)
 }
 
-pub(crate) fn validate_feature_parents_for_decode(models: &[&Model], ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<(), FeatureParentError>, cadmpeg_core::CodecError> {
+pub(crate) fn validate_feature_parents_for_decode(
+    models: &[&Model],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Result<(), FeatureParentError>, cadmpeg_core::CodecError> {
     use crate::features::{FeatureDefinition, FeatureOperation};
     use crate::index::{DecodeStorage, IndexStorage};
     let storage = DecodeStorage(ctx);
@@ -973,11 +1012,18 @@ pub(crate) fn validate_feature_parents_for_decode(models: &[&Model], ctx: &cadmp
     let mut features = std::collections::HashMap::new();
     for feature in models.iter().flat_map(|model| &model.features) {
         ctx.charge_work(1, "feature parent validation scan")?;
-        reservation.with_storage_limit(|| storage.entry(&mut features, &(&feature.id), "feature parent identities"))?;
+        reservation.with_storage_limit(|| {
+            storage.entry(&mut features, &(&feature.id), "feature parent identities")
+        })?;
         if features.insert(&feature.id, feature).is_some() {
             return Ok(Err(FeatureParentError {
-                owner: feature.id.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(format_args!("feature identity `{}` is repeated", feature.id), "feature parent diagnostic")?,
+                owner: feature
+                    .id
+                    .try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
+                message: ctx.format_retained(
+                    format_args!("feature identity `{}` is repeated", feature.id),
+                    "feature parent diagnostic",
+                )?,
             }));
         }
     }
@@ -990,11 +1036,19 @@ pub(crate) fn validate_feature_parents_for_decode(models: &[&Model], ctx: &cadmp
         };
         for child in children {
             ctx.charge_work(1, "feature tree parent scan")?;
-            reservation.with_storage_limit(|| storage.entry(&mut tree_parents, &child, "feature tree parent entries"))?;
+            reservation.with_storage_limit(|| {
+                storage.entry(&mut tree_parents, &child, "feature tree parent entries")
+            })?;
             if let Some(previous) = tree_parents.insert(child, &parent.id) {
                 return Ok(Err(FeatureParentError {
                     owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                    message: ctx.format_retained(format_args!("feature `{child}` has two tree parents `{previous}` and `{}`", parent.id), "feature parent diagnostic")?,
+                    message: ctx.format_retained(
+                        format_args!(
+                            "feature `{child}` has two tree parents `{previous}` and `{}`",
+                            parent.id
+                        ),
+                        "feature parent diagnostic",
+                    )?,
                 }));
             }
         }
@@ -1005,7 +1059,13 @@ pub(crate) fn validate_feature_parents_for_decode(models: &[&Model], ctx: &cadmp
         .flat_map(|model| &model.feature_regeneration_parents.0)
     {
         ctx.charge_work(1, "feature regeneration parent scan")?;
-        reservation.with_storage_limit(|| storage.entry(&mut regeneration_parents, &child, "feature regeneration parent entries"))?;
+        reservation.with_storage_limit(|| {
+            storage.entry(
+                &mut regeneration_parents,
+                &child,
+                "feature regeneration parent entries",
+            )
+        })?;
         if let Some(previous) = regeneration_parents.insert(child, parent) {
             return Ok(Err(FeatureParentError {
                 owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
@@ -1013,7 +1073,13 @@ pub(crate) fn validate_feature_parents_for_decode(models: &[&Model], ctx: &cadmp
             }));
         }
         let Some(child_feature) = features.get(child) else {
-            return Ok(Err(FeatureParentError { owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?, message: ctx.format_retained(format_args!("regeneration relation names missing child feature `{child}`"), "feature parent diagnostic")? }));
+            return Ok(Err(FeatureParentError {
+                owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
+                message: ctx.format_retained(
+                    format_args!("regeneration relation names missing child feature `{child}`"),
+                    "feature parent diagnostic",
+                )?,
+            }));
         };
         if let Some(existing) = tree_parents.get(child) {
             return Ok(Err(FeatureParentError {
@@ -1022,12 +1088,21 @@ pub(crate) fn validate_feature_parents_for_decode(models: &[&Model], ctx: &cadmp
             }));
         }
         let Some(parent_feature) = features.get(parent) else {
-            return Ok(Err(FeatureParentError { owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?, message: ctx.format_retained(format_args!("feature `{child}` names missing regeneration parent `{parent}`"), "feature parent diagnostic")? }));
+            return Ok(Err(FeatureParentError {
+                owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
+                message: ctx.format_retained(
+                    format_args!("feature `{child}` names missing regeneration parent `{parent}`"),
+                    "feature parent diagnostic",
+                )?,
+            }));
         };
         if parent_feature.ordinal >= child_feature.ordinal {
             return Ok(Err(FeatureParentError {
                 owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(format_args!("regeneration parent `{parent}` does not precede child `{child}`"), "feature parent diagnostic")?,
+                message: ctx.format_retained(
+                    format_args!("regeneration parent `{parent}` does not precede child `{child}`"),
+                    "feature parent diagnostic",
+                )?,
             }));
         }
     }
@@ -1087,39 +1162,71 @@ impl Model {
             .or_else(|| self.feature_regeneration_parents.0.get(child))
     }
 
-    fn validate_regeneration_parent<'a>(&self, child: &'a crate::features::FeatureId, parent: &'a crate::features::FeatureId, ctx: &DecodeContext<'_>) -> Result<Result<(), RegenerationParentError<'a>>, CodecError> {
+    fn validate_regeneration_parent<'a>(
+        &self,
+        child: &'a crate::features::FeatureId,
+        parent: &'a crate::features::FeatureId,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), RegenerationParentError<'a>>, CodecError> {
         const OPERATION: &str = "install decoded feature regeneration parent";
         for candidate in &self.features {
             ctx.charge_work(1, OPERATION)?;
-            if let crate::features::FeatureDefinition::Operation(crate::features::FeatureOperation::TreeNode { children, .. }) = candidate.evaluation.definition() {
-                for member in children.iter() {
+            if let crate::features::FeatureDefinition::Operation(
+                crate::features::FeatureOperation::TreeNode { children, .. },
+            ) = candidate.evaluation.definition()
+            {
+                for member in children {
                     ctx.charge_work(1, OPERATION)?;
-                    if member == child { return Ok(Err(RegenerationParentError::TreeChild(child))); }
+                    if member == child {
+                        return Ok(Err(RegenerationParentError::TreeChild(child)));
+                    }
                 }
             }
         }
         let mut child_ordinal = None;
         for feature in &self.features {
             ctx.charge_work(1, OPERATION)?;
-            if feature.id == *child { child_ordinal = Some(feature.ordinal); break; }
+            if feature.id == *child {
+                child_ordinal = Some(feature.ordinal);
+                break;
+            }
         }
-        let Some(child_ordinal) = child_ordinal else { return Ok(Err(RegenerationParentError::MissingChild(child))); };
+        let Some(child_ordinal) = child_ordinal else {
+            return Ok(Err(RegenerationParentError::MissingChild(child)));
+        };
         let mut parent_ordinal = None;
         for feature in &self.features {
             ctx.charge_work(1, OPERATION)?;
-            if feature.id == *parent { parent_ordinal = Some(feature.ordinal); break; }
+            if feature.id == *parent {
+                parent_ordinal = Some(feature.ordinal);
+                break;
+            }
         }
-        let Some(parent_ordinal) = parent_ordinal else { return Ok(Err(RegenerationParentError::MissingParent(parent))); };
-        if parent_ordinal >= child_ordinal { return Ok(Err(RegenerationParentError::NotPreceding { child, parent })); }
+        let Some(parent_ordinal) = parent_ordinal else {
+            return Ok(Err(RegenerationParentError::MissingParent(parent)));
+        };
+        if parent_ordinal >= child_ordinal {
+            return Ok(Err(RegenerationParentError::NotPreceding { child, parent }));
+        }
         Ok(Ok(()))
     }
 
     /// Set a regeneration predecessor without asserting structural tree membership.
-    pub fn set_feature_regeneration_parent(&mut self, child: crate::features::FeatureId, parent: crate::features::FeatureId) -> Result<(), FeatureRegenerationError> {
+    pub fn set_feature_regeneration_parent(
+        &mut self,
+        child: crate::features::FeatureId,
+        parent: crate::features::FeatureId,
+    ) -> Result<(), FeatureRegenerationError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy).map_err(FeatureRegenerationError::Resource)?;
-        self.set_feature_regeneration_parent_for_decode(&ctx, &child, &parent).map_err(FeatureRegenerationError::from)
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
+            .map_err(FeatureRegenerationError::Resource)?;
+        let result = self
+            .set_feature_regeneration_parent_for_decode(&ctx, &child, &parent)
+            .map_err(FeatureRegenerationError::from);
+        drop(child);
+        drop(parent);
+        result
     }
 
     /// Set a decoded regeneration predecessor with charged text and map admission.
@@ -1233,34 +1340,65 @@ impl Model {
 
     /// Attaches one procedural surface construction to its carrier.
     // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    pub fn add_procedural_surface(&mut self, owner: &SurfaceId, procedural: ProceduralSurface) -> Result<(), ProceduralAttachmentError> {
+    pub fn add_procedural_surface(
+        &mut self,
+        owner: &SurfaceId,
+        procedural: ProceduralSurface,
+    ) -> Result<(), ProceduralAttachmentError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy).map_err(ProceduralAttachmentError::Resource)?;
-        self.add_procedural_surface_for_decode(&ctx, owner, procedural).map_err(ProceduralAttachmentError::from)?.map_err(ProceduralAttachmentError::Invalid)
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
+            .map_err(ProceduralAttachmentError::Resource)?;
+        self.add_procedural_surface_for_decode(&ctx, owner, procedural)
+            .map_err(ProceduralAttachmentError::from)?
+            .map_err(ProceduralAttachmentError::Invalid)
     }
 
     /// Attach a procedural surface using the caller's retained-byte budget.
-    pub fn add_procedural_surface_for_decode(&mut self, ctx: &DecodeContext<'_>, owner: &SurfaceId, procedural: ProceduralSurface) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
+    pub fn add_procedural_surface_for_decode(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        owner: &SurfaceId,
+        procedural: ProceduralSurface,
+    ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
         for existing in &self.procedural_surfaces {
             ctx.charge_work(1, "scan procedural surface constructions")?;
             if existing.id == procedural.id {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!("procedural surface construction {} already exists", procedural.id), "procedural surface refusal")?)));
+                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    format_args!(
+                        "procedural surface construction {} already exists",
+                        procedural.id
+                    ),
+                    "procedural surface refusal",
+                )?)));
             }
         }
         let mut owner_index = None;
         for (index, carrier) in self.surfaces.iter().enumerate() {
             ctx.charge_work(1, "scan procedural surface carriers")?;
-            if &carrier.id == owner && owner_index.is_none() { owner_index = Some(index); }
-            if &carrier.id != owner && carrier.geometry.procedural_construction() == Some(&procedural.id) {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!("procedural surface construction {} already owns surface {}", procedural.id, carrier.id), "procedural surface refusal")?)));
+            if &carrier.id == owner && owner_index.is_none() {
+                owner_index = Some(index);
+            }
+            if &carrier.id != owner
+                && carrier.geometry.procedural_construction() == Some(&procedural.id)
+            {
+                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    format_args!(
+                        "procedural surface construction {} already owns surface {}",
+                        procedural.id, carrier.id
+                    ),
+                    "procedural surface refusal",
+                )?)));
             }
         }
         let Some(surface) = owner_index.and_then(|index| self.surfaces.get_mut(index)) else {
-            return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!(
-                "procedural surface {} references missing surface {owner}",
-                procedural.id
-            ), "procedural surface refusal")?)));
+            return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                format_args!(
+                    "procedural surface {} references missing surface {owner}",
+                    procedural.id
+                ),
+                "procedural surface refusal",
+            )?)));
         };
         match &surface.geometry {
             SurfaceGeometry::Procedural {
@@ -1268,20 +1406,36 @@ impl Model {
                 cache: None,
             } if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!(
+                    return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                        format_args!(
                         "direct procedural surface {owner} cannot carry a solved-cache tolerance"
-                    ), "procedural surface refusal")?)));
+                    ),
+                        "procedural surface refusal",
+                    )?)));
                 }
-                ctx.reserve_retained_vec(&mut self.procedural_surfaces, 1, "store procedural surface constructions")?;
+                ctx.reserve_retained_vec(
+                    &mut self.procedural_surfaces,
+                    1,
+                    "store procedural surface constructions",
+                )?;
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!(
+                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    format_args!(
                     "surface {owner} is already owned by procedural construction {construction}"
-                ), "procedural surface refusal")?)));
+                ),
+                    "procedural surface refusal",
+                )?)));
             }
             SurfaceGeometry::Solved(_) => {
-                let construction = procedural.id.try_clone_for_decode(ctx, "procedural surface owner identity")?;
-                ctx.reserve_retained_vec(&mut self.procedural_surfaces, 1, "store procedural surface constructions")?;
+                let construction = procedural
+                    .id
+                    .try_clone_for_decode(ctx, "procedural surface owner identity")?;
+                ctx.reserve_retained_vec(
+                    &mut self.procedural_surfaces,
+                    1,
+                    "store procedural surface constructions",
+                )?;
                 let previous = std::mem::replace(
                     &mut surface.geometry,
                     SurfaceGeometry::Procedural {
@@ -1300,38 +1454,69 @@ impl Model {
         }
         self.procedural_surfaces.push(procedural);
         Ok(Ok(()))
-        }
+    }
 
     /// Attaches one procedural curve construction to its carrier.
     // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    pub fn add_procedural_curve(&mut self, owner: &CurveId, procedural: ProceduralCurve) -> Result<(), ProceduralAttachmentError> {
+    pub fn add_procedural_curve(
+        &mut self,
+        owner: &CurveId,
+        procedural: ProceduralCurve,
+    ) -> Result<(), ProceduralAttachmentError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy).map_err(ProceduralAttachmentError::Resource)?;
-        self.add_procedural_curve_for_decode(&ctx, owner, procedural).map_err(ProceduralAttachmentError::from)?.map_err(ProceduralAttachmentError::Invalid)
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
+            .map_err(ProceduralAttachmentError::Resource)?;
+        self.add_procedural_curve_for_decode(&ctx, owner, procedural)
+            .map_err(ProceduralAttachmentError::from)?
+            .map_err(ProceduralAttachmentError::Invalid)
     }
 
     /// Attach a procedural curve using the caller's retained-byte budget.
-    pub fn add_procedural_curve_for_decode(&mut self, ctx: &DecodeContext<'_>, owner: &CurveId, procedural: ProceduralCurve) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
+    pub fn add_procedural_curve_for_decode(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        owner: &CurveId,
+        procedural: ProceduralCurve,
+    ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
         for existing in &self.procedural_curves {
             ctx.charge_work(1, "scan procedural curve constructions")?;
             if existing.id == procedural.id {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!("procedural curve construction {} already exists", procedural.id), "procedural curve refusal")?)));
+                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    format_args!(
+                        "procedural curve construction {} already exists",
+                        procedural.id
+                    ),
+                    "procedural curve refusal",
+                )?)));
             }
         }
         let mut owner_index = None;
         for (index, carrier) in self.curves.iter().enumerate() {
             ctx.charge_work(1, "scan procedural curve carriers")?;
-            if &carrier.id == owner && owner_index.is_none() { owner_index = Some(index); }
-            if &carrier.id != owner && carrier.geometry.procedural_construction() == Some(&procedural.id) {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!("procedural curve construction {} already owns curve {}", procedural.id, carrier.id), "procedural curve refusal")?)));
+            if &carrier.id == owner && owner_index.is_none() {
+                owner_index = Some(index);
+            }
+            if &carrier.id != owner
+                && carrier.geometry.procedural_construction() == Some(&procedural.id)
+            {
+                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    format_args!(
+                        "procedural curve construction {} already owns curve {}",
+                        procedural.id, carrier.id
+                    ),
+                    "procedural curve refusal",
+                )?)));
             }
         }
         let Some(curve) = owner_index.and_then(|index| self.curves.get_mut(index)) else {
-            return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!(
-                "procedural curve {} references missing curve {owner}",
-                procedural.id
-            ), "procedural curve refusal")?)));
+            return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                format_args!(
+                    "procedural curve {} references missing curve {owner}",
+                    procedural.id
+                ),
+                "procedural curve refusal",
+            )?)));
         };
         match &mut curve.geometry {
             CurveGeometry::Procedural {
@@ -1339,20 +1524,36 @@ impl Model {
                 cache: None,
             } if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!(
-                        "direct procedural curve {owner} cannot carry a solved-cache tolerance"
-                    ), "procedural curve refusal")?)));
+                    return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                        format_args!(
+                            "direct procedural curve {owner} cannot carry a solved-cache tolerance"
+                        ),
+                        "procedural curve refusal",
+                    )?)));
                 }
-                ctx.reserve_retained_vec(&mut self.procedural_curves, 1, "store procedural curve constructions")?;
+                ctx.reserve_retained_vec(
+                    &mut self.procedural_curves,
+                    1,
+                    "store procedural curve constructions",
+                )?;
             }
             CurveGeometry::Procedural { construction, .. } => {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(format_args!(
-                    "curve {owner} is already owned by procedural construction {construction}"
-                ), "procedural curve refusal")?)));
+                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    format_args!(
+                        "curve {owner} is already owned by procedural construction {construction}"
+                    ),
+                    "procedural curve refusal",
+                )?)));
             }
             CurveGeometry::Solved(_) => {
-                let construction = procedural.id.try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?;
-                ctx.reserve_retained_vec(&mut self.procedural_curves, 1, "store procedural curve constructions")?;
+                let construction = procedural
+                    .id
+                    .try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?;
+                ctx.reserve_retained_vec(
+                    &mut self.procedural_curves,
+                    1,
+                    "store procedural curve constructions",
+                )?;
                 let previous = std::mem::replace(
                     &mut curve.geometry,
                     CurveGeometry::Procedural {
@@ -1369,8 +1570,7 @@ impl Model {
         }
         self.procedural_curves.push(procedural);
         Ok(Ok(()))
-        }
-
+    }
 }
 
 /// Accept only the supported `ir_version`.

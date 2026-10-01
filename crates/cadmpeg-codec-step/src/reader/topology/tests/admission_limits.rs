@@ -679,7 +679,7 @@ fn staged_surfaces_refuse_collection_limit() {
     assert!(matches!(staged_topology_refusal(1, u64::MAX, 1),
         super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_staged_surfaces"));
+                && refusal.operation == "draft entity arena"));
 }
 
 #[test]
@@ -687,7 +687,7 @@ fn staged_regions_refuse_collection_limit() {
     assert!(matches!(staged_topology_refusal(0, u64::MAX, 0),
         super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_staged_regions"));
+                && refusal.operation == "draft entity arena"));
 }
 
 #[test]
@@ -695,7 +695,7 @@ fn staged_bodies_refuse_collection_limit() {
     assert!(matches!(staged_topology_refusal(1, u64::MAX, 0),
         super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_staged_bodies"));
+                && refusal.operation == "draft entity arena"));
 }
 
 fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {

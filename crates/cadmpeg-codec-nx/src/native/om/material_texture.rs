@@ -256,7 +256,11 @@ pub(in crate::native) fn material_texture_assets(
             byte_order,
             first_ifd_offset,
             u64_from_index(size),
-            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, payload, "retain NX material texture digest")?,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx,
+                payload,
+                "retain NX material texture digest",
+            )?,
             source_entry,
             offset,
         )

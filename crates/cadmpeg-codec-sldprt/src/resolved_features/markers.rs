@@ -218,11 +218,7 @@ pub(crate) fn spatial_sketches(
                     valid_lines = false;
                     break;
                 };
-                ctx.reserve_vec(
-                    &mut projected_lines,
-                    1,
-                    "project SLDPRT spatial lines",
-                )?;
+                ctx.reserve_vec(&mut projected_lines, 1, "project SLDPRT spatial lines")?;
                 projected_lines.push((lines.0 + offsets[0], None, geometry));
             }
             if !valid_lines {
@@ -260,7 +256,10 @@ pub(crate) fn spatial_sketches(
                 native_ref: Some(native_lane_ref),
             });
             for (index, (_, native_ref, geometry)) in projected.into_iter().enumerate() {
-                let entity_id = ctx.format_retained(format_args!("{}:entity:{index}", sketch_id.as_str()), "retain SLDPRT spatial entity identity")?;
+                let entity_id = ctx.format_retained(
+                    format_args!("{}:entity:{index}", sketch_id.as_str()),
+                    "retain SLDPRT spatial entity identity",
+                )?;
                 let Ok(entity_id) = SpatialSketchEntityId::mint(entity_id) else {
                     continue;
                 };
@@ -305,11 +304,7 @@ pub(crate) fn spatial_sketches(
             };
             let vertices = spatial_vertex_coordinates_charged(ctx, object)?;
             if vertices.len() >= 2 && vertices.len().is_multiple_of(2) {
-                ctx.reserve_vec(
-                    &mut candidates,
-                    1,
-                    "collect SLDPRT spatial line lanes",
-                )?;
+                ctx.reserve_vec(&mut candidates, 1, "collect SLDPRT spatial line lanes")?;
                 candidates.push((lane, vertices));
             }
         }
@@ -328,7 +323,10 @@ pub(crate) fn spatial_sketches(
         let mut projected = Vec::new();
         let mut valid_lines = true;
         for (index, vertices) in vertices.chunks_exact(2).enumerate() {
-            let entity_id = ctx.format_retained(format_args!("{}:entity:{index}", sketch_id.as_str()), "retain SLDPRT spatial entity identity")?;
+            let entity_id = ctx.format_retained(
+                format_args!("{}:entity:{index}", sketch_id.as_str()),
+                "retain SLDPRT spatial entity identity",
+            )?;
             let (Ok(entity_id), Ok(geometry)) = (
                 SpatialSketchEntityId::mint(entity_id),
                 SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1]),
@@ -404,7 +402,10 @@ fn spatial_sketch_id_charged(
     let value = if let Some(index) = feature_id.find(FEATURE_PREFIX) {
         let (head, tail) = feature_id.split_at(index);
         let suffix = &tail[FEATURE_PREFIX.len()..];
-        ctx.format_retained(format_args!("{head}{SKETCH_PREFIX}{suffix}"), "retain SLDPRT spatial sketch identity")?
+        ctx.format_retained(
+            format_args!("{head}{SKETCH_PREFIX}{suffix}"),
+            "retain SLDPRT spatial sketch identity",
+        )?
     } else {
         copy_spatial_text(ctx, feature_id)?
     };
@@ -1314,10 +1315,13 @@ pub(super) fn relation_bindings_scoped(
         let ordinal = u32::try_from(bindings.len()).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation bindings", u64::MAX - 1, u64::MAX)
         })?;
-        let id = ctx.format_retained(format_args!(
+        let id = ctx.format_retained(
+            format_args!(
                 "sldprt:feature-input:relation-binding#{lane_key}:{}",
                 class.offset
-            ), "retain SLDPRT relation binding identity")?;
+            ),
+            "retain SLDPRT relation binding identity",
+        )?;
         let parent = copy_reference_text(ctx, parent)?;
         let class_ref = copy_reference_text(ctx, &class.id)?;
         let scalar_ref = copy_reference_text(ctx, &scalar.id)?;

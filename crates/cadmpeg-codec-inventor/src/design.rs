@@ -572,7 +572,11 @@ pub(crate) fn project_parameters(
             dependencies.len(),
             "collect Inventor parameter dependencies",
         )?;
-        dependency_members.extend_for_decode(ctx, dependencies, "collect Inventor parameter dependencies")?;
+        dependency_members.extend_for_decode(
+            ctx,
+            dependencies,
+            "collect Inventor parameter dependencies",
+        )?;
         projected.push(DesignParameter {
             id,
             owner: None,
@@ -685,10 +689,15 @@ fn parameter_id(
         cadmpeg_core::decode::u64_from_index("inventor:design:parameter#".len() + key_len),
         "retain Inventor parameter id",
     )?;
-    { let mut copied_storage = ctx.reserve_scoped(0, "compose Inventor parameter id key")?; copied_storage.with_storage(|| Ok::<_, CodecError>(ParameterId::compose(
-        &cadmpeg_ir::identity_namespace!("inventor", "design", "parameter"),
-        parameter.identity.key(ctx)?,
-    ))) }
+    {
+        let mut copied_storage = ctx.reserve_scoped(0, "compose Inventor parameter id key")?;
+        copied_storage.with_storage(|| {
+            Ok::<_, CodecError>(ParameterId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "design", "parameter"),
+                parameter.identity.key(ctx)?,
+            ))
+        })
+    }
 }
 
 fn decimal_len(mut value: u32) -> usize {
@@ -1688,7 +1697,8 @@ mod tests {
     #[test]
     fn overflowing_unit_quotient_is_not_rendered_as_an_expression() {
         let token = cadmpeg_ir::identity_key!("segment");
-        let unit = Located::new(PmDcUnitPayload {
+        let unit = Located::new(
+            PmDcUnitPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -1700,10 +1710,17 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-0);
-        let expression = Located::new(PmDcExpressionPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            0,
+        );
+        let expression = Located::new(
+            PmDcExpressionPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -1714,9 +1731,15 @@ String::new(),
                     state: 0,
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-0);
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            0,
+        );
         let expressions = HashMap::from([((token.as_str(), 0), &expression)]);
         let units = HashMap::from([((token.as_str(), 0), &unit)]);
         let arena = DecodeArena::new();
@@ -1902,7 +1925,8 @@ String::new(),
     #[test]
     fn parameter_dependencies_refuse_collection_limit_before_distinct_members_creation() {
         let token = cadmpeg_ir::identity_key!("segment");
-        let base = Located::new(PmDcUnitPayload {
+        let base = Located::new(
+            PmDcUnitPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -1914,10 +1938,17 @@ String::new(),
                     factor: real(1.0),
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-0);
-        let unit = Located::new(PmDcUnitPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            0,
+        );
+        let unit = Located::new(
+            PmDcUnitPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -1933,10 +1964,17 @@ String::new(),
                     derived: reference(0, false),
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-1);
-        let literal = Located::new(PmDcExpressionPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            1,
+        );
+        let literal = Located::new(
+            PmDcExpressionPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -1947,10 +1985,17 @@ String::new(),
                     state: 0,
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-2);
-        let first = Located::new(PmDcParameterPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            2,
+        );
+        let first = Located::new(
+            PmDcParameterPayload {
                 save_version_major: 22,
                 header: PmDcContentHeader {
                     header_value: 0,
@@ -1969,10 +2014,17 @@ String::new(),
                 tolerance: 0,
                 terminal_value: -1,
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-3);
-        let reference_expression = Located::new(PmDcExpressionPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            3,
+        );
+        let reference_expression = Located::new(
+            PmDcExpressionPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -1981,10 +2033,17 @@ String::new(),
                     operand: reference(4, true),
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-4);
-        let second = Located::new(PmDcParameterPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            4,
+        );
+        let second = Located::new(
+            PmDcParameterPayload {
                 save_version_major: 22,
                 header: PmDcContentHeader {
                     header_value: 0,
@@ -2003,9 +2062,15 @@ String::new(),
                 tolerance: 0,
                 terminal_value: -1,
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-5);
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            5,
+        );
         let inventory = DesignInventory {
             parameters: vec![first, second],
             expressions: vec![literal, reference_expression],
@@ -2047,7 +2112,8 @@ String::new(),
 
     fn single_parameter_inventory() -> DesignInventory {
         let token = cadmpeg_ir::identity_key!("segment");
-        let base = Located::new(PmDcUnitPayload {
+        let base = Located::new(
+            PmDcUnitPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -2059,10 +2125,17 @@ String::new(),
                     factor: real(1.0),
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-0);
-        let unit = Located::new(PmDcUnitPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            0,
+        );
+        let unit = Located::new(
+            PmDcUnitPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -2078,10 +2151,17 @@ String::new(),
                     derived: reference(0, false),
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-1);
-        let literal = Located::new(PmDcExpressionPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            1,
+        );
+        let literal = Located::new(
+            PmDcExpressionPayload {
                 save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
@@ -2092,10 +2172,17 @@ String::new(),
                     state: 0,
                 },
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-2);
-        let parameter = Located::new(PmDcParameterPayload {
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            2,
+        );
+        let parameter = Located::new(
+            PmDcParameterPayload {
                 save_version_major: 22,
                 header: PmDcContentHeader {
                     header_value: 0,
@@ -2114,9 +2201,15 @@ String::new(),
                 tolerance: 0,
                 terminal_value: -1,
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-3);
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            3,
+        );
         DesignInventory {
             parameters: vec![parameter],
             expressions: vec![literal],
@@ -2372,7 +2465,8 @@ String::new(),
         root: u32,
     ) -> Result<Option<(String, Vec<ParameterId>)>, CodecError> {
         let token = cadmpeg_ir::identity_key!("segment");
-        let parameter = Located::new(PmDcParameterPayload {
+        let parameter = Located::new(
+            PmDcParameterPayload {
                 save_version_major: 22,
                 header: PmDcContentHeader {
                     header_value: 0,
@@ -2391,23 +2485,36 @@ String::new(),
                 tolerance: 0,
                 terminal_value: 0,
             },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-0);
+            String::new(),
+            token
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token"),
+            0,
+        );
         let nodes = kinds
             .into_iter()
             .enumerate()
             .map(|(ordinal, kind)| {
-                Located::new(PmDcExpressionPayload {
+                Located::new(
+                    PmDcExpressionPayload {
                         save_version_major: 22,
                         header_value: 0,
                         header_id: 0,
                         unit: reference(0, false),
                         kind,
                     },
-String::new(),
-(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
-u32::try_from(ordinal).expect("small fixture"))
+                    String::new(),
+                    token
+                        .try_clone_for_decode(
+                            &cadmpeg_test_support::service_decode_context(),
+                            "Inventor located fixture token",
+                        )
+                        .expect("service fixture token"),
+                    u32::try_from(ordinal).expect("small fixture"),
+                )
             })
             .collect::<Vec<_>>();
         let expressions = nodes

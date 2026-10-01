@@ -49,7 +49,10 @@ pub(crate) fn named_scalars_charged(
             ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
         })?;
         let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
-        let id = ctx.format_retained(format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"), "retain SLDPRT scalar identity")?;
+        let id = ctx.format_retained(
+            format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
+            "retain SLDPRT scalar identity",
+        )?;
         let parent = copy_scalar_text(ctx, parent)?;
         let name_id = copy_scalar_text(ctx, &name.id)?;
         ctx.reserve_vec(&mut scalars, 1, "collect SLDPRT named scalars")?;
@@ -160,7 +163,10 @@ fn scalar_operands_charged(
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
         })?;
-        let reference_ref = ctx.format_retained(format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"), "retain SLDPRT scalar identity")?;
+        let reference_ref = ctx.format_retained(
+            format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
+            "retain SLDPRT scalar identity",
+        )?;
         ctx.reserve_vec(&mut operands, 1, "collect SLDPRT scalar operands")?;
         operands.push(FeatureInputOperand {
             offset: offset_u64,

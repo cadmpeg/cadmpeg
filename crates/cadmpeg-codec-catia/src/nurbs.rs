@@ -754,7 +754,9 @@ pub(crate) fn circular_helix_cache(
     let mut controls = Vec::new();
     ctx.reserve_vec(&mut controls, sample_count, "catia_helix_controls")?;
     controls.extend(samples.into_iter().map(|(_, point)| point));
-    let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, knots, controls, None, false)? {
+    let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        ctx, 1, knots, controls, None, false,
+    )? {
         Ok(curve) => curve,
         Err(error) => return note_refusal(ctx, Err(error), refusal, record),
     };

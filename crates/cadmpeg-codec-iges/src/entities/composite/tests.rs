@@ -284,7 +284,7 @@ fn composite_projection_refuses_model_and_procedural_slots_before_growth() {
         ),
         (
             composite_curve_file(),
-            "iges composite procedural curve slots",
+            "store procedural curve constructions",
         ),
         (composite_curve_file(), "iges composite wire edge ids"),
     ] {

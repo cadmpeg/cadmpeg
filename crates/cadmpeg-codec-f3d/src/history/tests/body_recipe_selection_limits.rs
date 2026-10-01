@@ -314,10 +314,14 @@ fn body_recipe_ids_refuse_collection_limit() {
 
 #[test]
 fn body_recipe_validation_refuses_collection_limit() {
-    let error = bind(2, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "validate BodySelection historical members",
+        |cap| bind(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "validate F3D body recipe identities")
+        if limit.operation == "validate BodySelection historical members")
     );
 }
 
@@ -352,7 +356,7 @@ fn direct_body_recipe_selection_validation_refuses_collection_limit() {
     let error = bind_direct(6, false).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "validate F3D direct body recipe selections")
+        if limit.operation == "validate distinct decoded members")
     );
 }
 

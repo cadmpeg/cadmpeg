@@ -162,7 +162,7 @@ fn source_rescoping_refuses_provenance_stream_handle_limit() {
     let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "create F3Z provenance stream handle")
+        if limit.operation == "allocate annotation stream handle")
     );
 }
 
@@ -176,7 +176,12 @@ fn fidelity_append_charged_preserves_source_metadata() {
         )
         .unwrap();
     let mut plain = SourceFidelity::default();
-    plain.append(&cadmpeg_test_support::service_decode_context(), source("member")).unwrap();
+    plain
+        .append(
+            &cadmpeg_test_support::service_decode_context(),
+            source("member"),
+        )
+        .unwrap();
     assert_eq!(charged, plain);
 }
 
@@ -219,7 +224,12 @@ fn fidelity_append_refuses_retained_record_collection_limit() {
 fn fidelity_append_refuses_new_destination_nodes_without_mutation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     for records in [false, true] {
-        let mut target = rescope_fidelity(&cadmpeg_test_support::service_decode_context(), source("left"), "left").unwrap();
+        let mut target = rescope_fidelity(
+            &cadmpeg_test_support::service_decode_context(),
+            source("left"),
+            "left",
+        )
+        .unwrap();
         let mut incoming = source("right");
         if !records {
             target = SourceFidelity::with_annotations(target.annotations);
@@ -231,8 +241,14 @@ fn fidelity_append_refuses_new_destination_nodes_without_mutation() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = target.append(&ctx, incoming).unwrap_err();
-        let operation = if records { "append source records" } else { "append source provenance" };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+        let operation = if records {
+            "append source records"
+        } else {
+            "append source provenance"
+        };
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
         assert_eq!(target, before);
     }
 }

@@ -320,20 +320,30 @@ fn profile_segment_intersection_refuses_work_limit() {
 fn profile_nurbs_arc_intersection_refuses_segment_work() {
     let first = profile_nurbs_line();
     let second = profile_circle([10.0, 10.0], 1.0, false);
-    let error = under_work_limit(2, |ctx| {
-        super::profile_segments_intersect(ctx, &first, &second, 0.01)
-    })
-    .expect_err("NURBS arc segment exceeds prior pair and sample work");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo profile NURBS arc intersection segments",
+        |limit| {
+            under_work_limit(limit, |ctx| {
+                super::profile_segments_intersect(ctx, &first, &second, 0.01)
+            })
+        },
+    );
     assert_work(&error, "creo profile NURBS arc intersection segments");
 }
 
 #[test]
 fn profile_nurbs_winding_refuses_segment_work() {
     let profile = vec![profile_nurbs_line()];
-    let error = under_work_limit(1, |ctx| {
-        super::profile_strictly_contains(ctx, &profile, [0.5, 0.5])
-    })
-    .expect_err("NURBS winding segment exceeds prior sample work");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo profile NURBS winding segments",
+        |limit| {
+            under_work_limit(limit, |ctx| {
+                super::profile_strictly_contains(ctx, &profile, [0.5, 0.5])
+            })
+        },
+    );
     assert_work(&error, "creo profile NURBS winding segments");
 }
 

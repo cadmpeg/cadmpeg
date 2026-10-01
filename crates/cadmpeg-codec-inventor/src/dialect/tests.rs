@@ -617,7 +617,7 @@ fn dialect_layers_refuse_primary_copy_before_construction() {
         layers(&ctx, &primary, &crate::kernel::ActiveCarrierState::NotApplicable),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "copy Inventor primary dialect declarations"
+                && limit.operation == "copy Inventor primary dialect"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");

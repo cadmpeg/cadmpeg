@@ -136,12 +136,12 @@ fn attribute_class_use_retained_limit_refuses_borrowed_serialization() {
         attribute_definition: "definition".into(),
         inflated_offset: 8,
     };
-    let json = serde_json::to_vec(&record).unwrap();
+    let needed = "a".len() + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>() + "id".len();
 
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes = u64::try_from(json.len()).unwrap() - 1;
+            policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
         },
         |limited| {
             ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| count.set(0));

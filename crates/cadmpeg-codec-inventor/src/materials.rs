@@ -178,7 +178,7 @@ pub(crate) fn project_catalog(
                 category: None,
                 base_color,
                 properties: cadmpeg_core::text::named_entries_for_decode(
-        ctx,
+                    ctx,
                     format_args!(
                         "inventor:protein:appearance#{instance_ordinal}-{}",
                         record.ordinal

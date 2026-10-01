@@ -334,7 +334,7 @@ fn occurrence_native_field_clone_refuses_collection_limit() {
     let error = rescope_record(&ctx, &record, "unknowns", "component-0").unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "load typed native record")
+        if limit.operation == "serialize native record")
     );
 }
 

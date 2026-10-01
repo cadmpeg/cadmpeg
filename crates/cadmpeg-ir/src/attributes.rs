@@ -34,7 +34,11 @@ pub enum AttributeTarget {
 
 impl AttributeTarget {
     /// Copy the owning identity under the decode budget.
-    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         ctx.charge_work(1, operation)?;
         Ok(match self {
             Self::Document => Self::Document,
@@ -116,13 +120,25 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(identity_len).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(target.try_clone_for_decode(&ctx, "attribute target copy").unwrap(), target);
-        let error = target.try_clone_for_decode(&ctx, "attribute target copy").unwrap_err();
+        assert_eq!(
+            target
+                .try_clone_for_decode(&ctx, "attribute target copy")
+                .unwrap(),
+            target
+        );
+        let error = target
+            .try_clone_for_decode(&ctx, "attribute target copy")
+            .unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "attribute target copy"));
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(AttributeTarget::Document.try_clone_for_decode(&ctx, "document target copy").unwrap(), AttributeTarget::Document);
+        assert_eq!(
+            AttributeTarget::Document
+                .try_clone_for_decode(&ctx, "document target copy")
+                .unwrap(),
+            AttributeTarget::Document
+        );
     }
 }

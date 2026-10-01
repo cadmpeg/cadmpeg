@@ -11,14 +11,21 @@ use cadmpeg_ir::math::Point3;
 
 fn spine_model(count: u32) -> (CadIr, CurveId) {
     let id = CurveId::mint("nx:test:curve#context-spine").expect("valid test identity");
-    let points = (0..count)
+    let points: Vec<Point3> = (0..count)
         .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
         .collect();
     let mut knots = vec![0.0];
     knots.extend((0..count).map(f64::from));
     knots.push(f64::from(count - 1));
-    let nurbs =
-        NurbsCurve::from_lanes(1, knots, points, None, false).expect("clamped linear test spine");
+    let bytes = serde_json::to_vec(&(knots.as_slice(), points.as_slice())).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items =
+        cadmpeg_core::decode::u64_from_index(knots.len() + points.len());
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let nurbs = NurbsCurve::from_lanes_for_decode(&ctx, 1, knots, points, None, false)
+        .expect("service storage")
+        .expect("clamped linear test spine");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),

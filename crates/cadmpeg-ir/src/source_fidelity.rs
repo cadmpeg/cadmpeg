@@ -354,7 +354,10 @@ impl SourceFidelity {
         mut other: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
         for id in other.retained_records.keys() {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.as_str().len()), "check appended source records")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(id.as_str().len()),
+                "check appended source records",
+            )?;
             if self.retained_records.contains_key(id) {
                 return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
                     format_args!("duplicate retained or native unknown record {id}"),
@@ -363,9 +366,19 @@ impl SourceFidelity {
             }
         }
         if !self.retained_records.is_empty() && !other.retained_records.is_empty() {
-            for _entry in self.retained_records.iter().chain(other.retained_records.iter()) {
+            for _entry in self
+                .retained_records
+                .iter()
+                .chain(other.retained_records.iter())
+            {
                 ctx.charge_collection_items(1, "append source records")?;
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(UnknownId, RetainedSourceRecord)>()), "append source records")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                        UnknownId,
+                        RetainedSourceRecord,
+                    )>()),
+                    "append source records",
+                )?;
             }
         }
         self.annotations
