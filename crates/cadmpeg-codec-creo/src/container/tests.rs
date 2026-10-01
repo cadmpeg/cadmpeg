@@ -1107,3 +1107,22 @@ fn feature_reference_aggregation_refuses_before_vec_growth() {
 }
 
 mod framing;
+
+#[test]
+fn duplicate_primitive_section_namespace_is_refused() {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let section = |source_offset| super::ExpandedSection { name: "SolidPrimdata".to_owned(), source_offset, compressed_length: 0, data: Vec::new() };
+        let error = super::scan_primitives(ctx, &[section(1), section(2)]).map(|scan| scan.scalar_arrays.len()).expect_err("distinct sections cannot share primitive identity");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed { .. }));
+    });
+}
+
+#[test]
+fn expanded_section_local_ceiling_is_a_refusal() {
+    let bytes = b"#Body\n\x1f\x9d\x10";
+    let section = super::Section::scan("Body".to_owned(), 0, bytes.len(), Some(256 * 1024 * 1024 + 1), bytes).expect("section extent");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::expanded_sections(ctx, bytes, &[section]).expect_err("expansion ceiling");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo expanded section ceiling"));
+    });
+}
