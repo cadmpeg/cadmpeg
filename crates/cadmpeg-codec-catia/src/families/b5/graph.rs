@@ -6216,14 +6216,12 @@ fn object_stream_run_ranges(
                 position = end;
                 continue;
             }
-            let allocation_end = position
-                .checked_add(15)
-                .filter(|&end| end <= bytes.len())
-                .filter(|&end| {
-                    crate::wire::records::scan_vertex_record_ranges(&bytes[position..end])
-                        .eq(std::iter::once(0..15))
-                })
-                .or_else(|| {
+            let coordinate_end = position.checked_add(15).filter(|&end| end <= bytes.len());
+            let allocation_end = if let Some(end) = coordinate_end {
+                crate::wire::records::scan_vertex_record_ranges(ctx, &bytes[position..end])?
+                    .eq(std::iter::once(0..15)).then_some(end)
+            } else { None };
+            let allocation_end = allocation_end                .or_else(|| {
                     external_grids
                         .iter()
                         .find(|range| range.start == position)

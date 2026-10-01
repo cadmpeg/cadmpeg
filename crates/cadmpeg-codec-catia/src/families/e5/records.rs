@@ -179,12 +179,12 @@ pub(super) fn e5_vertices(
     let mut vertices = Vec::new();
     let mut region_start = 0usize;
     for record in e5_records(data) {
-        for vertex in scan_vertex_records(&data[region_start..record.pos]) {
+        for vertex in scan_vertex_records(ctx, &data[region_start..record.pos])? {
             ctx.push_vec(&mut vertices, vertex, "catia_e5_vertex_roster")?;
         }
         region_start = record.end();
     }
-    for vertex in scan_vertex_records(&data[region_start..]) {
+    for vertex in scan_vertex_records(ctx, &data[region_start..])? {
         ctx.push_vec(&mut vertices, vertex, "catia_e5_vertex_roster")?;
     }
     if vertices.len() != vertex_count {

@@ -41,7 +41,10 @@ pub fn e5_topology(data: &[u8]) {
 
 /// Exercise standard-family vertex-record scanning.
 pub fn geometry_vertices(data: &[u8]) {
-    let _probe = crate::wire::records::scan_vertex_records(data).count();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy) else { return; };
+    let _probe = crate::wire::records::scan_vertex_records(&ctx, data).map(|rows| rows.count());
 }
 
 /// Exercise standard-family surface-prefix extraction.

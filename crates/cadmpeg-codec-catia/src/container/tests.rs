@@ -1282,7 +1282,7 @@ fn scan_parses_outer_directory_with_absolute_extents() {
     let directory_offset =
         usize::try_from(u32::from_be_bytes(bytes[8..12].try_into().unwrap())).unwrap();
     assert_eq!(
-        crate::container::outer_stream_directory_range(&bytes),
+        crate::test_support::with_service_context(|ctx| crate::container::outer_stream_directory_range(ctx, &bytes)).expect("service resource budget"),
         Some(directory_offset..bytes.len())
     );
     let scan = crate::test_support::with_service_context(|ctx| {
@@ -1436,4 +1436,39 @@ fn fbb_census_separates_groups_from_face_rows() {
     .expect("service resource budget");
     assert_eq!(scan.census.fbb_runs, 1);
     assert_eq!(scan.census.fbb_face_rows, 2);
+}
+
+#[test]
+fn marker_free_container_searches_refuse_work() {
+    let bytes = [0_u8; 64];
+    for operation in ["catia_finjpl_scan", "catia_fbb_scan", "catia_census_marker_scan"] {
+        crate::test_support::with_work_limit(0, |ctx| {
+            let error = match operation {
+                "catia_finjpl_scan" => super::finjpl_segments(ctx, &super::BodyExtent::whole(&bytes)).map(|_| ()),
+                "catia_fbb_scan" => super::fbb_run_ranges(ctx, &bytes).map(|_| ()),
+                _ => super::count_subslice(ctx, &bytes, b"marker").map(|_| ()),
+            }.expect_err("search must consume work");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+}
+
+#[test]
+fn empty_directory_candidate_scans_refuse_work() {
+    let mut bytes = super::DIR_MAGIC.to_vec();
+    bytes.resize(128, 0);
+    for probe in [false, true] {
+        crate::test_support::with_work_limit(0, |ctx| {
+            let result = if probe {
+                super::directory_region_has_descriptor(ctx, &bytes, 0, 0, bytes.len()).map(|_| ())
+            } else {
+                super::parse_directory_region(ctx, &bytes, 0, 0, bytes.len()).map(|_| ())
+            };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = result.expect_err("candidate scan consumes work") else { panic!("resource refusal required") };
+            assert_eq!(limit.operation, "catia_directory_candidate_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 }

@@ -893,20 +893,21 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
-pub(crate) fn scan_vertex_records(bytes: &[u8]) -> impl Iterator<Item = FinitePoint3> + '_ {
-    scan_vertex_rows(bytes).map(|(_, point)| point)
+pub(crate) fn scan_vertex_records<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<impl Iterator<Item = FinitePoint3> + 'a, CodecError> {
+    Ok(scan_vertex_rows(ctx, bytes)?.map(|(_, point)| point))
 }
 
 /// Locate every finite `05 08 01` coordinate row in `bytes`.
-pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
-    scan_vertex_rows(bytes).map(|(range, _)| range)
+pub(crate) fn scan_vertex_record_ranges<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<impl Iterator<Item = Range<usize>> + 'a, CodecError> {
+    Ok(scan_vertex_rows(ctx, bytes)?.map(|(range, _)| range))
 }
 
 /// Every `05 08 01` row whose three coordinates are finite, with its byte
 /// range and admitted point.
-fn scan_vertex_rows(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, FinitePoint3)> + '_ {
+fn scan_vertex_rows<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<impl Iterator<Item = (Range<usize>, FinitePoint3)> + 'a, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), "catia_vertex_row_scan")?;
     let mut p = 0usize;
-    std::iter::from_fn(move || loop {
+    Ok(std::iter::from_fn(move || loop {
         if p + 15 > bytes.len() {
             return None;
         }
@@ -924,7 +925,7 @@ fn scan_vertex_rows(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, FiniteP
         } else {
             p += 1;
         }
-    })
+    }))
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
@@ -942,6 +943,16 @@ mod tests {
         ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
         ConsolidatedRecord,
     };
+
+    #[test]
+    fn vertex_scan_refuses_marker_free_work() {
+        let bytes = [0_u8; 64];
+        crate::test_support::with_work_limit(0, |ctx| {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::scan_vertex_records(ctx, &bytes) else { panic!("resource refusal required") };
+            assert_eq!(limit.operation, "catia_vertex_row_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 
     #[test]
     fn consolidated_record_scan_refuses_marker_free_work() {
@@ -1264,8 +1275,7 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
 
-        let [point] = scan_vertex_records(&bytes)
-            .collect::<Vec<_>>()
+        let [point] = crate::test_support::with_service_context(|ctx| scan_vertex_records(ctx, &bytes).expect("service resource budget").collect::<Vec<_>>())
             .try_into()
             .expect("one vertex row");
         assert_eq!(point.x, 2_000_000.0);

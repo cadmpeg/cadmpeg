@@ -2194,12 +2194,13 @@ fn object_stream_vertices_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Result<Vec<FinitePoint3>, CodecError> {
-    ctx.collect_vec(
-        object_stream_vertex_row_ranges_from_records(ctx, data, records)?
-            .into_iter()
-            .flat_map(|range| crate::wire::records::scan_vertex_records(&data[range])),
-        "catia_object_stream_vertices",
-    )
+    let mut points = Vec::new();
+    for range in object_stream_vertex_row_ranges_from_records(ctx, data, records)? {
+        for point in crate::wire::records::scan_vertex_records(ctx, &data[range])? {
+            ctx.push_vec(&mut points, point, "catia_object_stream_vertices")?;
+        }
+    }
+    Ok(points)
 }
 
 fn object_stream_vertex_row_ranges_from_records(
@@ -2225,7 +2226,7 @@ fn object_stream_vertex_row_ranges_from_records(
             continue;
         }
         if range.start > region_start {
-            for row in scan_vertex_record_ranges(&data[region_start..range.start]) {
+            for row in scan_vertex_record_ranges(ctx, &data[region_start..range.start])? {
                 ctx.push_vec(
                     &mut rows,
                     row.start + region_start..row.end + region_start,
@@ -2235,7 +2236,7 @@ fn object_stream_vertex_row_ranges_from_records(
         }
         region_start = region_start.max(range.end);
     }
-    for row in scan_vertex_record_ranges(&data[region_start..]) {
+    for row in scan_vertex_record_ranges(ctx, &data[region_start..])? {
         ctx.push_vec(
             &mut rows,
             row.start + region_start..row.end + region_start,
