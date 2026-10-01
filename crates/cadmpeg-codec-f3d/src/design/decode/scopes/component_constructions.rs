@@ -1092,7 +1092,7 @@ pub(super) fn bind_component_pattern_occurrences(
     let byte_offset = scope.byte_offset();
     let Some(instances) = scope
         .rectangular_pattern_construction()
-        .and_then(|construction| construction.instances.as_ref())
+        .and_then(|construction| construction.instances())
     else {
         return Ok(());
     };
@@ -1166,11 +1166,8 @@ pub(super) fn bind_component_pattern_occurrences(
         },
         generated,
     };
-    if let Some(instances) = scope
-        .rectangular_pattern_construction_mut()
-        .and_then(|construction| construction.instances.as_mut())
-    {
-        *instances = bound;
+    if let Some(construction) = scope.rectangular_pattern_construction_mut() {
+        construction.try_set_instances(Some(bound)).map_err(CodecError::malformed)?;
     }
     Ok(())
 }

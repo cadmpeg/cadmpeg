@@ -1536,7 +1536,7 @@ pub(crate) fn bind_mirror_selection_planes(
             continue;
         };
         construction.plane =
-            Some(crate::records::feature::patterns::DesignPlane { origin, normal });
+            crate::records::feature::patterns::DesignPlane::from_parts(origin, normal);
     }
     Ok(())
 }

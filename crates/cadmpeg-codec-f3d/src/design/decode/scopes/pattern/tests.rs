@@ -106,7 +106,7 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
                 record_index: 11,
                 identity_offset: 23,
             },
-        ],
+        ].try_into().unwrap(),
         persistent_identity: 17,
         resolved: None,
     };
@@ -395,7 +395,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             &[]
         ),
         Some(DesignCircularPatternConstruction {
-            count: 25,
+            count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
             count_offset: u64_from_index(count_start + 40),
             angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
@@ -481,7 +481,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         &owners,
     )
     .unwrap();
-    assert_eq!(owner_backed.count, 25);
+    assert_eq!(owner_backed.count.get(), 25);
     assert_eq!(owner_backed.count_offset, 101);
     assert_eq!(owner_backed.angle.get(), std::f64::consts::TAU);
     assert_eq!(owner_backed.angle_offset, 202);
@@ -568,7 +568,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
     assert_eq!(rectangular.v_extent(), 0.0);
     assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
-    assert_eq!(rectangular.instances, None);
+    assert_eq!(rectangular.instances(), None);
 
     append_transform_record(&mut bytes, 100, [2.0, 3.0, 4.0]);
     for record_index in 50..=53 {
@@ -596,7 +596,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         &rectangular_owners,
     )
     .expect("rectangular-pattern placement run");
-    let instances = rectangular.instances.expect("exact placement run");
+    let instances = rectangular.instances().expect("exact placement run");
     assert_eq!(
         instances
             .frames()

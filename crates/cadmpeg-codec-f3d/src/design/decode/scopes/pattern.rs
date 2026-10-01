@@ -92,8 +92,8 @@ pub(super) fn exact_rectangular_pattern_construction(
     let Some(mut construction) = parsed else {
         return Ok(None);
     };
-    construction.instances =
-        exact_rectangular_pattern_instances(ctx, bytes, records, scope, &construction)?;
+    let instances = exact_rectangular_pattern_instances(ctx, bytes, records, scope, &construction)?;
+    construction.try_set_instances(instances).map_err(CodecError::malformed)?;
     Ok(Some(construction))
 }
 
@@ -572,7 +572,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             return None;
         };
         Some(Ok(DesignCircularPatternConstruction {
-            count: *count,
+            count: std::num::NonZeroU32::new(*count)?,
             count_record_index: *count_record_index,
             count_offset: *count_offset,
             angle: *angle,
@@ -751,7 +751,7 @@ fn exact_legacy_circular_pattern_axis(
         }
         Some(Ok((
             DesignCircularPatternAxis::HistoricalEdge {
-                wrappers: retained_wrappers,
+                wrappers: retained_wrappers.try_into().ok()?,
                 persistent_identity,
                 resolved: None,
             },
