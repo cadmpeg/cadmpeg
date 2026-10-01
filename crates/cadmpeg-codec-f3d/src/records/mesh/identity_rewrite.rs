@@ -11,6 +11,9 @@ rewrite_native_record!(DesignMeshCollectionOwner, []; {record, backlink});
 rewrite_native_record!(DesignMeshEntryName, []; {record, name});
 rewrite_native_record!(DesignMeshFeature, []; {id, scope, collection, texture_table, collection_owner, bodies});
 impl<const LENGTH: u64> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for DesignMeshFixedRecord<LENGTH> {
+    fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "walk typed reference scalar")
+    }
     fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "rewrite native typed node")?;
         Ok(self)

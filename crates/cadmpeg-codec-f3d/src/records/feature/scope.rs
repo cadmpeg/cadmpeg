@@ -389,6 +389,17 @@ macro_rules! design_feature_kinds {
         }
 
         impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for DesignScopePayload {
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk native typed references")?;
+                ctx.charge_work(1, "walk native typed references")?;
+                match self {
+                    $(Self::$variant(value) => value.visit_identity_references(ctx, visitor),)+
+                    $(Self::$fixed(value) => value.visit_identity_references(ctx, visitor),)+
+                    $(Self::$required(value) => value.visit_identity_references(ctx, visitor),)+
+                    $(Self::$unit => Ok(()),)+
+                    Self::Native(name) => name.visit_identity_references(ctx, visitor),
+                }
+            }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
                 self,
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,

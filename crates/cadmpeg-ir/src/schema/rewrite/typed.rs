@@ -9,14 +9,12 @@ use cadmpeg_core::CodecError;
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
     /// Visit borrowed typed references without projecting a value tree.
-    /// Values whose owners expose no references admit one scalar visit.
+    /// Scalar owners admit one visit and expose no references.
     fn visit_identity_references(
         &self,
         ctx: &DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        ctx.charge_work(1, "walk typed reference scalar")
-    }
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError>;
 
     /// Return the rewritten value or the original resource refusal.
     fn rewrite_identities<F>(
@@ -137,6 +135,9 @@ impl RewriteIdentities for crate::ids::Identity {
 macro_rules! rewrite_scalars {
     ($($type:ty),* $(,)?) => {$(
         impl RewriteIdentities for $type {
+            fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+                ctx.charge_work(1, "walk typed reference scalar")
+            }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
                 ctx.charge_work(1, "identity rewrite scalar")?;
                 Ok(self)
@@ -147,6 +148,9 @@ macro_rules! rewrite_scalars {
 rewrite_scalars!(bool, char, u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64, ());
 
 impl RewriteIdentities for String {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        ctx.charge_work(1, "walk typed reference scalar")
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         ctx.charge_work(1, "identity rewrite text node")?;
         Ok(self)
@@ -226,6 +230,9 @@ impl<K: RewriteIdentities + Ord + std::hash::Hash, V: RewriteIdentities> Rewrite
 mod tests;
 
 impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        ctx.charge_work(1, "walk typed reference scalar")
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         ctx.charge_work(1, "rewrite nonblank text node")?;
         Ok(self)

@@ -136,6 +136,9 @@ impl Serialize for SwallowsElementErrors {
 }
 
 impl RewriteIdentities for SwallowsElementErrors {
+    fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        self.0.visit_identity_references(ctx, visitor)
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         for identity in &self.0 {
             identity.clone().rewrite_identities(ctx, map).ok();
