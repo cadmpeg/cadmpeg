@@ -194,10 +194,10 @@ pub(super) fn sketch_table_headers(
             table.offset,
         )?;
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         headers.as_mut_slice(),
-        |header| header.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo sketch table headers headers ordering",
     )?;
     Ok(headers)

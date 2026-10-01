@@ -483,10 +483,10 @@ fn generator_separates_control_nets(
         )?;
         boundary_angles.push(angle);
     }
-    crate::sort::stable_sort_by(
-        ctx,
+    ctx.stable_sort_by(
         boundary_angles.as_mut_slice(),
         f64::total_cmp,
+        |_| 0,
         "creo generator separates control nets boundary angles ordering",
     )?;
     let tolerance = point_tolerance(first_poles().chain(second_poles())).unwrap_or(f64::INFINITY);

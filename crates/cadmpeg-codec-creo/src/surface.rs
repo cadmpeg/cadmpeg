@@ -2608,10 +2608,10 @@ fn outline_planes(
             offset: record.offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo outline planes result ordering",
     )?;
     Ok(result)
@@ -2796,10 +2796,10 @@ pub(crate) fn positional_frame_planes(
             result.push(candidate.clone());
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo positional frame planes result ordering",
     )?;
     Ok(result)
@@ -2882,10 +2882,10 @@ pub(crate) fn placed_outline_planes(
             frame_bound.push(plane);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         frame_bound.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo placed outline planes frame bound ordering",
     )?;
     let mut frame_bound_ids = BTreeSet::new();
@@ -2914,10 +2914,10 @@ pub(crate) fn placed_outline_planes(
         ctx.reserve_vec(&mut result, 1, "creo placed outline planes")?;
         result.push(plane);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo placed outline planes result ordering",
     )?;
     Ok(result)
@@ -3013,10 +3013,10 @@ pub(crate) fn counted_row_bounds(
             }
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |(row, _)| row.offset,
+        |(left, _), (right, _)| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo counted row bounds result ordering",
     )?;
     Ok(result)
@@ -3155,10 +3155,10 @@ fn rows_with_boundaries(
             offset: id_start,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo rows with boundaries result ordering",
     )?;
     result.dedup_by_key(|row| row.offset);
@@ -3733,10 +3733,10 @@ fn named_prototype_frames<'a>(
         });
         search = close + 2;
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         frames.as_mut_slice(),
-        |frame| frame.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo named prototype frames frames ordering",
     )?;
     Ok(frames)
@@ -5460,10 +5460,10 @@ fn contour_records_for_rows(
         ctx.reserve_vec(&mut records, chain.len(), "creo contour record aggregation")?;
         records.extend(chain);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         records.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo contour records for rows records ordering",
     )?;
     Ok(records)
@@ -6055,10 +6055,10 @@ pub(crate) fn tabulated_cylinder_curve_replays(
             surface_row_offset: owner.offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         replays.as_mut_slice(),
-        |replay| replay.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo tabulated cylinder curve replays replays ordering",
     )?;
     Ok(replays)
@@ -7579,10 +7579,10 @@ fn plane_envelopes_for_rows(
             offset: scalar_start,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         envelopes.as_mut_slice(),
-        |envelope| envelope.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo plane envelopes for rows envelopes ordering",
     )?;
     Ok(envelopes)

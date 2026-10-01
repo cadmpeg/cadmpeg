@@ -653,7 +653,11 @@ pub(crate) fn operation_states(
                 RecipeState::Resolved(binding.recipe)
             })
         };
-        let kind = crate::text::copy_lossy_text(ctx, family, "creo operation family name")?;
+        let text_work = cadmpeg_core::decode::u64_from_index(family.len())
+            .checked_mul(6)
+            .ok_or_else(|| ctx.refuse_codec_limit("creo operation family text work", u64::MAX, u64::MAX))?;
+        ctx.charge_work(text_work, "creo operation family text work")?;
+        let kind = ctx.copy_retained_lossy_utf8(family, "creo operation family name")?;
         let name_bytes = ctx.copy_retained(
             &payload[state_offset..separator + separator_bytes.len() + end],
             "creo operation stored name bytes",
@@ -710,10 +714,10 @@ pub(crate) fn operation_states(
             state_offset: binding.offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |operation| operation.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo operation states result ordering",
     )?;
     let mut display_counts = BTreeMap::<u32, usize>::new();
@@ -859,10 +863,10 @@ pub(crate) fn operations(
             operation.kind = OperationKind::Native;
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         current.as_mut_slice(),
-        |operation| operation.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo operations current ordering",
     )?;
     Ok(current)

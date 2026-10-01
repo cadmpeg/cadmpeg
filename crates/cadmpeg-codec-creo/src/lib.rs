@@ -83,9 +83,7 @@ mod primdata;
 mod psb;
 mod reference;
 mod scalar;
-mod sort;
 mod surface;
-mod text;
 mod topology;
 mod vecmath;
 

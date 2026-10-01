@@ -584,10 +584,10 @@ pub(in super::super) fn geometry_generator_features(
         ctx.reserve_vec(&mut output, 1, "creo geometry generator features")?;
         output.push(generator);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         output.as_mut_slice(),
-        |generator| generator.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo geometry generator features output ordering",
     )?;
     Ok(output)
