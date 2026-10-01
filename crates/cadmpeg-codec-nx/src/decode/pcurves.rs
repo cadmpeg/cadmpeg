@@ -1999,7 +1999,7 @@ fn exact_boundary_pcurve_with_index(
     let Some(solved_curve) = curve_carrier.geometry.solved() else {
         return Ok(None);
     };
-    let Some(curve_breaks) = exact_boundary_curve_breaks(solved_curve, range, geometry_budget)?
+    let Some((curve_breaks, _curve_storage)) = exact_boundary_curve_breaks(solved_curve, range, geometry_budget)?
     else {
         return Ok(None);
     };
@@ -2316,7 +2316,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         tolerance,
     } = boundary_carrier_fit;
 
-    let Some(surface_breaks) =
+    let Some((surface_breaks, _surface_storage)) =
         boundary_curve_affine_breaks_with_index(index, surface, pcurve, range, geometry_budget)?
     else {
         return Ok(false);
@@ -2371,16 +2371,15 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     Ok(true)
 }
 
-fn exact_boundary_curve_breaks(
+fn exact_boundary_curve_breaks<'a>(
     geometry: &SolvedCurveGeometry,
     range: [f64; 2],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
-    let mut breaks = match geometry {
+    geometry_budget: &GeometryWorkBudget<'a>,
+) -> Result<Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>, cadmpeg_core::decode::ResourceLimit> {
+    let (mut breaks, mut storage) = match geometry {
         SolvedCurveGeometry::Line(_) => geometry_budget
             .charges
-            .copy_temporary_slice(&range, "nx boundary breaks")
-            .map(|(copy, _reservation)| copy)?,
+            .copy_temporary_slice(&range, "nx boundary breaks")?,
         SolvedCurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -2402,15 +2401,15 @@ fn exact_boundary_curve_breaks(
             };
             geometry_budget
                 .charges
-                .copy_temporary_slice(knots, "nx boundary breaks")
-                .map(|(copy, _reservation)| copy)?
+                .copy_temporary_slice(knots, "nx boundary breaks")?
         }
         _ => return Ok(None),
     };
     breaks.retain(|parameter| {
         parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
     });
-    let _range_reservation = geometry_budget.charges.reserve_temporary_vec(
+    geometry_budget.charges.reserve_scoped_vec_limit(
+        &mut storage,
         &mut breaks,
         2,
         "nx boundary range breaks",
@@ -2418,7 +2417,7 @@ fn exact_boundary_curve_breaks(
     breaks.extend(range);
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
-    Ok(Some(breaks))
+    Ok(Some((breaks, storage)))
 }
 
 #[cfg(test)]
@@ -2704,9 +2703,9 @@ fn coincident_pcurve_pair_with_index(
             geometry_budget,
         )?,
     ];
-    if let [Some(first), Some(second)] = affine_breaks {
-        let mut breaks = first;
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
+    if let [Some((mut breaks, mut storage)), Some((second, _second_storage))] = affine_breaks {
+        geometry_budget.charges.reserve_scoped_vec_limit(
+            &mut storage,
             &mut breaks,
             second.len(),
             "nx coincident pcurve breaks",
@@ -2778,14 +2777,14 @@ fn coincident_pcurve_pair_with_index(
     Ok(true)
 }
 
-fn boundary_curve_affine_breaks_with_index(
+fn boundary_curve_affine_breaks_with_index<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
-    (|| -> Option<Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit>> {
+    geometry_budget: &GeometryWorkBudget<'a>,
+) -> Result<Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::decode::ResourceLimit>> {
         let carrier = index.surfaces(surface.as_str())?;
         if matches!(
             carrier.geometry.solved(),
@@ -2794,8 +2793,7 @@ fn boundary_curve_affine_breaks_with_index(
             return Some(
                 geometry_budget
                     .charges
-                    .copy_temporary_slice(&range, "nx boundary breaks")
-                    .map(|(copy, _reservation)| copy),
+                    .copy_temporary_slice(&range, "nx boundary breaks"),
             );
         }
         if matches!(
@@ -2816,8 +2814,7 @@ fn boundary_curve_affine_breaks_with_index(
                     return Some(
                         geometry_budget
                             .charges
-                            .copy_temporary_slice(&range, "nx boundary breaks")
-                            .map(|(copy, _reservation)| copy),
+                            .copy_temporary_slice(&range, "nx boundary breaks"),
                     );
                 }
             }
@@ -2856,6 +2853,7 @@ fn boundary_curve_affine_breaks_with_index(
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.control_points().len();
+                let mut storage = match geometry_budget.charges.reserve_scoped_limit(0, "nx affine pcurve breaks") { Ok(storage) => storage, Err(limit) => return Some(Err(limit)), };
                 let mut breaks = Vec::new();
                 for parameter in isocurve.knots().get(degree..=count)? {
                     let Some(fraction) =
@@ -2869,7 +2867,8 @@ fn boundary_curve_affine_breaks_with_index(
                     else {
                         continue;
                     };
-                    if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
+                    if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
+                        &mut storage,
                         &mut breaks,
                         1,
                         "nx affine pcurve breaks",
@@ -2878,7 +2877,8 @@ fn boundary_curve_affine_breaks_with_index(
                     }
                     breaks.push(mapped);
                 }
-                if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
+                if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
+                    &mut storage,
                     &mut breaks,
                     2,
                     "nx affine pcurve range",
@@ -2886,7 +2886,7 @@ fn boundary_curve_affine_breaks_with_index(
                     return Some(Err(limit));
                 }
                 breaks.extend(range);
-                return Some(Ok(breaks));
+                return Some(Ok((breaks, storage)));
             }
         }
         let PcurveGeometry::Line(line_pcurve) = pcurve else {
@@ -2901,8 +2901,7 @@ fn boundary_curve_affine_breaks_with_index(
                 return Some(
                     geometry_budget
                         .charges
-                        .copy_temporary_slice(&range, "nx boundary breaks")
-                        .map(|(copy, _reservation)| copy),
+                        .copy_temporary_slice(&range, "nx boundary breaks"),
                 );
             }
             Some(SolvedSurfaceGeometry::Cone(_))
@@ -2911,8 +2910,7 @@ fn boundary_curve_affine_breaks_with_index(
                 return Some(
                     geometry_budget
                         .charges
-                        .copy_temporary_slice(&range, "nx boundary breaks")
-                        .map(|(copy, _reservation)| copy),
+                        .copy_temporary_slice(&range, "nx boundary breaks"),
                 );
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
@@ -2935,13 +2933,12 @@ fn boundary_curve_affine_breaks_with_index(
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.control_points().len();
-                let mut breaks = match geometry_budget
+                let (mut breaks, mut storage) = match geometry_budget
                     .charges
                     .copy_temporary_slice(
                         isocurve.knots().get(degree..=count)?,
                         "nx boundary breaks",
                     )
-                    .map(|(copy, _reservation)| copy)
                 {
                     Ok(breaks) => breaks,
                     Err(limit) => return Some(Err(limit)),
@@ -2952,7 +2949,8 @@ fn boundary_curve_affine_breaks_with_index(
                 breaks.retain(|parameter| {
                     parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
                 });
-                if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
+                if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
+                    &mut storage,
                     &mut breaks,
                     2,
                     "nx affine pcurve range",
@@ -2960,7 +2958,7 @@ fn boundary_curve_affine_breaks_with_index(
                     return Some(Err(limit));
                 }
                 breaks.extend(range);
-                Some(breaks)
+                Some((breaks, storage))
             }
             _ => None,
         }

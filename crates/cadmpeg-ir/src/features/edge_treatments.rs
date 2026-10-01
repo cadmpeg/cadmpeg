@@ -65,6 +65,11 @@ pub enum RadiusSpec {
 }
 
 impl RadiusSpec {
+    /// Copy admitted fields through the caller's decode context.
+    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+    }
+
     /// Returns whether the radius law lacks its required dimensions.
     pub const fn is_unresolved(&self) -> bool {
         matches!(self, Self::Unresolved { .. })
@@ -399,11 +404,3 @@ mod decode_clone;
 
 #[cfg(test)]
 mod tests;
-
-
-impl RadiusSpec {
-    /// Copy admitted fields through the caller's decode context.
-    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
-        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
-    }
-}
