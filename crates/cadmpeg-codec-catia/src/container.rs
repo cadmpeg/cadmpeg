@@ -22,7 +22,7 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ContainerSummary;
 
@@ -946,8 +946,9 @@ pub(crate) fn logical_record_streams(
         .flatten()
     {
         for descriptor in &directory.descriptors {
-            let stream = reconstruct_logical_stream(ctx, &scan.data, descriptor, directory.inner)?;
+            let (stream, storage) = reconstruct_logical_stream(ctx, &scan.data, descriptor, directory.inner)?;
             if !stream.is_empty() {
+                storage.commit()?;
                 ctx.push_vec(&mut streams, stream, "catia_logical_record_streams")?;
             }
         }
@@ -1353,12 +1354,13 @@ fn descriptor_name(
 }
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
-fn reconstruct_logical_stream(
-    ctx: &DecodeContext<'_>,
+fn reconstruct_logical_stream<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     data: &[u8],
     descriptor: &Descriptor,
     inner: usize,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<(Vec<u8>, ScopedReservation<'storage>), CodecError> {
+    ctx.charge_work(u64_from_index(descriptor.extents.len()), "catia_logical_stream_extents")?;
     let Some(logical_length) =
         descriptor
             .extents
@@ -1371,18 +1373,17 @@ fn reconstruct_logical_stream(
                     .flatten()
             })
     else {
-        return Ok(Vec::new());
+        return ctx.temporary_vec(0, "catia_logical_stream_bytes").map_err(Into::into);
     };
     let bytes = u64_from_index(logical_length);
-    ctx.charge_retained(bytes, "catia_logical_stream_bytes")?;
-    let mut out = Vec::new();
-    ctx.reserve_vec(&mut out, logical_length, "catia_logical_stream_bytes")?;
+    ctx.charge_work(bytes, "catia_logical_stream_copy")?;
+    let (mut out, storage) = ctx.temporary_vec(logical_length, "catia_logical_stream_bytes")?;
     for extent in &descriptor.extents {
         let start = inner + index_from_u32(extent.phys_off);
         let end = start + index_from_u32(extent.phys_len);
         out.extend_from_slice(&data[start..end]);
     }
-    Ok(out)
+    Ok((out, storage))
 }
 
 /// Decode model-container declarations whose UUIDs select named outer streams.
@@ -1401,7 +1402,7 @@ pub(crate) fn outer_container_declarations(
     if data_descriptors.next().is_some() {
         return Ok(Vec::new());
     }
-    let logical = reconstruct_logical_stream(ctx, data, data_descriptor, outer.inner)?;
+    let (logical, _storage) = reconstruct_logical_stream(ctx, data, data_descriptor, outer.inner)?;
     parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
 }
 
@@ -1568,7 +1569,7 @@ fn brep_stream(
     ) else {
         return Ok(None);
     };
-    let surface = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
+    let (surface, _storage) = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
     ctx.extend_retained_bytes(&mut out, &surface, "catia_brep_surface_bytes")?;
     Ok(Some(out))
 }
@@ -1589,9 +1590,9 @@ fn main_data_stream(
     ) else {
         return Ok(None);
     };
-    Ok(Some(reconstruct_logical_stream(
-        ctx, data, main, dir.inner,
-    )?))
+    let (stream, storage) = reconstruct_logical_stream(ctx, data, main, dir.inner)?;
+    storage.commit()?;
+    Ok(Some(stream))
 }
 
 fn unique_largest_descriptor<'a>(
