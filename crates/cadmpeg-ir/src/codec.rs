@@ -437,17 +437,17 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         };
         let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, &ctx)?;
         if result.report().format() != C::FORMAT.as_str() {
-            return Err(CodecError::WrongFormat(format!(
+            return Err(CodecError::WrongFormat(ctx.format_retained(format_args!(
                 "codec {:?} decoded a {:?} document",
                 C::FORMAT.as_str(),
                 result.report().format()
-            ))
+            ), "decode format refusal")?)
             .into());
         }
-        crate::validate::evaluation_cycles::admit_evaluation_cycles(result.ir())?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(result.report().losses.len()), "decode strict loss scan")?;
+        crate::validate::evaluation_cycles::admit_evaluation_cycles(&ctx, result.ir())?;
         let strict_loss_index =
             if options.policy.mode == DecodeMode::Strict && !options.container_only {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(result.report().losses.len()), "decode strict loss scan")?;
                 result
                     .report()
                     .losses

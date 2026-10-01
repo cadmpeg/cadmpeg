@@ -11,7 +11,7 @@ use crate::report::{
     check::{Check, ValidationReport},
     loss::LossNote,
 };
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::CodecError;
 
 /// Expand [`DRAFT_CORE_CHECKS`], optionally appending extra [`Check`] variants.
 macro_rules! with_draft_core {
@@ -75,7 +75,7 @@ pub fn filter_checks(mut report: ValidationReport, allowed: &[Check]) -> Validat
 }
 
 /// Run full neutral validation, then retain only findings in `allowed`.
-pub fn admit(ir: &CadIr, allowed: &[Check], losses: Vec<LossNote>) -> Result<ValidationReport, ResourceLimit> {
+pub fn admit(ir: &CadIr, allowed: &[Check], losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
     Ok(filter_checks(super::validate_neutral(ir, losses)?, allowed))
 }
 
@@ -85,7 +85,7 @@ pub fn admit_with_annotations(
     annotations: &Annotations,
     allowed: &[Check],
     losses: Vec<LossNote>,
-) -> Result<ValidationReport, ResourceLimit> {
+) -> Result<ValidationReport, CodecError> {
     Ok(filter_checks(
         super::validate_neutral_with_annotations(ir, annotations, losses)?,
         allowed,
@@ -98,7 +98,7 @@ pub fn admit_with_additional_native_identities<'a>(
     additional: impl IntoIterator<Item = &'a str>,
     allowed: &[Check],
     losses: Vec<LossNote>,
-) -> Result<ValidationReport, ResourceLimit> {
+) -> Result<ValidationReport, CodecError> {
     Ok(filter_checks(
         super::validate_neutral_with_additional_native_identities(ir, additional, losses)?,
         allowed,

@@ -17,7 +17,8 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
@@ -128,7 +129,7 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, ResourceLimit> {
+fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::new(ir);
     validate_model_with_index(ir, losses, &index)
 }
@@ -137,7 +138,7 @@ fn validate_model_with_index(
     ir: &CadIr,
     losses: Vec<LossNote>,
     ids: &crate::index::ModelIndex<'_>,
-) -> Result<ValidationReport, ResourceLimit> {
+) -> Result<ValidationReport, CodecError> {
     let mut findings = Vec::new();
 
     // The identity walk enumerates every entity id in the product document;
@@ -145,7 +146,9 @@ fn validate_model_with_index(
     check_identity_and_order(ir, &mut findings);
     check_tolerances(ir, &mut findings);
     check_references(ir, ids, &mut findings);
-    check_evaluation_cycles(ir, ids, &mut findings);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    check_evaluation_cycles(&ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
@@ -178,7 +181,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
     ir: &'a CadIr,
     additional: impl IntoIterator<Item = &'a str>,
     losses: Vec<LossNote>,
-) -> Result<ValidationReport, ResourceLimit> {
+) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
     validate_model_with_index(ir, losses, &index)
 }
@@ -187,7 +190,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
 pub fn validate_neutral(
     ir: &CadIr,
     losses: Vec<LossNote>,
-) -> Result<ValidationReport, ResourceLimit> {
+) -> Result<ValidationReport, CodecError> {
     validate_model(ir, losses)
 }
 
@@ -196,7 +199,7 @@ pub fn validate_neutral_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
-) -> Result<ValidationReport, ResourceLimit> {
+) -> Result<ValidationReport, CodecError> {
     let mut report = validate_model(ir, losses)?;
     let all_ids = crate::index::ModelIndex::new(ir)
         .identities()
@@ -211,7 +214,7 @@ pub fn validate_neutral_with_source_fidelity(
     ir: &CadIr,
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
-) -> Result<ValidationReport, ResourceLimit> {
+) -> Result<ValidationReport, CodecError> {
     let mut report = validate_model(ir, losses)?;
     let index = crate::index::ModelIndex::new(ir);
     let mut all_ids = index
