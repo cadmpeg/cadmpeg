@@ -1686,7 +1686,12 @@ pub(in crate::families) fn a8_external_grid_ranges(
             ctx.push_vec(&mut ranges, range, "catia_a8_external_grid_ranges")?;
         }
     }
-    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    ctx.sort_unstable_by(
+        &mut ranges,
+        |left, right| (left.start, left.end).cmp(&(right.start, right.end)),
+        |_| 0,
+        "catia_a8_external_grid_ranges_sort",
+    )?;
     ranges.dedup();
     Ok(ranges)
 }

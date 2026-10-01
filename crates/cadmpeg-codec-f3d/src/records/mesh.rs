@@ -333,7 +333,12 @@ impl DesignMeshTextureTable {
             .checked_mul(passes)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
         ctx.charge_work(work, operation)?;
-        resources.sort_by_key(|resource| resource.ordinal);
+        ctx.stable_sort_by(
+            &mut resources,
+            |a, b| a.ordinal.cmp(&b.ordinal),
+            |_| 0,
+            operation,
+        )?;
         Ok(resources)
     }
     fn flags_count_offset(&self) -> u64 {

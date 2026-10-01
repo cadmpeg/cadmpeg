@@ -146,7 +146,12 @@ pub(crate) fn bind_history_classes(
         }
     }
     for classes in direct_classes_by_name.values_mut() {
-        classes.sort_unstable();
+        ctx.sort_unstable_by(
+            classes,
+            Ord::cmp,
+            |class| class.len(),
+            "sort SLDPRT history class names",
+        )?;
         classes.dedup();
     }
     let mut history_name_counts = HashMap::<String, usize>::new();
@@ -292,7 +297,16 @@ pub(crate) fn bind_history_classes(
             }
         }
     }
-    native_startups.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut native_startups,
+        Ord::cmp,
+        |startup| {
+            startup
+                .iter()
+                .fold(0usize, |bytes, class| bytes.saturating_add(class.len()))
+        },
+        "sort SLDPRT native startup classes",
+    )?;
     native_startups.dedup();
     if let [classes] = native_startups.as_slice() {
         for history in histories.iter_mut() {
@@ -524,7 +538,12 @@ fn legacy_repeated_hole_wizard_classes(
                 .filter(|class| native_object_class(&class.name) == NativeClassKind::HoleWizard)
                 .map(|class| class.name.as_str()),
         )?;
-        declared.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut declared,
+            Ord::cmp,
+            |class| class.len(),
+            "sort SLDPRT hole wizard classes",
+        )?;
         declared.dedup();
         let [class] = declared.as_slice() else {
             continue;

@@ -3657,7 +3657,7 @@ fn overlapping_ranges(
             .iter()
             .map(|(sequence, range)| (range.start, range.end, *sequence)),
     );
-    ordered.sort_unstable();
+    ctx.sort_unstable_by(&mut ordered, Ord::cmp, |_| 0, "iges declared parameter range sort")?;
     let mut overlapping = BTreeSet::new();
     let mut highest_end = 0_u32;
     let mut highest_owner = None;

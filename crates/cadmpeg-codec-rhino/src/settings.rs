@@ -1251,33 +1251,38 @@ fn parse_layer_extensions(
         outer_reader.skip(entry.next_offset() - outer_reader.position())?;
     }
     outer_reader.skip_remaining()?;
-    values.sort_by(|a, b| {
-        a.viewport_id
-            .cmp(&b.viewport_id)
-            .then_with(|| a.settings_mask().cmp(&b.settings_mask()))
-            .then_with(|| a.visible.cmp(&b.visible))
-            .then_with(|| a.persistent_visibility.cmp(&b.persistent_visibility))
-            .then_with(|| {
-                a.color
-                    // endian-exception: packed-color-order
-                    .map(u32::from_le_bytes)
-                    // endian-exception: packed-color-order
-                    .cmp(&b.color.map(u32::from_le_bytes))
-            })
-            .then_with(|| {
-                a.plot_color
-                    // endian-exception: packed-color-order
-                    .map(u32::from_le_bytes)
-                    // endian-exception: packed-color-order
-                    .cmp(&b.plot_color.map(u32::from_le_bytes))
-            })
-            .then_with(|| match (a.plot_weight_mm, b.plot_weight_mm) {
-                (Some(a), Some(b)) => a.get().total_cmp(&b.get()),
-                (None, None) => std::cmp::Ordering::Equal,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (Some(_), None) => std::cmp::Ordering::Greater,
-            })
-    });
+    ctx.stable_sort_by(
+        &mut values,
+        |a, b| {
+            a.viewport_id
+                .cmp(&b.viewport_id)
+                .then_with(|| a.settings_mask().cmp(&b.settings_mask()))
+                .then_with(|| a.visible.cmp(&b.visible))
+                .then_with(|| a.persistent_visibility.cmp(&b.persistent_visibility))
+                .then_with(|| {
+                    a.color
+                        // endian-exception: packed-color-order
+                        .map(u32::from_le_bytes)
+                        // endian-exception: packed-color-order
+                        .cmp(&b.color.map(u32::from_le_bytes))
+                })
+                .then_with(|| {
+                    a.plot_color
+                        // endian-exception: packed-color-order
+                        .map(u32::from_le_bytes)
+                        // endian-exception: packed-color-order
+                        .cmp(&b.plot_color.map(u32::from_le_bytes))
+                })
+                .then_with(|| match (a.plot_weight_mm, b.plot_weight_mm) {
+                    (Some(a), Some(b)) => a.get().total_cmp(&b.get()),
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Less,
+                    (Some(_), None) => std::cmp::Ordering::Greater,
+                })
+        },
+        |_| 0,
+        "Rhino layer per-viewport settings sort",
+    )?;
     Ok(values)
 }
 

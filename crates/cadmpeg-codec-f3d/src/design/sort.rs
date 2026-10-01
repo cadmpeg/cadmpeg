@@ -41,9 +41,12 @@ pub(super) fn sort_by<T>(
     let mut permutation = Vec::new();
     ctx.reserve_vec(&mut permutation, count, "f3d stable sort permutation")?;
     permutation.extend(0..count);
-    permutation.sort_unstable_by(|left, right| {
-        compare(&values[*left], &values[*right]).then_with(|| left.cmp(right))
-    });
+    ctx.sort_unstable_by(
+        &mut permutation,
+        |left, right| compare(&values[*left], &values[*right]).then_with(|| left.cmp(right)),
+        |_| 0,
+        "f3d stable sort permutation order",
+    )?;
     // Invert source indices into destination indices, marking each completed cycle.
     for start in 0..count {
         if permutation[start] & VISITED != 0 {

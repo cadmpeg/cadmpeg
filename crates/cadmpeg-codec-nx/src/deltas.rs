@@ -539,7 +539,12 @@ fn term_use_numeric_tails(
             ctx.refuse_codec_limit("NX deltas event start sort", 0, u64_from_index(count))
         })?;
     ctx.charge_work(sort_work, "sort NX deltas event starts")?;
-    event_starts.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut event_starts,
+        Ord::cmp,
+        |_| 0,
+        "sort NX deltas event starts",
+    )?;
     event_starts.dedup();
 
     let mut tails = Vec::new();
@@ -1791,7 +1796,7 @@ fn merged_event_spans(
                 .map(|state| (state.offset, state.end)),
         );
     }
-    covered.sort_unstable();
+    ctx.sort_unstable_by(&mut covered, Ord::cmp, |_| 0, "sort NX deltas covered spans")?;
     let mut merged = Vec::<(usize, usize)>::new();
     for (start, end) in covered {
         if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
@@ -2275,9 +2280,17 @@ fn count_unmatched_events(
             .checked_mul(u64::from(usize::BITS - events.len().leading_zeros()))
             .ok_or_else(|| ctx.refuse_codec_limit("sort NX unmatched deltas events", 0, count))?;
         ctx.charge_work(work, "sort NX unmatched deltas events")?;
-        events.sort_by_key(|event| match event {
-            MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
-        });
+        ctx.stable_sort_by(
+            &mut events,
+            |first, second| {
+                let offset = |event: &MergeEvent| match event {
+                    MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
+                };
+                offset(first).cmp(&offset(second))
+            },
+            |_| 0,
+            "sort NX unmatched deltas events",
+        )?;
         let Some(MergeEvent::Tombstone {
             offset,
             kind: tombstone_kind,

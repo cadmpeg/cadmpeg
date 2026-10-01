@@ -134,7 +134,7 @@ pub(crate) fn decode_edge_operands(
         }
     }
     for offsets in stream_offsets.values_mut() {
-        offsets.sort_unstable();
+        ctx.sort_unstable_by(offsets, Ord::cmp, |_| 0, "sort f3d edge operand stream offsets")?;
     }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();

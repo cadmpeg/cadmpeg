@@ -579,7 +579,12 @@ pub(crate) fn enrich_history_split_lines(
                 objects.push((name.offset, feature));
             }
         }
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT split-line objects",
+        )?;
         for (index, (start, feature)) in objects.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moPLine_c") {
                 continue;

@@ -279,7 +279,15 @@ pub(super) fn parasolid_group_records(
         cadmpeg_core::decode::u64_from_index(work),
         "NX GROUP record sort work",
     )?;
-    groups.sort_by_key(|group| (group.origin.stream_ordinal(), group.inflated_offset));
+    ctx.stable_sort_by(
+        &mut groups,
+        |first, second| {
+            (first.origin.stream_ordinal(), first.inflated_offset)
+                .cmp(&(second.origin.stream_ordinal(), second.inflated_offset))
+        },
+        |_| 0,
+        "sort NX GROUP records",
+    )?;
     Ok(groups)
 }
 
@@ -504,7 +512,12 @@ fn apply_group_state_events(
         cadmpeg_core::decode::u64_from_index(work),
         "NX GROUP state event sort work",
     )?;
-    events.sort_by_key(|(offset, _)| *offset);
+    ctx.stable_sort_by(
+        &mut events,
+        |(first, _), (second, _)| first.cmp(second),
+        |_| 0,
+        "sort NX GROUP state events",
+    )?;
     for (_, event) in events {
         match event {
             Event::Record(record) => {
@@ -1325,7 +1338,12 @@ fn sort_deltas_events<T>(
         cadmpeg_core::decode::u64_from_index(work),
         "NX deltas event sort work",
     )?;
-    events.sort_by(|left, right| id(left).cmp(id(right)));
+    ctx.stable_sort_by(
+        events,
+        |left, right| id(left).cmp(id(right)),
+        |event| id(event).len(),
+        "sort NX deltas events",
+    )?;
     Ok(())
 }
 
@@ -1859,7 +1877,12 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
         cadmpeg_core::decode::u64_from_index(sort_units),
         "sort NX Parasolid cached records",
     )?;
-    records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| P::id(left).cmp(P::id(right)),
+        |record| P::id(record).len(),
+        "sort NX Parasolid records",
+    )?;
     Ok(records)
 }
 
@@ -1918,7 +1941,12 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
         cadmpeg_core::decode::u64_from_index(sort_units),
         "sort NX Parasolid scanned records",
     )?;
-    records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| P::id(left).cmp(P::id(right)),
+        |record| P::id(record).len(),
+        "sort NX Parasolid records",
+    )?;
     Ok(records)
 }
 
@@ -2396,7 +2424,12 @@ pub(super) fn parasolid_chart_records(
         cadmpeg_core::decode::u64_from_index(work),
         "NX Parasolid chart record sort work",
     )?;
-    records.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| left.id.cmp(&right.id),
+        |item| item.id.len(),
+        "sort NX Parasolid records",
+    )?;
     Ok(records)
 }
 
@@ -3429,7 +3462,12 @@ pub(super) fn parasolid_field_names_records(
         cadmpeg_core::decode::u64_from_index(records.len()),
         "sort NX field names records",
     )?;
-    records.sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut records,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid records",
+    )?;
     Ok(records)
 }
 
@@ -3554,7 +3592,12 @@ pub(super) fn parasolid_attribute_field_names(
         cadmpeg_core::decode::u64_from_index(work),
         "NX attribute field name relation sort work",
     )?;
-    relations.sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut relations,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX attribute field name relations",
+    )?;
     Ok(relations)
 }
 
@@ -3746,7 +3789,12 @@ pub(super) fn parasolid_entity_51_records(
         cadmpeg_core::decode::u64_from_index(records.len()),
         "sort NX entity 51 records",
     )?;
-    records.sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut records,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid records",
+    )?;
     Ok(records)
 }
 
@@ -4003,27 +4051,48 @@ pub(super) fn parasolid_entity_value_records(
         cadmpeg_core::decode::u64_from_index(sort_units),
         "sort NX Parasolid value records",
     )?;
-    records
-        .integers
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .doubles
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .strings
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .vectors
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .axes
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .tags
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    records
-        .unicode
-        .sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut records.integers,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value integers",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.doubles,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value doubles",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.strings,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value strings",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.vectors,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value vectors",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.axes,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value axes",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.tags,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value tags",
+    )?;
+    ctx.stable_sort_by(
+        &mut records.unicode,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid value unicode",
+    )?;
     Ok(records)
 }
 
@@ -4096,7 +4165,12 @@ fn sort_entity_51_uses<T>(
         cadmpeg_core::decode::u64_from_index(work),
         "NX entity 51 value use sort work",
     )?;
-    uses.sort_by(|left, right| id(left).cmp(id(right)));
+    ctx.stable_sort_by(
+        uses,
+        |left, right| id(left).cmp(id(right)),
+        |value_use| id(value_use).len(),
+        "sort NX entity 51 value uses",
+    )?;
     Ok(())
 }
 
@@ -4510,7 +4584,12 @@ pub(super) fn parasolid_topology_attribute_class_uses(
         cadmpeg_core::decode::u64_from_index(work),
         "NX topology attribute class sort work",
     )?;
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut uses,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid uses",
+    )?;
     Ok(uses)
 }
 
@@ -4583,7 +4662,12 @@ pub(super) fn parasolid_attribute_class_uses(
         cadmpeg_core::decode::u64_from_index(work),
         "NX attribute class use sort work",
     )?;
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut uses,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid uses",
+    )?;
     Ok(uses)
 }
 
@@ -4822,7 +4906,12 @@ pub(super) fn parasolid_attribute_field_uses(
         cadmpeg_core::decode::u64_from_index(sort_work),
         "NX attribute field use sort work",
     )?;
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    ctx.stable_sort_by(
+        &mut uses,
+        |first, second| first.id.cmp(&second.id),
+        |item| item.id.len(),
+        "sort NX Parasolid uses",
+    )?;
     Ok(uses)
 }
 

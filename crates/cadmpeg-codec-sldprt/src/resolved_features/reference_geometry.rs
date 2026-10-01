@@ -481,7 +481,12 @@ pub(crate) fn enrich_history_reference_planes(
         explicit_reference_indices.remove(index);
     }
     for ((history_index, feature_index), mut native) in face_native_candidates {
-        native.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut native,
+            Ord::cmp,
+            |native| native.len(),
+            "sort SLDPRT face native references",
+        )?;
         native.dedup();
         if let [native] = native.as_slice() {
             insert_reference_plane_property(
@@ -493,7 +498,12 @@ pub(crate) fn enrich_history_reference_planes(
         }
     }
     for ((history_index, feature_index), mut targets) in face_feature_candidates {
-        targets.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut targets,
+            Ord::cmp,
+            |target| target.len(),
+            "sort SLDPRT face feature targets",
+        )?;
         targets.dedup();
         if let [target] = targets.as_slice() {
             insert_reference_plane_property(
@@ -609,7 +619,12 @@ pub(crate) fn enrich_history_reference_planes(
                 sources.push(source);
             }
         }
-        sources.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut sources,
+            Ord::cmp,
+            |source| source.len(),
+            "sort SLDPRT inferred plane sources",
+        )?;
         sources.dedup();
         if let [source] = sources.as_slice() {
             let source = crate::text_admission::format_retained(
@@ -707,7 +722,12 @@ pub(crate) fn enrich_history_reference_planes(
                 }
             }
         }
-        sources.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut sources,
+            Ord::cmp,
+            |source| source.len(),
+            "sort SLDPRT reference plane sources",
+        )?;
         sources.dedup();
         let [source] = sources.as_slice() else {
             continue;
@@ -1913,7 +1933,12 @@ pub(crate) fn enrich_history_sketch_block_references(
             }
         }
         for (feature_index, mut sources) in candidates {
-            sources.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut sources,
+                Ord::cmp,
+                |_| 0,
+                "sort SLDPRT sketch block definitions",
+            )?;
             sources.dedup();
             let [source] = sources.as_slice() else {
                 continue;

@@ -3669,7 +3669,12 @@ fn named_prototype_frames<'a>(
                 named.push((token_offset, length));
             }
         }
-        named.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut named,
+            Ord::cmp,
+            |_| 0,
+            "creo named prototype field position sort",
+        )?;
         named.dedup();
         let mut owned_scalar_end = close + 2;
         named.retain(|(token_offset, token_length)| {
@@ -4402,7 +4407,12 @@ fn inline_surface_suffix_body(
                 }
             }
         }
-        terminal_closes[..close_count].sort_unstable();
+        ctx.sort_unstable_by(
+            &mut terminal_closes[..close_count],
+            Ord::cmp,
+            |_| 0,
+            "creo terminal close sort",
+        )?;
         let mut previous_close = None;
         for relative_close in terminal_closes[..close_count].iter().copied() {
             if previous_close == Some(relative_close) {

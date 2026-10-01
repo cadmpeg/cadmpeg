@@ -1835,7 +1835,7 @@ fn unique_stable_face_slots(
     if slots.iter().any(|slot| *slot < 0) {
         return Ok(None);
     }
-    slots.sort_unstable();
+    ctx.sort_unstable_by(&mut slots, Ord::cmp, |_| 0, "f3d stable face slot sort")?;
     let unique = slots.windows(2).all(|pair| pair[0] != pair[1]);
     Ok(unique.then_some(slots))
 }
@@ -1945,7 +1945,7 @@ fn effective_historical_face_slots(
             "f3d effective candidate face slot",
         )?;
     }
-    candidate_slots.sort_unstable();
+    ctx.sort_unstable_by(&mut candidate_slots, Ord::cmp, |_| 0, "f3d effective candidate face sort")?;
     candidate_slots.dedup();
 
     let mut active_faces = Vec::new();
@@ -1956,7 +1956,7 @@ fn effective_historical_face_slots(
             "f3d effective active face slot",
         )?;
     }
-    active_faces.sort_unstable();
+    ctx.sort_unstable_by(&mut active_faces, Ord::cmp, |_| 0, "f3d effective active face sort")?;
     active_faces.dedup();
     Ok((!active_faces.is_empty()
         && active_faces
@@ -1981,7 +1981,7 @@ fn convergent_face_support(
     for slot in &first.preceding_face_slots {
         ctx.push_vec(&mut support, *slot, "f3d convergent support face")?;
     }
-    support.sort_unstable();
+    ctx.sort_unstable_by(&mut support, Ord::cmp, |_| 0, "f3d convergent support face sort")?;
     support.dedup();
     if support.is_empty() {
         return Ok(None);
@@ -2001,7 +2001,7 @@ fn convergent_face_support(
                 "f3d convergent candidate support face",
             )?;
         }
-        candidate.sort_unstable();
+        ctx.sort_unstable_by(&mut candidate, Ord::cmp, |_| 0, "f3d convergent candidate face sort")?;
         candidate.dedup();
         if candidate != support {
             return Ok(None);
@@ -2012,7 +2012,7 @@ fn convergent_face_support(
             "f3d convergent covered face",
         )?;
     }
-    covered.sort_unstable();
+    ctx.sort_unstable_by(&mut covered, Ord::cmp, |_| 0, "f3d convergent covered face sort")?;
     covered.dedup();
     Ok((covered == active_faces).then_some(support))
 }
@@ -2038,7 +2038,7 @@ fn bounded_face_candidate_by_boundary_cardinality(
                 "f3d bounded face cardinality candidate",
             )?;
         }
-        slots.sort_unstable();
+        ctx.sort_unstable_by(&mut slots, Ord::cmp, |_| 0, "f3d bounded face candidate sort")?;
         if selected.as_ref().is_some_and(|first| first != &slots) {
             return Ok(None);
         }
@@ -2061,7 +2061,7 @@ fn bounded_face_candidate_by_boundary_cardinality(
             )?;
         }
         if edge_count == Some(header_value) {
-            slots.sort_unstable();
+            ctx.sort_unstable_by(&mut slots, Ord::cmp, |_| 0, "f3d bounded face union sort")?;
             if selected.as_ref().is_some_and(|first| first != &slots) {
                 return Ok(None);
             }

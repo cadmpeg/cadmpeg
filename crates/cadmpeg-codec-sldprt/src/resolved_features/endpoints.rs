@@ -1421,12 +1421,17 @@ fn resolve_indexed_marker_candidates<'a>(
             charge_endpoint_work(ctx, marker.id().len(), factor, OPERATION)?;
         }
     }
-    pairs.sort_unstable_by(|left, right| {
-        left[0]
-            .id()
-            .cmp(right[0].id())
-            .then_with(|| left[1].id().cmp(right[1].id()))
-    });
+    ctx.sort_unstable_by(
+        &mut pairs,
+        |left, right| {
+            left[0]
+                .id()
+                .cmp(right[0].id())
+                .then_with(|| left[1].id().cmp(right[1].id()))
+        },
+        |pair| pair[0].id().len().saturating_add(pair[1].id().len()),
+        OPERATION,
+    )?;
     Ok((copy_endpoint_markers(ctx, &pairs[0])?, false))
 }
 
@@ -2313,9 +2318,14 @@ fn point_distance_component_has_solution(
         .and_then(|levels| levels.checked_mul(32))
         .ok_or_else(|| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
     charge_endpoint_work(ctx, unassigned.len(), factor, POINT_SOLVER_OPERATION)?;
-    unassigned.sort_unstable_by_key(|index| {
-        std::cmp::Reverse(domains.get(index).map_or(usize::MAX, Vec::len))
-    });
+    let domain_key =
+        |index: &u32| std::cmp::Reverse(domains.get(index).map_or(usize::MAX, Vec::len));
+    ctx.sort_unstable_by(
+        &mut unassigned,
+        |left, right| domain_key(left).cmp(&domain_key(right)),
+        |_| 0,
+        POINT_SOLVER_OPERATION,
+    )?;
     point_distance_assignment_exists(ctx, &unassigned, domains, constraints)
 }
 
@@ -4473,11 +4483,16 @@ fn sort_endpoint_points(
         .and_then(|levels| levels.checked_mul(64))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     charge_endpoint_work(ctx, points.len(), factor, operation)?;
-    points.sort_unstable_by(|left, right| {
-        left[0]
-            .total_cmp(&right[0])
-            .then_with(|| left[1].total_cmp(&right[1]))
-    });
+    ctx.sort_unstable_by(
+        points,
+        |left, right| {
+            left[0]
+                .total_cmp(&right[0])
+                .then_with(|| left[1].total_cmp(&right[1]))
+        },
+        |_| 0,
+        operation,
+    )?;
     Ok(())
 }
 
@@ -4555,7 +4570,12 @@ pub(super) fn sort_endpoint_markers(
         .and_then(|levels| levels.checked_mul(64))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     charge_endpoint_work(ctx, markers.len(), factor, operation)?;
-    markers.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        markers,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        operation,
+    )?;
     Ok(())
 }
 
@@ -6054,7 +6074,12 @@ pub(super) fn unique_arc_center_marker(
         .and_then(|levels| levels.checked_mul(64))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     charge_endpoint_work(ctx, centers.len(), factor, OPERATION)?;
-    centers.sort_unstable_by_key(|(center, _)| *center);
+    ctx.sort_unstable_by(
+        &mut centers,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        OPERATION,
+    )?;
     centers.dedup_by_key(|(center, _)| *center);
     let [(_, center)] = centers.as_slice() else {
         return Ok(None);

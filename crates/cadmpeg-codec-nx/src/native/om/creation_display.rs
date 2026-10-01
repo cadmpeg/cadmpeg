@@ -121,7 +121,12 @@ fn finalize_relations(
         u64_from_index(sort_work),
         "sort NX creation display relations",
     )?;
-    relations.sort_by_key(|relation| relation.encoding.offset());
+    ctx.stable_sort_by(
+        &mut relations,
+        |left, right| left.encoding.offset().cmp(&right.encoding.offset()),
+        |_| 0,
+        "sort NX creation display relations",
+    )?;
     drop(sort_reservation);
     for (ordinal, relation) in relations.iter_mut().enumerate() {
         relation.ordinal = u32::try_from(ordinal)

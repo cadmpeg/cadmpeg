@@ -63,7 +63,12 @@ pub(super) fn feature_intervals(
             }
         }
     }
-    starts.sort_unstable_by_key(|(offset, _)| *offset);
+    ctx.sort_unstable_by(
+        &mut starts,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT feature intervals",
+    )?;
     starts.dedup_by_key(|(offset, _)| *offset);
     let mut intervals = Vec::new();
     ctx.reserve_collection_vec(
@@ -575,7 +580,12 @@ pub(super) fn relation_instances(
             operands: copy_relation_operands(ctx, &scalar.operands)?,
         });
     }
-    instances.sort_unstable_by_key(|relation| (relation.offset, relation.ordinal));
+    ctx.sort_unstable_by(
+        &mut instances,
+        |left, right| (left.offset, left.ordinal).cmp(&(right.offset, right.ordinal)),
+        |_| 0,
+        "sort SLDPRT relation instances",
+    )?;
     for (ordinal, relation) in instances.iter_mut().enumerate() {
         relation.ordinal = u32::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX)
@@ -762,7 +772,12 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         return Ok(None);
     }
     let mut scalars = collect_relation_vec(ctx, lane.scalars.iter())?;
-    scalars.sort_unstable_by_key(|scalar| scalar.offset);
+    ctx.sort_unstable_by(
+        &mut scalars,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort SLDPRT relation scalars",
+    )?;
     let mut names = HashMap::new();
     for name in &lane.names {
         ctx.reserve_map(&mut names, 1, "index SLDPRT relation records")?;
@@ -1103,7 +1118,12 @@ fn feature_entities<'a>(
             .iter()
             .filter(|entity| entity.feature_ref.as_deref() == Some(feature)),
     )?;
-    entities.sort_unstable_by_key(|entity| (entity.offset(), entity.ordinal()));
+    ctx.sort_unstable_by(
+        &mut entities,
+        |left, right| (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal())),
+        |_| 0,
+        "sort SLDPRT relation feature entities",
+    )?;
     Ok(entities)
 }
 
@@ -1174,7 +1194,12 @@ fn dynamic_point_candidates<'a>(
     }) {
         push_point_candidate(ctx, &mut candidates, &mut seen, Some(entity))?;
     }
-    candidates.sort_unstable_by(|left, right| left.id().cmp(right.id()));
+    ctx.sort_unstable_by(
+        &mut candidates,
+        |left, right| left.id().cmp(right.id()),
+        |entity| entity.id().len(),
+        "sort SLDPRT dynamic point candidates",
+    )?;
     Ok(candidates)
 }
 
@@ -1402,7 +1427,12 @@ fn bind_dynamic_point_relation(
         };
         matches = dynamic_point_matches(ctx, first_relaxed, second_relaxed, target, horizontal)?;
     }
-    matches.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut matches,
+        Ord::cmp,
+        |(first, second)| first.len().saturating_add(second.len()),
+        "sort SLDPRT dynamic point matches",
+    )?;
     matches.dedup();
     if let [(first, second)] = matches.as_slice() {
         relation.operands[0].entity_ref = Some(copy_relation_text(ctx, first)?);
@@ -1456,7 +1486,12 @@ fn bind_dynamic_point_line_relation(
             same_relation_dimension(measured, target).then(|| point.id())
         }),
     )?;
-    matches.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut matches,
+        Ord::cmp,
+        |id| id.len(),
+        "sort SLDPRT dynamic point-line matches",
+    )?;
     matches.dedup();
     if let [point] = matches.as_slice() {
         relation.operands[0].entity_ref = Some(copy_relation_text(ctx, point)?);

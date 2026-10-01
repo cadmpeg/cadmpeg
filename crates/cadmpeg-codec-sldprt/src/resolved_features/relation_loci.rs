@@ -1935,7 +1935,12 @@ fn unique_repaired_profile_pair(
             OPERATION,
         )?;
         let mut pair = [known, partner];
-        pair.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+        ctx.sort_unstable_by(
+            &mut pair,
+            |left, right| locus_key(left).cmp(&locus_key(right)),
+            |locus| locus_key(locus).0.len(),
+            OPERATION,
+        )?;
         let [first, second] = pair;
         let pair = (first, second);
         if selected.as_ref().is_some_and(|selected| selected != &pair) {
@@ -2294,14 +2299,17 @@ pub(super) fn canonical_profile_loci(
         OPERATION,
     )?;
     // Source order breaks equal geometric and identity keys without sort scratch.
-    indexed.sort_unstable_by(
+    ctx.sort_unstable_by(
+        &mut indexed,
         |(left_index, left_point, left_locus), (right_index, right_point, right_locus)| {
             quantize(*left_point, QUANTUM)
                 .cmp(&quantize(*right_point, QUANTUM))
                 .then_with(|| locus_key(left_locus).cmp(&locus_key(right_locus)))
                 .then_with(|| left_index.cmp(right_index))
         },
-    );
+        |(_, _, locus)| locus_key(locus).0.len(),
+        OPERATION,
+    )?;
     indexed.dedup_by(|(_, left_point, _), (_, right_point, _)| {
         quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM)
     });
@@ -2472,7 +2480,12 @@ fn unique_repaired_entity_pair(
             super::transforms::copy_sketch_entity_identity(ctx, known, OPERATION)?,
             partner,
         ];
-        pair.sort();
+        ctx.stable_sort_by(
+            &mut pair,
+            Ord::cmp,
+            |entity| entity.as_str().len(),
+            OPERATION,
+        )?;
         let [first, second] = pair;
         let pair = (first, second);
         if selected.as_ref().is_some_and(|selected| selected != &pair) {
@@ -3525,7 +3538,12 @@ fn dynamic_line_operand_candidates(
             })
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(work, OPERATION)?;
-        entities.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut entities,
+            Ord::cmp,
+            |entity| entity.as_str().len(),
+            OPERATION,
+        )?;
         entities.dedup();
     }
     Ok(entities)
@@ -3809,7 +3827,12 @@ fn dynamic_marker_line_candidates(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    candidates.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |entity| entity.as_str().len(),
+        OPERATION,
+    )?;
     candidates.dedup();
     Ok(candidates)
 }
@@ -4395,7 +4418,12 @@ pub(super) fn relation_operand_marker<'a>(
                     )
             })?;
         charge_relation_marker_sort(ctx, &coordinate_handles, OPERATION)?;
-        coordinate_handles.sort_unstable_by_key(|marker| marker.offset());
+        ctx.sort_unstable_by(
+            &mut coordinate_handles,
+            |left, right| left.offset().cmp(&right.offset()),
+            |_| 0,
+            OPERATION,
+        )?;
         return Ok(coordinate_handles
             .get(usize::from(operand.entity_index))
             .map(|marker| marker.id()));
@@ -4498,12 +4526,17 @@ fn dynamic_relation_marker<'a>(
     let mut ordinal =
         collect_relation_marker_candidates(ctx, relation, markers_by_id, direct_kind)?;
     charge_relation_marker_sort(ctx, &ordinal, "sort SLDPRT ordinal operand markers")?;
-    ordinal.sort_unstable_by(|left, right| {
-        left.offset()
-            .cmp(&right.offset())
-            .then_with(|| left.ordinal().cmp(&right.ordinal()))
-            .then_with(|| left.id().cmp(right.id()))
-    });
+    ctx.sort_unstable_by(
+        &mut ordinal,
+        |left, right| {
+            left.offset()
+                .cmp(&right.offset())
+                .then_with(|| left.ordinal().cmp(&right.ordinal()))
+                .then_with(|| left.id().cmp(right.id()))
+        },
+        |marker| marker.id().len(),
+        "sort SLDPRT ordinal operand markers",
+    )?;
     Ok(ordinal
         .get(usize::from(operand.entity_index))
         .map(|marker| marker.id()))
@@ -5108,7 +5141,12 @@ pub(super) fn single_marker_line_entity(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    entities.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut entities,
+        Ord::cmp,
+        |entity| entity.as_str().len(),
+        "sort SLDPRT single marker line entities",
+    )?;
     entities.dedup();
     if entities.len() == 1 {
         return Ok(entities.into_iter().next());
@@ -5456,7 +5494,12 @@ fn sort_profile_loci(
         operation,
     )?;
     // Equal sort keys identify equal locus values.
-    loci.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    ctx.sort_unstable_by(
+        loci.as_mut_slice(),
+        |left, right| locus_key(left).cmp(&locus_key(right)),
+        |locus| locus_key(locus).0.len(),
+        operation,
+    )?;
     loci.dedup();
     Ok(())
 }

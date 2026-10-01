@@ -2490,7 +2490,7 @@ fn resolved_fillet_assignments<'a>(
             ctx.push_vec(&mut assigned, record, "f3d Fillet assigned parameter")?;
         }
     }
-    assigned.sort_unstable();
+    ctx.sort_unstable_by(&mut assigned, Ord::cmp, |_| 0, "f3d Fillet assigned parameter sort")?;
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
         return Ok(None);
     }
@@ -4986,7 +4986,7 @@ fn normalize_parameter_ordinals(
                 "f3d parameter group ordinal",
             )?;
         }
-        ordinals.sort_unstable();
+        ctx.sort_unstable_by(&mut ordinals, Ord::cmp, |_| 0, "f3d parameter group ordinal sort")?;
         let mut unresolved = HashSet::new();
         for index in indices {
             // discarded-value: each parameter index occurs once in its owner group.

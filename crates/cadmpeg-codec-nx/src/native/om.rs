@@ -5341,7 +5341,12 @@ pub(super) fn data_block_control_handle_pairs(
             cadmpeg_core::decode::u64_from_index(scratch_bytes),
             "sort NX control handle pair references",
         )?;
-        block_references.sort_by_key(|(reference, _)| reference.source_offset);
+        ctx.stable_sort_by(
+            &mut block_references,
+            |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),
+            |_| 0,
+            "sort NX control handle pair references",
+        )?;
         let mut at = 0;
         while at < block_references.len() {
             let start = at;
@@ -6056,7 +6061,12 @@ pub(super) fn object_record_handle_pairs(
             cadmpeg_core::decode::u64_from_index(record_references.len()),
             "sort NX record handle references",
         )?;
-        record_references.sort_by_key(|(reference, _)| reference.source_offset);
+        ctx.stable_sort_by(
+            &mut record_references,
+            |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),
+            |_| 0,
+            "sort NX record handle references",
+        )?;
         let mut at = 0;
         while at < record_references.len() {
             let start = at;

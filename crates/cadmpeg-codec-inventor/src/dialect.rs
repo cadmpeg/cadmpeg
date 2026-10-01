@@ -187,7 +187,12 @@ impl DialectRecovery {
                 schemas.push(schema);
             }
         }
-        schemas.sort_unstable_by_key(|schema| schema.value());
+        ctx.sort_unstable_by(
+            &mut schemas,
+            |left, right| left.value().cmp(&right.value()),
+            |_| 0,
+            "Inventor dialect schema sort",
+        )?;
         schemas.dedup();
         let mut unframed_schemas = Vec::new();
         for descriptor in &container.rse.databases {
@@ -196,7 +201,12 @@ impl DialectRecovery {
                 unframed_schemas.push(*schema);
             }
         }
-        unframed_schemas.sort_unstable_by_key(|schema| schema.value());
+        ctx.sort_unstable_by(
+            &mut unframed_schemas,
+            |left, right| left.value().cmp(&right.value()),
+            |_| 0,
+            "Inventor unframed dialect schema sort",
+        )?;
         unframed_schemas.dedup();
         let mut meta_streams = Vec::new();
         for segment in &container.rse.segments {
@@ -205,7 +215,12 @@ impl DialectRecovery {
                 meta_streams.push(declaration);
             }
         }
-        meta_streams.sort();
+        ctx.stable_sort_by(
+            &mut meta_streams,
+            Ord::cmp,
+            |item| item.marker.len(),
+            "Inventor dialect metadata sort",
+        )?;
         meta_streams.dedup();
         let mut unframed_meta_streams = Vec::new();
         for segment in &container.rse.segments {
@@ -222,7 +237,12 @@ impl DialectRecovery {
                 unframed_meta_streams.push(declared.clone());
             }
         }
-        unframed_meta_streams.sort();
+        ctx.stable_sort_by(
+            &mut unframed_meta_streams,
+            Ord::cmp,
+            |item| item.marker.len(),
+            "Inventor unframed dialect metadata sort",
+        )?;
         unframed_meta_streams.dedup();
         Ok(Self {
             cfb_major_version: container.snapshot.major_version(),

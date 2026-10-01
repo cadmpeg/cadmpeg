@@ -382,12 +382,17 @@ fn assign_feature_parameter_ordinals(
             cadmpeg_core::decode::u64_from_index(parameters.len()),
             "catia_feature_parameter_sort",
         )?;
-        parameters.sort_unstable_by(|left, right| {
-            left.0
-                .cmp(&right.0)
-                .then(left.1.cmp(&right.1))
-                .then(left.2.cmp(&right.2))
-        });
+        ctx.sort_unstable_by(
+            parameters,
+            |left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then(left.1.cmp(&right.1))
+                    .then(left.2.cmp(&right.2))
+            },
+            |item| item.2.as_str().len(),
+            "catia_feature_parameter_order_sort",
+        )?;
         for (ordinal, parameter) in parameters.iter().enumerate() {
             let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
@@ -442,7 +447,12 @@ fn assign_document_parameter_ordinals(
         cadmpeg_core::decode::u64_from_index(parameters.len()),
         "catia_document_parameter_sort",
     )?;
-    parameters.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    ctx.sort_unstable_by(
+        &mut parameters,
+        |left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)),
+        |item| item.1.as_str().len(),
+        "catia_document_parameter_order_sort",
+    )?;
 
     let mut parameter_ordinals = HashMap::new();
     for (ordinal, (_, parameter)) in parameters.into_iter().enumerate() {
@@ -1324,12 +1334,17 @@ fn native_operation_definition_properties(
             .filter_map(|entity| entity.definition_value().map(|value| (entity, value))),
         "catia_feature_definition_values",
     )?;
-    definition_values.sort_unstable_by(|(left, _), (right, _)| {
-        left.byte_offset
-            .cmp(&right.byte_offset)
-            .then(left.ordinal.cmp(&right.ordinal))
-            .then(left.id.cmp(&right.id))
-    });
+    ctx.sort_unstable_by(
+        &mut definition_values,
+        |(left, _), (right, _)| {
+            left.byte_offset
+                .cmp(&right.byte_offset)
+                .then(left.ordinal.cmp(&right.ordinal))
+                .then(left.id.cmp(&right.id))
+        },
+        |(entity, _)| entity.id.len(),
+        "catia_feature_definition_values_sort",
+    )?;
     for (ordinal, (entity, value)) in definition_values.into_iter().enumerate() {
         definition_value_count += 1;
         let record =
@@ -1377,12 +1392,17 @@ fn native_operation_definition_properties(
             .filter_map(|entity| entity.definition_chain_value().map(|value| (entity, value))),
         "catia_feature_definition_chain_values",
     )?;
-    definition_chain_values.sort_unstable_by(|(left, _), (right, _)| {
-        left.byte_offset
-            .cmp(&right.byte_offset)
-            .then(left.ordinal.cmp(&right.ordinal))
-            .then(left.id.cmp(&right.id))
-    });
+    ctx.sort_unstable_by(
+        &mut definition_chain_values,
+        |(left, _), (right, _)| {
+            left.byte_offset
+                .cmp(&right.byte_offset)
+                .then(left.ordinal.cmp(&right.ordinal))
+                .then(left.id.cmp(&right.id))
+        },
+        |(entity, _)| entity.id.len(),
+        "catia_feature_definition_chain_values_sort",
+    )?;
     for (ordinal, (entity, value)) in definition_chain_values.into_iter().enumerate() {
         definition_chain_value_count += 1;
         let record = ctx.copy_retained_text(&entity.object_record, "catia_feature_chain_record")?;
@@ -1437,12 +1457,17 @@ fn native_operation_definition_properties(
             }),
         "catia_feature_range_intervals",
     )?;
-    range_intervals.sort_unstable_by(|(left, _), (right, _)| {
-        left.byte_offset
-            .cmp(&right.byte_offset)
-            .then(left.ordinal.cmp(&right.ordinal))
-            .then(left.id.cmp(&right.id))
-    });
+    ctx.sort_unstable_by(
+        &mut range_intervals,
+        |(left, _), (right, _)| {
+            left.byte_offset
+                .cmp(&right.byte_offset)
+                .then(left.ordinal.cmp(&right.ordinal))
+                .then(left.id.cmp(&right.id))
+        },
+        |(entity, _)| entity.id.len(),
+        "catia_feature_range_intervals_sort",
+    )?;
     range_intervals.dedup_by(|(left, _), (right, _)| left.id == right.id);
     for (ordinal, (entity, range)) in range_intervals.into_iter().enumerate() {
         range_count += 1;

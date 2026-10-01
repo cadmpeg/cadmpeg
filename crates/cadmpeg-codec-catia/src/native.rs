@@ -8305,7 +8305,12 @@ fn consolidated_class61_records(
             "catia_native_class61_order",
         )?;
     }
-    class61_records.sort_by_key(|(pos, _, _)| *pos);
+    ctx.stable_sort_by(
+        &mut class61_records,
+        |(left, _, _), (right, _, _)| left.cmp(right),
+        |_| 0,
+        "catia_native_class61_sort",
+    )?;
     let mut output = Vec::new();
     for (index, (pos, header_token, payload)) in class61_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass61Record {
@@ -8329,7 +8334,14 @@ fn consolidated_class5b5c_records(
 ) -> Result<Vec<CatiaConsolidatedClass5b5cRecord>, CodecError> {
     let mut control_records =
         crate::families::b2::records::b2_class5b5c_records_from_records(ctx, bytes, records)?;
-    control_records.sort_by_key(|record| (record.source_index, record.source_offset));
+    ctx.stable_sort_by(
+        &mut control_records,
+        |left, right| {
+        (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
+    },
+        |_| 0,
+        "catia_native_class5b5c_sort",
+    )?;
     let mut output = Vec::new();
     for (index, record) in control_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass5b5cRecord {
@@ -9012,7 +9024,12 @@ fn consolidated_pcurves(
             ),
         "catia_native_pcurve_ordering",
     )?;
-    pcurves.sort_by_key(|(pcurve, _)| pcurve.pos);
+    ctx.stable_sort_by(
+        &mut pcurves,
+        |(left, _), (right, _)| left.pos.cmp(&right.pos),
+        |_| 0,
+        "catia_native_pcurve_sort",
+    )?;
     let mut native = Vec::new();
     for (index, (pcurve, family)) in pcurves.into_iter().enumerate() {
         let (knots, points, first_derivatives, second_derivatives) = pcurve.native_lanes(ctx)?;

@@ -1286,7 +1286,8 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         )?;
         chronology.push((index, label, first_offset));
     }
-    chronology.sort_unstable_by(
+    ctx.sort_unstable_by(
+        &mut chronology,
         |(left_index, left, left_first), (right_index, right, right_first)| {
             left_first
                 .cmp(right_first)
@@ -1294,7 +1295,9 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                 .then_with(|| right.source_offset.cmp(&left.source_offset))
                 .then_with(|| left_index.cmp(right_index))
         },
-    );
+        |(_, label, _)| label.section_link.len(),
+        "sort NX hole operation chronology",
+    )?;
     let group_work = references
         .len()
         .checked_add(lanes.len())
@@ -1402,14 +1405,17 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             cadmpeg_core::decode::u64_from_index(member_work),
             "sort NX simple hole group members",
         )?;
-        positioned.sort_unstable_by(
+        ctx.sort_unstable_by(
+            &mut positioned,
             |(left_pos, left_index, left, _), (right_pos, right_index, right, _)| {
                 left_pos
                     .cmp(right_pos)
                     .then_with(|| left.operation_label.cmp(&right.operation_label))
                     .then_with(|| left_index.cmp(right_index))
             },
-        );
+            |(_, _, reference, _)| reference.operation_label.len(),
+            "sort NX simple hole group members",
+        )?;
         if positioned.len() < 2
             || positioned
                 .iter()
@@ -1668,9 +1674,17 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         cadmpeg_core::decode::u64_from_index(sort_work),
         "sort NX hole package groups",
     )?;
-    matches.sort_unstable_by(|(left, _), (right, _)| {
-        simple_hole_group_key(left).cmp(&simple_hole_group_key(right))
-    });
+    ctx.sort_unstable_by(
+        &mut matches,
+        |(left, _), (right, _)| simple_hole_group_key(left).cmp(&simple_hole_group_key(right)),
+        |(group, _)| {
+            simple_hole_group_key(group)
+                .iter()
+                .map(|part| part.len())
+                .sum::<usize>()
+        },
+        "sort NX hole package groups",
+    )?;
     let mut uses = Vec::new();
     for (group, lane) in matches {
         let id = copy_replaced_id(
