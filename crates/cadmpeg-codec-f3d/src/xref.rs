@@ -244,36 +244,41 @@ fn validate_component_reference_data(
     Ok(())
 }
 
-fn parse_component_reference_data(
-    ctx: &DecodeContext<'_>,
+fn parse_component_reference_data<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<serde_json::Value, CodecError> {
-    let length = u64::try_from(bytes.len()).map_err(|_| {
-        ctx.refuse_codec_limit("preflight F3D component reference JSON", 0, u64::MAX)
-    })?;
-    let _reservation = ctx.reserve_scoped(length, "preflight F3D component reference JSON")?;
-    if !crate::json_budget::preflight(
-        ctx,
-        bytes,
-        "preflight F3D component reference JSON",
-        "scan F3D component reference JSON",
-        "parse F3D component reference JSON",
-    )? {
-        return Err(CodecError::malformed(format_args!(
-            "{COMPONENT_REFERENCE_ENTRY} is not valid JSON"
-        )));
-    }
-    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
+) -> Result<
+    (
+        serde_json::Value,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.charge_work(u64_from_index(bytes.len()), "validate F3D JSON UTF-8")?;
+    let text = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
         ))
     })?;
+    let (reservation, value) = {
+        let (value, reservation) = ctx
+            .parse_json_value(text, "parse F3D component reference JSON")
+            .map_err(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return error;
+                };
+                CodecError::malformed(format_args!(
+                    "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
+                ))
+            })?;
+        (reservation, value)
+    };
     if !value.is_object() {
         return Err(CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} must contain a top-level JSON object"
         )));
     }
-    Ok(value)
+    Ok((value, reservation))
 }
 
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
@@ -316,14 +321,22 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError> {
-    let length = u64::try_from(bytes.len())
-        .map_err(|_| ctx.refuse_codec_limit("parse F3D redirections JSON", 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(length, "parse F3D redirections JSON")?;
-    let parsed = serde_json::from_slice::<RedirectionsJson>(bytes).map_err(|error| {
+    ctx.charge_work(u64_from_index(bytes.len()), "validate F3D JSON UTF-8")?;
+    let text = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
         ))
     })?;
+    let parsed: RedirectionsJson = ctx
+        .parse_json(text, "parse F3D redirections JSON")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            CodecError::malformed(format_args!(
+                "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
+            ))
+        })?;
     if parsed.name != "RedirectionsStream" {
         return Err(redirections_error(format_args!(
             "name must be RedirectionsStream"
@@ -418,20 +431,14 @@ pub(crate) fn docstruct(
     let Some(payload) = view.take(count) else {
         return Ok(None);
     };
-    let length = u64::try_from(payload.len())
-        .map_err(|_| ctx.refuse_codec_limit("preflight F3D properties JSON", 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(length, "preflight F3D properties JSON")?;
-    if !crate::json_budget::preflight(
-        ctx,
-        payload,
-        "preflight F3D properties JSON",
-        "scan F3D properties JSON",
-        "parse F3D properties JSON",
-    )? {
+    ctx.charge_work(u64_from_index(payload.len()), "validate F3D JSON UTF-8")?;
+    let Ok(text) = std::str::from_utf8(payload) else {
         return Ok(None);
-    }
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(payload) else {
-        return Ok(None);
+    };
+    let (_reservation, value) = match ctx.parse_json_value(text, "parse F3D properties JSON") {
+        Ok((value, reservation)) => (reservation, value),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
     };
     let Some(docstruct) = value.get("docstruct") else {
         return Ok(None);

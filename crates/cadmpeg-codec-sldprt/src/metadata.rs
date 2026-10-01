@@ -194,9 +194,14 @@ fn scan_units_xml(
     else {
         return Ok(());
     };
-    let Ok(document) = roxmltree::Document::parse(text.as_str()) else {
-        return Ok(());
+    let admitted_document = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+        Ok(tree) => tree,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => {
+            return Ok(());
+        }
     };
+    let document = admitted_document.document();
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         let value = if node.tag_name().name() == "SW_UnitsLinear" {
             node.text()

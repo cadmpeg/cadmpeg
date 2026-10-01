@@ -390,6 +390,7 @@ name = "cadmpeg-core"
 version = "0.6.0"
 dependencies = [
  "memchr",
+ "roxmltree",
  "schemars",
  "serde",
  "serde_json",

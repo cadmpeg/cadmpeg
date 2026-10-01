@@ -36,8 +36,6 @@ pub const CONTINUATION_MARKER: &[u8] = &continuation_page::MARKER_VALUE;
 pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RECOVERY_VALUES: u64 = 1_024;
-const XML_NODE_RESERVATION_BYTES: u64 = 192;
-const XML_ATTRIBUTE_RESERVATION_BYTES: u64 = 192;
 
 fn take_lp_utf8_capped(
     ctx: &DecodeContext<'_>,
@@ -453,46 +451,24 @@ fn parse_schema_document(
     bytes: &[u8],
     schemas: &mut HashMap<String, Schema>,
 ) -> Result<(), CodecError> {
-    let _reservation = {
-        let xml_len = cadmpeg_core::decode::u64_from_index(bytes.len());
-        let mut tag_markers = 0_u64;
-        let mut attribute_separators = 0_u64;
-        for &byte in bytes {
-            tag_markers += u64::from(byte == b'<');
-            attribute_separators += u64::from(byte == b'=');
-        }
-        ctx.charge_work(xml_len, "Protein schema XML parse")?;
-        ctx.charge_collection_items(tag_markers, "Protein schema XML nodes")?;
-        // One tag can produce an element and adjacent text node. '=' bounds attributes.
-        let possible_nodes = tag_markers
-            .checked_mul(2)
-            .and_then(|count| count.checked_add(1))
-            .ok_or_else(|| {
-                CodecError::Malformed("Protein schema XML node count overflows".into())
-            })?;
-        let materialized = xml_len
-            .checked_mul(4)
-            .and_then(|size| {
-                possible_nodes
-                    .checked_mul(XML_NODE_RESERVATION_BYTES)
-                    .and_then(|nodes| size.checked_add(nodes))
-            })
-            .and_then(|size| {
-                attribute_separators
-                    .checked_mul(XML_ATTRIBUTE_RESERVATION_BYTES)
-                    .and_then(|attributes| size.checked_add(attributes))
-            })
-            .ok_or_else(|| CodecError::Malformed("Protein schema XML size overflows".into()))?;
-        ctx.reserve_scoped(materialized, "Protein schema XML tree")?
-    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "validate Protein XML UTF-8",
+    )?;
     let xml = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
     })?;
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "Protein schema {name} is malformed XML: {error}"
-        ))
-    })?;
+    let admitted_document = ctx
+        .parse_xml(xml, "Protein schema XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            CodecError::malformed(format_args!(
+                "Protein schema {name} is malformed XML: {error}"
+            ))
+        })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     let uid = root
         .children()
@@ -1256,20 +1232,34 @@ mod tests {
         let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
-        assert!(matches!(
-            super::parse_schema_document(
+        policy.limits.max_collection_items = 0;
+        for _ in 0..4096 {
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
+            let error = super::parse_schema_document(
                 &ctx,
                 "Schemas/SimpleSchema.xml",
                 xml,
                 &mut std::collections::HashMap::new(),
-            ),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "Protein parsed schema"
-        ));
+            )
+            .expect_err("schema must refuse at its collection boundary");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("collection refusal expected");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            let threshold = limit
+                .used
+                .checked_add(limit.additional)
+                .expect("collection threshold");
+            assert!(threshold > policy.limits.max_collection_items);
+            if limit.operation == "Protein parsed schema" {
+                assert_eq!(threshold, policy.limits.max_collection_items + 1);
+                return;
+            }
+            policy.limits.max_collection_items = threshold;
+        }
+        panic!("Protein parsed schema must refuse after XML tree admission");
     }
 
     #[test]

@@ -104,23 +104,21 @@ pub(super) fn model_root(
     scan: &ContainerScan<'_>,
 ) -> Result<(String, Option<String>), CodecError> {
     let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
-    let bytes = u64::try_from(manifest_bytes.len())
-        .map_err(|_| ctx.refuse_codec_limit("parse F3Z manifest JSON", 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(bytes, "parse F3Z manifest JSON")?;
-    if !crate::json_budget::preflight(
-        ctx,
-        manifest_bytes,
-        "preflight F3Z manifest JSON",
-        "scan F3Z manifest JSON",
-        "admit F3Z manifest JSON nodes",
-    )? {
-        return Err(CodecError::malformed(format_args!(
-            "{MANIFEST_ENTRY} is not valid JSON"
-        )));
-    }
-    let manifest = serde_json::from_slice::<ManifestJson>(manifest_bytes).map_err(|error| {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(manifest_bytes.len()),
+        "validate F3Z JSON UTF-8",
+    )?;
+    let text = std::str::from_utf8(manifest_bytes).map_err(|error| {
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
     })?;
+    let manifest: ManifestJson =
+        ctx.parse_json(text, "parse F3Z manifest JSON")
+            .map_err(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return error;
+                };
+                CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+            })?;
     model_root_member(ctx, scan, &manifest.root)
 }
 
@@ -263,24 +261,21 @@ fn model_root_member(
     }
 
     let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
-    let description_len = u64::try_from(description_bytes.len()).map_err(|_| {
-        ctx.refuse_codec_limit("preflight F3Z design description JSON", 0, u64::MAX)
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(description_bytes.len()),
+        "validate F3Z JSON UTF-8",
+    )?;
+    let text = std::str::from_utf8(description_bytes).map_err(|error| {
+        CodecError::malformed(format_args!(
+            "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
+        ))
     })?;
-    let _reservation =
-        ctx.reserve_scoped(description_len, "preflight F3Z design description JSON")?;
-    if !crate::json_budget::preflight(
-        ctx,
-        description_bytes,
-        "preflight F3Z design description JSON",
-        "match F3Z derived model reference",
-        "collect F3Z model candidates",
-    )? {
-        return Err(CodecError::malformed(format_args!(
-            "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON"
-        )));
-    }
-    let description: DesignDescriptionJson =
-        serde_json::from_slice(description_bytes).map_err(|error| {
+    let description: DesignDescriptionJson = ctx
+        .parse_json(text, "match F3Z derived model reference")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
             CodecError::malformed(format_args!(
                 "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
             ))
@@ -377,16 +372,16 @@ mod tests {
             let scan =
                 crate::container::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes))
                     .unwrap();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(description.len());
-            crate::test_support::with_decode_policy(&policy, |ctx| {
-                let error = super::model_root_member(ctx, &scan, "drawing.f2d").unwrap_err();
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                    panic!("root scan must refuse");
-                };
-                assert_eq!(limit.operation, "match F3Z root object ID");
-                assert_eq!(Some(limit), ctx.resource_refusal());
-            });
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                "match F3Z root object ID",
+                0,
+                |ctx| super::model_root_member(ctx, &scan, "drawing.f2d"),
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("root scan must refuse");
+            };
+            assert_eq!(limit.operation, "match F3Z root object ID");
         });
     }
     #[test]
@@ -405,7 +400,9 @@ mod tests {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 match dimension {
                     cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = 0;
+                        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(
+                            scan.entry_bytes("Manifest.json").unwrap().len(),
+                        );
                     }
                     cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
                         policy.limits.max_recursion_depth = 1;
@@ -418,7 +415,7 @@ mod tests {
                         panic!("manifest scan must refuse");
                     };
                     assert_eq!(limit.dimension, dimension);
-                    assert_eq!(limit.operation, "scan F3Z manifest JSON");
+                    assert_eq!(limit.operation, "parse F3Z manifest JSON");
                     assert_eq!(Some(limit), ctx.resource_refusal());
                 });
             }

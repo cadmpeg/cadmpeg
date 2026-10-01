@@ -4,17 +4,17 @@ use cadmpeg_core::decode::{u64_from_index, DecodePolicy, ResourceDimension};
 #[test]
 fn xref_design_text_refuses_retained_transition() {
     let bytes = br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"part.f3d","displayName":"part","lineageUrn":"urn:lineage","versionUrn":"urn:version"}],"references":{}}"#;
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64_from_index("f3d:xref:design#0".len());
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let error = crate::xref::parse(ctx, bytes).unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("design text must be admitted");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(limit.operation, "retain F3D xref design text");
-        assert_eq!(Some(limit), ctx.resource_refusal());
-    });
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "retain F3D xref design text",
+        0,
+        |ctx| crate::xref::parse(ctx, bytes),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("design text must be admitted");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain F3D xref design text");
 }
 
 #[test]

@@ -420,7 +420,7 @@ mod tests {
                 1
             );
             let mut result_vec_refused = false;
-            for cap in 0..64 {
+            for cap in 0..128 {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
@@ -563,9 +563,25 @@ mod tests {
                 + RECORD_MARKER.len()
                 + record.len(),
         );
-        // One schema CRC, one XML parse, and one two-step property closure.
+        // The schema's XML tree admission charges what one parse of its text needs.
+        let schema_text = std::str::from_utf8(schema).expect("ASCII schema");
+        let schema_tree_work = (0..u64::MAX)
+            .find(|&limit| {
+                let arena = DecodeArena::new();
+                let mut tree_policy = DecodePolicy::service();
+                tree_policy.limits.max_work_units = limit;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &tree_policy).expect("empty root");
+                let parsed = ctx
+                    .parse_xml(schema_text, "Protein schema XML tree")
+                    .is_ok();
+                parsed
+            })
+            .expect("schema parses");
+        // One schema CRC, one UTF-8 validation, one XML tree, and one two-step property closure.
         policy.limits.max_work_units = 2 * inventory_work
             + 2 * cadmpeg_core::decode::u64_from_index(schema.len())
+            + schema_tree_work
             + 2 * instance_work
             + 2;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)

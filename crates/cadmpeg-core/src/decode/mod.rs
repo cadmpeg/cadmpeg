@@ -13,6 +13,7 @@ mod policy;
 mod probe;
 mod sort;
 mod space;
+pub mod tree;
 mod utf16;
 mod view;
 pub mod work_scratch;

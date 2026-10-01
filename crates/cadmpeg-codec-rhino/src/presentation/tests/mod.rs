@@ -1497,7 +1497,12 @@ fn legacy_rdk_material_userdata_transfers_uuid_from_unterminated_xml() {
     let bytes = legacy_rdk_payload(xml, false, &[0xaa, 0xbb]);
     let userdata = [legacy_rdk_descriptor(0..bytes.len())];
     assert_eq!(
-        legacy_rdk_material_instance_id(&bytes, &userdata),
+        legacy_rdk_material_instance_id(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &userdata
+        )
+        .expect("admitted XML"),
         Some(Uuid::from_canonical([
             0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
             0x88, 0x99,
@@ -1510,14 +1515,26 @@ fn legacy_rdk_material_userdata_ignores_terminated_callback_xml() {
     let xml = "<xml><render-content-manager-data><material instance-id=\"AABBCCDD-EEFF-0011-2233-445566778899\" /></render-content-manager-data></xml>";
     let bytes = legacy_rdk_payload(xml, true, &[]);
     let userdata = [legacy_rdk_descriptor(0..bytes.len())];
-    assert_eq!(legacy_rdk_material_instance_id(&bytes, &userdata), None);
+    assert_eq!(
+        legacy_rdk_material_instance_id(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &userdata
+        )
+        .expect("admitted XML"),
+        None
+    );
 }
 
 #[test]
 fn legacy_rdk_material_userdata_rejects_malformed_xml() {
     let bytes = legacy_rdk_payload("<xml><render-content-manager-data><material>", false, &[]);
-    let error = parse_legacy_rdk_material_instance_id(&bytes, 0..bytes.len())
-        .expect_err("malformed legacy XML");
+    let error = parse_legacy_rdk_material_instance_id(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+    )
+    .expect_err("malformed legacy XML");
     assert!(matches!(error, FramingError::Structural { .. }));
 }
 
@@ -1836,5 +1853,31 @@ mod patterns;
 mod resource_limits;
 
 mod materials;
+
+#[test]
+fn legacy_rdk_material_optional_readers_propagate_tree_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let xml = "<xml><render-content-manager-data><material instance-id=\"AABBCCDD-EEFF-0011-2233-445566778899\" /></render-content-manager-data></xml>";
+    let bytes = legacy_rdk_payload(xml, false, &[]);
+    let userdata = [legacy_rdk_descriptor(0..bytes.len())];
+    for opaque in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = if opaque {
+            super::rdk_material_userdata_requires_opaque(&ctx, &bytes, &userdata).map(|_| ())
+        } else {
+            legacy_rdk_material_instance_id(&ctx, &bytes, &userdata).map(|_| ())
+        }
+        .unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("tree admission must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "Rhino legacy RDK XML tree");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+}
 
 mod utf16;
