@@ -1141,6 +1141,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = u64::MAX;
+        policy.limits.max_retained_bytes = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
             .expect("test input fits the policy");
         let mut values = Vec::<u8>::new();
@@ -1150,7 +1151,7 @@ mod tests {
         assert!(matches!(
             error,
             crate::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
+                if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.reason == ResourceFailure::AllocationFailed
                     && limit.used == 0
                     && limit.additional == u64_from_index(usize::MAX)
