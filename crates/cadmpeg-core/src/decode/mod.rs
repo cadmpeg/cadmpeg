@@ -12,6 +12,7 @@ mod error;
 mod policy;
 mod probe;
 mod space;
+mod utf16;
 mod view;
 pub mod work_scratch;
 
