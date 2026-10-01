@@ -442,21 +442,23 @@ pub(crate) fn append_design_intent_losses(
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut current_body_ids =
-        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")?;
+    let mut body_storage = ctx.reserve_scoped(0, "NX report body lookup storage")?;
+    let mut current_body_ids = body_storage.with_storage(|| {
+        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")
+    })?;
     for body in &ir.model.bodies {
-        current_body_ids.push(
+        current_body_ids.push(body_storage.with_storage(|| {
             body.id
-                .try_clone_for_decode(ctx, "nx report current body identity")?,
-        );
+                .try_clone_for_decode(ctx, "nx report current body identity")
+        })?);
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
-    let (active_features, closure_rejection) =
-        match crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)?
-        {
-            Ok(active) => (Some(active), None),
-            Err(rejection) => (None, Some(rejection.code())),
-        };
+    let (active_features, closure_rejection) = match body_storage.with_storage(|| {
+        crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)
+    })? {
+        Ok(active) => (Some(active), None),
+        Err(rejection) => (None, Some(rejection.code())),
+    };
     let active_features = active_features.filter(|active| {
         active.values().any(|&index| {
             !matches!(
@@ -1100,20 +1102,16 @@ mod tests {
     }
 
     #[test]
-    fn design_intent_report_refuses_body_copy_at_retained_limit() {
-        crate::test_support::with_decode_context_over(
+    fn design_intent_report_refuses_body_copy_at_scoped_limit() {
+        let error = crate::test_support::resource_refusal_at(
             &[],
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                assert!(matches!(
-                    append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                        if limit.dimension == ResourceDimension::RetainedBytes
-                            && limit.operation == "nx report current body identity"
-                ));
-            },
+            ResourceDimension::MaterializedBytes,
+            "nx report current body identity",
+            |ctx| append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "nx report current body identity")
         );
     }
 }

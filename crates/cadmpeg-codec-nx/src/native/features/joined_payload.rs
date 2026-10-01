@@ -40,17 +40,13 @@ impl<'ctx> JoinedPayload<'ctx> {
         ctx.charge_collection_items(u64_from_index(count), "NX feature payload spans")?;
         let mut reservation = ctx.reserve_scoped(0, "join NX feature payload")?;
         let mut bytes = Vec::new();
-        reservation.with_storage(|| ctx.reserve_capacity(
-            &mut bytes,
-            byte_len,
-            "allocate NX feature payload bytes",
-        ))?;
+        reservation.with_storage(|| {
+            ctx.reserve_capacity(&mut bytes, byte_len, "allocate NX feature payload bytes")
+        })?;
         let mut sources = Vec::new();
-        reservation.with_storage(|| ctx.reserve_capacity(
-            &mut sources,
-            count,
-            "allocate NX feature payload spans",
-        ))?;
+        reservation.with_storage(|| {
+            ctx.reserve_capacity(&mut sources, count, "allocate NX feature payload spans")
+        })?;
         for id in ids {
             let Some((fragment, source_offset)) = blocks.get(id).copied() else {
                 return Ok(None);

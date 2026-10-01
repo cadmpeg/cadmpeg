@@ -285,7 +285,9 @@ pub(super) fn summarize(
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
                     Err(message) => {
-                        storage_notes_storage.with_storage(|| ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes"))?;
+                        storage_notes_storage.with_storage(|| {
+                            ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")
+                        })?;
                         storage_notes.push(ctx.format_retained(
                             format_args!(
                                 "parasolid#{si}: {message}: {}/{inflated_len}",
@@ -361,11 +363,7 @@ fn insert_summary_attribute(
     };
 
     let mut key = String::new();
-    ctx.try_reserve_retained_text(
-        &mut key,
-        key_len,
-        "nx summary attribute text",
-    )?;
+    ctx.try_reserve_retained_text(&mut key, key_len, "nx summary attribute text")?;
     key.push_str(prefix);
     if lowercase_suffix {
         for character in suffix.chars() {
@@ -375,11 +373,7 @@ fn insert_summary_attribute(
         key.push_str(suffix);
     }
     let mut rendered = String::new();
-    ctx.try_reserve_retained_text(
-        &mut rendered,
-        value_len,
-        "nx summary attribute text",
-    )?;
+    ctx.try_reserve_retained_text(&mut rendered, value_len, "nx summary attribute text")?;
     match value {
         SummaryValue::Text(text) => rendered.push_str(text),
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")

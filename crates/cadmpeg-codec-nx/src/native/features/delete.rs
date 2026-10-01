@@ -260,16 +260,15 @@ fn delete_construction_payload_from_field(
         cadmpeg_core::decode::u64_from_index(slots.len()),
         "NX DELETE source block references",
     )?;
-    let mut source_reservation = ctx.reserve_scoped(
-        0,
-        "NX DELETE source block references",
-    )?;
+    let mut source_reservation = ctx.reserve_scoped(0, "NX DELETE source block references")?;
     let mut data_blocks = Vec::new();
-    source_reservation.with_storage(|| ctx.reserve_capacity(
-        &mut data_blocks,
-        slots.len(),
-        "allocate NX DELETE source block references",
-    ))?;
+    source_reservation.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut data_blocks,
+            slots.len(),
+            "allocate NX DELETE source block references",
+        )
+    })?;
     for reference in slots {
         let Some((_, Some(block))) = reference else {
             return Ok(None);

@@ -323,7 +323,7 @@ impl SourceChartData {
             let mut storage = Vec::new();
             storage.try_reserve_exact(points.len()).map(|()| storage)
         }
-            .map_err(|_| "points: storage allocation failed")?;
+        .map_err(|_| "points: storage allocation failed")?;
         Self::xyz3_with_storage(points, checked)
     }
 
@@ -379,7 +379,7 @@ impl SourceChartData {
             let mut storage = Vec::new();
             storage.try_reserve_exact(points.len()).map(|()| storage)
         }
-            .map_err(|_| "points: storage allocation failed")?;
+        .map_err(|_| "points: storage allocation failed")?;
         Self::ext11_with_storage(points, parameters, [first?, second?], samples)
     }
 

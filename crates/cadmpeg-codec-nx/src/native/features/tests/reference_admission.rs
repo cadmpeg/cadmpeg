@@ -1585,14 +1585,36 @@ fn draft_index_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = draft_index_container();
-    let lanes = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_index_lanes(ctx, &container)
-    })
+    // This direct native-reader test reconstructs a container in memory.
+    // Its JSON byte envelope funds both conservative offset indexes.
+    let input_envelope =
+        serde_json::to_vec(container.data.as_ref()).expect("container byte envelope");
+    let lanes = crate::test_support::with_decode_context_over(
+        &input_envelope,
+        |policy| {
+            // Both offset indexes can hold all 7039 records at once.
+            let node = 11 * std::mem::size_of::<(String, (&[u8], u64))>()
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * std::mem::align_of::<(String, (&[u8], u64))>();
+            policy.limits.max_materialized_bytes =
+                cadmpeg_core::decode::u64_from_index(2 * 7039 * 21 * node + 7039 * 64);
+        },
+        |ctx| feature_draft_construction_index_lanes(ctx, &container),
+    )
     .expect("admitted draft index lane");
     assert_eq!(lanes.len(), 1);
-    let payloads = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_payloads(ctx, &container, &lanes)
-    })
+    let payloads = crate::test_support::with_decode_context_over(
+        &input_envelope,
+        |policy| {
+            // Both offset indexes can hold all 7039 records at once.
+            let node = 11 * std::mem::size_of::<(String, (&[u8], u64))>()
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * std::mem::align_of::<(String, (&[u8], u64))>();
+            policy.limits.max_materialized_bytes =
+                cadmpeg_core::decode::u64_from_index(2 * 7039 * 21 * node + 7039 * 64);
+        },
+        |ctx| feature_draft_construction_payloads(ctx, &container, &lanes),
+    )
     .expect("resolved draft index target blocks");
     assert_eq!(payloads.len(), 1);
 

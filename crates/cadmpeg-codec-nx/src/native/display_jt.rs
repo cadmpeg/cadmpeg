@@ -112,15 +112,19 @@ fn inflate_display_jt(
     ctx: &DecodeContext<'_>,
     member: View<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    let (buffer, consumed) = match inflate_zlib_member_owned(ctx, member, cadmpeg_core::decode::ExpandSpec::Unknown) {
-        Ok(output) => output,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
+    let (buffer, consumed) =
+        match inflate_zlib_member_owned(ctx, member, cadmpeg_core::decode::ExpandSpec::Unknown) {
+            Ok(output) => output,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(None),
+        };
     if consumed != member.window().len() {
         return Ok(None);
     }
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(buffer.capacity()), "retain inflated DisplayJT payload")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(buffer.capacity()),
+        "retain inflated DisplayJT payload",
+    )?;
     Ok(Some(buffer))
 }
 
@@ -3059,11 +3063,7 @@ pub(super) fn display_jt_indices(
             }
             ctx.charge_collection_items(u64::from(declared_count), "admit DisplayJT index rows")?;
             let mut rows = Vec::new();
-            ctx.reserve_capacity(
-                &mut rows,
-                row_count,
-                "retain DisplayJT index rows",
-            )?;
+            ctx.reserve_capacity(&mut rows, row_count, "retain DisplayJT index rows")?;
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
@@ -3398,7 +3398,10 @@ pub(super) fn display_jt_segments(
                 else {
                     return Ok(Vec::new());
                 };
-                let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+                let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+                let Some(inflated) =
+                    inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+                else {
                     return Ok(Vec::new());
                 };
                 Some(DisplayJtCompression {
@@ -3464,7 +3467,10 @@ pub(super) fn display_jt_shape_lod_elements(
             return Ok(Vec::new());
         };
         let payload = &bytes[24..];
-        let Some((parsed, framed_end)) = parse_jt_element_sequence(budget.0, payload)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((parsed, framed_end)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, payload))?
+        else {
             return Ok(Vec::new());
         };
         if payload.get(framed_end..) != Some(SEGMENT_TAIL.as_slice()) {
@@ -4539,10 +4545,16 @@ pub(super) fn display_jt_compressed_element_sequences(
         else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let Some((parsed, framed_end)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((parsed, framed_end)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok((Vec::new(), Vec::new()));
         };
         {
@@ -4554,8 +4566,16 @@ pub(super) fn display_jt_compressed_element_sequences(
             ctx.charge_collection_items(count, "store DisplayJT compressed elements")?;
         }
         let mut element_ids = Vec::new();
-        budget.0.reserve_capacity(&mut element_ids, parsed.len(), "retain DisplayJT element ids")?;
-        budget.0.reserve_capacity(&mut elements, parsed.len(), "retain DisplayJT compressed elements")?;
+        budget.0.reserve_capacity(
+            &mut element_ids,
+            parsed.len(),
+            "retain DisplayJT element ids",
+        )?;
+        budget.0.reserve_capacity(
+            &mut elements,
+            parsed.len(),
+            "retain DisplayJT compressed elements",
+        )?;
         for (ordinal, element) in parsed.into_iter().enumerate() {
             {
                 let ctx = budget.0;
@@ -4619,11 +4639,9 @@ pub(super) fn display_jt_compressed_element_sequences(
             ctx.charge_retained(string_bytes, "retain DisplayJT compressed sequence fields")?;
         }
         let ctx = budget.0;
-        budget.0.reserve_capacity(
-            &mut sequences,
-            1,
-            "retain DisplayJT compressed sequence",
-        )?;
+        budget
+            .0
+            .reserve_capacity(&mut sequences, 1, "retain DisplayJT compressed sequence")?;
         let retained_tail = ctx.copy_retained(tail, "retain DisplayJT compressed sequence tail")?;
         let tail_work = cadmpeg_core::decode::u64_from_index(tail.len());
         ctx.charge_work(
@@ -4697,10 +4715,16 @@ pub(super) fn display_jt_string_property_atoms(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -4781,15 +4805,24 @@ pub(super) fn display_jt_shape_lod_bindings(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((_, scene_end)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((_, scene_end)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         let tail = &inflated[scene_end..];
+        let mut property_framing_storage = budget
+            .0
+            .reserve_scoped(0, "NX JT property framing storage")?;
         let Some((property_atoms, property_table_offset)) =
-            parse_jt_element_sequence(budget.0, tail)?
+            property_framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, tail))?
         else {
             return Ok(Vec::new());
         };
@@ -4991,10 +5024,16 @@ pub(super) fn display_jt_base_node_data(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5094,10 +5133,16 @@ pub(super) fn display_jt_group_node_data(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5195,10 +5240,16 @@ pub(super) fn display_jt_instance_nodes(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5285,10 +5336,16 @@ pub(super) fn display_jt_geometric_transform_attributes(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5380,10 +5437,16 @@ pub(super) fn display_jt_material_attributes(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5481,10 +5544,16 @@ pub(super) fn display_jt_partition_nodes(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5573,10 +5642,16 @@ pub(super) fn display_jt_range_lod_nodes(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5669,10 +5744,16 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = budget.0.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) =
+            inflated_storage.with_storage(|| inflate_display_jt(budget.0, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = budget.0.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(budget.0, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -6421,11 +6502,7 @@ fn display_jt_tessellation_rows(
                         .checked_mul(*component_count)
                         .and_then(|count| count.checked_mul(4)));
                     let mut data = Vec::new();
-                    (ctx.reserve_vec(
-                        &mut data,
-                        byte_count,
-                        "nx JT tessellation texture bytes",
-                    ))?;
+                    (ctx.reserve_vec(&mut data, byte_count, "nx JT tessellation texture bytes"))?;
                     texture_data.push(data);
                 }
                 let mut vertex_flag_data = Vec::new();
@@ -6476,11 +6553,7 @@ fn display_jt_tessellation_rows(
                 let channel_count = required!(usize::from(color_array.is_some())
                     .checked_add(texture_arrays.len())
                     .and_then(|count| count.checked_add(usize::from(vertex_flag_array.is_some()))));
-                (ctx.reserve_vec(
-                    &mut channels,
-                    channel_count,
-                    "nx JT tessellation channels",
-                ))?;
+                (ctx.reserve_vec(&mut channels, channel_count, "nx JT tessellation channels"))?;
                 if color_array.is_some() {
                     channels.push(required!(TessellationChannel::new(
                         cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},

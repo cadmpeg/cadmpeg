@@ -512,30 +512,25 @@ fn assign_stable_toggle_identities(
     ctx: &DecodeContext<'_>,
     entries: &mut [SavedToggleEntry],
 ) -> Result<(), CodecError> {
-    let scratch_bytes = entries
-        .len()
-        .checked_mul(std::mem::size_of::<(&ToggleId, usize)>() * 4)
-        .and_then(|len| u64::try_from(len).ok())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "size NX saved toggle index",
-                0,
-                cadmpeg_core::decode::u64_from_index(entries.len()),
-            )
-        })?;
-    let _reservation = ctx.reserve_scoped(scratch_bytes, "index NX saved toggle identities")?;
+    let mut reservation = ctx.reserve_scoped(0, "index NX saved toggle identities")?;
     let mut counts = BTreeMap::<ToggleId, usize>::new();
     for entry in entries.iter() {
         ctx.charge_work(1, "index NX saved toggle identities")?;
         if let Some(count) = counts.get_mut(&entry.toggle_id) {
             *count += 1;
         } else {
-            ctx.insert_btree_map(
-                &mut counts,
-                entry.toggle_id.clone(),
-                1,
-                "index NX saved toggle identities",
-            )?;
+            reservation.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut counts,
+                    ToggleId::try_from(ctx.copy_retained_text(
+                        entry.toggle_id.as_str(),
+                        "index NX saved toggle identities",
+                    )?)
+                    .map_err(CodecError::malformed)?,
+                    1,
+                    "index NX saved toggle identities",
+                )
+            })?;
         }
     }
     for entry in entries.iter_mut() {

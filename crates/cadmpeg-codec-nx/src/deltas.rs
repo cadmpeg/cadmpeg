@@ -1684,8 +1684,8 @@ fn merged_event_spans(
             )
         })?;
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event spans")?;
-    let (mut covered, _covered_reservation) = ctx.scoped_vector_storage(
-        count, "NX deltas event span allocation")?;
+    let (mut covered, _covered_reservation) =
+        ctx.scoped_vector_storage(count, "NX deltas event span allocation")?;
     covered.extend(
         census
             .transmit_header
@@ -2112,7 +2112,8 @@ fn merge_records(
                     u64_from_index(partition.len()),
                 )
             })?;
-        let (mut merged, reservation) = ctx.scoped_vector_storage(total_len, "NX merged partition bytes")?;
+        let (mut merged, reservation) =
+            ctx.scoped_vector_storage(total_len, "NX merged partition bytes")?;
         merged.extend_from_slice(partition);
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
@@ -2492,11 +2493,7 @@ pub(crate) fn semantic_residual_with_census(
             })?;
     }
     let mut residual = Vec::new();
-    ctx.reserve_capacity(
-        &mut residual,
-        total_len,
-        "NX semantic residual bytes",
-    )?;
+    ctx.reserve_capacity(&mut residual, total_len, "NX semantic residual bytes")?;
     residual.extend_from_slice(stream);
     residual.fill(0xff);
     for scope in &current_scopes {

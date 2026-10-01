@@ -647,12 +647,14 @@ pub(crate) fn terminal_feature_body_ids(
         if statuses_by_binding.contains_key(status.segment_body_binding.as_str()) {
             return Ok(None);
         }
-        storage.with_storage(|| ctx.insert_btree_map(
-            &mut statuses_by_binding,
-            status.segment_body_binding.as_str(),
-            status,
-            "nx terminal body status index",
-        ))?;
+        storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut statuses_by_binding,
+                status.segment_body_binding.as_str(),
+                status,
+                "nx terminal body status index",
+            )
+        })?;
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
@@ -669,12 +671,15 @@ pub(crate) fn terminal_feature_body_ids(
         let prefix_len = 5_u64 + digits;
         let mut prefix_reservation = ctx.reserve_scoped(0, "nx terminal body prefix")?;
         let mut prefix = String::new();
-        prefix_reservation.with_storage(|| ctx.try_reserve_retained_text(
-            &mut prefix,
-            cadmpeg_core::decode::index_from_u64(prefix_len)
-                .ok_or_else(|| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?,
-            "nx terminal body prefix",
-        ))?;
+        prefix_reservation.with_storage(|| {
+            ctx.try_reserve_retained_text(
+                &mut prefix,
+                cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(|| {
+                    ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len)
+                })?,
+                "nx terminal body prefix",
+            )
+        })?;
         write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
         ctx.charge_work(
@@ -686,7 +691,9 @@ pub(crate) fn terminal_feature_body_ids(
             .filter(|body| body.as_str().starts_with(&prefix))
         {
             if !mapped.contains(body) {
-                storage.with_storage(|| ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body"))?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body")
+                })?;
             }
             if status.terminal && !selected.contains(body) {
                 let body_id =

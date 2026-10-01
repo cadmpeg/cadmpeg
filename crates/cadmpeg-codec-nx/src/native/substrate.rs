@@ -395,11 +395,13 @@ impl<'a> ParsedStreams<'a> {
                         &stream.inflated,
                         census,
                     )?;
-                    residual_reservation.with_storage(|| ctx.reserve_capacity(
-                        &mut residual,
-                        part.len(),
-                        "nx semantic residual aggregation",
-                    ))?;
+                    residual_reservation.with_storage(|| {
+                        ctx.reserve_capacity(
+                            &mut residual,
+                            part.len(),
+                            "nx semantic residual aggregation",
+                        )
+                    })?;
                     residual.extend_from_slice(&part);
                 }
             }
@@ -411,11 +413,13 @@ impl<'a> ParsedStreams<'a> {
                             &scan.streams[*delta].inflated,
                             census,
                         )?;
-                        residual_reservation.with_storage(|| ctx.reserve_capacity(
-                            &mut residual,
-                            part.len(),
-                            "nx semantic residual aggregation",
-                        ))?;
+                        residual_reservation.with_storage(|| {
+                            ctx.reserve_capacity(
+                                &mut residual,
+                                part.len(),
+                                "nx semantic residual aggregation",
+                            )
+                        })?;
                         residual.extend_from_slice(&part);
                     }
                 }
@@ -434,17 +438,20 @@ impl<'a> ParsedStreams<'a> {
                 (Rc::clone(&raw), Rc::clone(&raw.graph))
             } else {
                 let graph = Rc::new(Graph::parse(ctx, &semantic_bytes)?);
-                let mut auxiliary_reservation = ctx.reserve_scoped(0, "nx auxiliary topology snapshot")?;
+                let mut auxiliary_reservation =
+                    ctx.reserve_scoped(0, "nx auxiliary topology snapshot")?;
                 let topology_for_auxiliary = if paired.is_some() {
                     Some(match &semantic_bytes {
                         Cow::Borrowed(bytes) => Cow::Borrowed(*bytes),
                         Cow::Owned(bytes) => {
                             let mut copy = Vec::new();
-                            auxiliary_reservation.with_storage(|| ctx.reserve_capacity(
-                                &mut copy,
-                                bytes.len(),
-                                "nx auxiliary topology snapshot",
-                            ))?;
+                            auxiliary_reservation.with_storage(|| {
+                                ctx.reserve_capacity(
+                                    &mut copy,
+                                    bytes.len(),
+                                    "nx auxiliary topology snapshot",
+                                )
+                            })?;
                             copy.extend_from_slice(bytes);
                             Cow::Owned(copy)
                         }

@@ -87,7 +87,8 @@ impl SupportUvLane {
         let checked = {
             let mut storage = Vec::new();
             storage.try_reserve_exact(values.len()).map(|()| storage)
-        }.ok()?;
+        }
+        .ok()?;
         Self::present_with_storage(values, checked)
     }
 
@@ -366,10 +367,7 @@ impl CurveScan {
                     .as_ref()
                     .map(|lane| {
                         crate::intersection::SupportUvLane::from_checked(
-                            ctx.copy_slice(
-                                lane.as_slice(),
-                                "NX solved support-UV lane copy",
-                            )?,
+                            ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                             lane.as_slice().len(),
                         )
                         .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
@@ -381,10 +379,7 @@ impl CurveScan {
                     .as_ref()
                     .map(|lane| {
                         crate::intersection::SupportUvLane::from_checked(
-                            ctx.copy_slice(
-                                lane.as_slice(),
-                                "NX solved support-UV lane copy",
-                            )?,
+                            ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                             lane.as_slice().len(),
                         )
                         .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
@@ -1242,7 +1237,8 @@ fn chart_points(
         operation,
     )?;
     let (mut points, _point_storage) = ctx.scoped_vector_storage(count, operation)?;
-    let (mut native_parameters, _parameter_storage) = ctx.scoped_vector_storage(count, operation)?;
+    let (mut native_parameters, _parameter_storage) =
+        ctx.scoped_vector_storage(count, operation)?;
     let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
     let mut lane_reservations = [
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,

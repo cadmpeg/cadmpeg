@@ -357,7 +357,9 @@ pub(super) fn body_surface_ids<'ctx>(
             face.surface
                 .try_clone_for_decode(ctx, "NX body surface identity copy")
         })?;
-        reservation.with_storage(|| ctx.insert_btree_set(&mut ids, surface, "NX body surface identities"))?;
+        reservation.with_storage(|| {
+            ctx.insert_btree_set(&mut ids, surface, "NX body surface identities")
+        })?;
     }
     Ok(Some(ScopedSurfaceIds {
         ids,
@@ -438,11 +440,9 @@ pub(super) fn blend_feature_definition(
                     complete_pairs = false;
                 } else {
                     ctx.charge_collection_items(1, "NX blend support pairs")?;
-                    pairs_reservation.with_storage(|| ctx.reserve_capacity(
-                        &mut pairs,
-                        1,
-                        "NX blend support pairs",
-                    ))?;
+                    pairs_reservation.with_storage(|| {
+                        ctx.reserve_capacity(&mut pairs, 1, "NX blend support pairs")
+                    })?;
                     pairs.push(pairs_reservation.with_storage(|| {
                         Ok::<_, CodecError>([
                             first.surface.try_clone_for_decode(
@@ -644,11 +644,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
     for (&surface, &second_side) in &sides {
         let output = if second_side { &mut second } else { &mut first };
         ctx.charge_collection_items(1, "NX blend support output")?;
-        reservation.with_storage(|| ctx.reserve_capacity(
-            output,
-            1,
-            "NX blend support output",
-        ))?;
+        reservation.with_storage(|| ctx.reserve_capacity(output, 1, "NX blend support output"))?;
         output.push(reservation.with_storage(|| {
             surface.try_clone_for_decode(ctx, "NX blend support identity copy")
         })?);
@@ -972,11 +968,9 @@ pub(super) fn support_face_projection(
             return Ok((FaceSelection::Native(native), None));
         }
         ctx.charge_collection_items(1, "NX support face projection")?;
-        reservation.with_storage(|| ctx.reserve_capacity(
-            &mut selected,
-            1,
-            "NX support face projection",
-        ))?;
+        reservation.with_storage(|| {
+            ctx.reserve_capacity(&mut selected, 1, "NX support face projection")
+        })?;
         selected.push((
             face.id
                 .try_clone_for_decode(ctx, "NX support face identity copy")?,
@@ -987,16 +981,8 @@ pub(super) fn support_face_projection(
     let mut senses = Vec::new();
     for (face, sense) in selected {
         ctx.charge_collection_items(2, "NX resolved support faces")?;
-        ctx.reserve_capacity(
-            &mut faces,
-            1,
-            "NX resolved support faces",
-        )?;
-        ctx.reserve_capacity(
-            &mut senses,
-            1,
-            "NX resolved support senses",
-        )?;
+        ctx.reserve_capacity(&mut faces, 1, "NX resolved support faces")?;
+        ctx.reserve_capacity(&mut senses, 1, "NX resolved support senses")?;
         faces.push(face);
         senses.push(sense);
     }
@@ -1043,17 +1029,9 @@ pub(in crate::native) fn feature_source_content(
         ctx.charge_collection_items(1, "NX feature source text")?;
 
         let mut owned = String::new();
-        ctx.try_reserve_retained_text(
-            &mut owned,
-            text.len(),
-            "NX feature source text",
-        )?;
+        ctx.try_reserve_retained_text(&mut owned, text.len(), "NX feature source text")?;
         owned.push_str(text);
-        ctx.reserve_capacity(
-            &mut content,
-            1,
-            "NX feature source text",
-        )?;
+        ctx.reserve_capacity(&mut content, 1, "NX feature source text")?;
         content.push(FeatureSourceContent::Text(owned));
     }
     cadmpeg_ir::features::FeatureContent::try_from_for_decode(
@@ -1281,26 +1259,18 @@ pub(super) fn block_placement(
             .find(|band| (1.0 - band.normal.dot(normal)).abs() <= angular_tolerance);
         ctx.charge_collection_items(1, "NX block plane offsets")?;
         if let Some(band) = existing {
-            band_reservation.with_storage(|| ctx.reserve_capacity(
-                &mut band.offsets,
-                1,
-                "NX block plane offsets",
-            ))?;
+            band_reservation.with_storage(|| {
+                ctx.reserve_capacity(&mut band.offsets, 1, "NX block plane offsets")
+            })?;
             band.offsets.push(offset);
         } else {
             ctx.charge_collection_items(1, "NX block plane bands")?;
             let mut offsets = Vec::new();
-            band_reservation.with_storage(|| ctx.reserve_capacity(
-                &mut offsets,
-                1,
-                "NX block plane offsets",
-            ))?;
+            band_reservation
+                .with_storage(|| ctx.reserve_capacity(&mut offsets, 1, "NX block plane offsets"))?;
             offsets.push(offset);
-            band_reservation.with_storage(|| ctx.reserve_capacity(
-                &mut bands,
-                1,
-                "NX block plane bands",
-            ))?;
+            band_reservation
+                .with_storage(|| ctx.reserve_capacity(&mut bands, 1, "NX block plane bands"))?;
             bands.push(PlaneBand { normal, offsets });
         }
     }
@@ -2663,11 +2633,7 @@ pub(super) fn insert_hole_output_body(
         "NX hole output map",
     )?;
     let mut bodies = Vec::new();
-    ctx.reserve_capacity(
-        &mut bodies,
-        1,
-        "NX hole output body",
-    )?;
+    ctx.reserve_capacity(&mut bodies, 1, "NX hole output body")?;
     bodies.push(body.try_clone_for_decode(ctx, "NX hole output body")?);
     outputs.insert(operation.to_owned(), bodies);
     Ok(())
@@ -3340,11 +3306,7 @@ pub(super) fn cylindrical_face_witnesses(
             return Ok(None);
         }
         ctx.charge_collection_items(1, "NX cylindrical face witnesses")?;
-        ctx.reserve_capacity(
-            &mut witnesses,
-            1,
-            "NX cylindrical face witness",
-        )?;
+        ctx.reserve_capacity(&mut witnesses, 1, "NX cylindrical face witness")?;
         witnesses.push(CylindricalFaceWitness {
             line_origin,
             axis,
@@ -3793,11 +3755,7 @@ pub(super) fn hole_operations_by_body(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX hole operations per body",
             )?;
-            ctx.reserve_capacity(
-                group,
-                1,
-                "NX hole operations per body",
-            )?;
+            ctx.reserve_capacity(group, 1, "NX hole operations per body")?;
             group.push(operation.clone());
         }
         return Ok(Some(operations_by_body));
@@ -3830,11 +3788,7 @@ pub(super) fn hole_operations_by_body(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX hole operations per body",
         )?;
-        ctx.reserve_capacity(
-            &mut group,
-            1,
-            "NX hole operations per body",
-        )?;
+        ctx.reserve_capacity(&mut group, 1, "NX hole operations per body")?;
         group.push(operation.clone());
     }
     Ok(Some(BTreeMap::from([(
@@ -3881,11 +3835,9 @@ pub(super) fn simple_hole_chamfers(
         let bytes = template.operation_label.len();
         ctx.charge_collection_items(1, "NX chamfer selected operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        operation_reservation.with_storage(|| ctx.reserve_capacity(
-            &mut operations,
-            1,
-            "NX chamfer selected operations",
-        ))?;
+        operation_reservation.with_storage(|| {
+            ctx.reserve_capacity(&mut operations, 1, "NX chamfer selected operations")
+        })?;
         operations.push(template.operation_label.clone());
     }
     if operations.is_empty() {
@@ -4060,16 +4012,12 @@ pub(super) fn simple_hole_chamfers(
                 return Ok(BTreeMap::new());
             }
             ctx.charge_collection_items(2, "nx chamfer cone geometry")?;
-            geometry_reservation.with_storage(|| ctx.reserve_capacity(
-                &mut outer_radii,
-                1,
-                "nx chamfer outer radii",
-            ))?;
-            geometry_reservation.with_storage(|| ctx.reserve_capacity(
-                &mut included_angles,
-                1,
-                "nx chamfer included angles",
-            ))?;
+            geometry_reservation.with_storage(|| {
+                ctx.reserve_capacity(&mut outer_radii, 1, "nx chamfer outer radii")
+            })?;
+            geometry_reservation.with_storage(|| {
+                ctx.reserve_capacity(&mut included_angles, 1, "nx chamfer included angles")
+            })?;
             outer_radii.push(outer);
             included_angles.push(half_angle * 2.0);
         }

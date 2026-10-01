@@ -1074,11 +1074,7 @@ impl<'a> IndexedSection<'a> {
         let mut expressions = Vec::new();
         for (record_ordinal, (offset, bytes, object_id)) in records.into_iter().enumerate() {
             if let Some(expression) = numeric_expression_at(bytes, offset, object_id) {
-                ctx.reserve_vec(
-                    &mut expressions,
-                    1,
-                    "nx indexed numeric expression records",
-                )?;
+                ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expression records")?;
                 expressions.push((record_ordinal, expression));
             }
         }
@@ -1321,8 +1317,7 @@ impl<'a> Section<'a> {
         else {
             return Ok(None);
         };
-        let mut ends =
-            ctx.vector_storage(2, "NX operation state boundaries")?;
+        let mut ends = ctx.vector_storage(2, "NX operation state boundaries")?;
         if let Some(table) = &group {
             let Some(overlap_end) =
                 terminal.checked_add(table.groups().first().opener().bytes().len())
@@ -1412,11 +1407,7 @@ impl<'a> Section<'a> {
         let mut references = Vec::new();
         for (ordinal, record) in self.operation_records_with_label_ordinals(ctx)? {
             if let Some(reference) = operation_body_reference(record.body_view()) {
-                ctx.reserve_vec(
-                    &mut references,
-                    1,
-                    "nx section operation body references",
-                )?;
+                ctx.reserve_vec(&mut references, 1, "nx section operation body references")?;
                 references.push((ordinal, reference));
             }
         }
@@ -1882,8 +1873,7 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
-            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx pattern transform rows")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx pattern transform rows") {
                 *failure.borrow_mut() = Some(error);
                 return None;
             }
@@ -1963,9 +1953,7 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
-            if let Err(error) =
-                ctx.reserve_vec(&mut rows, 1, "nx pattern wide transform rows")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx pattern wide transform rows") {
                 *failure.borrow_mut() = Some(error);
                 return None;
             }
@@ -2056,9 +2044,7 @@ pub(crate) fn multi_instance_output_payload_lane(
             let ordinal = *record.payload().get(at + 1)?;
             instance_count = instance_count.max(ordinal);
             (record.payload().get(at + 2) == Some(&expected_row_index)).then_some(())?;
-            if let Err(error) =
-                ctx.reserve_vec(&mut rows, 1, "nx multi-instance selector rows")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx multi-instance selector rows") {
                 failure = Some(error);
                 return None;
             }
@@ -2457,9 +2443,7 @@ pub(crate) fn operation_body_members(
                     return None;
                 }
                 at += 1;
-                if let Err(error) =
-                    ctx.reserve_vec(&mut members, 1, "NX operation body members")
-                {
+                if let Err(error) = ctx.reserve_vec(&mut members, 1, "NX operation body members") {
                     failure = Some(error);
                     return None;
                 }
@@ -3345,11 +3329,7 @@ fn operation_state_group_table_before_counter_map(
             continue;
         };
         ctx.charge_collection_items(1, "nx operation-state group candidates")?;
-        ctx.reserve_capacity(
-            &mut candidates,
-            1,
-            "nx operation-state group candidates",
-        )?;
+        ctx.reserve_capacity(&mut candidates, 1, "nx operation-state group candidates")?;
         candidates.push((at, end));
     }
     ctx.stable_sort_by(

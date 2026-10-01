@@ -160,32 +160,30 @@ fn graph_index_refuses_work_limit() {
 fn graph_rejection_identity_refuses_retained_limit() {
     let mut wire = graph_wire();
     wire["display_jt_segments"][0]["document"] = json!("nx:display-jt:document#missing");
-    let raw: DisplayJtGraphWire = serde_json::from_value(wire.clone()).unwrap();
 
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &[],
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
+        ResourceDimension::RetainedBytes,
+        "retain DisplayJT graph rejection",
         |ctx| {
-            let error = DisplayJtGraph::from_wire_with_context(ctx, raw).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
-        CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain DisplayJT graph rejection")
-            );
-
-            let raw: DisplayJtGraphWire = serde_json::from_value(wire).unwrap();
-            crate::test_support::with_decode_context(|service| {
-                let error = DisplayJtGraph::from_wire_with_context(service, raw).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_ir::native::NativeConvertError::InvalidCollection(message)
-        if message.contains("nx:display-jt:segment#0: document does not resolve"))
-                );
-            });
+            let raw: DisplayJtGraphWire = serde_json::from_value(wire.clone()).unwrap();
+            DisplayJtGraph::from_wire_with_context(ctx, raw).map_err(|error| match error {
+                cadmpeg_ir::native::NativeConvertError::Resource(error) => error,
+                error => panic!("unexpected graph refusal: {error}"),
+            })
         },
     );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "retain DisplayJT graph rejection")
+    );
+    let raw: DisplayJtGraphWire = serde_json::from_value(wire).unwrap();
+    crate::test_support::with_decode_context(|service| {
+        let error = DisplayJtGraph::from_wire_with_context(service, raw).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_ir::native::NativeConvertError::InvalidCollection(message)
+        if message.contains("nx:display-jt:segment#0: document does not resolve"))
+        );
+    });
 }
 
 #[test]

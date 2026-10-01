@@ -109,7 +109,9 @@ pub(crate) fn classify_layers(
         .iter()
         .filter(|stream| stream.schema_token().is_some())
         .count();
-    let (mut streams, _streams_storage) = ctx.with_scoped_storage("nx schema streams", || ctx.collection_vec(schema_count, "nx schema streams"))?;
+    let (mut streams, _streams_storage) = ctx.with_scoped_storage("nx schema streams", || {
+        ctx.collection_vec(schema_count, "nx schema streams")
+    })?;
     for stream in &scan.streams {
         if let Some(schema) = stream.schema_token() {
             streams.push((stream, schema));
@@ -132,11 +134,7 @@ pub(crate) fn classify_layers(
             "retain NX schema carrier labels",
         )?;
         let mut label = String::new();
-        ctx.try_reserve_retained_text(
-            &mut label,
-            label_len,
-            "nx schema carrier labels",
-        )?;
+        ctx.try_reserve_retained_text(&mut label, label_len, "nx schema carrier labels")?;
         std::fmt::Write::write_fmt(&mut label, format_args!("stream@{}", stream.file_offset))
             .map_err(|_| {
                 ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))

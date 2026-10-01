@@ -128,14 +128,13 @@ pub(in crate::native) fn attach_expression_parameters(
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
     for (table_ordinal, (table, mut expressions)) in ordered_tables.into_iter().enumerate() {
         let ordered_count = order_expression_dependencies(ctx, &mut reservation, &mut expressions)?;
-        let feature_id_bytes = table.len().checked_add(32)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX expression feature identity",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(table.len()),
-                )
-            })?;
+        let feature_id_bytes = table.len().checked_add(32).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX expression feature identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(table.len()),
+            )
+        })?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(feature_id_bytes))?;
         let feature_id: FeatureId = match table.split_once(":expression-table#") {
             None => IdScope::of(table)
@@ -195,11 +194,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX expression feature content",
             )?;
-            ctx.reserve_capacity(
-                &mut source_content,
-                1,
-                "NX expression feature content",
-            )?;
+            ctx.reserve_capacity(&mut source_content, 1, "NX expression feature content")?;
             source_content.push(FeatureSourceContent::Parameter(parameter));
         }
         let source_content = cadmpeg_ir::features::FeatureContent::try_from_for_decode(
@@ -218,11 +213,7 @@ pub(in crate::native) fn attach_expression_parameters(
             cadmpeg_core::decode::u64_from_index(feature_bytes),
             "NX expression feature",
         )?;
-        ctx.reserve_capacity(
-            &mut ir.model.features,
-            1,
-            "NX expression feature",
-        )?;
+        ctx.reserve_capacity(&mut ir.model.features, 1, "NX expression feature")?;
         let ordinal = base_ordinal
             .checked_add(cadmpeg_core::decode::u64_from_index(table_ordinal))
             .ok_or_else(|| ctx.refuse_codec_limit("NX expression feature ordinal", 0, 1))?;
@@ -326,11 +317,7 @@ pub(in crate::native) fn attach_expression_parameters(
                         cadmpeg_core::decode::u64_from_index(bytes),
                         "NX parameter dependency",
                     )?;
-                    ctx.reserve_capacity(
-                        &mut dependencies,
-                        1,
-                        "NX parameter dependencies",
-                    )?;
+                    ctx.reserve_capacity(&mut dependencies, 1, "NX parameter dependencies")?;
                     dependencies.push(
                         candidate.try_clone_for_decode(ctx, "NX expression dependency identity")?,
                     );
@@ -426,11 +413,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX expression parameter",
             )?;
-            ctx.reserve_capacity(
-                &mut ir.model.parameters,
-                1,
-                "NX expression parameters",
-            )?;
+            ctx.reserve_capacity(&mut ir.model.parameters, 1, "NX expression parameters")?;
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 ctx.refuse_codec_limit(
                     "NX expression parameter ordinal",

@@ -975,9 +975,7 @@ pub(in crate::native) fn feature_pattern_references(
                         return;
                     }
                 };
-                if let Err(error) =
-                    ctx.reserve_vec(&mut references, 1, "NX pattern references")
-                {
+                if let Err(error) = ctx.reserve_vec(&mut references, 1, "NX pattern references") {
                     failure = Some(error);
                     return;
                 }
@@ -1051,8 +1049,7 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
                     return;
                 }
             };
-            if let Err(error) =
-                ctx.reserve_vec(&mut lanes, 1, "NX counted pattern reference lanes")
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX counted pattern reference lanes")
             {
                 refusal = Some(error);
                 return;
@@ -1158,7 +1155,9 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             let Some(block) = reference.data_block.as_deref() else {
                 continue 'operations;
             };
-            source_id_storage.with_storage(|| ctx.reserve_vec(&mut data_blocks, 1, "NX pattern construction block IDs"))?;
+            source_id_storage.with_storage(|| {
+                ctx.reserve_vec(&mut data_blocks, 1, "NX pattern construction block IDs")
+            })?;
             data_blocks.push(ctx.copy_retained_text(block, "NX pattern construction block ID")?);
         }
         let Some(store) = data_blocks
@@ -1376,9 +1375,7 @@ pub(in crate::native) fn feature_pattern_transform_lanes(
                     return;
                 }
             };
-            if let Err(error) =
-                ctx.reserve_vec(&mut lanes, 1, "NX pattern transform lanes")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX pattern transform lanes") {
                 failure = Some(error);
                 return;
             }
@@ -1455,9 +1452,7 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
                     return;
                 }
             };
-            if let Err(error) =
-                ctx.reserve_vec(&mut lanes, 1, "NX multi-instance output lanes")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX multi-instance output lanes") {
                 failure = Some(error);
                 return;
             }
@@ -1540,8 +1535,7 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
                     return;
                 }
             };
-            if let Err(error) =
-                ctx.reserve_vec(&mut lanes, 1, "NX identical-instance output lanes")
+            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX identical-instance output lanes")
             {
                 failure = Some(error);
                 return;

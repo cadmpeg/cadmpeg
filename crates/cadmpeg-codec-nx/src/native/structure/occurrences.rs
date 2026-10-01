@@ -108,7 +108,9 @@ impl TryFrom<Vec<FastLoadComponentOccurrenceWire>> for FastLoadOccurrences {
             let mut storage = Vec::new();
             storage.try_reserve_exact(wire.len()).map(|()| storage)
         }
-        .map_err(|_| NativeConvertError::InvalidCollection("occurrence storage allocation failed".into()))?;
+        .map_err(|_| {
+            NativeConvertError::InvalidCollection("occurrence storage allocation failed".into())
+        })?;
         Self::from_wire_with_storage(wire, records)
     }
 }

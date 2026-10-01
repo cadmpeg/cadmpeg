@@ -761,11 +761,7 @@ pub(in crate::native) fn feature_symbolic_threads(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX symbolic threads")
                 .and_then(|()| {
-                    ctx.reserve_capacity(
-                        &mut threads,
-                        1,
-                        "allocate NX symbolic threads",
-                    )
+                    ctx.reserve_capacity(&mut threads, 1, "allocate NX symbolic threads")
                 })
             {
                 failure = Some(error);
@@ -1540,11 +1536,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_lanes(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX hole package lanes")
                 .and_then(|()| {
-                    ctx.reserve_capacity(
-                        &mut lanes,
-                        1,
-                        "allocate NX hole package lanes",
-                    )
+                    ctx.reserve_capacity(&mut lanes, 1, "allocate NX hole package lanes")
                 })
             {
                 failure = Some(error);

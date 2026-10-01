@@ -1864,11 +1864,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
         };
         ctx.charge_collection_items(2, "nx coupled support UV boundary lanes")?;
         for lane in &mut lanes {
-            ctx.reserve_capacity(
-                lane,
-                1,
-                "nx coupled support UV boundary lanes",
-            )?;
+            ctx.reserve_capacity(lane, 1, "nx coupled support UV boundary lanes")?;
         }
         lanes[blend_side].push(blend_parameters);
         lanes[support_side].push(support_parameters);

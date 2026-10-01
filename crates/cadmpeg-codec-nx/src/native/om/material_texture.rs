@@ -186,11 +186,7 @@ pub(in crate::native) fn material_texture_assets(
         .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
         .count();
     let mut entries = Vec::new();
-    ctx.reserve_capacity(
-        &mut entries,
-        count,
-        "allocate NX material texture entries",
-    )?;
+    ctx.reserve_capacity(&mut entries, count, "allocate NX material texture entries")?;
     entries.extend(
         container
             .entries
