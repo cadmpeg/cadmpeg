@@ -11,6 +11,10 @@ rewrite_native_record!(DesignMeshCollectionOwner, []; {record, backlink});
 rewrite_native_record!(DesignMeshEntryName, []; {record, name});
 rewrite_native_record!(DesignMeshFeature, []; {id, scope, collection, texture_table, collection_owner, bodies});
 impl<const LENGTH: u64> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for DesignMeshFixedRecord<LENGTH> {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "walk native identity scalar")
+    }
+
     fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
         ctx.charge_work(1, "walk typed reference scalar")
     }

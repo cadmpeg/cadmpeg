@@ -6,8 +6,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 
+pub mod native_fields;
+
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
+    /// Rewrite identity markers in an existing native wire value.
+    /// Owners without a declared native wire layout refuse this operation.
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+        ctx: &DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut IdentityMap<'_, F>,
+    ) -> Result<(), CodecError> {
+        ctx.charge_work(1, "check native identity layout")?;
+        Err(CodecError::malformed("typed owner has no native identity layout"))
+    }
+
     /// Visit borrowed typed references without projecting a value tree.
     /// Scalar owners admit one visit and expose no references.
     fn visit_identity_references(
@@ -121,6 +132,14 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 }
 
 impl RewriteIdentities for crate::ids::Identity {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, value: &mut serde_json::Value, map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("rewrite native identity")?;
+        ctx.charge_work(1, "rewrite native identity")?;
+        let serde_json::Value::String(source) = value else { return Err(CodecError::malformed("native identity must be text")); };
+        *source = map.identity(ctx, source)?;
+        Ok(())
+    }
+
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         ctx.charge_work(1, "walk typed identity reference")?;
         visitor(self.as_str())
@@ -135,6 +154,10 @@ impl RewriteIdentities for crate::ids::Identity {
 macro_rules! rewrite_scalars {
     ($($type:ty),* $(,)?) => {$(
         impl RewriteIdentities for $type {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        ctx.charge_work(1, "walk native identity scalar")
+    }
+
             fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
                 ctx.charge_work(1, "walk typed reference scalar")
             }
@@ -148,6 +171,10 @@ macro_rules! rewrite_scalars {
 rewrite_scalars!(bool, char, u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64, ());
 
 impl RewriteIdentities for String {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        ctx.charge_work(1, "walk native identity scalar")
+    }
+
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         ctx.charge_work(1, "walk typed reference scalar")
     }
@@ -158,6 +185,13 @@ impl RewriteIdentities for String {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, value: &mut serde_json::Value, map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk native identity collection")?;
+        ctx.charge_work(1, "walk native identity collection")?;
+        if !value.is_null() { T::rewrite_native_value(ctx, value, map)?; }
+        Ok(())
+    }
+
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk typed reference option")?;
         ctx.charge_work(1, "walk typed reference option")?;
@@ -172,6 +206,13 @@ impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, value: &mut serde_json::Value, map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk native identity collection")?;
+        ctx.charge_work(1, "walk native identity collection")?;
+        if let serde_json::Value::Array(values) = value { for value in values { T::rewrite_native_value(ctx, value, map)?; } }
+        Ok(())
+    }
+
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk typed reference sequence")?;
         ctx.charge_work(1, "walk typed reference sequence")?;
@@ -185,6 +226,13 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
 }
 
 impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, value: &mut serde_json::Value, map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk native identity collection")?;
+        ctx.charge_work(1, "walk native identity collection")?;
+        if let serde_json::Value::Array(values) = value { for value in values { T::rewrite_native_value(ctx, value, map)?; } }
+        Ok(())
+    }
+
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk typed reference array")?;
         ctx.charge_work(1, "walk typed reference array")?;
@@ -230,6 +278,10 @@ impl<K: RewriteIdentities + Ord + std::hash::Hash, V: RewriteIdentities> Rewrite
 mod tests;
 
 impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        ctx.charge_work(1, "walk native identity scalar")
+    }
+
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         ctx.charge_work(1, "walk typed reference scalar")
     }
@@ -241,6 +293,13 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
 rewrite_scalars!(std::num::NonZeroI64, std::num::NonZeroU32);
 
 impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
+    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, value: &mut serde_json::Value, map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk native identity collection")?;
+        ctx.charge_work(1, "walk native identity collection")?;
+        T::rewrite_native_value(ctx, value, map)?;
+        Ok(())
+    }
+
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk typed reference box")?;
         ctx.charge_work(1, "walk typed reference box")?;

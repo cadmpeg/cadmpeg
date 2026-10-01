@@ -1233,3 +1233,60 @@ fn typed_native_field_rewrite_preserves_session_refusals() {
     assert_eq!(fields["name"], serde_json::json!("test:model:body#one"));
     assert!(!fields.contains_key("id"));
 }
+
+#[test]
+fn native_field_rewrite_does_not_require_serde_reconstruction() {
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::CodecError;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    use crate::topology::Body;
+
+    struct FieldOwner;
+    impl RewriteIdentities for FieldOwner {
+        fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, value: &mut serde_json::Value, map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+            Body::rewrite_native_value(ctx, value, map)
+        }
+        fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+            ctx.charge_work(1, "test field owner")
+        }
+        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+            ctx.charge_work(1, "test field owner")?;
+            Ok(self)
+        }
+    }
+    let record = NativeRecord::new(
+        crate::ids::Identity::new("test:model:body#one").unwrap(),
+        serde_json::from_value(serde_json::json!({
+            "kind": "solid",
+            "regions": ["test:model:region#one"],
+            "name": "test:model:region#one"
+        })).unwrap(),
+    ).unwrap();
+    let ctx = super::test_ctx();
+    let fields = record.rewrite_fields::<FieldOwner, _>(&ctx, |id| {
+        ctx.format_retained(format_args!("test:occurrence:{}", id.strip_prefix("test:model:").unwrap()), "test native identity")
+    }).unwrap();
+    assert_eq!(fields["regions"], serde_json::json!(["test:occurrence:region#one"]));
+    assert_eq!(fields["name"], serde_json::json!("test:model:region#one"));
+    assert!(!fields.contains_key("id"));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn native_attribute_target_rewrite_preserves_every_wire_kind() {
+    use crate::attributes::AttributeTarget;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    let ctx = super::test_ctx();
+    for kind in ["body", "face", "shell", "loop", "coedge", "edge", "vertex", "document"] {
+        let mut value = serde_json::json!({"kind": kind});
+        if kind != "document" { value["id"] = serde_json::json!(format!("test:model:{kind}#one")); }
+        let expected: AttributeTarget = serde_json::from_value(value.clone()).unwrap();
+        let remap = |id: &str| ctx.format_retained(format_args!("test:occurrence:{}", id.strip_prefix("test:model:").unwrap()), "test native identity");
+        let mut map = IdentityMap::new(&ctx, "test native identity", remap).unwrap();
+        AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut map).unwrap();
+        map.finish(&ctx).unwrap();
+        let expected = crate::schema::rewrite::identities(&ctx, "test typed attribute target", expected, remap).unwrap();
+        assert_eq!(value, serde_json::to_value(expected).unwrap());
+    }
+    ctx.finish_session().unwrap();
+}

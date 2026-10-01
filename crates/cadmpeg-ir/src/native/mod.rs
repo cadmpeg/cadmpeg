@@ -14,6 +14,7 @@ use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializ
 use serde_json::{Map, Value};
 
 mod canon;
+mod copy;
 pub mod catalogue;
 mod replay;
 
@@ -415,24 +416,28 @@ impl NativeRecord {
         Ok(fields)
     }
 
-    /// Rewrite codec-owned typed fields with scoped intermediate storage.
+    /// Rewrite native identity fields through their typed owner's field walk.
     pub fn rewrite_fields<T, F>(
-        &self,
-        ctx: &DecodeContext<'_>,
-        map: F,
+        &self, ctx: &DecodeContext<'_>, map: F,
     ) -> Result<Map<String, Value>, NativeConvertError>
-    where
-        T: DeserializeOwned + Serialize + crate::schema::rewrite::typed::RewriteIdentities,
-        F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+    where T: crate::schema::rewrite::typed::RewriteIdentities,
+          F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
     {
-        let (rewritten, storage) = ctx.with_scoped_storage("rewrite typed native fields", || {
-            let typed: T = self.to_typed(ctx).map_err(cadmpeg_core::CodecError::from)?;
-            crate::schema::rewrite::identities(ctx, "rewrite typed native identities", typed, map)
+        let projected = ctx.with_scoped_storage("rewrite typed native fields", || {
+            let mut fields = copy::fields(ctx, &self.fields)?;
+            let key = ctx.copy_retained_text("id", "copy native record identity field")?;
+            let id = ctx.copy_retained_text(self.id.as_str(), "copy native record identity")?;
+            copy::insert(ctx, &mut fields, key, Value::String(id))?;
+            let mut value = Value::Object(fields);
+            let mut identities = crate::schema::rewrite::typed::IdentityMap::new(ctx, "rewrite typed native identities", map)?;
+            T::rewrite_native_value(ctx, &mut value, &mut identities)?;
+            identities.finish(ctx)?;
+            let Value::Object(mut fields) = value else { return Err(cadmpeg_core::CodecError::malformed("native record must be an object")); };
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(fields.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("remove native record identity", u64::MAX - 1, u64::MAX))?, "remove native record identity")?;
+            fields.remove("id");
+            Ok(fields)
         })?;
-        let fields = Self::from_typed_for_decode(ctx, &rewritten, None).map(|record| record.fields);
-        drop(rewritten);
-        drop(storage);
-        fields
+        Ok(copy::fields(ctx, &projected.0)?)
     }
 
     /// One codec-owned field.
