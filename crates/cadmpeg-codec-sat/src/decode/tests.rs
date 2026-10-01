@@ -477,8 +477,10 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
 
 #[test]
 fn sat_container_only_stops_before_entity_decode_for_all_encodings() {
-    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
-    options.container_only = true;
+    let mut options = cadmpeg_ir::codec::DecodeOptions {
+        container_only: true,
+        ..Default::default()
+    };
     options.policy.limits.max_entities = 0;
     for bytes in [
         text_sphere_stream(1.0),
@@ -486,7 +488,8 @@ fn sat_container_only_stops_before_entity_decode_for_all_encodings() {
         binary_sphere_stream(BinaryFixtureKind::Acis),
         acis_text_sphere_stream(21_800),
     ] {
-        let result = SatCodec.decode(&mut Cursor::new(bytes), &options)
+        let result = SatCodec
+            .decode(&mut Cursor::new(bytes), &options)
             .expect("container facts require no entity admission");
         assert!(result.report().container_only());
         assert!(!result.report().geometry_transferred());
@@ -502,14 +505,23 @@ fn sat_container_only_stops_before_entity_decode_for_all_encodings() {
 #[test]
 fn sat_container_only_ignores_malformed_entity_payload() {
     let source = String::from_utf8(text_sphere_stream(1.0)).expect("text fixture");
-    let source = source.replacen("asmheader $-1 -1 @13 232.4.0.65535 #", "asmheader @broken #", 1);
-    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
-    options.container_only = true;
-    let result = SatCodec.decode(&mut Cursor::new(source.as_bytes()), &options)
+    let source = source.replacen(
+        "asmheader $-1 -1 @13 232.4.0.65535 #",
+        "asmheader @broken #",
+        1,
+    );
+    let mut options = cadmpeg_ir::codec::DecodeOptions {
+        container_only: true,
+        ..Default::default()
+    };
+    let result = SatCodec
+        .decode(&mut Cursor::new(source.as_bytes()), &options)
         .expect("container scope does not parse entities");
     assert!(result.ir().model.surfaces.is_empty());
     options.container_only = false;
-    assert!(SatCodec.decode(&mut Cursor::new(source.as_bytes()), &options).is_err());
+    assert!(SatCodec
+        .decode(&mut Cursor::new(source.as_bytes()), &options)
+        .is_err());
 }
 
 #[test]
@@ -517,16 +529,25 @@ fn sat_header_conversion_refuses_as_not_implemented() {
     for line in ["20 1.7976931348623157e308 0", "1 5e-324 0"] {
         let source = String::from_utf8(text_sphere_stream(1.0)).expect("text fixture");
         let bytes = source.replacen(
-            "1 9.999999999999999547e-07 1.000000000000000036e-10", line, 1,
+            "1 9.999999999999999547e-07 1.000000000000000036e-10",
+            line,
+            1,
         );
         for container_only in [false, true] {
             let options = cadmpeg_ir::codec::DecodeOptions {
-                container_only, ..Default::default()
+                container_only,
+                ..Default::default()
             };
-            let error = SatCodec.decode(&mut Cursor::new(bytes.as_bytes()), &options)
+            let error = SatCodec
+                .decode(&mut Cursor::new(bytes.as_bytes()), &options)
                 .expect_err("converted positive tolerance cannot be represented");
-            assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))),
-                "{line}, container={container_only}: {error:?}");
+            assert!(
+                matches!(
+                    error,
+                    cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))
+                ),
+                "{line}, container={container_only}: {error:?}"
+            );
         }
     }
 }
@@ -534,22 +555,30 @@ fn sat_header_conversion_refuses_as_not_implemented() {
 #[test]
 fn sat_recognized_header_values_refuse_as_malformed() {
     for line in [
-        "0 1 0", "-1 1 0", "NaN 1 0", "inf 1 0", "bad 1 0",
-        "1 -1 0", "1 NaN 0", "1 inf 0", "1 bad 0",
-        "1 1 -1", "1 1 NaN", "1 1 inf", "1 1 bad",
+        "0 1 0", "-1 1 0", "NaN 1 0", "inf 1 0", "bad 1 0", "1 -1 0", "1 NaN 0", "1 inf 0",
+        "1 bad 0", "1 1 -1", "1 1 NaN", "1 1 inf", "1 1 bad",
     ] {
         let source = String::from_utf8(text_sphere_stream(1.0)).expect("text fixture");
         let bytes = source.replacen(
-            "1 9.999999999999999547e-07 1.000000000000000036e-10", line, 1,
+            "1 9.999999999999999547e-07 1.000000000000000036e-10",
+            line,
+            1,
         );
         for container_only in [false, true] {
             let options = cadmpeg_ir::codec::DecodeOptions {
-                container_only, ..Default::default()
+                container_only,
+                ..Default::default()
             };
-            let error = SatCodec.decode(&mut Cursor::new(bytes.as_bytes()), &options)
+            let error = SatCodec
+                .decode(&mut Cursor::new(bytes.as_bytes()), &options)
                 .expect_err("recognized tolerance grammar has invalid values");
-            assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_))),
-                "{line}, container={container_only}: {error:?}");
+            assert!(
+                matches!(
+                    error,
+                    cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_))
+                ),
+                "{line}, container={container_only}: {error:?}"
+            );
         }
     }
 }

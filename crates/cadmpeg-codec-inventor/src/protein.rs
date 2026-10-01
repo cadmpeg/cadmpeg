@@ -555,15 +555,10 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "ZIP end record search"
         ));
-        // Each inventory scans the ZIP, one end candidate, and three headers.
-        // The stored payloads need CRC work; each instance scans its pages and copies its record.
-        let inventory_work = cadmpeg_core::decode::u64_from_index(zip.len())
-            + 4
-            + cadmpeg_core::decode::u64_from_index(
-                "Schemas/SimpleSchema.xml".len()
-                    + "First/InstanceProperties.bin".len()
-                    + "Second/InstanceProperties.bin".len(),
-            );
+        // Each inventory admits the end search, one end candidate, three
+        // headers, and dependency indexing at sixteen work units per ZIP byte.
+        // Stored payloads need CRC work; instances scan pages and copy records.
+        let inventory_work = 17 * cadmpeg_core::decode::u64_from_index(zip.len()) + 4;
         let instance_work = cadmpeg_core::decode::u64_from_index(
             instance.len() + instance.len() - STREAM_HEADER_LEN
                 + RECORD_MARKER.len()

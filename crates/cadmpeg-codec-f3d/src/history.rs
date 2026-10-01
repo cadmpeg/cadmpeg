@@ -657,11 +657,14 @@ fn bind_complete_record_tables(
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return Ok(false);
     };
-    let active_limit = cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
+    let active_limit =
+        cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
     let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
         Ok(records) => records,
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
-        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => return Err(error.into_codec_error()),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+            return Err(error.into_codec_error())
+        }
         Err(_) => return Ok(false),
     };
     admit_complete_table_binding_budget(
@@ -700,8 +703,12 @@ fn bind_complete_record_tables(
         }
         let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
             Ok(records) => records,
-            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
-            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => return Err(error.into_codec_error()),
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
+                return Err(error.into())
+            }
+            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+                return Err(error.into_codec_error())
+            }
             Err(_) => return Ok(false),
         };
         if framed.len() != 1 {
@@ -9322,7 +9329,9 @@ fn decode_history_records(
             Ok(decoded)
         }
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => Err(error.into()),
-        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => Err(error.into_codec_error()),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+            Err(error.into_codec_error())
+        }
         Err(error) => {
             let raw_bytes =
                 ctx.copy_retained(&bytes[start..limit], "retain opaque F3D history record")?;

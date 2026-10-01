@@ -135,7 +135,9 @@ fn history_topology_decode_matches_full_brep_graph() {
         )
         .expect("fixture is within the service input limit");
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-        let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan").expect("solved record limit");
+        let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+            .expect("history scan")
+            .expect("solved record limit");
         let records = cadmpeg_asm::test_support::sab::frame(
             &bytes,
             start,
@@ -1305,7 +1307,9 @@ fn decode_reports_faces_with_missing_surface_references() {
     for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
-        let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh).expect("history scan").unwrap();
+        let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
+            .expect("history scan")
+            .unwrap();
         let records = cadmpeg_asm::test_support::sab::frame(
             &smbh,
             start,
@@ -1378,7 +1382,9 @@ fn decode_reports_undecoded_edge_curve_kinds() {
 fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh).expect("history scan").unwrap();
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
+        .expect("history scan")
+        .unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &smbh,
         start,

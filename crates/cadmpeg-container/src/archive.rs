@@ -131,17 +131,20 @@ impl<'bytes, 'ctx> ZipIndex<'bytes, 'ctx> {
         // record is below 1 KiB and each central entry occupies at least 46
         // bytes. Names, comments, extras, parsed vectors and index tables fit
         // the remaining factor in this 64-byte-per-input-byte peak bound.
-        let workspace_bytes = input_bytes.checked_mul(64).ok_or_else(|| {
-            ctx.refuse_codec_limit("ZIP indexing workspace", u64::MAX, u64::MAX)
-        })?;
+        let workspace_bytes = input_bytes
+            .checked_mul(64)
+            .ok_or_else(|| ctx.refuse_codec_limit("ZIP indexing workspace", u64::MAX, u64::MAX))?;
         let workspace = ctx.reserve_scoped(workspace_bytes, "ZIP indexing workspace")?;
-        let work = input_bytes.checked_mul(16).ok_or_else(|| {
-            ctx.refuse_codec_limit("ZIP dependency indexing", u64::MAX, u64::MAX)
-        })?;
+        let work = input_bytes
+            .checked_mul(16)
+            .ok_or_else(|| ctx.refuse_codec_limit("ZIP dependency indexing", u64::MAX, u64::MAX))?;
         ctx.charge_work(work, "ZIP dependency indexing")?;
         let archive = zip::ZipArchive::new(Cursor::new(bytes))
             .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
-        Ok(Self { archive, _workspace: workspace })
+        Ok(Self {
+            archive,
+            _workspace: workspace,
+        })
     }
 }
 
@@ -1806,18 +1809,27 @@ mod tests {
         for probe in [false, true] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 64 * cadmpeg_core::decode::u64_from_index(bytes.len());
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            policy.limits.max_materialized_bytes =
+                64 * cadmpeg_core::decode::u64_from_index(bytes.len());
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
             if probe {
                 assert!(ArchiveSnapshot::contains_name(&ctx, root, "stored.bin").expect("probe"));
             } else {
-                assert_eq!(ArchiveSnapshot::new(&ctx, root).expect("snapshot").entries().len(), 3);
+                assert_eq!(
+                    ArchiveSnapshot::new(&ctx, root)
+                        .expect("snapshot")
+                        .entries()
+                        .len(),
+                    3
+                );
             }
             ctx.reserve_scoped(policy.limits.max_materialized_bytes, "index released")
                 .expect("dependency workspace is released");
 
             policy.limits.max_materialized_bytes -= 1;
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
             let refused = if probe {
                 ArchiveSnapshot::contains_name(&ctx, root, "stored.bin").map(|_| ())
             } else {

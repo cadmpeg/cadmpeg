@@ -178,6 +178,10 @@ mod tests {
         assert_eq!(header.metadata.entity_count, Some(2));
         assert_eq!(header.metadata.flags, Some(13));
         assert_eq!(record_stream_start(&bytes), Some(record_start));
-        assert_eq!(solved_record_limit(&cadmpeg_test_support::service_decode_context(), &bytes).expect("service policy admits history scan"), Some(history_start));
+        assert_eq!(
+            solved_record_limit(&cadmpeg_test_support::service_decode_context(), &bytes)
+                .expect("service policy admits history scan"),
+            Some(history_start)
+        );
     }
 }

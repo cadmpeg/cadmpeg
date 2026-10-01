@@ -167,17 +167,26 @@ mod tests {
                 assert!(matches!(&failure, StreamFailure::Operation(_)));
                 let error = failure.into_codec_error(ctx, |_| panic!("operation is not framing"));
                 assert_eq!(error.to_string(), expected);
-                assert!(matches!(error, CodecError::Malformed(_) | CodecError::NotImplemented(_) | CodecError::Io(_)));
+                assert!(matches!(
+                    error,
+                    CodecError::Malformed(_) | CodecError::NotImplemented(_) | CodecError::Io(_)
+                ));
             }
-        }).expect("service test context");
+        })
+        .expect("service test context");
     }
 
     #[test]
     fn stream_resource_variant_contains_only_the_original_refusal() {
         crate::test_support::with_service_context(&[], |ctx| {
             let CodecError::ResourceLimit(refusal) = ctx.refuse_codec_limit("stream refusal", 3, 2)
-                else { panic!("resource-only core refusal"); };
-            assert_eq!(OperationFailure::try_from(CodecError::ResourceLimit(refusal)).unwrap_err(), refusal);
+            else {
+                panic!("resource-only core refusal");
+            };
+            assert_eq!(
+                OperationFailure::try_from(CodecError::ResourceLimit(refusal)).unwrap_err(),
+                refusal
+            );
             for failure in [
                 StreamFailure::from(refusal),
                 StreamFailure::from_operation(CodecError::ResourceLimit(refusal)),
@@ -186,7 +195,8 @@ mod tests {
                 let error = failure.into_codec_error(ctx, |_| panic!("resource is not framing"));
                 assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == refusal));
             }
-        }).expect("service test context");
+        })
+        .expect("service test context");
     }
 
     #[test]

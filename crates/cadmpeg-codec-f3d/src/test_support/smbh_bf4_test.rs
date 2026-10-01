@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::service_decode_context;
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
 use crate::test_support::smbh_header_test::bf4_header_prefix;
 use crate::test_support::tokens_test::{
@@ -25,7 +25,9 @@ pub(crate) fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
 
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan").unwrap();
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
