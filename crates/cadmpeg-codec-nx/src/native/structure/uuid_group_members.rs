@@ -7,15 +7,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::iter_wire::IterWire;
 use crate::om::nonempty::NonEmpty;
 
+/// Two independent admitted lists with equal nonzero cardinality.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ListSlot {
-    occurrence: String,
-    object_uuid_value: String,
+pub(super) struct UuidGroupMembers {
+    occurrences: NonEmpty<String>,
+    object_uuid_values: NonEmpty<String>,
 }
-
-/// Slots retain positions in the two independent lists, not matched instances.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct UuidGroupMembers(NonEmpty<ListSlot>);
 
 impl UuidGroupMembers {
     pub(super) fn new_charged(
@@ -26,43 +23,44 @@ impl UuidGroupMembers {
         if occurrences.len() != object_uuid_values.len() {
             return Ok(None);
         }
-        NonEmpty::new_charged(
-            ctx,
-            occurrences.into_iter().zip(object_uuid_values).map(
-                |(occurrence, object_uuid_value)| ListSlot {
-                    occurrence,
-                    object_uuid_value,
-                },
-            ),
-        )
-        .map(|members| members.map(Self))
+        let Some(occurrences) = NonEmpty::new_charged(ctx, occurrences)? else {
+            return Ok(None);
+        };
+        let Some(object_uuid_values) = NonEmpty::new_charged(ctx, object_uuid_values)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            occurrences,
+            object_uuid_values,
+        }))
     }
 
-    pub(super) fn new(
+    /// Transfer the two wire-admitted lists without building another collection.
+    fn from_admitted_lists(
         occurrences: Vec<String>,
         object_uuid_values: Vec<String>,
     ) -> Result<Self, &'static str> {
         if occurrences.len() != object_uuid_values.len() {
             return Err("occurrences/object_uuid_values: list lengths must match");
         }
-        NonEmpty::new(occurrences.into_iter().zip(object_uuid_values).map(
-            |(occurrence, object_uuid_value)| ListSlot {
-                occurrence,
-                object_uuid_value,
-            },
-        ))
-        .map(Self)
-        .ok_or("occurrences/object_uuid_values: lists must be nonempty")
+        let occurrences = NonEmpty::from_admitted_vec(occurrences)
+            .ok_or("occurrences/object_uuid_values: lists must be nonempty")?;
+        let object_uuid_values = NonEmpty::from_admitted_vec(object_uuid_values)
+            .ok_or("occurrences/object_uuid_values: lists must be nonempty")?;
+        Ok(Self {
+            occurrences,
+            object_uuid_values,
+        })
     }
 
     #[cfg(test)]
     pub(super) fn occurrences(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(|slot| slot.occurrence.as_str())
+        self.occurrences.iter().map(String::as_str)
     }
 
     #[cfg(test)]
     pub(super) fn object_uuid_values(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(|slot| slot.object_uuid_value.as_str())
+        self.object_uuid_values.iter().map(String::as_str)
     }
 }
 
@@ -71,11 +69,11 @@ impl Serialize for UuidGroupMembers {
         let mut state = serializer.serialize_struct("UuidGroupMembers", 2)?;
         state.serialize_field(
             "occurrences",
-            &IterWire(self.0.iter().map(|slot| slot.occurrence.as_str())),
+            &IterWire(self.occurrences.iter().map(String::as_str)),
         )?;
         state.serialize_field(
             "object_uuid_values",
-            &IterWire(self.0.iter().map(|slot| slot.object_uuid_value.as_str())),
+            &IterWire(self.object_uuid_values.iter().map(String::as_str)),
         )?;
         state.end()
     }
@@ -89,7 +87,8 @@ impl<'de> Deserialize<'de> for UuidGroupMembers {
             object_uuid_values: Vec<String>,
         }
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.occurrences, wire.object_uuid_values).map_err(serde::de::Error::custom)
+        Self::from_admitted_lists(wire.occurrences, wire.object_uuid_values)
+            .map_err(serde::de::Error::custom)
     }
 }
 

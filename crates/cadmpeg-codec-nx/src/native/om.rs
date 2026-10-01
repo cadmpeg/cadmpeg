@@ -3382,7 +3382,7 @@ pub(super) fn external_reference_indexed_records(
             continue;
         };
         let byte_len = cadmpeg_core::decode::u64_from_index(record.byte_len);
-        let Some(bytes) = container.bounded_entry_bytes(source_offset, byte_len) else {
+        let Some(bytes) = container.bounded_entry_bytes(ctx, source_offset, byte_len)? else {
             continue;
         };
         ctx.reserve_retained_vec(
@@ -3432,7 +3432,8 @@ pub(super) fn external_reference_empty_records(
 ) -> Result<Vec<ExternalReferenceEmptyRecord>, CodecError> {
     let mut output = Vec::new();
     for record in indexed {
-        let Some(bytes) = container.bounded_entry_bytes(record.source_offset, record.byte_len)
+        let Some(bytes) =
+            container.bounded_entry_bytes(ctx, record.source_offset, record.byte_len)?
         else {
             continue;
         };
@@ -3487,7 +3488,9 @@ pub(super) fn external_reference_tail_reference_pairs(
         else {
             continue;
         };
-        let Some(bytes) = container.bounded_entry_bytes(source_offset, record.tail_byte_len) else {
+        let Some(bytes) =
+            container.bounded_entry_bytes(ctx, source_offset, record.tail_byte_len)?
+        else {
             continue;
         };
         for (ordinal, (offset, persistent_handle, tagged_reference)) in

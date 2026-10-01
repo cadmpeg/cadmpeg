@@ -1223,3 +1223,112 @@ fn nurbs_duplicate_array_index_refuses_lookup_work() {
         },
     );
 }
+
+#[test]
+fn nurbs_low_nonnull_identities_resolve_owned_carriers() {
+    let mut bytes = bspline_partition_stream();
+    let find = |bytes: &[u8], tag: u8, identity: u16| {
+        let [high, low] = identity.to_be_bytes();
+        bytes
+            .windows(4)
+            .position(|lane| lane == [0, tag, high, low])
+            .unwrap()
+    };
+    let surface = find(&bytes, 124, 10);
+    let surface_desc = find(&bytes, 126, 20);
+    let surface_data = surface_desc + 48;
+    assert_eq!(&bytes[surface_data..surface_data + 4], &[0, 125, 0, 21]);
+    let curve = find(&bytes, 134, 50);
+    let curve_desc = find(&bytes, 136, 40);
+    let curve_data = find(&bytes, 135, 41);
+    put_ref(&mut bytes, surface + 19, 2);
+    put_ref(&mut bytes, surface + 21, 3);
+    put_ref(&mut bytes, surface_desc + 2, 2);
+    put_ref(&mut bytes, surface_desc + 46, 3);
+    put_ref(&mut bytes, surface_data + 2, 3);
+    put_ref(&mut bytes, curve + 19, 4);
+    put_ref(&mut bytes, curve + 21, 5);
+    put_ref(&mut bytes, curve_desc + 2, 4);
+    put_ref(&mut bytes, curve_data + 2, 5);
+    let find_array = |tag, identity: u16| {
+        let [high, low] = identity.to_be_bytes();
+        bytes
+            .windows(8)
+            .position(|lane| lane[0..2] == [0, tag] && lane[6..8] == [high, low])
+            .unwrap()
+    };
+    let mult = find_array(127, 42);
+    let knot = find_array(128, 43);
+    put_ref(&mut bytes, mult + 6, 6);
+    put_ref(&mut bytes, knot + 6, 7);
+    put_ref(&mut bytes, curve_desc + 23, 6);
+    put_ref(&mut bytes, curve_desc + 25, 7);
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(super::surface_payload_at(ctx, &bytes, surface_data)
+            .unwrap()
+            .is_some());
+        assert!(super::surface_descriptor_at(&bytes, surface_desc).is_some());
+        assert!(super::curve_payload_at(ctx, &bytes, curve_data)
+            .unwrap()
+            .is_some());
+        assert!(super::curve_descriptor_at(&bytes, curve_desc, true).is_some());
+        assert_eq!(super::surfaces(ctx, &bytes).unwrap().0.len(), 1);
+        assert_eq!(super::curves(ctx, &bytes).unwrap().0.len(), 1);
+    });
+}
+
+#[test]
+fn nurbs_short_headers_admit_every_nonnull_identity() {
+    for identity in 2..=10_u16 {
+        let [high, low] = identity.to_be_bytes();
+        let bytes = [0, 135, high, low, 1, 0, 1, 1];
+        assert_eq!(
+            super::curve_data_header_at(&bytes, 0),
+            Some((u32::from(identity), 8))
+        );
+    }
+    for identity in [0_u16, 1] {
+        let [high, low] = identity.to_be_bytes();
+        assert_eq!(
+            super::curve_data_header_at(&[0, 135, high, low, 1, 0, 1, 1], 0),
+            None
+        );
+    }
+}
+
+#[test]
+fn nurbs_singleton_arrays_admit_low_nonnull_identities() {
+    for (tag, identity) in [(127, 2_u16), (128, 5)] {
+        let mut bytes = vec![0, tag, 0, 0, 0, 1];
+        bytes.extend_from_slice(&identity.to_be_bytes());
+        if tag == 127 {
+            bytes.extend_from_slice(&1_u16.to_be_bytes());
+        } else {
+            bytes.extend_from_slice(&0.0_f64.to_be_bytes());
+        }
+        crate::test_support::with_decode_context(|ctx| {
+            let array = super::array_record_at(ctx, &bytes, 0).unwrap().unwrap();
+            assert_eq!(array.reference, u32::from(identity));
+            assert_eq!(array.end, bytes.len());
+        });
+    }
+}
+
+#[test]
+fn nurbs_surface_headers_admit_low_nonnull_identity() {
+    for identity in [0_u16, 1, 2, 10] {
+        let mut bytes = vec![0, 125];
+        bytes.extend_from_slice(&identity.to_be_bytes());
+        bytes.extend_from_slice(&[0; 64]);
+        bytes.push(1);
+        bytes.extend_from_slice(b"BBBB????????");
+        for _ in 0..4 {
+            bytes.extend_from_slice(&[0, 1, 1]);
+        }
+        let result = super::surface_data_header_at(&bytes, 0);
+        assert_eq!(
+            result,
+            (identity > 1).then_some((u32::from(identity), bytes.len()))
+        );
+    }
+}

@@ -86,7 +86,7 @@ fn serialize_records<S: Serializer>(
 fn deserialize_records<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<NonEmpty<String>, D::Error> {
-    NonEmpty::new(Vec::<String>::deserialize(deserializer)?).ok_or_else(|| {
+    NonEmpty::from_admitted_vec(Vec::<String>::deserialize(deserializer)?).ok_or_else(|| {
         serde::de::Error::custom("records must contain at least one intersected record")
     })
 }
@@ -157,7 +157,7 @@ pub(in crate::native) fn object_uuid_values(
                 ctx.reserve_retained_vec(&mut record_ids, 1, "NX OM UUID records")?;
                 record_ids.push(uuid_record_id(ctx, section_ordinal, record_ordinal)?);
             }
-            let Some(records) = NonEmpty::from_vec(record_ids) else {
+            let Some(records) = NonEmpty::from_admitted_vec(record_ids) else {
                 continue;
             };
             let Some(source_offset) =
@@ -193,7 +193,6 @@ mod tests {
     use crate::om::{FixedEntityRecord, IndexedSection, IndexedStore};
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::sync::{Arc, OnceLock};
 
@@ -222,7 +221,7 @@ mod tests {
             })
             .expect("test cache is empty");
         Container {
-            data: Cow::Borrowed(UUID_FRAME),
+            data: UUID_FRAME.into(),
             physical_size: cadmpeg_core::decode::u64_from_index(UUID_FRAME.len()),
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {

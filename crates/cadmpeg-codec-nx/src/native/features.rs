@@ -2159,7 +2159,8 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
         let lane = FramedScalarRun::new(
             form,
             offset,
-            NonEmpty::from_vec(values).ok_or("values must contain a sketch scalar atom")?,
+            NonEmpty::from_admitted_vec(values)
+                .ok_or("values must contain a sketch scalar atom")?,
         )?;
         if !lane
             .iter()
