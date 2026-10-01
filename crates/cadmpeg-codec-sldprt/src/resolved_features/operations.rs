@@ -41,7 +41,7 @@ fn copy_retained_string(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut copy, value.len(), operation)?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -581,7 +581,7 @@ pub(crate) fn enrich_history_split_lines(
         for feature in histories.iter().flat_map(|history| &history.features) {
             ctx.charge_work(1, "scan SLDPRT split-line objects")?;
             if let Some(name) = feature_object_name(feature, lane) {
-                ctx.reserve_collection_vec(&mut objects, 1, "collect SLDPRT split-line objects")?;
+                ctx.reserve_vec(&mut objects, 1, "collect SLDPRT split-line objects")?;
                 objects.push((name.offset, feature));
             }
         }

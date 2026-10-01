@@ -90,7 +90,7 @@ fn scan_transformed_reference_plane(
         ) else {
             continue;
         };
-        ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -151,16 +151,11 @@ fn scan_length_user_units(
             })
         })?;
         let mut value = String::new();
-        crate::text_admission::reserve_retained_string(
-            ctx,
-            &mut value,
-            text_bytes,
-            "retain SLDPRT linear unit name",
-        )?;
+        ctx.try_reserve_retained_text(&mut value, text_bytes, "retain SLDPRT linear unit name")?;
         for scalar in scalars() {
             value.push(scalar);
         }
-        ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -202,7 +197,7 @@ fn scan_units_xml(
         let Some(code) = value.and_then(|value| value.trim().parse::<i64>().ok()) else {
             continue;
         };
-        ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -253,7 +248,7 @@ fn scan_vectors(
         let Some(values) = values else {
             continue;
         };
-        ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -287,7 +282,7 @@ fn scan_part(
         ) else {
             continue;
         };
-        ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -328,7 +323,7 @@ fn scan_configuration_manager(
         if filetime > i64::MAX as u64 {
             continue;
         }
-        ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,

@@ -177,7 +177,7 @@ fn definition_candidates(
             continue;
         };
         let family =
-            crate::byte_admission::copy_retained(ctx, text, "copy Parasolid attribute family")?;
+            ctx.copy_retained(text, "copy Parasolid attribute family")?;
         reserve_map_entry(
             ctx,
             &mut found,
@@ -291,7 +291,7 @@ fn integer_lists(
         }
         charge_items(ctx, count, "decode Parasolid attribute values")?;
         let mut values = Vec::new();
-        ctx.reserve_precharged_vec(&mut values, count, "decode Parasolid attribute values")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, count, "decode Parasolid attribute values")?;
         for index in 0..count {
             let Some(value) = index
                 .checked_mul(4)
@@ -443,7 +443,7 @@ pub(super) fn scan(
                 "copy Parasolid face identity fields",
             )?;
             let mut copied_fields = Vec::new();
-            ctx.reserve_precharged_vec(
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
                 &mut copied_fields,
                 trailing_fields.len(),
                 "copy Parasolid face identity fields",
@@ -479,7 +479,7 @@ pub(super) fn scan(
     }
     charge_items(ctx, found.len(), "retain Parasolid face atoms")?;
     let mut out = Vec::new();
-    ctx.reserve_precharged_vec(&mut out, found.len(), "retain Parasolid face atoms")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut out, found.len(), "retain Parasolid face atoms")?;
     out.extend(found.into_values().flatten());
     ctx.stable_sort_by(
         &mut out,
@@ -561,7 +561,7 @@ pub(super) fn scan_body_modifiers(
     }
     charge_items(ctx, found.len(), "retain Parasolid body modifiers")?;
     let mut out = Vec::new();
-    ctx.reserve_precharged_vec(&mut out, found.len(), "retain Parasolid body modifiers")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut out, found.len(), "retain Parasolid body modifiers")?;
     out.extend(found.into_values().flatten());
     ctx.stable_sort_by(
         &mut out,

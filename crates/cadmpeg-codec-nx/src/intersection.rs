@@ -403,12 +403,12 @@ impl CurveScan {
         }
         Ok(Self {
             source_constructions: ctx
-                .copy_slice_with_work(&self.source_constructions, "NX source intersection copy")?,
+                .copy_slice(&self.source_constructions, "NX source intersection copy")?,
             constructions: ctx
-                .copy_slice_with_work(&self.constructions, "NX intersection construction copy")?,
+                .copy_slice(&self.constructions, "NX intersection construction copy")?,
             curves,
             uncharted: ctx
-                .copy_slice_with_work(&self.uncharted, "NX uncharted intersection copy")?,
+                .copy_slice(&self.uncharted, "NX uncharted intersection copy")?,
             rejected: self.rejected,
         })
     }

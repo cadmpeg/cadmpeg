@@ -125,18 +125,14 @@ pub(crate) fn project_parameters(
                     ordinal: ordinal_u32,
                     properties,
                     name,
-                    expression: crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{expression}"),
-                        "retain SLDPRT parameter expression",
-                    )?,
+                    expression: ctx.format_retained(format_args!("{expression}"), "retain SLDPRT parameter expression")?,
                     display,
                     value,
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     native_ref: None,
                     pmi: None,
                 };
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut parameters,
                     1,
                     "collect SLDPRT projected parameters",
@@ -194,11 +190,7 @@ fn bare_text_parameter_literal(
         return Ok(None);
     }
     Ok(Some(ParameterValue::String(
-        crate::text_admission::format_retained(
-            ctx,
-            format_args!("{expression}"),
-            "retain SLDPRT text parameter literal",
-        )?,
+        ctx.format_retained(format_args!("{expression}"), "retain SLDPRT text parameter literal")?,
     )))
 }
 
@@ -214,11 +206,7 @@ fn formatted_text_dimension_literal(
     )?;
     formatted_text_dimension_value(name, expression)
         .map(|value| {
-            crate::text_admission::format_retained(
-                ctx,
-                format_args!("{value}"),
-                "retain SLDPRT formatted parameter literal",
-            )
+            ctx.format_retained(format_args!("{value}"), "retain SLDPRT formatted parameter literal")
             .map(ParameterValue::String)
         })
         .transpose()
@@ -314,11 +302,7 @@ pub(super) fn apply_evaluated_parameters(
                 continue;
             };
             let value = match value {
-                ParameterValue::String(value) => crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{value}"),
-                    "retain SLDPRT evaluated parameter text",
-                )?,
+                ParameterValue::String(value) => ctx.format_retained(format_args!("{value}"), "retain SLDPRT evaluated parameter text")?,
                 _ => format_parameter_value(value),
             };
             let name = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(
@@ -326,7 +310,7 @@ pub(super) fn apply_evaluated_parameters(
                 name.as_str(),
             )?)
             .ok_or_else(|| CodecError::malformed("blank SLDPRT evaluated parameter name"))?;
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut replacements,
                 1,
                 "collect SLDPRT evaluated parameter replacements",
@@ -447,11 +431,7 @@ fn copy_parameter_id(ctx: &DecodeContext<'_>, id: &ParameterId) -> Result<Parame
             ctx.refuse_codec_limit("retain SLDPRT parameter reference", u64::MAX - 1, u64::MAX)
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT parameter reference")?;
-    ParameterId::mint(crate::text_admission::format_retained(
-        ctx,
-        format_args!("{id}"),
-        "retain SLDPRT parameter reference",
-    )?)
+    ParameterId::mint(ctx.format_retained(format_args!("{id}"), "retain SLDPRT parameter reference")?)
     .map_err(CodecError::malformed)
 }
 
@@ -472,11 +452,7 @@ fn copy_parameter_value(
                 })?;
             ctx.charge_work(work, "retain SLDPRT parameter value text")?;
             Ok(ParameterValue::String(
-                crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{value}"),
-                    "retain SLDPRT parameter value text",
-                )?,
+                ctx.format_retained(format_args!("{value}"), "retain SLDPRT parameter value text")?,
             ))
         }
         _ => Ok(value.clone()),
@@ -542,7 +518,7 @@ fn order_parameters_by_dependencies(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             seen_owners.insert(owner);
-            ctx.reserve_collection_vec(&mut owner_order, 1, OPERATION)?;
+            ctx.reserve_vec(&mut owner_order, 1, OPERATION)?;
             owner_order.push(owner);
         }
         if !parameter_owners.contains_key(&parameter.id) {
@@ -559,7 +535,7 @@ fn order_parameters_by_dependencies(
         for (index, parameter) in parameters.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if parameter.owner.as_ref() == owner {
-                ctx.reserve_collection_vec(&mut remaining, 1, OPERATION)?;
+                ctx.reserve_vec(&mut remaining, 1, OPERATION)?;
                 remaining.push(index);
             }
         }
@@ -597,7 +573,7 @@ fn order_parameters_by_dependencies(
                     .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ordered_ids.insert(id);
             }
-            ctx.reserve_collection_vec(&mut ordered, 1, OPERATION)?;
+            ctx.reserve_vec(&mut ordered, 1, OPERATION)?;
             ordered.push(index);
         }
         for (ordinal, index) in ordered.into_iter().enumerate() {
@@ -608,7 +584,7 @@ fn order_parameters_by_dependencies(
                     ordinal as u64,
                 )
             })?;
-            ctx.reserve_collection_vec(&mut updates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut updates, 1, OPERATION)?;
             updates.push((index, ordinal));
         }
     }
@@ -677,7 +653,7 @@ impl ParameterAliases {
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "retain SLDPRT parameter alias";
         let copy = |value: &str| {
-            crate::text_admission::format_retained(ctx, format_args!("{value}"), OPERATION)
+            ctx.format_retained(format_args!("{value}"), OPERATION)
         };
         let mut aliases = Self {
             global: HashMap::new(),
@@ -706,21 +682,13 @@ impl ParameterAliases {
                 .as_ref()
                 .and_then(|owner| feature_names.get(owner))
             {
-                let qualified = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{}@{owner_name}", parameter.name),
-                    OPERATION,
-                )?;
+                let qualified = ctx.format_retained(format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
                 insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 if let Some(equation_id) = parameter.properties.get("EquationId") {
                     let qualified = if equation_id.contains('@') {
                         copy(equation_id)?
                     } else {
-                        crate::text_admission::format_retained(
-                            ctx,
-                            format_args!("{equation_id}@{owner_name}"),
-                            OPERATION,
-                        )?
+                        ctx.format_retained(format_args!("{equation_id}@{owner_name}"), OPERATION)?
                     };
                     insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 }
@@ -1029,12 +997,12 @@ fn parameter_value_states(
     let mut states = Vec::new();
     if include_global || configurations.is_empty() {
         let state = make_state(None)?;
-        ctx.reserve_collection_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
+        ctx.reserve_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
         states.push(state);
     }
     for configuration in configurations {
         let state = make_state(Some(configuration))?;
-        ctx.reserve_collection_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
+        ctx.reserve_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
         states.push(state);
     }
     Ok(states)
@@ -1132,11 +1100,7 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
         };
         ctx.charge_work(inner.len() as u64, "unescape SLDPRT parameter identifier")?;
         let value = if inner.contains("\"\"") {
-            let (mut value, reservation) = crate::text_admission::reserve_scoped_string(
-                ctx,
-                inner.len(),
-                "unescape SLDPRT parameter identifier",
-            )?;
+            let (mut value, reservation) = ctx.scoped_string(inner.len(), "unescape SLDPRT parameter identifier")?;
             let mut segments = inner.split("\"\"");
             if let Some(first) = segments.next() {
                 value.push_str(first);
@@ -1243,7 +1207,7 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
             if closed {
                 if let Some(identifier) = ExpressionIdentifier::quoted(ctx, expression, at, cursor)?
                 {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut identifiers,
                         1,
                         "collect SLDPRT parameter identifiers",
@@ -1264,7 +1228,7 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
                 })
                 .unwrap_or(rest.len());
             if let Some(identifier) = ExpressionIdentifier::plain(expression, at, at + end) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut identifiers,
                     1,
                     "collect SLDPRT parameter identifiers",

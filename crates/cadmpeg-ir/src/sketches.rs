@@ -339,7 +339,7 @@ impl SketchProfiles {
         const OPERATION: &str = "append sketch profile use";
         ctx.charge_work(2, OPERATION)?;
         let mut profile = Vec::new();
-        ctx.reserve_collection_vec(&mut profile, 1, OPERATION)?;
+        ctx.reserve_vec(&mut profile, 1, OPERATION)?;
         if self.0.len() == self.0.capacity() {
             ctx.charge_work(
                 u64::try_from(self.0.len())
@@ -347,7 +347,7 @@ impl SketchProfiles {
                 OPERATION,
             )?;
         }
-        ctx.reserve_collection_vec(&mut self.0, 1, OPERATION)?;
+        ctx.reserve_vec(&mut self.0, 1, OPERATION)?;
         profile.push(entity);
         self.0.push(profile);
         Ok(())
@@ -374,7 +374,7 @@ impl SketchProfiles {
             OPERATION,
         )?;
         let mut decisions = Vec::new();
-        ctx.reserve_collection_vec(&mut decisions, count, OPERATION)?;
+        ctx.reserve_vec(&mut decisions, count, OPERATION)?;
         for profile in &self.0 {
             for usage in profile {
                 ctx.charge_work(

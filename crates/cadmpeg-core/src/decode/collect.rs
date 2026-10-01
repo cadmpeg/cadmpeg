@@ -83,12 +83,7 @@ impl DecodeContext<'_> {
         })?;
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
         self.charge_collection_items_limit(u64_from_index(count), operation)?;
-        values.try_reserve(count).map_err(|_| ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            self.policy().limits.max_collection_items,
-            u64_from_index(count),
-            operation,
-        ))
+        values.try_reserve(count).map_err(|_| self.collection_allocation_failed_limit(count, operation))
     }
 
     /// Appends a value after admitting its slot and retained element storage.
@@ -289,21 +284,8 @@ impl DecodeContext<'_> {
         Ok((copies, reservation))
     }
 
-    /// Formats retained text after charging its byte count as work.
-    pub fn format_retained_with_work(
-        &self,
-        args: fmt::Arguments<'_>,
-        operation: &'static str,
-    ) -> Result<String, CodecError> {
-        let length = self.formatted_length(args, operation)?;
-        self.charge_work(u64_from_index(length), operation)?;
-        let mut text = self.retained_string(length, operation)?;
-        fmt::write(&mut text, args).map_err(CodecError::malformed)?;
-        Ok(text)
-    }
-
     /// Formats text in an existing scope after charging its byte count as work.
-    pub fn format_scoped_text_with_work(
+    pub fn format_scoped_text(
         &self,
         reservation: &mut ScopedReservation<'_>,
         args: fmt::Arguments<'_>,
@@ -345,16 +327,6 @@ impl DecodeContext<'_> {
             collected.push(value);
         }
         Ok(collected)
-    }
-
-    /// Copies a slice after admitting its work and collection slots.
-    pub fn copy_slice_with_work<T: Clone>(
-        &self,
-        values: &[T],
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
-        self.copy_slice(values, operation)
     }
 
     /// Reserves text bytes charged by aggregate admission.
@@ -512,6 +484,18 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         reservation.grow(u64_from_index(additional))?;
         Self::reserve_admitted_string(text, additional, operation)
+    }
+
+    /// Creates empty scoped text with fallible storage admission.
+    pub fn scoped_string(
+        &self,
+        length: usize,
+        operation: &'static str,
+    ) -> Result<(String, ScopedReservation<'_>), CodecError> {
+        let mut reservation = self.reserve_scoped(0, operation)?;
+        let mut text = String::new();
+        self.reserve_scoped_string(&mut reservation, &mut text, length, operation)?;
+        Ok((text, reservation))
     }
 
     fn allocation_failed(
@@ -963,12 +947,29 @@ impl DecodeContext<'_> {
         Ok(rows)
     }
 
+    /// Collects fallible values and admits the storage of each output slot.
+    pub fn try_collect_retained_with<I, T, E: From<CodecError>>(
+        &self,
+        values: impl IntoIterator<Item = I>,
+        operation: &'static str,
+        mut map: impl FnMut(I) -> Result<T, E>,
+    ) -> Result<Vec<T>, E> {
+        let mut collected = Vec::new();
+        for value in values {
+            self.charge_work(1, operation)?;
+            self.reserve_retained_vec(&mut collected, 1, operation)?;
+            collected.push(map(value)?);
+        }
+        Ok(collected)
+    }
+
     /// Copies a slice after charging its collection slots.
     pub fn copy_slice<T: Clone>(
         &self,
         values: &[T],
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
         let mut copy = self.collection_vec(values.len(), operation)?;
         copy.extend_from_slice(values);
         Ok(copy)
@@ -1260,6 +1261,41 @@ impl DecodeContext<'_> {
         Ok((values, reservation))
     }
 
+    /// Collects a borrowed string index with scoped hash storage.
+    pub fn collect_scoped_string_set<'text>(
+        &self,
+        count: usize,
+        values: impl IntoIterator<Item = &'text str>,
+        operation: &'static str,
+    ) -> Result<(HashSet<&'text str>, ScopedReservation<'_>), CodecError> {
+        let (mut output, reservation) = self.temporary_set(count, operation)?;
+        for value in values {
+            self.charge_work(u64_from_index(value.len()).checked_mul(2).and_then(|work| work.checked_add(1))
+                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?, operation)?;
+            output.insert(value);
+        }
+        Ok((output, reservation))
+    }
+
+    /// Collects a borrowed string-keyed index with scoped hash storage.
+    pub fn collect_scoped_string_map<'text, V>(
+        &self,
+        count: usize,
+        values: impl IntoIterator<Item = (&'text str, V)>,
+        operation: &'static str,
+    ) -> Result<(HashMap<&'text str, V>, ScopedReservation<'_>), CodecError> {
+        let reservation = self.reserve_scoped(self.temporary_hash_bytes::<(&str, V)>(count, operation)?, operation)?;
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        let mut output = HashMap::new();
+        Self::reserve_admitted_map(&mut output, count, operation)?;
+        for (key, value) in values {
+            self.charge_work(u64_from_index(key.len()).checked_mul(2).and_then(|work| work.checked_add(1))
+                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?, operation)?;
+            output.insert(key, value);
+        }
+        Ok((output, reservation))
+    }
+
     /// Reserves a scoped deque and returns its live reservation.
     pub fn temporary_queue<T>(
         &self,
@@ -1293,6 +1329,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<String, CodecError> {
         let length = self.formatted_length(args, operation)?;
+        self.charge_work(u64_from_index(length), operation)?;
         self.charge_retained(u64_from_index(length), operation)?;
         let mut text = String::new();
         text.try_reserve_exact(length).map_err(|_| {
@@ -1308,13 +1345,8 @@ impl DecodeContext<'_> {
         args: fmt::Arguments<'_>,
         operation: &'static str,
     ) -> Result<(String, ScopedReservation<'_>), CodecError> {
-        let length = self.formatted_length(args, operation)?;
-        let reservation = self.reserve_scoped(u64_from_index(length), operation)?;
-        let mut text = String::new();
-        text.try_reserve_exact(length).map_err(|_| {
-            self.allocation_failed(ResourceDimension::MaterializedBytes, length, operation)
-        })?;
-        fmt::write(&mut text, args).map_err(CodecError::malformed)?;
+        let mut reservation = self.reserve_scoped(0, operation)?;
+        let text = self.format_scoped_text(&mut reservation, args, operation)?;
         Ok((text, reservation))
     }
 
@@ -1481,18 +1513,31 @@ impl DecodeContext<'_> {
         args: fmt::Arguments<'_>,
         operation: &'static str,
     ) -> Result<usize, CodecError> {
-        struct Count(Option<usize>);
-        impl Write for Count {
+        struct Count<'ctx, 'arena> {
+            ctx: &'ctx DecodeContext<'arena>,
+            operation: &'static str,
+            length: Option<usize>,
+            refusal: Option<CodecError>,
+        }
+        impl Write for Count<'_, '_> {
             fn write_str(&mut self, value: &str) -> fmt::Result {
-                self.0 = self.0.and_then(|total| total.checked_add(value.len()));
-                self.0.map(|_| ()).ok_or(fmt::Error)
+                if let Err(error) = self.ctx.charge_work(u64_from_index(value.len()), self.operation) {
+                    self.refusal = Some(error);
+                    return Err(fmt::Error);
+                }
+                self.length = self.length.and_then(|total| total.checked_add(value.len()));
+                self.length.map(|_| ()).ok_or(fmt::Error)
             }
         }
-        let mut count = Count(Some(0));
-        fmt::write(&mut count, args)
-            .map_err(|_| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let mut count = Count { ctx: self, operation, length: Some(0), refusal: None };
+        if fmt::write(&mut count, args).is_err() {
+            return Err(match count.refusal {
+                Some(error) => error,
+                None => self.refuse_codec_limit(operation, u64::MAX, u64::MAX),
+            });
+        }
         count
-            .0
+            .length
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))
     }
 }
@@ -2276,7 +2321,7 @@ mod tests {
         ResourceDimension::WorkUnits,
         2,
         |ctx: &DecodeContext<'_>| ctx
-            .format_retained_with_work(format_args!("ab"), "test formatted work")
+            .format_retained(format_args!("ab"), "test formatted work")
             .map(|_| ())
     );
     operation_case!(
@@ -2286,7 +2331,7 @@ mod tests {
         2,
         |ctx: &DecodeContext<'_>| {
             let mut reservation = ctx.reserve_scoped(0, "test scoped formatted work")?;
-            ctx.format_scoped_text_with_work(
+            ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("ab"),
                 "test scoped formatted work",
@@ -2364,7 +2409,7 @@ mod tests {
         ResourceDimension::WorkUnits,
         2,
         |ctx: &DecodeContext<'_>| ctx
-            .copy_slice_with_work(&[1u8, 2], "test work copy")
+            .copy_slice(&[1u8, 2], "test work copy")
             .map(|_| ())
     );
 

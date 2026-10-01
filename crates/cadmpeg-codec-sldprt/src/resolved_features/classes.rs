@@ -95,7 +95,7 @@ pub(crate) fn bind_history_classes(
             if let Some(object_id) = name.object_id.and_then(ObjectId::value) {
                 reserve_class_map(ctx, &mut classes_by_object)?;
                 let classes = classes_by_object.entry(object_id).or_default();
-                ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
+                ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")?;
                 classes.push(&class.name);
             }
         }
@@ -135,7 +135,7 @@ pub(crate) fn bind_history_classes(
             if class.role() != FeatureInputClassRole::Native {
                 reserve_class_map(ctx, &mut direct_classes_by_name)?;
                 let classes = direct_classes_by_name.entry(name).or_default();
-                ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
+                ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")?;
                 classes.push(&class.name);
             }
         }
@@ -216,7 +216,7 @@ pub(crate) fn bind_history_classes(
             };
             reserve_class_map(ctx, &mut groups)?;
             let group = groups.entry(token).or_default();
-            ctx.reserve_collection_vec(group, 1, "bind SLDPRT history classes")?;
+            ctx.reserve_vec(group, 1, "bind SLDPRT history classes")?;
             group.push(feature);
         }
         for features in groups.values() {
@@ -229,7 +229,7 @@ pub(crate) fn bind_history_classes(
                     let classes = cosmetic_thread_classes
                         .entry(copy_class_text(ctx, &feature.id)?)
                         .or_default();
-                    ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
+                    ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")?;
                     classes.push(copy_class_text(ctx, class)?);
                 }
             }
@@ -278,7 +278,7 @@ pub(crate) fn bind_history_classes(
                 && native_object_class(sketch) == NativeClassKind::ProfileFeature
                 && native_object_class(extrusion) == NativeClassKind::Extrusion
             {
-                ctx.reserve_collection_vec(&mut native_startups, 1, "bind SLDPRT history classes")?;
+                ctx.reserve_vec(&mut native_startups, 1, "bind SLDPRT history classes")?;
                 native_startups.push([plane, plane, plane, origin, sketch, extrusion]);
             }
         }
@@ -310,7 +310,7 @@ pub(crate) fn bind_history_classes(
             let classes = classes_by_type
                 .entry(copy_class_text(ctx, &feature.kind)?)
                 .or_default();
-            ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
+            ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")?;
             classes.push(copy_class_text(ctx, class)?);
         }
     }
@@ -374,7 +374,7 @@ pub(crate) fn bind_history_classes(
                     let classes = classes_by_token
                         .entry((lane.id.as_str(), token))
                         .or_default();
-                    ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
+                    ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")?;
                     classes.push(copy_class_text(ctx, class)?);
                 }
             }
@@ -425,7 +425,7 @@ pub(crate) fn bind_history_classes(
                     .get(&(lane.id.as_str(), token))
                     .map(Vec::as_slice)
                 {
-                    ctx.reserve_collection_vec(&mut candidates, 1, "bind SLDPRT history classes")?;
+                    ctx.reserve_vec(&mut candidates, 1, "bind SLDPRT history classes")?;
                     candidates.push(copy_class_text(ctx, class)?);
                 }
             }
@@ -543,7 +543,7 @@ fn legacy_repeated_hole_wizard_classes(
             };
             reserve_class_map(ctx, &mut groups)?;
             let group = groups.entry(token).or_default();
-            ctx.reserve_collection_vec(group, 1, "bind SLDPRT history classes")?;
+            ctx.reserve_vec(group, 1, "bind SLDPRT history classes")?;
             group.push(feature);
         }
         for features in groups.values() {
@@ -574,11 +574,7 @@ fn copy_class_text(
             ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX)
         })?;
     ctx.charge_work(copy_work, "bind SLDPRT history classes")?;
-    crate::text_admission::format_retained(
-        ctx,
-        format_args!("{text}"),
-        "bind SLDPRT history classes",
-    )
+    ctx.format_retained(format_args!("{text}"), "bind SLDPRT history classes")
 }
 
 fn reserve_class_map<K: Eq + std::hash::Hash, V>(
@@ -623,7 +619,7 @@ fn collect_class_vec<T>(
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
     let mut values = Vec::new();
     for item in items {
-        ctx.reserve_collection_vec(&mut values, 1, "bind SLDPRT history classes")?;
+        ctx.reserve_vec(&mut values, 1, "bind SLDPRT history classes")?;
         values.push(item);
     }
     Ok(values)

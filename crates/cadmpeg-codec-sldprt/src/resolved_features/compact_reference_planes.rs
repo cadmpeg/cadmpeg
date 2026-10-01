@@ -35,7 +35,7 @@ impl CompactReferencePlaneIndex {
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
                     == Some(COMPACT_REFERENCE_PLANE_CLASS)
             {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut class_offsets,
                     1,
                     "collect compact reference plane classes",
@@ -48,7 +48,7 @@ impl CompactReferencePlaneIndex {
                         payload.get(start..start + COMPACT_REFERENCE_PLANE_RECORD_LEN)
                     {
                         if let Some(source) = compact_declared_reference_plane_record(bytes) {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut declared,
                                 1,
                                 "collect declared compact reference planes",
@@ -66,7 +66,7 @@ impl CompactReferencePlaneIndex {
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut components,
                                 1,
                                 "collect component compact reference planes",

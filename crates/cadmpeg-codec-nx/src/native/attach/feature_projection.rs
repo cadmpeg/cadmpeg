@@ -293,11 +293,11 @@ pub(super) fn parameter_consumer_identity(
     operation_label: &str,
 ) -> Result<String, CodecError> {
     match operation_label.split_once("operation-label") {
-        Some((prefix, suffix)) => ctx.format_retained_with_work(
+        Some((prefix, suffix)) => ctx.format_retained(
             format_args!("{prefix}feature{suffix}"),
             "NX feature projection text",
         ),
-        None => ctx.format_retained_with_work(
+        None => ctx.format_retained(
             format_args!("{operation_label}"),
             "NX feature projection text",
         ),
@@ -310,7 +310,7 @@ pub(super) fn insert_parameter_property(
     key: std::fmt::Arguments<'_>,
     value: String,
 ) -> Result<(), CodecError> {
-    let key = ctx.format_retained_with_work(key, "NX feature projection text")?;
+    let key = ctx.format_retained(key, "NX feature projection text")?;
     let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format_args!("NX parameter property key is blank"))
     })?;
@@ -508,11 +508,11 @@ pub(super) fn blend_feature_definition(
     };
     let face_blend = if matches!(family, NxBlendFamily::Face) && complete_pairs {
         if let Some(sides) = blend_support_bipartition(ctx, &pairs)? {
-            let first_native = ctx.format_retained_with_work(
+            let first_native = ctx.format_retained(
                 format_args!("{body}:blend-first-support-surfaces"),
                 "NX feature projection text",
             )?;
-            let second_native = ctx.format_retained_with_work(
+            let second_native = ctx.format_retained(
                 format_args!("{body}:blend-second-support-surfaces"),
                 "NX feature projection text",
             )?;
@@ -690,7 +690,7 @@ pub(super) fn offset_surface_feature_definition(
     else {
         return Ok(None);
     };
-    let native = ctx.format_retained_with_work(
+    let native = ctx.format_retained(
         format_args!("{}:offset-support-surfaces", body.as_str()),
         "NX feature projection text",
     )?;
@@ -836,7 +836,7 @@ pub(super) fn thicken_feature_definition(
     else {
         return Ok(None);
     };
-    let native = ctx.format_retained_with_work(
+    let native = ctx.format_retained(
         format_args!("{}:thicken-support-surfaces", body.as_str()),
         "NX feature projection text",
     )?;

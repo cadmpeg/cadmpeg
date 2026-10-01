@@ -35,12 +35,7 @@ fn copy_binding_text(
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT sketch binding identity")?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut copy,
-        value.len(),
-        "retain SLDPRT sketch binding identity",
-    )?;
+    ctx.try_reserve_retained_text(&mut copy, value.len(), "retain SLDPRT sketch binding identity")?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -73,7 +68,7 @@ fn push_sketch_binding(
     let feature_id = copy_binding_feature_id(ctx, feature_id)?;
     let native_ref = copy_binding_text(ctx, native_ref)?;
     let sketch = copy_binding_sketch_id(ctx, sketch)?;
-    ctx.reserve_collection_vec(bindings, 1, "collect SLDPRT sketch bindings")?;
+    ctx.reserve_vec(bindings, 1, "collect SLDPRT sketch bindings")?;
     bindings.push(SketchBinding {
         index,
         feature_id,
@@ -112,7 +107,7 @@ pub(crate) fn bind_unique_sketch_feature(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
         ) {
-            ctx.reserve_collection_vec(&mut feature_indices, 1, "collect SLDPRT sketch features")?;
+            ctx.reserve_vec(&mut feature_indices, 1, "collect SLDPRT sketch features")?;
             feature_indices.push(index);
         }
     }
@@ -264,7 +259,7 @@ pub(crate) fn bind_unique_sketch_feature(
             continue;
         };
         let sketch = copy_binding_sketch_id(ctx, &binding.sketch)?;
-        ctx.reserve_collection_vec(&mut aliases, 1, "collect SLDPRT sketch aliases")?;
+        ctx.reserve_vec(&mut aliases, 1, "collect SLDPRT sketch aliases")?;
         aliases.push(SketchBinding {
             index: base_index,
             feature_id: base_dependency,
@@ -273,7 +268,7 @@ pub(crate) fn bind_unique_sketch_feature(
             has_profile: binding.has_profile,
         });
     }
-    ctx.reserve_precharged_vec(&mut bindings, aliases.len(), "merge SLDPRT sketch aliases")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bindings, aliases.len(), "merge SLDPRT sketch aliases")?;
     bindings.extend(aliases);
     for feature in features {
         ctx.charge_work(
@@ -435,7 +430,7 @@ fn regeneration_order(
             let Some(&source) = by_id.get(predecessor) else {
                 continue;
             };
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut outgoing[source],
                 1,
                 "collect SLDPRT feature regeneration edges",
@@ -452,7 +447,7 @@ fn regeneration_order(
         }
     }
     let mut order = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut order,
         features.len(),
         "collect SLDPRT feature regeneration order",
@@ -560,12 +555,7 @@ fn copy_output_body_id(
     id: &str,
 ) -> Result<BodyId, cadmpeg_core::CodecError> {
     let mut text = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut text,
-        id.len(),
-        "retain SLDPRT feature output body",
-    )?;
+    ctx.try_reserve_retained_text(&mut text, id.len(), "retain SLDPRT feature output body")?;
     text.push_str(id);
     BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -679,7 +669,7 @@ pub(crate) fn derive_feature_outputs(
                             u64::MAX,
                         )
                     })?;
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut outputs,
                     count,
                     "collect SLDPRT body modifier outputs",
@@ -712,7 +702,7 @@ pub(crate) fn derive_feature_outputs(
         }
         let bodies = produced.entry(*source_id).or_default();
         if !bodies.contains(body) {
-            ctx.reserve_collection_vec(bodies, 1, "collect SLDPRT produced bodies")?;
+            ctx.reserve_vec(bodies, 1, "collect SLDPRT produced bodies")?;
             bodies.push(body);
         }
     }
@@ -738,7 +728,7 @@ pub(crate) fn derive_feature_outputs(
         };
         if let Some(bodies) = produced.get(&source_id) {
             let mut outputs = Vec::new();
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut outputs,
                 bodies.len(),
                 "collect SLDPRT feature outputs",

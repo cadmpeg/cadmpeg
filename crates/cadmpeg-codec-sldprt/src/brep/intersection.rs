@@ -738,7 +738,7 @@ pub(super) fn scan_intersection_carriers(
                 ctx,
                 format_args!("intersection chart for attr {attr}: {record}"),
             )?;
-            ctx.reserve_collection_vec(lane_refusals, 1, "collect intersection chart losses")?;
+            ctx.reserve_vec(lane_refusals, 1, "collect intersection chart losses")?;
             lane_refusals.push(note);
         }
         let Some(selected) = selected else {

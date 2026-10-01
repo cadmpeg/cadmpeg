@@ -183,7 +183,7 @@ impl CarrierIndex {
             other.blend_support_pairs,
             "merge SLDPRT blend support pairs",
         )?;
-        ctx.reserve_precharged_vec(
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             &mut self.lane_refusals,
             other.lane_refusals.len(),
             "merge SLDPRT lane refusals",

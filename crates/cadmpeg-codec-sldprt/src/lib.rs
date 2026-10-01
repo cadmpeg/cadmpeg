@@ -100,7 +100,6 @@
 mod annotations;
 mod appearance;
 mod brep;
-mod byte_admission;
 mod classification;
 mod container;
 mod decode;
@@ -122,7 +121,6 @@ mod records;
 mod resolved_features;
 mod swift;
 mod tessellation;
-mod text_admission;
 mod writer;
 mod writer_patch;
 mod writer_transform;

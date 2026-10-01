@@ -1388,7 +1388,7 @@ fn resolve_indexed_marker_candidates<'a>(
         if pairs.len() == pairs.capacity() {
             charge_endpoint_work(ctx, pairs.len(), 16, OPERATION)?;
         }
-        ctx.reserve_collection_vec(&mut pairs, 1, OPERATION)?;
+        ctx.reserve_vec(&mut pairs, 1, OPERATION)?;
         pairs.push([*first, *second]);
     }
     let Some(first) = pairs.first().copied() else {
@@ -1838,7 +1838,7 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
         if raw.len() == raw.capacity() {
             charge_endpoint_work(ctx, raw.len(), 32, OPERATION)?;
         }
-        ctx.reserve_collection_vec(&mut raw, 1, OPERATION)?;
+        ctx.reserve_vec(&mut raw, 1, OPERATION)?;
         raw.push((candidate, coordinates));
     }
     if !has_code_two_point || !has_embedded_geometry {
@@ -1862,7 +1862,7 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
         if roster.len() == roster.capacity() {
             charge_endpoint_work(ctx, roster.len(), 8, OPERATION)?;
         }
-        ctx.reserve_collection_vec(&mut roster, 1, OPERATION)?;
+        ctx.reserve_vec(&mut roster, 1, OPERATION)?;
         roster.push(marker);
     }
     Ok(Some(roster))
@@ -2076,7 +2076,7 @@ fn reserve_point_solver_vec<T>(
     if values.capacity() - values.len() < additional {
         charge_endpoint_work(ctx, values.len(), 4, POINT_SOLVER_OPERATION)?;
     }
-    ctx.reserve_collection_vec(values, additional, POINT_SOLVER_OPERATION)
+    ctx.reserve_vec(values, additional, POINT_SOLVER_OPERATION)
 }
 
 fn reserve_point_solver_map<T>(
@@ -3947,7 +3947,7 @@ pub(super) fn compact_profile_full_circle(
         if radials.len() == radials.capacity() {
             charge_endpoint_work(ctx, radials.len(), 4, OPERATION)?;
         }
-        ctx.reserve_collection_vec(&mut radials, 1, OPERATION)?;
+        ctx.reserve_vec(&mut radials, 1, OPERATION)?;
         radials.push(radial);
     }
     let factor = u64::from(radials.len().checked_ilog2().unwrap_or(0))
@@ -4439,7 +4439,7 @@ fn collect_endpoint_values<T>(
                 operation,
             )?;
         }
-        ctx.reserve_collection_vec(&mut collected, 1, operation)?;
+        ctx.reserve_vec(&mut collected, 1, operation)?;
         collected.push(value);
     }
     Ok(collected)
@@ -4470,7 +4470,7 @@ pub(super) fn copy_endpoint_markers<'a>(
     const OPERATION: &str = "copy SLDPRT resolved curve endpoints";
     charge_endpoint_work(ctx, markers.len(), 4, OPERATION)?;
     let mut copied = Vec::new();
-    ctx.reserve_collection_vec(&mut copied, markers.len(), OPERATION)?;
+    ctx.reserve_vec(&mut copied, markers.len(), OPERATION)?;
     copied.extend_from_slice(markers);
     Ok(copied)
 }
@@ -4523,7 +4523,7 @@ pub(super) fn collect_endpoint_markers<'a>(
         if selected.len() == selected.capacity() {
             charge_endpoint_work(ctx, selected.len(), 4, operation)?;
         }
-        ctx.reserve_collection_vec(&mut selected, 1, operation)?;
+        ctx.reserve_vec(&mut selected, 1, operation)?;
         selected.push(marker);
     }
     Ok(selected)

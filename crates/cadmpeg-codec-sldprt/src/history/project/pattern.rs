@@ -87,13 +87,9 @@ pub(super) fn project_pattern(
                 seeds.clear();
                 break;
             };
-            let copied = crate::text_admission::format_retained(
-                ctx,
-                format_args!("{}", id.as_str()),
-                OPERATION,
-            )?;
+            let copied = ctx.format_retained(format_args!("{}", id.as_str()), OPERATION)?;
             let id = FeatureId::mint(copied).map_err(CodecError::malformed)?;
-            ctx.reserve_collection_vec(&mut seeds, 1, OPERATION)?;
+            ctx.reserve_vec(&mut seeds, 1, OPERATION)?;
             seeds.push(PatternSeed::Feature(id));
         }
     }
@@ -106,11 +102,7 @@ pub(super) fn project_pattern(
                     .get(source.as_str())
                     .copied()
                     .unwrap_or(source);
-                crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{text}"),
-                    "retain SLDPRT pattern path",
-                )
+                ctx.format_retained(format_args!("{text}"), "retain SLDPRT pattern path")
                 .map(PathRef::Native)
             })
             .transpose()?

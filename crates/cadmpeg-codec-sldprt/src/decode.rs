@@ -110,7 +110,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             &classification,
             container::notes_charged(ctx, &scan)?,
         )?;
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut report.losses,
             pmi_losses.len(),
             "append SLDPRT PMI losses",
@@ -132,7 +132,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 form_padding,
                 &mut admitted_entities,
             )?;
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut report.losses,
                 pmi_losses.len(),
                 "append SLDPRT PMI losses",
@@ -157,7 +157,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         &classification,
         container::notes_charged(ctx, &scan)?,
     )?;
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut report.losses,
         pmi_losses.len(),
         "append SLDPRT PMI losses",
@@ -2230,7 +2230,7 @@ fn copy_retained_string(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut copy, value.len(), operation)?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -2264,7 +2264,7 @@ fn conflicting_display_reference(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     let mut message = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut message, bytes, OPERATION)?;
+    ctx.try_reserve_retained_text(&mut message, bytes, OPERATION)?;
     message.push_str(stream);
     message.push_str("::DisplayFace[");
     write!(&mut message, "{table_index}")
@@ -2339,7 +2339,7 @@ fn appearance_assignment_loss_message(
         }
     }
     let mut message = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut message, bytes, OPERATION)?;
+    ctx.try_reserve_retained_text(&mut message, bytes, OPERATION)?;
     message.push_str(PREFIX);
     if has_unmatched {
         message.push_str(MISSING_PREFIX);
@@ -2385,7 +2385,7 @@ fn active_body_streams<'a>(
             if !crate::parasolid::is_body_stream(&stream.header) {
                 continue;
             }
-            ctx.reserve_collection_vec(&mut streams, 1, "collect SLDPRT body streams")?;
+            ctx.reserve_vec(&mut streams, 1, "collect SLDPRT body streams")?;
             streams.push(ActiveParasolidSite {
                 section,
                 payload: &stream.payload,
@@ -2433,13 +2433,13 @@ fn try_decode_brep(
             Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "collect SLDPRT B-rep sites")?;
                 let mut indices = Vec::new();
-                ctx.reserve_collection_vec(&mut indices, 1, "collect SLDPRT site streams")?;
+                ctx.reserve_vec(&mut indices, 1, "collect SLDPRT site streams")?;
                 indices.push(index);
                 entry.insert(indices);
             }
             Entry::Occupied(mut entry) => {
                 let indices = entry.get_mut();
-                ctx.reserve_collection_vec(indices, 1, "collect SLDPRT site streams")?;
+                ctx.reserve_vec(indices, 1, "collect SLDPRT site streams")?;
                 indices.push(index);
             }
         }
@@ -2448,12 +2448,12 @@ fn try_decode_brep(
     for (site, indices) in &sites {
         let first = indices[0];
         let mut bodies = Vec::new();
-        ctx.reserve_collection_vec(&mut bodies, indices.len(), "collect SLDPRT site bodies")?;
+        ctx.reserve_vec(&mut bodies, indices.len(), "collect SLDPRT site bodies")?;
         for index in indices {
             bodies.push((streams[*index].payload, streams[*index].header));
         }
         let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
-        ctx.reserve_collection_vec(&mut decoded_sites, 1, "collect decoded SLDPRT sites")?;
+        ctx.reserve_vec(&mut decoded_sites, 1, "collect decoded SLDPRT sites")?;
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
@@ -2542,7 +2542,7 @@ fn try_decode_brep(
     bind_opaque_geometry(ctx, &mut decoded, &streams[selected].section.native_id())?;
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut configuration_bodies,
             1,
             "collect SLDPRT configuration bodies",
@@ -2553,7 +2553,7 @@ fn try_decode_brep(
         alternate.qualify_ids(ctx, &site)?;
         bind_opaque_geometry(ctx, &mut alternate, &streams[first].section.native_id())?;
         if let Some(index) = configuration_index(streams[first].source_stream().as_str()) {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut configuration_bodies,
                 1,
                 "collect SLDPRT configuration bodies",
@@ -2563,7 +2563,7 @@ fn try_decode_brep(
         // Keep only the selected source's bridge sequence namespace. Alternate
         // configuration sites are qualified into the model but do not own the
         // active SWIFT CadIdentifier lane.
-        merge_brep(ctx, &mut decoded, alternate)?;
+        merge_brep(&mut decoded, alternate)?;
     }
     let report = build_geometry_report(
         ctx,
@@ -2587,7 +2587,7 @@ fn copy_body_ids(
     bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
     let mut ids = Vec::new();
-    ctx.reserve_collection_vec(&mut ids, bodies.len(), "collect SLDPRT body IDs")?;
+    ctx.reserve_vec(&mut ids, bodies.len(), "collect SLDPRT body IDs")?;
     for body in bodies {
         let value = copy_retained_string(ctx, body.id.as_str(), "retain SLDPRT body ID")?;
         let id = cadmpeg_ir::ids::BodyId::mint(value)
@@ -2639,45 +2639,36 @@ fn bind_opaque_geometry(
 }
 
 fn append_brep_arena<T>(
-    ctx: &DecodeContext<'_>,
     target: &mut Vec<T>,
     source: &mut Vec<T>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_precharged_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
     target.append(source);
     Ok(())
 }
 
-fn merge_brep(
-    ctx: &DecodeContext<'_>,
-    target: &mut Brep,
-    mut source: Brep,
-) -> Result<(), CodecError> {
+fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
     target.annotations.append(source.annotations)?;
-    append_brep_arena(ctx, &mut target.bodies, &mut source.bodies)?;
-    append_brep_arena(ctx, &mut target.regions, &mut source.regions)?;
-    append_brep_arena(ctx, &mut target.shells, &mut source.shells)?;
-    append_brep_arena(ctx, &mut target.faces, &mut source.faces)?;
-    append_brep_arena(ctx, &mut target.loops, &mut source.loops)?;
-    append_brep_arena(ctx, &mut target.coedges, &mut source.coedges)?;
-    append_brep_arena(ctx, &mut target.edges, &mut source.edges)?;
-    append_brep_arena(ctx, &mut target.vertices, &mut source.vertices)?;
-    append_brep_arena(ctx, &mut target.points, &mut source.points)?;
-    append_brep_arena(ctx, &mut target.surfaces, &mut source.surfaces)?;
-    append_brep_arena(
-        ctx,
-        &mut target.procedural_surfaces,
-        &mut source.procedural_surfaces,
-    )?;
-    append_brep_arena(ctx, &mut target.curves, &mut source.curves)?;
-    append_brep_arena(ctx, &mut target.pcurves, &mut source.pcurves)?;
-    append_brep_arena(ctx, &mut target.unknowns, &mut source.unknowns)?;
-    append_brep_arena(ctx, &mut target.face_colors, &mut source.face_colors)?;
-    append_brep_arena(ctx, &mut target.face_atoms, &mut source.face_atoms)?;
-    append_brep_arena(ctx, &mut target.body_modifiers, &mut source.body_modifiers)?;
-    append_brep_arena(ctx, &mut target.losses, &mut source.losses)?;
+    append_brep_arena(&mut target.bodies, &mut source.bodies)?;
+    append_brep_arena(&mut target.regions, &mut source.regions)?;
+    append_brep_arena(&mut target.shells, &mut source.shells)?;
+    append_brep_arena(&mut target.faces, &mut source.faces)?;
+    append_brep_arena(&mut target.loops, &mut source.loops)?;
+    append_brep_arena(&mut target.coedges, &mut source.coedges)?;
+    append_brep_arena(&mut target.edges, &mut source.edges)?;
+    append_brep_arena(&mut target.vertices, &mut source.vertices)?;
+    append_brep_arena(&mut target.points, &mut source.points)?;
+    append_brep_arena(&mut target.surfaces, &mut source.surfaces)?;
+    append_brep_arena(&mut target.procedural_surfaces, &mut source.procedural_surfaces)?;
+    append_brep_arena(&mut target.curves, &mut source.curves)?;
+    append_brep_arena(&mut target.pcurves, &mut source.pcurves)?;
+    append_brep_arena(&mut target.unknowns, &mut source.unknowns)?;
+    append_brep_arena(&mut target.face_colors, &mut source.face_colors)?;
+    append_brep_arena(&mut target.face_atoms, &mut source.face_atoms)?;
+    append_brep_arena(&mut target.body_modifiers, &mut source.body_modifiers)?;
+    append_brep_arena(&mut target.losses, &mut source.losses)?;
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
@@ -2717,7 +2708,7 @@ fn ensure_display_appearance(
         "displaylist_visual_properties",
         Exactness::ByteExact,
     )?;
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut ir.model.appearances,
         1,
         "admit SLDPRT display appearance",
@@ -2772,7 +2763,7 @@ fn build_geometry_ir(
                 entry.insert(Vec::new())
             }
         };
-        ctx.reserve_collection_vec(links, 1, "index SLDPRT opaque geometry link")?;
+        ctx.reserve_vec(links, 1, "index SLDPRT opaque geometry link")?;
         links.push(copy_retained_string(
             ctx,
             entity,
@@ -2794,7 +2785,7 @@ fn build_geometry_ir(
         let summary = crate::tessellation::summary_for_faces(&faces);
         display_summary.vertices += summary.vertices;
         display_summary.triangles += summary.triangles;
-        ctx.reserve_collection_vec(&mut display_sections, 1, "collect SLDPRT display sections")?;
+        ctx.reserve_vec(&mut display_sections, 1, "collect SLDPRT display sections")?;
         display_sections.push((section, faces));
     }
     let mut ir = CadIr::decoded(source_meta(
@@ -2910,7 +2901,7 @@ fn build_geometry_ir(
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut lanes,
         supplemental_config_lanes.len(),
         "merge SLDPRT feature input lanes",
@@ -3044,7 +3035,7 @@ fn build_geometry_ir(
     stamp_feature_baseline(ctx, &mut ir)?;
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut attributes,
         custom_properties.len(),
         "append SLDPRT custom properties",
@@ -3088,7 +3079,7 @@ fn build_geometry_ir(
     )?;
     let face_atoms = std::mem::take(&mut brep.face_atoms);
     let mut face_identities = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut face_identities,
         face_atoms.len(),
         "collect SLDPRT face identities",
@@ -3097,7 +3088,7 @@ fn build_geometry_ir(
         face_identities.push((atom.face, atom.identity));
     }
     let mut face_producers = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut face_producers,
         face_identities.len(),
         "collect SLDPRT face producers",
@@ -3120,7 +3111,7 @@ fn build_geometry_ir(
         .filter(|modifier| modifier.target.is_some())
         .count();
     let mut body_modifiers = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut body_modifiers,
         modifier_count,
         "collect SLDPRT body modifiers",
@@ -3269,7 +3260,7 @@ fn build_geometry_ir(
         &all_lanes,
         &mut annotations,
     )?;
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut pmi_losses,
         configuration_losses.len(),
         "append SLDPRT configuration PMI losses",
@@ -3352,12 +3343,7 @@ fn build_geometry_ir(
                 .len()
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            crate::text_admission::reserve_retained_string(
-                ctx,
-                &mut qualified_site,
-                bytes,
-                OPERATION,
-            )?;
+            ctx.try_reserve_retained_text(&mut qualified_site, bytes, OPERATION)?;
             qualified_site.push('@');
             qualified_site.push_str(site);
         }
@@ -3388,7 +3374,7 @@ fn build_geometry_ir(
             .iter()
             .any(|appearance| appearance.id == id)
         {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut ir.model.appearances,
                 1,
                 "admit SLDPRT face appearance",
@@ -3426,7 +3412,7 @@ fn build_geometry_ir(
                 .iter()
                 .any(|binding| binding.id == binding_id)
             {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut ir.model.appearance_bindings,
                     1,
                     "admit SLDPRT face appearance binding",
@@ -3457,7 +3443,7 @@ fn build_geometry_ir(
             "moVisualProperties_c",
             Exactness::ByteExact,
         )?;
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut ir.model.appearances,
             1,
             "admit SLDPRT material appearance",
@@ -3506,7 +3492,7 @@ fn build_geometry_ir(
                     table_index,
                     &candidates,
                 )?;
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut conflicting_display_references,
                     1,
                     "collect SLDPRT conflicting display references",
@@ -3524,7 +3510,7 @@ fn build_geometry_ir(
             }
         }
         let mut display_links = Vec::new();
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut display_links,
             display_faces.len(),
             "collect SLDPRT display links",
@@ -3537,13 +3523,13 @@ fn build_geometry_ir(
             );
             if let Some(identity) = display_face.persistent_surface_identity() {
                 let mut trailing_fields = Vec::new();
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut trailing_fields,
                     identity.trailing_fields.len(),
                     "copy SLDPRT persistent face identity fields",
                 )?;
                 trailing_fields.extend_from_slice(&identity.trailing_fields);
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut persistent_face_bindings,
                     1,
                     "collect SLDPRT persistent face bindings",
@@ -3583,12 +3569,7 @@ fn build_geometry_ir(
                         )
                     })?;
                 let mut source_entity_id = String::new();
-                crate::text_admission::reserve_retained_string(
-                    ctx,
-                    &mut source_entity_id,
-                    source_id_len,
-                    "retain SLDPRT DisplayFace source identity",
-                )?;
+                ctx.try_reserve_retained_text(&mut source_entity_id, source_id_len, "retain SLDPRT DisplayFace source identity")?;
                 source_entity_id.push_str(source_stream);
                 source_entity_id.push_str("::DisplayFace[");
                 source_entity_id.push_str(&table_index_text);
@@ -3600,7 +3581,7 @@ fn build_geometry_ir(
                     display.ordinal(),
                     &mut annotations,
                 )?;
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut ir.model.appearance_bindings,
                     1,
                     "admit SLDPRT display appearance binding",
@@ -3621,7 +3602,7 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut ir.model.tessellations,
                 1,
                 "admit SLDPRT display tessellation",
@@ -3650,15 +3631,11 @@ fn build_geometry_ir(
             "displaylist_tessellation",
             Exactness::Unknown,
         )?;
-        ctx.reserve_collection_vec(&mut unknowns, 1, "retain SLDPRT display unknown")?;
+        ctx.reserve_vec(&mut unknowns, 1, "retain SLDPRT display unknown")?;
         unknowns.push(UnknownRecord::retained(
             display_id,
             0,
-            crate::byte_admission::copy_retained(
-                ctx,
-                display.payload(),
-                "retain SLDPRT display section",
-            )?,
+            ctx.copy_retained(display.payload(), "retain SLDPRT display section")?,
             display_links,
         ));
     }
@@ -3668,7 +3645,7 @@ fn build_geometry_ir(
         &matched_feature_sources,
         &conflicting_display_references,
     )? {
-        ctx.reserve_collection_vec(&mut pmi_losses, 1, "append SLDPRT appearance loss")?;
+        ctx.reserve_vec(&mut pmi_losses, 1, "append SLDPRT appearance loss")?;
         pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
     let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
@@ -3679,7 +3656,7 @@ fn build_geometry_ir(
     )?;
     let remaining_assignments =
         crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model)?;
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut assigned_tessellations,
         remaining_assignments.len(),
         "merge SLDPRT assigned tessellations",
@@ -3774,7 +3751,7 @@ fn build_geometry_ir(
                 "opaque geometry record {record_id} was not retained"
             )));
         };
-        ctx.reserve_precharged_vec(
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             source.links_mut(),
             links.len(),
             "append SLDPRT opaque geometry links",
@@ -4049,17 +4026,17 @@ fn build_geometry_report(
                 s.unknown_procedural_supports
             ));
         }
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut losses,
         decoded.losses.len(),
         "move SLDPRT B-rep losses to report",
     )?;
     losses.append(&mut decoded.losses);
     if s.unknown_curve_edges > 0 {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(
             SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(
                 "{} edge(s) reference an untyped support curve; topology references an opaque \
@@ -4069,42 +4046,42 @@ fn build_geometry_report(
         );
     }
     if s.ambiguous_pcurve_parameters > 0 {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
             "{} pcurve(s) were withheld because more than one geometric parameter satisfies the stored edge or ruling geometry; the decoder does not choose by residual order.",
             s.ambiguous_pcurve_parameters
         )));
     }
     if s.off_surface_nurbs_pcurves > 0 {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::TopologyPcurveCarrierOffSurface.note(format!(
             "{} NURBS edge carrier(s) have vertex ranges off their bound B-spline surface; pcurve derivation is withheld because the defect is upstream of parameter-space geometry.",
             s.off_surface_nurbs_pcurves
         )));
     }
     if s.unresolved_face_colors > 0 {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
             s.unresolved_face_colors
         )));
     }
     if s.ambiguous_face_owners > 0 {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::TopologyFaceOwnerAmbiguous.note(format!(
             "{} face owner(s) have non-equivalent bridge uses; all uses for each owner remain unresolved.",
             s.ambiguous_face_owners
         )));
     }
     if s.unclaimed_faces > 0 {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::TopologyFaceUnclaimed.note(format!(
             "{} canonical face(s) are not claimed by an explicit body relation; the decoder withholds them rather than inventing body membership.",
             s.unclaimed_faces
         )));
     }
     if s.synthetic_body_grouping {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(
             SldprtLossCode::TopologyBodyHierarchyDerived.note(
                 "No body record was available; one body/region/shell hierarchy was derived."
@@ -4162,7 +4139,7 @@ fn build_metadata_ir(
     } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut model_attributes,
         custom_properties.len(),
         "append SLDPRT custom properties",
@@ -4214,11 +4191,11 @@ fn build_metadata_ir(
             "parasolid_stream",
             Exactness::Unknown,
         )?;
-        ctx.reserve_collection_vec(&mut unknowns, 1, "retain SLDPRT metadata site")?;
+        ctx.reserve_vec(&mut unknowns, 1, "retain SLDPRT metadata site")?;
         unknowns.push(UnknownRecord::retained(
             id,
             offset,
-            crate::byte_admission::copy_retained(ctx, site.payload, "retain SLDPRT active site")?,
+            ctx.copy_retained(site.payload, "retain SLDPRT active site")?,
             Vec::new(),
         ));
     }
@@ -4314,7 +4291,7 @@ fn build_metadata_ir(
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut lanes,
         supplemental_config_lanes.len(),
         "merge SLDPRT feature input lanes",
@@ -4544,7 +4521,7 @@ fn build_metadata_ir(
         lanes,
         &mut annotations,
     )?;
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut pmi_losses,
         configuration_losses.len(),
         "append SLDPRT configuration PMI losses",
@@ -4706,7 +4683,7 @@ fn parameter_identity_lanes<'a>(
         if (has_global && lane.configuration.is_none())
             || (single_scoped && lane.configuration.is_some())
         {
-            ctx.reserve_collection_vec(&mut selected, 1, "select SLDPRT parameter identity lanes")?;
+            ctx.reserve_vec(&mut selected, 1, "select SLDPRT parameter identity lanes")?;
             selected.push(lane);
         }
     }
@@ -5230,7 +5207,7 @@ fn assign_configuration_bodies(
                 "merge SLDPRT configuration bodies",
             )?;
             if !merged.contains(&body) {
-                ctx.reserve_precharged_vec(merged, 1, "merge SLDPRT configuration bodies")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(merged, 1, "merge SLDPRT configuration bodies")?;
                 merged.push(body);
             }
         }
@@ -5288,7 +5265,7 @@ fn assign_configuration_bodies(
             .map(|configuration| configuration.ordinal)
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut ir.model.configurations,
             1,
             "append SLDPRT partition configuration",
@@ -5572,7 +5549,7 @@ fn brep_local_sha256_in_place(
         "partition SLDPRT digest appearances",
     )?;
     let mut saved_body_display = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut saved_body_display,
         ir.model.bodies.len(),
         "save SLDPRT body display fields for digest",
@@ -5835,14 +5812,14 @@ fn preserve_source_image(
         "source_image",
         Exactness::ByteExact,
     )?;
-    ctx.reserve_collection_vec(unknowns, 1, "retain SLDPRT source image record")?;
+    ctx.reserve_vec(unknowns, 1, "retain SLDPRT source image record")?;
     unknowns.push(UnknownRecord::retained(
         UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
             cadmpeg_ir::identity_key!("0"),
         ),
         0,
-        crate::byte_admission::copy_retained(ctx, scan.source_image, "retain SLDPRT source image")?,
+        ctx.copy_retained(scan.source_image, "retain SLDPRT source image")?,
         Vec::new(),
     ));
     Ok(())
@@ -5887,7 +5864,7 @@ fn build_container_report(
     ];
 
     if !container::has_parasolid_body_stream(scan) {
-        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT container loss")?;
+        ctx.reserve_vec(&mut losses, 1, "append SLDPRT container loss")?;
         losses.push(
             SldprtLossCode::ContainerNoParasolidStream.note(
                 "no Parasolid partition/deltas stream was located in the container".to_string(),
@@ -5944,7 +5921,7 @@ fn append_swift_pmi_losses(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     let (mut classes, _reservation) =
-        crate::text_admission::reserve_scoped_string(ctx, classes_len, OPERATION)?;
+        ctx.scoped_string(classes_len, OPERATION)?;
     for (index, (class, class_count)) in unsupported.iter().enumerate() {
         if index > 0 {
             classes.push_str(", ");
@@ -5955,14 +5932,10 @@ fn append_swift_pmi_losses(
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         classes.push(')');
     }
-    let message = crate::text_admission::format_retained(
-        ctx,
-        format_args!(
+    let message = ctx.format_retained(format_args!(
             "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
-        ),
-        "retain SLDPRT unsupported SWIFT loss",
-    )?;
-    ctx.reserve_collection_vec(losses, 1, "append SLDPRT unsupported SWIFT loss")?;
+        ), "retain SLDPRT unsupported SWIFT loss")?;
+    ctx.reserve_vec(losses, 1, "append SLDPRT unsupported SWIFT loss")?;
     losses.push(SldprtLossCode::PmiSwiftAnnotationUnsupported.note(message));
     Ok(())
 }

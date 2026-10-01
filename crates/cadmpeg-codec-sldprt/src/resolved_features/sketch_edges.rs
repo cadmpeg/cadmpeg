@@ -29,12 +29,7 @@ fn retained_curve_debug(
         ctx.refuse_codec_limit("retain SLDPRT opaque sketch curve", u64::MAX - 1, u64::MAX)
     })?;
     let mut text = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut text,
-        count.0,
-        "retain SLDPRT opaque sketch curve",
-    )?;
+    ctx.try_reserve_retained_text(&mut text, count.0, "retain SLDPRT opaque sketch curve")?;
     fmt::write(&mut text, format_args!("{curve:?}")).map_err(|_| {
         cadmpeg_core::CodecError::malformed("cannot format SLDPRT opaque sketch curve")
     })?;
@@ -47,7 +42,7 @@ fn retained_id_text(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut text = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut text, value.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut text, value.len(), operation)?;
     text.push_str(value);
     Ok(text)
 }
@@ -105,7 +100,7 @@ pub(super) fn project_endpoint_constraints(
                 ctx.charge_collection_items(1, "index SLDPRT shared sketch endpoints")?;
             }
             let loci = loci_by_endpoint.entry(endpoint).or_default();
-            ctx.reserve_collection_vec(loci, 1, "collect SLDPRT shared sketch endpoint loci")?;
+            ctx.reserve_vec(loci, 1, "collect SLDPRT shared sketch endpoint loci")?;
             loci.push((index == 0, entity.id()));
         }
     }
@@ -139,12 +134,7 @@ pub(super) fn project_endpoint_constraints(
             + digits(face_ordinal)
             + digits(constraints.len());
         let mut id_text = String::new();
-        crate::text_admission::reserve_retained_string(
-            ctx,
-            &mut id_text,
-            id_length,
-            "retain SLDPRT shared endpoint constraint ID",
-        )?;
+        ctx.try_reserve_retained_text(&mut id_text, id_length, "retain SLDPRT shared endpoint constraint ID")?;
         std::fmt::Write::write_fmt(
             &mut id_text,
             format_args!(
@@ -161,7 +151,7 @@ pub(super) fn project_endpoint_constraints(
             continue;
         };
         let mut loci = Vec::new();
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut loci,
             sources.len(),
             "collect SLDPRT shared endpoint constraint loci",
@@ -205,7 +195,7 @@ pub(super) fn project_endpoint_constraints(
             "retain SLDPRT constraint sketch ID",
         )?)
         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch ID"))?;
-        ctx.reserve_collection_vec(constraints, 1, "collect SLDPRT shared endpoint constraints")?;
+        ctx.reserve_vec(constraints, 1, "collect SLDPRT shared endpoint constraints")?;
         constraints.push(SketchConstraint {
             id,
             sketch,
@@ -285,7 +275,7 @@ pub(super) fn project_edge(
             .try_clone()
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let mut projected = Vec::new();
-        ctx.reserve_collection_vec(&mut projected, count, operation)?;
+        ctx.reserve_vec(&mut projected, count, operation)?;
         match nurbs.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
                 projected.extend(
@@ -306,7 +296,7 @@ pub(super) fn project_edge(
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
                 let mut weights = Vec::new();
-                ctx.reserve_collection_vec(&mut weights, count, operation)?;
+                ctx.reserve_vec(&mut weights, count, operation)?;
                 weights.extend(points.iter().map(|point| point.weight));
                 Some(weights)
             }

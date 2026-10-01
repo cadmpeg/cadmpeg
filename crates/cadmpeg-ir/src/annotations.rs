@@ -713,7 +713,7 @@ impl Annotations {
         }
         let mut targets = std::collections::BTreeSet::new();
         let mut remapping = Vec::new();
-        ctx.reserve_collection_vec(&mut remapping, ids.len(), operation)?;
+        ctx.reserve_vec(&mut remapping, ids.len(), operation)?;
         let mut scratch = ctx.reserve_scoped(0, operation)?;
         for id in ids {
             ctx.charge_work(1, operation)?;
@@ -740,7 +740,7 @@ impl Annotations {
             match (provenance, exactness) {
                 (Some(provenance), Some(exactness)) => {
                     let mut provenance_key = String::new();
-                    ctx.reserve_retained_string(&mut provenance_key, target.len(), operation)?;
+                    ctx.try_reserve_retained_text(&mut provenance_key, target.len(), operation)?;
                     provenance_key.push_str(&target);
                     ctx.charge_collection_items(1, operation)?;
                     remapped.provenance.insert(provenance_key, provenance);

@@ -183,7 +183,7 @@ pub(super) fn scan(
         } else {
             geometry.clone()
         };
-        ctx.reserve_collection_vec(&mut out, 1, "collect Parasolid subset curves")?;
+        ctx.reserve_vec(&mut out, 1, "collect Parasolid subset curves")?;
         out.push(CurveCarrier {
             attr,
             offset: off,

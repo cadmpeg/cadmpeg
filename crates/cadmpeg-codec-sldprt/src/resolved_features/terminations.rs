@@ -275,7 +275,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     (value.get() - scalar.value.get() * 1000.0).abs()
                         <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
                 }) {
-                    ctx.reserve_collection_vec(&mut owners, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut owners, 1, OPERATION)?;
                     owners.push(feature);
                 }
             }
@@ -496,13 +496,9 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 }
                             };
                             ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                            let reference = crate::text_admission::format_retained(
-                                ctx,
-                                format_args!(
+                            let reference = ctx.format_retained(format_args!(
                                     "sldprt:feature-input:{prefix}:{lane_key}:{reference}"
-                                ),
-                                OPERATION,
-                            )?;
+                                ), OPERATION)?;
                             return Ok(Some(TerminationVote::ToVertex { reference }));
                         }
                         compact_extrusion_to_face_at(
@@ -524,7 +520,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         .transpose()
                     })()?;
                 if let Some(candidate) = candidate {
-                    ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                     candidates.push(candidate);
                 }
             }
@@ -553,7 +549,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let votes = terminations.get_mut(feature_id.as_str()).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("missing admitted termination vote bucket")
             })?;
-            ctx.reserve_collection_vec(votes, 1, OPERATION)?;
+            ctx.reserve_vec(votes, 1, OPERATION)?;
             votes.push(vote);
         }
     }
@@ -628,11 +624,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             {
                 if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
                     ctx.charge_work(1, OPERATION)?;
-                    let value = crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{}", crate::history::literals::LengthLiteral(depth)),
-                        OPERATION,
-                    )?;
+                    let value = ctx.format_retained(format_args!("{}", crate::history::literals::LengthLiteral(depth)), OPERATION)?;
                     insert_termination_field(ctx, &mut feature.parameters, "D1", value, OPERATION)?;
                 }
             }
@@ -724,11 +716,7 @@ fn compact_termination_face_vote(
 ) -> Result<TerminationVote, cadmpeg_core::CodecError> {
     const OPERATION: &str = "build SLDPRT extrusion face vote";
     ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-    let reference = crate::text_admission::format_retained(
-        ctx,
-        format_args!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}"),
-        OPERATION,
-    )?;
+    let reference = ctx.format_retained(format_args!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}"), OPERATION)?;
     for selection in &lane.surface_selections {
         let work = u64_from_index(selection.feature_ref.len())
             .checked_add(u64_from_index(feature_ref.len()))
@@ -769,7 +757,7 @@ fn compact_termination_face_vote(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             }
             let mut identity = String::new();
-            crate::text_admission::reserve_retained_string(ctx, &mut identity, size, OPERATION)?;
+            ctx.try_reserve_retained_text(&mut identity, size, OPERATION)?;
             identity.push_str(canonical);
             identity.push('|');
             for (index, producer) in selection.producer_feature_refs.iter().enumerate() {
@@ -881,16 +869,8 @@ pub(crate) fn enrich_history_combine_selections(
                         OPERATION,
                     )?;
                     Some(CombineSelection {
-                        target: crate::text_admission::format_retained(
-                            ctx,
-                            format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"),
-                            OPERATION,
-                        )?,
-                        tools: crate::text_admission::format_retained(
-                            ctx,
-                            format_args!("sldprt:feature-input:body-path:{lane_key}:{tools}"),
-                            OPERATION,
-                        )?,
+                        target: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"), OPERATION)?,
+                        tools: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{tools}"), OPERATION)?,
                         operation: operation
                             .map(|operation| copy_termination_text(ctx, operation, OPERATION))
                             .transpose()?,
@@ -910,7 +890,7 @@ pub(crate) fn enrich_history_combine_selections(
             let votes = selections.get_mut(feature_id.as_str()).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("missing admitted combine vote bucket")
             })?;
-            ctx.reserve_collection_vec(votes, 1, OPERATION)?;
+            ctx.reserve_vec(votes, 1, OPERATION)?;
             votes.push(selection);
         }
     }
@@ -1103,22 +1083,14 @@ pub(crate) fn enrich_history_sweep_paths(
                 }
             }
             let path = if let Some(source) = source.filter(|_| !ambiguous_source) {
-                Some(crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{source}"),
-                    OPERATION,
-                )?)
+                Some(ctx.format_retained(format_args!("{source}"), OPERATION)?)
             } else if let Some(offset) = path_offset.filter(|_| !ambiguous_offset) {
                 let lane_key = lane
                     .id
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
                 ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                Some(crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"),
-                    OPERATION,
-                )?)
+                Some(ctx.format_retained(format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"), OPERATION)?)
             } else {
                 None
             };
@@ -1137,7 +1109,7 @@ pub(crate) fn enrich_history_sweep_paths(
                 paths.insert(key, Vec::new());
             }
             if let Some(votes) = paths.get_mut(feature_id) {
-                ctx.reserve_collection_vec(votes, 1, OPERATION)?;
+                ctx.reserve_vec(votes, 1, OPERATION)?;
                 votes.push(path);
             }
         }
@@ -1204,7 +1176,7 @@ fn history_object_offsets(
             continue;
         };
         let id = copy_termination_text(ctx, &feature.id, operation)?;
-        ctx.reserve_collection_vec(&mut objects, 1, operation)?;
+        ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name.offset, id));
     }
     let levels = if objects.len() > 1 {
@@ -1229,7 +1201,7 @@ fn copy_termination_text(
 ) -> Result<String, cadmpeg_core::CodecError> {
     ctx.charge_work(u64_from_index(text.len()), operation)?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -1261,7 +1233,7 @@ fn component_local_ids(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(u64_from_index(size), operation)?;
     let mut local_id = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut local_id, size, operation)?;
+    ctx.try_reserve_retained_text(&mut local_id, size, operation)?;
     for (index, component) in components.iter().enumerate() {
         if index != 0 {
             local_id.push(',');
@@ -1288,7 +1260,7 @@ pub(crate) fn project_surface_sweep_profiles(
     let mut history_features = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
-        ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
+        ctx.reserve_vec(&mut history_features, 1, OPERATION)?;
         history_features.push(feature);
     }
     let mut feature_ids_by_native = HashMap::new();
@@ -1353,7 +1325,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 ctx.charge_work(work, OPERATION)?;
             }
             if let Some(name) = feature_object_name(feature, lane) {
-                ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+                ctx.reserve_vec(&mut objects, 1, OPERATION)?;
                 objects.push((name.offset, *feature));
             }
         }
@@ -1440,7 +1412,7 @@ pub(crate) fn project_surface_sweep_profiles(
                                 &lane.native_payload,
                                 marker,
                             )? {
-                                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                                ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                                 candidates.push((marker, components));
                             }
                         }
@@ -1466,23 +1438,19 @@ pub(crate) fn project_surface_sweep_profiles(
                     let feature_id = copy_termination_feature_id(ctx, id, OPERATION)?;
                     let local_id = component_local_ids(ctx, &components, OPERATION)?;
                     ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                    let native = crate::text_admission::format_retained(
-                        ctx,
-                        format_args!(
+                    let native = ctx.format_retained(format_args!(
                             "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
-                        ),
-                        OPERATION,
-                    )?;
+                        ), OPERATION)?;
                     let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else {
                         continue;
                     };
                     let mut curves = Vec::new();
-                    ctx.reserve_collection_vec(&mut curves, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut curves, 1, OPERATION)?;
                     curves.push(curve);
                     let Ok(profile) = PlanarProfileRef::generated(curves, native) else {
                         continue;
                     };
-                    ctx.reserve_collection_vec(&mut generated, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut generated, 1, OPERATION)?;
                     generated.push((profile, components));
                 }
             }
@@ -1504,7 +1472,7 @@ pub(crate) fn project_surface_sweep_profiles(
                     ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
                     if let Some(id) = feature_ids_by_native.get(native.as_str()) {
                         let id = copy_termination_feature_id(ctx, id, OPERATION)?;
-                        ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
+                        ctx.reserve_vec(&mut dependencies, 1, OPERATION)?;
                         dependencies.push(id);
                     }
                 }
@@ -1512,13 +1480,13 @@ pub(crate) fn project_surface_sweep_profiles(
             match &profile {
                 PlanarProfileRef::Feature(id) => {
                     let id = copy_termination_feature_id(ctx, id, OPERATION)?;
-                    ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut dependencies, 1, OPERATION)?;
                     dependencies.push(id);
                 }
                 PlanarProfileRef::Generated { curves, .. } => {
                     for curve in curves {
                         let id = copy_termination_feature_id(ctx, &curve.feature, OPERATION)?;
-                        ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
+                        ctx.reserve_vec(&mut dependencies, 1, OPERATION)?;
                         dependencies.push(id);
                     }
                 }
@@ -1714,7 +1682,7 @@ pub(crate) fn project_compact_combine_paths(
     let mut history_features = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
-        ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
+        ctx.reserve_vec(&mut history_features, 1, OPERATION)?;
         history_features.push(feature);
     }
     let mut projections = HashMap::<String, Projection>::new();
@@ -1781,7 +1749,7 @@ pub(crate) fn project_compact_combine_paths(
                 return Ok(None);
             };
             let mut bodies = Vec::new();
-            ctx.reserve_collection_vec(&mut bodies, 1, OPERATION)?;
+            ctx.reserve_vec(&mut bodies, 1, OPERATION)?;
             bodies.push(body);
             let native = copy_termination_text(ctx, native, OPERATION)?;
             let Ok(selection) = BodySelection::generated(bodies, native) else {
@@ -1809,7 +1777,7 @@ pub(crate) fn project_compact_combine_paths(
             ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
             if let Some(feature) = feature_ids_by_native.get(native.as_str()) {
                 let feature = copy_termination_feature_id(ctx, feature, OPERATION)?;
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut dependencies,
                     1,
                     "project SLDPRT combine dependencies",
@@ -1817,7 +1785,7 @@ pub(crate) fn project_compact_combine_paths(
                 dependencies.push(feature);
             }
         }
-        ctx.reserve_collection_vec(&mut dependencies, 2, "project SLDPRT combine dependencies")?;
+        ctx.reserve_vec(&mut dependencies, 2, "project SLDPRT combine dependencies")?;
         dependencies.push(target_owner);
         dependencies.push(tool_owner);
         let levels = if dependencies.len() > 1 {
@@ -1841,7 +1809,7 @@ pub(crate) fn project_compact_combine_paths(
                 .iter()
                 .find(|feature| feature.id == dependency)
                 .map_or(u64::MAX, |feature| feature.ordinal);
-            ctx.reserve_collection_vec(&mut ordered, 1, OPERATION)?;
+            ctx.reserve_vec(&mut ordered, 1, OPERATION)?;
             ordered.push((order, ordinal, dependency));
         }
         ordered.sort_unstable_by_key(|(order, ordinal, _)| (*order, *ordinal));
@@ -1857,7 +1825,7 @@ pub(crate) fn project_compact_combine_paths(
                     continue;
                 }
             }
-            ctx.reserve_precharged_vec(&mut dependencies, 1, OPERATION)?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut dependencies, 1, OPERATION)?;
             dependencies.push(dependency);
         }
         ctx.charge_work(u64_from_index(history_feature.id.len()), OPERATION)?;
@@ -2483,7 +2451,7 @@ impl LegacyFacePathSearch<'_, '_> {
                 }
             } else {
                 let mut complete = Vec::new();
-                ctx.reserve_collection_vec(&mut complete, self.entries.len(), OPERATION)?;
+                ctx.reserve_vec(&mut complete, self.entries.len(), OPERATION)?;
                 complete.extend_from_slice(&self.entries);
                 self.complete = Some(complete);
             }
@@ -2504,7 +2472,7 @@ impl LegacyFacePathSearch<'_, '_> {
                 cursor + 16
             };
             let entry_count = self.entries.len();
-            ctx.reserve_collection_vec(&mut self.entries, 1, OPERATION)?;
+            ctx.reserve_vec(&mut self.entries, 1, OPERATION)?;
             self.entries.push(entry);
             for slot_bytes in [0usize, 4] {
                 if slot_bytes == 4
@@ -2760,7 +2728,7 @@ pub(super) fn compact_termination_reference_path_at(
             continue;
         }
         if let Some(entry) = entry_at(cursor) {
-            ctx.reserve_collection_vec(&mut entries, 1, OPERATION)?;
+            ctx.reserve_vec(&mut entries, 1, OPERATION)?;
             entries.push(entry);
             cursor += 20;
             continue;
@@ -2833,7 +2801,7 @@ pub(crate) fn compact_surface_selection_value(
     }
     ctx.charge_work(u64_from_index(size), OPERATION)?;
     let mut value = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut value, size, OPERATION)?;
+    ctx.try_reserve_retained_text(&mut value, size, OPERATION)?;
     value.push_str(PREFIX);
     for (index, component) in components.iter().enumerate() {
         if index != 0 {

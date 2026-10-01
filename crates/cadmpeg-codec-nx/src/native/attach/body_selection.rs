@@ -95,7 +95,7 @@ pub(super) fn local_body_selection(
         "NX local body selection",
     )?;
     let native_copy =
-        ctx.format_retained_with_work(format_args!("{native}"), "NX feature projection text")?;
+        ctx.format_retained(format_args!("{native}"), "NX feature projection text")?;
     Ok(BodySelection::local(bodies, native_copy).unwrap_or(BodySelection::Native(native)))
 }
 
@@ -378,7 +378,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
             1,
             "NX feature body local identities",
         )?;
-        bodies.push(ctx.format_scoped_text_with_work(
+        bodies.push(ctx.format_scoped_text(
             &mut reservation,
             format_args!("nx:om-body-object#{root}"),
             "NX body selection text",
@@ -460,7 +460,7 @@ pub(super) fn feature_body_set_selection(
             1,
             "NX feature body set local selection",
         )?;
-        bodies.push(ctx.format_scoped_text_with_work(
+        bodies.push(ctx.format_scoped_text(
             &mut reservation,
             format_args!("nx:om-body-object#{root}"),
             "NX body selection text",

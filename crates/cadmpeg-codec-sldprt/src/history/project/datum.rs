@@ -32,11 +32,7 @@ fn copy_reference_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Co
             )
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT datum and curve reference")?;
-    crate::text_admission::format_retained(
-        ctx,
-        format_args!("{text}"),
-        "retain SLDPRT datum and curve reference",
-    )
+    ctx.format_retained(format_args!("{text}"), "retain SLDPRT datum and curve reference")
 }
 
 pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
@@ -227,7 +223,7 @@ pub(super) fn project_composite_curve(
         ctx.charge_work(1, "project SLDPRT composite curve segments")?;
         let source = native_by_source.get(source).copied().unwrap_or(source);
         let segment = PathRef::Native(copy_reference_text(ctx, source)?);
-        ctx.reserve_collection_vec(&mut segments, 1, "project SLDPRT composite curve segments")?;
+        ctx.reserve_vec(&mut segments, 1, "project SLDPRT composite curve segments")?;
         segments.push(segment);
     }
     if segments.is_empty() {

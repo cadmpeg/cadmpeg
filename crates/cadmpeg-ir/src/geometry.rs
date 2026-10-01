@@ -619,7 +619,7 @@ impl SolvedCurveGeometry {
                     operation,
                 )?;
                 let mut copied = Vec::new();
-                ctx.reserve_collection_vec(&mut copied, segments.len(), operation)?;
+                ctx.reserve_vec(&mut copied, segments.len(), operation)?;
                 for segment in segments {
                     let curve = CurveId::mint(copy_geometry_identity(
                         ctx,

@@ -26,7 +26,7 @@ impl CloneCharged for String {
     ) -> Result<Self, CodecError> {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
         let mut copy = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut copy, self.len(), operation)?;
+        ctx.try_reserve_retained_text(&mut copy, self.len(), operation)?;
         copy.push_str(self);
         Ok(copy)
     }
@@ -57,7 +57,7 @@ impl<T: CloneCharged> CloneCharged for Vec<T> {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut copy = Vec::new();
-        ctx.reserve_collection_vec(&mut copy, self.len(), operation)?;
+        ctx.reserve_retained_vec(&mut copy, self.len(), operation)?;
         for value in self {
             ctx.charge_work(1, operation)?;
             copy.push(value.clone_charged(ctx, operation)?);
@@ -92,12 +92,7 @@ fn copy_history_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, Cod
         "clone SLDPRT history text",
     )?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut copy,
-        value.len(),
-        "clone SLDPRT history text",
-    )?;
+    ctx.try_reserve_retained_text(&mut copy, value.len(), "clone SLDPRT history text")?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -143,7 +138,7 @@ fn clone_feature_content(
             }
             FeatureContent::Text(value) => FeatureContent::Text(copy_history_text(ctx, value)?),
         };
-        ctx.reserve_collection_vec(&mut copy, 1, operation)?;
+        ctx.reserve_vec(&mut copy, 1, operation)?;
         copy.push(text);
     }
     Ok(copy)
@@ -165,7 +160,7 @@ fn clone_history_content(
             }
             HistoryContent::Text(value) => HistoryContent::Text(copy_history_text(ctx, value)?),
         };
-        ctx.reserve_collection_vec(&mut copy, 1, operation)?;
+        ctx.reserve_vec(&mut copy, 1, operation)?;
         copy.push(text);
     }
     Ok(copy)
@@ -268,13 +263,13 @@ impl CloneCharged for FeatureHistory {
         let mut configurations = Vec::new();
         for configuration in &self.configurations {
             let item = clone_history_configuration(ctx, operation, configuration)?;
-            ctx.reserve_collection_vec(&mut configurations, 1, operation)?;
+            ctx.reserve_vec(&mut configurations, 1, operation)?;
             configurations.push(item);
         }
         let mut features = Vec::new();
         for feature in &self.features {
             let item = clone_history_feature(ctx, operation, feature)?;
-            ctx.reserve_collection_vec(&mut features, 1, operation)?;
+            ctx.reserve_vec(&mut features, 1, operation)?;
             features.push(item);
         }
         Ok(FeatureHistory {
@@ -305,7 +300,7 @@ pub(crate) fn clone_histories_charged(
     let mut copy = Vec::new();
     for history in histories {
         let item = history.clone_charged(ctx, operation)?;
-        ctx.reserve_collection_vec(&mut copy, 1, operation)?;
+        ctx.reserve_vec(&mut copy, 1, operation)?;
         copy.push(item);
     }
     Ok(copy)

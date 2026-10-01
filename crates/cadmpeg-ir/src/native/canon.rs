@@ -73,7 +73,7 @@ fn copy_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CanonError> 
         WORK,
     )?;
     let mut copied = String::new();
-    ctx.reserve_retained_string(&mut copied, text.len(), STORAGE)?;
+    ctx.try_reserve_retained_text(&mut copied, text.len(), STORAGE)?;
     copied.push_str(text);
     Ok(copied)
 }
@@ -179,7 +179,7 @@ impl std::fmt::Write for ChargingDisplayText<'_> {
                 .map_err(|_| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
             self.ctx.charge_work(work, WORK)?;
             self.ctx
-                .reserve_retained_string(&mut self.text, fragment.len(), STORAGE)
+                .try_reserve_retained_text(&mut self.text, fragment.len(), STORAGE)
         })();
         if let Err(error) = admission {
             self.refusal = Some(CanonError::Resource(error));
@@ -252,7 +252,7 @@ impl CanonError {
             return self;
         };
         let admitted = (|| {
-            ctx.reserve_collection_vec(&mut steps, 1, WORK)?;
+            ctx.reserve_vec(&mut steps, 1, WORK)?;
             step()
         })();
         match admitted {
@@ -282,7 +282,7 @@ impl CanonError {
                         .len()
                         .checked_add(usize::from(!path.is_empty()))
                         .ok_or_else(|| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
-                    ctx.reserve_retained_string(&mut path, extra, STORAGE)?;
+                    ctx.try_reserve_retained_text(&mut path, extra, STORAGE)?;
                     if !path.is_empty() {
                         path.push('.');
                     }
@@ -290,7 +290,7 @@ impl CanonError {
                 }
                 Step::Index(index) => {
                     ctx.charge_work(32, WORK)?;
-                    ctx.reserve_retained_string(&mut path, 32, STORAGE)?;
+                    ctx.try_reserve_retained_text(&mut path, 32, STORAGE)?;
                     write!(path, "[{index}]")
                         .map_err(|_| CodecError::malformed("cannot format native member path"))?;
                 }
@@ -742,7 +742,7 @@ impl ser::SerializeSeq for CanonSeq<'_> {
             .serialize(CanonValue::within(self.ctx, self.depth, self.sink))
             .map_err(|error| error.within(self.ctx, || Ok(Step::Index(index))))?
             .into_value();
-        self.ctx.reserve_collection_vec(&mut self.out, 1, WORK)?;
+        self.ctx.reserve_vec(&mut self.out, 1, WORK)?;
         self.out.push(element);
         Ok(())
     }

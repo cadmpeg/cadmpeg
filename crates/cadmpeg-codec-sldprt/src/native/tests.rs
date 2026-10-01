@@ -292,11 +292,7 @@ fn native_load_materialized_limit_refuses_before_expected_lane_clone() {
     let namespace = decoded.ir().native.namespace("sldprt").unwrap();
     let native = crate::native::SldprtNative::load(namespace).unwrap();
     assert!(!native.feature_input_lanes.is_empty());
-    let needed = native
-        .feature_input_lanes
-        .iter()
-        .map(|lane| u64::try_from(serde_json::to_vec(lane).unwrap().len()).unwrap())
-        .sum::<u64>();
+    let needed = u64::try_from(native.feature_input_lanes.len() * (std::mem::size_of::<&str>() + 32)).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = needed - 1;
@@ -311,7 +307,7 @@ fn native_load_materialized_limit_refuses_before_expected_lane_clone() {
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "validate SLDPRT expected lane copies"
+                && limit.operation == "index SLDPRT lane ids"
     ));
 
     let (service, _) =
@@ -408,15 +404,14 @@ fn native_body_validation_collection_limit_refuses_before_candidates() {
     let record = &lane.body_selections[0];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items =
-        u64::try_from(super::selection_payload_span(lane, record.offset)).unwrap() - 1;
+    policy.limits.max_collection_items = u64::try_from(record.local_body_ids.len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::body_selection_disagrees_with_payload(&limited, lane, record).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT body selection candidates"
+                && limit.operation == "decode SLDPRT compact body selection"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -443,14 +438,14 @@ fn native_body_state_validation_limit_refuses_before_state_ids() {
     assert!(source_units > 0);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = source_units - 1;
+    policy.limits.max_collection_items = u64::try_from(record.body_state_ids.len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::body_state_ids_disagree_with_payload(&limited, lane, record).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT body state candidates"
+                && limit.operation == "decode SLDPRT body state identities"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -501,8 +496,7 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items =
-        u64::try_from(super::selection_payload_span(&lane, record.offset)).unwrap() - 1;
+    policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
         super::edge_selection_disagrees_with_payload(&limited, &lane, &record, &[]).unwrap_err();
@@ -510,7 +504,7 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT edge selection candidates"
+                && limit.operation == "decode SLDPRT component reference list"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -550,8 +544,7 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
     }];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items =
-        u64::try_from(super::selection_payload_span(&lane, record.offset)).unwrap() - 1;
+    policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
         super::surface_selection_disagrees_with_payload(&limited, &lane, &record, &[]).unwrap_err();
@@ -559,7 +552,7 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT surface selection candidates"
+                && limit.operation == "decode SLDPRT compact surface path"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -588,14 +581,14 @@ fn native_derived_lane_collection_limit_refuses_before_reconstruction() {
     assert!(payload_bytes > 0);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = lane_count * 2 + payload_bytes - 1;
+    policy.limits.max_collection_items = lane_count - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::lanes::admit(&native, &limited).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT derived lanes"
+                && limit.operation == "validate SLDPRT expected primary lanes"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -705,7 +698,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
     assert_eq!(lane.generated_surface_identities.len(), 1);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = u64::try_from(lane.native_payload.len()).unwrap() - 1;
+    policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
         super::generated_surface_identities_disagree_with_payload(&limited, &lane).unwrap_err();
@@ -713,7 +706,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT generated surface identities"
+                && limit.operation == "decode SLDPRT generated surface identities"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -745,17 +738,16 @@ fn native_scalar_operand_validation_limit_refuses_before_resolution() {
         .iter()
         .find(|scalar| !scalar.operands.is_empty())
         .unwrap();
-    let source_items = lane.sketch_entities.len() + scalar.operands.len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = u64::try_from(source_items).unwrap() - 1;
+    policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::resolved_scalar_operand_markers(&limited, lane, scalar).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT scalar operand candidates"
+                && limit.operation == "collect SLDPRT scalar operand markers"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -1156,7 +1148,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         &native,
     )
     .unwrap()
-    .remove(0)
+    .0.remove(0)
     .1;
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
