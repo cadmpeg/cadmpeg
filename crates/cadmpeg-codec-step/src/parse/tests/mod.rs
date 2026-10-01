@@ -7,3 +7,4 @@ mod envelope;
 mod index;
 mod omitted;
 mod resource_limits;
+mod storage;

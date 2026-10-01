@@ -656,7 +656,7 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
         .resolve_root(&value)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
     assert!(
-        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_anchor_materialization_storage")
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_anchor_typed_name_copy")
     );
 }
 
@@ -861,7 +861,7 @@ fn reference_typed_wrapper_is_charged_before_its_clone() {
         .resolve_value(&value, 0)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
     assert!(
-        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_reference_materialization_storage")
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_reference_typed_name_copy")
     );
 }
 
@@ -938,7 +938,7 @@ fn parser_accounts_for_owned_value_storage() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.operation == "step_parse_value_storage" {
+        if limit.operation == "step_parse_parameter" {
             value_storage_limit = Some(limit);
             break;
         }
@@ -1102,7 +1102,7 @@ fn parser_bounds_exponential_anchor_expansion() {
     assert!(matches!(
         error,
         crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.used <= limit.limit
                 && limit.additional > limit.limit - limit.used
     ));
@@ -1128,7 +1128,7 @@ fn parser_bounds_aggregate_anchor_materialization() {
     assert!(matches!(
         error,
         crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.used <= limit.limit
                 && limit.additional > limit.limit - limit.used
     ));
