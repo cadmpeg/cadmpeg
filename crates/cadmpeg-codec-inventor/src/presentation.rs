@@ -369,6 +369,7 @@ fn project_face_bindings(
         }
         *key_counts.entry(*key).or_insert(0_usize) += 1;
     }
+    let mut appearance_copy_storage = ctx.reserve_scoped(0, "Inventor temporary face appearance identities")?;
     let mut appearance_ids = std::collections::HashMap::<(&str, u32), AppearanceId>::new();
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(face_keys.len()),
@@ -516,7 +517,7 @@ fn project_face_bindings(
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
             });
-            appearance_ids.insert(appearance_key, id.try_clone_for_decode(ctx, "retain Inventor face appearance ids")?);
+            appearance_ids.insert(appearance_key, appearance_copy_storage.with_storage(|| id.try_clone_for_decode(ctx, "retain Inventor face appearance ids"))?);
             id
         };
         ctx.charge_collection_items(1, "project Inventor face appearance binding")?;

@@ -2902,6 +2902,7 @@ fn build_one(
     let mut radial = BTreeMap::<EdgeId, Vec<usize>>::new();
     let mut poly_edges = BTreeMap::<(u64, EdgeId), (u64, u64)>::new();
     let mut poly_points = BTreeSet::<(u64, u64)>::new();
+    let mut surface_index_storage = ctx.reserve_scoped(0, "STEP temporary implicit surface identities")?;
     let mut implicit_surface_ids = BTreeSet::new();
     let mut admissions = Vec::new();
     for &shell_reference in shell_steps {
@@ -3058,7 +3059,7 @@ fn build_one(
                 if !implicit_surface_ids.contains(&surface_id) {
                     ctx.insert_btree_set(
                         &mut implicit_surface_ids,
-                        surface_id.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                        surface_index_storage.with_storage(|| surface_id.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                         "step_brep_implicit_surface_ids",
                     )?;
                     ctx.push_vec(
@@ -3827,23 +3828,20 @@ fn build_one(
                 coedges[indices[(position + 1) % indices.len()]].id.try_clone_for_decode(ctx, "step_topology_identity_copy")?;
         }
     }
-    let mut edge_by_id = BTreeMap::<EdgeId, &Edge>::new();
+    let mut edge_by_id = BTreeMap::<&EdgeId, &Edge>::new();
     for edge in &edges {
         ctx.insert_btree_map(
             &mut edge_by_id,
-            edge.id
-                .try_clone_for_decode(ctx, "step_brep_edge_index_ids")?,
+            &edge.id,
             edge,
             "step_brep_edge_index",
         )?;
     }
-    let mut coedge_by_id = BTreeMap::<CoedgeId, &Coedge>::new();
+    let mut coedge_by_id = BTreeMap::<&CoedgeId, &Coedge>::new();
     for coedge in &coedges {
         ctx.insert_btree_map(
             &mut coedge_by_id,
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "step_brep_coedge_index_ids")?,
+            &coedge.id,
             coedge,
             "step_brep_coedge_index",
         )?;
