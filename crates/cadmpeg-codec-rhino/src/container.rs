@@ -818,9 +818,9 @@ fn list_checksum_children(
         other => FramingError::structural(first_child_offset, other.to_string()),
     })?;
     let mut children = Vec::new();
-    reservation.with_storage(|| ctx.reserve_capacity(
-        &mut children, child_count, "Rhino view checksum ranges",
-    ))?;
+    reservation.with_storage(|| {
+        ctx.reserve_capacity(&mut children, child_count, "Rhino view checksum ranges")
+    })?;
     offset = first_child_offset;
     for _ in 0..child_count {
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;

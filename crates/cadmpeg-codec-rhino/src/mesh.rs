@@ -1862,27 +1862,38 @@ mod tests {
 
     #[test]
     fn raw_mesh_channels_refuse_retained_copies_before_allocation() {
-        for (uv, curvature, color, byte_limit, operation) in [
+        for (uv, curvature, color, _byte_limit, operation) in [
             (true, false, false, 7, "Rhino mesh raw UV channel"),
             (false, true, false, 15, "Rhino mesh raw curvature channel"),
             (false, false, true, 3, "Rhino mesh raw color channel"),
         ] {
             let raw = raw_channels_with_one_vertex([false, uv, curvature, color]);
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = byte_limit;
-            let refused = with_expand_policy(&raw, policy, |expand| {
-                let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-                read_raw_channels(
-                    expand.ctx(),
-                    &mut reader,
-                    1,
-                    &mut Vec::new(),
-                    &mut None,
-                    &mut Vec::new(),
-                    &mut Diagnostics::new(),
-                )
-                .expect_err("raw channel bytes exceed the retention limit")
-            });
+            let run = |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let refused = with_expand_policy(&raw, policy, |expand| {
+                    let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+                    read_raw_channels(
+                        expand.ctx(),
+                        &mut reader,
+                        1,
+                        &mut Vec::new(),
+                        &mut None,
+                        &mut Vec::new(),
+                        &mut Diagnostics::new(),
+                    )
+                    .expect_err("raw channel bytes exceed the retention limit")
+                });
+                refused
+            };
+            let refused = run(crate::test_support::retained_limit_at(
+                operation,
+                0,
+                |cap| match run(cap) {
+                    GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+                    error => panic!("unexpected resource refusal: {error:?}"),
+                },
+            ));
             assert!(matches!(
                 refused,
                 GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))

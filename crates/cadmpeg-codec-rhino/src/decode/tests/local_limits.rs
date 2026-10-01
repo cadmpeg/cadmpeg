@@ -171,25 +171,39 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
         1,
         POINT_CLASS,
     )]);
-    with_transaction_limits(&scan, 100, None, Some(0), |expand| {
-        let context = DecodeContext::new(&scan, expand).expect("transaction");
-        let mut scratch = expand
-            .ctx()
-            .reserve_scoped(0, "Rhino instance traversal scratch")
-            .expect("empty scope");
-        let error = context
-            .reference_segment(
-                0,
-                scan.objects[0].identity().expect("identity"),
-                &mut scratch,
+    with_transaction_limits(
+        &scan,
+        100,
+        None,
+        Some(
+            u64::try_from(
+                4 * std::mem::size_of::<(crate::wire::Uuid, Vec<usize>)>()
+                    + 35
+                    + 4 * std::mem::size_of::<usize>()
+                    + 8 * std::mem::size_of::<Option<super::super::GeometryOutcome>>(),
             )
-            .expect_err("path UUID needs scoped storage");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            .expect("transaction lookup layout"),
+        ),
+        |expand| {
+            let context = DecodeContext::new(&scan, expand).expect("transaction");
+            let mut scratch = expand
+                .ctx()
+                .reserve_scoped(0, "Rhino instance traversal scratch")
+                .expect("empty scope");
+            let error = context
+                .reference_segment(
+                    0,
+                    scan.objects[0].identity().expect("identity"),
+                    &mut scratch,
+                )
+                .expect_err("path UUID needs scoped storage");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && refusal.operation == "Rhino instance path segment")
-        );
-    });
+            );
+        },
+    );
 }
 
 #[test]

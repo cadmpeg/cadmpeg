@@ -1884,12 +1884,24 @@ mod tests {
     #[test]
     fn dropped_annotation_loss_note_copy_refuses_retained_limit() {
         let class_uuid = Uuid::from_canonical([1; 16]);
-        let message = format!(
-            "annotation object fixture at offset 0 (class {class_uuid}) could not be transferred: malformed"
-        );
         let refusal = with_retained_limit(
             &[],
-            u64::try_from(message.len()).expect("test text fits u64"),
+            crate::test_support::retained_limit_at("Rhino annotation loss text", 1, |cap| {
+                match with_retained_limit(&[], cap, |ctx| {
+                    super::annotation_record_dropped(
+                        ctx,
+                        &mut Vec::new(),
+                        "fixture",
+                        0,
+                        class_uuid,
+                        "malformed",
+                    )
+                    .expect_err("loss note copy exceeds the exact first-message budget")
+                }) {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+                    error => panic!("unexpected resource refusal: {error:?}"),
+                }
+            }),
             |ctx| {
                 super::annotation_record_dropped(
                     ctx,

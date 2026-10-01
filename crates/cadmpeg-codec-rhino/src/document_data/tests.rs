@@ -125,7 +125,14 @@ macro_rules! retained_metadata_test {
         #[test]
         fn $name() {
             let scan = $fixture();
-            let limit = u64::try_from($limit).expect("bounded metadata fixture");
+            let limit = crate::test_support::retained_limit_at($operation, 0, |cap| {
+                let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+                    metadata_refusal(&scan, 100, cap)
+                else {
+                    panic!("metadata resource refusal");
+                };
+                refusal
+            });
             assert_metadata_refusal(&metadata_refusal(&scan, 100, limit), $operation);
         }
     };
