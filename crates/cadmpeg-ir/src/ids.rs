@@ -951,6 +951,10 @@ macro_rules! id_type {
         pub struct $name($crate::ids::Identity);
 
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
+            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+                <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
+            }
+
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
             }

@@ -1088,3 +1088,119 @@ fn assembly_path_append_identities_refuse_collection_limit() {
     assert_eq!(path.occurrence_guids().len(), 2);
     assert_eq!(path.identity_guids().len(), 8);
 }
+
+#[test]
+fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    let identity = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let selection =
+        |record_index| crate::records::feature::assembly::DesignAssemblyLegacySelection {
+            record_index,
+            byte_offset: 400,
+            class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned())
+                .unwrap(),
+            asset_id: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            asset_id_offset: 411,
+            context_id: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            context_id_offset: 422,
+            recipe_record_index: 50,
+            recipe_record_byte_offset: 500,
+            recipe_id: "recipe".into(),
+            recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
+            recipe_references: vec![serde_json::from_value(serde_json::json!({
+                "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
+                "design_reference": 1, "design_reference_offset": 3,
+                "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
+                "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
+            })).unwrap()],
+            next_byte_offset: 600,
+        };
+    let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
+        crate::records::feature::assembly::DesignAssemblyLegacyOperand {
+            construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                "256".to_owned(),
+            )
+            .unwrap(),
+            reference_offset: 11,
+            construction: Box::new(
+                crate::records::feature::work_geometry::DesignWorkPointConstruction {
+                    point_record_index: 10,
+                    point_record_byte_offset: 100,
+                    position: crate::test_support::reals([1.0, 2.0, 3.0]),
+                    position_offset: 125,
+                    rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
+                        crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
+                            reference_type: 0,
+                            inputs: Vec::new(),
+                        },
+                    )
+                    .expect("compatible WorkPoint rule"),
+                    reference_type_offset: 150,
+                },
+            ),
+            selection: selection(40),
+        },
+        crate::records::feature::assembly::DesignAssemblyLegacyOperand {
+            construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                "257".to_owned(),
+            )
+            .unwrap(),
+            reference_offset: 22,
+            construction: Box::new(crate::records::feature::hole::DesignHoleConstruction {
+                point_record_index: 20,
+                point_record_byte_offset: 200,
+                position: crate::test_support::reals([4.0, 5.0, 6.0]),
+                position_offset: 225,
+                direction: crate::test_support::reals([0.0, 0.0, 1.0]),
+                direction_offset: 250,
+                point_parameters: crate::test_support::reals([0.0, 0.0]),
+                point_parameter_offsets: [275, 283],
+                reference_type: 0,
+                reference_type_offset: 291,
+                tangent_point_data: None,
+                input_records: Vec::new(),
+                face_selection: None,
+            }),
+            selection: selection(41),
+        },
+    );
+    let solved_frame = crate::records::feature::assembly::DesignAssemblySolvedFrame {
+        reference_record_index: 30,
+        reference_offset: 33,
+        record_byte_offset: 300,
+        class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        transform: identity.try_into().unwrap(),
+        transform_offset: 325,
+    };
+
+    let alignment = super::DesignAssemblyAlignment::try_new(
+        0.0, [0.0; 3], Vec::new(), Some(super::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+            carriers, solved_frame, limits: None, frames_field_present: true,
+        }),
+    ).unwrap();
+    let mut value = serde_json::to_value(&alignment).unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let remap = |id: &str| ctx.format_retained(format_args!("f3d:occurrence:{}", id.strip_prefix("f3d:model:").unwrap()), "test native identity");
+    let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed alignment", alignment, remap).unwrap();
+    let mut identities = IdentityMap::new(&ctx, "test native alignment", remap).unwrap();
+    super::DesignAssemblyAlignment::rewrite_native_value(&ctx, &mut value, &mut identities).unwrap();
+    identities.finish(&ctx).unwrap();
+    assert_eq!(value, serde_json::to_value(expected).unwrap());
+    for operand in value["legacy_operand_carriers"].as_array().unwrap() {
+        assert_eq!(operand["selection"]["recipe_references"][0]["candidate_faces"][0], "f3d:occurrence:face#one");
+        assert_eq!(operand["selection"]["recipe_references"][0]["token"], "f3d:model:face#one");
+    }
+    drop(identities);
+    ctx.finish_session().unwrap();
+}
