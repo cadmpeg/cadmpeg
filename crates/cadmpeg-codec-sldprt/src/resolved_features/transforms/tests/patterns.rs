@@ -509,8 +509,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     for (start, end) in [(500usize, 600usize), (600, 700)] {
         let object = &lane.native_payload[start..end];
         assert_eq!(
-            crate::resolved_features::reference_geometry::explicit_reference_plane_frame(object)
-                .expect("a zero object states no frame"),
+            crate::resolved_features::reference_geometry::explicit_reference_plane_frame(
+                &cadmpeg_test_support::service_decode_context(),
+                object,
+            )
+            .expect("resource budget")
+            .expect("a zero object states no frame"),
             None
         );
         assert_eq!(

@@ -175,6 +175,7 @@ fn partial_incidence_constraint_joins_every_component_it_can_couple() {
 
 #[test]
 fn incidence_components_order_by_endpoint_branch_width() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 0], [1, 1]],
         vec![[2, 2], [3, 3], [4, 4]],
@@ -183,8 +184,13 @@ fn incidence_components_order_by_endpoint_branch_width() {
     ];
     let mut components = vec![vec![0, 2], vec![1], vec![3]];
 
-    crate::solve::incidence::order_incidence_components_by_branch_width(&mut components, &choices)
-        .expect("valid component edges");
+    crate::solve::incidence::order_incidence_components_by_branch_width(
+        &ctx,
+        &mut components,
+        &choices,
+    )
+    .expect("service resource budget")
+    .expect("valid component edges");
 
     assert_eq!(components, vec![vec![3], vec![1], vec![0, 2]]);
 }

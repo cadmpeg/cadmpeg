@@ -913,7 +913,12 @@ pub(super) fn complete_duplicate_face_slots(
     )?;
     for (edge, faces) in edge_faces.iter().enumerate() {
         let mut incident = *faces;
-        incident.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut incident,
+            Ord::cmp,
+            |_| 0,
+            "catia standard duplicate edge faces sort",
+        )?;
         for &face in if incident[0] == incident[1] {
             &incident[..1]
         } else {
@@ -937,7 +942,7 @@ pub(super) fn complete_duplicate_face_slots(
     {
         return Ok(None);
     }
-    unresolved.sort_by_key(|&edge| {
+    let free_faces = |&edge: &usize| {
         let [start, end] = edge_points[edge];
         degrees
             .iter()
@@ -946,7 +951,13 @@ pub(super) fn complete_duplicate_face_slots(
                     && (start == end || duplicate_degree(face, end).unwrap_or_default() < 2)
             })
             .count()
-    });
+    };
+    ctx.stable_sort_by(
+        &mut unresolved,
+        |left, right| free_faces(left).cmp(&free_faces(right)),
+        |_| 0,
+        "catia standard duplicate unresolved edges sort",
+    )?;
 
     let mut solutions = Vec::new();
     let mut operations = 0;

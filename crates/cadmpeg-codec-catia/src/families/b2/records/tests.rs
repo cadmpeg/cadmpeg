@@ -511,22 +511,37 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
         (16, [101, 103]),
     ]);
 
-    let edges = b2_closed_owner_boundary_edges(&targets, &endpoints)
-        .expect("four class-5e targets close a cycle");
+    let edges = crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
+    })
+    .expect("service profile admits the sort")
+    .expect("four class-5e targets close a cycle");
     assert_eq!(edges.map(|edge| edge.slot), [1, 3, 5, 7]);
     assert_eq!(edges[0].endpoint_records, [100, 101]);
 
     let mut open = endpoints.clone();
     open.insert(16, [101, 104]);
-    assert!(b2_closed_owner_boundary_edges(&targets, &open).is_none());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &open)
+    })
+    .expect("service profile admits the sort")
+    .is_none());
 
     let mut mixed_classes = targets.clone();
     mixed_classes[0].target_class = crate::native::CatiaOwnerIdentityClass::Vertex;
-    assert!(b2_closed_owner_boundary_edges(&mixed_classes, &endpoints).is_none());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &mixed_classes, &endpoints)
+    })
+    .expect("service profile admits the sort")
+    .is_none());
 
     let mut duplicate = endpoints;
     duplicate.insert(16, [100, 101]);
-    assert!(b2_closed_owner_boundary_edges(&targets, &duplicate).is_none());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &duplicate)
+    })
+    .expect("service profile admits the sort")
+    .is_none());
 }
 
 #[test]

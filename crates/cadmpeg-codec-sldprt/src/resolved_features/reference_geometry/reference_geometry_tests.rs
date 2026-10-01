@@ -665,7 +665,8 @@ fn fixed_reference_plane_uses_all_three_stored_basis_vectors() {
     frame[81..89].fill(0);
     frame[89..97].fill(0);
     assert_eq!(
-        explicit_reference_plane_frame(&frame),
+        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &frame)
+            .unwrap(),
         Ok(Some((
             Point3::new(374.0, -250.0, 125.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1418,7 +1419,8 @@ fn matrix_reference_plane_owns_its_fixed_frame_prefix() {
         ))
     );
     assert_eq!(
-        explicit_reference_plane_frame(&payload),
+        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1470,8 +1472,17 @@ fn ambiguous_reference_plane_frame_encodings_are_withheld() {
     payload[compact + 64] = 0;
     payload[compact + 81] = 0;
 
-    assert!(compact_reference_plane_frame(&payload).is_some());
-    assert_eq!(explicit_reference_plane_frame(&payload), Err(()));
+    assert!(compact_reference_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload
+    )
+    .unwrap()
+    .is_some());
+    assert_eq!(
+        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
+        Err(())
+    );
 }
 
 #[test]
@@ -1495,7 +1506,8 @@ fn compact_reference_plane_solves_omitted_basis_components() {
     payload[root + 64] = 0;
     payload[root + 81] = 0;
     assert_eq!(
-        compact_reference_plane_frame(&payload),
+        compact_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
         Some((
             Point3::new(1.0, -2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1504,7 +1516,11 @@ fn compact_reference_plane_solves_omitted_basis_components() {
     );
 
     payload[root + 73..root + 81].copy_from_slice(&0.5f64.to_le_bytes());
-    assert_eq!(compact_reference_plane_frame(&payload), None);
+    assert_eq!(
+        compact_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
+        None
+    );
 }
 
 #[test]

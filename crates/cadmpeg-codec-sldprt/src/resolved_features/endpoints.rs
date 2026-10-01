@@ -2144,16 +2144,16 @@ pub(super) fn inferred_point_coordinates_by_index(
         reserve_point_solver_vec(ctx, &mut candidates, 1)?;
         candidates.push(point);
     }
-    let sort_factor = u64::from(candidates.len().checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(64))
-        .ok_or_else(|| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
-    charge_endpoint_work(ctx, candidates.len(), sort_factor, POINT_SOLVER_OPERATION)?;
-    candidates.sort_unstable_by(|left, right| {
-        left[0]
-            .total_cmp(&right[0])
-            .then_with(|| left[1].total_cmp(&right[1]))
-    });
+    ctx.sort_unstable_by(
+        &mut candidates,
+        |left, right| {
+            left[0]
+                .total_cmp(&right[0])
+                .then_with(|| left[1].total_cmp(&right[1]))
+        },
+        |_| 0,
+        "sldprt point solver candidates sort",
+    )?;
     charge_endpoint_work(ctx, candidates.len(), 64, POINT_SOLVER_OPERATION)?;
     candidates.dedup_by(|left, right| {
         same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
@@ -3970,16 +3970,16 @@ pub(super) fn compact_profile_full_circle(
         ctx.reserve_vec(&mut radials, 1, OPERATION)?;
         radials.push(radial);
     }
-    let factor = u64::from(radials.len().checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(64))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    charge_endpoint_work(ctx, radials.len(), factor, OPERATION)?;
-    radials.sort_unstable_by(|left, right| {
-        left[0]
-            .total_cmp(&right[0])
-            .then_with(|| left[1].total_cmp(&right[1]))
-    });
+    ctx.sort_unstable_by(
+        &mut radials,
+        |left, right| {
+            left[0]
+                .total_cmp(&right[0])
+                .then_with(|| left[1].total_cmp(&right[1]))
+        },
+        |_| 0,
+        "sldprt ellipse radial points sort",
+    )?;
     radials.dedup_by(|left, right| {
         same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
     });
@@ -4569,8 +4569,16 @@ pub(super) fn sort_endpoint_markers(
     Ok(())
 }
 
-fn ellipse_axis_bounds(mut values: [f64; 4]) -> Option<[f64; 2]> {
-    values.sort_unstable_by(f64::total_cmp);
+fn ellipse_axis_bounds(
+    ctx: &DecodeContext<'_>,
+    mut values: [f64; 4],
+) -> Result<Option<[f64; 2]>, CodecError> {
+    ctx.sort_unstable_by(
+        &mut values,
+        f64::total_cmp,
+        |_| 0,
+        "sldprt ellipse axis bounds sort",
+    )?;
     let first = values[0];
     let mut second = None;
     for value in values.into_iter().skip(1) {
@@ -4579,11 +4587,11 @@ fn ellipse_axis_bounds(mut values: [f64; 4]) -> Option<[f64; 2]> {
             continue;
         }
         if second.is_some() {
-            return None;
+            return Ok(None);
         }
         second = Some(value);
     }
-    Some([first, second?])
+    Ok(second.map(|second| [first, second]))
 }
 
 pub(super) fn coordinate_ellipse_axes(
@@ -4630,7 +4638,7 @@ pub(super) fn coordinate_ellipse_axes(
     )?;
     sort_endpoint_markers(ctx, &mut following, OPERATION)?;
     ctx.charge_work(512, OPERATION)?;
-    Ok((|| {
+    (|| {
         let corners: [&SketchInputEntity; 4] = following.get(..4)?.try_into().ok()?;
         if corners[0].offset() != following_offset {
             return None;
@@ -4643,8 +4651,18 @@ pub(super) fn coordinate_ellipse_axes(
             return None;
         };
         let coordinates = [first, second, third, fourth];
-        let [u_min, u_max] = ellipse_axis_bounds(coordinates.map(|point| point[0]))?;
-        let [v_min, v_max] = ellipse_axis_bounds(coordinates.map(|point| point[1]))?;
+        let u_bounds = ellipse_axis_bounds(ctx, coordinates.map(|point| point[0]));
+        let v_bounds = ellipse_axis_bounds(ctx, coordinates.map(|point| point[1]));
+        let [u_min, u_max] = match u_bounds {
+            Ok(Some(bounds)) => bounds,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let [v_min, v_max] = match v_bounds {
+            Ok(Some(bounds)) => bounds,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let products = [
             [u_min, v_min],
             [u_min, v_max],
@@ -4670,11 +4688,12 @@ pub(super) fn coordinate_ellipse_axes(
             return None;
         }
         if u_radius > v_radius {
-            Some(([1.0, 0.0], u_radius, v_radius))
+            Some(Ok(([1.0, 0.0], u_radius, v_radius)))
         } else {
-            Some(([0.0, 1.0], v_radius, u_radius))
+            Some(Ok(([0.0, 1.0], v_radius, u_radius)))
         }
-    })())
+    })()
+    .transpose()
 }
 
 fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {

@@ -412,7 +412,10 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         })
     );
     assert_eq!(
-        crate::evaluation::evaluate_saved_body_census(&ir),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::evaluation::evaluate_saved_body_census(ctx, &ir)
+        })
+        .expect("body census evaluation is admitted"),
         crate::evaluation::BodyCensusEvaluation::mismatch(
             vec![bound],
             ir.model.bodies.iter().map(|body| body.id.clone()).collect()

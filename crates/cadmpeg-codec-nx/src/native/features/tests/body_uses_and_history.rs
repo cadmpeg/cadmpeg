@@ -13,6 +13,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::test_om::composed_feature_history_payload;
+use crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::NxCodec;
 
@@ -21,7 +22,7 @@ const SYNTHETIC_BOOLEAN_PAYLOAD: &[u8] = b"\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\
 fn boolean_native_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let part = composed_feature_history_payload(
+    let part = composed_feature_history_payload_over_sort_scratch(
         &[(&[0xff; 4], "SUBTRACT", SYNTHETIC_BOOLEAN_PAYLOAD.to_vec())],
         &[],
     );

@@ -4574,14 +4574,20 @@ fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, uppe
 /// admitted candidates sufficient to recognize every nested candidate. This
 /// keeps the admission pass linear after sorting and, more importantly, keeps
 /// rejected candidates as layout metadata rather than allocated records.
-fn select_outer_indexed_candidates(
-    mut candidates: Vec<IndexedCandidate<'_>>,
-) -> Vec<IndexedCandidate<'_>> {
-    candidates.sort_by(|left, right| {
-        left.start()
-            .cmp(&right.start())
-            .then_with(|| right.source().len().cmp(&left.source().len()))
-    });
+fn select_outer_indexed_candidates<'a>(
+    ctx: &DecodeContext<'_>,
+    mut candidates: Vec<IndexedCandidate<'a>>,
+) -> Result<Vec<IndexedCandidate<'a>>, CodecError> {
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| {
+            left.start()
+                .cmp(&right.start())
+                .then_with(|| right.source().len().cmp(&left.source().len()))
+        },
+        |_| 0,
+        "nx indexed OM candidates outer sort",
+    )?;
     let mut furthest_end = 0;
     candidates.retain(|candidate| {
         if candidate.source().len() <= furthest_end {
@@ -4590,8 +4596,13 @@ fn select_outer_indexed_candidates(
         furthest_end = candidate.source().len();
         true
     });
-    candidates.sort_by_key(|candidate| candidate.discovery_order);
-    candidates
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| left.discovery_order.cmp(&right.discovery_order),
+        |_| 0,
+        "nx indexed OM candidates discovery sort",
+    )?;
+    Ok(candidates)
 }
 
 fn materialize_indexed_candidate<'a>(
@@ -4840,7 +4851,7 @@ pub(crate) fn indexed_sections<'a>(
         });
     }
     let mut sections = Vec::new();
-    for candidate in select_outer_indexed_candidates(candidates) {
+    for candidate in select_outer_indexed_candidates(ctx, candidates)? {
         let section = materialize_indexed_candidate(ctx, candidate)?;
         ctx.reserve_retained_vec(&mut sections, 1, "nx indexed OM sections")?;
         sections.push(section);

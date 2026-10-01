@@ -768,15 +768,21 @@ fn parse_feature_timeline_record(
     let Some(item_count_offset) = u64::try_from(item_count_offset).ok() else {
         return Ok(None);
     };
-    let Some(frame) = crate::records::entity_header::DesignTimelineFrame::new(
+    let frame = match crate::records::entity_header::DesignTimelineFrame::new(
+        crate::records::admission::RecordAdmission::Charged(ctx),
         frame_start,
         frame_length,
         context_reference_offset,
         item_count_offset,
         items,
-    )
-    .ok() else {
-        return Ok(None);
+    ) {
+        Ok(frame) => frame,
+        Err(crate::records::entity_header::DesignTimelineFrameError::Resource(error)) => {
+            return Err(error);
+        }
+        Err(crate::records::entity_header::DesignTimelineFrameError::Invalid(_)) => {
+            return Ok(None);
+        }
     };
     let Some(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag).ok() else {
         return Ok(None);

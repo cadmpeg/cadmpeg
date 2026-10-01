@@ -107,7 +107,7 @@ pub(crate) fn decode_parameter_scopes(
                 scope.byte_offset(),
                 "f3d Design parameter scope ID",
             )?;
-            bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
+            bind_coil_extent_from_parameters(ctx, &mut scope, parameters, parameter_owners)?;
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
                 let start = usize::try_from(scope.byte_offset()).ok();

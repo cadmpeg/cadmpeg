@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::evaluation::evaluate_saved_body_census;
 use crate::evaluation::tests::body_neutral_feature;
 use crate::evaluation::tests::body_preserving_feature;
 use crate::evaluation::tests::complete_block_ir;
+use crate::evaluation::tests::evaluate_saved_body_census;
 use crate::evaluation::tests::model_body;
 use crate::evaluation::BodyCensusEvaluation;
 use crate::evaluation::FeatureBoundary;

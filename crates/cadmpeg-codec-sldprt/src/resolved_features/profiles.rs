@@ -722,7 +722,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     }),
                     OPERATION,
                 )?;
-                let Some(corners) = ordered_rectangle_corners(&points) else {
+                let Some(corners) = ordered_rectangle_corners(ctx, &points)? else {
                     continue;
                 };
                 let Some(corner_markers) = collect_optional_profile_items(
@@ -883,7 +883,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     else {
                         continue;
                     };
-                    let Some(corners) = ordered_rectangle_corners(&points) else {
+                    let Some(corners) = ordered_rectangle_corners(ctx, &points)? else {
                         continue;
                     };
                     let Some(corner_markers) = collect_optional_profile_items(

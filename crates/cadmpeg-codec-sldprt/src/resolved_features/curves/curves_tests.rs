@@ -180,13 +180,14 @@ fn indexed_rectangle_refuses_work_limit() {
     let markers = rectangle_limit_markers();
     let marker_refs = markers.iter().collect::<Vec<_>>();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 11;
+    // Four elements, eight bytes each, three bit-length levels plus one, eight work units per byte.
+    policy.limits.max_work_units = 4 + 4 * 8 * 4 * 8 - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::indexed_rectangle_from_line_cycle(&ctx, &[], &marker_refs).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "sort SLDPRT rectangle marker roster"));
+            && limit.operation == "sldprt rectangle marker roster sort"));
 }
 
 fn compact_region_payload() -> Vec<u8> {
@@ -273,13 +274,14 @@ fn dimensioned_rectangle_refuses_work_limit() {
     let markers = rectangle_limit_markers();
     let marker_refs = markers.iter().collect::<Vec<_>>();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 23;
+    // Four i64 cells, eight bytes each, three bit-length levels plus one, eight work units per byte.
+    policy.limits.max_work_units = 4 + 4 * 8 * 4 * 8 - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "sort SLDPRT rectangle coordinates"));
+            && limit.operation == "sldprt rectangle cells u sort"));
 }
 
 #[test]
@@ -441,7 +443,8 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
         Point2::new(25.75, -14.15),
     ];
     assert_eq!(
-        ordered_rectangle_corners(&corners),
+        ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &corners)
+            .unwrap(),
         Some([
             Point2::new(-25.75, -14.15),
             Point2::new(25.75, -14.15),
@@ -451,14 +454,25 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
     );
 
     let duplicate = [corners[0], corners[0], corners[2], corners[3]];
-    assert_eq!(ordered_rectangle_corners(&duplicate), None);
+    assert_eq!(
+        ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &duplicate)
+            .unwrap(),
+        None
+    );
     let non_rectangular = [
         corners[0],
         corners[1],
         corners[2],
         Point2::new(24.0, -14.15),
     ];
-    assert_eq!(ordered_rectangle_corners(&non_rectangular), None);
+    assert_eq!(
+        ordered_rectangle_corners(
+            &cadmpeg_test_support::service_decode_context(),
+            &non_rectangular
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]

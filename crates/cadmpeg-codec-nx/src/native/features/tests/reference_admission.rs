@@ -34,11 +34,13 @@ use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::FeatureExtrudeProfileReference;
 
+/// A container whose feature-history links exceed what the stable sort sorts
+/// without scratch, so a scoped limit of zero refuses at the link sort.
 fn reference_container(
     label: &'static str,
     payload: Vec<u8>,
 ) -> crate::container::Container<'static> {
-    let part = crate::test_support::test_om::composed_feature_history_payload(
+    let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
         &[(&[0xff; 4], label, payload)],
         &[],
     );

@@ -360,6 +360,7 @@ fn native_scalar_matches_discrete_parameter(
 }
 
 pub(crate) fn sync_changed_feature_scalars(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
     changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
@@ -379,7 +380,12 @@ pub(crate) fn sync_changed_feature_scalars(
                 feature_object_name(feature, lane).map(|name| (name.offset, feature))
             })
             .collect::<Vec<_>>();
-        starts.sort_by_key(|(offset, _)| *offset);
+        ctx.stable_sort_by(
+            &mut starts,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sldprt feature name starts sort",
+        )?;
         let mut updates = Vec::<(usize, f64)>::new();
         for (index, &(start, feature)) in starts.iter().enumerate() {
             let end = starts

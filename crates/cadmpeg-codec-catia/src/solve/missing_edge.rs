@@ -940,8 +940,12 @@ fn mesh_edge_runs(
     ctx.stable_sort_by(
         &mut runs,
         |left, right| {
-            (left.face, left.cycle, left.start, left.edge)
-                .cmp(&(right.face, right.cycle, right.start, right.edge))
+            (left.face, left.cycle, left.start, left.edge).cmp(&(
+                right.face,
+                right.cycle,
+                right.start,
+                right.edge,
+            ))
         },
         |_| 0,
         "catia_mesh_edge_run_sort",
@@ -1368,7 +1372,12 @@ pub(crate) fn repeated_face_endpoint_closures(
                 .copied()
                 .filter(|face| *face != faces[0]),
         );
-        choices.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut choices,
+            Ord::cmp,
+            |_| 0,
+            "catia missing edge duplicate face choices sort",
+        )?;
         choices.dedup();
         ctx.push_vec(
             &mut branches,
@@ -1459,7 +1468,12 @@ impl FaceOptions {
         for face in admitted.into_iter().filter(|face| *face != retained) {
             ctx.push_vec(&mut others, face, "catia_duplicate_face_options")?;
         }
-        ctx.sort_unstable_by(&mut others, Ord::cmp, |_| 0, "catia_duplicate_face_options_sort")?;
+        ctx.sort_unstable_by(
+            &mut others,
+            Ord::cmp,
+            |_| 0,
+            "catia_duplicate_face_options_sort",
+        )?;
         others.dedup();
         let at = others.partition_point(|face| *face < retained);
         if at == 0 {
@@ -1585,7 +1599,14 @@ where
             )?;
         }
     }
-    branches.sort_unstable_by_key(|(edge, options)| (options.count(), *edge));
+    ctx.sort_unstable_by(
+        &mut branches,
+        |(left_edge, left), (right_edge, right)| {
+            (left.count(), *left_edge).cmp(&(right.count(), *right_edge))
+        },
+        |_| 0,
+        "catia missing edge duplicate face branches sort",
+    )?;
     let mut states = 0;
     let mut exhausted = false;
     let mut solutions = Vec::new();
@@ -1694,7 +1715,12 @@ where
         for face in allowed.iter().copied().filter(|face| *face != faces[0]) {
             ctx.push_vec(&mut choices, face, "catia_duplicate_visit_choices")?;
         }
-        choices.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut choices,
+            Ord::cmp,
+            |_| 0,
+            "catia missing edge duplicate visit choices sort",
+        )?;
         choices.dedup();
         if choices.len() > 1 {
             ctx.push_vec(
@@ -1704,7 +1730,14 @@ where
             )?;
         }
     }
-    branches.sort_unstable_by_key(|(edge, choices)| (choices.len(), *edge));
+    ctx.sort_unstable_by(
+        &mut branches,
+        |(left_edge, left), (right_edge, right)| {
+            (left.len(), *left_edge).cmp(&(right.len(), *right_edge))
+        },
+        |_| 0,
+        "catia missing edge duplicate visit branches sort",
+    )?;
 
     let mut visited = 0;
     Ok(Some(visit(
@@ -2264,7 +2297,12 @@ pub(crate) fn bounded_endpoint_cycle_orders(
         return Ok(None);
     }
     let mut missing = ctx.copy_slice(missing, "catia_endpoint_cycle_missing_edges")?;
-    ctx.sort_unstable_by(&mut missing, Ord::cmp, |_| 0, "catia_endpoint_cycle_missing_sort")?;
+    ctx.sort_unstable_by(
+        &mut missing,
+        Ord::cmp,
+        |_| 0,
+        "catia_endpoint_cycle_missing_sort",
+    )?;
     let first_edge = missing[0];
     let mut transitions = HashMap::<usize, Vec<(usize, usize)>>::new();
     for (rank, &edge) in missing.iter().enumerate().skip(1) {
@@ -2294,7 +2332,12 @@ pub(crate) fn bounded_endpoint_cycle_orders(
         }
     }
     for values in transitions.values_mut() {
-        ctx.sort_unstable_by(&mut *values, Ord::cmp, |_| 0, "catia_endpoint_cycle_transition_sort")?;
+        ctx.sort_unstable_by(
+            &mut *values,
+            Ord::cmp,
+            |_| 0,
+            "catia_endpoint_cycle_transition_sort",
+        )?;
         values.dedup();
     }
     let mut search = Search {
@@ -2315,7 +2358,12 @@ pub(crate) fn bounded_endpoint_cycle_orders(
     for pair in &mut first_pairs {
         ctx.sort_unstable_by(pair, Ord::cmp, |_| 0, "catia_endpoint_cycle_pair_sort")?;
     }
-    ctx.sort_unstable_by(&mut first_pairs, Ord::cmp, |_| 0, "catia_endpoint_cycle_first_pairs_sort")?;
+    ctx.sort_unstable_by(
+        &mut first_pairs,
+        Ord::cmp,
+        |_| 0,
+        "catia_endpoint_cycle_first_pairs_sort",
+    )?;
     first_pairs.dedup();
     for [first_point, current_point] in first_pairs {
         let mut order = Vec::new();
@@ -2339,7 +2387,12 @@ pub(crate) fn bounded_endpoint_cycle_orders(
         "catia_endpoint_cycle_result_rows",
     )?;
     orders.extend(search.orders);
-    ctx.sort_unstable_by(&mut orders, Ord::cmp, |item| std::mem::size_of_val(item.as_slice()), "catia_endpoint_cycle_orders_sort")?;
+    ctx.sort_unstable_by(
+        &mut orders,
+        Ord::cmp,
+        |item| std::mem::size_of_val(item.as_slice()),
+        "catia_endpoint_cycle_orders_sort",
+    )?;
     Ok(Some(orders))
 }
 
@@ -2441,7 +2494,12 @@ fn standard_mesh_missing_edge_assignment_domains(
                         .reserve_vec(&mut points, current.len(), "catia_gap_state_points")?;
                     points.extend(current.iter().copied());
                 }
-                self.ctx.sort_unstable_by(&mut points, Ord::cmp, |_| 0, "catia_gap_state_points_sort")?;
+                self.ctx.sort_unstable_by(
+                    &mut points,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_gap_state_points_sort",
+                )?;
                 let has_flexible = placed.len() > gap_placed_start;
                 let state = (gap, offset, used, current_port, points, has_flexible);
                 if self.dead_states.contains(&state) {
@@ -2666,7 +2724,12 @@ fn standard_mesh_missing_edge_assignment_domains(
                             }
                             (None, _) => self.ctx.alloc_filled(1, None, "catia_gap_next_ports")?,
                         };
-                        self.ctx.sort_unstable_by(&mut next_ports, Ord::cmp, |_| 0, "catia_gap_next_ports_sort")?;
+                        self.ctx.sort_unstable_by(
+                            &mut next_ports,
+                            Ord::cmp,
+                            |_| 0,
+                            "catia_gap_next_ports_sort",
+                        )?;
                         next_ports.dedup();
                         let next_points =
                             if let Some(edge_points) =
@@ -3796,7 +3859,12 @@ fn boundary_endpoint_support(
         ctx.reserve_vec(&mut states, count, "catia_boundary_support_layer_states")?;
         for &pair in pairs {
             let mut unordered = pair;
-            ctx.sort_unstable_by(&mut unordered, Ord::cmp, |_| 0, "catia_boundary_support_pair_sort")?;
+            ctx.sort_unstable_by(
+                &mut unordered,
+                Ord::cmp,
+                |_| 0,
+                "catia_boundary_support_pair_sort",
+            )?;
             states.extend([
                 State {
                     pair: unordered,
@@ -4049,7 +4117,12 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         for (edge, domain) in candidates.iter_mut().enumerate() {
             let mut allowed = None::<HashSet<[usize; 2]>>;
             let mut incident = edge_faces[edge];
-            incident.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut incident,
+                Ord::cmp,
+                |_| 0,
+                "catia missing edge incident faces sort",
+            )?;
             for face in incident
                 .into_iter()
                 .take(if incident[0] == incident[1] { 1 } else { 2 })
@@ -4074,11 +4147,21 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             let Some(allowed) = allowed else {
                 return Ok(None);
             };
-            domain.retain(|pair| {
-                let mut pair = *pair;
-                pair.sort_unstable();
-                allowed.contains(&pair)
-            });
+            let mut kept = 0;
+            for index in 0..domain.len() {
+                let mut pair = domain[index];
+                ctx.sort_unstable_by(
+                    &mut pair,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia missing edge allowed pair sort",
+                )?;
+                if allowed.contains(&pair) {
+                    domain.swap(kept, index);
+                    kept += 1;
+                }
+            }
+            domain.truncate(kept);
             if domain.is_empty() {
                 return Ok(None);
             }
@@ -4288,7 +4371,12 @@ fn standard_mesh_missing_edge_endpoint_assignments(
                         for &end in ends {
                             if start != end {
                                 let mut pair = [start, end];
-                                ctx.sort_unstable_by(&mut pair, Ord::cmp, |_| 0, "catia_placement_endpoint_pair_sort")?;
+                                ctx.sort_unstable_by(
+                                    &mut pair,
+                                    Ord::cmp,
+                                    |_| 0,
+                                    "catia_placement_endpoint_pair_sort",
+                                )?;
                                 ctx.push_vec(
                                     &mut pairs,
                                     pair,
@@ -4297,7 +4385,12 @@ fn standard_mesh_missing_edge_endpoint_assignments(
                             }
                         }
                     }
-                    ctx.sort_unstable_by(&mut pairs, Ord::cmp, |_| 0, "catia_placement_endpoint_pairs_sort")?;
+                    ctx.sort_unstable_by(
+                        &mut pairs,
+                        Ord::cmp,
+                        |_| 0,
+                        "catia_placement_endpoint_pairs_sort",
+                    )?;
                     pairs.dedup();
                     Some(pairs)
                 } else {
@@ -4375,7 +4468,11 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
         }
         for assignments in &mut faces {
             let mut kept = Vec::new();
-            ctx.reserve_vec(&mut kept, assignments.len(), "catia_placement_kept_assignments")?;
+            ctx.reserve_vec(
+                &mut kept,
+                assignments.len(),
+                "catia_placement_kept_assignments",
+            )?;
             for mut assignment in std::mem::take(assignments) {
                 let mut keep = true;
                 for candidate in &mut assignment {
@@ -4470,7 +4567,12 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
         for placement in face.into_iter().flatten() {
             ctx.push_vec(&mut placements, placement, "catia_placement_candidates")?;
         }
-        placements.sort_unstable_by_key(|candidate| candidate.placement);
+        ctx.sort_unstable_by(
+            &mut placements,
+            |left, right| left.placement.cmp(&right.placement),
+            |_| 0,
+            "catia missing edge placement candidates sort",
+        )?;
         placements.dedup_by_key(|candidate| candidate.placement);
         for candidate in placements {
             let edge = candidate.placement.edge;
@@ -4487,7 +4589,12 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     }
     for (edge, domain) in domains.iter_mut().enumerate() {
         if bound_counts[edge] == placement_counts[edge] {
-            domain.sort_unstable();
+            ctx.sort_unstable_by(
+                domain,
+                Ord::cmp,
+                |_| 0,
+                "catia missing edge placement domain sort",
+            )?;
         } else {
             domain.clear();
         }
@@ -5088,7 +5195,7 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs(
         return Ok(None);
     };
     for pair in &mut pairs {
-        pair.sort_unstable();
+        ctx.sort_unstable_by(pair, Ord::cmp, |_| 0, "catia missing edge port pair sort")?;
     }
     Ok(Some(pairs))
 }
@@ -5194,7 +5301,12 @@ fn edge_port_candidate_assignment(
     for group in groups.into_values() {
         ctx.push_vec(&mut components, group, "catia_port_components")?;
     }
-    components.sort_by_key(|component| component[0]);
+    ctx.stable_sort_by(
+        &mut components,
+        |left, right| left[0].cmp(&right[0]),
+        |_| 0,
+        "catia missing edge port components sort",
+    )?;
     let mut solution = ctx.alloc_filled(ports.len(), None, "catia_edge_port_solution")?;
     for component in components {
         let mut component_ports = Vec::new();

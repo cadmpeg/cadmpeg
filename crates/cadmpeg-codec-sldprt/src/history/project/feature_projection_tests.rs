@@ -411,7 +411,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "12"),
         ("e", "<MOD-DIAM>5.5"),
     ]);
-    let construction = hole_sketch_construction(&counterbore).expect("required invariant");
+    let construction = hole_sketch_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &counterbore,
+    )
+    .expect("resource budget")
+    .expect("required invariant");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
@@ -439,7 +444,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "10"),
         ("e", "118°"),
     ]);
-    let construction = hole_sketch_construction(&threaded).expect("required invariant");
+    let construction =
+        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &threaded)
+            .expect("resource budget")
+            .expect("required invariant");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.2).unwrap()
@@ -466,7 +474,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "11.62"),
         ("f", "<MOD-DIAM>10.29"),
     ]);
-    let construction = hole_sketch_construction(&tapered_thread).expect("tapered thread profile");
+    let construction = hole_sketch_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &tapered_thread,
+    )
+    .expect("resource budget")
+    .expect("tapered thread profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(8.43).unwrap()
@@ -504,8 +517,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "<MOD-DIAM>4.5"),
         ("f", "<MOD-DIAM>4.55"),
     ]);
-    let construction =
-        hole_sketch_construction(&counterbore_with_exit_countersink).expect("dual-ended profile");
+    let construction = hole_sketch_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &counterbore_with_exit_countersink,
+    )
+    .expect("resource budget")
+    .expect("dual-ended profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap()
@@ -538,7 +555,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("f", "5.4"),
         ("g", "<MOD-DIAM>9.95"),
     ]);
-    let construction = hole_sketch_construction(&counterdrill).expect("counterdrill profile");
+    let construction = hole_sketch_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &counterdrill,
+    )
+    .expect("resource budget")
+    .expect("counterdrill profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
@@ -575,7 +597,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "4"),
         ("e", "6"),
     ]);
-    assert!(hole_sketch_construction(&placement_dimensions).is_none());
+    assert!(hole_sketch_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &placement_dimensions
+    )
+    .expect("resource budget")
+    .is_none());
 
     let unsupported_countersink = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -583,7 +610,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("depth", "6"),
         ("angle", "82°"),
     ]);
-    assert!(hole_sketch_construction(&unsupported_countersink).is_none());
+    assert!(hole_sketch_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &unsupported_countersink
+    )
+    .expect("resource budget")
+    .is_none());
 
     let unsupported_counterbore = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -591,7 +623,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("entry depth", "3"),
         ("depth", "6"),
     ]);
-    assert!(hole_sketch_construction(&unsupported_counterbore).is_none());
+    assert!(hole_sketch_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &unsupported_counterbore
+    )
+    .expect("resource budget")
+    .is_none());
 
     let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
     native_profile.id = "native-profile".into();
@@ -1355,7 +1392,11 @@ fn hole_profile_rejects_more_than_supported_dimension_roles() {
         );
         profile.content.push(FeatureContent::Dimension(name.into()));
     }
-    assert!(hole_sketch_construction(&profile).is_none());
+    assert!(
+        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
+            .expect("resource budget")
+            .is_none()
+    );
 }
 
 #[test]
@@ -1368,7 +1409,10 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("depth"), "9".into());
-    let construction = hole_sketch_construction(&profile).expect("fallback hole dimensions");
+    let construction =
+        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
+            .expect("resource budget")
+            .expect("fallback hole dimensions");
     assert_eq!(construction.diameter.get(), 5.0);
     assert_eq!(
         construction
@@ -1379,5 +1423,9 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .content
         .push(FeatureContent::Dimension("missing".into()));
-    assert!(hole_sketch_construction(&profile).is_none());
+    assert!(
+        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
+            .expect("resource budget")
+            .is_none()
+    );
 }

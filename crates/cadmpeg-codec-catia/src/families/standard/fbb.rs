@@ -477,9 +477,14 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             }
         }
         for pair in &mut filtered {
-            pair.sort_unstable();
+            ctx.sort_unstable_by(pair, Ord::cmp, |_| 0, "catia standard port pair sort")?;
         }
-        filtered.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut filtered,
+            Ord::cmp,
+            |_| 0,
+            "catia standard port filtered pairs sort",
+        )?;
         filtered.dedup();
         if filtered.is_empty() {
             return Ok(None);

@@ -1600,10 +1600,11 @@ pub(crate) fn bind_edge_operand_candidates(
 }
 
 pub(crate) fn edge_operand_candidate_faces(
+    ctx: &DecodeContext<'_>,
     design_reference: i64,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
-) -> Vec<cadmpeg_ir::ids::FaceId> {
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut faces = tags
@@ -1617,9 +1618,14 @@ pub(crate) fn edge_operand_candidate_faces(
             _ => None,
         })
         .collect::<Vec<_>>();
-    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    ctx.stable_sort_by(
+        &mut faces,
+        |left, right| left.as_str().cmp(right.as_str()),
+        |face| face.as_str().len(),
+        "f3d edge operand candidate faces sort",
+    )?;
     faces.dedup();
-    faces
+    Ok(faces)
 }
 
 /// Resolve the unique sketch-profile frame named by profile-based scopes.

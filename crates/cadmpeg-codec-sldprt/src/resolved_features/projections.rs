@@ -2215,15 +2215,12 @@ fn full_round_fillet_selection_triple<'a>(
     let by_lane = surface_selections_by_lane(ctx, selections, OPERATION)?;
     let mut consensus: Option<[&'a FeatureInputSurfaceSelection; 3]> = None;
     for mut lane_selections in by_lane.into_values() {
-        let len = lane_selections.len();
-        let count = u64::try_from(len)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        let levels = if len > 1 { len.ilog2() + 1 } else { 1 };
-        let work = count
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
-        lane_selections.sort_unstable_by_key(|selection| selection.offset);
+        ctx.sort_unstable_by(
+            &mut lane_selections,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            OPERATION,
+        )?;
         let [center, side_one, side_two] = lane_selections.as_slice() else {
             return Ok(None);
         };

@@ -732,15 +732,16 @@ fn exact_long_coil_transform_values(
 }
 
 pub(super) fn bind_coil_extent_from_parameters(
+    ctx: &DecodeContext<'_>,
     scope: &mut DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
-) {
+) -> Result<(), CodecError> {
     if scope.kind() != scope::DesignFeatureKind::CoilPrimitive || scope.coil_extent().is_some() {
-        return;
+        return Ok(());
     }
     let Some(stream) = native_stream(&scope.id) else {
-        return;
+        return Ok(());
     };
     let owned_kinds = parameter_owners
         .iter()
@@ -761,12 +762,17 @@ pub(super) fn bind_coil_extent_from_parameters(
     let mut count = 0usize;
     for kind in owned_kinds {
         if count == sorted.len() {
-            return;
+            return Ok(());
         }
         sorted[count] = kind;
         count += 1;
     }
-    sorted[..count].sort_unstable_by_key(|(ordinal, _)| *ordinal);
+    ctx.sort_unstable_by(
+        &mut sorted[..count],
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
+        "f3d coil parameter owner ordinals sort",
+    )?;
     let mut kinds = [""; 5];
     for (index, (_, source_kind)) in sorted[..count].iter().enumerate() {
         kinds[index] = source_kind;
@@ -797,6 +803,7 @@ pub(super) fn bind_coil_extent_from_parameters(
             );
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

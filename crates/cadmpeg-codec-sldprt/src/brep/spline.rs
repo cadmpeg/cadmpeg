@@ -519,7 +519,13 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
     None
 }
 
-fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySpan> {
+fn array_spans(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    arrays: &Arrays,
+    tag: u8,
+    attr: u16,
+) -> Result<Vec<ArraySpan>, cadmpeg_core::CodecError> {
     let mut spans = Vec::new();
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         let Some(p) = array_body(bytes, off, tag) else {
@@ -548,9 +554,14 @@ fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySp
                 count: array.count,
             }),
     );
-    spans.sort_by_key(|span| (span.start, span.count));
+    ctx.stable_sort_by(
+        &mut spans,
+        |left, right| (left.start, left.count).cmp(&(right.start, right.count)),
+        |_| 0,
+        "sldprt parasolid array spans sort",
+    )?;
     spans.dedup();
-    spans
+    Ok(spans)
 }
 
 fn f64_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<f64>> {
@@ -566,17 +577,18 @@ fn u16_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<u16>> {
 }
 
 fn unique_control_span(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     arrays: &Arrays,
     attr: u16,
     old_values: &[f64],
-) -> Option<ArraySpan> {
-    let spans = array_spans(bytes, arrays, 0x2d, attr)
+) -> Result<Option<ArraySpan>, cadmpeg_core::CodecError> {
+    let spans = array_spans(ctx, bytes, arrays, 0x2d, attr)?
         .into_iter()
         .filter(|span| span.count == old_values.len())
         .collect::<Vec<_>>();
     if spans.len() == 1 {
-        return Some(spans[0]);
+        return Ok(Some(spans[0]));
     }
     let mut matching = spans.into_iter().filter(|&span| {
         f64_values(bytes, span).is_some_and(|values| {
@@ -586,24 +598,26 @@ fn unique_control_span(
             })
         })
     });
-    let selected = matching.next()?;
-    matching.next().is_none().then_some(selected)
+    let Some(selected) = matching.next() else {
+        return Ok(None);
+    };
+    Ok(matching.next().is_none().then_some(selected))
 }
 
 fn unique_surface_knot_span(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     arrays: &Arrays,
-    knot_attr: u16,
-    multiplicity_attr: u16,
+    (knot_attr, multiplicity_attr): (u16, u16),
     declared_count: usize,
     old_values: &[f64],
     old_multiplicities: &[usize],
-) -> Option<ArraySpan> {
+) -> Result<Option<ArraySpan>, cadmpeg_core::CodecError> {
     if old_values.len() != declared_count || old_multiplicities.len() != declared_count {
-        return None;
+        return Ok(None);
     }
-    let knot_spans = array_spans(bytes, arrays, 0x80, knot_attr);
-    let multiplicity_spans = array_spans(bytes, arrays, 0x7f, multiplicity_attr);
+    let knot_spans = array_spans(ctx, bytes, arrays, 0x80, knot_attr)?;
+    let multiplicity_spans = array_spans(ctx, bytes, arrays, 0x7f, multiplicity_attr)?;
     let mut pairs = Vec::new();
     for knot_span in knot_spans {
         let Some(knots) = f64_values(bytes, knot_span) else {
@@ -633,12 +647,28 @@ fn unique_surface_knot_span(
             }
         }
     }
-    pairs.sort_by_key(|(knots, multiplicities)| (knots.start, knots.count, multiplicities.start));
+    ctx.stable_sort_by(
+        &mut pairs,
+        |(left_knots, left_multiplicities), (right_knots, right_multiplicities)| {
+            (
+                left_knots.start,
+                left_knots.count,
+                left_multiplicities.start,
+            )
+                .cmp(&(
+                    right_knots.start,
+                    right_knots.count,
+                    right_multiplicities.start,
+                ))
+        },
+        |_| 0,
+        "sldprt parasolid surface knot span pairs sort",
+    )?;
     pairs.dedup();
-    match pairs.as_slice() {
+    Ok(match pairs.as_slice() {
         [(knots, _)] => Some(*knots),
         _ => None,
-    }
+    })
 }
 
 fn patch_f64_span(bytes: &mut [u8], span: ArraySpan, values: &[f64]) -> Option<()> {
@@ -829,25 +859,28 @@ pub(crate) fn patch_nurbs_surface(
     }
     let old_poles = homogeneous_grid_poles(old.pole_grid(), scale)?;
     let poles = homogeneous_grid_poles(new.pole_grid(), scale)?;
-    let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
+    let control_span =
+        unique_control_span(&ctx, bytes, &arrays, control_attr, &old_poles).ok()??;
     let u_knot_span = unique_surface_knot_span(
+        &ctx,
         bytes,
         &arrays,
-        u_knot_attr,
-        descriptor.refs[1],
+        (u_knot_attr, descriptor.refs[1]),
         descriptor.u_knot_count,
         &old_u,
         &old_u_mult,
-    )?;
+    )
+    .ok()??;
     let v_knot_span = unique_surface_knot_span(
+        &ctx,
         bytes,
         &arrays,
-        v_knot_attr,
-        descriptor.refs[2],
+        (v_knot_attr, descriptor.refs[2]),
         descriptor.v_knot_count,
         &old_v,
         &old_v_mult,
-    )?;
+    )
+    .ok()??;
     patch_f64_span(bytes, control_span, &poles)?;
     patch_f64_span(bytes, u_knot_span, &new_u)?;
     patch_f64_span(bytes, v_knot_span, &new_v)
@@ -1762,7 +1795,16 @@ mod tests {
     #[test]
     fn missing_surface_knot_arrays_decline_the_patch() {
         assert_eq!(
-            unique_surface_knot_span(&[], &Arrays::default(), 2, 3, 1, &[0.0], &[1]),
+            unique_surface_knot_span(
+                &cadmpeg_test_support::service_decode_context(),
+                &[],
+                &Arrays::default(),
+                (2, 3),
+                1,
+                &[0.0],
+                &[1]
+            )
+            .unwrap(),
             None
         );
     }

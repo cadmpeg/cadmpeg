@@ -255,7 +255,7 @@ pub(crate) fn enrich_history_hole_constructions(
                         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                     OPERATION,
                 )?;
-                hole_profile_from_child_order(feature, history)
+                hole_profile_from_child_order(ctx, feature, history)?
             };
             let Some((profile, rank)) = profile else {
                 continue;
@@ -322,20 +322,32 @@ pub(crate) fn enrich_history_hole_constructions(
                 continue;
             };
             ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
-            let mut profiles = history.features.iter().filter(|candidate| {
+            let mut first = None;
+            let mut ambiguous = false;
+            for candidate in &history.features {
                 let source_text = candidate.source_id.map(String::from);
                 let identity = source_text.as_deref().unwrap_or(&candidate.id);
-                !claimed_profiles.contains(identity)
-                    && candidate
+                if claimed_profiles.contains(identity)
+                    || !candidate
                         .source_value()
                         .is_some_and(|candidate| source < candidate && candidate < upper)
-                    && classify(candidate) == Some(FeatureClass::Sketch)
-                    && crate::history::project::solid::is_hole_profile_construction(candidate)
-            });
-            let Some(profile) = profiles.next() else {
+                    || classify(candidate) != Some(FeatureClass::Sketch)
+                    || !crate::history::project::solid::is_hole_profile_construction(
+                        ctx, candidate,
+                    )?
+                {
+                    continue;
+                }
+                if first.is_some() {
+                    ambiguous = true;
+                    break;
+                }
+                first = Some(candidate);
+            }
+            let Some(profile) = first else {
                 continue;
             };
-            if profiles.next().is_some() {
+            if ambiguous {
                 continue;
             }
             ctx.reserve_vec(&mut interval_additions, 1, OPERATION)?;
@@ -495,7 +507,9 @@ fn hole_profile_from_position_source<'a>(
                 };
                 if successors.next().is_some()
                     || classify(successor) != Some(FeatureClass::Sketch)
-                    || !crate::history::project::solid::is_hole_profile_construction(successor)
+                    || !crate::history::project::solid::is_hole_profile_construction(
+                        ctx, successor,
+                    )?
                 {
                     return Ok(None);
                 }
@@ -513,15 +527,25 @@ fn hole_profile_from_position_source<'a>(
     }
     let adjacent_sources = [source.checked_sub(1), source.checked_add(1)];
     ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
-    let mut profiles = history.features.iter().filter(|candidate| {
-        candidate
+    let mut first = None;
+    let mut ambiguous = false;
+    for candidate in &history.features {
+        if !candidate
             .source_value()
             .is_some_and(|source| adjacent_sources.contains(&Some(source)))
-            && classify(candidate) == Some(FeatureClass::Sketch)
-            && crate::history::project::solid::is_hole_profile_construction(candidate)
-    });
-    if let Some(profile) = profiles.next() {
-        if profiles.next().is_none() {
+            || classify(candidate) != Some(FeatureClass::Sketch)
+            || !crate::history::project::solid::is_hole_profile_construction(ctx, candidate)?
+        {
+            continue;
+        }
+        if first.is_some() {
+            ambiguous = true;
+            break;
+        }
+        first = Some(candidate);
+    }
+    if let Some(profile) = first {
+        if !ambiguous {
             return Ok(Some((profile, 3)));
         }
     }
@@ -534,16 +558,20 @@ fn hole_profile_from_position_source<'a>(
         (source, hole_source)
     };
     ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
-    let mut profiles = history.features.iter().filter(|candidate| {
-        candidate
+    let mut bounded = None;
+    for candidate in &history.features {
+        if !candidate
             .source_value()
             .is_some_and(|source| lower < source && source < upper)
-            && classify(candidate) == Some(FeatureClass::Sketch)
-            && crate::history::project::solid::is_hole_profile_construction(candidate)
-    });
-    let bounded = profiles.next();
-    if profiles.next().is_some() {
-        return Ok(None);
+            || classify(candidate) != Some(FeatureClass::Sketch)
+            || !crate::history::project::solid::is_hole_profile_construction(ctx, candidate)?
+        {
+            continue;
+        }
+        if bounded.is_some() {
+            return Ok(None);
+        }
+        bounded = Some(candidate);
     }
     if let Some(profile) = bounded {
         return Ok(Some((profile, 2)));
@@ -557,26 +585,35 @@ fn hole_profile_from_position_source<'a>(
         position.ordinal.checked_add(1),
     ];
     ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
-    let mut profiles = history.features.iter().filter(|candidate| {
-        adjacent_ordinals.contains(&Some(candidate.ordinal))
-            && candidate.id != position.id
-            && classify(candidate) == Some(FeatureClass::Sketch)
-            && crate::history::project::solid::is_hole_profile_construction(candidate)
-    });
-    let Some(profile) = profiles.next() else {
-        return Ok(None);
-    };
-    Ok(profiles.next().is_none().then_some((profile, 1)))
+    let mut first = None;
+    for candidate in &history.features {
+        if !adjacent_ordinals.contains(&Some(candidate.ordinal))
+            || candidate.id == position.id
+            || classify(candidate) != Some(FeatureClass::Sketch)
+            || !crate::history::project::solid::is_hole_profile_construction(ctx, candidate)?
+        {
+            continue;
+        }
+        if first.is_some() {
+            return Ok(None);
+        }
+        first = Some(candidate);
+    }
+    Ok(first.map(|profile| (profile, 1)))
 }
 
 fn hole_profile_from_child_order<'a>(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     history: &'a crate::records::FeatureHistory,
-) -> Option<(&'a crate::records::Feature, u8)> {
-    let ordinals = [
-        feature.ordinal.checked_add(1)?,
-        feature.ordinal.checked_add(2)?,
-    ];
+) -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
+    let (Some(first_ordinal), Some(second_ordinal)) = (
+        feature.ordinal.checked_add(1),
+        feature.ordinal.checked_add(2),
+    ) else {
+        return Ok(None);
+    };
+    let ordinals = [first_ordinal, second_ordinal];
     let unique_child = |ordinal| {
         let mut children = history
             .features
@@ -585,18 +622,29 @@ fn hole_profile_from_child_order<'a>(
         let child = children.next()?;
         children.next().is_none().then_some(child)
     };
-    let children = [unique_child(ordinals[0])?, unique_child(ordinals[1])?];
+    let (Some(first_child), Some(second_child)) =
+        (unique_child(ordinals[0]), unique_child(ordinals[1]))
+    else {
+        return Ok(None);
+    };
+    let children = [first_child, second_child];
     if children
         .iter()
         .any(|child| classify(child) != Some(FeatureClass::Sketch))
     {
-        return None;
+        return Ok(None);
     }
-    let mut profiles = children
-        .into_iter()
-        .filter(|child| crate::history::project::solid::is_hole_profile_construction(child));
-    let profile = profiles.next()?;
-    profiles.next().is_none().then_some((profile, 1))
+    let mut first = None;
+    for child in children {
+        if !crate::history::project::solid::is_hole_profile_construction(ctx, child)? {
+            continue;
+        }
+        if first.is_some() {
+            return Ok(None);
+        }
+        first = Some(child);
+    }
+    Ok(first.map(|profile| (profile, 1)))
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters(
@@ -904,23 +952,24 @@ fn profiled_hole_construction_with_evidence(
     )?;
     ctx.charge_work(u64_from_index(lengths.len()), OPERATION)?;
     lengths.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
-    let dimension_only = if crate::history::project::solid::is_hole_profile_construction(profile) {
-        match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
-            ([diameter], [depth], []) => Some(DimensionOnlyHole {
-                diameter: *diameter,
-                depth: cadmpeg_ir::scalar::NonZeroLength::from(*depth),
-                drill_point_angle: None,
-            }),
-            ([diameter], [depth], [drill_point_angle]) => Some(DimensionOnlyHole {
-                diameter: *diameter,
-                depth: cadmpeg_ir::scalar::NonZeroLength::from(*depth),
-                drill_point_angle: Some(*drill_point_angle),
-            }),
-            _ => None,
-        }
-    } else {
-        None
-    };
+    let dimension_only =
+        if crate::history::project::solid::is_hole_profile_construction(ctx, profile)? {
+            match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
+                ([diameter], [depth], []) => Some(DimensionOnlyHole {
+                    diameter: *diameter,
+                    depth: cadmpeg_ir::scalar::NonZeroLength::from(*depth),
+                    drill_point_angle: None,
+                }),
+                ([diameter], [depth], [drill_point_angle]) => Some(DimensionOnlyHole {
+                    diameter: *diameter,
+                    depth: cadmpeg_ir::scalar::NonZeroLength::from(*depth),
+                    drill_point_angle: Some(*drill_point_angle),
+                }),
+                _ => None,
+            }
+        } else {
+            None
+        };
     if evidence == ProfileEvidence::Dimensions {
         if let Some(construction) = dimension_only {
             return Ok(Some(construction.into_construction()));
@@ -5080,10 +5129,14 @@ pub(super) fn feature_input_sketch_frame(
         .profile_source(context_start, start, end)
         .and_then(|source| plane_frames.get(&source).copied());
     let component = compact_profile_component_plane_frame(payload, context_start, start, end);
-    let explicit = || {
-        let (origin, normal, u_axis) = payload
-            .get(start..end)
-            .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
+    let explicit = || -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
+        let Some(object) = payload.get(start..end) else {
+            return Ok(None);
+        };
+        let Ok(Some((origin, normal, u_axis))) = explicit_reference_plane_frame(ctx, object)?
+        else {
+            return Ok(None);
+        };
         let finite_zero = |value: f64| {
             if value.abs() <= EPS_HOLE_EXACT_GEOMETRY {
                 0.0
@@ -5091,7 +5144,7 @@ pub(super) fn feature_input_sketch_frame(
                 value
             }
         };
-        Some((
+        Ok(Some((
             Point3::new(
                 finite_zero(origin.x),
                 finite_zero(origin.y),
@@ -5107,23 +5160,26 @@ pub(super) fn feature_input_sketch_frame(
                 finite_zero(u_axis.y),
                 finite_zero(u_axis.z),
             ),
-        ))
+        )))
     };
     Ok(match reference {
         Some(reference) => {
             let component = component
                 .filter(|component| coplanar_plane_frames(reference.as_tuple(), *component));
             if reference.u_axis_source == SketchPlaneUAxisSource::ConstructedMidPlane {
-                component.or_else(|| {
-                    explicit().filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame))
-                })
+                match component {
+                    Some(component) => Some(component),
+                    None => explicit()?
+                        .filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame)),
+                }
             } else {
-                component
-                    .or_else(|| Some(reference.as_tuple()))
-                    .or_else(explicit)
+                component.or(Some(reference.as_tuple()))
             }
         }
-        None => component.or_else(explicit),
+        None => match component {
+            Some(component) => Some(component),
+            None => explicit()?,
+        },
     })
 }
 
