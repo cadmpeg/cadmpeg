@@ -124,7 +124,7 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
         generated,
     }) = scope
         .rectangular_pattern_construction()
-        .and_then(|construction| construction.instances.as_ref())
+        .and_then(|construction| construction.instances())
     else {
         panic!("admitted component pattern instances");
     };

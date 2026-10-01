@@ -2252,7 +2252,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     != Some(design::DesignFeatureFamily::RectangularPattern)
             }
             Some(construction) => {
-                let instances_link = construction.instances.as_ref().is_none_or(|instances| {
+                let instances_link = construction.instances().is_none_or(|instances| {
                     let active = [
                         (construction.u_count(), construction.u_extent()),
                         (construction.v_count(), construction.v_extent()),

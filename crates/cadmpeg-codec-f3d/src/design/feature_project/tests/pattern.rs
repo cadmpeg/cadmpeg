@@ -109,7 +109,7 @@ fn circular_scope() -> DesignParameterScope {
         scope.payload_mut()
     {
         *slot = Some(DesignCircularPatternConstruction {
-            count: 3,
+            count: std::num::NonZeroU32::new(3).unwrap(),
             count_record_index: 11,
             count_offset: 0,
             angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),

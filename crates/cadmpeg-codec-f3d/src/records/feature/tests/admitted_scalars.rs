@@ -142,7 +142,7 @@ fn surface_offset_boundary_carrier_refuses_a_nonpositive_tolerance() {
 fn circular_pattern_construction_refuses_a_nonpositive_angle() {
     refuses_zero(
         &DesignCircularPatternConstruction {
-            count: 25,
+            count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index: 11,
             count_offset: 40,
             angle: PositiveAngle::new(std::f64::consts::TAU).expect("positive angle"),
@@ -175,4 +175,32 @@ fn edge_treatment_radius_candidate_refuses_a_nonpositive_radius() {
         "radius",
         "PositiveReal",
     );
+}
+
+#[test]
+fn circular_pattern_construction_refuses_zero_count() {
+    let wire = serde_json::json!({
+        "count": 0, "count_record_index": 1, "count_offset": 2,
+        "angle": 1.0, "angle_record_index": 3, "angle_offset": 4,
+        "axis": {"kind":"inline", "origin":[0.0,0.0,0.0], "origin_offset":5,
+            "direction":[0.0,0.0,1.0], "direction_offset":6},
+        "axis_record_index":7, "selection_record_index":8
+    });
+    let error = serde_json::from_value::<DesignCircularPatternConstruction>(wire).unwrap_err();
+    assert!(error.to_string().contains("nonzero"), "{error}");
+}
+
+#[test]
+fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
+    let wire = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_offset":51,"stitch_tolerance_record_index":12,"seed_group_record_index":20,"plane_group_record_index":30,"plane_origin":[0.0,0.0,0.0]}"#;
+    let mut value: serde_json::Value = serde_json::from_str(wire).unwrap();
+    for normal in [[0.0,0.0,0.0], [0.0,0.0,2.0]] {
+        value["plane_normal"] = serde_json::json!(normal);
+        let error = serde_json::from_value::<DesignMirrorConstruction>(value.clone()).unwrap_err();
+        assert!(error.to_string().contains("plane_normal must be a unit vector"));
+    }
+    value["plane_origin"] = serde_json::to_value(cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)).unwrap()).unwrap();
+    value["plane_normal"] = serde_json::to_value(cadmpeg_ir::features::FiniteVector3::from(cadmpeg_ir::units::UnitVector3::Z_AXIS)).unwrap();
+    let plane: DesignMirrorConstruction = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(plane).unwrap(), value);
 }

@@ -6536,7 +6536,7 @@ fn project_circular_pattern(
         axis_origin,
         axis_dir,
         angle: construction.angle,
-        count: construction.count,
+        count: construction.count.get(),
     })
     .ok() else {
         return Ok(None);
@@ -6629,10 +6629,7 @@ fn project_rectangular_pattern_scalars(
     if active.next().is_some() || inactive_count != 1 {
         return Ok(None);
     }
-    let direction = construction.instances.as_ref().and_then(|instances| {
-        if instances.instance_count() != usize::try_from(count).ok()? {
-            return None;
-        }
+    let direction = construction.instances().and_then(|instances| {
         let first = &instances.frames().next()?.transform.value;
         let last = &instances.frames().next_back()?.transform.value;
         let delta = Vector3::new(
@@ -6643,8 +6640,7 @@ fn project_rectangular_pattern_scalars(
         cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(delta)
     });
     let component_seed = construction
-        .instances
-        .as_ref()
+        .instances()
         .and_then(|instances| match instances {
             crate::records::feature::patterns::DesignRectangularPatternInstances::Bodies(_) => None,
             crate::records::feature::patterns::DesignRectangularPatternInstances::Components {
@@ -6793,7 +6789,7 @@ fn project_mirror(
         )
     };
     let (plane_origin, plane_normal, scale_origin) = match construction.plane {
-        Some(plane) => (plane.origin.get(), plane.normal.get(), false),
+        Some(plane) => (plane.origin().get(), *plane.normal().as_raw(), false),
         None => {
             let Some(plane_scope_record_index) = construction
                 .plane_scope_record_index
