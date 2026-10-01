@@ -22,7 +22,7 @@ use cadmpeg_ir::units::UnitVector3;
 
 use crate::error::malformed;
 use crate::records::mesh::DesignMeshUuid;
-use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+use cadmpeg_core::decode::index_from_u32;
 
 /// Container magic.
 const MAGIC: [u8; 12] = [
@@ -1178,10 +1178,12 @@ fn attribute_names(
         format_args!("<Root>{body}</Root>"),
         "wrap paramesh attribute XML",
     )?;
-    let wrapped_count = u64_from_index(wrapped.len());
-    ctx.charge_collection_items(wrapped_count, "parse paramesh XML nodes")?;
-    let document = roxmltree::Document::parse(&wrapped)
-        .map_err(|_| malformed("paramesh attribute-name stream is not XML"))?;
+    let admitted_document = ctx.parse_xml(&wrapped, "parse paramesh XML tree")
+        .map_err(|error| match error {
+            CodecError::ResourceLimit(_) => error,
+            _ => malformed("paramesh attribute-name stream is not XML"),
+        })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "Root"
         || root.attributes().next().is_some()
