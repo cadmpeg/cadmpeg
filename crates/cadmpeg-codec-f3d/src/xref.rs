@@ -244,36 +244,23 @@ fn validate_component_reference_data(
     Ok(())
 }
 
-fn parse_component_reference_data(
-    ctx: &DecodeContext<'_>,
+fn parse_component_reference_data<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<serde_json::Value, CodecError> {
-    let length = u64::try_from(bytes.len()).map_err(|_| {
-        ctx.refuse_codec_limit("preflight F3D component reference JSON", 0, u64::MAX)
+) -> Result<(serde_json::Value, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    let text = std::str::from_utf8(bytes).map_err(|error| {
+        CodecError::malformed(format_args!("{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"))
     })?;
-    let _reservation = ctx.reserve_scoped(length, "preflight F3D component reference JSON")?;
-    if !crate::json_budget::preflight(
-        ctx,
-        bytes,
-        "preflight F3D component reference JSON",
-        "scan F3D component reference JSON",
-        "parse F3D component reference JSON",
-    )? {
-        return Err(CodecError::malformed(format_args!(
-            "{COMPONENT_REFERENCE_ENTRY} is not valid JSON"
-        )));
-    }
-    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
-        ))
+    let (value, reservation) = ctx.parse_json_value(text, "parse F3D component reference JSON").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        CodecError::malformed(format_args!("{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"))
     })?;
     if !value.is_object() {
         return Err(CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} must contain a top-level JSON object"
         )));
     }
-    Ok(value)
+    Ok((value, reservation))
 }
 
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
@@ -316,13 +303,12 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError> {
-    let length = u64::try_from(bytes.len())
-        .map_err(|_| ctx.refuse_codec_limit("parse F3D redirections JSON", 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(length, "parse F3D redirections JSON")?;
-    let parsed = serde_json::from_slice::<RedirectionsJson>(bytes).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
-        ))
+    let text = std::str::from_utf8(bytes).map_err(|error| {
+        CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY} is not valid JSON: {error}"))
+    })?;
+    let parsed: RedirectionsJson = ctx.parse_json(text, "parse F3D redirections JSON").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY} is not valid JSON: {error}"))
     })?;
     if parsed.name != "RedirectionsStream" {
         return Err(redirections_error(format_args!(
