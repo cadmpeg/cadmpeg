@@ -408,16 +408,19 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                     .expect("finite interval"),
                 extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
             }];
-        native.body_visibilities = vec![crate::records::bodies::BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
-            id: "f3d:design:body-visibility#42".into(),
-            body: visible_body,
-            stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
-            byte_offset: 0,
-            asm_body_key_offset: 0,
-            asm_body_key: 42,
-            entity_suffix: 42,
-            visible: false,
-        }).unwrap()];
+        native.body_visibilities = vec![crate::records::bodies::BodyVisibility::try_from(
+            crate::records::bodies::BodyVisibilityWire {
+                id: "f3d:design:body-visibility#42".into(),
+                body: visible_body,
+                stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
+                byte_offset: 0,
+                asm_body_key_offset: 0,
+                asm_body_key: 42,
+                entity_suffix: 42,
+                visible: false,
+            },
+        )
+        .unwrap()];
     }
     let mut encoded = Vec::new();
     crate::native::reset_load_count();
@@ -481,11 +484,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     {
         let mut invalid = source_less.clone();
         {
-        let visibility = &mut f3d_native_mut(&mut invalid).body_visibilities[0];
-        let mut wire = crate::records::bodies::BodyVisibilityWire::from(visibility.clone());
-        wire.id = "f3d:design:body-visibility#43".into();
-        wire.asm_body_key = 43;
-        *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
+            let visibility = &mut f3d_native_mut(&mut invalid).body_visibilities[0];
+            let mut wire = crate::records::bodies::BodyVisibilityWire::from(visibility.clone());
+            wire.id = "f3d:design:body-visibility#43".into();
+            wire.asm_body_key = 43;
+            *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
         }
         let error = F3dCodec
             .plan(EncodeInput::new(&invalid, None), TargetRequest::Inherit)

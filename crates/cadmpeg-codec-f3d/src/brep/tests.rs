@@ -1025,14 +1025,20 @@ fn fusion_attribute_family_scan_preserves_work_refusal() {
         name: "foreign".into(),
         values: vec![AttributeValue::String("foreign payload".repeat(32))],
     };
-    for family in ["sketch_attrib_def", "generic_tag_attrib_def", "Timestamp_attrib_def"] {
+    for family in [
+        "sketch_attrib_def",
+        "generic_tag_attrib_def",
+        "Timestamp_attrib_def",
+    ] {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 1;
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let error = super::attribute_family(ctx, &attribute, family).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "compare Fusion attribute family"
-                    && ctx.resource_refusal() == Some(limit)));
+                    && ctx.resource_refusal() == Some(limit))
+            );
         });
     }
     let mut asm = AsmBrep::default();
@@ -1041,7 +1047,9 @@ fn fusion_attribute_family_scan_preserves_work_refusal() {
     policy.limits.max_work_units = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let error = super::Brep::from_asm(ctx, asm).err().expect("scan refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "scan Fusion attribute family" && ctx.resource_refusal() == Some(limit)));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan Fusion attribute family" && ctx.resource_refusal() == Some(limit))
+        );
     });
 }

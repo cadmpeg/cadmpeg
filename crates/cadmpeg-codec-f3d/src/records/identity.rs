@@ -440,10 +440,23 @@ impl NativeRecordId {
         let stream_end = stream.len();
         Ok(Self { text, stream_end })
     }
-    pub(super) fn try_f3d_new(text: String, kind: &str, key: impl std::fmt::Display) -> Result<Self, String> {
+    pub(super) fn try_f3d_new(
+        text: String,
+        kind: &str,
+        key: impl std::fmt::Display,
+    ) -> Result<Self, String> {
         let id = Self::try_new(text, kind, key)?;
-        let scope = id.stream().strip_prefix("f3d:").ok_or("id must use the F3D native scheme")?;
-        if scope.is_empty() || scope.chars().any(|character| character.is_whitespace() || character.is_control() || matches!(character, ':' | '#')) {
+        let scope = id
+            .stream()
+            .strip_prefix("f3d:")
+            .ok_or("id must use the F3D native scheme")?;
+        if scope.is_empty()
+            || scope.chars().any(|character| {
+                character.is_whitespace()
+                    || character.is_control()
+                    || matches!(character, ':' | '#')
+            })
+        {
             return Err("id must contain an escaped nonempty native scope".into());
         }
         Ok(id)

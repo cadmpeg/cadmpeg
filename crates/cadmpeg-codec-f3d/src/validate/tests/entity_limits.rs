@@ -513,7 +513,11 @@ fn body_binding_group_member_refuses_collection_limit() {
 fn body_binding_invalid_finding_refuses_collection_limit() {
     let mut native = validation_body_bounds(true);
     // The binding names a valid body but has no matching native body source.
-    native.design_body_bindings[0].body = Some(cadmpeg_ir::examples::unit_cube().unwrap().model.bodies[0].id.clone());
+    native.design_body_bindings[0].body = Some(
+        cadmpeg_ir::examples::unit_cube().unwrap().model.bodies[0]
+            .id
+            .clone(),
+    );
     let error = body_binding_error(native, 0, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -525,7 +529,11 @@ fn body_binding_invalid_finding_refuses_collection_limit() {
 fn body_binding_invalid_entity_refuses_retained_limit() {
     let mut native = validation_body_bounds(true);
     // The binding names a valid body but has no matching native body source.
-    native.design_body_bindings[0].body = Some(cadmpeg_ir::examples::unit_cube().unwrap().model.bodies[0].id.clone());
+    native.design_body_bindings[0].body = Some(
+        cadmpeg_ir::examples::unit_cube().unwrap().model.bodies[0]
+            .id
+            .clone(),
+    );
     let error = body_binding_error(native, u64::MAX, 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

@@ -92,15 +92,21 @@ pub(crate) fn decode_body_members(
                 u64_from_index(cursor),
                 "f3d body member identifier",
             )?;
-            ctx.charge_work(u64_from_index(id.len()).checked_mul(8)
-                .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body member identity", 0, u64::MAX))?,
-                "admit F3D body member identity")?;
-            decoded.push(DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
-                id,
-                byte_offset: u64_from_index(cursor),
-                entity_suffix,
-                flags,
-            }).map_err(CodecError::Malformed)?);
+            ctx.charge_work(
+                u64_from_index(id.len()).checked_mul(8).ok_or_else(|| {
+                    ctx.refuse_codec_limit("admit F3D body member identity", 0, u64::MAX)
+                })?,
+                "admit F3D body member identity",
+            )?;
+            decoded.push(
+                DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
+                    id,
+                    byte_offset: u64_from_index(cursor),
+                    entity_suffix,
+                    flags,
+                })
+                .map_err(CodecError::Malformed)?,
+            );
         }
         if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
             ctx.reserve_vec(&mut out, decoded.len(), "f3d decoded body members")?;
@@ -221,12 +227,18 @@ pub(crate) fn decode_body_bounds(
             })
         };
         let id = design_record_id_charged(
-            ctx, &entry.name, ":design-body-bounds#", entity.byte_offset,
+            ctx,
+            &entry.name,
+            ":design-body-bounds#",
+            entity.byte_offset,
             "f3d body record identifier",
         )?;
-        ctx.charge_work(u64_from_index(id.len()).checked_mul(8)
-            .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body bounds identity", 0, u64::MAX))?,
-            "admit F3D body bounds identity")?;
+        ctx.charge_work(
+            u64_from_index(id.len()).checked_mul(8).ok_or_else(|| {
+                ctx.refuse_codec_limit("admit F3D body bounds identity", 0, u64::MAX)
+            })?,
+            "admit F3D body bounds identity",
+        )?;
         let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
             id,
             entity_suffix: entity.entity_id.suffix(),
@@ -639,9 +651,7 @@ fn snapshot_body_map_records(
             .and_then(|ordinal| ordinal.checked_add(256))
             .filter(|tag| *tag <= 999)
             .ok_or_else(|| {
-                CodecError::malformed(
-                    "F3D Design snapshot body-map class tag is not three digits",
-                )
+                CodecError::malformed("F3D Design snapshot body-map class tag is not three digits")
             })?
             .to_string();
         for &entity in design_type.entities.values() {
@@ -1241,13 +1251,21 @@ pub(crate) fn decode_design_body_bindings(
                     binding.asm_key,
                 )?;
                 let id = design_record_id_charged(
-                    ctx, &entry.name, ":design-body-binding#", u64_from_index(binding.asm_key_offset),
+                    ctx,
+                    &entry.name,
+                    ":design-body-binding#",
+                    u64_from_index(binding.asm_key_offset),
                     "f3d body record identifier",
                 )?;
-                ctx.charge_work(u64_from_index(id.len()).checked_add(u64_from_index(entry.name.len()))
-                    .and_then(|length| length.checked_mul(8))
-                    .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body binding identity", 0, u64::MAX))?,
-                    "admit F3D body binding identity")?;
+                ctx.charge_work(
+                    u64_from_index(id.len())
+                        .checked_add(u64_from_index(entry.name.len()))
+                        .and_then(|length| length.checked_mul(8))
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit("admit F3D body binding identity", 0, u64::MAX)
+                        })?,
+                    "admit F3D body binding identity",
+                )?;
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id,
@@ -1325,13 +1343,21 @@ pub(crate) fn bind_body_bounds(
         )?;
         let mut ids = Vec::new();
         for binding in matches {
-            ctx.charge_work(u64_from_index(binding.id().len()).checked_mul(8)
-                .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body binding reference", 0, u64::MAX))?,
-                "admit F3D body binding reference")?;
+            ctx.charge_work(
+                u64_from_index(binding.id().len())
+                    .checked_mul(8)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("admit F3D body binding reference", 0, u64::MAX)
+                    })?,
+                "admit F3D body binding reference",
+            )?;
             let id = ctx.copy_retained_text(binding.id(), "f3d body bounds binding identifier")?;
 
             ctx.reserve_vec(&mut ids, 1, "f3d body bounds binding identifiers")?;
-            ids.push(crate::records::bodies::DesignBodyBindingId::try_from(id).map_err(CodecError::Malformed)?);
+            ids.push(
+                crate::records::bodies::DesignBodyBindingId::try_from(id)
+                    .map_err(CodecError::Malformed)?,
+            );
         }
         bounds.set_body_binding_ids(ids);
     }
@@ -2717,7 +2743,10 @@ mod tests {
             &[binding],
         )
         .unwrap();
-        assert_eq!(bounds[0].body_binding_ids().collect::<Vec<_>>(), ["f3d:Design/BulkStream.dat:design-body-binding#20"]);
+        assert_eq!(
+            bounds[0].body_binding_ids().collect::<Vec<_>>(),
+            ["f3d:Design/BulkStream.dat:design-body-binding#20"]
+        );
     }
 
     #[test]

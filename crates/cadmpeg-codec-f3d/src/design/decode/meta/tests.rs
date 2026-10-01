@@ -160,7 +160,11 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
     let type_guid = "11111111-2222-3333-4444-555555555555";
     let design_type =
         crate::design::test_support::design_type(type_guid, None, 7, "Fusion", vec![17]);
-    let design_type = crate::records::entity_header::SegmentType::try_new(crate::ids::native_design_type_id(&meta_name, 0), design_type).unwrap();
+    let design_type = crate::records::entity_header::SegmentType::try_new(
+        crate::ids::native_design_type_id(&meta_name, 0),
+        design_type,
+    )
+    .unwrap();
     let types = [design_type];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

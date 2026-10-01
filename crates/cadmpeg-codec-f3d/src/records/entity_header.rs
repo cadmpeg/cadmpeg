@@ -128,7 +128,7 @@ pub(crate) struct SegmentTypeData {
     pub(crate) entities: ReferenceRun<u64>,
 }
 
-/// An identified type registration whose native key binds its MetaStream offset.
+/// An identified type registration whose native key binds its `MetaStream` offset.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "SegmentTypeWire")]
@@ -145,22 +145,36 @@ impl SegmentType {
         }
         Ok(Self { id, data })
     }
-    pub(crate) fn id(&self) -> &String { self.id.text() }
+    pub(crate) fn id(&self) -> &String {
+        self.id.text()
+    }
     #[cfg(test)]
-    pub(crate) fn set_module(&mut self, module: String) { self.data.module = module; }
+    pub(crate) fn set_module(&mut self, module: String) {
+        self.data.module = module;
+    }
     #[cfg(test)]
-    pub(crate) fn set_entities(&mut self, entities: ReferenceRun<u64>) { self.data.entities = entities; }
+    pub(crate) fn set_entities(&mut self, entities: ReferenceRun<u64>) {
+        self.data.entities = entities;
+    }
     #[cfg(test)]
-    pub(crate) fn set_base_type_guid(&mut self, base: BaseTypeGuid) { self.data.base_type_guid = base; }
+    pub(crate) fn set_base_type_guid(&mut self, base: BaseTypeGuid) {
+        self.data.base_type_guid = base;
+    }
     #[cfg(test)]
-    pub(crate) fn set_version(&mut self, version: u32) { self.data.version = version; }
+    pub(crate) fn set_version(&mut self, version: u32) {
+        self.data.version = version;
+    }
     #[cfg(test)]
-    pub(crate) fn set_type_guid(&mut self, guid: DesignRelaxedGuidText) { self.data.type_guid = guid; }
+    pub(crate) fn set_type_guid(&mut self, guid: DesignRelaxedGuidText) {
+        self.data.type_guid = guid;
+    }
 }
 
 impl std::ops::Deref for SegmentType {
     type Target = SegmentTypeData;
-    fn deref(&self) -> &Self::Target { &self.data }
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
 }
 
 #[cfg(test)]
@@ -172,7 +186,10 @@ thread_local! {
 impl Clone for SegmentType {
     fn clone(&self) -> Self {
         SEGMENT_TYPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        Self { id: self.id.clone(), data: self.data.clone() }
+        Self {
+            id: self.id.clone(),
+            data: self.data.clone(),
+        }
     }
 }
 
@@ -282,23 +299,26 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
     type Error = String;
     /// Nonempty `base_type_guid` text outside the relaxed GUID domain is not decoder-producible and is rejected deliberately.
     fn try_from(wire: SegmentTypeWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.id, SegmentTypeData {
-            byte_offset: wire.byte_offset,
-            type_guid: wire.type_guid,
-            type_guid_offset: wire.type_guid_offset,
-            version: wire.version,
-            version_offset: wire.version_offset,
-            module: wire.module,
-            entities: ReferenceRun::from_columns(
-                wire.entity_ids,
-                wire.entity_id_offsets,
-                "entity_ids/entity_id_offsets",
-            )?,
-            base_type_guid: BaseTypeGuid::from_wire(
-                wire.base_type_guid,
-                wire.base_type_guid_offset,
-            )?,
-        })
+        Self::try_new(
+            wire.id,
+            SegmentTypeData {
+                byte_offset: wire.byte_offset,
+                type_guid: wire.type_guid,
+                type_guid_offset: wire.type_guid_offset,
+                version: wire.version,
+                version_offset: wire.version_offset,
+                module: wire.module,
+                entities: ReferenceRun::from_columns(
+                    wire.entity_ids,
+                    wire.entity_id_offsets,
+                    "entity_ids/entity_id_offsets",
+                )?,
+                base_type_guid: BaseTypeGuid::from_wire(
+                    wire.base_type_guid,
+                    wire.base_type_guid_offset,
+                )?,
+            },
+        )
     }
 }
 

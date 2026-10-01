@@ -85,10 +85,12 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         panic!("parsed entity locations");
     };
     assert_eq!(entities.len(), 2);
-    object.set_type_guid("91111111-2222-3333-4444-555555555555"
-        .to_owned()
-        .try_into()
-        .expect("type GUID"));
+    object.set_type_guid(
+        "91111111-2222-3333-4444-555555555555"
+            .to_owned()
+            .try_into()
+            .expect("type GUID"),
+    );
     let base_offset = object.base_type_guid.offset().expect("located base GUID");
     object.set_base_type_guid(crate::records::entity_header::BaseTypeGuid::Guid {
         value: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef"

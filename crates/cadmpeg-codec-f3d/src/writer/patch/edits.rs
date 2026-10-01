@@ -1950,7 +1950,12 @@ pub(in crate::writer) fn validate_body_native_key_edits(
                         visibility.body == before.body
                             && before.asm_body_key == Some(visibility.asm_body_key())
                     })
-                    .map(|visibility| (visibility.stream().to_owned(), visibility.asm_body_key_offset)),
+                    .map(|visibility| {
+                        (
+                            visibility.stream().to_owned(),
+                            visibility.asm_body_key_offset,
+                        )
+                    }),
             );
             if let Some(old_key) = before.asm_body_key {
                 joined.extend(

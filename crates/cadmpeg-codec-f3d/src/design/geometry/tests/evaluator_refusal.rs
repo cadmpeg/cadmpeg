@@ -172,10 +172,18 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
 #[test]
 fn sketch_nurbs_point_preserves_caller_scratch_refusal() {
     let curve = PcurveNurbs::from_lanes(
-        3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(2.0, 0.0), Point2::new(3.0, 0.0)],
-        None, false,
-    ).unwrap();
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
@@ -190,14 +198,24 @@ fn sketch_nurbs_point_preserves_caller_scratch_refusal() {
 #[test]
 fn certified_nurbs_tubes_preserve_caller_scratch_refusal() {
     let curve = PcurveNurbs::from_lanes(
-        3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(2.0, 0.0), Point2::new(3.0, 0.0)],
-        None, false,
-    ).unwrap();
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let error = super::super::certified_nurbs_tubes(&curve, 0.5, ctx).err().expect("caller scratch refusal");
+        let error = super::super::certified_nurbs_tubes(&curve, 0.5, ctx)
+            .err()
+            .expect("caller scratch refusal");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && ctx.resource_refusal() == Some(limit)));

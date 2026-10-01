@@ -1040,11 +1040,19 @@ fn arrangement_node(
     Ok(nodes.len() - 1)
 }
 
-fn arrangement_cycle_work(edge_count: usize, node_count: usize, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+fn arrangement_cycle_work(
+    edge_count: usize,
+    node_count: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<usize, CodecError> {
     edge_count
         .checked_add(1)
         .and_then(|count| count.checked_mul(edge_count))
-        .and_then(|count| node_count.checked_add(1).and_then(|nodes| count.checked_mul(nodes)))
+        .and_then(|count| {
+            node_count
+                .checked_add(1)
+                .and_then(|nodes| count.checked_mul(nodes))
+        })
         .ok_or_else(|| ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX))
 }
 
@@ -1068,7 +1076,13 @@ fn arrangement_retain_cycle_edges(
         let remaining = budget.remaining();
         if !budget.charge_by(work) {
             return Err(ctx.resource_refusal().map_or_else(
-                || ctx.refuse_codec_limit("F3D arrangement cycle work", cadmpeg_core::decode::u64_from_index(remaining), cadmpeg_core::decode::u64_from_index(work)),
+                || {
+                    ctx.refuse_codec_limit(
+                        "F3D arrangement cycle work",
+                        cadmpeg_core::decode::u64_from_index(remaining),
+                        cadmpeg_core::decode::u64_from_index(work),
+                    )
+                },
                 CodecError::ResourceLimit,
             ));
         }
@@ -1477,9 +1491,9 @@ fn sketch_geometry_point(
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let geometry = nurbs_evaluation_geometry(curve, ctx, "f3d nurbs evaluator input")?;
-            cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, parameter)?,
-            )?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                ctx, &geometry, parameter,
+            )?)?
             .map(Point2::from)
         }
         _ => None,
@@ -2161,7 +2175,9 @@ fn nurbs_evaluation_geometry(
     operation: &'static str,
 ) -> Result<cadmpeg_ir::geometry::pcurve::PcurveGeometry, CodecError> {
     let copies = cadmpeg_core::decode::u64_from_index(curve.knots().len())
-        .checked_add(cadmpeg_core::decode::u64_from_index(curve.pole_rows().count()))
+        .checked_add(cadmpeg_core::decode::u64_from_index(
+            curve.pole_rows().count(),
+        ))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_work(copies, operation)?;
     Ok(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
@@ -2207,14 +2223,20 @@ fn certified_nurbs_tubes(
             };
             let start = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
-                    ctx, &geometry, geometric!(parameter(index)),
+                    ctx,
+                    &geometry,
+                    geometric!(parameter(index)),
                 )?
-            )?).as_raw();
+            )?)
+            .as_raw();
             let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
-                    ctx, &geometry, geometric!(parameter(index + 1)),
+                    ctx,
+                    &geometry,
+                    geometric!(parameter(index + 1)),
                 )?
-            )?).as_raw();
+            )?)
+            .as_raw();
             {
                 ctx.reserve_vec(&mut tubes, 1, "f3d certified nurbs tube")?;
             }

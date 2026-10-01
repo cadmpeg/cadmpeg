@@ -1,24 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 fn design_type(module: &str) -> crate::records::entity_header::SegmentType {
-    crate::records::entity_header::SegmentType::try_new("f3d:Design/MetaStream.dat:design-type#1".into(), crate::records::entity_header::SegmentTypeData {
-        byte_offset: 1,
-        type_guid: "11111111-2222-3333-4444-555555555555"
-            .to_owned()
-            .try_into()
-            .unwrap(),
-        type_guid_offset: 4,
-        base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
-        version: 1,
-        version_offset: 44,
-        module: module.into(),
-        entities: crate::records::identity::ReferenceRun::located(vec![
-            crate::records::identity::Located {
-                value: 17,
-                offset: 100,
-            },
-        ]),
-    }).unwrap()
+    crate::records::entity_header::SegmentType::try_new(
+        "f3d:Design/MetaStream.dat:design-type#1".into(),
+        crate::records::entity_header::SegmentTypeData {
+            byte_offset: 1,
+            type_guid: "11111111-2222-3333-4444-555555555555"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            type_guid_offset: 4,
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+            version: 1,
+            version_offset: 44,
+            module: module.into(),
+            entities: crate::records::identity::ReferenceRun::located(vec![
+                crate::records::identity::Located {
+                    value: 17,
+                    offset: 100,
+                },
+            ]),
+        },
+    )
+    .unwrap()
 }
 
 fn image_index_error(module: &str, canvas: bool) -> cadmpeg_core::CodecError {

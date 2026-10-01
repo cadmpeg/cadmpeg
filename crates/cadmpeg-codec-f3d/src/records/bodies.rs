@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design body members, bounds, bindings and visibility.
 
-use super::mesh::DesignMeshSceneBounds;
 use super::identity::NativeRecordId;
+use super::mesh::DesignMeshSceneBounds;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::BodyId;
@@ -10,25 +10,34 @@ use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
-/// A nonblank containing Design BulkStream archive path.
+/// A nonblank containing Design `BulkStream` archive path.
 #[derive(Debug, Clone, PartialEq)]
 struct DesignBulkStreamPath(NonBlankString);
 
 impl TryFrom<String> for DesignBulkStreamPath {
     type Error = String;
     fn try_from(text: String) -> Result<Self, Self::Error> {
-        let prefix = text.strip_suffix("/BulkStream.dat")
+        let prefix = text
+            .strip_suffix("/BulkStream.dat")
             .ok_or("stream must name a containing Design BulkStream")?;
-        if prefix.is_empty() || text.chars().any(char::is_control)
-            || prefix.split('/').any(|part| matches!(part, "" | "." | "..")) {
+        if prefix.is_empty()
+            || text.chars().any(char::is_control)
+            || prefix
+                .split('/')
+                .any(|part| matches!(part, "" | "." | ".."))
+        {
             return Err("stream must name a containing Design BulkStream".into());
         }
-        Ok(Self(NonBlankString::new(text).ok_or("stream must not be blank")?))
+        Ok(Self(
+            NonBlankString::new(text).ok_or("stream must not be blank")?,
+        ))
     }
 }
 
 impl DesignBulkStreamPath {
-    fn as_str(&self) -> &str { self.0.as_str() }
+    fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 /// A native reference to one admitted Design body-map pair.
@@ -39,9 +48,17 @@ pub(crate) struct DesignBodyBindingId(NativeRecordId);
 impl TryFrom<String> for DesignBodyBindingId {
     type Error = String;
     fn try_from(text: String) -> Result<Self, Self::Error> {
-        let key = text.rsplit_once('#').ok_or("binding id requires a numeric key")?.1
-            .parse::<u64>().map_err(|_| "binding id requires a numeric key")?;
-        Ok(Self(NativeRecordId::try_f3d_new(text, "design-body-binding", key)?))
+        let key = text
+            .rsplit_once('#')
+            .ok_or("binding id requires a numeric key")?
+            .1
+            .parse::<u64>()
+            .map_err(|_| "binding id requires a numeric key")?;
+        Ok(Self(NativeRecordId::try_f3d_new(
+            text,
+            "design-body-binding",
+            key,
+        )?))
     }
 }
 
@@ -52,7 +69,9 @@ impl Serialize for DesignBodyBindingId {
 }
 
 impl DesignBodyBindingId {
-    fn as_str(&self) -> &str { self.0.text() }
+    fn as_str(&self) -> &str {
+        self.0.text()
+    }
 }
 
 /// One member of the Design `BulkStream` `BodiesRoot` list.
@@ -86,8 +105,12 @@ impl TryFrom<DesignBodyMemberWire> for DesignBodyMember {
 }
 
 impl DesignBodyMember {
-    pub(crate) fn id(&self) -> &String { self.id.text() }
-    pub(crate) fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub(crate) fn id(&self) -> &String {
+        self.id.text()
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
 }
 
 impl Serialize for DesignBodyMember {
@@ -259,7 +282,11 @@ impl DesignBodyBounds {
             return Err("maximum and minimum must not define a degenerate box".into());
         }
         Ok(Self {
-            id: NativeRecordId::try_f3d_new(wire.id, "design-body-bounds", wire.entity_byte_offset)?,
+            id: NativeRecordId::try_f3d_new(
+                wire.id,
+                "design-body-bounds",
+                wire.entity_byte_offset,
+            )?,
             entity_suffix,
             entity_byte_offset: wire.entity_byte_offset,
             record_byte_offsets: wire.record_byte_offsets,
@@ -271,10 +298,16 @@ impl DesignBodyBounds {
 }
 
 impl DesignBodyBounds {
-    pub(crate) fn id(&self) -> &String { self.id.text() }
-    pub(crate) fn entity_byte_offset(&self) -> u64 { self.entity_byte_offset }
+    pub(crate) fn id(&self) -> &String {
+        self.id.text()
+    }
+    pub(crate) fn entity_byte_offset(&self) -> u64 {
+        self.entity_byte_offset
+    }
     pub(crate) fn body_binding_ids(&self) -> impl ExactSizeIterator<Item = &str> {
-        self.body_binding_ids.iter().map(DesignBodyBindingId::as_str)
+        self.body_binding_ids
+            .iter()
+            .map(DesignBodyBindingId::as_str)
     }
     pub(crate) fn set_body_binding_ids(&mut self, ids: Vec<DesignBodyBindingId>) {
         self.body_binding_ids = ids;
@@ -453,7 +486,8 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
         if wire.blob_name_offset <= entity_suffix_offset {
             return Err("blob_name_offset must follow entity_suffix_offset".into());
         }
-        let id = NativeRecordId::try_f3d_new(wire.id, "design-body-binding", wire.asm_body_key_offset)?;
+        let id =
+            NativeRecordId::try_f3d_new(wire.id, "design-body-binding", wire.asm_body_key_offset)?;
         let stream = DesignBulkStreamPath::try_from(wire.stream)?;
         if !crate::ids::native_scope_matches(id.stream(), stream.as_str()) {
             return Err("id must identify its containing stream".into());
@@ -474,8 +508,12 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
 }
 
 impl DesignBodyBinding {
-    pub(crate) fn id(&self) -> &String { self.id.text() }
-    pub(crate) fn stream(&self) -> &str { self.stream.as_str() }
+    pub(crate) fn id(&self) -> &String {
+        self.id.text()
+    }
+    pub(crate) fn stream(&self) -> &str {
+        self.stream.as_str()
+    }
     pub(crate) fn pair_count(&self) -> u32 {
         self.pair_count.get()
     }
@@ -558,9 +596,15 @@ impl TryFrom<BodyVisibilityWire> for BodyVisibility {
 }
 
 impl BodyVisibility {
-    pub(crate) fn id(&self) -> &String { self.id.text() }
-    pub(crate) fn stream(&self) -> &str { self.stream.as_str() }
-    pub(crate) fn asm_body_key(&self) -> u64 { self.asm_body_key }
+    pub(crate) fn id(&self) -> &String {
+        self.id.text()
+    }
+    pub(crate) fn stream(&self) -> &str {
+        self.stream.as_str()
+    }
+    pub(crate) fn asm_body_key(&self) -> u64 {
+        self.asm_body_key
+    }
 }
 
 impl Serialize for BodyVisibility {
@@ -583,9 +627,14 @@ impl Serialize for BodyVisibility {
 impl From<BodyVisibility> for BodyVisibilityWire {
     fn from(value: BodyVisibility) -> Self {
         Self {
-            id: value.id.into_string(), body: value.body, stream: value.stream.0.into_string(),
-            byte_offset: value.byte_offset, asm_body_key_offset: value.asm_body_key_offset,
-            asm_body_key: value.asm_body_key, entity_suffix: value.entity_suffix, visible: value.visible,
+            id: value.id.into_string(),
+            body: value.body,
+            stream: value.stream.0.into_string(),
+            byte_offset: value.byte_offset,
+            asm_body_key_offset: value.asm_body_key_offset,
+            asm_body_key: value.asm_body_key,
+            entity_suffix: value.entity_suffix,
+            visible: value.visible,
         }
     }
 }
@@ -731,8 +780,14 @@ mod tests {
         let wire = serde_json::json!({"id":"f3d:Design/BulkStream.dat:design-body-member#10", "byte_offset":10, "entity_suffix":7, "flags":0});
         let member: super::DesignBodyMember = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&member).unwrap(), wire);
-        for id in ["", "f3d:Design/BulkStream.dat:other#10", "f3d:Design/BulkStream.dat:design-body-member#11", "stream:design-body-member#10"] {
-            let mut value = wire.clone(); value["id"] = serde_json::json!(id);
+        for id in [
+            "",
+            "f3d:Design/BulkStream.dat:other#10",
+            "f3d:Design/BulkStream.dat:design-body-member#11",
+            "stream:design-body-member#10",
+        ] {
+            let mut value = wire.clone();
+            value["id"] = serde_json::json!(id);
             assert!(serde_json::from_value::<super::DesignBodyMember>(value.clone()).is_err());
             let raw: super::DesignBodyMemberWire = serde_json::from_value(value).unwrap();
             assert!(super::DesignBodyMember::try_from(raw).is_err());
@@ -747,13 +802,24 @@ mod tests {
             ("id", serde_json::json!("f3d:native:design-body-bounds#1")),
             ("id", serde_json::json!("f3d:native:other#0")),
             ("body_binding_ids", serde_json::json!([""])),
-            ("body_binding_ids", serde_json::json!(["f3d:native:other#1"])),
-            ("body_binding_ids", serde_json::json!(["f3d:native:design-body-binding#bad"])),
+            (
+                "body_binding_ids",
+                serde_json::json!(["f3d:native:other#1"]),
+            ),
+            (
+                "body_binding_ids",
+                serde_json::json!(["f3d:native:design-body-binding#bad"]),
+            ),
         ] {
-            let mut wire = serde_json::to_value(&valid).unwrap(); wire[field] = value;
-            assert!(serde_json::from_value::<DesignBodyBounds>(wire).is_err(), "{field}");
+            let mut wire = serde_json::to_value(&valid).unwrap();
+            wire[field] = value;
+            assert!(
+                serde_json::from_value::<DesignBodyBounds>(wire).is_err(),
+                "{field}"
+            );
         }
-        let mut wire = DesignBodyBoundsWire::from(valid); wire.id.clear();
+        let mut wire = DesignBodyBoundsWire::from(valid);
+        wire.id.clear();
         assert!(DesignBodyBounds::try_from(wire).is_err());
         assert!(super::DesignBodyBindingId::try_from(String::new()).is_err());
     }
@@ -762,11 +828,15 @@ mod tests {
     fn body_binding_rejects_unbound_record_and_stream_identities() {
         let valid = binding_fixture();
         for (field, value) in [
-            ("id", ""), ("id", "f3d:Design/BulkStream.dat:design-body-binding#11"),
+            ("id", ""),
+            ("id", "f3d:Design/BulkStream.dat:design-body-binding#11"),
             ("id", "f3d:Design/BulkStream.dat:other#10"),
-            ("stream", ""), ("stream", "Other/BulkStream.dat"), ("stream", "Design/MetaStream.dat"),
+            ("stream", ""),
+            ("stream", "Other/BulkStream.dat"),
+            ("stream", "Design/MetaStream.dat"),
         ] {
-            let mut wire = serde_json::to_value(&valid).unwrap(); wire[field] = serde_json::json!(value);
+            let mut wire = serde_json::to_value(&valid).unwrap();
+            wire[field] = serde_json::json!(value);
             assert!(serde_json::from_value::<DesignBodyBinding>(wire.clone()).is_err());
             let raw: DesignBodyBindingWire = serde_json::from_value(wire).unwrap();
             assert!(DesignBodyBinding::try_from(raw).is_err());
@@ -778,12 +848,18 @@ mod tests {
         let wire = serde_json::json!({"id":"f3d:Breps/BREP.synthetic.smbh:body-visibility#3", "body":"f3d:brep:entity#1", "stream":"Design/BulkStream.dat", "byte_offset":10, "asm_body_key_offset":20, "asm_body_key":3, "entity_suffix":7, "visible":true});
         let visibility: super::BodyVisibility = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&visibility).unwrap(), wire);
-        for (field, value) in [("id", ""), ("id", "f3d:Breps/BREP.synthetic.smbh:body-visibility#4"), ("id", "f3d:Breps/BREP.synthetic.smbh:other#3"), ("stream", ""), ("stream", "Design/MetaStream.dat")] {
-            let mut value_wire = wire.clone(); value_wire[field] = serde_json::json!(value);
+        for (field, value) in [
+            ("id", ""),
+            ("id", "f3d:Breps/BREP.synthetic.smbh:body-visibility#4"),
+            ("id", "f3d:Breps/BREP.synthetic.smbh:other#3"),
+            ("stream", ""),
+            ("stream", "Design/MetaStream.dat"),
+        ] {
+            let mut value_wire = wire.clone();
+            value_wire[field] = serde_json::json!(value);
             assert!(serde_json::from_value::<super::BodyVisibility>(value_wire.clone()).is_err());
             let raw: super::BodyVisibilityWire = serde_json::from_value(value_wire).unwrap();
             assert!(super::BodyVisibility::try_from(raw).is_err());
         }
     }
-
 }
