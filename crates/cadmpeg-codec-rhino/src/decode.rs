@@ -414,25 +414,39 @@ impl ExpansionBudget {
         }
     }
 
-    fn charge(value: &mut usize, amount: usize, limit: usize, label: &str) -> Result<(), String> {
-        *value = value
-            .checked_add(amount)
-            .filter(|value| *value <= limit)
-            .ok_or_else(|| format!("document instance {label} budget exceeded"))?;
+    fn charge(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: &mut usize,
+        amount: usize,
+        limit: usize,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let requested = value.checked_add(amount).ok_or_else(|| {
+            ctx.refuse_codec_limit(operation, u64_from_index(limit), u64::MAX)
+        })?;
+        if requested > limit {
+            return Err(ctx.refuse_codec_limit(
+                operation,
+                u64_from_index(limit),
+                u64_from_index(requested),
+            ));
+        }
+        *value = requested;
         Ok(())
     }
 
-    fn reference(&mut self) -> Result<(), String> {
-        Self::charge(&mut self.references, 1, self.limits[0], "reference")
+    fn reference(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
+        Self::charge(ctx, &mut self.references, 1, self.limits[0], "Rhino instance reference limit")
     }
 
-    fn member(&mut self) -> Result<(), String> {
-        Self::charge(&mut self.members, 1, self.limits[1], "member")
+    fn member(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
+        Self::charge(ctx, &mut self.members, 1, self.limits[1], "Rhino instance member limit")
     }
 
-    fn entities(&mut self, amount: usize) -> Result<(), String> {
-        Self::charge(&mut self.entities, amount, self.limits[2], "entity")
+    fn entities(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, amount: usize) -> Result<(), cadmpeg_core::CodecError> {
+        Self::charge(ctx, &mut self.entities, amount, self.limits[2], "Rhino instance entity limit")
     }
+
 }
 
 #[derive(Clone)]
@@ -671,9 +685,7 @@ impl<'a> DecodeContext<'a> {
                 if !validation.is_ok() {
                     return Err(CandidateError::Validation(validation_findings(&validation)));
                 }
-                budget
-                    .entities(entity_count)
-                    .map_err(CandidateError::Admission)?;
+                budget.entities(session, entity_count)?;
                 session
                     .charge_entities(u64_from_index(entity_count), "rhino_instance_entities")
                     .map_err(CandidateError::Codec)?;
@@ -2135,14 +2147,18 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<Vec<String>, ReferenceFailure> {
         const MAX_INSTANCE_DEPTH: usize = 64;
         let _nested = self.expand.ctx().enter_nested("rhino_instance_nesting")?;
-        self.expansion_budget.reference()?;
+        self.expansion_budget.reference(self.expand.ctx())?;
         self.charge_session_collections(1, "rhino_instance_reference")?;
         let depth_limit = session_ceiling(
             self.expand.ctx().policy().limits.max_recursion_depth,
             MAX_INSTANCE_DEPTH,
         );
         if stack.len() >= depth_limit {
-            return Err("instance nesting exceeds 64 levels".to_string().into());
+            return Err(self.expand.ctx().refuse_codec_limit(
+                "Rhino instance depth limit",
+                u64_from_index(depth_limit),
+                u64_from_index(stack.len()) + 1,
+            ).into());
         }
         let object = self
             .scan
@@ -2216,7 +2232,7 @@ impl<'a> DecodeContext<'a> {
         });
         let mut links = Vec::new();
         for member_id in definition_members {
-            self.expansion_budget.member()?;
+            self.expansion_budget.member(self.expand.ctx())?;
             self.charge_session_collections(1, "rhino_instance_member")?;
             let member_order = match self.resolve_object(member_id) {
                 ObjectReference::Resolved(order) => order,
@@ -3023,20 +3039,12 @@ impl<'a> DecodeContext<'a> {
             .push_admitted(self.expand.ctx(), format_args!("{class}: {message}"))
     }
 
-    fn charge_entities(
-        &mut self,
-        source_order: usize,
-        amount: usize,
-    ) -> Result<bool, cadmpeg_core::CodecError> {
+    fn charge_entities(&mut self, amount: usize) -> Result<(), cadmpeg_core::CodecError> {
         let mut budget = self.expansion_budget;
-        if let Err(message) = budget.entities(amount) {
-            self.scan_warning(source_order, format_args!("{message}"))?;
-            Ok(false)
-        } else {
-            self.charge_session_entities(amount)?;
-            self.expansion_budget = budget;
-            Ok(true)
-        }
+        budget.entities(self.expand.ctx(), amount)?;
+        self.charge_session_entities(amount)?;
+        self.expansion_budget = budget;
+        Ok(())
     }
 
     fn charge_session_entities(&self, amount: usize) -> Result<(), cadmpeg_core::CodecError> {
@@ -3085,9 +3093,7 @@ impl<'a> DecodeContext<'a> {
         };
         match decoded {
             crate::curves::DecodedGeometry::Point { position, scaled } => {
-                if !self.charge_entities(source_order, 5)? {
-                    return Ok(false);
-                }
+                self.charge_entities(5)?;
                 let body_id = cadmpeg_ir::ids::BodyId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
                     key.clone(),
@@ -3161,9 +3167,7 @@ impl<'a> DecodeContext<'a> {
                     )?;
                     return Ok(false);
                 };
-                if !self.charge_entities(source_order, entity_count)? {
-                    return Ok(false);
-                }
+                self.charge_entities(entity_count)?;
                 let body_id = cadmpeg_ir::ids::BodyId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
                     key.clone(),
@@ -3289,9 +3293,7 @@ impl<'a> DecodeContext<'a> {
                 crate::surfaces::DecodedSurface::Typed {
                     geometry, derived, ..
                 } => {
-                    if !self.charge_entities(source_order, 1)? {
-                        return Ok(false);
-                    }
+                    self.charge_entities(1)?;
                     let surface_id = cadmpeg_ir::ids::SurfaceId::compose(
                         &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
                         key.clone(),
@@ -3653,9 +3655,7 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity() else {
             return Ok(false);
         };
-        if !self.charge_entities(source_order, 1)? {
-            return Ok(false);
-        }
+        self.charge_entities(1)?;
         for mut loss in mesh.losses {
             self.expand.ctx().reserve_vec(
                 &mut self.report.phase_losses,
@@ -3836,14 +3836,14 @@ impl<'a> DecodeContext<'a> {
                     !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
-                let committed = budget.entities(entity_count).and_then(|()| {
-                    with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
+                budget.entities(self.expand.ctx(), entity_count)?;
+                let committed = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
                         draft
                             .commit(ir, &mut self.annotations)
                             .map_err(|error| error.to_string())
                     })
-                    .map_err(|error| error.to_string())?
-                });
+                    .map_err(|error| error.to_string())
+                    .and_then(std::convert::identity);
                 if let Err(error) = committed {
                     self.scan_warning(
                         source_order,

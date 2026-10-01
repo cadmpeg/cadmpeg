@@ -1410,14 +1410,12 @@ impl Serialize for NativeProductOccurrenceExpansion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum ProductOccurrenceIssue {
-    DepthLimit,
     MalformedDefinition,
     MalformedPlacement,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceExpansion {
-    pub(crate) depth_truncated_at: Option<u32>,
     pub(crate) malformed_definition_sequences: Vec<u32>,
     pub(crate) malformed_placement_sequences: Vec<u32>,
 }
@@ -2065,7 +2063,6 @@ impl OccurrenceExpansion<'_, '_> {
         parent: Transform,
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
-        depth_truncated_at: &mut Option<u32>,
         malformed_placement_sequences: &mut std::collections::BTreeSet<u32>,
     ) -> Result<(), CodecError> {
         let _depth = self.ctx.enter_nested("iges_product_occurrence")?;
@@ -2077,10 +2074,11 @@ impl OccurrenceExpansion<'_, '_> {
             ));
         }
         if path.len() >= self.depth_limit {
-            if depth_truncated_at.is_none() {
-                *depth_truncated_at = Some(instance_sequence);
-            }
-            return Ok(());
+            return Err(self.ctx.refuse_codec_limit(
+                "iges_product_occurrence_depth",
+                cadmpeg_core::decode::u64_from_index(self.depth_limit),
+                cadmpeg_core::decode::u64_from_index(path.len()) + 1,
+            ));
         }
         if path.contains(&instance_sequence) {
             return Ok(());
@@ -2152,7 +2150,6 @@ impl OccurrenceExpansion<'_, '_> {
                     definition_world,
                     path,
                     occurrences,
-                    depth_truncated_at,
                     malformed_placement_sequences,
                 )?;
                 continue;
@@ -6811,7 +6808,6 @@ pub(crate) fn store(
         }
     }
     let mut product_occurrences = Vec::new();
-    let mut depth_truncated_at = None;
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
     if let Some(length_factor) = occurrence_length_factor {
         if let Some(admission) = structure_admitted {
@@ -6856,7 +6852,6 @@ pub(crate) fn store(
                     Transform::identity(),
                     &mut Vec::new(),
                     &mut product_occurrences,
-                    &mut depth_truncated_at,
                     &mut malformed_placement_sequences,
                 )?;
             }
@@ -6865,9 +6860,6 @@ pub(crate) fn store(
     let issues = collect_native_items(
         ctx,
         [
-            depth_truncated_at
-                .is_some()
-                .then_some(ProductOccurrenceIssue::DepthLimit),
             (!malformed_definition_sequences.is_empty())
                 .then_some(ProductOccurrenceIssue::MalformedDefinition),
             (!malformed_placement_sequences.is_empty())
@@ -7095,7 +7087,6 @@ pub(crate) fn store(
     )?;
     Ok(NativeStoreResult {
         occurrence_expansion: ProductOccurrenceExpansion {
-            depth_truncated_at,
             malformed_definition_sequences,
             malformed_placement_sequences: {
                 let mut sequences = ctx.collection_vec(

@@ -45,8 +45,6 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
-    /// Product-occurrence expansion stopped at the configured nesting-depth limit.
-    OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
@@ -130,8 +128,7 @@ impl IgesLossCode {
                 Severity::Blocking
             }
             Self::ProceduralReduced => Severity::Info,
-            Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked
+            Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
@@ -170,8 +167,7 @@ impl IgesLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked
+            Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
