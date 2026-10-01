@@ -41,7 +41,8 @@ use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
 use cadmpeg_core::decode::work_scratch::WorkScratch;
-use cadmpeg_core::decode::{u64_from_index, ResourceLimit, WorkBudget};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, WorkBudget};
+use cadmpeg_core::CodecError;
 
 /// Evaluation under the caller decode resource limits.
 pub mod decode;
@@ -586,21 +587,25 @@ fn rational_patch_parameter_segment(
 /// restricted exactly to the parameter line, and its positive-weight residual
 /// control hull bounds the complete piece rather than selected samples.
 pub fn nurbs_surface_parameter_segment_chord_bound(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     parameters: [Point2; 2],
     chord: [Point3; 2],
-) -> Result<Option<f64>, ResourceLimit> {
-    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
-    nurbs_surface_parameter_segment_chord_bound_with_budget(surface, parameters, chord, &budget)
+) -> Result<Option<f64>, CodecError> {
+    let budget = ctx.work_budget(u64_from_index(DEFAULT_NURBS_SURFACE_INVERSION_WORK));
+    nurbs_surface_parameter_segment_chord_bound_with_budget(ctx, surface, parameters, chord, &budget)
 }
 
 /// Bound a surface segment with scratch charged to the work slice's session.
 pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     parameters: [Point2; 2],
     chord: [Point3; 2],
     budget: &WorkBudget<'_>,
-) -> Result<Option<f64>, ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
+    let _depth = ctx.enter_nested("IR surface segment depth")?;
+    let result = (|| -> Result<Option<f64>, CodecError> {
     let (bytes, _) = nurbs_surface_patch_workspace(surface)?;
     let _workspace = budget.reserve_scratch(bytes, "IR surface segment workspace")?;
     let [Some(first), Some(last)] = parameters.map(FinitePoint2::new) else {
@@ -614,20 +619,22 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
     };
     let [first_u, first_v] = first.coordinates();
     let [last_u, last_v] = last.coordinates();
+    let mut split_storage = ctx.reserve_scoped(0, "IR rational surface segment splits")?;
     let mut splits = Vec::new();
     let Some(split_capacity) = patches
         .len()
         .checked_mul(4)
         .and_then(|count| count.checked_add(2))
     else {
-        return Ok(None);
+        return Err(ctx.refuse_codec_limit("IR rational surface segment splits", u64::MAX - 1, u64::MAX));
     };
-    scratch::reserve_exact(
-        &mut splits,
+    ctx.reserve_scoped_vec(
+        &mut split_storage, &mut splits,
         split_capacity,
         "IR rational surface segment splits",
     )?;
     splits.extend([0.0, 1.0]);
+    ctx.charge_work(u64_from_index(patches.len()).checked_mul(4).ok_or_else(|| ctx.refuse_codec_limit("IR surface segment boundary scan", u64::MAX - 1, u64::MAX))?, "IR surface segment boundary scan")?;
     for patch in &patches {
         let [u_lower, u_upper] = patch.u_domain.finite_endpoints();
         let [v_lower, v_upper] = patch.v_domain.finite_endpoints();
@@ -653,10 +660,12 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         }
     }
     // Equal finite split parameters are indistinguishable before deduplication.
-    splits.sort_unstable_by(f64::total_cmp);
+    ctx.sort_unstable_by(&mut splits, f64::total_cmp, |_| 0, "IR surface segment split sort")?;
+    ctx.charge_work(u64_from_index(splits.len()), "IR surface segment split deduplication")?;
     splits.dedup();
     let mut bound = 0.0_f64;
     for range in splits.windows(2) {
+        ctx.charge_work(1, "IR surface segment interval scan")?;
         let middle = 0.5 * (range[0] + range[1]);
         let parameter_point = |parameter: f64| {
             Some(FinitePoint2::from_coordinates(
@@ -667,6 +676,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         let Some(midpoint) = parameter_point(middle) else {
             return Ok(None);
         };
+        ctx.charge_work(u64_from_index(patches.len()), "IR surface segment patch search")?;
         let Some(patch) = patches.iter().find(|patch| {
             patch.u_domain.lower() <= midpoint.u
                 && midpoint.u <= patch.u_domain.upper()
@@ -696,6 +706,14 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         bound = bound.max(piece_bound);
     }
     Ok(Some(bound))
+    })();
+    ctx.charge_work(0, "IR surface segment completion")?;
+    if budget.exhausted() {
+        let limit = u64_from_index(budget.consumed());
+        let requested = limit.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("IR surface segment work", u64::MAX - 1, u64::MAX))?;
+        return Err(ctx.refuse_codec_limit("IR surface segment work", limit, requested));
+    }
+    result
 }
 
 fn rational_patch_distance_bounds_with_budget(
