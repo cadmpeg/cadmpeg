@@ -1068,6 +1068,24 @@ fn counted_children<'a, 'input>(
                 "FCStd persistence diagnostic",
             )
         })?;
+    let mut actual_count = 0_usize;
+    let mut valid_tags = true;
+    for child in parent.children().filter(roxmltree::Node::is_element) {
+        ctx.charge_work(1, "FCStd link child framing")?;
+        actual_count = actual_count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("FCStd link child framing", u64::MAX, u64::MAX)
+        })?;
+        valid_tags &= child.has_tag_name(tag);
+    }
+    if actual_count != count || !valid_tags {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{type_name} count={count} but {actual_count} {tag} values were found"
+            ),
+            "FCStd persistence diagnostic",
+        ));
+    }
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(count),
         "FCStd link nodes",
@@ -1076,20 +1094,11 @@ fn counted_children<'a, 'input>(
         cadmpeg_core::decode::u64_from_index(count),
         "FCStd link target or subelement records",
     )?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "FCStd link node copy")?;
     let children = parent.children().filter(roxmltree::Node::is_element);
     let mut child_nodes =
         cadmpeg_core::decode::DecodeContext::admitted_vec(count, "FCStd link nodes")?;
     child_nodes.extend(children);
-    if child_nodes.len() != count || child_nodes.iter().any(|child| !child.has_tag_name(tag)) {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "{type_name} count={count} but {} {tag} values were found",
-                child_nodes.len()
-            ),
-            "FCStd persistence diagnostic",
-        ));
-    }
     Ok(child_nodes.into_iter())
 }
 
