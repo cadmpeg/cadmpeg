@@ -273,9 +273,9 @@ impl Node {
     }
 
     /// Decode adjacent references at the start of a compact geometry payload.
-    pub(crate) fn compact_tail_references(&self, count: usize) -> Option<Vec<u32>> {
+    pub(crate) fn compact_tail_references<const N: usize>(&self) -> Option<[u32; N]> {
         let mut at = self.common_header()?.1;
-        read_sequence_at(&self.bytes, &mut at, count)
+        read_sequence_at::<N>(&self.bytes, &mut at)
     }
 
     /// Read a byte at its logical record offset.
@@ -300,7 +300,7 @@ impl Node {
         let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         at += 8;
-        let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
+        let refs = read_sequence_at::<5>(&self.bytes, &mut at)?;
         let sense = match self.bytes.get(at) {
             Some(b'+') => Sense::Forward,
             Some(b'-') => Sense::Reversed,
@@ -324,7 +324,7 @@ impl Node {
         let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         at += 8;
-        let refs = read_sequence_at(&self.bytes, &mut at, 7)?;
+        let refs = read_sequence_at::<7>(&self.bytes, &mut at)?;
         Some(EdgeFields {
             attributes: XmtTarget::from_wire(attributes),
             tolerance,
@@ -337,7 +337,7 @@ impl Node {
     pub(crate) fn shell_fields(&self) -> Option<ShellFields> {
         (self.kind == NodeKind::Shell).then_some(())?;
         let mut at = 8 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 8)?;
+        let refs = read_sequence_at::<8>(&self.bytes, &mut at)?;
         Some(ShellFields {
             attributes: XmtTarget::from_wire(refs[0]),
             body: XmtTarget::from_wire(refs[1]),
@@ -354,7 +354,7 @@ impl Node {
     pub(crate) fn loop_fields(&self) -> Option<LoopFields> {
         (self.kind == NodeKind::Loop).then_some(())?;
         let mut at = 8 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 4)?;
+        let refs = read_sequence_at::<4>(&self.bytes, &mut at)?;
         Some(LoopFields {
             attributes: XmtTarget::from_wire(refs[0]),
             fin: XmtTarget::from_wire(refs[1]),
@@ -367,7 +367,7 @@ impl Node {
     pub(crate) fn fin_fields(&self) -> Option<FinFields> {
         (self.kind == NodeKind::Fin).then_some(())?;
         let mut at = 4 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 9)?;
+        let refs = read_sequence_at::<9>(&self.bytes, &mut at)?;
         let sense = match self.bytes.get(at) {
             Some(b'+') => Sense::Forward,
             Some(b'-') => Sense::Reversed,
@@ -390,7 +390,7 @@ impl Node {
     pub(crate) fn vertex_fields(&self) -> Option<VertexFields> {
         (self.kind == NodeKind::Vertex).then_some(())?;
         let mut at = 8 + self.shift;
-        let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
+        let refs = read_sequence_at::<5>(&self.bytes, &mut at)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         Some(VertexFields {
             attributes: XmtTarget::from_wire(refs[0]),
@@ -466,7 +466,7 @@ impl Node {
                     return Vec::new();
                 }
                 at += 1;
-                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                read_sequence_at::<3>(&self.bytes, &mut at).map_or_else(Vec::new, |references| {
                     vec![
                         (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
                         (ReferenceRole::Surface, XmtTarget::from_wire(references[1])),
@@ -500,7 +500,7 @@ impl Node {
                 let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
-                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                read_sequence_at::<3>(&self.bytes, &mut at).map_or_else(Vec::new, |references| {
                     vec![
                         (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
                         (ReferenceRole::Curve, XmtTarget::from_wire(references[1])),
@@ -645,7 +645,7 @@ impl Graph {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::Intersection).filter_map(|node| {
                 let mut at = 8 + node.shift;
-                let header = read_sequence_at(&node.bytes, &mut at, 5)?;
+                let header = read_sequence_at::<5>(&node.bytes, &mut at)?;
                 let sense = match node.bytes.get(at) {
                     Some(b'+') => true,
                     Some(b'-') => false,
@@ -653,7 +653,7 @@ impl Graph {
                 };
                 at += 1;
                 let references: [u32; 6] =
-                    read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
+                    read_sequence_at::<6>(&node.bytes, &mut at)?;
                 let chart_with_optional_terms =
                     references[2] > 1 && references[3..=4].iter().all(|reference| *reference >= 1);
                 let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
@@ -662,9 +662,7 @@ impl Graph {
                     && (references[0] > 1 || references[1] > 1))
                     .then_some(CompositeCurve {
                         xmt: node.xmt,
-                        header_references: <[u32; 5]>::try_from(header)
-                            .ok()?
-                            .map(XmtTarget::from_wire),
+                        header_references: header.map(XmtTarget::from_wire),
                         sense,
                         references: references.map(XmtTarget::from_wire),
                         delta_twin: false,
@@ -781,7 +779,7 @@ impl Graph {
                 let mut at = node.common_header()?.1;
                 (*node.bytes.get(at)? == b'R').then_some(())?;
                 at += 1;
-                let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+                let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
                 let values = [
                     View::f64_be_at(&node.bytes, at)?,
                     View::f64_be_at(&node.bytes, at + 8)?,
@@ -863,7 +861,7 @@ impl Graph {
         ctx.collect_retained_vec(
             self.of_kind(NodeKind::SpCurve).filter_map(|node| {
                 let mut at = node.common_header()?.1;
-                let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+                let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
                 let tolerance = View::f64_be_at(&node.bytes, at)?;
                 Some(SurfaceCurve {
                     xmt: node.xmt,
@@ -1373,7 +1371,7 @@ impl Graph {
                 continue;
             }
             at += 1;
-            if let Some(spine) = read_sequence_at(&node.bytes, &mut at, 3)
+            if let Some(spine) = read_sequence_at::<3>(&node.bytes, &mut at)
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {
@@ -1382,7 +1380,7 @@ impl Graph {
         }
         for node in self.of_kind(NodeKind::TrimmedCurve) {
             if let Some(reference) = node
-                .compact_tail_references(1)
+                .compact_tail_references::<1>()
                 .and_then(|items| items.first().copied())
                 .filter(|reference| *reference > 1)
             {
@@ -1391,7 +1389,7 @@ impl Graph {
         }
         for node in self.of_kind(NodeKind::SpCurve) {
             if let Some(reference) = node
-                .compact_tail_references(3)
+                .compact_tail_references::<3>()
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {

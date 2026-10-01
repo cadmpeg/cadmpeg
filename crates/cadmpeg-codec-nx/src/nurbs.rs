@@ -85,7 +85,7 @@ fn decode_surfaces(
     graph
         .of_kind(NodeKind::BSurface)
         .filter_map(|node| {
-            let refs = node.compact_tail_references(2)?;
+            let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?;
             descriptor
                 .payload
@@ -219,7 +219,7 @@ fn decode_pcurves(
     graph
         .of_kind(NodeKind::BCurve)
         .filter_map(|node| {
-            let refs = node.compact_tail_references(2)?;
+            let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?;
             (descriptor.basis.dimension == 2).then_some(())?;
             let control = controls.get(&refs[1])?;
@@ -319,7 +319,7 @@ fn decode_curves(
     graph
         .of_kind(NodeKind::BCurve)
         .filter_map(|node| {
-            let refs = node.compact_tail_references(2)?;
+            let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?;
             matches!(descriptor.basis.dimension, 3 | 4).then_some(())?;
             let control = controls.get(&refs[1])?;
