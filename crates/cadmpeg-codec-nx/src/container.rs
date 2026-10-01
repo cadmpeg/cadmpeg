@@ -1296,8 +1296,11 @@ pub(crate) fn looks_like_nx(prefix: &[u8]) -> bool {
 pub(crate) fn looks_like_legacy_nx(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
     let (probe, _storage) = CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
     let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else { return Ok(false); };
-    ctx.charge_work(u64_from_index(prefix.len()), "compare NX directory evidence")?;
-    Ok(paths.iter().any(|path| path.eq_ignore_ascii_case("UG_PART/UG_PART")))
+    for path in &paths {
+        ctx.charge_work(u64_from_index(path.len()), "compare NX directory evidence")?;
+        if path.eq_ignore_ascii_case("UG_PART/UG_PART") { return Ok(true); }
+    }
+    Ok(false)
 }
 
 fn u24_le(d: &[u8], at: usize) -> u32 {

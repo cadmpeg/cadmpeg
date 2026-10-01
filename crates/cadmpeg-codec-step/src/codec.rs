@@ -50,21 +50,20 @@ impl CodecBackend for StepCodec {
     const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
     fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let view = prefix;
         let prefix = prefix.window();
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect input")?;
-        if starts_with_step_magic(prefix) {
-            Ok(Confidence::High)
-        } else if archive::has_root_marker(prefix)
-            || is_part26_hdf5(prefix)
-            || is_part28_xml(prefix)
-            || is_ap242_bo_model_xml(prefix)
-        {
-            Ok(Confidence::Medium)
-        } else if archive::has_zip_magic(prefix) {
-            Ok(Confidence::Low)
-        } else {
-            Ok(Confidence::No)
-        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect STEP trivia")?;
+        if starts_with_step_magic(prefix) { return Ok(Confidence::High); }
+        if archive::has_root_marker(ctx, view)? { return Ok(Confidence::Medium); }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect STEP HDF5")?;
+        if is_part26_hdf5(prefix) { return Ok(Confidence::Medium); }
+        let xml_bytes = cadmpeg_core::decode::u64_from_index(prefix.len().min(4096));
+        ctx.charge_work(xml_bytes * 6, "detect STEP Part 28 XML")?;
+        if is_part28_xml(prefix) { return Ok(Confidence::Medium); }
+        ctx.charge_work(xml_bytes * 5, "detect STEP business-object XML")?;
+        if is_ap242_bo_model_xml(prefix) { return Ok(Confidence::Medium); }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len().min(4)), "detect STEP ZIP")?;
+        Ok(if archive::has_zip_magic(prefix) { Confidence::Low } else { Confidence::No })
     }
 
     fn inspect_impl(

@@ -40,7 +40,7 @@ impl DecodeContext<'_> {
                 return Ok(None);
             }
             self.charge_work(u64_from_index(produced), "DEFLATE probe copy")?;
-            storage.with_storage(|| self.reserve_vec(&mut output, produced, "DEFLATE probe output"))?;
+            self.reserve_scoped_vec(&mut storage, &mut output, produced, "DEFLATE probe output")?;
             output.extend_from_slice(&chunk[..produced]);
             if status == Status::StreamEnd {
                 return Ok(Some((output, storage)));
@@ -58,6 +58,24 @@ mod tests {
     use flate2::{write::DeflateEncoder, Compression};
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
+
+    #[test]
+    fn deflate_probe_output_reservation_lives_with_returned_bytes() {
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"Document.xml").expect("encode");
+        let bytes = encoder.finish().expect("finish");
+        for release in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 256 * 1024 + 12;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let probe = ctx.inflate_probe(root, 12, false).expect("probe").expect("evidence");
+            if release { drop(probe); }
+            let result = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "probe output lifetime");
+            if release { assert!(result.is_ok()); }
+            else { assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 12)); }
+        }
+    }
 
     #[test]
     fn deflate_probe_propagates_work_and_scoped_refusals() {

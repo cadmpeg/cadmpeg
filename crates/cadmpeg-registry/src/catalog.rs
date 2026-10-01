@@ -84,7 +84,7 @@ pub struct AmbiguousDetection {
 
 impl AmbiguousDetection {
     fn from_tie(ctx: &DecodeContext<'_>, confidence: Confidence, first: FormatId, second: FormatId, rest: impl Iterator<Item = FormatId>) -> Result<Self, CodecError> {
-        Ok(Self { confidence, candidates: ctx.collect_vec([first, second].into_iter().chain(rest), "detection tie candidates")? })
+        Ok(Self { confidence, candidates: ctx.collect_retained_vec([first, second].into_iter().chain(rest), "detection tie candidates")? })
     }
 
     /// Returns the confidence shared by the candidates.
@@ -236,7 +236,7 @@ impl InputCatalog {
                 let Some(codec) = descriptor.codec() else { continue; };
                 let confidence = codec.detect(ctx, prefix)?;
                 if confidence > Confidence::No {
-                    ctx.push_vec(&mut matches, (codec, confidence), "detection candidates")?;
+                    ctx.push_retained_vec(&mut matches, (codec, confidence), "detection candidates")?;
                 }
             }
             ctx.stable_sort_by(&mut matches, |(_, left), (_, right)| right.cmp(left), |_| 0, "sort detection candidates")?;
@@ -319,6 +319,19 @@ pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{ForcedInput, InputCatalog, ResolvedSource};
+
+    #[test]
+    fn detection_candidates_keep_workspace_and_slot_refusals_typed() {
+        for dimension in [cadmpeg_core::decode::ResourceDimension::MaterializedBytes, cadmpeg_core::decode::ResourceDimension::CollectionItems] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            if dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes { policy.limits.max_materialized_bytes = 0; }
+            else { policy.limits.max_collection_items = 0; }
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy).expect("root");
+            assert!(matches!(super::InputCatalog::with_builtins().candidates(&ctx, root),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+        }
+    }
 
     #[test]
     fn detection_propagates_work_refusal_before_catalog_scan() {
