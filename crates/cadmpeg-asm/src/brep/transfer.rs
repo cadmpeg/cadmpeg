@@ -92,7 +92,16 @@ pub fn transfer_into_ir<'ir>(
         annotation_records,
     } = brep;
 
-    let before = ir.model.entity_count();
+    let entity_count = [
+        bodies.len(), regions.len(), shells.len(), faces.len(), loops.len(),
+        coedges.len(), edges.len(), vertices.len(), points.len(), surfaces.len(),
+        curves.len(), pcurves.len(), procedural_surfaces.len(),
+        procedural_curves.len(), attributes.len(),
+    ].into_iter().try_fold(0_u64, |total, count| {
+        total.checked_add(cadmpeg_core::decode::u64_from_index(count))
+            .ok_or_else(|| ctx.refuse_codec_limit("admit ASM entities", u64::MAX, u64::MAX))
+    })?;
+    ctx.charge_entities(entity_count, "admit ASM entities")?;
     ctx.extend_vec(&mut ir.model.bodies, bodies, "ASM transfer bodies")?;
     ctx.extend_vec(&mut ir.model.regions, regions, "ASM transfer regions")?;
     ctx.extend_vec(&mut ir.model.shells, shells, "ASM transfer shells")?;
@@ -119,11 +128,6 @@ pub fn transfer_into_ir<'ir>(
         &mut ir.model.attributes,
         attributes,
         "ASM transfer attributes",
-    )?;
-    // Every transfer above appends entities; procedural attachment removes none.
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
-        "admit ASM entities",
     )?;
 
     let namespace = ir.native.namespace_mut(native_format);
@@ -204,6 +208,38 @@ mod tests {
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM transfer regions");
+    }
+
+    #[test]
+    fn transfer_refuses_entities_before_mutating_the_destination() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::ids::{BodyId, RegionId};
+        use cadmpeg_ir::topology::Region;
+
+        let source = [0_u8];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+            .expect("test root fits policy");
+        let mut brep = AsmBrep::default();
+        brep.regions.push(Region {
+            id: RegionId::mint("sat:brep:region#1").unwrap(),
+            body: BodyId::mint("sat:brep:body#1").unwrap(),
+            shells: Vec::new(),
+        });
+        let mut ir = CadIr::empty();
+        let error = transfer_into_ir(&ctx, &mut ir, "test", brep).err()
+            .expect("one entity exceeds zero entities");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected entity refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::Entities);
+        assert_eq!(limit.operation, "admit ASM entities");
+        assert_eq!(ir.model.entity_count(), 0);
+        assert!(ir.model.regions.is_empty());
+        assert!(ir.native.namespace("test").is_none());
     }
 
     #[test]
