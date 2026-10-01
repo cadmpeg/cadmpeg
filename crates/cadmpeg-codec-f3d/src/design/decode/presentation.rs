@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse typed Design body-presentation and browser-node records.
 
+use crate::bytes::{lp_utf16_bounded_charged};
 use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::HashMap;
@@ -13,7 +14,7 @@ use crate::design::decode::meta::typed_primary_frames;
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
 };
-use crate::design::decode::text::lp_utf16_bounded_charged;
+
 use crate::design::presentation::{
     is_physical_material_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
     BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
@@ -119,7 +120,7 @@ pub(super) fn browser_node_records(
             ));
         }
         let Some((guid, after_guid)) =
-            lp_utf16_bounded_charged(ctx, record, 21, GUID_LEN..=GUID_LEN)?.filter(
+            lp_utf16_bounded_charged(ctx, record, 21, GUID_LEN..=GUID_LEN, "f3d Design UTF-16 text")?.filter(
                 |(guid, after)| {
                     is_guid_prefix(guid)
                         && after
@@ -370,7 +371,7 @@ fn presentation_material(
             continue;
         };
         let Some((physical_token, after_token)) =
-            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)?
+            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256, "f3d Design UTF-16 text")?
         else {
             continue;
         };
@@ -403,7 +404,7 @@ fn presentation_material(
         {
             continue;
         }
-        let Some((_, after_name)) = lp_utf16_bounded_charged(ctx, bytes, reference_at, 0..=256)?
+        let Some((_, after_name)) = lp_utf16_bounded_charged(ctx, bytes, reference_at, 0..=256, "f3d Design UTF-16 text")?
         else {
             continue;
         };
@@ -411,7 +412,7 @@ fn presentation_material(
             continue;
         };
         let Some((visual_guid, after_visual)) =
-            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)?
+            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256, "f3d Design UTF-16 text")?
         else {
             continue;
         };
@@ -445,7 +446,7 @@ fn presentation_material(
         };
         let visual_preset = if legacy {
             if let Some(at) = skip_zeros(bytes, after_visual_marker, end) {
-                lp_utf16_bounded_charged(ctx, bytes, at, 1..=256)?
+                lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")?
                     .and_then(|(value, _)| value.starts_with("Prism-").then_some((at, value)))
             } else {
                 None
@@ -495,7 +496,7 @@ fn bare_presentation_material(
             continue;
         };
         let Some((physical_token, after_token)) =
-            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)?
+            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256, "f3d Design UTF-16 text")?
         else {
             continue;
         };
@@ -511,7 +512,7 @@ fn bare_presentation_material(
             continue;
         };
         let Some((node_guid, after_node_guid)) =
-            lp_utf16_bounded_charged(ctx, bytes, node_guid_at, GUID_LEN..=GUID_LEN)?
+            lp_utf16_bounded_charged(ctx, bytes, node_guid_at, GUID_LEN..=GUID_LEN, "f3d Design UTF-16 text")?
         else {
             continue;
         };
@@ -528,7 +529,7 @@ fn bare_presentation_material(
 
         let mut after_name = None;
         if let Some(name_at) = skip_zeros(bytes, node_reference_at, end) {
-            if let Some((_, end)) = lp_utf16_bounded_charged(ctx, bytes, name_at, 1..=256)? {
+            if let Some((_, end)) = lp_utf16_bounded_charged(ctx, bytes, name_at, 1..=256, "f3d Design UTF-16 text")? {
                 after_name = Some(end);
             }
         }
@@ -543,7 +544,7 @@ fn bare_presentation_material(
             continue;
         }
         let Some((visual_guid, after_visual)) =
-            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)?
+            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256, "f3d Design UTF-16 text")?
         else {
             continue;
         };
@@ -677,7 +678,7 @@ fn preceding_lp_utf16(
             {
                 continue;
             }
-            let Some((value, _)) = lp_utf16_bounded_charged(ctx, bytes, at, 1..=256)? else {
+            let Some((value, _)) = lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")? else {
                 continue;
             };
             if candidate.is_some() {
@@ -752,7 +753,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(text.len() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
+        let error = crate::bytes::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256, "f3d Design UTF-16 text")
             .err()
             .unwrap();
         assert!(matches!(error,
@@ -763,7 +764,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let decoded =
-            crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
+            crate::bytes::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256, "f3d Design UTF-16 text")
                 .unwrap()
                 .unwrap();
         assert_eq!(decoded.0, text);
@@ -771,7 +772,7 @@ mod tests {
 
         let invalid = [1, 0, 0, 0, 0, 0xd8];
         assert!(
-            crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &invalid, 0, 1..=256)
+            crate::bytes::lp_utf16_bounded_charged(&ctx, &invalid, 0, 1..=256, "f3d Design UTF-16 text")
                 .unwrap()
                 .is_none()
         );

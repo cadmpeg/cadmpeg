@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged text reads shared by Design record decoders.
 
-use std::ops::RangeInclusive;
-
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 /// Validate a borrowed three-digit class tag before making its fixed-size copy.
@@ -103,113 +101,10 @@ pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
         .then_some(end)
 }
 
-pub(super) fn lp_utf16_bounded_charged(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-    bounds: RangeInclusive<usize>,
-) -> Result<Option<(String, usize)>, CodecError> {
-    let Some(count) = View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    if !bounds.contains(&count) {
-        return Ok(None);
-    }
-    let Some(start) = at.checked_add(4) else {
-        return Ok(None);
-    };
-    let Some(end) = count
-        .checked_mul(2)
-        .and_then(|bytes| start.checked_add(bytes))
-    else {
-        return Ok(None);
-    };
-    let Some(raw) = bytes.get(start..end) else {
-        return Ok(None);
-    };
-    let mut view = View::over_retained(raw);
-    let mut utf8_len = 0usize;
-    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-        let Ok(character) = decoded else {
-            return Ok(None);
-        };
-        utf8_len = utf8_len
-            .checked_add(character.len_utf8())
-            .ok_or_else(|| ctx.refuse_codec_limit("f3d Design UTF-16 length", 0, 1))?;
-    }
-
-    let mut text = ctx.retained_string(utf8_len, "f3d Design UTF-16 text")?;
-    let mut view = View::over_retained(raw);
-    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-        let Ok(character) = decoded else {
-            return Ok(None);
-        };
-        text.push(character);
-    }
-    Ok(Some((text, end)))
-}
-
-pub(super) fn lp_utf16_bounded_scoped<'a>(
-    ctx: &'a DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-    bounds: RangeInclusive<usize>,
-) -> Result<Option<(String, usize, ScopedReservation<'a>)>, CodecError> {
-    let Some(count) = View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    if !bounds.contains(&count) {
-        return Ok(None);
-    }
-    let Some(start) = at.checked_add(4) else {
-        return Ok(None);
-    };
-    let Some(end) = count
-        .checked_mul(2)
-        .and_then(|width| start.checked_add(width))
-    else {
-        return Ok(None);
-    };
-    let Some(raw) = bytes.get(start..end) else {
-        return Ok(None);
-    };
-    let mut view = View::over_retained(raw);
-    let mut utf8_len = 0usize;
-    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-        let Ok(character) = decoded else {
-            return Ok(None);
-        };
-        utf8_len = utf8_len
-            .checked_add(character.len_utf8())
-            .ok_or_else(|| ctx.refuse_codec_limit("f3d Design temporary UTF-16 length", 0, 1))?;
-    }
-    let mut reservation = ctx.reserve_scoped(0, "f3d Design temporary UTF-16 text")?;
-    let mut text = String::new();
-    ctx.reserve_scoped_string(
-        &mut reservation,
-        &mut text,
-        utf8_len,
-        "f3d Design temporary UTF-16 text",
-    )?;
-    let mut view = View::over_retained(raw);
-    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-        let Ok(character) = decoded else {
-            return Ok(None);
-        };
-        text.push(character);
-    }
-    Ok(Some((text, end, reservation)))
-}
-
 #[cfg(test)]
 mod tests {
+    use super::{class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq, relaxed_guid_end};
     use crate::bytes::lp_ascii_filtered_view;
-    use super::{
-        class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq,
-        relaxed_guid_end,
-    };
 
     #[test]
     fn relaxed_guid_scan_matches_owned_validation_at_each_admitted_length() {
@@ -227,8 +122,10 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let owned = crate::test_support::with_decode_context(|ctx| crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 1..=256).unwrap())
-                .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
+            let owned = crate::test_support::with_decode_context(|ctx| {
+                crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 1..=256, "retain F3D UTF-16 string").unwrap()
+            })
+            .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
             assert_eq!(relaxed_guid_end(&bytes, 0), owned);
         }
     }
@@ -248,8 +145,10 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let prior = crate::test_support::with_decode_context(|ctx| crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 36..=36).unwrap())
-                .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
+            let prior = crate::test_support::with_decode_context(|ctx| {
+                crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 36..=36, "retain F3D UTF-16 string").unwrap()
+            })
+            .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
             let current = fixed_guid_ascii(&bytes, 0)
                 .map(|(guid, end)| (String::from_utf8(guid.to_vec()).unwrap(), end));
             assert_eq!(current, prior);
@@ -271,9 +170,15 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let decoded =
-                crate::test_support::with_decode_context(|ctx| crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, expected.len()..=expected.len()).unwrap())
-                    .and_then(|(text, end)| (text == expected).then_some(end));
+            let decoded = crate::test_support::with_decode_context(|ctx| {
+                crate::bytes::lp_utf16_bounded_charged(
+                    ctx,
+                    &bytes,
+                    0,
+                    expected.len()..=expected.len(), "retain F3D UTF-16 string")
+                .unwrap()
+            })
+            .and_then(|(text, end)| (text == expected).then_some(end));
             assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), decoded);
             bytes.pop();
             assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), None);
@@ -289,8 +194,11 @@ mod tests {
             for bounds in [0..=2000, 3..=3] {
                 let predicates: [fn(&u8) -> bool; 2] = [u8::is_ascii_graphic, u8::is_ascii_digit];
                 for allowed in predicates {
-                    let original =
-                        crate::test_support::with_decode_context(|ctx| crate::bytes::lp_ascii_strict_charged(ctx, &bytes, 0, bounds.clone()).unwrap()).filter(|(text, _)| text.as_bytes().iter().all(allowed));
+                    let original = crate::test_support::with_decode_context(|ctx| {
+                        crate::bytes::lp_ascii_strict_charged(ctx, &bytes, 0, bounds.clone())
+                            .unwrap()
+                    })
+                    .filter(|(text, _)| text.as_bytes().iter().all(allowed));
                     let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)
                         .map(|(value, end)| (value.to_owned(), end));
                     assert_eq!(borrowed, original);

@@ -23,8 +23,9 @@ use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, Proto
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
-    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict, lp_ascii_strict_charged,
-    lp_utf16_bounded_view, lp_utf16_bounded_charged, take_reference, take_reference_charged,
+    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict,
+    lp_ascii_strict_charged, lp_utf16_bounded_charged, lp_utf16_bounded_view, take_reference,
+    take_reference_charged,
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
@@ -188,7 +189,12 @@ impl ReferenceJson {
             format_args!("f3d:xref:reference#{ordinal}"),
             "retain F3D xref record ID",
         )?;
-        for capacity in [from_capacity, path_capacity, role_capacity, neutron_data.capacity()] {
+        for capacity in [
+            from_capacity,
+            path_capacity,
+            role_capacity,
+            neutron_data.capacity(),
+        ] {
             ctx.charge_retained(u64_from_index(capacity), "retain F3D xref reference text")?;
         }
         Ok(XrefReference {
@@ -208,8 +214,13 @@ fn redirections_error(message: impl std::fmt::Display) -> CodecError {
     CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY}: {message}"))
 }
 
-fn required_text(value: String, field: impl std::fmt::Display) -> Result<crate::records::xref::RequiredXrefText, CodecError> {
-    value.try_into().map_err(|_| redirections_error(format_args!("{field} must be non-empty")))
+fn required_text(
+    value: String,
+    field: impl std::fmt::Display,
+) -> Result<crate::records::xref::RequiredXrefText, CodecError> {
+    value
+        .try_into()
+        .map_err(|_| redirections_error(format_args!("{field} must be non-empty")))
 }
 
 /// Validate `ComponentReferenceData.json`, if present.
@@ -319,7 +330,13 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
         )));
     }
     if parsed.schema_version != 0 {
-        let message = ctx.format_retained(format_args!("F3D {REDIRECTIONS_ENTRY}: unsupported schema-version {}", parsed.schema_version), "describe unsupported F3D redirections schema")?;
+        let message = ctx.format_retained(
+            format_args!(
+                "F3D {REDIRECTIONS_ENTRY}: unsupported schema-version {}",
+                parsed.schema_version
+            ),
+            "describe unsupported F3D redirections schema",
+        )?;
         return Err(CodecError::NotImplemented(message));
     }
     if parsed.designs.is_empty() {
@@ -340,8 +357,15 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
             "retain F3D xref record ID",
         )?;
         ctx.charge_retained(u64_from_index(name_capacity), "retain F3D xref design text")?;
-        for text in [&design.display_name, &design.lineage_urn, &design.version_urn] {
-            ctx.charge_retained(u64_from_index(text.capacity()), "retain F3D xref design text")?;
+        for text in [
+            &design.display_name,
+            &design.lineage_urn,
+            &design.version_urn,
+        ] {
+            ctx.charge_retained(
+                u64_from_index(text.capacity()),
+                "retain F3D xref design text",
+            )?;
         }
         designs.push(XrefDesign {
             id,
@@ -707,9 +731,18 @@ fn copy_reference_charged(
         },
         ordinal: source.ordinal,
         occurrence_ordinal: source.occurrence_ordinal,
-        from: ctx.copy_retained_text(&source.from, operation)?.try_into().map_err(CodecError::malformed)?,
-        relative_path: ctx.copy_retained_text(&source.relative_path, operation)?.try_into().map_err(CodecError::malformed)?,
-        neutron_role: ctx.copy_retained_text(&source.neutron_role, operation)?.try_into().map_err(CodecError::malformed)?,
+        from: ctx
+            .copy_retained_text(&source.from, operation)?
+            .try_into()
+            .map_err(CodecError::malformed)?,
+        relative_path: ctx
+            .copy_retained_text(&source.relative_path, operation)?
+            .try_into()
+            .map_err(CodecError::malformed)?,
+        neutron_role: ctx
+            .copy_retained_text(&source.neutron_role, operation)?
+            .try_into()
+            .map_err(CodecError::malformed)?,
         neutron_data: ctx.copy_retained_text(&source.neutron_data, operation)?,
         transform: source.transform,
     })
@@ -969,7 +1002,10 @@ fn occurrence_placement(
     if let Some((role, transform)) = legacy_occurrence_placement(body) {
         let role = role.to_retained(decode, "retain F3D UTF-16 string")?;
         let link_names = decode.collect_vec([role], "collect F3D legacy xref role")?;
-        return Ok(Some(OccurrencePlacement { link_names, transform }));
+        return Ok(Some(OccurrencePlacement {
+            link_names,
+            transform,
+        }));
     }
     if let Some(placement) = repeated_target_occurrence_placement(decode, body)? {
         return Ok(Some(placement));
@@ -1024,30 +1060,6 @@ macro_rules! xref_some {
     };
 }
 
-fn xref_utf16(
-    decode: &DecodeContext<'_>,
-    body: &[u8],
-    at: usize,
-    bounds: std::ops::RangeInclusive<usize>,
-) -> Result<Option<(String, usize)>, CodecError> {
-    {
-        let ctx = decode;
-        lp_utf16_bounded_charged(ctx, body, at, bounds)
-    }
-}
-
-fn xref_ascii(
-    decode: &DecodeContext<'_>,
-    body: &[u8],
-    at: usize,
-    bounds: std::ops::RangeInclusive<usize>,
-) -> Result<Option<(String, usize)>, CodecError> {
-    {
-        let ctx = decode;
-        lp_ascii_strict_charged(ctx, body, at, bounds)
-    }
-}
-
 fn repeated_target_occurrence_placement_details(
     decode: &DecodeContext<'_>,
     body: &[u8],
@@ -1059,7 +1071,7 @@ fn repeated_target_occurrence_placement_details(
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = xref_some!(xref_utf16(decode, body, at, 36..=36)?);
+        let (guid, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=36, "retain F3D UTF-16 string")?);
         if !is_guid_relaxed(&guid) {
             return Ok(None);
         }
@@ -1070,7 +1082,7 @@ fn repeated_target_occurrence_placement_details(
     }
     at += METADATA_MARKER.len();
 
-    let (component_guid, next) = xref_some!(xref_utf16(decode, body, at, 36..=36)?);
+    let (component_guid, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=36, "retain F3D UTF-16 string")?);
     if !is_guid_relaxed(&component_guid) {
         return Ok(None);
     }
@@ -1079,13 +1091,13 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let (type_guid, next) = xref_some!(xref_ascii(decode, body, at, 36..=36)?);
+    let (type_guid, next) = xref_some!(lp_ascii_strict_charged(decode, body, at, 36..=36)?);
     if !is_guid_relaxed(&type_guid) {
         return Ok(None);
     }
     at = next;
     let role_offset = at;
-    let (role, next) = xref_some!(xref_utf16(decode, body, at, 36..=256)?);
+    let (role, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=256, "retain F3D UTF-16 string")?);
     if !is_guid_prefix(&role) {
         return Ok(None);
     }
@@ -1112,7 +1124,7 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 4;
-    let (final_role, next) = xref_some!(xref_utf16(decode, body, at, 36..=256)?);
+    let (final_role, next) = xref_some!(lp_utf16_bounded_charged(decode, body, at, 36..=256, "retain F3D UTF-16 string")?);
     if !final_role.eq_ignore_ascii_case(&role) {
         return Ok(None);
     }
@@ -1255,7 +1267,8 @@ fn grouped_component_insert_identity_with_layout<'a>(
     const CLASS_341_REPEAT_MARKER: &[u8] = &[1, 0, 0, 0, 0];
     const CLOSURE: &[u8] = &[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) =
+        lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
     let carrier_span = relation_at.checked_sub(carrier_at)?;
     if class_tag != expected_class_tag
         || after_tag != carrier_at + 7
@@ -1300,8 +1313,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
     let role_bounds = if variable_role { 36..=256 } else { 36..=36 };
     let (role, next) = lp_utf16_bounded_view(bytes, at, role_bounds.clone())?;
     let valid_role = if variable_role {
-        role.is_guid_relaxed()
-            || role.is_guid_urn_role()
+        role.is_guid_relaxed() || role.is_guid_urn_role()
     } else {
         role.is_guid_relaxed()
     };

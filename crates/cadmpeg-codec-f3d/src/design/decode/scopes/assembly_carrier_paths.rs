@@ -499,11 +499,12 @@ mod tests {
             Some((0, class_307_joint_origin::LEN))
         );
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| lp_utf16_bounded_charged(ctx,
+            crate::test_support::with_decode_context(|ctx| lp_utf16_bounded_charged(
+                ctx,
                 &bytes,
                 class_307_joint_origin::KIND_CODE_UNIT_COUNT,
-                11..=11,
-            ).unwrap()),
+                11..=11, "retain F3D UTF-16 string")
+            .unwrap()),
             Some((
                 "JointOrigin".into(),
                 class_307_joint_origin::FEATURE_ORDINAL
