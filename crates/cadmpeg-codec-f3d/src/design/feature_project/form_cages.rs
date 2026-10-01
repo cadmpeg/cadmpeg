@@ -1039,8 +1039,14 @@ fn form_cage_serializers(
             ctx.push_vec(&mut offsets, *offset, "f3d form serializer offset")?;
         }
     }
-    let sort_work = offsets.len().checked_mul(offsets.len()).ok_or_else(|| ctx.refuse_codec_limit("sort f3d form serializer offsets", 0, u64::MAX))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "sort f3d form serializer offsets")?;
+    let sort_work = offsets
+        .len()
+        .checked_mul(offsets.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("sort f3d form serializer offsets", 0, u64::MAX))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_work),
+        "sort f3d form serializer offsets",
+    )?;
     offsets.sort_unstable();
     let mut ordered = Vec::new();
     let mut entries = HashMap::new();
@@ -1084,12 +1090,20 @@ fn form_cage_serializers(
         let Some(raw_name) = bytes.get(name_at + 4..after_name) else {
             continue;
         };
-        let (entry_name, _name_reservation) = match ctx.utf16le_scoped_text(raw_name, name_units, false, "f3d form serializer name materialization") {
+        let (entry_name, name_reservation) = match ctx.utf16le_scoped_text(
+            raw_name,
+            name_units,
+            false,
+            "f3d form serializer name materialization",
+        ) {
             Ok(text) => text,
             Err(CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entry_name.len()), "validate f3d form serializer entry name")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entry_name.len()),
+            "validate f3d form serializer entry name",
+        )?;
         if !entry_name.starts_with("TSpline.")
             || !std::path::Path::new(&entry_name)
                 .extension()
@@ -1120,8 +1134,11 @@ fn form_cage_serializers(
         if let Some(entry) = entries.get_mut(&surface) {
             *entry = FormCageEntry::Duplicate;
         } else {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(entry_name.len()), "f3d form serializer entry name")?;
-            let entry_name = ctx.copy_retained_text(&entry_name, "f3d form serializer entry name")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(entry_name.len()),
+                "f3d form serializer entry name",
+            )?;
+            drop(name_reservation);
             ctx.insert_hash_map(
                 &mut entries,
                 surface,
