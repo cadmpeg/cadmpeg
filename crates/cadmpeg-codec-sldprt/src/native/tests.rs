@@ -1151,13 +1151,10 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
             entity.local_id(),
         );
     }
-    let expected = crate::native::lanes::expected_lanes_charged(
-        &cadmpeg_test_support::service_decode_context(),
-        &native,
-    )
-    .unwrap()
-    .remove(0)
-    .1;
+    let context = cadmpeg_test_support::service_decode_context();
+    let expected_lanes = crate::native::lanes::expected_lanes_charged(&context, &native).unwrap();
+    let expected = expected_lanes.iter().next().unwrap().1.clone();
+    drop(expected_lanes);
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
     lane.relation_bindings = expected.relation_bindings;
@@ -1795,4 +1792,21 @@ fn native_store_refuses_collection_limit() {
 #[test]
 fn native_store_refuses_nesting_limit() {
     assert_native_store_dimension_refusal(cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+}
+
+#[test]
+fn expected_lane_reservations_cover_borrowed_results() {
+    let native = emitter_models()[1].clone();
+    let used = |drop_before_probe| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let expected = crate::native::lanes::expected_lanes_charged(&ctx, &native).unwrap();
+        assert!(expected.iter().next().is_some());
+        if drop_before_probe { drop(expected); }
+        let error = ctx.reserve_scoped(512 * 1024 * 1024, "probe live expected lanes").unwrap_err();
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.used,
+            error => panic!("{error}"),
+        }
+    };
+    assert!(used(false) > used(true));
 }

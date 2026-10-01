@@ -5,7 +5,7 @@ use crate::records::charged_clone::CloneCharged;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 
 pub(super) fn admit(
     native: &SldprtNative,
@@ -103,7 +103,7 @@ pub(super) fn admit(
         }
     }
     let expected = expected_lanes_charged(ctx, native)?;
-    for (lane, expected_lane) in expected {
+    for (lane, expected_lane) in expected.iter() {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,
             &expected_lane.scalars,
@@ -154,11 +154,23 @@ pub(super) fn admit(
     Ok(())
 }
 
-pub(crate) fn expected_lanes_charged<'a>(
-    ctx: &DecodeContext<'_>,
+pub(crate) struct ExpectedLanes<'ctx, 'native> {
+    pairs: Vec<(&'native FeatureInputLane, FeatureInputLane)>,
+    _copies: ScopedReservation<'ctx>,
+    _derived: ScopedReservation<'ctx>,
+}
+
+impl<'native> ExpectedLanes<'_, 'native> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &(&'native FeatureInputLane, FeatureInputLane)> {
+        self.pairs.iter()
+    }
+}
+
+pub(crate) fn expected_lanes_charged<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     native: &'a SldprtNative,
-) -> Result<Vec<(&'a FeatureInputLane, FeatureInputLane)>, cadmpeg_ir::NativeConvertError> {
-    let _expected_lanes_reservation = admit_temporary_clones(
+) -> Result<ExpectedLanes<'ctx, 'a>, cadmpeg_ir::NativeConvertError> {
+    let copies = admit_temporary_clones(
         ctx,
         native.feature_input_lanes.iter(),
         "validate SLDPRT expected lane copies",
@@ -184,7 +196,7 @@ pub(crate) fn expected_lanes_charged<'a>(
                 u64::MAX,
             ))
         })?;
-    let _derived_reservation = admit_validation_candidates(
+    let derived = admit_validation_candidates(
         ctx,
         validation_source_bytes,
         "validate SLDPRT derived lanes",
@@ -260,7 +272,7 @@ pub(crate) fn expected_lanes_charged<'a>(
         expected_supplemental_lanes,
         ctx,
     )?);
-    Ok(expected)
+    Ok(ExpectedLanes { pairs: expected, _copies: copies, _derived: derived })
 }
 
 fn copy_feature_ref(
