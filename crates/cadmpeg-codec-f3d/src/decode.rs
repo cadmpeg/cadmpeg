@@ -5591,13 +5591,14 @@ const MIN_ANALYTIC_LINEAR_TOLERANCE_MM: f64 = 1.0e-7;
 /// refused here and never floored at a comparison site.
 fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, CodecError> {
     let linear_mm = resabs * 10.0;
+    let tolerances = Tolerances::new(linear_mm, resnor).map_err(CodecError::Malformed)?;
     if linear_mm < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
-        return Err(CodecError::malformed(format!(
+        return Err(CodecError::NotImplemented(format!(
             "kernel header resabs {linear_mm} mm is below the analytic linear \
              tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm"
         )));
     }
-    Tolerances::new(linear_mm, resnor).map_err(CodecError::Malformed)
+    Ok(tolerances)
 }
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.

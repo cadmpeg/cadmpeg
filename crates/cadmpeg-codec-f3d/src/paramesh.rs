@@ -1786,33 +1786,55 @@ fn registry_feature_edges(
     Ok(feature_edges)
 }
 
+/// A version-2 header with its complete registry extent inside the entry.
+struct ParamMeshHeader {
+    protobuf: std::ops::Range<usize>,
+}
+
+impl ParamMeshHeader {
+    fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Self, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(PROTOBUF_AT), "validate paramesh header")?;
+        if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
+            return Err(malformed("paramesh container has no magic"));
+        }
+        if View::u32_le_at(bytes, MAGIC.len()) != Some(VERSION) {
+            return Err(malformed("paramesh container declares an unknown version"));
+        }
+        let reserved = bytes.get(MAGIC.len() + 4..PROTOBUF_COUNT_AT)
+            .ok_or_else(|| malformed("paramesh container is truncated"))?;
+        if reserved.iter().any(|byte| *byte != 0) {
+            return Err(malformed("paramesh reserved header bytes are not zero"));
+        }
+        if View::u32_le_at(bytes, PROTOBUF_AT - 4) != Some(1) {
+            return Err(malformed("paramesh fixed header word is not one"));
+        }
+        let count = usize::try_from(View::u64_le_at(bytes, PROTOBUF_COUNT_AT)
+            .ok_or_else(|| malformed("paramesh container is truncated"))?)
+            .map_err(|_| malformed("paramesh protobuf message is out of range"))?;
+        let end = PROTOBUF_AT.checked_add(count)
+            .ok_or_else(|| malformed("paramesh protobuf message is out of range"))?;
+        if end > bytes.len() {
+            return Err(malformed("paramesh protobuf message is truncated"));
+        }
+        Ok(Self { protobuf: PROTOBUF_AT..end })
+    }
+}
+
+enum MeshChunkState {
+    AwaitNameTable,
+    Streams(UniqueStreamNames),
+}
+
 /// Decode one `.paramesh` container entry.
 pub(crate) fn decode_mesh_container(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<MeshContainer, CodecError> {
-    if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
-        return Err(malformed("paramesh container has no magic"));
-    }
-    match View::u32_le_at(bytes, MAGIC.len()) {
-        Some(VERSION) => {}
-        _ => return Err(malformed("paramesh container declares an unknown version")),
-    }
-    let protobuf_count = usize::try_from(
-        View::u64_le_at(bytes, PROTOBUF_COUNT_AT)
-            .ok_or_else(|| malformed("paramesh container is truncated"))?,
-    )
-    .map_err(|_| malformed("paramesh protobuf message is out of range"))?;
-    let protobuf_end = PROTOBUF_AT
-        .checked_add(protobuf_count)
-        .ok_or_else(|| malformed("paramesh protobuf message is out of range"))?;
-    let message = bytes
-        .get(PROTOBUF_AT..protobuf_end)
-        .ok_or_else(|| malformed("paramesh protobuf message is truncated"))?;
+    let header = ParamMeshHeader::parse(ctx, bytes)?;
+    let message = &bytes[header.protobuf.clone()];
     let registry = mesh_registry(ctx, message)?;
-
-    let mut at = protobuf_end;
-    let mut name_table: Option<UniqueStreamNames> = None;
+    let mut at = header.protobuf.end;
+    let mut state = MeshChunkState::AwaitNameTable;
     let mut streams = Vec::new();
     while at < bytes.len() {
         let body_count = usize::try_from(
@@ -1834,14 +1856,18 @@ pub(crate) fn decode_mesh_container(
         at = body_end;
         match kind {
             CHUNK_NAME_TABLE => {
-                if name_table
-                    .replace(message_pack_name_table(ctx, body)?)
-                    .is_some()
-                {
+                if matches!(state, MeshChunkState::Streams(_)) {
                     return Err(malformed("paramesh container repeats its name table"));
                 }
+                state = MeshChunkState::Streams(message_pack_name_table(ctx, body)?);
             }
             CHUNK_STREAM => {
+                let MeshChunkState::Streams(names) = &state else {
+                    return Err(malformed("paramesh stream precedes its name table"));
+                };
+                if streams.len() >= names.entries.len() {
+                    return Err(malformed("paramesh has more streams than admitted names"));
+                }
                 let stream = inflate_stream(ctx, body)?;
                 ctx.push_vec(&mut streams, stream, "collect paramesh streams")?;
             }
@@ -1852,8 +1878,9 @@ pub(crate) fn decode_mesh_container(
             }
         }
     }
-    let name_table =
-        name_table.ok_or_else(|| malformed("paramesh container has no name table"))?;
+    let MeshChunkState::Streams(name_table) = state else {
+        return Err(malformed("paramesh container has no name table"));
+    };
     let mut name_table = name_table.entries;
     if name_table.len() != streams.len() {
         return Err(malformed(
@@ -3367,6 +3394,38 @@ mod tests {
         assert_eq!(mesh.vertices.len(), 4);
         assert_eq!(mesh.vertices[2].get(), Point3::new(1.0, 1.0, 0.0));
         assert_eq!(mesh.triangles, [[0, 1, 2], [3, 1, 2]]);
+    }
+
+    #[test]
+    fn paramesh_header_rejects_nonzero_reserved_bytes() {
+        let mut bytes = container(GUID, &TRIANGLE_VERTICES, &TRIANGLE_CORNERS);
+        bytes[0x10] = 1;
+        assert_malformed(decode_mesh_container(&bytes));
+    }
+
+    #[test]
+    fn paramesh_header_rejects_changed_fixed_word() {
+        let mut bytes = container(GUID, &TRIANGLE_VERTICES, &TRIANGLE_CORNERS);
+        bytes[0x38] = 2;
+        assert_malformed(decode_mesh_container(&bytes));
+    }
+
+    #[test]
+    fn paramesh_stream_before_name_table_refuses_before_expansion() {
+        let mut bytes = container(GUID, &TRIANGLE_VERTICES, &TRIANGLE_CORNERS);
+        let count = usize::try_from(cadmpeg_core::decode::View::u64_le_at(&bytes, super::PROTOBUF_COUNT_AT).unwrap()).unwrap();
+        let table_start = super::PROTOBUF_AT + count;
+        let table_count = usize::try_from(cadmpeg_core::decode::View::u64_le_at(&bytes, table_start).unwrap()).unwrap();
+        let table_end = table_start + 12 + table_count;
+        let table = bytes[table_start..table_end].to_vec();
+        bytes.drain(table_start..table_end);
+        bytes.extend_from_slice(&table);
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_total = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_malformed(decode_mesh_container_charged(ctx, &bytes));
+            assert!(ctx.resource_refusal().is_none());
+        });
     }
 
     #[test]
