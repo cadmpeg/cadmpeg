@@ -1222,3 +1222,31 @@ fn object_declaration_framing_precedes_collection_admission() {
         assert!(matches!(super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx), Err(cadmpeg_core::CodecError::Malformed(_))));
     }
 }
+
+#[test]
+fn duplicate_object_name_comparisons_admit_prefix_bytes() {
+    let prefix = "a".repeat(10000);
+    let document = format!(r#"<Document><Objects Count="2"><Object name="{prefix}A" type="Part::Feature"/><Object name="{prefix}B" type="Part::Feature"/></Objects><ObjectData Count="2"><Object name="{prefix}A"/><Object name="{prefix}B"/></ObjectData></Document>"#);
+    let xml = roxmltree::Document::parse(&document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 60000;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
+    let error = super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx).err().expect("prefix comparisons exceed allowance");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd duplicate object names" && Some(limit) == ctx.resource_refusal()));
+}
+
+#[test]
+fn duplicate_property_name_comparisons_admit_lookup_and_prefix_bytes() {
+    let prefix = "a".repeat(10000);
+    let document = format!(r#"<Properties Count="2"><Property name="{prefix}A" type="App::PropertyString"/><Property name="{prefix}B" type="App::PropertyString"/></Properties>"#);
+    let xml = roxmltree::Document::parse(&document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 100;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
+    let error = super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), &ctx).expect_err("prefix comparisons exceed allowance");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd duplicate property names" && Some(limit) == ctx.resource_refusal()));
+}
