@@ -11,6 +11,7 @@
 )]
 
 use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_test_support::service_decode_context;
 
 use cadmpeg_test_support::edit;
 
@@ -1517,7 +1518,9 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,

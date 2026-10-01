@@ -148,17 +148,26 @@ fn record_stream_start_with_width(bytes: &[u8], width: RefWidth) -> Option<usize
 /// unframed record after the solved sequence is accepted only when its exact
 /// identifier token is `delta_state`. Raw substring search is deliberately not
 /// used because string payloads can contain the same bytes.
-pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
-    let width = declared_width(bytes)?;
-    let flags = match width {
-        RefWidth::Four => View::u32_le_at(bytes, bf4::FLAGS).map(u64::from),
-        RefWidth::Eight => View::u64_le_at(bytes, bf8::FLAGS),
-    }?;
-    if flags & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {
-        return None;
-    }
-    let start = record_stream_start_with_width(bytes, width)?;
+pub fn solved_record_limit(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    let Some((start, width)) = (|| {
+        let width = declared_width(bytes)?;
+        let flags = match width {
+            RefWidth::Four => View::u32_le_at(bytes, bf4::FLAGS).map(u64::from),
+            RefWidth::Eight => View::u64_le_at(bytes, bf8::FLAGS),
+        }?;
+        if flags & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {
+            return None;
+        }
+        let start = record_stream_start_with_width(bytes, width)?;
+        Some((start, width))
+    })() else {
+        return Ok(None);
+    };
     crate::sab::scan_history_boundary(
+        ctx,
         bytes,
         start,
         width,
@@ -167,12 +176,19 @@ pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
 }
 
 /// Exact solved-record boundary, using an already-parsed ASM header.
-pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
+pub fn solved_record_limit_with_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    header: &BinaryHeader,
+) -> Result<Option<usize>, CodecError> {
     if !header.metadata.has_history_partition() {
-        return None;
+        return Ok(None);
     }
-    let start = record_stream_start_with_header(bytes, header)?;
+    let Some(start) = record_stream_start_with_header(bytes, header) else {
+        return Ok(None);
+    };
     crate::sab::scan_history_boundary(
+        ctx,
         bytes,
         start,
         header.width,
