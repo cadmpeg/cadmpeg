@@ -505,32 +505,12 @@ impl ModelDraft<DraftAccounting> {
 
     /// Commit decoded entities and transfer their owned exactness entries.
     pub fn commit_for_decode(
-        mut self,
+        self,
         base: &mut CadIr,
         annotations: &mut Annotations,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        let accounting = std::mem::take(&mut self.accounting);
-        let draft = ModelDraft {
-            model: self.model,
-            accounting: (),
-        };
-        // Admit annotation destination storage before the model becomes visible.
-        let (merged, storage) = ctx.with_scoped_storage("draft annotation transaction", || {
-            let mut merged = AnnotationBuilder::resume(
-                annotations.try_clone_for_decode(ctx, "draft annotation transaction")?,
-            );
-            for (identity, exactness) in accounting.exactness {
-                merged.exactness_owned_for_decode(ctx, identity, exactness)?;
-            }
-            Ok::<_, CodecError>(merged.build())
-        })?;
-        storage.commit()?;
-        if let Err(error) = draft.commit_model_for_decode(base, ctx)? {
-            return Ok(Err(error));
-        }
-        *annotations = merged;
-        Ok(Ok(()))
+        CommitSession::new_for_decode(base, ctx)?.commit(self, annotations, ctx)
     }
 }
 
@@ -588,11 +568,45 @@ impl DecodeCommitSession<'_, '_> {
     ) -> Result<Result<(), DraftError>, CodecError> {
         let result = self
             .session
-            .commit_with_storage(draft, ctx, &mut self.storage);
+            .commit_with_storage(draft, ctx, &mut self.storage, || Ok(()));
         if result.is_err() {
             self.session.identities = None;
         }
         result
+    }
+
+    /// Admit an accounted draft and its annotation transfer before either is applied.
+    pub fn commit(
+        &mut self,
+        draft: ModelDraft<DraftAccounting>,
+        annotations: &mut Annotations,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), DraftError>, CodecError> {
+        let transaction = annotations.copy_transaction(ctx, "draft annotation transaction")?;
+        let ModelDraft { model, accounting } = draft;
+        let (_, transaction) = transaction.update(|annotations| {
+            let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+            for (identity, exactness) in accounting.exactness {
+                builder.exactness_owned_for_decode(ctx, identity, exactness)?;
+            }
+            *annotations = builder.build();
+            Ok::<_, CodecError>(())
+        })?;
+        let result = self.session.commit_with_storage(
+            ModelDraft { model, accounting: () }, ctx, &mut self.storage,
+            || transaction.into_retained(),
+        );
+        match result {
+            Ok(Ok(merged)) => {
+                *annotations = merged;
+                Ok(Ok(()))
+            }
+            Ok(Err(error)) => Ok(Err(error)),
+            Err(error) => {
+                self.session.identities = None;
+                Err(error)
+            }
+        }
     }
 
     /// Look up an identity after admitting cache storage and comparison work.
@@ -747,7 +761,7 @@ impl<'a> CommitSession<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
         let mut storage = ctx.reserve_scoped(0, "committed identity storage")?;
-        let result = self.commit_with_storage(draft, ctx, &mut storage);
+        let result = self.commit_with_storage(draft, ctx, &mut storage, || Ok(()));
         self.identities = None;
         result
     }
@@ -756,12 +770,13 @@ impl<'a> CommitSession<'a> {
     ///
     /// The outer result reports a resource refusal. The inner result reports
     /// a rejected candidate without changing the committed model.
-    fn commit_with_storage(
+    fn commit_with_storage<T>(
         &mut self,
         mut draft: ModelDraft,
         ctx: &DecodeContext<'_>,
         cache: &mut ScopedReservation<'_>,
-    ) -> Result<Result<(), DraftError>, CodecError> {
+        before_apply: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<Result<T, DraftError>, CodecError> {
         cache.with_storage(|| self.ensure_identities(ctx))?;
         let identities = self
             .identities
@@ -810,11 +825,12 @@ impl<'a> CommitSession<'a> {
             }
             Ok::<_, CodecError>(())
         })?;
+        let transferred = before_apply()?;
         for (hash, group) in staged {
             identities.entry(hash).or_default().extend(group);
         }
         self.base.model.append(draft.model);
-        Ok(Ok(()))
+        Ok(Ok(transferred))
     }
 }
 
