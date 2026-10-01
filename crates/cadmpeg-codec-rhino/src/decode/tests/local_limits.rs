@@ -179,3 +179,21 @@ fn transformed_instance_annotation_ids_refuse_scoped_slots_before_copy() {
                 && refusal.operation == "Rhino instance annotation scratch"));
     });
 }
+
+#[test]
+fn point_cloud_commit_propagates_local_entity_limit() {
+    let scan = scan_with_objects(&[crate::test_support::test_dump::object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction");
+        context.set_expansion_limits([16, 16, 6]);
+        let point = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("point");
+        let error = context.commit_geometry(0, crate::curves::DecodedGeometry::PointCloud(crate::curves::PointCloud {
+            points: vec![point, point], scaled: false, warnings: crate::loss::Diagnostics::new(),
+        })).expect_err("seven cloud entities exceed six");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance entity limit" && refusal.limit == 6 && refusal.additional == 1));
+        assert!(context.ir.model.bodies.is_empty());
+        assert!(context.ir.model.vertices.is_empty());
+        assert!(context.report.phase_warnings.is_empty());
+    });
+}

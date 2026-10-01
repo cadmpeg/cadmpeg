@@ -2061,6 +2061,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
     ) -> Result<Option<IdentityKey>, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
+        ctx.charge_work(u64_from_index(identity.source_id.len()), "Rhino object key scan")?;
         let value = if let Some(selected) = &self.instance_selection {
             ctx.format_retained_with_work(format_args!("{}", selected.key.as_str()), "Rhino object key copy")?
         } else if let Some((_, key)) = identity.source_id.rsplit_once('#') {
@@ -2068,6 +2069,7 @@ impl<'a> DecodeContext<'a> {
         } else {
             ctx.format_retained_with_work(format_args!("{source_order}"), "Rhino object key copy")?
         };
+        ctx.charge_work(u64_from_index(value.len()), "Rhino object key validation")?;
         match IdentityKey::try_new(value) {
             Ok(key) => Ok(Some(key)),
             Err(error) => {
@@ -2192,7 +2194,7 @@ impl<'a> DecodeContext<'a> {
         const MAX_INSTANCE_DEPTH: usize = 64;
         let _nested = self.expand.ctx().enter_nested("rhino_instance_nesting")?;
         self.expansion_budget.reference(self.expand.ctx())?;
-        self.charge_session_collections(1, "rhino_instance_reference")?;
+        self.expand.ctx().charge_collection_items(1, "rhino_instance_reference")?;
         let depth_limit = session_ceiling(
             self.expand.ctx().policy().limits.max_recursion_depth,
             MAX_INSTANCE_DEPTH,
@@ -2280,7 +2282,7 @@ impl<'a> DecodeContext<'a> {
         let mut links = Vec::new();
         for &member_id in definition_members {
             self.expansion_budget.member(self.expand.ctx())?;
-            self.charge_session_collections(1, "rhino_instance_member")?;
+            self.expand.ctx().charge_collection_items(1, "rhino_instance_member")?;
             let member_order = match self.resolve_object(member_id) {
                 ObjectReference::Resolved(order) => order,
                 ObjectReference::Missing => {
@@ -3118,25 +3120,9 @@ impl<'a> DecodeContext<'a> {
     fn charge_entities(&mut self, amount: usize) -> Result<(), cadmpeg_core::CodecError> {
         let mut budget = self.expansion_budget;
         budget.entities(self.expand.ctx(), amount)?;
-        self.charge_session_entities(amount)?;
+        self.expand.ctx().charge_entities(u64_from_index(amount), "rhino_instance_entities")?;
         self.expansion_budget = budget;
         Ok(())
-    }
-
-    fn charge_session_entities(&self, amount: usize) -> Result<(), cadmpeg_core::CodecError> {
-        self.expand
-            .ctx()
-            .charge_entities(u64_from_index(amount), "rhino_instance_entities")
-    }
-
-    fn charge_session_collections(
-        &self,
-        amount: usize,
-        operation: &'static str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.expand
-            .ctx()
-            .charge_collection_items(u64_from_index(amount), operation)
     }
 
     fn commit_geometry(
@@ -3256,7 +3242,7 @@ impl<'a> DecodeContext<'a> {
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
                     key.clone(),
                 );
-                self.charge_session_collections(points.len(), "Rhino point-cloud vertices")?;
+                self.expand.ctx().charge_collection_items(u64_from_index(points.len()), "Rhino point-cloud vertices")?;
                 let mut vertices = Vec::new();
                 cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
                     &mut vertices,
