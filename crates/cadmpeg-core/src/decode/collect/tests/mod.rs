@@ -3,33 +3,33 @@
 use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 pub(super) fn context(arena: &DecodeArena, items: u64) -> DecodeContext<'_> {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = items;
-        match DecodeContext::from_root_bytes(&[], arena, &policy) {
-            Ok((ctx, _)) => ctx,
-            Err(error) => panic!("test context failed: {error}"),
-        }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    match DecodeContext::from_root_bytes(&[], arena, &policy) {
+        Ok((ctx, _)) => ctx,
+        Err(error) => panic!("test context failed: {error}"),
     }
+}
 
 pub(super) fn operation_context(
-        arena: &DecodeArena,
-        dimension: ResourceDimension,
-        limit: u64,
-    ) -> DecodeContext<'_> {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
-            ResourceDimension::Entities => policy.limits.max_entities = limit,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-            _ => panic!("test needs a byte, entity or work dimension"),
-        }
-        DecodeContext::from_root_bytes(&[], arena, &policy)
-            .expect("empty root fits policy")
-            .0
+    arena: &DecodeArena,
+    dimension: ResourceDimension,
+    limit: u64,
+) -> DecodeContext<'_> {
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
+        ResourceDimension::Entities => policy.limits.max_entities = limit,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+        _ => panic!("test needs a byte, entity or work dimension"),
     }
+    DecodeContext::from_root_bytes(&[], arena, &policy)
+        .expect("empty root fits policy")
+        .0
+}
 
-    macro_rules! collection_case {
+macro_rules! collection_case {
         ($name:ident, $needed:expr, $refused:expr, $success:expr) => {
             #[test]
             fn $name() {
@@ -46,7 +46,7 @@ pub(super) fn operation_context(
         };
     }
 
-    macro_rules! admitted_case {
+macro_rules! admitted_case {
         ($name:ident, $body:expr) => {
             #[test]
             fn $name() {
@@ -66,7 +66,7 @@ pub(super) fn operation_context(
         };
     }
 
-    macro_rules! retained_case {
+macro_rules! retained_case {
         ($name:ident, $need:expr, $body:expr) => {
             #[test]
             fn $name() {
@@ -86,7 +86,7 @@ pub(super) fn operation_context(
         };
     }
 
-    macro_rules! materialized_case {
+macro_rules! materialized_case {
         ($name:ident, $need:expr, $body:expr) => {
             #[test]
             fn $name() {
@@ -106,7 +106,7 @@ pub(super) fn operation_context(
         };
     }
 
-    macro_rules! operation_case {
+macro_rules! operation_case {
         ($name:ident, $success:ident, $dimension:expr, $needed:expr, $operation:expr) => {
             #[test]
             fn $name() {
@@ -127,7 +127,7 @@ pub(super) fn operation_context(
 
 mod capacity;
 mod collections;
-mod text;
-mod operations;
 mod groups;
+mod operations;
 mod storage;
+mod text;

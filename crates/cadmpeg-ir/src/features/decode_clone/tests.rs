@@ -148,7 +148,14 @@ fn feature_parameter_map_copy_charges_each_owned_allocation_once() {
             value.to_owned(),
         )]),
     });
-    let needed = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+    // The service item ceiling bounds 21 possible split-path nodes. Each node
+    // admits eleven key/value lanes, sixteen metadata/edge words and padding.
+    let needed = 21
+        * (11
+            * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>()
+                + std::mem::size_of::<String>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>())
         + key.len()
         + value.len();
     let arena = DecodeArena::new();

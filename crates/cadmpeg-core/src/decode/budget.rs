@@ -531,14 +531,16 @@ impl ScopedReservation<'_> {
         let value = build();
         let mut storage = scope.finish();
         let Some(bytes) = self.bytes.checked_add(storage.bytes) else {
-            return value.and_then(|_| Err(failure(self.budget.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                self.budget.materialized_allowance(),
-                self.bytes,
-                storage.bytes,
-                self.operation,
-            ))));
+            return value.and_then(|_| {
+                Err(failure(self.budget.refuse_limit(
+                    ResourceDimension::MaterializedBytes,
+                    ResourceFailure::BudgetExceeded,
+                    self.budget.materialized_allowance(),
+                    self.bytes,
+                    storage.bytes,
+                    self.operation,
+                )))
+            });
         };
         self.bytes = bytes;
         storage.bytes = 0;
