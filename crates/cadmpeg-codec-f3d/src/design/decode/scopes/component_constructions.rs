@@ -37,11 +37,23 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_derived_instance_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
-) -> Option<DesignDerivedInstanceConstruction> {
+) -> Result<Option<DesignDerivedInstanceConstruction>, CodecError> {
+    if !matches!(scope.kind(), scope::DesignFeatureKind::DerivedInstance | scope::DesignFeatureKind::CopyPaste) {
+        return Ok(None);
+    }
+    ctx.charge_work(u64_from_index(occurrences.len()), "scan F3D construction occurrences")?;
+    for occurrence in occurrences {
+        let work = u64_from_index(occurrence.id.len()).checked_mul(4)
+            .and_then(|value| value.checked_add(80))
+            .ok_or_else(|| ctx.refuse_codec_limit("F3D occurrence scan work overflow", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, "scan F3D construction occurrences")?;
+    }
+    let parsed = (|| {
     if scope.kind() != scope::DesignFeatureKind::DerivedInstance
         || scope.class_tag.as_str() != "279"
         || scope.paired_class_tag.as_str() != "261"
@@ -127,15 +139,18 @@ pub(super) fn exact_derived_instance_construction(
     if candidates.next().is_some() {
         return None;
     }
-    Some(DesignDerivedInstanceConstruction {
+    let transform_offset = u64::try_from(transform_offset).ok()?;
+    Some((|| { Ok(DesignDerivedInstanceConstruction {
         reference_record_index,
         relation_record_index,
         carrier_record_index,
-        component_guid: carrier.component_guid.clone(),
-        occurrence_guid: carrier.occurrence_guid.clone(),
+        component_guid: carrier.component_guid.try_clone_for_decode(ctx, "retain F3D construction GUID")?,
+        occurrence_guid: carrier.occurrence_guid.try_clone_for_decode(ctx, "retain F3D construction GUID")?,
         transform,
-        transform_offset: u64::try_from(transform_offset).ok()?,
-    })
+        transform_offset,
+    }) })())
+    })();
+    parsed.transpose()
 }
 
 pub(super) fn exact_component_insert_construction(
@@ -978,11 +993,23 @@ fn legacy_component_insert_placements(
 }
 
 pub(super) fn exact_copy_paste_component_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
-) -> Option<DesignCopyPasteComponentOperation> {
+) -> Result<Option<DesignCopyPasteComponentOperation>, CodecError> {
+    if !matches!(scope.kind(), scope::DesignFeatureKind::DerivedInstance | scope::DesignFeatureKind::CopyPaste) {
+        return Ok(None);
+    }
+    ctx.charge_work(u64_from_index(occurrences.len()), "scan F3D construction occurrences")?;
+    for occurrence in occurrences {
+        let work = u64_from_index(occurrence.id.len()).checked_mul(4)
+            .and_then(|value| value.checked_add(80))
+            .ok_or_else(|| ctx.refuse_codec_limit("F3D occurrence scan work overflow", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, "scan F3D construction occurrences")?;
+    }
+    let parsed = (|| {
     let stream = native_stream(&scope.id)?;
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let relation_record_index = *scope.reference_members().values().next()?;
@@ -1038,18 +1065,20 @@ pub(super) fn exact_copy_paste_component_operation(
     if source_candidates.next().is_some() {
         return None;
     }
-    Some(DesignCopyPasteComponentOperation {
+    Some((|| { Ok(DesignCopyPasteComponentOperation {
         relation_record_index,
         source_occurrence_record_index: source.record_index,
         copied_occurrence_record_index,
-        component_guid: copied.component_guid.clone(),
-        source_occurrence_guid: source.occurrence_guid.clone(),
-        copied_occurrence_guid: copied.occurrence_guid.clone(),
+        component_guid: copied.component_guid.try_clone_for_decode(ctx, "retain F3D construction GUID")?,
+        source_occurrence_guid: source.occurrence_guid.try_clone_for_decode(ctx, "retain F3D construction GUID")?,
+        copied_occurrence_guid: copied.occurrence_guid.try_clone_for_decode(ctx, "retain F3D construction GUID")?,
         source_transform,
         source_transform_offset: u64_from_index(source_transform_offset),
         copied_transform,
         copied_transform_offset: u64_from_index(copied_transform_offset),
-    })
+    }) })())
+    })();
+    parsed.transpose()
 }
 
 pub(super) fn bind_component_pattern_occurrences(
@@ -1067,26 +1096,13 @@ pub(super) fn bind_component_pattern_occurrences(
     else {
         return Ok(());
     };
-    let mut generated = Vec::new();
     let mut component_guid = None;
     for (ordinal, frame) in instances.frames().enumerate().skip(1) {
-        let Some(expected_ordinal) = u32::try_from(ordinal)
-            .ok()
-            .and_then(|value| value.checked_add(1))
-        else {
+        let expected_ordinal = u32::try_from(ordinal).ok().and_then(|value| value.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit("F3D pattern occurrence ordinal overflow", u64::from(u32::MAX), u64_from_index(ordinal)))?;
+        let Some(candidate) = unique_pattern_occurrence(ctx, stream, frame, expected_ordinal, occurrences)? else {
             return Ok(());
         };
-        let mut candidates = occurrences.iter().filter(|occurrence| {
-            native_stream(&occurrence.id) == Some(stream)
-                && occurrence.transform().map(|frame| frame.offset) == Some(frame.transform.offset)
-                && occurrence.occurrence_ordinal() == expected_ordinal
-        });
-        let Some(candidate) = candidates.next() else {
-            return Ok(());
-        };
-        if candidates.next().is_some() {
-            return Ok(());
-        }
         if let Some(first_guid) = component_guid {
             if !candidate
                 .component_guid
@@ -1099,19 +1115,16 @@ pub(super) fn bind_component_pattern_occurrences(
             component_guid = Some(candidate.component_guid.as_str());
         }
 
-        ctx.reserve_vec(
-            &mut generated,
-            1,
-            "f3d component pattern generated instances",
-        )?;
-        generated.push(patterns::DesignPatternComponentInstance {
-            instance: *frame,
-            occurrence_guid: candidate.occurrence_guid.clone(),
-        });
     }
     let Some(component_guid) = component_guid else {
         return Ok(());
     };
+    ctx.charge_work(u64_from_index(occurrences.len()), "scan F3D pattern seed occurrences")?;
+    for occurrence in occurrences {
+        let work = u64_from_index(occurrence.id.len()).checked_add(80)
+            .ok_or_else(|| ctx.refuse_codec_limit("F3D pattern seed work overflow", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, "scan F3D pattern seed occurrences")?;
+    }
     let mut seed_candidates = occurrences.iter().filter(|occurrence| {
         native_stream(&occurrence.id) == Some(stream)
             && occurrence.byte_offset() < byte_offset
@@ -1133,11 +1146,23 @@ pub(super) fn bind_component_pattern_occurrences(
     let Some(seed_frame) = instances.frames().next().copied() else {
         return Ok(());
     };
+    let mut generated = Vec::new();
+    for (ordinal, frame) in instances.frames().enumerate().skip(1) {
+        let expected_ordinal = u32::try_from(ordinal).ok().and_then(|value| value.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit("F3D pattern occurrence ordinal overflow", u64::from(u32::MAX), u64_from_index(ordinal)))?;
+        let candidate = unique_pattern_occurrence(ctx, stream, frame, expected_ordinal, occurrences)?
+            .ok_or_else(|| CodecError::malformed("F3D pattern occurrence changed during binding"))?;
+        ctx.reserve_vec(&mut generated, 1, "f3d component pattern generated instances")?;
+        generated.push(patterns::DesignPatternComponentInstance {
+            instance: *frame,
+            occurrence_guid: candidate.occurrence_guid.try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
+        });
+    }
     let bound = DesignRectangularPatternInstances::Components {
-        component_guid: seed.component_guid.clone(),
+        component_guid: seed.component_guid.try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
         seed: patterns::DesignPatternComponentInstance {
             instance: seed_frame,
-            occurrence_guid: seed.occurrence_guid.clone(),
+            occurrence_guid: seed.occurrence_guid.try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
         },
         generated,
     };
@@ -1148,6 +1173,26 @@ pub(super) fn bind_component_pattern_occurrences(
         *instances = bound;
     }
     Ok(())
+}
+
+fn unique_pattern_occurrence<'a>(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    frame: &patterns::DesignPatternInstance,
+    ordinal: u32,
+    occurrences: &'a [DesignComponentOccurrence],
+) -> Result<Option<&'a DesignComponentOccurrence>, CodecError> {
+    ctx.charge_work(u64_from_index(occurrences.len()), "scan F3D pattern occurrences")?;
+    for occurrence in occurrences {
+        ctx.charge_work(u64_from_index(occurrence.id.len()), "scan F3D pattern occurrences")?;
+    }
+    let mut candidates = occurrences.iter().filter(|occurrence| {
+        native_stream(&occurrence.id) == Some(stream)
+            && occurrence.transform().map(|frame| frame.offset) == Some(frame.transform.offset)
+            && occurrence.occurrence_ordinal() == ordinal
+    });
+    let candidate = candidates.next();
+    Ok(if candidates.next().is_some() { None } else { candidate })
 }
 
 fn unique_indexed_record_before(
