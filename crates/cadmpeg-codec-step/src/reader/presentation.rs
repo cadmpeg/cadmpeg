@@ -1694,7 +1694,12 @@ fn surface_transparency(
         .partials
         .iter()
         .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
-        .flat_map(|partial| partial.parameters.iter().flat_map(|value| references(value, ctx)))
+        .flat_map(|partial| {
+            partial
+                .parameters
+                .iter()
+                .flat_map(|value| references(value, ctx))
+        })
     {
         let property_id = property_id?;
         let Some(property) = exchange.records().get(&property_id) else {

@@ -117,7 +117,10 @@ fn insert_attribute(
     value: String,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "step_inspect_attributes")?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(key.len()), "step_inspect_attribute_key")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(key.len()),
+        "step_inspect_attribute_key",
+    )?;
     let key = ctx.copy_retained_text(key, "step_inspect_attribute_key")?;
     attributes.insert(key, value);
     Ok(())
@@ -180,7 +183,10 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "anchor_count",
-            ctx.format_retained(format_args!("{}", exchange.anchors().len()), "step_inspect_attribute_count")?,
+            ctx.format_retained(
+                format_args!("{}", exchange.anchors().len()),
+                "step_inspect_attribute_count",
+            )?,
         )?;
         ctx.push_vec(
             &mut entries,
@@ -199,7 +205,10 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "external_count",
-            ctx.format_retained(format_args!("{}", exchange.references().len()), "step_inspect_attribute_count")?,
+            ctx.format_retained(
+                format_args!("{}", exchange.references().len()),
+                "step_inspect_attribute_count",
+            )?,
         )?;
         insert_attribute(
             ctx,
@@ -250,13 +259,17 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "entity_count",
-            ctx.format_retained(format_args!("{}", section.records.len()), "step_inspect_attribute_count")?,
+            ctx.format_retained(
+                format_args!("{}", section.records.len()),
+                "step_inspect_attribute_count",
+            )?,
         )?;
         insert_attribute(ctx, &mut attributes, "unknown_entities", unknown)?;
         ctx.push_vec(
             &mut entries,
             ContainerEntry {
-                name: ctx.format_retained(format_args!("DATA[{index}]"), "step_inspect_section_name")?,
+                name: ctx
+                    .format_retained(format_args!("DATA[{index}]"), "step_inspect_section_name")?,
                 role: ContainerRole::EntityRecords,
                 storage: EntryStorage::unreported(VerbatimLabel::None),
                 attributes,
@@ -274,7 +287,10 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "dependency_count",
-            ctx.format_retained(format_args!("{}", dependency_count), "step_inspect_attribute_count")?,
+            ctx.format_retained(
+                format_args!("{dependency_count}"),
+                "step_inspect_attribute_count",
+            )?,
         )?;
         insert_attribute(
             ctx,
@@ -289,7 +305,8 @@ fn inspect_parsed_exchange(
         ctx.push_vec(
             &mut entries,
             ContainerEntry {
-                name: ctx.copy_retained_text("EXTERNAL_DEPENDENCIES", "step_inspect_section_label")?,
+                name: ctx
+                    .copy_retained_text("EXTERNAL_DEPENDENCIES", "step_inspect_section_label")?,
                 role: ContainerRole::ExternalReferences,
                 storage: EntryStorage::unreported(VerbatimLabel::None),
                 attributes,
@@ -304,7 +321,10 @@ fn inspect_parsed_exchange(
                 name: if index == 0 {
                     ctx.copy_retained_text("SIGNATURE", "step_inspect_signature_name")?
                 } else {
-                    ctx.format_retained(format_args!("SIGNATURE[{index}]"), "step_inspect_signature_indexed_name")?
+                    ctx.format_retained(
+                        format_args!("SIGNATURE[{index}]"),
+                        "step_inspect_signature_indexed_name",
+                    )?
                 },
                 role: ContainerRole::Signature,
                 storage: EntryStorage::verbatim(
@@ -430,12 +450,14 @@ fn inspect_zip(
         ctx.push_formatted_retained(
             &mut notes,
             format_args!("root {}", archive::ROOT_NAME),
-            "step_codec_notes", "step_codec_root_note",
+            "step_codec_notes",
+            "step_codec_root_note",
         )?;
         ctx.push_formatted_retained(
             &mut notes,
             format_args!("archive entries={entry_count}; root data offset={root_data_offset}"),
-            "step_codec_notes", "step_codec_archive_note",
+            "step_codec_notes",
+            "step_codec_archive_note",
         )
     }?;
     ctx.extend_vec(
@@ -485,7 +507,8 @@ fn decode_zip(
             "container root {}; archive entries={entry_count}",
             archive::ROOT_NAME
         ),
-        "step_codec_notes", "step_codec_container_note",
+        "step_codec_notes",
+        "step_codec_container_note",
     )?;
     ctx.extend_vec(&mut decoded.body.notes, resource_notes, "step_codec_notes")?;
     Ok(decoded)
@@ -734,8 +757,11 @@ mod tests {
         policy.limits.max_retained_bytes = 13;
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let mut attributes = std::collections::BTreeMap::new();
-            let value = ctx.copy_retained_text("1", "step_test_attribute_value").expect("one-byte value");
-            insert_attribute(ctx, &mut attributes, "entity_count", value).expect("twelve-byte key fits once");
+            let value = ctx
+                .copy_retained_text("1", "step_test_attribute_value")
+                .expect("one-byte value");
+            insert_attribute(ctx, &mut attributes, "entity_count", value)
+                .expect("twelve-byte key fits once");
             assert_eq!(attributes["entity_count"], "1");
         });
     }
@@ -902,7 +928,7 @@ mod tests {
                     assert!(next > limit, "retained limit must advance");
                     limit = next;
                 }
-                Ok(_) => panic!("ZIP operation completed before {operation}"),
+                Ok(()) => panic!("ZIP operation completed before {operation}"),
                 Err(error) => panic!("ZIP operation did not reach {operation}: {error}"),
             }
         }

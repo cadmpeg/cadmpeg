@@ -15,6 +15,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::loss::StepLossCode;
 use crate::parse::{parse_inner, Value};
@@ -702,19 +703,19 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
         .expect("empty test root");
     let rows = Value::List(vec![
         Value::List(vec![
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite fixture")),
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+            Value::Real(FiniteReal::new(f64::MAX).expect("finite fixture")),
+            Value::Real(FiniteReal::ZERO),
+            Value::Real(FiniteReal::ZERO),
         ]),
         Value::List(vec![
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(2.0_f64.powi(-800)).expect("finite fixture")),
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+            Value::Real(FiniteReal::new(2.0_f64.powi(-800)).expect("finite fixture")),
+            Value::Real(FiniteReal::ZERO),
+            Value::Real(FiniteReal::ZERO),
         ]),
         Value::List(vec![
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(f64::from_bits(1)).expect("finite fixture")),
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+            Value::Real(FiniteReal::new(f64::from_bits(1)).expect("finite fixture")),
+            Value::Real(FiniteReal::ZERO),
+            Value::Real(FiniteReal::ZERO),
         ]),
     ]);
     assert_eq!(
@@ -735,9 +736,9 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
 #[test]
 fn tessellation_normal_rows_reserve_temporary_bytes_before_collection() {
     let rows = Value::List(vec![Value::List(vec![
-        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
-        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
-        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture")),
+        Value::Real(FiniteReal::ZERO),
+        Value::Real(FiniteReal::ZERO),
+        Value::Real(FiniteReal::ONE),
     ])]);
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
@@ -1948,11 +1949,13 @@ fn complex_strip_and_malformed_strip_witnesses_preserve_winding() {
 
 #[test]
 fn non_finite_tessellation_coordinates_are_rejected() {
-    let result = decode_inline(
+    let result = decode_inline_result(
         "#1=COORDINATES_LIST('',1,((1E400,0.,0.)));
 #2=TRIANGULATED_SURFACE_SET('',#1,1,$,$,((1,1,1)));",
     );
-    assert!(result.ir().model.tessellations.is_empty());
+    assert!(
+        matches!(result, Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message))) if message.contains("finite binary64 range"))
+    );
 }
 #[test]
 fn complex_tessellated_face_keeps_exact_support_surface_reachable() {

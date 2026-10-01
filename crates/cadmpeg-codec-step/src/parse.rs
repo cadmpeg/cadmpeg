@@ -1000,7 +1000,8 @@ impl Parser<'_, '_, '_> {
         }
         if !anchors.is_empty() {
             self.budget.charge_collection_items(
-                u64_from_index(anchors.len()), "step_anchor_binding_items",
+                u64_from_index(anchors.len()),
+                "step_anchor_binding_items",
             )?;
             self.budget.charge_retained(
                 btree_node_storage::<String, Value>()?
@@ -1010,7 +1011,10 @@ impl Parser<'_, '_, '_> {
             )?;
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
-                self.budget.charge_work(u64_from_index(anchor.name.len()), "step_anchor_binding_name_copy")?;
+                self.budget.charge_work(
+                    u64_from_index(anchor.name.len()),
+                    "step_anchor_binding_name_copy",
+                )?;
                 anchor_bindings.insert(
                     self.budget
                         .copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")?,
@@ -1070,12 +1074,10 @@ impl Parser<'_, '_, '_> {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
 
-                if parameters.len() == parameters.capacity() {
-                    self.budget.charge_retained(
-                        u64_from_index(size_of::<Value>()),
-                        "step_omitted_name_recovery_storage",
-                    )?;
-                }
+                self.budget.charge_retained(
+                    u64_from_index(size_of::<Value>()),
+                    "step_omitted_name_recovery_storage",
+                )?;
 
                 self.budget
                     .reserve_vec(parameters, 1, "step_omitted_name_recovery_item")?;
@@ -1286,11 +1288,13 @@ impl Parser<'_, '_, '_> {
         let budget = self.budget;
         let _nested = budget.enter_nested("step_parse_parameter_nesting")?;
         if self.depth >= recursion_cap(budget, MAX_VALUE_DEPTH) {
-            return Err(budget.refuse_codec_limit(
-                "step_parse_parameter_depth_limit",
-                u64_from_index(recursion_cap(budget, MAX_VALUE_DEPTH)),
-                u64_from_index(self.depth + 1),
-            ).into());
+            return Err(budget
+                .refuse_codec_limit(
+                    "step_parse_parameter_depth_limit",
+                    u64_from_index(recursion_cap(budget, MAX_VALUE_DEPTH)),
+                    u64_from_index(self.depth + 1),
+                )
+                .into());
         }
         self.depth += 1;
         let result = parse(self);
@@ -1358,9 +1362,12 @@ impl Parser<'_, '_, '_> {
                 return parser.err("typed parameter requires one value");
             }
             parser.punct(&TokenKind::RParen)?;
-            parser.budget.charge_collection_items(1, "step_parse_typed_value")?;
+            parser
+                .budget
+                .charge_collection_items(1, "step_parse_typed_value")?;
             parser.budget.charge_retained(
-                u64_from_index(size_of::<Value>()), "step_parse_typed_value_storage",
+                u64_from_index(size_of::<Value>()),
+                "step_parse_typed_value_storage",
             )?;
             Ok(Value::Typed(name, Box::new(value)))
         })
@@ -2366,18 +2373,18 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         self.remaining_nodes = self
             .remaining_nodes
             .checked_sub(expanded_nodes)
-            .ok_or_else(|| {
-                self.node_limit_error()
-            })?;
+            .ok_or_else(|| self.node_limit_error())?;
         Ok(value)
     }
 
     fn node_limit_error(&self) -> ResolveError {
-        self.budget.refuse_codec_limit(
-            "step_anchor_output_node_limit",
-            u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES)),
-            u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES) + 1),
-        ).into()
+        self.budget
+            .refuse_codec_limit(
+                "step_anchor_output_node_limit",
+                u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES)),
+                u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES) + 1),
+            )
+            .into()
     }
 
     fn charge_nodes(&self, count: usize) -> Result<(), ResolveError> {
@@ -2401,11 +2408,14 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             .map_err(ResolveError::Resource)?;
         self.budget.charge_work(1, "step_anchor_materialization")?;
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err(self.budget.refuse_codec_limit(
-                "step_anchor_depth_limit",
-                u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
-                u64_from_index(depth + 1),
-            ).into());
+            return Err(self
+                .budget
+                .refuse_codec_limit(
+                    "step_anchor_depth_limit",
+                    u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
+                    u64_from_index(depth + 1),
+                )
+                .into());
         }
         if let Value::Resource(name) = value {
             if let Some((name, source)) = self.anchors.get_key_value(name) {
@@ -2504,6 +2514,8 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, budget, depth + 1)?;
                 self.budget
+                    .charge_work(u64_from_index(name.len()), "step_anchor_typed_name_copy")?;
+                self.budget
                     .charge_retained(
                         u64_from_index(size_of::<Value>()),
                         "step_anchor_materialization_storage",
@@ -2515,7 +2527,13 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .map_err(ResolveError::Resource)?,
                     Box::new(value),
                 );
-                Ok((value, nodes.checked_add(1).ok_or_else(|| self.node_limit_error())?, expanded_nodes))
+                Ok((
+                    value,
+                    nodes
+                        .checked_add(1)
+                        .ok_or_else(|| self.node_limit_error())?,
+                    expanded_nodes,
+                ))
             }
             value => {
                 self.charge_nodes(1)?;
@@ -2590,13 +2608,17 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             .budget
             .enter_nested("step_reference_expansion")
             .map_err(ResolveError::Resource)?;
-        self.budget.charge_work(1, "step_reference_materialization")?;
+        self.budget
+            .charge_work(1, "step_reference_materialization")?;
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err(self.budget.refuse_codec_limit(
-                "step_reference_depth_limit",
-                u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
-                u64_from_index(depth + 1),
-            ).into());
+            return Err(self
+                .budget
+                .refuse_codec_limit(
+                    "step_reference_depth_limit",
+                    u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
+                    u64_from_index(depth + 1),
+                )
+                .into());
         }
         match value {
             Value::Reference(id) => {
@@ -2608,11 +2630,14 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             Value::List(values) => {
                 self.consume_materialized_node()?;
                 if !self.stack.is_empty() && values.len() > self.remaining_nodes {
-                    return Err(self.budget.refuse_codec_limit(
-                        "step_reference_output_node_limit",
-                        u64_from_index(self.remaining_nodes),
-                        u64_from_index(values.len()),
-                    ).into());
+                    return Err(self
+                        .budget
+                        .refuse_codec_limit(
+                            "step_reference_output_node_limit",
+                            u64_from_index(self.remaining_nodes),
+                            u64_from_index(values.len()),
+                        )
+                        .into());
                 }
                 self.admit_copy(1)?;
                 let mut resolved = self
@@ -2627,9 +2652,12 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             Value::Typed(name, value) => {
                 self.consume_materialized_node()?;
                 let resolved = self.resolve_value(value, depth + 1)?;
+                self.budget
+                    .charge_work(u64_from_index(name.len()), "step_reference_typed_name_copy")?;
                 self.admit_copy(1)?;
                 self.budget.charge_retained(
-                    u64_from_index(size_of::<Value>()), "step_reference_materialization_storage",
+                    u64_from_index(size_of::<Value>()),
+                    "step_reference_materialization_storage",
                 )?;
                 Ok(Value::Typed(
                     self.budget
@@ -2734,7 +2762,10 @@ fn resolve_local_references(
         .map_err(ResolveError::Resource)?;
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
-        budget.charge_work(u64_from_index(anchor.name.len()), "step_reference_anchor_name_copy")?;
+        budget.charge_work(
+            u64_from_index(anchor.name.len()),
+            "step_reference_anchor_name_copy",
+        )?;
         anchor_bindings.insert(
             budget
                 .copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")
@@ -2794,15 +2825,17 @@ fn value_node_count(
             .enter_nested("step_value_node_count")
             .map_err(ResolveError::Resource)?;
         if depth >= 256 {
-            return Err(budget.refuse_codec_limit(
-                "step_value_node_count_depth_limit", 256, u64_from_index(depth + 1),
-            ).into());
+            return Err(budget
+                .refuse_codec_limit(
+                    "step_value_node_count_depth_limit",
+                    256,
+                    u64_from_index(depth + 1),
+                )
+                .into());
         }
         *remaining = remaining
             .checked_sub(1)
-            .ok_or_else(|| budget.refuse_codec_limit(
-                "step_value_node_count_node_limit", 0, 1,
-            ))?;
+            .ok_or_else(|| budget.refuse_codec_limit("step_value_node_count_node_limit", 0, 1))?;
         budget
             .charge_work(1, "step_value_node_count")
             .map_err(ResolveError::Resource)?;

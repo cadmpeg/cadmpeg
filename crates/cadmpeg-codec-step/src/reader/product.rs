@@ -427,9 +427,11 @@ pub(super) fn decode(
             return Err(ctx.refuse_codec_limit(
                 "step_assembly_occurrence_limit",
                 u64_from_index(occurrence_cap),
-                u64_from_index(ir.model.occurrences.len()).checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("step_assembly_occurrence_limit", u64::MAX, u64::MAX)
-                })?,
+                u64_from_index(ir.model.occurrences.len())
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("step_assembly_occurrence_limit", u64::MAX, u64::MAX)
+                    })?,
             ));
         }
         ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_root_occurrence_items")?;
@@ -579,9 +581,15 @@ pub(super) fn decode(
                 return Err(ctx.refuse_codec_limit(
                     "step_assembly_occurrence_limit",
                     u64_from_index(occurrence_cap),
-                    u64_from_index(ir.model.occurrences.len()).checked_add(1).ok_or_else(|| {
-                        ctx.refuse_codec_limit("step_assembly_occurrence_limit", u64::MAX, u64::MAX)
-                    })?,
+                    u64_from_index(ir.model.occurrences.len())
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "step_assembly_occurrence_limit",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })?,
                 ));
             }
             if !child_ordinals.contains_key(&parent) {
