@@ -1125,29 +1125,18 @@ fn repeated_target_occurrence_placement_details(
 /// Bind a repeated-target occurrence carrier to a Component Insert scope
 /// through its relation record.
 pub(crate) fn repeated_target_component_insert(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
     expected_transform: [[f64; 4]; 4],
-) -> Option<(String, usize, Option<usize>)> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    ) else {
-        return None;
-    };
-    let decode_ctx = &decode_ctx;
-
-    let body = bytes.get(carrier_at..relation_at)?;
-    if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
-        return None;
+) -> Result<Option<(String, usize, Option<usize>)>, CodecError> {
+    let body = xref_some!(bytes.get(carrier_at..relation_at));
+    if xref_some!(View::u64_le_at(body, 7)) != u64::from(carrier_record_index) {
+        return Ok(None);
     }
-    let Ok(Some(details)) = repeated_target_occurrence_placement_details(decode_ctx, body) else {
-        return None;
-    };
+    let details = xref_some!(repeated_target_occurrence_placement_details(ctx, body)?);
     let transform = details.transform.map_or(
         [
             [1.0, 0.0, 0.0, 0.0],
@@ -1158,13 +1147,13 @@ pub(crate) fn repeated_target_component_insert(
         |(_, matrix)| matrix,
     );
     if transform != expected_transform {
-        return None;
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         details.role,
         carrier_at + details.role_offset,
         details.transform.map(|(offset, _)| carrier_at + offset),
-    ))
+    )))
 }
 
 /// Parse the grouped identity carrier used by the compact `Component Insert`

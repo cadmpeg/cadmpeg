@@ -1109,7 +1109,8 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     assert_eq!(matrix_5.len(), 823);
     assert_eq!(matrix_6.len(), 823);
     let (matrix_role, _, matrix_offset) =
-        super::repeated_target_component_insert(&matrix_6, 0, matrix_6.len(), 15, matrix)
+        super::repeated_target_component_insert(&cadmpeg_test_support::service_decode_context(), &matrix_6, 0, matrix_6.len(), 15, matrix)
+            .unwrap()
             .expect("matrix carrier matching the scope transform");
     assert_eq!(matrix_role, role);
     assert!(matrix_offset.is_some());
@@ -1142,6 +1143,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     let local_carrier =
         repeated_target_occurrence_record_with_path_role(path_role, &retained_role, 16, 1, None);
     let (decoded_role, role_offset, transform_offset) = super::repeated_target_component_insert(
+        &cadmpeg_test_support::service_decode_context(),
         &local_carrier,
         0,
         local_carrier.len(),
@@ -1153,6 +1155,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
             [0.0, 0.0, 0.0, 1.0],
         ],
     )
+    .unwrap()
     .expect("identity carrier with an independent retained role");
     assert_eq!(decoded_role, retained_role);
     assert_eq!(transform_offset, None);
@@ -1900,4 +1903,27 @@ fn redirections_leaf_form_parses_empty_object_references() {
     assert_eq!(table.designs.len(), 1);
     assert_eq!(table.designs[0].target_file_name, "part.f3d");
     assert!(table.references.is_empty());
+}
+
+#[test]
+fn repeated_target_component_insert_preserves_caller_refusal() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let bytes = repeated_target_occurrence_record(role, 10, 1, None);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let error = super::repeated_target_component_insert(
+            ctx,
+            &bytes,
+            0,
+            bytes.len(),
+            10,
+            [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+             [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+        ).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("placement must preserve the resource refusal");
+        };
+        assert_eq!(Some(limit), ctx.resource_refusal());
+    });
 }
