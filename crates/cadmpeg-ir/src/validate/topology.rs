@@ -2,6 +2,10 @@
 //! Focused validation checks for topology.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fmt;
+
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
 use crate::features::{
@@ -123,7 +127,7 @@ pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
-pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     for b in &ir.model.bodies {
         for l in &b.regions {
             if ids.regions(l.as_str()).is_none() {
@@ -2012,10 +2016,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         }
     }
     check_feature_sketch_references(ir, &sketches, findings);
-    check_feature_references(ir, ids, findings);
+    check_feature_references(ctx, ir, ids, findings)?;
+    Ok(())
 }
 
-fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     use crate::features::{
         EdgeSelection, FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ScaleCenter,
     };
@@ -2239,12 +2244,19 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             entity: None,
         });
     }
-    let feature_records = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let feature_records_storage = ctx.with_scoped_storage("feature reference index", || {
+        let mut records = HashMap::new();
+        let mut longest = 0;
+        for feature in &ir.model.features {
+            ctx.charge_work(1, "feature reference index scan")?;
+            longest = longest.max(feature.id.as_str().len());
+            plane_lookup_work(ctx, records.len(), feature.id.as_str().len(), longest)?;
+            ctx.insert_hash_map(&mut records, feature.id.as_str(), feature, "feature reference index")?;
+        }
+        Ok::<_, CodecError>((records, longest))
+    })?;
+    let (feature_records, longest_feature_id) = &feature_records_storage.0;
+    let longest_feature_id = *longest_feature_id;
     let sketch_entities = ir
         .model
         .sketch_entities
@@ -2257,48 +2269,65 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .iter()
         .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
         .collect::<HashMap<_, _>>();
+    let mut reported_storage = ctx.reserve_scoped(0, "datum-plane reported cycles")?;
     let mut reported_plane_cycles = HashSet::new();
     for feature in &ir.model.features {
-        let mut path = Vec::new();
-        let mut positions = HashMap::new();
-        let mut cursor = feature.id.as_str();
-        loop {
-            if let Some(&cycle_start) = positions.get(cursor) {
-                let mut cycle = path[cycle_start..].to_vec();
-                cycle.sort_unstable();
-                if reported_plane_cycles.insert(cycle.clone()) {
-                    findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
-                            "datum-plane reference cycle contains {}",
-                            cycle
-                                .iter()
-                                .map(|id| format!("`{id}`"))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ),
-                        entity: Some(feature.id.as_str().to_owned()),
-                    });
+        let mut path_storage = ctx.reserve_scoped(0, "datum-plane traversal storage")?;
+            let mut path: Vec<(&str, cadmpeg_core::decode::DepthGuard<'_>)> = Vec::new();
+            let mut positions = HashMap::new();
+            let mut cursor = feature.id.as_str();
+            let mut longest_path_id = 0;
+            loop {
+                ctx.charge_work(1, "datum-plane traversal")?;
+                longest_path_id = longest_path_id.max(cursor.len());
+                plane_lookup_work(ctx, positions.len(), cursor.len(), longest_path_id)?;
+                if let Some(&cycle_start) = positions.get(cursor) {
+                    let mut cycle_storage = ctx.with_scoped_storage("datum-plane cycle identities", || {
+                        ctx.collect_vec(path[cycle_start..].iter().map(|(id, _)| *id), "datum-plane cycle identities")
+                    })?;
+                    let cycle = &mut cycle_storage.0;
+                    ctx.sort_unstable_by(cycle, Ord::cmp, |id| id.len(), "sort datum-plane cycle identities")?;
+                    ctx.charge_work(u64_from_index(cycle.len()), "datum-plane cycle byte scan")?;
+                    let cycle_bytes = cycle.iter().try_fold(0u64, |bytes, id| {
+                        bytes.checked_add(u64_from_index(id.len()))
+                    }).ok_or_else(|| ctx.refuse_codec_limit("datum-plane cycle hash", u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(cycle_bytes, "datum-plane cycle hash")?;
+                    let comparisons = u64_from_index(reported_plane_cycles.len()).checked_add(1)
+                        .and_then(|count| count.checked_mul(cycle_bytes.checked_mul(2)?.checked_add(1)?))
+                        .ok_or_else(|| ctx.refuse_codec_limit("datum-plane cycle comparisons", u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(comparisons, "datum-plane cycle comparisons")?;
+                    if !reported_plane_cycles.contains(&*cycle) {
+                        let finding = Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: ctx.format_retained(format_args!("datum-plane reference cycle contains {}", PlaneCyclePath(cycle)), "datum-plane cycle finding")?,
+                            entity: Some(ctx.copy_retained_text(feature.id.as_str(), "datum-plane cycle finding identity")?),
+                        };
+                        ctx.push_vec(findings, finding, "datum-plane cycle findings")?;
+                        reported_storage.with_storage(|| {
+                            let copy = ctx.collect_vec(cycle.iter().copied(), "datum-plane reported cycle identities")?;
+                            ctx.charge_work(cycle_bytes, "datum-plane reported cycle hash")?;
+                            ctx.charge_work(comparisons, "datum-plane reported cycle comparisons")?;
+                            ctx.insert_hash_set(&mut reported_plane_cycles, copy, "datum-plane reported cycles")
+                        })?;
+                    }
+                    break;
                 }
-                break;
+                plane_lookup_work(ctx, positions.len(), cursor.len(), longest_path_id)?;
+                path_storage.with_storage(|| ctx.insert_hash_map(&mut positions, cursor, path.len(), "datum-plane traversal positions"))?;
+                let depth = ctx.enter_nested("datum-plane traversal depth")?;
+                ctx.push_scoped_vec(&mut path_storage, &mut path, (cursor, depth), "datum-plane traversal path")?;
+                plane_lookup_work(ctx, feature_records.len(), cursor.len(), longest_feature_id)?;
+                let Some(next) = feature_records.get(cursor).and_then(|feature| {
+                    let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                        reference: Some(DatumPlaneReference::Feature { feature: reference }),
+                        ..
+                    }) = feature.evaluation.definition()
+                    else { return None; };
+                    Some(reference.as_str())
+                }) else { break; };
+                cursor = next;
             }
-            positions.insert(cursor, path.len());
-            path.push(cursor);
-            let Some(next) = feature_records.get(cursor).and_then(|feature| {
-                let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                    reference: Some(DatumPlaneReference::Feature { feature: reference }),
-                    ..
-                }) = feature.evaluation.definition()
-                else {
-                    return None;
-                };
-                Some(reference.as_str())
-            }) else {
-                break;
-            };
-            cursor = next;
-        }
     }
     let parameters_by_id = ir
         .model
@@ -3586,6 +3615,26 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
         }
     }
+    Ok(())
+}
+
+struct PlaneCyclePath<'a, 'id>(&'a [&'id str]);
+
+impl fmt::Display for PlaneCyclePath<'_, '_> {
+    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, id) in self.0.iter().enumerate() {
+            if index != 0 { output.write_str(", ")?; }
+            write!(output, "`{id}`")?;
+        }
+        Ok(())
+    }
+}
+
+fn plane_lookup_work(ctx: &DecodeContext<'_>, count: usize, key_bytes: usize, longest: usize) -> Result<(), CodecError> {
+    let work = u64_from_index(count).checked_add(1)
+        .and_then(|count| count.checked_mul(u64_from_index(key_bytes).checked_add(u64_from_index(longest))?.checked_add(1)?))
+        .ok_or_else(|| ctx.refuse_codec_limit("datum-plane identity lookup", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, "datum-plane identity lookup")
 }
 
 fn check_historical_members<'a, I, F>(
