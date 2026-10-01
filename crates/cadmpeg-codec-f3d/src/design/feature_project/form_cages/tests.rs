@@ -392,18 +392,33 @@ fn form_serializer_offset_refuses_collection_limit() {
 fn form_serializer_name_refuses_materialized_limit() {
     assert_form_serializer_refusal(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        239,
+        47,
         "f3d form serializer name materialization",
     );
 }
 
 #[test]
-fn form_serializer_units_refuses_collection_limit() {
-    assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        2,
-        "f3d form serializer name units",
-    );
+fn form_serializer_name_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+    let mut serializer = indexed_frame(b"315", 8305, 132);
+    serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+    for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+        let at = 25 + ordinal * 2;
+        serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    serializer[121] = 1;
+    serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+    let following = indexed_frame(b"457", 8306, 15);
+    let bytes = [serializer, following].concat();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(form_cage_serializers(&ctx, &bytes, &records), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "f3d form serializer name materialization"));
 }
 
 #[test]
@@ -451,7 +466,7 @@ fn form_serializer_unicode_name_refuses_exact_retained_limit() {
 fn form_serializer_entry_index_refuses_collection_limit() {
     assert_form_serializer_refusal(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        50,
+        2,
         "f3d form serializer entry index",
     );
 }
@@ -460,7 +475,7 @@ fn form_serializer_entry_index_refuses_collection_limit() {
 fn form_serializer_order_refuses_collection_limit() {
     assert_form_serializer_refusal(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        51,
+        3,
         "f3d form serializer order",
     );
 }

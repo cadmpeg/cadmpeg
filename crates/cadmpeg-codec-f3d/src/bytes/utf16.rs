@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validated UTF-16 text borrowed from a counted source field.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use std::fmt::Write;
 
@@ -80,24 +80,9 @@ impl<'a> Utf16View<'a> {
         ctx: &'ctx DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
-        self.charge_copy(ctx, operation)?;
-        let mut reservation = ctx.reserve_scoped(0, operation)?;
-        let mut text = String::new();
-        ctx.reserve_scoped_string(&mut reservation, &mut text, self.utf8_len, operation)?;
-        text.extend(self.chars());
-        Ok((text, reservation))
+        ctx.utf16le_scoped_text(self.raw, self.raw.len() / 2, false, operation)
     }
 
-    fn charge_copy(
-        self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        let work = u64_from_index(self.raw.len())
-            .checked_add(u64_from_index(self.utf8_len))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, operation)
-    }
 }
 
 impl std::fmt::Display for Utf16View<'_> {
