@@ -3340,7 +3340,11 @@ pub(super) fn parasolid_attribute_definitions(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX attribute definition stream ordinal", 0, 1))?;
-        let crate::parasolid::AttributeScan { records: scanned, slots: _scan_slots, payloads } = crate::parasolid::attribute_definitions(ctx, &stream.inflated)?;
+        let crate::parasolid::AttributeScan {
+            records: scanned,
+            slots: _scan_slots,
+            payloads,
+        } = crate::parasolid::attribute_definitions(ctx, &stream.inflated)?;
         payloads.commit()?;
         for definition in scanned {
             ctx.reserve_retained_vec(&mut records, 1, "NX attribute definitions")?;
@@ -3389,7 +3393,11 @@ pub(super) fn parasolid_field_names_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX field names stream ordinal", 0, 1))?;
-        let crate::parasolid::AttributeScan { records: scanned, slots: _scan_slots, payloads } = crate::parasolid::field_names_records(ctx, &stream.inflated)?;
+        let crate::parasolid::AttributeScan {
+            records: scanned,
+            slots: _scan_slots,
+            payloads,
+        } = crate::parasolid::field_names_records(ctx, &stream.inflated)?;
         payloads.commit()?;
         for record in scanned {
             ctx.reserve_retained_vec(&mut records, 1, "NX field names records")?;
@@ -3699,7 +3707,11 @@ pub(super) fn parasolid_entity_51_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX entity 51 stream ordinal", 0, 1))?;
-        let crate::parasolid::AttributeScan { records: scanned, slots: _scan_slots, payloads } = crate::parasolid::entity_51_records(ctx, &stream.inflated)?;
+        let crate::parasolid::AttributeScan {
+            records: scanned,
+            slots: _scan_slots,
+            payloads,
+        } = crate::parasolid::entity_51_records(ctx, &stream.inflated)?;
         payloads.commit()?;
         for record in scanned {
             ctx.reserve_retained_vec(&mut records, 1, "NX entity 51 records")?;
@@ -3783,14 +3795,16 @@ pub(super) fn parasolid_entity_value_records(
                 offsets
             }
             StreamKind::Partition | StreamKind::Plain => {
-                let (offsets, guard) = crate::parasolid::referenced_value_record_offsets(ctx, &stream.inflated)?;
+                let (offsets, guard) =
+                    crate::parasolid::referenced_value_record_offsets(ctx, &stream.inflated)?;
                 offsets_guard = guard;
                 offsets
             }
             StreamKind::Preview => continue,
         };
         let values = crate::parasolid::value_records::entity_value_records_at(
-            ctx, &stream.inflated,
+            ctx,
+            &stream.inflated,
             owned_offsets,
         )?;
         drop(offsets_guard);
@@ -3958,7 +3972,6 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-
     }
     let sort_units = [
         records.integers.len(),

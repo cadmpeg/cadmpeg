@@ -60,12 +60,7 @@ pub(super) fn ordered_point_candidates<'a>(
     ctx: &DecodeContext<'_>,
     graph: &'a Graph,
 ) -> Result<Vec<(FinitePoint3, &'a Node)>, CodecError> {
-    ordered_fixed_candidates(
-        ctx,
-        graph,
-        [NodeKind::Point],
-        Node::point_position,
-    )
+    ordered_fixed_candidates(ctx, graph, [NodeKind::Point], Node::point_position)
 }
 
 pub(super) fn ordered_surface_candidates<'a>(

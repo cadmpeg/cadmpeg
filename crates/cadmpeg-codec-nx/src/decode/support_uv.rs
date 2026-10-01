@@ -160,9 +160,14 @@ pub(super) fn linear_knots(
         return Ok(Vec::new());
     }
     let ctx = geometry_budget.charges;
-    let count = parameters.len().checked_add(2)
+    let count = parameters
+        .len()
+        .checked_add(2)
         .ok_or_else(|| ctx.refuse_codec_limit("nx linear knot count", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "form nx linear knots")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "form nx linear knots",
+    )?;
     let mut knots = ctx.retained_vec(count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
@@ -2882,13 +2887,22 @@ mod tests {
 
     #[test]
     fn linear_knots_refuse_retained_storage_before_construction() {
-        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_retained_bytes = 0, |ctx| {
-            let budget = GeometryWorkBudget::from_context(ctx, 100);
-            assert!(matches!(super::linear_knots(&[0.0, 1.0], &budget), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "nx linear knots" && limit.dimension == ResourceDimension::RetainedBytes));
-        });
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                assert!(
+                    matches!(super::linear_knots(&[0.0, 1.0], &budget), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "nx linear knots" && limit.dimension == ResourceDimension::RetainedBytes)
+                );
+            },
+        );
         crate::test_support::with_decode_context(|ctx| {
             let budget = GeometryWorkBudget::from_context(ctx, 100);
-            assert_eq!(super::linear_knots(&[0.0, 1.0], &budget).unwrap(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(
+                super::linear_knots(&[0.0, 1.0], &budget).unwrap(),
+                [0.0, 0.0, 1.0, 1.0]
+            );
         });
     }
 

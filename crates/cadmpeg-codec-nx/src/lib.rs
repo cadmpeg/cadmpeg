@@ -140,7 +140,11 @@ impl CodecBackend for NxCodec {
         let admitted = native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
             ctx, namespace,
         )
-        .and_then(|_| native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(ctx, namespace));
+        .and_then(|_| {
+            native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
+                ctx, namespace,
+            )
+        });
         Ok(match admitted {
             Ok(_) => Vec::new(),
             Err(error) => {

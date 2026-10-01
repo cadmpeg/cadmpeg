@@ -227,13 +227,25 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         }
         if is_value_family(kind) && !value_boundary && referenced_value_offsets.is_none() {
             let mut offsets = BTreeSet::new();
-            let (events, _event_guard) = crate::parasolid::referenced_value_event_offsets(ctx, stream)?;
+            let (events, _event_guard) =
+                crate::parasolid::referenced_value_event_offsets(ctx, stream)?;
             for event_offset in events {
-                ctx.insert_scoped_btree_set(&mut referenced_offsets_guard, &mut offsets, event_offset, "index NX referenced offsets", "NX referenced value offsets")?;
+                ctx.insert_scoped_btree_set(
+                    &mut referenced_offsets_guard,
+                    &mut offsets,
+                    event_offset,
+                    "index NX referenced offsets",
+                    "NX referenced value offsets",
+                )?;
             }
             referenced_value_offsets = Some(offsets);
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(referenced_value_offsets.as_ref().map_or(0, BTreeSet::len)), "resolve NX referenced offset")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(
+                referenced_value_offsets.as_ref().map_or(0, BTreeSet::len),
+            ),
+            "resolve NX referenced offset",
+        )?;
         let value_owned = !is_value_family(kind)
             || value_boundary
             || referenced_value_offsets
@@ -241,7 +253,9 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
                 .is_some_and(|offsets| offsets.contains(&offset));
         if !value_owned {
             if let Some((parsed_kind, _, byte_len)) =
-                crate::parasolid::value_records::entity_value_record_identity_at(ctx, stream, offset)?
+                crate::parasolid::value_records::entity_value_record_identity_at(
+                    ctx, stream, offset,
+                )?
             {
                 if parsed_kind == kind {
                     offset += byte_len;

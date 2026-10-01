@@ -2168,7 +2168,8 @@ fn merge_records(
         .body_shape_face_count(ctx)?
         .checked_add(deleted_faces)
         .ok_or_else(|| CodecError::Malformed("NX accounted face count overflow".into()))?;
-    let unaccounted_face_loss = !deletes_owner && accounted_faces < graph.body_shape_face_count(ctx)?;
+    let unaccounted_face_loss =
+        !deletes_owner && accounted_faces < graph.body_shape_face_count(ctx)?;
     if base_complete && (!merged_complete || unaccounted_face_loss) {
         let (selected, reservation) = build(false)?;
         reservation.commit()?;
@@ -2739,7 +2740,9 @@ fn consume_variable(
     let parsed: Option<Result<_, CodecError>> = (|| {
         Some(Ok(match kind {
             81 => {
-                let record = propagate_resource!(crate::parasolid::entity_51_record_at(ctx, stream, offset))?;
+                let record = propagate_resource!(crate::parasolid::entity_51_record_at(
+                    ctx, stream, offset
+                ))?;
                 (
                     record.xmt.into(),
                     record.byte_len,
@@ -2750,10 +2753,11 @@ fn consume_variable(
                 )
             }
             82..=89 | 98 => {
-                let (parsed_kind, xmt, byte_len) =
-                    propagate_resource!(crate::parasolid::value_records::entity_value_record_identity_at(
+                let (parsed_kind, xmt, byte_len) = propagate_resource!(
+                    crate::parasolid::value_records::entity_value_record_identity_at(
                         ctx, stream, offset,
-                    ))?;
+                    )
+                )?;
                 (parsed_kind == kind).then_some(())?;
                 let family = match parsed_kind {
                     82 => RecordFamily::Entity52,
@@ -3262,7 +3266,11 @@ fn consume_type_45(
         (View::u16_be_at(stream, offset) == Some(45)).then_some(())?;
         let direct = propagate_resource!(type_45_layout(ctx, stream, offset, 0));
         let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-        let escaped = if escaped_marker { propagate_resource!(type_45_layout(ctx, stream, offset, 1)) } else { None };
+        let escaped = if escaped_marker {
+            propagate_resource!(type_45_layout(ctx, stream, offset, 1))
+        } else {
+            None
+        };
         select_enveloped_layout(escaped_marker, direct, escaped).map(Ok)
     })();
     let Some((xmt, end)) = parsed.transpose()? else {
@@ -3338,42 +3346,53 @@ fn type_67_layout(
     Some((xmt, node_id, references, at))
 }
 
-fn type_45_layout(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize, envelope_len: usize) -> Result<Option<(u32, usize)>, CodecError> {
+fn type_45_layout(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Result<Option<(u32, usize)>, CodecError> {
     let parsed: Option<Result<_, CodecError>> = (|| {
-    let count_at = offset.checked_add(2 + envelope_len)?;
-    let count = usize::try_from(View::u32_be_at(stream, count_at)?).ok()?;
-    (count > 0).then_some(())?;
-    let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
-    (xmt > 1).then_some(())?;
-    let data_at = count_at.checked_add(4 + xmt_len)?;
-    let finite_end = |value_count: usize| -> Result<Option<usize>, CodecError> {
-        let parsed: Option<Result<_, CodecError>> = (|| {
-        let end = data_at.checked_add(value_count.checked_mul(8)?)?;
-        let raw = stream.get(data_at..end)?;
-        propagate_resource!(ctx.charge_work(u64_from_index(value_count), "validate NX type-45 lane"));
-        (0..value_count)
-            .all(|i| {
-                View::f64_be_at(raw, i * 8)
-                    .is_some_and(|value| value.is_finite() && (value == 0.0 || value.is_normal()))
-            })
-            .then_some(Ok(end))
-        })();
-        parsed.transpose()
-    };
-    let exact_end = propagate_resource!(finite_end(count));
-    let successor_count = count.checked_add(1)?;
-    let successor_extent = data_at.checked_add(successor_count.checked_mul(8)?)?;
-    let successor_end = propagate_resource!(finite_end(successor_count));
-    let end = match (exact_end, successor_end) {
-        (Some(exact), Some(_)) if propagate_resource!(crate::nurbs::auxiliary_record_at(ctx, stream, exact)).is_some() => {
-            exact
-        }
-        (_, Some(successor)) => successor,
-        (Some(exact), None) if successor_extent > stream.len() => exact,
-        (Some(_) | None, None) => return None,
-    };
-    Some(Ok((xmt, end)))
-})();
+        let count_at = offset.checked_add(2 + envelope_len)?;
+        let count = usize::try_from(View::u32_be_at(stream, count_at)?).ok()?;
+        (count > 0).then_some(())?;
+        let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
+        (xmt > 1).then_some(())?;
+        let data_at = count_at.checked_add(4 + xmt_len)?;
+        let finite_end = |value_count: usize| -> Result<Option<usize>, CodecError> {
+            let parsed: Option<Result<_, CodecError>> = (|| {
+                let end = data_at.checked_add(value_count.checked_mul(8)?)?;
+                let raw = stream.get(data_at..end)?;
+                propagate_resource!(
+                    ctx.charge_work(u64_from_index(value_count), "validate NX type-45 lane")
+                );
+                (0..value_count)
+                    .all(|i| {
+                        View::f64_be_at(raw, i * 8).is_some_and(|value| {
+                            value.is_finite() && (value == 0.0 || value.is_normal())
+                        })
+                    })
+                    .then_some(Ok(end))
+            })();
+            parsed.transpose()
+        };
+        let exact_end = propagate_resource!(finite_end(count));
+        let successor_count = count.checked_add(1)?;
+        let successor_extent = data_at.checked_add(successor_count.checked_mul(8)?)?;
+        let successor_end = propagate_resource!(finite_end(successor_count));
+        let end = match (exact_end, successor_end) {
+            (Some(exact), Some(_))
+                if propagate_resource!(crate::nurbs::auxiliary_record_at(ctx, stream, exact))
+                    .is_some() =>
+            {
+                exact
+            }
+            (_, Some(successor)) => successor,
+            (Some(exact), None) if successor_extent > stream.len() => exact,
+            (Some(_) | None, None) => return None,
+        };
+        Some(Ok((xmt, end)))
+    })();
     parsed.transpose()
 }
 

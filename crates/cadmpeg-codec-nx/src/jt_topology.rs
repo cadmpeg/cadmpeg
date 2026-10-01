@@ -122,7 +122,10 @@ impl Symbols<'_> {
         let Some(context) = AttributeMaskContext::of(degree) else {
             return Ok(None);
         };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(degree.get()), "form JT face attribute mask")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(degree.get()),
+            "form JT face attribute mask",
+        )?;
         let lane = context.lane();
         let degree = degree.get();
         if degree <= 64 {
@@ -248,27 +251,36 @@ impl Decoder<'_> {
         Ok(Some(index))
     }
 
-    fn face_context(&self, ctx: &DecodeContext<'_>, vertex: usize) -> Result<Option<usize>, CodecError> {
+    fn face_context(
+        &self,
+        ctx: &DecodeContext<'_>,
+        vertex: usize,
+    ) -> Result<Option<usize>, CodecError> {
         let decoded: Option<Result<_, CodecError>> = (|| {
-        let vertex = self.vertices.get(vertex)?;
-        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(vertex.faces.len()), "scan JT vertex face context"));
-        let (known, total) = vertex
-            .faces
-            .iter()
-            .flatten()
-            .try_fold((0usize, 0usize), |(known, sum), &face| {
-                Some((known.checked_add(1)?, sum.checked_add(self.faces.get(face)?.vertices.len())?))
-            })?;
-        Some(Ok(match vertex.faces.len() {
-            3 if total < known * 6 => 0,
-            3 if total == known * 6 => 1,
-            3 => 2,
-            4 if total < known * 4 => 3,
-            4 if total == known * 4 => 4,
-            4 => 5,
-            5 => 6,
-            _ => 7,
-        }))
+            let vertex = self.vertices.get(vertex)?;
+            propagate_resource!(ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(vertex.faces.len()),
+                "scan JT vertex face context"
+            ));
+            let (known, total) = vertex.faces.iter().flatten().try_fold(
+                (0usize, 0usize),
+                |(known, sum), &face| {
+                    Some((
+                        known.checked_add(1)?,
+                        sum.checked_add(self.faces.get(face)?.vertices.len())?,
+                    ))
+                },
+            )?;
+            Some(Ok(match vertex.faces.len() {
+                3 if total < known * 6 => 0,
+                3 if total == known * 6 => 1,
+                3 => 2,
+                4 if total < known * 4 => 3,
+                4 if total == known * 4 => 4,
+                4 => 5,
+                5 => 6,
+                _ => 7,
+            }))
         })();
         decoded.transpose()
     }
@@ -295,48 +307,54 @@ impl Decoder<'_> {
         face_slot: usize,
     ) -> Result<Option<()>, CodecError> {
         let decoded: Option<Result<_, CodecError>> = (|| {
-        let degree = self.faces.get(face)?.vertices.len();
-        if degree == 0 || face_slot >= degree {
-            return None;
-        }
-        self.set_face_vertex(face, face_slot, vertex)?;
-        let valence = self.vertices.get(vertex)?.faces.len();
-        let clockwise = (face_slot + degree - 1) % degree;
-        let counterclockwise = (face_slot + 1) % degree;
-        if let Some(neighbor) = self.faces[face].vertices[clockwise] {
-            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.vertices.get(neighbor)?.faces.len()), "scan JT neighboring face ring"));
-            let shared = self
-                .vertices
-                .get(neighbor)?
-                .faces
-                .iter()
-                .position(|&v| v == Some(face))?;
-            let slot = (vertex_face_slot + 1) % valence;
-            if self.vertices[vertex].faces[slot].is_none() {
-                let adjacent = (shared + self.vertices[neighbor].faces.len() - 1)
-                    % self.vertices[neighbor].faces.len();
-                if let Some(adjacent_face) = self.vertices[neighbor].faces[adjacent] {
-                    self.set_vertex_face(vertex, slot, adjacent_face)?;
+            let degree = self.faces.get(face)?.vertices.len();
+            if degree == 0 || face_slot >= degree {
+                return None;
+            }
+            self.set_face_vertex(face, face_slot, vertex)?;
+            let valence = self.vertices.get(vertex)?.faces.len();
+            let clockwise = (face_slot + degree - 1) % degree;
+            let counterclockwise = (face_slot + 1) % degree;
+            if let Some(neighbor) = self.faces[face].vertices[clockwise] {
+                propagate_resource!(ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(self.vertices.get(neighbor)?.faces.len()),
+                    "scan JT neighboring face ring"
+                ));
+                let shared = self
+                    .vertices
+                    .get(neighbor)?
+                    .faces
+                    .iter()
+                    .position(|&v| v == Some(face))?;
+                let slot = (vertex_face_slot + 1) % valence;
+                if self.vertices[vertex].faces[slot].is_none() {
+                    let adjacent = (shared + self.vertices[neighbor].faces.len() - 1)
+                        % self.vertices[neighbor].faces.len();
+                    if let Some(adjacent_face) = self.vertices[neighbor].faces[adjacent] {
+                        self.set_vertex_face(vertex, slot, adjacent_face)?;
+                    }
                 }
             }
-        }
-        if let Some(neighbor) = self.faces[face].vertices[counterclockwise] {
-            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.vertices.get(neighbor)?.faces.len()), "scan JT neighboring face ring"));
-            let shared = self
-                .vertices
-                .get(neighbor)?
-                .faces
-                .iter()
-                .position(|&v| v == Some(face))?;
-            let slot = (vertex_face_slot + valence - 1) % valence;
-            if self.vertices[vertex].faces[slot].is_none() {
-                let adjacent = (shared + 1) % self.vertices[neighbor].faces.len();
-                if let Some(adjacent_face) = self.vertices[neighbor].faces[adjacent] {
-                    self.set_vertex_face(vertex, slot, adjacent_face)?;
+            if let Some(neighbor) = self.faces[face].vertices[counterclockwise] {
+                propagate_resource!(ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(self.vertices.get(neighbor)?.faces.len()),
+                    "scan JT neighboring face ring"
+                ));
+                let shared = self
+                    .vertices
+                    .get(neighbor)?
+                    .faces
+                    .iter()
+                    .position(|&v| v == Some(face))?;
+                let slot = (vertex_face_slot + valence - 1) % valence;
+                if self.vertices[vertex].faces[slot].is_none() {
+                    let adjacent = (shared + 1) % self.vertices[neighbor].faces.len();
+                    if let Some(adjacent_face) = self.vertices[neighbor].faces[adjacent] {
+                        self.set_vertex_face(vertex, slot, adjacent_face)?;
+                    }
                 }
             }
-        }
-        Some(Ok(()))
+            Some(Ok(()))
         })();
         decoded.transpose()
     }
@@ -371,7 +389,10 @@ impl Decoder<'_> {
             let Some(attribute_mask) = self.symbols.attribute_mask(ctx, degree)? else {
                 return Ok(None);
             };
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(attribute_mask.len()), "count JT face attributes")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(attribute_mask.len()),
+                "count JT face attributes",
+            )?;
             let Some(face_attribute_count) =
                 u32::try_from(attribute_mask.iter().filter(|&&bit| bit).count()).ok()
             else {
@@ -384,7 +405,10 @@ impl Decoder<'_> {
                 return Ok(None);
             };
             let mut attributes = ctx.collection_vec(attribute_len, "nx JT face attributes")?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(attribute_len), "form JT face attributes")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(attribute_len),
+                "form JT face attributes",
+            )?;
             attributes.extend(self.attribute_count..attribute_end);
             let vertices = FaceSlots::new(ctx, degree.get())?;
             ctx.reserve_vec(&mut self.faces, 1, "nx JT topology faces")?;
@@ -474,8 +498,13 @@ impl Decoder<'_> {
             let Some(neighbor) = self.faces[previous_face].vertices[previous_slot] else {
                 break;
             };
-            let Some(next) = self.faces.get(next_face) else { return Ok(None); };
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(next.vertices.len()), "scan JT next face ring")?;
+            let Some(next) = self.faces.get(next_face) else {
+                return Ok(None);
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(next.vertices.len()),
+                "scan JT next face ring",
+            )?;
             let Some(found) = self
                 .faces
                 .get(next_face)
@@ -521,8 +550,13 @@ impl Decoder<'_> {
             let Some(neighbor) = self.faces[previous_face].vertices[previous_slot] else {
                 break;
             };
-            let Some(next) = self.faces.get(next_face) else { return Ok(None); };
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(next.vertices.len()), "scan JT next face ring")?;
+            let Some(next) = self.faces.get(next_face) else {
+                return Ok(None);
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(next.vertices.len()),
+                "scan JT next face ring",
+            )?;
             let Some(found) = self
                 .faces
                 .get(next_face)
@@ -554,9 +588,13 @@ impl Decoder<'_> {
 
     fn next_active_face(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
         // At most sixteen removals shift the active lane, plus the suffix walk.
-        let work = self.active.len().checked_mul(17)
-            .ok_or_else(|| ctx.refuse_codec_limit("select JT active face", u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "select JT active face")?;
+        let work = self.active.len().checked_mul(17).ok_or_else(|| {
+            ctx.refuse_codec_limit("select JT active face", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "select JT active face",
+        )?;
         while self.active.last().is_some_and(|&face| self.removed[face]) {
             self.active.pop();
         }
@@ -594,8 +632,14 @@ impl Decoder<'_> {
             }
             while let Some(face) = self.next_active_face(ctx)? {
                 loop {
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.faces[face].vertices.len()), "scan JT unfilled face slots")?;
-                    let Some(slot) = self.faces[face].vertices.iter().position(Option::is_none) else { break; };
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(self.faces[face].vertices.len()),
+                        "scan JT unfilled face slots",
+                    )?;
+                    let Some(slot) = self.faces[face].vertices.iter().position(Option::is_none)
+                    else {
+                        break;
+                    };
                     let Some(vertex) = self.activate_vertex(ctx, face, slot)? else {
                         return Ok(None);
                     };
@@ -606,7 +650,10 @@ impl Decoder<'_> {
                 self.removed[face] = true;
             }
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.slot_count), "validate JT reconstructed rings")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.slot_count),
+            "validate JT reconstructed rings",
+        )?;
         if !self.symbols.exhausted()
             || self.faces.iter().any(|face| face.vertices.empty() != 0)
             || self
@@ -619,7 +666,10 @@ impl Decoder<'_> {
         let mut polygons = ctx.collection_vec(self.vertices.len(), "nx JT output polygons")?;
         for (vertex_index, vertex) in self.vertices.into_iter().enumerate() {
             let mut corners = ctx.collection_vec(vertex.faces.len(), "nx JT polygon corners")?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(vertex.faces.len()), "form JT polygon corners")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(vertex.faces.len()),
+                "form JT polygon corners",
+            )?;
             for face_index in vertex.faces {
                 let Some(face_index) = face_index else {
                     return Ok(None);
@@ -630,7 +680,10 @@ impl Decoder<'_> {
                 let attribute = if face.attributes.is_empty() {
                     None
                 } else {
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(face.vertices.len()), "scan JT polygon attribute ring")?;
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(face.vertices.len()),
+                        "scan JT polygon attribute ring",
+                    )?;
                     let Some(vertex_slot) = face
                         .vertices
                         .iter()
@@ -639,7 +692,10 @@ impl Decoder<'_> {
                         return Ok(None);
                     };
                     let mut attribute_slot = face.attributes.len() - 1;
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(vertex_slot + 1), "scan JT polygon attribute mask")?;
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(vertex_slot + 1),
+                        "scan JT polygon attribute mask",
+                    )?;
                     for slot in 0..=vertex_slot {
                         if face.attribute_mask[slot] {
                             attribute_slot = (attribute_slot + 1) % face.attributes.len();

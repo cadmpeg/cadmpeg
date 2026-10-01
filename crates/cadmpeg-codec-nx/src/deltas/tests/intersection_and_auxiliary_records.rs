@@ -500,7 +500,10 @@ fn deltas_walks_complete_nurbs_auxiliary_records() {
     ] {
         let (pos, auxiliary) = (0..source.len())
             .find_map(|pos| {
-                let auxiliary = crate::test_support::with_decode_context(|ctx| crate::nurbs::auxiliary_record_at(ctx, &source, pos)).unwrap()?;
+                let auxiliary = crate::test_support::with_decode_context(|ctx| {
+                    crate::nurbs::auxiliary_record_at(ctx, &source, pos)
+                })
+                .unwrap()?;
                 (auxiliary.family.kind() == kind).then_some((pos, auxiliary))
             })
             .expect("complete NURBS auxiliary record");

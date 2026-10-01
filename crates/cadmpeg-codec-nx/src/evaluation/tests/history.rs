@@ -113,8 +113,9 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
     assert_eq!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::verified(vec![
-                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-            ]).unwrap()
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+        ])
+        .unwrap()
     );
 }
 
@@ -687,9 +688,10 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
     assert_eq!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::verified(vec![
-                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
-                extracted
-            ]).unwrap()
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+            extracted
+        ])
+        .unwrap()
     );
 }
 
