@@ -319,10 +319,8 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
         )));
     }
     if parsed.schema_version != 0 {
-        return Err(redirections_error(format_args!(
-            "unsupported schema-version {}",
-            parsed.schema_version
-        )));
+        let message = ctx.format_retained(format_args!("F3D {REDIRECTIONS_ENTRY}: unsupported schema-version {}", parsed.schema_version), "describe unsupported F3D redirections schema")?;
+        return Err(CodecError::NotImplemented(message));
     }
     if parsed.designs.is_empty() {
         return Err(redirections_error(

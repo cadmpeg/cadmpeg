@@ -1929,3 +1929,5 @@ fn repeated_target_component_insert_preserves_caller_refusal() {
 }
 
 mod retained_text;
+
+mod schema;
