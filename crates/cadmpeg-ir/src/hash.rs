@@ -803,7 +803,7 @@ mod tests {
             .into_iter()
             .filter(|record| record.id.as_str() != source_image_id)
             .collect::<Vec<_>>();
-        normalized.set_native_unknowns(format, &unknowns).unwrap();
+        normalized.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), format, &unknowns).unwrap();
         crate::hash::sha256_hex(normalized.to_canonical_json().unwrap().as_bytes())
     }
 

@@ -160,7 +160,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         .expect("valid identity");
     let mut candidate = CadIr::empty();
     candidate
-        .set_native_unknowns(
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -304,7 +304,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let links = staged.links.clone();
     let mut candidate = CadIr::empty();
     candidate
-        .set_native_unknowns(
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -376,7 +376,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
 
     let mut candidate = CadIr::empty();
     candidate
-        .set_native_unknowns(
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown,

@@ -118,7 +118,7 @@ fn parameter_native_ref_must_resolve() {
 #[test]
 fn unresolved_unknown_record_link_is_reported_once() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_native_unknowns(
+    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
         "test",
         &[crate::NativeUnknownRecord {
             id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),

@@ -92,7 +92,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     source_less.source = None;
     source_less.model.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -190,7 +190,7 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -256,7 +256,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         for (ordinal, profile) in profiles.into_iter().enumerate() {
             source_less
                 .model
@@ -345,7 +345,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         for (ordinal, source) in source_curves.into_iter().enumerate() {
             source_less
                 .model
@@ -426,7 +426,7 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -494,7 +494,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         source_less
             .model
             .curves
@@ -603,7 +603,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -685,7 +685,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -760,7 +760,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         source_less
             .model
             .curves
@@ -885,7 +885,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         source_less
             .model
             .curves
@@ -1005,7 +1005,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1065,7 +1065,7 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1117,7 +1117,7 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1166,7 +1166,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             .clone();
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         let surface = source_less
             .model
             .surfaces

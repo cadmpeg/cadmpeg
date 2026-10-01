@@ -669,7 +669,7 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
-    ir.set_native_unknowns("inventor", &[])?;
+    ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     let body_ids = ctx.collect_indexed_vec(

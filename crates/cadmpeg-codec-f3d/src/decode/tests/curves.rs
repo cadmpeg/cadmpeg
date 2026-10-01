@@ -253,7 +253,7 @@ fn decode_retains_generated_helix_construction() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let expected = source_less.model.procedural_curves[0].definition().clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -326,7 +326,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
     let expected = procedural.definition().clone();
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -390,7 +390,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -509,7 +509,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let source_id = match source_less.model.procedural_curves[0].definition() {
         ProceduralCurveDefinition::VectorOffset(definition_payload) => {
             let source = definition_payload.source();
@@ -663,7 +663,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let source_id = match source_less.model.procedural_curves[0].definition() {
         ProceduralCurveDefinition::Subset(definition_payload) => {
             let source = definition_payload.source();
@@ -763,7 +763,7 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -800,7 +800,7 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
             .expect("generated spline carrier decode");
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
 
         let mut encoded = Vec::new();
         F3dCodec
@@ -995,7 +995,7 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
         ));
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1104,7 +1104,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     for (ordinal, component) in component_ids.iter().enumerate() {
         source_less
             .model
@@ -1272,7 +1272,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1398,7 +1398,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut expected = source_less.model.procedural_curves[0].definition().clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1463,7 +1463,7 @@ fn generated_mixed_offset_supports_write_source_less() {
         .expect("generated embedded offset-support decode");
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let first_support = source_less.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
             panic!("expected two-sided offset construction")
@@ -1620,7 +1620,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let expected_geometries = supports;
     let mut encoded = Vec::new();
     F3dCodec
@@ -1738,7 +1738,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

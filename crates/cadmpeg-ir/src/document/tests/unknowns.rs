@@ -16,11 +16,11 @@ fn reserved_unknown_arena_accepts_owned_and_borrowed_records() {
     let records = [record("b", &[]), record("a", &["test:model:body#0"])];
     let mut owned = CadIr::empty();
     owned
-        .set_native_unknowns_from("test", records.clone())
+        .set_native_unknowns_from(&cadmpeg_test_support::service_decode_context(), "test", records.clone())
         .unwrap();
     let mut borrowed = CadIr::empty();
     borrowed
-        .set_native_unknowns_from("test", records.iter())
+        .set_native_unknowns_from(&cadmpeg_test_support::service_decode_context(), "test", records.iter())
         .unwrap();
     assert_eq!(owned, borrowed);
     assert_eq!(
@@ -45,12 +45,12 @@ fn duplicate_unknown_replacement_leaves_existing_document_unchanged() {
         let mut document = CadIr::empty();
         if existing {
             document
-                .set_native_unknowns("test", &[record("original", &[])])
+                .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "test", &[record("original", &[])])
                 .unwrap();
         }
         let before = document.clone();
         let error = document
-            .set_native_unknowns_from(
+            .set_native_unknowns_from(&cadmpeg_test_support::service_decode_context(),
                 "test",
                 [
                     record("duplicate", &["test:model:body#first"]),
@@ -70,7 +70,7 @@ fn duplicate_unknown_replacement_leaves_existing_document_unchanged() {
 fn complete_document_keeps_raw_native_fields_but_product_reader_checks_links() {
     let mut document = CadIr::empty();
     document
-        .set_native_unknowns("test", &[record("a", &["test:model:body#unresolved"])])
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "test", &[record("a", &["test:model:body#unresolved"])])
         .unwrap();
     let valid = serde_json::to_value(&document).unwrap();
     let parsed = CadIr::from_json(&valid.to_string()).unwrap();
@@ -103,5 +103,32 @@ fn complete_document_keeps_raw_native_fields_but_product_reader_checks_links() {
             assert!(parsed.native_unknowns("test").is_err());
             assert!(parsed.native_unknowns_iter("test").next().unwrap().is_err());
         }
+    }
+}
+
+#[test]
+fn native_unknown_replacement_preserves_resource_refusals_and_document() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes,
+        ResourceDimension::CollectionItems, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+        let mut document = CadIr::empty();
+        document.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "test", &[record("prior", &[])]).unwrap();
+        let before = document.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = CodecError::from(document.set_native_unknowns(&ctx, "test", &[record("incoming", &["test:model:body#one"])]).unwrap_err());
+        assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        assert_eq!(ctx.finish_session().unwrap_err().to_string(), error.to_string());
+        assert_eq!(document, before);
     }
 }

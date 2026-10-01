@@ -185,7 +185,7 @@ fn numerical_audit_large_finite_axis_keeps_an_orthogonal_reference() {
 fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
-    ir.set_native_unknowns(
+    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),
