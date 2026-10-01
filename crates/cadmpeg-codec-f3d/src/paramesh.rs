@@ -1020,9 +1020,11 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     let declared =
         View::u32_le_at(body, at).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
     if declared > MAX_STREAM_BYTES {
-        return Err(malformed(format!(
-            "paramesh stream declares {declared} bytes, above the {MAX_STREAM_BYTES}-byte limit"
-        )));
+        return Err(ctx.refuse_codec_limit(
+            "paramesh stream byte ceiling",
+            u64::from(MAX_STREAM_BYTES),
+            u64::from(declared),
+        ));
     }
     let properties = body
         .get(at + 4..at + 6)
@@ -1047,6 +1049,23 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     if properties != [LZMA_PROPERTIES, LZMA_DICTIONARY_LOG] {
         return Err(malformed("paramesh stream carries an undefined encoding"));
     }
+    // LZMA1 uses 8 literal contexts, four 64-entry position trees, a
+    // 16-entry alignment tree and two length decoders of 512 probabilities.
+    // The dictionary reservation also covers its old buffer during growth.
+    const PROBABILITY_COUNT: u64 = 8 * 0x300 + 4 * 64 + 16 + 2 * 512;
+    const SCRATCH_BYTES: u64 = 2 * (1 << LZMA_DICTIONARY_LOG) + 2 * PROBABILITY_COUNT;
+    let _decoder_storage = ctx.reserve_scoped(SCRATCH_BYTES, "paramesh LZMA scratch")?;
+    // Each symbol emits a byte or ends the stream. At most 256 range-bit,
+    // lookahead and dictionary steps are admitted per output byte, including
+    // a final 273-byte match that crosses the declared output boundary.
+    let work = u64::from(declared)
+        .checked_add(273)
+        .and_then(|count| count.checked_mul(256))
+        .and_then(|count| count.checked_add(PROBABILITY_COUNT))
+        .and_then(|count| count.checked_add(2 * (1 << LZMA_DICTIONARY_LOG)))
+        .and_then(|count| count.checked_add(cadmpeg_core::decode::u64_from_index(payload.len())))
+        .ok_or_else(|| ctx.refuse_codec_limit("paramesh LZMA work", 0, u64::MAX))?;
+    ctx.charge_work(work, "paramesh LZMA work")?;
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
     // from the stream. The container stores a properties byte and a base-2
     // dictionary exponent.
@@ -1059,6 +1078,7 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     framed.push(LZMA_PROPERTIES);
     framed.extend_from_slice(&(1u32 << LZMA_DICTIONARY_LOG).to_le_bytes());
     framed.extend_from_slice(payload);
+    ctx.charge_retained(u64::from(declared), "retain paramesh stream bytes")?;
     let mut writer = LzmaOutput {
         expansion: ctx.begin_expand(ExpandSpec::Exact(u64::from(declared)))?,
         failure: None,
@@ -2284,6 +2304,45 @@ mod tests {
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.operation == "collect paramesh descriptor entries"));
+    }
+
+    #[test]
+    fn paramesh_lzma_refuses_decoder_scratch_limit() {
+        let chunk = stream_chunk(&[0x80], &[7; 1024]);
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 1024;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = inflate_stream_charged(ctx, &chunk[12..]).err().expect("scratch limit");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                    && limit.operation == "paramesh LZMA scratch"
+                    && ctx.resource_refusal() == Some(limit)));
+        });
+    }
+
+    #[test]
+    fn paramesh_lzma_refuses_expansion_work_limit() {
+        let chunk = stream_chunk(&[0x80], &[7; 1024]);
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1024;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = inflate_stream_charged(ctx, &chunk[12..]).err().expect("work limit");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "paramesh LZMA work"
+                    && ctx.resource_refusal() == Some(limit)));
+        });
+    }
+
+    #[test]
+    fn paramesh_stream_ceiling_preserves_resource_refusal() {
+        let body = raw_stream_body(&[0x80], super::MAX_STREAM_BYTES + 1, &[]);
+        crate::test_support::with_decode_context(|ctx| {
+            let error = inflate_stream_charged(ctx, &body).err().expect("stream ceiling");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == "paramesh stream byte ceiling"
+                    && ctx.resource_refusal() == Some(limit)));
+        });
     }
 
     #[test]
