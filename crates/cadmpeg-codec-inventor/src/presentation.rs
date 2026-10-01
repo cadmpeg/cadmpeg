@@ -1165,9 +1165,12 @@ impl<'a> Cursor<'a> {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
         })?;
         if units > 1_048_576 {
-            return Err(CodecError::malformed(format_args!(
-                "Inventor presentation {field} exceeds 1048576 UTF-16 code units"
-            )));
+            if self.source.counted(cadmpeg_core::decode::u64_from_index(units), 2).is_none() {
+                return Err(CodecError::malformed(format_args!(
+                    "Inventor presentation {field} UTF-16 payload is truncated"
+                )));
+            }
+            return Err(ctx.refuse_codec_limit("Inventor presentation UTF-16 code units", 1_048_576, cadmpeg_core::decode::u64_from_index(units)));
         }
         let byte_len = units.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1260,6 +1263,22 @@ mod tests {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+    #[test]
+    fn presentation_utf16_local_ceiling_refuses_resources_for_complete_payload() {
+        let units = 1_048_577_u32;
+        let mut bytes = units.to_le_bytes().to_vec();
+        bytes.extend(std::iter::repeat_n(0_u8, usize::try_from(units).expect("length") * 2));
+        crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
+            let error = Cursor::new(root).utf16(ctx, "name").expect_err("local string ceiling");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == "Inventor presentation UTF-16 code units"
+                    && limit.limit == 1_048_576 && Some(limit) == ctx.resource_refusal()));
+        });
+        crate::test_support::test_fixtures::parse(&units.to_le_bytes(), |ctx, root| {
+            assert!(matches!(Cursor::new(root).utf16(ctx, "name"), Err(CodecError::Malformed(_))));
+        });
+    }
 
     #[test]
     fn presentation_utf16_text_charges_trimmed_utf8_size_and_keeps_interior_nul() {
