@@ -1235,22 +1235,22 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &mut design_types,
         |left, right| {
             (
-                ids::native_stream(&left.id).unwrap_or_default(),
+                ids::native_stream(left.id()).unwrap_or_default(),
                 left.byte_offset,
             )
                 .cmp(&(
-                    ids::native_stream(&right.id).unwrap_or_default(),
+                    ids::native_stream(right.id()).unwrap_or_default(),
                     right.byte_offset,
                 ))
         },
-        |design_type| design_type.id.len(),
+        |design_type| design_type.id().len(),
         "f3d feature timeline types sort",
     )?;
     for design_type in design_types {
-        let Some(meta_stream) = ids::native_stream(&design_type.id) else {
+        let Some(meta_stream) = ids::native_stream(design_type.id()) else {
             continue;
         };
-        let Some(segment) = ids::design_segment(&design_type.id) else {
+        let Some(segment) = ids::design_segment(design_type.id()) else {
             continue;
         };
         ctx.decode.admit_hash_map_entry(
@@ -1305,7 +1305,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                         class_tag,
                         *source_ordinal,
                         valid_type,
-                        design_type.id.as_str(),
+                        design_type.id().as_str(),
                     ),
                 )
                 .is_some()
@@ -1316,7 +1316,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                     "Fusion Design feature-timeline type repeats an entity identity",
                     Some(
                         ctx.decode
-                            .copy_retained_text(&design_type.id, "retain F3D validation entity")?,
+                            .copy_retained_text(design_type.id(), "retain F3D validation entity")?,
                     ),
                 )?;
             }
@@ -1704,7 +1704,7 @@ fn validate_canvas_images(
                 )
             })
             .flat_map(|design_type| {
-                let design_segment = ids::design_segment(&design_type.id);
+                let design_segment = ids::design_segment(design_type.id());
                 design_type
                     .entities
                     .values()
@@ -1724,7 +1724,7 @@ fn validate_canvas_images(
                 )
             })
             .flat_map(|design_type| {
-                let design_segment = ids::design_segment(&design_type.id);
+                let design_segment = ids::design_segment(design_type.id());
                 design_type
                     .entities
                     .values()
@@ -1794,7 +1794,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
                 design_type.module == records::entity_header::DESIGN_MODULE_FUSION
             })
             .flat_map(|design_type| {
-                let segment = ids::design_segment(&design_type.id);
+                let segment = ids::design_segment(design_type.id());
                 design_type
                     .entities
                     .values()
@@ -1929,7 +1929,7 @@ fn validate_body_bindings(
     let mut binding_groups =
         std::collections::HashMap::<(&str, u64), Vec<&records::bodies::DesignBodyBinding>>::new();
     for binding in &native.design_body_bindings {
-        let native_stream = design_stream(&binding.id);
+        let native_stream = design_stream(binding.id());
         let resolved_valid = if let Some(body) = &binding.body {
             ctx.decode.charge_work(
                 cadmpeg_core::decode::u64_from_index(native.body_native_keys.len())
@@ -1944,11 +1944,11 @@ fn validate_body_bindings(
                 "scan F3D validation body sources",
             )?;
             let has_named_source = native.body_native_keys.iter().any(|key| {
-                ids::same_native_occurrence(key.source_namespace.as_str(), &binding.id)
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
                     && key.source_brep.as_deref() == Some(binding.blob_name())
             });
             let source_keys = native.body_native_keys.iter().filter(|key| {
-                ids::same_native_occurrence(key.source_namespace.as_str(), &binding.id)
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
                     && if has_named_source {
                         key.source_brep.as_deref() == Some(binding.blob_name())
                     } else {
@@ -1964,7 +1964,7 @@ fn validate_body_bindings(
         } else {
             true
         };
-        let valid = design_stream_contains_entry(native_stream, &binding.stream)
+        let valid = design_stream_contains_entry(native_stream, binding.stream())
             && resolved_valid
             && ctx.decode.insert_hash_set(
                 &mut binding_offsets,
@@ -1978,7 +1978,7 @@ fn validate_body_bindings(
                 "Fusion Design body binding has an invalid ordered map entry",
                 Some(
                     ctx.decode
-                        .copy_retained_text(&binding.id, "retain F3D validation entity")?,
+                        .copy_retained_text(binding.id(), "retain F3D validation entity")?,
                 ),
             )?;
         }
@@ -2004,7 +2004,7 @@ fn validate_body_bindings(
                 usize::try_from(binding.pair_ordinal()).ok() == Some(ordinal)
                     && binding.pair_count() == bindings[0].pair_count()
                     && binding.blob_name() == bindings[0].blob_name()
-                    && binding.stream == bindings[0].stream
+                    && binding.stream() == bindings[0].stream()
             });
         if !complete {
             ctx.push_constant_finding(
@@ -2015,7 +2015,7 @@ fn validate_body_bindings(
                     .first()
                     .map(|binding| {
                         ctx.decode
-                            .copy_retained_text(&binding.id, "retain F3D validation entity")
+                            .copy_retained_text(binding.id(), "retain F3D validation entity")
                     })
                     .transpose()?,
             )?;
@@ -2029,10 +2029,10 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
     let native = ctx.native;
     let mut bounded_bodies = HashSet::new();
     for bounds in &native.design_body_bounds {
-        let native_stream = design_stream(&bounds.id);
+        let native_stream = design_stream(bounds.id());
         let mut expected_bindings = ctx.decode.collect_vec(
             native.design_body_bindings.iter().filter(|binding| {
-                design_stream_contains_entry(native_stream, &binding.stream)
+                design_stream_contains_entry(native_stream, binding.stream())
                     && binding.entity_suffix == bounds.entity_suffix()
             }),
             "collect F3D expected body bounds bindings",
@@ -2048,13 +2048,10 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
             .get(&(native_stream, bounds.entity_suffix()))
             .is_some_and(|entity| {
                 entity.module() == Some(records::entity_header::DESIGN_MODULE_BODY)
-                    && entity.byte_offset == bounds.entity_byte_offset
+                    && entity.byte_offset == bounds.entity_byte_offset()
             })
-            && bounds
-                .body_binding_ids
-                .iter()
-                .map(String::as_str)
-                .eq(expected_bindings.iter().map(|binding| binding.id.as_str()));
+            && bounds.body_binding_ids()
+                .eq(expected_bindings.iter().map(|binding| binding.id().as_str()));
         let valid = if valid_frame {
             ctx.decode.insert_hash_set(
                 &mut bounded_bodies,
@@ -2071,7 +2068,7 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
                 "Fusion Design body bounds have an invalid repeated record frame",
                 Some(
                     ctx.decode
-                        .copy_retained_text(&bounds.id, "retain F3D validation entity")?,
+                        .copy_retained_text(bounds.id(), "retain F3D validation entity")?,
                 ),
             )?;
         }
@@ -2287,7 +2284,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .map(|body| body.source.value)
                         .all(|suffix| {
                             native.design_body_bindings.iter().any(|binding| {
-                                design_stream(&binding.id) == native_stream
+                                design_stream(binding.id()) == native_stream
                                     && binding.entity_suffix == u64::from(suffix)
                             })
                         })
@@ -2297,7 +2294,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .map(|body| body.copied.value)
                         .all(|suffix| {
                             native.design_body_bindings.iter().any(|binding| {
-                                design_stream(&binding.id) == native_stream
+                                design_stream(binding.id()) == native_stream
                                     && binding.entity_suffix == u64::from(suffix)
                                     && binding.body.is_some()
                             })

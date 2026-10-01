@@ -154,8 +154,8 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
         .into_iter()
         .enumerate()
         .map(
-            |(ordinal, entity_suffix)| crate::records::bodies::BodyVisibility {
-                id: format!("f3d:generated:body-visibility#{ordinal}"),
+            |(ordinal, entity_suffix)| crate::records::bodies::BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
+                id: format!("f3d:generated-{ordinal}:body-visibility#42"),
                 body: body.clone(),
                 stream: "generated/Design1/BulkStream.dat".into(),
                 byte_offset: 0,
@@ -163,7 +163,7 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
                 asm_body_key: 42,
                 entity_suffix,
                 visible: false,
-            },
+            }).unwrap(),
         )
         .collect();
 

@@ -1013,8 +1013,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
 
     push_marked_reference(&mut bytes, 201);
     let segment_type = |type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
-        crate::records::entity_header::SegmentType {
-            id: String::new(),
+        crate::records::entity_header::SegmentTypeData {
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,

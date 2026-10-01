@@ -103,15 +103,9 @@ impl BaseTypeGuid {
     }
 }
 
-/// One type-table entry from a `MetaStream` segment header. The entry registers
-/// a record type and lists the entities whose sibling `BulkStream` records
-/// carry it.
-#[derive(Debug, PartialEq, Deserialize)]
-#[cfg_attr(not(test), derive(Clone))]
-#[serde(try_from = "SegmentTypeWire")]
-pub(crate) struct SegmentType {
-    /// Globally unique deterministic identifier for this native record.
-    pub(crate) id: String,
+/// One framed type registration before it receives an archive-scoped identity.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SegmentTypeData {
     /// Byte offset of this type-table entry in its `MetaStream`.
     pub(crate) byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
@@ -134,6 +128,41 @@ pub(crate) struct SegmentType {
     pub(crate) entities: ReferenceRun<u64>,
 }
 
+/// An identified type registration whose native key binds its MetaStream offset.
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "SegmentTypeWire")]
+pub(crate) struct SegmentType {
+    id: NativeRecordId,
+    data: SegmentTypeData,
+}
+
+impl SegmentType {
+    pub(crate) fn try_new(id: String, data: SegmentTypeData) -> Result<Self, String> {
+        let id = NativeRecordId::try_f3d_new(id, "design-type", data.byte_offset)?;
+        if !id.stream().ends_with("/MetaStream.dat") {
+            return Err("type id must name its containing MetaStream".into());
+        }
+        Ok(Self { id, data })
+    }
+    pub(crate) fn id(&self) -> &String { self.id.text() }
+    #[cfg(test)]
+    pub(crate) fn set_module(&mut self, module: String) { self.data.module = module; }
+    #[cfg(test)]
+    pub(crate) fn set_entities(&mut self, entities: ReferenceRun<u64>) { self.data.entities = entities; }
+    #[cfg(test)]
+    pub(crate) fn set_base_type_guid(&mut self, base: BaseTypeGuid) { self.data.base_type_guid = base; }
+    #[cfg(test)]
+    pub(crate) fn set_version(&mut self, version: u32) { self.data.version = version; }
+    #[cfg(test)]
+    pub(crate) fn set_type_guid(&mut self, guid: DesignRelaxedGuidText) { self.data.type_guid = guid; }
+}
+
+impl std::ops::Deref for SegmentType {
+    type Target = SegmentTypeData;
+    fn deref(&self) -> &Self::Target { &self.data }
+}
+
 #[cfg(test)]
 thread_local! {
     static SEGMENT_TYPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -143,17 +172,7 @@ thread_local! {
 impl Clone for SegmentType {
     fn clone(&self) -> Self {
         SEGMENT_TYPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        Self {
-            id: self.id.clone(),
-            byte_offset: self.byte_offset,
-            type_guid: self.type_guid.clone(),
-            type_guid_offset: self.type_guid_offset,
-            base_type_guid: self.base_type_guid.clone(),
-            version: self.version,
-            version_offset: self.version_offset,
-            module: self.module.clone(),
-            entities: self.entities.clone(),
-        }
+        Self { id: self.id.clone(), data: self.data.clone() }
     }
 }
 
@@ -198,7 +217,7 @@ impl Serialize for SegmentType {
             BaseTypeGuid::Guid { value, .. } => Some(value.as_str()),
         };
         SegmentTypeWireRef {
-            id: &self.id,
+            id: self.id.text(),
             byte_offset: self.byte_offset,
             type_guid: &self.type_guid,
             type_guid_offset: self.type_guid_offset,
@@ -263,8 +282,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
     type Error = String;
     /// Nonempty `base_type_guid` text outside the relaxed GUID domain is not decoder-producible and is rejected deliberately.
     fn try_from(wire: SegmentTypeWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
+        Self::try_new(wire.id, SegmentTypeData {
             byte_offset: wire.byte_offset,
             type_guid: wire.type_guid,
             type_guid_offset: wire.type_guid_offset,
@@ -287,10 +305,12 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
 #[cfg(test)]
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
+        let id = value.id.into_string();
+        let value = value.data;
         let (entity_ids, entity_id_offsets) = value.entities.into_wire();
         let (base_type_guid, base_type_guid_offset) = value.base_type_guid.into_wire();
         Self {
-            id: value.id,
+            id,
             byte_offset: value.byte_offset,
             type_guid: value.type_guid,
             type_guid_offset: value.type_guid_offset,

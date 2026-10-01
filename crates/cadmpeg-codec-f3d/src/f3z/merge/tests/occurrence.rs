@@ -507,8 +507,8 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         )
     })
     .expect("admitted configuration payload");
-    let visibility = BodyVisibility {
-        id: "f3d:Design/BulkStream.dat:body-visibility#1".into(),
+    let visibility = BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
+        id: "f3d:Design/BulkStream.dat:body-visibility#3".into(),
         body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         stream: "Design/BulkStream.dat".into(),
         byte_offset: 10,
@@ -516,7 +516,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         asm_body_key: 3,
         entity_suffix: 1,
         visible: true,
-    };
+    }).unwrap();
     let mut component = Native::default();
     component
         .namespace_mut("f3d")
@@ -550,14 +550,14 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         .arena_as("body_visibilities")
         .expect("read merged visibility arena");
     assert_eq!(
-        merged_visibility[0].id,
-        "f3d:xref/role/occurrence-0/Design/BulkStream.dat:body-visibility#1"
+        merged_visibility[0].id(),
+        "f3d:xref/role/occurrence-0/Design/BulkStream.dat:body-visibility#3"
     );
     assert_eq!(
         merged_visibility[0].body.as_str(),
         "f3d:xref/role/occurrence-0/brep:entity#1"
     );
-    assert_eq!(merged_visibility[0].stream, "Design/BulkStream.dat");
+    assert_eq!(merged_visibility[0].stream(), "Design/BulkStream.dat");
 
     let merged_configurations: Vec<DesignConfiguration> = root
         .namespace("f3d")

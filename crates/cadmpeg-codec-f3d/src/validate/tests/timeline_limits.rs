@@ -7,9 +7,8 @@ fn design_type(
 ) -> crate::records::entity_header::SegmentType {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, DESIGN_MODULE_FUSION};
     let is_timeline = type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID;
-    SegmentType {
-        id: id.into(),
-        byte_offset: 0,
+    SegmentType::try_new(id.into(), crate::records::entity_header::SegmentTypeData {
+        byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
         type_guid: type_guid.to_owned().try_into().unwrap(),
         type_guid_offset: 4,
         base_type_guid: if is_timeline {
@@ -39,7 +38,7 @@ fn design_type(
                 })
                 .collect(),
         ),
-    }
+    }).unwrap()
 }
 
 fn native() -> crate::native::F3dNative {
@@ -237,11 +236,10 @@ fn timeline_duplicate_type_entity_refuses_retained_limit() {
 #[test]
 fn timeline_invalid_record_finding_refuses_collection_limit() {
     let mut native = native();
-    native.design_types[1].entities =
-        crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
+    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
             value: 17,
             offset: 100,
-        }]);
+        }]));
     let error = timeline_error_with(native, 9, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -252,11 +250,10 @@ fn timeline_invalid_record_finding_refuses_collection_limit() {
 #[test]
 fn timeline_invalid_record_entity_refuses_retained_limit() {
     let mut native = native();
-    native.design_types[1].entities =
-        crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
+    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
             value: 17,
             offset: 100,
-        }]);
+        }]));
     let error = timeline_error_with(native, u64::MAX, 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -353,7 +350,7 @@ fn forward_history_native() -> crate::native::F3dNative {
         identity::{Located, ReferenceRun},
     };
     let mut native = native();
-    native.design_types[1].entities = ReferenceRun::located(vec![
+    native.design_types[1].set_entities(ReferenceRun::located(vec![
         Located {
             value: 17,
             offset: 100,
@@ -366,7 +363,7 @@ fn forward_history_native() -> crate::native::F3dNative {
             value: 100,
             offset: 116,
         },
-    ]);
+    ]));
     let timeline = &native.design_feature_timelines[0];
     native.design_feature_timelines[0] = DesignFeatureTimeline::try_new(
         timeline.id().clone(),

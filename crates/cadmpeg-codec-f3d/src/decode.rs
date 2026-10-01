@@ -3488,13 +3488,16 @@ fn decode_scanned_document<'a>(
                     .transpose()?
                     .flatten()
                 {
-                    let visibility = crate::records::bodies::BodyVisibility {
-                        id: crate::ids::native_scoped_id_charged(
-                            ctx,
-                            &candidate.name,
-                            "body-visibility",
-                            body_selector,
-                        )?,
+                    let id = crate::ids::native_scoped_id_charged(
+                        ctx, &candidate.name, "body-visibility", body_selector,
+                    )?;
+                    let identity_work = cadmpeg_core::decode::u64_from_index(id.len())
+                        .checked_add(cadmpeg_core::decode::u64_from_index(visibility.stream.len()))
+                        .and_then(|length| length.checked_mul(8))
+                        .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body visibility identity", 0, u64::MAX))?;
+                    ctx.charge_work(identity_work, "admit F3D body visibility identity")?;
+                    let visibility = crate::records::bodies::BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
+                        id,
                         body: body
                             .id
                             .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
@@ -3507,7 +3510,7 @@ fn decode_scanned_document<'a>(
                         asm_body_key: body_selector,
                         entity_suffix: visibility.entity_suffix,
                         visible: visibility.visible,
-                    };
+                    }).map_err(CodecError::Malformed)?;
                     ctx.push_vec(
                         &mut body_visibilities,
                         visibility,
@@ -4617,7 +4620,7 @@ fn populate_annotations(
             note!(&entity.id, "EDGE_REFERENCE_LOST");
         }
         for entity in &native.design_types {
-            note!(&entity.id, "design_type");
+            note!(entity.id(), "design_type");
         }
         for entity in &native.design_parameters {
             note!(&entity.id, "design_parameter");
@@ -4698,7 +4701,7 @@ fn populate_annotations(
             note!(&entity.id, "design_record_header");
         }
         for entity in &native.design_body_members {
-            note!(&entity.id, "BodiesRoot");
+            note!(entity.id(), "BodiesRoot");
         }
         for entity in &native.design_material_assignments {
             note!(&entity.id, "material_assignment");

@@ -4655,7 +4655,7 @@ pub(crate) fn bind_scope_histories(
             .map(|candidate| candidate.record_index)
             .min();
         let mut output_bindings = body_bindings.iter().filter(|binding| {
-            crate::ids::same_native_occurrence(&binding.id, &scope.id)
+            crate::ids::same_native_occurrence(binding.id(), &scope.id)
                 && binding.entity_suffix > u64::from(scope.record_index)
                 && next_scope_record_index
                     .is_none_or(|next| binding.entity_suffix < u64::from(next))
@@ -4699,7 +4699,7 @@ pub(crate) fn bind_scope_histories(
         };
         let mut referenced_histories = construction.body_reference_records().filter_map(|suffix| {
             let mut bindings = body_bindings.iter().filter(|binding| {
-                crate::ids::same_native_occurrence(&binding.id, &scope.id)
+                crate::ids::same_native_occurrence(binding.id(), &scope.id)
                     && binding.entity_suffix == u64::from(suffix)
             });
             let binding = bindings.next()?;
