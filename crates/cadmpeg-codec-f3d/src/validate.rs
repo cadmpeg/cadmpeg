@@ -2880,7 +2880,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     })
                     && (native.xref_references.is_empty()
                         || native.xref_references.iter().any(|reference| {
-                            reference.neutron_role == construction.neutron_role
+                            reference.neutron_role.as_str() == construction.neutron_role
                                 && reference
                                     .transform
                                     .map(records::xref::XrefPlacementTransform::rows)

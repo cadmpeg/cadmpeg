@@ -144,9 +144,11 @@ impl ReferenceJson {
             relative_path,
             properties,
         } = self;
-        require_text(&from, format_args!("references[{ordinal}].from"))?;
-        require_text(
-            &relative_path,
+        let from_capacity = from.capacity();
+        let path_capacity = relative_path.capacity();
+        let from = required_text(from, format_args!("references[{ordinal}].from"))?;
+        let relative_path = required_text(
+            relative_path,
             format_args!("references[{ordinal}].relativePath"),
         )?;
         let mut role = None;
@@ -171,8 +173,9 @@ impl ReferenceJson {
                 "references[{ordinal}].properties is missing neutronRole"
             ))
         })?;
-        require_text(
-            &neutron_role,
+        let role_capacity = neutron_role.capacity();
+        let neutron_role = required_text(
+            neutron_role,
             format_args!("references[{ordinal}].properties.neutronRole.value"),
         )?;
         let neutron_data = data.ok_or_else(|| {
@@ -184,8 +187,8 @@ impl ReferenceJson {
             format_args!("f3d:xref:reference#{ordinal}"),
             "retain F3D xref record ID",
         )?;
-        for text in [&from, &relative_path, &neutron_role, &neutron_data] {
-            ctx.charge_retained(u64_from_index(text.capacity()), "retain F3D xref reference text")?;
+        for capacity in [from_capacity, path_capacity, role_capacity, neutron_data.capacity()] {
+            ctx.charge_retained(u64_from_index(capacity), "retain F3D xref reference text")?;
         }
         Ok(XrefReference {
             id,
@@ -204,13 +207,8 @@ fn redirections_error(message: impl std::fmt::Display) -> CodecError {
     CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY}: {message}"))
 }
 
-fn require_text(value: &str, field: impl std::fmt::Display) -> Result<(), CodecError> {
-    if value.is_empty() {
-        return Err(redirections_error(format_args!(
-            "{field} must be non-empty"
-        )));
-    }
-    Ok(())
+fn required_text(value: String, field: impl std::fmt::Display) -> Result<crate::records::xref::RequiredXrefText, CodecError> {
+    value.try_into().map_err(|_| redirections_error(format_args!("{field} must be non-empty")))
 }
 
 /// Validate `ComponentReferenceData.json`, if present.
@@ -333,22 +331,24 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     let mut designs = Vec::new();
     for (ordinal, design) in parsed.designs.into_iter().enumerate() {
         ctx.reserve_vec(&mut designs, 1, "admit F3D xref designs")?;
-        require_text(
-            &design.target_file_name,
+        let name_capacity = design.target_file_name.capacity();
+        let target_file_name = required_text(
+            design.target_file_name,
             format_args!("designs[{ordinal}].targetFileName"),
         )?;
         let id = ctx.format_retained(
             format_args!("f3d:xref:design#{ordinal}"),
             "retain F3D xref record ID",
         )?;
-        for text in [&design.target_file_name, &design.display_name, &design.lineage_urn, &design.version_urn] {
+        ctx.charge_retained(u64_from_index(name_capacity), "retain F3D xref design text")?;
+        for text in [&design.display_name, &design.lineage_urn, &design.version_urn] {
             ctx.charge_retained(u64_from_index(text.capacity()), "retain F3D xref design text")?;
         }
         designs.push(XrefDesign {
             id,
             ordinal: ordinal_at(ordinal)?,
             file_version: design.file_version,
-            target_file_name: design.target_file_name,
+            target_file_name,
             display_name: design.display_name,
             lineage_urn: design.lineage_urn,
             version_urn: design.version_urn,
@@ -507,7 +507,7 @@ pub(crate) fn bind_component_insert_features(
             continue;
         };
         let mut matches = table.references.iter().filter(|reference| {
-            reference.neutron_role == construction.neutron_role
+            reference.neutron_role.as_str() == construction.neutron_role
                 && reference
                     .transform
                     .map(crate::records::xref::XrefPlacementTransform::rows)
@@ -650,13 +650,13 @@ fn bind_occurrences(
                     })
                     .any(|(construction_stream, construction)| {
                         construction_stream == stream
-                            && construction.neutron_role == reference.neutron_role
+                            && construction.neutron_role == reference.neutron_role.as_str()
                     })
                     && failures.iter().any(|failure| {
                         failure
                             .link_names
                             .iter()
-                            .any(|name| name == &reference.neutron_role)
+                            .any(|name| name == reference.neutron_role.as_str())
                     })
             }) {
                 ctx.reserve_vec(
@@ -708,9 +708,9 @@ fn copy_reference_charged(
         },
         ordinal: source.ordinal,
         occurrence_ordinal: source.occurrence_ordinal,
-        from: ctx.copy_retained_text(&source.from, operation)?,
-        relative_path: ctx.copy_retained_text(&source.relative_path, operation)?,
-        neutron_role: ctx.copy_retained_text(&source.neutron_role, operation)?,
+        from: ctx.copy_retained_text(&source.from, operation)?.try_into().map_err(CodecError::malformed)?,
+        relative_path: ctx.copy_retained_text(&source.relative_path, operation)?.try_into().map_err(CodecError::malformed)?,
+        neutron_role: ctx.copy_retained_text(&source.neutron_role, operation)?.try_into().map_err(CodecError::malformed)?,
         neutron_data: ctx.copy_retained_text(&source.neutron_data, operation)?,
         transform: source.transform,
     })
