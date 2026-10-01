@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDequ
 use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use crate::CodecError;
 
-fn storage_cases<T>(
+pub(super) fn storage_cases<T>(
     small: u64,
     grown: u64,
     build: impl Fn(&DecodeContext<'_>, usize) -> Result<T, CodecError>,
@@ -71,8 +71,9 @@ storage_case!(collection_vec_storage, 8, 40, |ctx: &DecodeContext<'_>, count| {
 storage_case!(reserve_vec_storage, 32, 64, |ctx: &DecodeContext<'_>, count| {
     let mut values = Vec::new();
     for value in 0..count {
+        let capacity = values.capacity();
         let result = ctx.reserve_vec(&mut values, 1, "reserve storage");
-        if values.is_empty() && result.is_err() { assert_eq!(values.capacity(), 0); }
+        if result.is_err() { assert_eq!(values.capacity(), capacity); }
         result?;
         values.push(u64::try_from(value).expect("small test index"));
     }
@@ -81,8 +82,9 @@ storage_case!(reserve_vec_storage, 32, 64, |ctx: &DecodeContext<'_>, count| {
 storage_case!(push_vec_storage, 32, 64, |ctx: &DecodeContext<'_>, count| {
     let mut values = Vec::new();
     for value in 0..count {
+        let capacity = values.capacity();
         let result = ctx.push_vec(&mut values, u64::try_from(value).expect("small test index"), "push storage");
-        if values.is_empty() && result.is_err() { assert_eq!(values.capacity(), 0); }
+        if result.is_err() { assert_eq!(values.capacity(), capacity); }
         result?;
     }
     Ok(values)
@@ -98,8 +100,9 @@ storage_case!(try_collect_vec_storage, 32, 64, |ctx: &DecodeContext<'_>, count| 
 storage_case!(reserve_set_storage, 67, 103, |ctx: &DecodeContext<'_>, count| {
     let mut values = HashSet::<u64>::new();
     for value in 0..count {
+        let capacity = values.capacity();
         let result = ctx.reserve_set(&mut values, 1, "set storage");
-        if values.is_empty() && result.is_err() { assert_eq!(values.capacity(), 0); }
+        if result.is_err() { assert_eq!(values.capacity(), capacity); }
         result?;
         values.insert(u64::try_from(value).expect("small test index"));
     }
@@ -108,8 +111,9 @@ storage_case!(reserve_set_storage, 67, 103, |ctx: &DecodeContext<'_>, count| {
 storage_case!(reserve_map_storage, 99, 167, |ctx: &DecodeContext<'_>, count| {
     let mut values = HashMap::<u64, u64>::new();
     for value in 0..count {
+        let capacity = values.capacity();
         let result = ctx.reserve_map(&mut values, 1, "map storage");
-        if values.is_empty() && result.is_err() { assert_eq!(values.capacity(), 0); }
+        if result.is_err() { assert_eq!(values.capacity(), capacity); }
         result?;
         values.insert(u64::try_from(value).expect("small test index"), 0);
     }
@@ -252,3 +256,6 @@ storage_case!(reserve_capacity_bytes, 32, 64, |ctx: &DecodeContext<'_>, count| {
     }
     Ok(values)
 });
+
+mod retained;
+mod scoped;
