@@ -647,3 +647,12 @@ fn legacy_stream_slots_refuse_exhausted_collection() {
         assert!(matches!(super::extract_legacy_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes)), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX embedded stream slots"));
     });
 }
+
+#[test]
+fn attribute_duplicate_identifier_index_refuses_lookup_work() {
+    let record = [0, 0x4f, 0, 0, 0, 1, 0, 17, b'A'];
+    let bytes = record.repeat(2);
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 21, |ctx| {
+        assert!(matches!(crate::parasolid::attribute_identifiers(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX attribute identifier"));
+    });
+}
