@@ -125,13 +125,13 @@ fn insert_free_vertex_shell(
     region_id: &str,
     shell_id: &str,
 ) {
-    draft.insert(point(point_id)).unwrap();
+    draft.insert(point(point_id), &cadmpeg_test_support::service_decode_context()).unwrap();
     draft
         .insert(Vertex {
             id: VertexId::mint(vertex_id).expect("valid identity"),
             point: PointId::mint(point_id).expect("valid identity"),
             tolerance: None,
-        })
+        }, &cadmpeg_test_support::service_decode_context())
         .unwrap();
     draft
         .insert(Body {
@@ -142,21 +142,21 @@ fn insert_free_vertex_shell(
             name: None,
             color: None,
             visible: None,
-        })
+        }, &cadmpeg_test_support::service_decode_context())
         .unwrap();
     draft
         .insert(Region {
             id: RegionId::mint(region_id).expect("valid identity"),
             body: BodyId::mint(body_id).expect("valid identity"),
             shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-        })
+        }, &cadmpeg_test_support::service_decode_context())
         .unwrap();
     draft
         .insert(Shell::with_free_vertex(
             ShellId::mint(shell_id).expect("valid identity"),
             RegionId::mint(region_id).expect("valid identity"),
             VertexId::mint(vertex_id).expect("valid identity"),
-        ))
+        ), &cadmpeg_test_support::service_decode_context())
         .unwrap();
 }
 
@@ -258,10 +258,10 @@ proptest! {
                 id: vertex_id.clone().try_into().expect("valid identity"),
                 point: missing.try_into().expect("valid identity"),
                 tolerance: None,
-            })
+            }, &cadmpeg_test_support::service_decode_context())
             .unwrap();
         let mut base = CadIr::empty();
-        let dangling_result = dangling.commit_model(&mut base);
+        let dangling_result = dangling.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap();
         let is_unresolved = matches!(
             dangling_result,
             Err(DraftError::UnresolvedReference { .. })
@@ -282,7 +282,7 @@ proptest! {
             &shell_id,
         );
         let mut base = CadIr::empty();
-        draft.commit_model(&mut base).unwrap();
+        draft.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
         base.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         let report = validate_neutral(&base, Vec::new()).expect("resource allocation did not fail");
         prop_assert_eq!(

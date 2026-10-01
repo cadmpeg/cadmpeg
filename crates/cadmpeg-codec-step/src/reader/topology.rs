@@ -2522,19 +2522,19 @@ fn staged_topology(
     } = parts;
     let mut draft = ModelDraft::new();
     for vertex in vertices {
-        draft.insert_for_decode(vertex, ctx)?;
+        draft.insert(vertex, ctx)?;
     }
     for edge in edges {
-        draft.insert_for_decode(edge, ctx)?;
+        draft.insert(edge, ctx)?;
     }
     for coedge in coedges {
-        draft.insert_for_decode(coedge, ctx)?;
+        draft.insert(coedge, ctx)?;
     }
     for loop_ in loops {
-        draft.insert_for_decode(loop_, ctx)?;
+        draft.insert(loop_, ctx)?;
     }
     for face in faces {
-        draft.insert_for_decode(face, ctx)?;
+        draft.insert(face, ctx)?;
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
@@ -2543,17 +2543,17 @@ fn staged_topology(
                 ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids")?;
             let id = String::from_utf8(id).map_err(CodecError::malformed)?;
             ctx.insert_btree_set(&mut surface_ids, id, "step_staged_surface_ids")?;
-            draft.insert_for_decode(surface, ctx)?;
+            draft.insert(surface, ctx)?;
         }
     }
     for shell in shells {
-        draft.insert_for_decode(shell, ctx)?;
+        draft.insert(shell, ctx)?;
     }
-    draft.insert_for_decode(region, ctx)?;
+    draft.insert(region, ctx)?;
     let body_id = body
         .id
         .try_clone_for_decode(ctx, "step_topology_identity_copy")?;
-    draft.insert_for_decode(body, ctx)?;
+    draft.insert(body, ctx)?;
     Ok(Built {
         typed,
         draft,

@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceLimit, ScopedReservation,
+    u64_from_index, DecodeContext, ResourceLimit, ScopedReservation,
 };
 use cadmpeg_core::CodecError;
 
@@ -267,14 +267,6 @@ impl From<CodecError> for DraftError {
     }
 }
 
-fn default_context<T>(
-    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, DraftError>,
-) -> Result<T, DraftError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    run(&ctx)
-}
-
 /// Transactional collection of staged model entities.
 ///
 /// A plain draft carries no accounting and can commit through `commit_model`.
@@ -312,8 +304,10 @@ impl ModelDraft {
     /// Accounted drafts cannot use a model-only commit:
     ///
     /// ```compile_fail
+    /// let arena = cadmpeg_core::decode::DecodeArena::new();
+    /// let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).unwrap();
     /// let draft = cadmpeg_ir::draft::ModelDraft::new().with_accounting();
-    /// draft.commit_model(&mut cadmpeg_ir::CadIr::empty()).unwrap();
+    /// draft.commit_model(&mut cadmpeg_ir::CadIr::empty(), &ctx).unwrap();
     /// ```
     ///
     /// A commit session also requires a draft with no accounting:
@@ -332,13 +326,8 @@ impl ModelDraft {
         }
     }
 
-    /// Commit a draft that carries model entities only.
-    pub fn commit_model(self, base: &mut CadIr) -> Result<(), DraftError> {
-        default_context(|ctx| self.commit_model_for_decode(base, ctx)?)
-    }
-
     /// Validate and append one decoded draft through the charged session owner.
-    pub fn commit_model_for_decode(
+    pub fn commit_model(
         self,
         base: &mut CadIr,
         ctx: &DecodeContext<'_>,
@@ -348,13 +337,8 @@ impl ModelDraft {
 }
 
 impl<A> ModelDraft<A> {
-    /// Inserts one entity, rejecting draft-local identity collisions immediately.
-    pub fn insert<T: ArenaEntity>(&mut self, entity: T) -> Result<(), DraftError> {
-        default_context(|ctx| self.insert_for_decode(entity, ctx))
-    }
-
     /// Admit the entity's arena storage and check its identity before insertion.
-    pub fn insert_for_decode<T: ArenaEntity>(
+    pub fn insert<T: ArenaEntity>(
         &mut self,
         entity: T,
         ctx: &DecodeContext<'_>,
@@ -364,7 +348,7 @@ impl<A> ModelDraft<A> {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for existing in &self.model.$field {
                     ctx.charge_work(1, "draft insertion identity scan")?;
-                    if existing.identity() == identity { return Err(DraftError::IdentityCollision(ctx.copy_retained_text(identity, "draft identity collision")?)); }
+                    if identities_equal(ctx, existing.identity(), identity, "compare draft insertion identities")? { return Err(DraftError::IdentityCollision(ctx.copy_retained_text(identity, "draft identity collision")?)); }
                 })*
             };
         }
@@ -459,18 +443,8 @@ impl<A> ModelDraft<A> {
 }
 
 impl ModelDraft<DraftAccounting> {
-    /// Records sparse exactness for a staged entity.
-    pub fn exactness(&mut self, identity: impl Into<String>, exactness: Exactness) {
-        let identity = identity.into();
-        if exactness == Exactness::ByteExact {
-            self.accounting.exactness.remove(&identity);
-        } else {
-            self.accounting.exactness.insert(identity, exactness);
-        }
-    }
-
     /// Record staged exactness after admitting the retained key and record.
-    pub fn exactness_for_decode(
+    pub fn exactness(
         &mut self,
         ctx: &DecodeContext<'_>,
         identity: impl std::fmt::Display,
@@ -482,6 +456,11 @@ impl ModelDraft<DraftAccounting> {
             format_args!("{identity}"),
             "draft exactness lookup",
         )?;
+        let work = u64_from_index(self.accounting.exactness.len()).checked_add(1)
+            .and_then(|count| count.checked_mul(u64_from_index(identity.len())))
+            .and_then(|count| count.checked_mul(2))
+            .ok_or_else(|| ctx.refuse_codec_limit("draft exactness comparisons", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, "draft exactness comparisons")?;
         let identity = if exactness != Exactness::ByteExact
             && !self.accounting.exactness.contains_key(&identity)
         {
@@ -490,7 +469,11 @@ impl ModelDraft<DraftAccounting> {
         } else {
             identity
         };
-        self.exactness(identity, exactness);
+        if exactness == Exactness::ByteExact {
+            self.accounting.exactness.remove(&identity);
+        } else {
+            self.accounting.exactness.insert(identity, exactness);
+        }
         Ok(())
     }
 
@@ -501,13 +484,8 @@ impl ModelDraft<DraftAccounting> {
             .retain(|identity, _| keep(identity));
     }
 
-    /// Validates and atomically extends a document and its exactness annotations.
-    pub fn commit(self, base: &mut CadIr, annotations: &mut Annotations) -> Result<(), DraftError> {
-        default_context(|ctx| self.commit_for_decode(base, annotations, ctx)?)
-    }
-
     /// Commit decoded entities and transfer their owned exactness entries.
-    pub fn commit_for_decode(
+    pub fn commit(
         self,
         base: &mut CadIr,
         annotations: &mut Annotations,
@@ -731,7 +709,7 @@ impl CommitState<'_> {
             .model
             .feature_regeneration_parents
             .reserve_append(&draft.model.feature_regeneration_parents, ctx)?;
-        let (staged, _staged_storage) = ctx.with_scoped_storage("draft committed identity staging", || {
+        let staged = ctx.with_scoped_storage("draft committed identity staging", || {
             let mut staged = CommittedIdentityIndex::new();
             macro_rules! stage_identities {
                 ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
@@ -745,14 +723,14 @@ impl CommitState<'_> {
             Ok::<_, CodecError>(staged)
         })?;
         let storage = DecodeStorage(ctx);
-        for (hash, group) in &staged {
+        for (hash, group) in &staged.0 {
             cache.with_storage_limit(|| storage.entry(identities, hash, "committed identity slots"))?;
             ctx.reserve_scoped_vec(
                 cache, identities.entry(*hash).or_default(), group.len(), "committed identity slots",
             )?;
         }
         let transferred = before_apply()?;
-        for (hash, group) in staged {
+        for (hash, group) in staged.0 {
             identities.entry(hash).or_default().extend(group);
         }
         self.base.model.append(draft.model);
@@ -786,7 +764,7 @@ mod tests {
 
     fn point_draft(id: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
-        draft.insert(point(id)).expect("insert point into draft");
+        draft.insert(point(id), &cadmpeg_test_support::service_decode_context()).expect("insert point into draft");
         draft
     }
 
@@ -797,7 +775,7 @@ mod tests {
                 id: id.try_into().expect("valid identity"),
                 point: point.try_into().expect("valid identity"),
                 tolerance: None,
-            })
+            }, &cadmpeg_test_support::service_decode_context())
             .expect("insert vertex into draft");
         draft
     }
@@ -997,7 +975,7 @@ mod tests {
                         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                     ),
                     native_ref: None,
-                })
+                }, &cadmpeg_test_support::service_decode_context())
                 .unwrap();
         }
         let child = "test:draft:feature#child".try_into().unwrap();
@@ -1008,7 +986,7 @@ mod tests {
             .unwrap();
         let expected = draft.model().clone();
         let mut ir = CadIr::empty();
-        draft.commit_model(&mut ir).unwrap();
+        draft.commit_model(&mut ir, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
         assert_eq!(ir.model, expected);
         let round_trip = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(
@@ -1025,12 +1003,12 @@ mod tests {
         ir.model.points.push(point("test:model:point#1"));
         let mut draft = ModelDraft::new().with_accounting();
         draft
-            .insert(point("test:model:point#1"))
+            .insert(point("test:model:point#1"), &cadmpeg_test_support::service_decode_context())
             .expect("insert point into empty draft");
         let mut annotations = Annotations::default();
 
         assert!(matches!(
-            draft.commit(&mut ir, &mut annotations),
+            draft.commit(&mut ir, &mut annotations, &cadmpeg_test_support::service_decode_context()).unwrap(),
             Err(DraftError::IdentityCollision(_))
         ));
         assert_eq!(ir.model.points.len(), 1);
@@ -1046,7 +1024,7 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            draft.commit_model(&mut ir),
+            draft.commit_model(&mut ir, &cadmpeg_test_support::service_decode_context()).unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
         assert!(ir.model.points.is_empty());
@@ -1065,7 +1043,7 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            draft.commit_model(&mut ir),
+            draft.commit_model(&mut ir, &cadmpeg_test_support::service_decode_context()).unwrap(),
             Err(DraftError::UnresolvedReference {
                 owner: owner.into(),
                 target: target.into(),
@@ -1088,10 +1066,10 @@ mod tests {
 
         let mut sequential_ir = CadIr::empty();
         point_draft("test:model:point#1")
-            .commit_model(&mut sequential_ir)
+            .commit_model(&mut sequential_ir, &cadmpeg_test_support::service_decode_context()).unwrap()
             .expect("first sequential commit");
         point_draft("test:model:point#2")
-            .commit_model(&mut sequential_ir)
+            .commit_model(&mut sequential_ir, &cadmpeg_test_support::service_decode_context()).unwrap()
             .expect("second sequential commit");
 
         drop(session);
@@ -1237,7 +1215,7 @@ mod tests {
                     .try_into()
                     .expect("valid identity"),
                 tolerance: None,
-            })
+            }, &cadmpeg_test_support::service_decode_context())
             .expect("insert rejected vertex");
         assert!(!session.contains(rejected_identity).unwrap());
         assert!(session.commit_model(rejected).unwrap().is_err());

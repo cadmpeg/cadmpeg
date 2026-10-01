@@ -4248,7 +4248,7 @@ impl<'a> DecodeContext<'a> {
                 let mut budget = self.expansion_budget;
                 budget.entities(self.expand.ctx(), entity_count)?;
                 let result = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
-                    draft.commit_for_decode(ir, &mut self.annotations, self.expand.ctx())
+                    draft.commit(ir, &mut self.annotations, self.expand.ctx())
                 });
                 let committed = match result {
                     Ok(result) => result?.map_err(|error| error.to_string()),
@@ -5038,7 +5038,7 @@ fn stage_brep_carriers(
                     staged
                         .warnings
                         .append_admitted(expand.ctx(), &mut mesh.warnings)?;
-                    staged.draft.exactness_for_decode(
+                    staged.draft.exactness(
                         ctx,
                         mesh.tessellation.id.to_string(),
                         if mesh.scaled {
@@ -5164,7 +5164,7 @@ fn stage_brep_carriers(
                         association.try_clone_for_decode(ctx, "Rhino source association copy")?,
                     ),
                 });
-                staged.draft.exactness_for_decode(
+                staged.draft.exactness(
                     ctx,
                     id.to_string(),
                     if derived {
@@ -5863,7 +5863,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     for id in derived_ids {
         staged
             .draft
-            .exactness_for_decode(ctx, id, Exactness::Derived)?;
+            .exactness(ctx, id, Exactness::Derived)?;
     }
     scale_plane_pcurves(ctx, &mut staged, scale)?;
     Ok(staged)
@@ -6142,8 +6142,8 @@ fn stage_brep_procedural_surface(
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     staged
         .draft
-        .exactness_for_decode(context.ctx, surface_id.to_string(), Exactness::Derived)?;
-    staged.draft.exactness_for_decode(
+        .exactness(context.ctx, surface_id.to_string(), Exactness::Derived)?;
+    staged.draft.exactness(
         context.ctx,
         procedural_id.to_string(),
         Exactness::Derived,
@@ -6237,7 +6237,7 @@ fn stage_curve_tree(
     });
     staged
         .draft
-        .exactness_for_decode(ctx, id.to_string(), Exactness::Derived)?;
+        .exactness(ctx, id.to_string(), Exactness::Derived)?;
     staged.links.push(id.to_string());
     if let Some(definition) = definition {
         let mut procedure_key_copy_storage =
@@ -6259,7 +6259,7 @@ fn stage_curve_tree(
         );
         staged
             .draft
-            .exactness_for_decode(ctx, procedure_id.to_string(), Exactness::Derived)?;
+            .exactness(ctx, procedure_id.to_string(), Exactness::Derived)?;
         staged.links.push(procedure_id.to_string());
         staged
             .draft

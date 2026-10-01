@@ -2612,7 +2612,7 @@ fn append_legacy_brep(
         visible: None,
     });
     draft
-        .commit_model_for_decode(ir, ctx)?
+        .commit_model(ir, ctx)?
         .map_err(CodecError::malformed)
 }
 
