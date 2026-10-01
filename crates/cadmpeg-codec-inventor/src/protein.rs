@@ -188,7 +188,7 @@ fn decode_instances_from(
         .map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
             let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
-            let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, &frames)?;
+            let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(entry.name.len()),
                 "Inventor Protein instance entry name",
