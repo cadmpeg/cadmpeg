@@ -389,6 +389,7 @@ dependencies = [
 name = "cadmpeg-core"
 version = "0.6.0"
 dependencies = [
+ "flate2",
  "memchr",
  "roxmltree",
  "schemars",
