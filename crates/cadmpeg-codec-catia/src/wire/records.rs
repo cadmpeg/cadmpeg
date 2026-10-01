@@ -5,10 +5,7 @@
 //! the `05 08 01` vertex-coordinate scanner (`scan_vertex_records`), and the
 //! degree-5 UV jet decoder (`parse_consolidated_pcurve`). Nothing here depends
 //! on a `families` module; the family decoders consume it downward.
-//!
-//! The `Consolidated*` names are retained from this code's original home in
-//! `families::consolidated::records`; a rename cascades across ~40 call sites
-//! and several `native` field paths, so the names carry naming debt here.
+
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -616,6 +613,7 @@ where
             let end = range.end;
             let mut pos = start;
             while pos < end {
+                ctx.charge_work(1, "catia_record_scan")?;
                 let Some(mut record) = parse_consolidated_record(data, pos, end) else {
                     pos += 1;
                     continue;
@@ -657,6 +655,7 @@ where
         loop {
             let mut added = Vec::new();
             let mut source_ends = HashSet::new();
+            ctx.charge_work(u64_from_index(source_records.len()), "catia_spanning_record_inventory")?;
             for record in &source_records {
                 ctx.insert_hash_set(
                     &mut source_ends,
@@ -665,9 +664,13 @@ where
                 )?;
             }
             for source_start in source_ends {
+                ctx.charge_work(1, "catia_spanning_record_lookup")?;
                 if record_starts.contains(&source_start) {
                     continue;
                 }
+                let work = u64_from_index(source_ranges.len()).checked_mul(14)
+                    .ok_or_else(|| ctx.refuse_codec_limit("catia_spanning_record_probe", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, "catia_spanning_record_probe")?;
                 let Some(record) = parse_spanning_consolidated_record(
                     data,
                     &source_ranges,
@@ -939,6 +942,19 @@ mod tests {
         ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
         ConsolidatedRecord,
     };
+
+    #[test]
+    fn consolidated_record_scan_refuses_marker_free_work() {
+        let bytes = [0_u8; 64];
+        crate::test_support::with_work_limit(0, |ctx| {
+            let error = super::consolidated_records_in_sources(ctx, &bytes,
+                std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))))
+                .expect_err("marker-free scan consumes work");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            assert_eq!(limit.operation, "catia_record_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 
     #[test]
     fn consolidated_record_inventory_refuses_each_contiguous_collection() {
