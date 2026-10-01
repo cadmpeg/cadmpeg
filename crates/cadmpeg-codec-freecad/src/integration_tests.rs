@@ -363,8 +363,8 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
     assert_eq!(
         entries
             .iter()
-            .find(|entry| entry.name == "Payload.bin")
-            .map(|entry| entry.data.as_slice()),
+            .find(|entry| entry.name() == "Payload.bin")
+            .map(|entry| entry.data()),
         Some(b"second payload".as_slice())
     );
     assert_valid(&round_trip);

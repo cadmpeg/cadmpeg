@@ -88,7 +88,7 @@ struct ApplicationPayloadWire<'a> {
     entry: &'a str,
     name: &'a str,
     byte_len: u64,
-    sha256: String,
+    sha256: &'a str,
     data: &'a [u8],
 }
 
@@ -110,10 +110,10 @@ fn wire_records<'a>(
     }
     let mut entry_index = HashMap::new();
     for entry in entries {
-        if !entry_index.contains_key(entry.name.as_str()) {
+        if !entry_index.contains_key(entry.name()) {
             ctx.reserve_map(&mut entry_index, 1, "FreeCAD application entry lookup")?;
         }
-        entry_index.insert(entry.name.as_str(), entry);
+        entry_index.insert(entry.name(), entry);
     }
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     for object in objects {
@@ -150,14 +150,16 @@ fn wire_records<'a>(
             for name in property.side_entries() {
                 if let Some(entry) = entry_index.get(name.as_str()) {
                     payloads.push(ApplicationPayloadWire {
-                        entry: &entry.id,
-                        name: &entry.name,
+                        entry: entry.id(),
+                        name: entry.name(),
                         byte_len: entry.byte_len(),
                         sha256: entry.sha256(),
-                        data: &entry.data,
+                        data: entry.data(),
                     });
                 }
             }
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "FreeCAD application property digest")?;
+            ctx.charge_retained(64, "FreeCAD application property digest")?;
             property_records.push(ApplicationPropertyWire {
                 id: crate::native::native_child_id_charged(
                     ctx,
@@ -180,6 +182,8 @@ fn wire_records<'a>(
                 inert: is_inert(property),
             });
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "FreeCAD application object digest")?;
+        ctx.charge_retained(64, "FreeCAD application object digest")?;
         records.push(ApplicationRecordWire {
             id: crate::native::native_id_charged(ctx, "application", &object.name)?,
             object: &object.id,

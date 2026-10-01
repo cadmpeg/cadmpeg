@@ -164,34 +164,16 @@ pub(crate) fn entry_records(
             referenced_by
                 .push(ctx.copy_retained_text(&property.id, "FCStd entry referencing identity")?);
         }
-        records.push(EntryRecord {
-            id: crate::native::native_id_charged(ctx, "entry", &entry.name)?,
-            name: ctx.copy_retained_text(&entry.name, "FCStd entry record name")?,
-            role: entry.role,
+        records.push(EntryRecord::new(
+            ctx,
+            crate::native::native_id_charged(ctx, "entry", &entry.name)?,
+            ctx.copy_retained_text(&entry.name, "FCStd entry record name")?,
+            entry.role,
             referenced_by,
-            data: ctx.copy_retained(bytes, "retain FCStd entry")?,
-        });
+            ctx.copy_retained(bytes, "retain FCStd entry")?,
+        )?);
     }
     Ok(records)
-}
-
-pub(crate) fn add_entry_reference(
-    ctx: &DecodeContext<'_>,
-    entry: &mut EntryRecord,
-    owner: &str,
-) -> Result<(), CodecError> {
-    if entry
-        .referenced_by
-        .iter()
-        .any(|candidate| candidate == owner)
-    {
-        return Ok(());
-    }
-    ctx.reserve_vec(&mut entry.referenced_by, 1, "FCStd GUI entry references")?;
-    entry
-        .referenced_by
-        .push(ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?);
-    Ok(())
 }
 
 pub(crate) fn source_attributes(
@@ -551,7 +533,7 @@ pub(crate) fn logical_ledger(
     }
     let mut output = Vec::new();
     for entry in entries {
-        if typed_entries.contains(entry.id.as_str()) || typed_entries.contains(entry.name.as_str())
+        if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name())
         {
             push_logical_span(
                 ctx,
@@ -560,12 +542,12 @@ pub(crate) fn logical_ledger(
                 0,
                 entry.byte_len(),
                 LogicalClassification::Typed {
-                    owner: ctx.copy_retained_text(&entry.id, "FCStd logical span owner")?,
+                    owner: ctx.copy_retained_text(entry.id(), "FCStd logical span owner")?,
                 },
             )?;
-        } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
+        } else if entry.name() == "Document.xml" || entry.name() == "GuiDocument.xml" {
             let mut ranges = Vec::new();
-            if entry.name == "Document.xml" {
+            if entry.name() == "Document.xml" {
                 for property in properties {
                     ctx.reserve_vec(&mut ranges, 1, "FCStd logical property ranges")?;
                     ranges.push((
@@ -611,7 +593,7 @@ pub(crate) fn logical_ledger(
             for (start, end, classification, owner) in ranges {
                 if start < cursor || end < start || end > entry.byte_len() {
                     return Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("overlapping or invalid {} record spans", entry.name),
+                        format_args!("overlapping or invalid {} record spans", entry.name()),
                         "FCStd logical span error",
                     )?));
                 }
@@ -646,7 +628,7 @@ pub(crate) fn logical_ledger(
                 0,
                 entry.byte_len(),
                 LogicalClassification::NamedOpaque {
-                    owner: ctx.copy_retained_text(&entry.id, "FCStd logical span owner")?,
+                    owner: ctx.copy_retained_text(entry.id(), "FCStd logical span owner")?,
                 },
             )?;
         }
@@ -700,11 +682,11 @@ pub(crate) fn byte_coverage(
             .is_some_and(|span| span.span.end() == physical_byte_len);
     let mut logical_exact = logical
         .iter()
-        .all(|span| entries.iter().any(|entry| entry.name == span.entry));
+        .all(|span| entries.iter().any(|entry| entry.name() == span.entry));
     if logical_exact {
         for entry in entries {
             let mut spans = Vec::new();
-            for span in logical.iter().filter(|span| span.entry == entry.name) {
+            for span in logical.iter().filter(|span| span.entry == entry.name()) {
                 ctx.reserve_vec(&mut spans, 1, "FCStd entry logical spans")?;
                 spans.push(span);
             }
@@ -759,7 +741,7 @@ fn push_logical_span(
     ctx.reserve_vec(output, 1, "FCStd logical ledger spans")?;
     output.push(LogicalSpan {
         id: crate::native::native_id("logical-span", output.len().to_string()),
-        entry: ctx.copy_retained_text(&entry.name, "FCStd logical span entry")?,
+        entry: ctx.copy_retained_text(entry.name(), "FCStd logical span entry")?,
         span: crate::native::ByteSpan::try_new(start, end).map_err(CodecError::Malformed)?,
         classification,
     });

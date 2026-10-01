@@ -517,7 +517,7 @@ pub(crate) fn inventory(
                     family: RecordIssueFamily::Feature {
                         type_id: type_id_string(record.type_id),
                     },
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
                 });
@@ -2159,7 +2159,7 @@ mod tests {
         MIRROR_FEATURE_TYPE, RECTANGULAR_PATTERN_FEATURE_TYPE,
     };
     use crate::container::InventorContainer;
-    use crate::pmdc::{type_id_string, PmDcContentHeader, PmDcReferenceList, PmDcU32List};
+    use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
     use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
@@ -2555,7 +2555,7 @@ mod tests {
                 header: test_header(),
                 kind,
             },
-            format!("{ordinal:032x}"),
+            crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}")).expect("test GUID"),
             &segment(),
             ordinal,
         )
@@ -2583,7 +2583,7 @@ mod tests {
                 .expect("test list metadata matches length"),
                 value: 0,
             },
-            type_id_string(FEATURE_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(FEATURE_TYPE),
             &segment(),
             ordinal,
         )
@@ -2639,7 +2639,7 @@ mod tests {
                 class_id: class_id.into(),
             })
             .expect("valid label fixture"),
-            type_id_string(FEATURE_LABEL_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(FEATURE_LABEL_TYPE),
             &segment(),
             owner_ordinal + 1000,
         )
@@ -2666,7 +2666,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: 0,
             },
-            "264d8790d011f8d10008cabc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from("264d8790d011f8d10008cabc0663dc09".to_owned()).expect("test GUID"),
             &segment(),
             ordinal,
         )
@@ -3269,7 +3269,7 @@ mod tests {
                 values: [0; 2],
                 auxiliary: None,
             },
-            "114d8790d011f8d10008cabc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from("114d8790d011f8d10008cabc0663dc09".to_owned()).expect("test GUID"),
             &segment(),
             50,
         );
@@ -3301,7 +3301,7 @@ mod tests {
                     cadmpeg_ir::scalar::FiniteReal::ONE,
                 ],
             },
-            "40df52ced011d0d20008ccbc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from("40df52ced011d0d20008ccbc0663dc09".to_owned()).expect("test GUID"),
             &segment(),
             60,
         );
@@ -3320,7 +3320,7 @@ mod tests {
                 associative_id: 1,
                 entity_type: 1,
             },
-            type_id_string(ENTITY_STYLE_LINK_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(ENTITY_STYLE_LINK_TYPE),
             &segment(),
             51,
         );
@@ -3485,7 +3485,7 @@ mod tests {
                 )
                 .expect("finite explicit matrix fixture"),
             },
-            "184d8790d011f8d10008cabc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from("184d8790d011f8d10008cabc0663dc09".to_owned()).expect("test GUID"),
             &segment(),
             60,
         );
@@ -3502,7 +3502,7 @@ mod tests {
                     cadmpeg_ir::scalar::FiniteReal::ONE.negated(),
                 ],
             },
-            "40df52ced011d0d20008ccbc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from("40df52ced011d0d20008ccbc0663dc09".to_owned()).expect("test GUID"),
             &segment(),
             61,
         );

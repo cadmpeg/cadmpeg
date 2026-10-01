@@ -158,8 +158,8 @@ pub(super) fn project(
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Presentation,
-                    segment_token: ctx
-                        .copy_retained_text(token, "retain Inventor rendering issue token")?,
+                    segment_token: cadmpeg_ir::ids::IdentityKey::try_new(ctx
+                        .copy_retained_text(token, "retain Inventor rendering issue token")?).map_err(CodecError::malformed)?,
                     record_ordinal: style.identity.record_ordinal,
                     detail,
                 });
@@ -220,13 +220,13 @@ pub(super) fn project(
         ctx.charge_entities(1, "admit Inventor native graphics style collection")?;
         projection
             .graphics_style_collections
-            .push(PmGraphicsStyleCollectionRecord {
+            .push(PmGraphicsStyleCollectionRecord::new(
                 id,
-                segment_token,
-                record_ordinal: collection.identity.record_ordinal,
-                segment_version_major: collection.segment_version_major,
-                style_references: collection.style_references.clone(),
-            });
+                cadmpeg_ir::ids::IdentityKey::try_new(segment_token).map_err(CodecError::malformed)?,
+                collection.identity.record_ordinal,
+                collection.segment_version_major,
+                collection.style_references.clone(),
+            ).map_err(CodecError::malformed)?);
     }
     for style in &inventory.graphics_primary_color_styles {
         let token = style.identity.segment_token.as_str();

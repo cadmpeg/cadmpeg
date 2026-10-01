@@ -12,7 +12,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 
 use crate::assembly::count_unresolved;
-use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
+use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::Located;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -698,7 +698,7 @@ pub(crate) fn inventory<'a>(
                 )?;
                 issues.push(RecordIssue {
                     family: RecordIssueFamily::Presentation,
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
                 });
@@ -730,7 +730,7 @@ fn push_presentation_record<T>(
         cadmpeg_core::decode::u64_from_index(token.as_str().len()),
         "retain Inventor presentation record segment token",
     )?;
-    records.push(Located::new(value, type_id_string(type_id), token, ordinal));
+    records.push(Located::new(value, crate::record_identity::RecordTypeId::from_bytes(type_id), token, ordinal));
     Ok(())
 }
 
@@ -1235,7 +1235,7 @@ mod tests {
         GRAPHICS_PRIMARY_COLOR_STYLE_TYPE, GRAPHICS_STYLE_COLLECTION_TYPE, RENDERING_STYLE_TYPE,
     };
     use crate::container::InventorContainer;
-    use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
+    use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
     use crate::test_support::test_fixtures::primary_envelope_fixture;
@@ -1378,13 +1378,13 @@ mod tests {
         let inventory = PresentationInventory {
             default_styles: vec![Located::new(
                 default,
-                type_id_string(DEFAULT_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(DEFAULT_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             rendering_styles: vec![Located::new(
                 style,
-                type_id_string(RENDERING_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(RENDERING_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 8,
             )],
@@ -1598,7 +1598,7 @@ mod tests {
         )
         .expect("truncated style becomes an issue");
         let detail_len = admitted.1[0].detail.len();
-        let token_len = admitted.1[0].segment_token.len();
+        let token_len = admitted.1[0].segment_token.as_str().len();
         for (limit_bytes, operation, used) in [
             (
                 detail_len - 1,
@@ -1692,13 +1692,13 @@ mod tests {
         let inventory = PresentationInventory {
             default_styles: vec![Located::new(
                 default,
-                type_id_string(DEFAULT_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(DEFAULT_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             rendering_styles: vec![Located::new(
                 style,
-                type_id_string(RENDERING_STYLE_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(RENDERING_STYLE_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 8,
             )],
@@ -1911,7 +1911,7 @@ mod tests {
                 key: 42,
                 values: [0; 2],
             },
-            type_id_string(GRAPHICS_FACE_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(GRAPHICS_FACE_TYPE),
             &cadmpeg_ir::identity_key!("graphics"),
             2,
         );
@@ -1924,7 +1924,7 @@ mod tests {
                 )
                 .expect("valid reference list"),
             },
-            type_id_string(GRAPHICS_STYLE_COLLECTION_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(GRAPHICS_STYLE_COLLECTION_TYPE),
             &cadmpeg_ir::identity_key!("graphics"),
             4,
         );
@@ -1944,7 +1944,7 @@ mod tests {
                 values: [0; 2],
                 terminal_state: 0,
             },
-            type_id_string(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
             &cadmpeg_ir::identity_key!("graphics"),
             6,
         );

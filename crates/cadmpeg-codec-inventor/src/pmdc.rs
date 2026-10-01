@@ -170,6 +170,9 @@ impl PmDcReferenceList {
         metadata: Option<PmDcListMetadata>,
         references: Vec<PmDcReference>,
     ) -> Option<Self> {
+        if metadata.as_ref().is_some_and(|value| !value.matches_marker(marker)) {
+            return None;
+        }
         let items = match paired_items(metadata, references) {
             PairedItems::Empty => None,
             PairedItems::Complete(metadata, references) => Some((metadata, references)),
@@ -310,6 +313,9 @@ impl PmDcU32List {
         metadata: Option<PmDcListMetadata>,
         values: Vec<u32>,
     ) -> Option<Self> {
+        if metadata.as_ref().is_some_and(|value| !value.matches_marker(marker)) {
+            return None;
+        }
         let items = match paired_items(metadata, values) {
             PairedItems::Empty => None,
             PairedItems::Complete(metadata, values) => Some((metadata, values)),
@@ -375,6 +381,12 @@ fn paired_items<M, T>(metadata: Option<M>, values: Vec<T>) -> PairedItems<M, T> 
 pub(crate) enum PmDcListMetadata {
     U16([u16; 2]),
     U32([u32; 2]),
+}
+
+impl PmDcListMetadata {
+    fn matches_marker(&self, marker: u16) -> bool {
+        matches!((marker, self), (8, Self::U16(_))) || (marker != 8 && matches!(self, Self::U32(_)))
+    }
 }
 
 pub(crate) struct Cursor<'a> {
@@ -707,6 +719,19 @@ mod tests {
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
 
+
+    #[test]
+    fn typed_lists_reject_marker_metadata_width_disagreement() {
+        let reference = super::PmDcReference::from_packed(1);
+        for (marker, metadata) in [(8, super::PmDcListMetadata::U32([0; 2])), (2, super::PmDcListMetadata::U16([0; 2]))] {
+            assert!(super::PmDcReferenceList::new(marker, Some(metadata.clone()), vec![reference]).is_none());
+            assert!(super::PmDcU32List::new(marker, Some(metadata.clone()), vec![1]).is_none());
+            let wire = serde_json::json!({"marker": marker, "metadata": metadata, "references": [reference]});
+            assert!(serde_json::from_value::<super::PmDcReferenceList>(wire).is_err());
+            let wire = serde_json::json!({"marker": marker, "metadata": metadata, "values": [1]});
+            assert!(serde_json::from_value::<super::PmDcU32List>(wire).is_err());
+        }
+    }
 
     #[test]
     fn references_reject_high_indices_on_every_construction_path() {

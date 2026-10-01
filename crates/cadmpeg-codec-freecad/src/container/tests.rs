@@ -51,13 +51,13 @@ fn missing_entry_error_refuses_at_retained_limit() {
 
 #[test]
 fn overlapping_logical_span_error_refuses_at_retained_limit() {
-    let entry = crate::native::EntryRecord {
-        id: "fcstd:native:entry#Document.xml".into(),
-        name: "Document.xml".into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
-        data: vec![0; 11],
-    };
+    let entry = crate::test_support::entry_record(
+        "fcstd:native:entry#Document.xml".into(),
+        "Document.xml".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![0; 11],
+    );
     let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#One".into(),
         owner: "fcstd:native:object#Owner".into(),
@@ -282,13 +282,7 @@ fn entry_data_copy_refuses_at_retained_limit() {
 }
 
 fn resource_entry_record() -> crate::native::EntryRecord {
-    crate::native::EntryRecord {
-        id: "fcstd:native:entry#GuiDocument.xml".into(),
-        name: "GuiDocument.xml".into(),
-        role: cadmpeg_core::container::ContainerRole::GuiDocument,
-        referenced_by: Vec::new(),
-        data: Vec::new(),
-    }
+    crate::test_support::entry_record("fcstd:native:entry#GuiDocument.xml".into(), "GuiDocument.xml".into(), cadmpeg_core::container::ContainerRole::GuiDocument, Vec::new(), Vec::new())
 }
 
 #[test]
@@ -296,7 +290,7 @@ fn gui_entry_reference_refuses_at_collection_limit() {
     collection_context(0, |ctx| {
         let mut entry = resource_entry_record();
         assert!(
-            matches!(super::add_entry_reference(ctx, &mut entry, "owner"),
+            matches!(entry.add_reference(ctx, "owner"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "FCStd GUI entry references")
         );
@@ -312,7 +306,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut entry = resource_entry_record();
     assert!(
-        matches!(super::add_entry_reference(&ctx, &mut entry, "owner"),
+        matches!(entry.add_reference(&ctx, "owner"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FCStd GUI entry reference identity")
     );
@@ -330,13 +324,13 @@ fn document_domain_set_refuses_on_collection_limit() {
 
 #[test]
 fn logical_span_vector_refuses_on_collection_limit() {
-    let entry = crate::native::EntryRecord {
-        id: "fcstd:native:entry#extra".to_owned(),
-        name: "extra".to_owned(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
-        data: vec![0],
-    };
+    let entry = crate::test_support::entry_record(
+        "fcstd:native:entry#extra".to_owned(),
+        "extra".to_owned(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![0],
+    );
     let result = collection_context(0, |ctx| {
         super::logical_ledger(
             ctx,
@@ -718,7 +712,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .expect("entries");
     let shared = entries
         .iter()
-        .find(|entry| entry.name == "Shared.bin")
+        .find(|entry| entry.name() == "Shared.bin")
         .expect("shared entry");
     let spans = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
@@ -728,20 +722,18 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .find(|span| span.entry == "Shared.bin")
         .expect("shared entry span");
 
-    assert_eq!(shared.referenced_by.len(), 2);
-    assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
+    assert_eq!(shared.referenced_by().len(), 2);
+    assert_ne!(shared.referenced_by()[0], shared.referenced_by()[1]);
     assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(shared.id.as_str()));
+    assert_eq!(span.classification.owner(), Some(shared.id()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let mut corrupted = result.ir().clone();
     let mut corrupted_entries = entries.clone();
-    corrupted_entries
-        .iter_mut()
-        .find(|entry| entry.name == "Shared.bin")
-        .expect("shared entry")
-        .referenced_by
-        .pop();
+    let shared = corrupted_entries.iter_mut().find(|entry| entry.name() == "Shared.bin").expect("shared entry");
+    let mut references = shared.referenced_by().to_vec();
+    references.pop();
+    *shared = crate::test_support::entry_record(shared.id().to_owned(), shared.name().to_owned(), shared.role, references, shared.data().to_vec());
     corrupted
         .native
         .namespace_mut("fcstd")
