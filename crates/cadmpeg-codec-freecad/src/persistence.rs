@@ -40,7 +40,7 @@ pub(crate) fn parse_with_context(
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         crate::resource::malformed_charged(
             ctx,
             format_args!("invalid Document.xml: {error}"),

@@ -529,6 +529,7 @@ pub(crate) fn parse_document(
         Ok(xml) => xml,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
+            let CodecError::Malformed(error) = error else { return Err(error); };
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("invalid Document.xml: {error}"),
                 "FCStd document parse error",

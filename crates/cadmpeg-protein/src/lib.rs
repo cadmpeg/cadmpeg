@@ -455,7 +455,7 @@ fn parse_schema_document(
         CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
     })?;
     let admitted_document = ctx.parse_xml(xml, "Protein schema XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         CodecError::malformed(format_args!(
             "Protein schema {name} is malformed XML: {error}"
         ))

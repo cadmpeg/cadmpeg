@@ -2352,7 +2352,7 @@ fn direct_shape_entry(
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {
     let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").or_else(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return Err(error); }
+        let CodecError::Malformed(error) = error else { return Err(error); };
         Err(CodecError::Malformed(ctx.format_retained(
             format_args!("invalid exact-shape property XML {}: {error}", property.id),
             "FreeCAD shape property XML diagnostic",

@@ -575,7 +575,7 @@ fn direct_value_attributes(
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
     let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         annotation_malformed(
             ctx,
             format_args!(
@@ -670,7 +670,7 @@ fn strict_text_values(
         return Ok(values);
     }
     let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         annotation_malformed(
             ctx,
             format_args!(

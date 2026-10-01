@@ -107,7 +107,7 @@ fn validate_value_root(
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
     let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").or_else(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return Err(error); }
+        let CodecError::Malformed(error) = error else { return Err(error); };
         Err(CodecError::Malformed(ctx.format_retained(
             format_args!("invalid geometry property XML {}: {error}", property.id),
             "FreeCAD geometry XML error",
@@ -282,7 +282,7 @@ fn point_transform(
     property: &PropertyRecord,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
     let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").or_else(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return Err(error); }
+        let CodecError::Malformed(error) = error else { return Err(error); };
         Err(CodecError::Malformed(ctx.format_retained(
             format_args!("invalid point property XML {}: {error}", property.id),
             "FreeCAD point XML error",

@@ -239,7 +239,7 @@ pub(crate) fn transfer(
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         gui_malformed(ctx, format_args!("invalid GuiDocument.xml: {error}"))
     })?;
     let xml = admitted_xml.document();
