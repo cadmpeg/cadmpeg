@@ -619,7 +619,7 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         &scan,
         &mut decoded,
         &classification,
-        crate::container::notes(&scan),
+        crate::container::notes_charged(&cadmpeg_test_support::service_decode_context(), &scan).unwrap(),
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {

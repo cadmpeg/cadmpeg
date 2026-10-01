@@ -1097,32 +1097,15 @@ pub(crate) fn assign_unique_surface_owners(
                 }
             }
             if fits {
-                ctx.reserve_collection_vec(&mut owners, 1, "collect SLDPRT tessellation owners")?;
-                owners.push(candidate);
-            }
-        }
-        {
-            let mut trimmed = Vec::new();
-            for candidate in owners {
                 let keep = match candidate.trim.as_ref() {
-                    Some(trim) => trim.contains_mesh(
-                        ctx,
-                        mesh,
-                        candidate.inverse,
-                        candidate.tolerance.max(quantization_tolerance),
-                    )?,
+                    Some(trim) => trim.contains_mesh(ctx, mesh, candidate.inverse, tolerance)?,
                     None => true,
                 };
                 if keep {
-                    ctx.reserve_collection_vec(
-                        &mut trimmed,
-                        1,
-                        "collect SLDPRT trimmed tessellation owners",
-                    )?;
-                    trimmed.push(candidate);
+                    ctx.reserve_collection_vec(&mut owners, 1, "collect SLDPRT tessellation owners")?;
+                    owners.push(candidate);
                 }
             }
-            owners = trimmed;
         }
         let (face, body, chordal_deflection) = match owners.as_slice() {
             [owner] => (owner.face, owner.body, None),
@@ -2906,6 +2889,13 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
 fn polygon_contains_triangle(
     ctx: &DecodeContext<'_>, boundary: &[Point2], triangle: [Point2; 3], tolerance: f64,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(boundary.len());
+    let work = count.checked_mul(count).and_then(|work| work.checked_add(count))
+        .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar outer simplicity", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "test SLDPRT planar outer simplicity")?;
+    if !is_simple_polygon(boundary, tolerance) || triangle.iter().any(|point| FinitePoint2::new(*point).is_none()) {
+        return Ok(false);
+    }
     let capacity = boundary.len().checked_mul(2).and_then(|count| count.checked_add(2))
         .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX))?;
     for edge in 0..3 {
@@ -2921,12 +2911,15 @@ fn polygon_contains_triangle(
             let next = boundary[(index + 1) % boundary.len()];
             let pu = point.u - start.u; let pv = point.v - start.v;
             let projected = (pu * du + pv * dv) / length_squared;
+            if !projected.is_finite() { return Ok(false); }
             if (0.0..=1.0).contains(&projected) { cuts.push(projected); }
             let eu = next.u - point.u; let ev = next.v - point.v;
             let denominator = du * ev - dv * eu;
+            if !denominator.is_finite() { return Ok(false); }
             if denominator == 0.0 { continue; }
             let along_triangle = (pu * ev - pv * eu) / denominator;
             let along_boundary = (pu * dv - pv * du) / denominator;
+            if !along_triangle.is_finite() || !along_boundary.is_finite() { return Ok(false); }
             if (0.0..=1.0).contains(&along_triangle) && (0.0..=1.0).contains(&along_boundary) { cuts.push(along_triangle); }
         }
         ctx.stable_sort_by(&mut cuts, f64::total_cmp, |_| 0, "sort SLDPRT triangle boundary cuts")?;
