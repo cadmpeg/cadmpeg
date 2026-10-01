@@ -459,12 +459,15 @@ pub fn parse_container(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(TextHeader, Terminator), StreamFailure> {
+    // Header field scans and the final marker search share this admission.
+    for _ in 0..3 {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "SAT container framing",
+        ).map_err(StreamFailure::from_operation)?;
+    }
     let mut position = 0;
     let header = parse_header(ctx, bytes, &mut position)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "SAT container terminator scan",
-    ).map_err(StreamFailure::from_operation)?;
     let tail = bytes.trim_ascii_end();
     let marker = tail.rsplit(|byte| is_ws(*byte)).next();
     let branch = match marker {
@@ -1847,6 +1850,25 @@ fn type_record(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sat_container_framing_admits_work_before_header_scan() {
+        let source = asm_stream("");
+        crate::test_support::with_service_context(&source, |service| {
+            let mut policy = *service.policy();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse_container(&ctx, &source).expect_err("scan work must refuse first");
+            let StreamFailure::Resource(refusal) = error else { panic!("resource refusal: {error:?}"); };
+            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(refusal.operation, "SAT container framing");
+            assert_eq!(refusal.used, 0);
+            assert_eq!(refusal.additional, cadmpeg_core::decode::u64_from_index(source.len()));
+        }).expect("service test context");
+    }
+
     #[test]
     fn sat_subtype_typing_refuses_depth_before_recursive_descent() {
         let prefix = "{ cyl_spl_sur 0 intcurve forward { int_int_cur 0 full nubs 1 open 2 0 2 1 2 0 0 0 1 0 0 2 0 0 3 0 0 0 spline forward ";

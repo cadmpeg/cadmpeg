@@ -173,7 +173,7 @@ impl<'a> ArchiveSnapshot<'a> {
         )?;
         let mut entries = DecodeContext::admitted_vec(archive.len(), "ZIP entry records")?;
         for index in 0..archive.len() {
-            let file = archive.by_index(index).map_err(|error| {
+            let file = archive.by_index_raw(index).map_err(|error| {
                 CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))
             })?;
             let name_len = cadmpeg_core::decode::u64_from_index(file.name().len());
