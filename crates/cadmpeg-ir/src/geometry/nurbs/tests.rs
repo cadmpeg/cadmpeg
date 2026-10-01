@@ -1096,3 +1096,31 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         vec![FiniteReal::new(5.0).unwrap(), FiniteReal::new(6.0).unwrap()]
     );
 }
+
+#[test]
+fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
+    use super::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurfaceAxis, PoleValue};
+    use crate::features::FinitePoint3;
+    use cadmpeg_core::decode::DecodeContext;
+
+    #[derive(Clone, Copy)]
+    struct Pole(Point3);
+    impl PoleValue<FinitePoint3> for Pole {
+        fn admit(self) -> Option<FinitePoint3> { FinitePoint3::new(self.0) }
+        fn admit_curve_poles_for_decode(_ctx: &DecodeContext<'_>, _poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+            panic!("context-free curve reconstruction must not start a decode session")
+        }
+        fn admit_surface_poles_for_decode(_ctx: &DecodeContext<'_>, _grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+            panic!("context-free surface reconstruction must not start a decode session")
+        }
+    }
+    let points = vec![Pole(Point3::new(0.0, 0.0, 0.0)), Pole(Point3::new(1.0, 0.0, 0.0))];
+    let curve = NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], NurbsPoles3::Polynomial { points: points.clone() }, false).unwrap();
+    assert_eq!(curve.control_points(), vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]);
+    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
+    let surface = NurbsSurface::new(axis(), axis(), NurbsPoleGrid::Polynomial { rows: vec![points.clone(), points] }, false).unwrap();
+    assert_eq!(surface.u_count(), 2);
+    assert_eq!(surface.v_count(), 2);
+    assert_eq!(serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(), curve);
+    assert_eq!(serde_json::from_value::<NurbsSurface>(serde_json::to_value(&surface).unwrap()).unwrap(), surface);
+}

@@ -1360,6 +1360,7 @@ impl<'de> Deserialize<'de> for ConfigurationEvaluation {
             Wire::Suppressed {} => Self::Suppressed {},
             Wire::Active { outputs } => {
                 let mut seen = std::collections::HashSet::new();
+                seen.try_reserve(outputs.len()).map_err(serde::de::Error::custom)?;
                 for output in &outputs {
                     if !seen.insert(output) {
                         return Err(serde::de::Error::custom("outputs: members must be distinct"));
@@ -2207,8 +2208,15 @@ impl<'a> IntoIterator for &'a FeatureContent {
 
 impl<'de> Deserialize<'de> for FeatureContent {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<FeatureSourceContent>::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
+        let values = Vec::<FeatureSourceContent>::deserialize(deserializer)?;
+        let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(values.len()).map_err(serde::de::Error::custom)?;
+        for value in &values {
+            if !matches!(value, FeatureSourceContent::Text(_)) && !seen.insert(value) {
+                return Err(serde::de::Error::custom("source_content repeats a parameter or child-feature reference"));
+            }
+        }
+        Ok(Self(values))
     }
 }
 
@@ -2866,7 +2874,17 @@ impl<'a> IntoIterator for &'a TreeChildren {
 impl<'de> Deserialize<'de> for TreeChildren {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = TreeChildrenWire::deserialize(deserializer)?;
-        Self::new(wire.children, wire.active_child).map_err(serde::de::Error::custom)
+        if wire.active_child.as_ref().is_some_and(|active| !wire.children.contains(active)) {
+            return Err(serde::de::Error::custom("active_child must belong to children"));
+        }
+        let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(wire.children.len()).map_err(serde::de::Error::custom)?;
+        for child in &wire.children {
+            if !seen.insert(child) {
+                return Err(serde::de::Error::custom("members must be distinct"));
+            }
+        }
+        Ok(Self { children: DistinctMembers(wire.children), active_child: wire.active_child })
     }
 }
 
@@ -6924,6 +6942,7 @@ impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for Disti
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<T>::deserialize(deserializer)?;
         let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(values.len()).map_err(serde::de::Error::custom)?;
         for value in &values {
             if !seen.insert(value) {
                 return Err(serde::de::Error::custom("members must be distinct"));
@@ -7004,7 +7023,14 @@ impl<'a, T> IntoIterator for &'a SelectionMembers<T> {
 
 impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for SelectionMembers<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        let values = Vec::<T>::deserialize(deserializer)?;
+        if values.is_empty() { return Err(serde::de::Error::custom(BodySelectionError::Empty)); }
+        let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(values.len()).map_err(serde::de::Error::custom)?;
+        for value in &values {
+            if !seen.insert(value) { return Err(serde::de::Error::custom(BodySelectionError::RepeatedBody)); }
+        }
+        Ok(Self(values))
     }
 }
 
@@ -7075,7 +7101,15 @@ impl std::ops::Deref for NativeSelections {
 
 impl<'de> Deserialize<'de> for NativeSelections {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<String>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        let values = Vec::<String>::deserialize(deserializer)?;
+        if values.is_empty() { return Err(serde::de::Error::custom(BodySelectionError::Empty)); }
+        if values.iter().any(|value| value.trim().is_empty()) { return Err(serde::de::Error::custom(BodySelectionError::BlankNativeMember)); }
+        let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(values.len()).map_err(serde::de::Error::custom)?;
+        for value in &values {
+            if !seen.insert(value) { return Err(serde::de::Error::custom(BodySelectionError::RepeatedNativeMember)); }
+        }
+        Ok(Self(values))
     }
 }
 
@@ -7246,6 +7280,8 @@ where
         }
         let mut bodies = std::collections::HashSet::new();
         let mut native = std::collections::HashSet::new();
+        bodies.try_reserve(rows.len()).map_err(serde::de::Error::custom)?;
+        native.try_reserve(rows.len()).map_err(serde::de::Error::custom)?;
         for row in &rows {
             if !bodies.insert(&row.body) {
                 return Err(serde::de::Error::custom(BodySelectionError::RepeatedBody));
@@ -8520,7 +8556,13 @@ impl SketchProfileLoops {
 impl TryFrom<SketchProfileLoopsWire> for SketchProfileLoops {
     type Error = FeatureCollectionError;
     fn try_from(wire: SketchProfileLoopsWire) -> Result<Self, Self::Error> {
-        Self::new(wire.outer, wire.holes)
+        let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(wire.holes.len()).map_err(|_| FeatureCollectionError::Invalid("hole member allocation failed"))?;
+        for hole in &wire.holes {
+            if !seen.insert(hole) { return Err(FeatureCollectionError::Invalid("holes must be distinct")); }
+        }
+        if seen.contains(&wire.outer) { return Err(FeatureCollectionError::Invalid("holes must not contain outer")); }
+        Ok(Self { outer: wire.outer, holes: DistinctMembers(wire.holes) })
     }
 }
 
@@ -9574,8 +9616,14 @@ impl<'a> IntoIterator for &'a SplitFacePlanes {
 
 impl<'de> Deserialize<'de> for SplitFacePlanes {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<FeatureId>::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
+        let planes = Vec::<FeatureId>::deserialize(deserializer)?;
+        if planes.len() < 2 { return Err(serde::de::Error::custom("planes must contain at least two planes")); }
+        let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(planes.len()).map_err(serde::de::Error::custom)?;
+        for plane in &planes {
+            if !seen.insert(plane) { return Err(serde::de::Error::custom("planes must be distinct")); }
+        }
+        Ok(Self(SelectionMembers(planes)))
     }
 }
 
