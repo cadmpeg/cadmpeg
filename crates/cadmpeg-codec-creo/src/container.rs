@@ -937,7 +937,14 @@ fn legacy_toc_sections<'a>(
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "creo legacy TOC entries")?;
     let mut sections = Vec::new();
     for _ in 0..count {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - next), "creo legacy TOC entry scan")?;
+        let mut window_start = next;
+        while window_start < data.len() {
+            let remaining = data.len() - window_start;
+            let step = if remaining < 64 { remaining } else { 64 };
+            ctx.charge_work(2 * cadmpeg_core::decode::u64_from_index(step), "creo legacy TOC entry scan")?;
+            if data[window_start..window_start + step].contains(&b'\n') { break; }
+            window_start += step;
+        }
         let Some((entry, after_entry)) = legacy::line(data, next) else {
             break;
         };
@@ -3333,6 +3340,7 @@ fn scan_primitives(
     let mut primitive_scalar_arrays = Vec::new();
     let mut primitive_triangle_strips = Vec::new();
     let mut conflicting_triangle_strip_representation_count = 0usize;
+    let mut primitive_namespace_seen = false;
     for section in expanded_sections {
         let tables = crate::scalar::double_xar_tables(ctx, &section.data)?;
         ctx.reserve_vec(
@@ -3350,6 +3358,8 @@ fn scan_primitives(
             });
         }
         if section.name == "SolidPrimdata" {
+            if primitive_namespace_seen { return Err(CodecError::malformed("duplicate SolidPrimdata identity namespace")); }
+            primitive_namespace_seen = true;
             let arrays = primdata::scalar_arrays(ctx, &section.data)?;
             ctx.reserve_vec(
                 &mut primitive_scalar_arrays,

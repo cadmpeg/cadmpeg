@@ -485,3 +485,20 @@ fn section_owner_range_refuses_before_counted_vec_growth() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo section owner ranges"));
 }
+
+#[test]
+fn complete_legacy_directory_admits_more_than_4096_entries() {
+    let count = 4097;
+    let mut bytes = format!("#Pro/ENGINEER  TM  Version H-01-21\n@Toc 52 0\n0 52 ->\n@entry 53 10\n1 53 [{count}]\n").into_bytes();
+    let row_len = "2 53 BasicData 00000000 0000000e 0 983####\n".len();
+    let first_offset = bytes.len() + count * row_len;
+    for index in 0..count {
+        let offset = first_offset + index * 14;
+        bytes.extend_from_slice(format!("2 53 BasicData {offset:08x} 0000000e 0 983####\n").as_bytes());
+    }
+    for _ in 0..count { bytes.extend_from_slice(b"#BasicData\nabc"); }
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let sections = super::super::legacy_toc_sections(ctx, &bytes, 0).expect("complete directory admitted");
+        assert_eq!(sections.len(),count);
+    });
+}
