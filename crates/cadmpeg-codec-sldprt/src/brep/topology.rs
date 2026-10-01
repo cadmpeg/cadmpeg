@@ -15,9 +15,12 @@
 //! Every record opens with `00 TT`, an optional `0xff`, then a big-endian `attr`
 //! (u16) and, for most families, an `ordinal`/`seq` (u32). The magic
 //! `c2 bc 92 8f 99 6e 00 00` anchors the bridge, edge-use, and vertex-use
-//! parses. Records are keyed by `attr` within one stream (one site); attribute
-//! ids collide across sites, so this codec resolves references only within the
-//! single active partition stream it decodes.
+//! parses. Records are keyed by `attr` within each stream. Same-site merges
+//! preserve partition topology, add missing subordinate deltas records and
+//! typed-FACE-selected bridges, and apply deltas point updates. The decoder
+//! merges all admitted sites. It keeps the active site's primary identities
+//! and qualifies the other sites' identities; without an active site, it
+//! qualifies every site's identities.
 
 use std::collections::{HashMap, HashSet};
 

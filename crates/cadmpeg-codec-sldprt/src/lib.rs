@@ -109,8 +109,8 @@ mod feature_schema;
 #[doc(hidden)]
 pub mod fuzz;
 mod history;
-/// Byte-offset constants generated from `docs/layouts/sldprt.toml`.
 mod lane_refusal;
+/// Byte-offset constants generated from `docs/layouts/sldprt.toml`.
 mod layout;
 mod loss;
 mod metadata;

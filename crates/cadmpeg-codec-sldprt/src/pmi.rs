@@ -641,7 +641,7 @@ enum ValueKind<'a> {
 ///
 /// Parse failures on GUID-prefixed `MessagePack` maps emit
 /// [`SldprtLossCode::PmiSemanticRecordMalformed`] instead of shrinking the
-/// document silently. New losses are additive under sidecar v1.
+/// document silently.
 pub(crate) fn dimensions(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
