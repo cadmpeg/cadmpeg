@@ -840,44 +840,20 @@ impl DecodeContext<'_> {
         }
     }
 
-    /// Copies items whose slots were charged by aggregate admission.
-    pub fn copy_admitted_slice<T: Copy>(
-        values: &[T],
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        let mut copy = Vec::new();
-        copy.try_reserve_exact(values.len()).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                u64::MAX,
-                u64_from_index(values.len()),
-                operation,
-            ))
-        })?;
-        copy.extend_from_slice(values);
-        Ok(copy)
-    }
-
-    /// Copies rows whose slots were charged by aggregate admission.
-    pub fn copy_admitted_rows<T: Copy>(
+    /// Copies a flat lane into rows after admitting every row and element slot.
+    pub fn copy_rows<T: Copy>(
+        &self,
         values: &[T],
         row_len: usize,
-        operation: &'static str,
+        row_operation: &'static str,
+        item_operation: &'static str,
     ) -> Result<Vec<Vec<T>>, CodecError> {
-        let mut rows = Vec::new();
-        let row_count = values.len().div_ceil(row_len);
-        rows.try_reserve_exact(row_count).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                u64::MAX,
-                u64_from_index(row_count),
-                operation,
-            ))
-        })?;
-        for row in values.chunks(row_len) {
-            rows.push(Self::copy_admitted_slice(row, operation)?);
+        if row_len == 0 {
+            return Err(CodecError::malformed("row width must be nonzero"));
         }
-        Ok(rows)
+        self.try_collect_retained_with(values.chunks(row_len), row_operation, |row| {
+            self.copy_slice(row, item_operation)
+        })
     }
 
     /// Collects fallible values and admits the storage of each output slot.
@@ -2135,14 +2111,15 @@ mod tests {
     );
     admitted_case!(
         copy_admitted_slice_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_slice(&[1_u8, 2], "test admitted")
+        |ctx: &DecodeContext<'_>| ctx.copy_slice(&[1_u8, 2], "test admitted")
             .map(|_| ())
     );
     admitted_case!(
         copy_admitted_rows_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_rows(
+        |ctx: &DecodeContext<'_>| ctx.copy_rows(
             &[1_u8, 2],
             1,
+            "test admitted",
             "test admitted"
         )
         .map(|_| ())
