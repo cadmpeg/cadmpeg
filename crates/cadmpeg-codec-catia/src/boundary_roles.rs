@@ -167,6 +167,7 @@ pub(crate) fn classify_planar_boundaries(
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
+    let normal = *plane_surface.frame().axis().as_raw();
     let mut polygons = Vec::new();
     for (_, boundary) in rows {
         if boundary.len() < 3 {
@@ -180,7 +181,16 @@ pub(crate) fn classify_planar_boundaries(
         )?;
         for point in boundary {
             let offset = point.vector_from(origin);
-            polygon.push(Point2::new(offset.dot(u_axis), offset.dot(v_axis)));
+            let u = offset.dot(u_axis);
+            let v = offset.dot(v_axis);
+            let distance = offset.dot(normal);
+            let scale = 1.0_f64.max(u.abs()).max(v.abs());
+            if !u.is_finite() || !v.is_finite() || !distance.is_finite()
+                || distance.abs() > EPS_PLANAR_COORDINATE * scale
+            {
+                return unspecified();
+            }
+            polygon.push(Point2::new(u, v));
         }
         ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
     }
@@ -331,6 +341,15 @@ mod tests {
             classify_planar_boundaries(&plane(), &boundaries),
             FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
         );
+    }
+
+    #[test]
+    fn planar_boundaries_decline_an_off_plane_hole() {
+        let outer = square(0.0, 0.0, 10.0, 10.0);
+        let mut inner = square(2.0, 2.0, 3.0, 3.0);
+        for point in &mut inner { point.z = 10.0; }
+        assert_eq!(classify_planar_boundaries(&plane(), &rows(vec![outer, inner])),
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)]));
     }
 
     #[test]
