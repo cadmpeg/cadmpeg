@@ -36,8 +36,6 @@ pub const CONTINUATION_MARKER: &[u8] = &continuation_page::MARKER_VALUE;
 pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RECOVERY_VALUES: u64 = 1_024;
-const XML_NODE_RESERVATION_BYTES: u64 = 192;
-const XML_ATTRIBUTE_RESERVATION_BYTES: u64 = 192;
 
 fn take_lp_utf8_capped(
     ctx: &DecodeContext<'_>,
@@ -453,46 +451,16 @@ fn parse_schema_document(
     bytes: &[u8],
     schemas: &mut HashMap<String, Schema>,
 ) -> Result<(), CodecError> {
-    let _reservation = {
-        let xml_len = cadmpeg_core::decode::u64_from_index(bytes.len());
-        let mut tag_markers = 0_u64;
-        let mut attribute_separators = 0_u64;
-        for &byte in bytes {
-            tag_markers += u64::from(byte == b'<');
-            attribute_separators += u64::from(byte == b'=');
-        }
-        ctx.charge_work(xml_len, "Protein schema XML parse")?;
-        ctx.charge_collection_items(tag_markers, "Protein schema XML nodes")?;
-        // One tag can produce an element and adjacent text node. '=' bounds attributes.
-        let possible_nodes = tag_markers
-            .checked_mul(2)
-            .and_then(|count| count.checked_add(1))
-            .ok_or_else(|| {
-                CodecError::Malformed("Protein schema XML node count overflows".into())
-            })?;
-        let materialized = xml_len
-            .checked_mul(4)
-            .and_then(|size| {
-                possible_nodes
-                    .checked_mul(XML_NODE_RESERVATION_BYTES)
-                    .and_then(|nodes| size.checked_add(nodes))
-            })
-            .and_then(|size| {
-                attribute_separators
-                    .checked_mul(XML_ATTRIBUTE_RESERVATION_BYTES)
-                    .and_then(|attributes| size.checked_add(attributes))
-            })
-            .ok_or_else(|| CodecError::Malformed("Protein schema XML size overflows".into()))?;
-        ctx.reserve_scoped(materialized, "Protein schema XML tree")?
-    };
     let xml = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
     })?;
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
+    let admitted_document = ctx.parse_xml(xml, "Protein schema XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
         CodecError::malformed(format_args!(
             "Protein schema {name} is malformed XML: {error}"
         ))
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     let uid = root
         .children()
