@@ -2298,6 +2298,8 @@ impl<'a> DecodeContext<'a> {
                 let nested = self.expand_reference_inner(member_order, transform, path, stack, scratch)?;
                 self.append_links(member_order, &nested)?;
                 self.mark_decoded(member_order);
+                self.expand.ctx().charge_work(u64_from_index(nested.len()), "Rhino instance link moves")?;
+                self.expand.ctx().reserve_scoped_vec(scratch, &mut links, nested.len(), "Rhino instance link slots")?;
                 links.extend(nested);
                 continue;
             }
@@ -2313,7 +2315,10 @@ impl<'a> DecodeContext<'a> {
             if before == after {
                 return Err(format!("definition member {member_id} did not decode").into());
             }
-            links.extend(self.transform_new_entities(&before, transform)?);
+            let transformed = self.transform_new_entities(&before, transform, scratch)?;
+            self.expand.ctx().charge_work(u64_from_index(transformed.len()), "Rhino instance link moves")?;
+            self.expand.ctx().reserve_scoped_vec(scratch, &mut links, transformed.len(), "Rhino instance link slots")?;
+            links.extend(transformed);
         }
         self.instance_display = previous_display;
         path.pop();
@@ -2325,15 +2330,21 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         before: &ModelCheckpoint,
         transform: Transform,
+        scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<Vec<String>, ReferenceFailure> {
+        let ctx = self.expand.ctx();
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
         for body in before
             .added_mut::<Body>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing bodies".to_string())?
         {
-            links.push(body.id.to_string());
-            derived_ids.push(body.id.to_string());
+            ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", body.id.as_str()), "Rhino transformed instance links")?;
+            links.push(id);
+            ctx.reserve_scoped_vec(scratch, &mut derived_ids, 1, "Rhino transformed instance annotations")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", body.id.as_str()), "Rhino transformed instance annotations")?;
+            derived_ids.push(id);
         }
         for point in before
             .added_mut::<Point>(&mut self.ir.model)
@@ -2341,7 +2352,9 @@ impl<'a> DecodeContext<'a> {
         {
             let placed = placed_finite_point(transform, point.position())?;
             point.set_position(placed);
-            derived_ids.push(point.id.to_string());
+            ctx.reserve_scoped_vec(scratch, &mut derived_ids, 1, "Rhino transformed instance annotations")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", point.id.as_str()), "Rhino transformed instance annotations")?;
+            derived_ids.push(id);
         }
         for curve in before
             .added_mut::<Curve>(&mut self.ir.model)
@@ -2351,8 +2364,12 @@ impl<'a> DecodeContext<'a> {
                 curve.geometry = CurveGeometry::Solved(cache.clone());
             }
             transform_curve(self.expand.ctx(), curve, transform)?;
-            links.push(curve.id.to_string());
-            derived_ids.push(curve.id.to_string());
+            ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", curve.id.as_str()), "Rhino transformed instance links")?;
+            links.push(id);
+            ctx.reserve_scoped_vec(scratch, &mut derived_ids, 1, "Rhino transformed instance annotations")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", curve.id.as_str()), "Rhino transformed instance annotations")?;
+            derived_ids.push(id);
         }
         for surface in before
             .added_mut::<Surface>(&mut self.ir.model)
@@ -2362,8 +2379,12 @@ impl<'a> DecodeContext<'a> {
                 surface.geometry = SurfaceGeometry::Solved(cache.clone());
             }
             transform_surface(surface, transform)?;
-            links.push(surface.id.to_string());
-            derived_ids.push(surface.id.to_string());
+            ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", surface.id.as_str()), "Rhino transformed instance links")?;
+            links.push(id);
+            ctx.reserve_scoped_vec(scratch, &mut derived_ids, 1, "Rhino transformed instance annotations")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", surface.id.as_str()), "Rhino transformed instance annotations")?;
+            derived_ids.push(id);
         }
         for mesh in before
             .added_mut::<Tessellation>(&mut self.ir.model)
@@ -2397,8 +2418,12 @@ impl<'a> DecodeContext<'a> {
                 })
                 .map_err(|error| error.to_string())?;
             }
-            links.push(mesh.id.to_string());
-            derived_ids.push(mesh.id.to_string());
+            ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", mesh.id.as_str()), "Rhino transformed instance links")?;
+            links.push(id);
+            ctx.reserve_scoped_vec(scratch, &mut derived_ids, 1, "Rhino transformed instance annotations")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", mesh.id.as_str()), "Rhino transformed instance annotations")?;
+            derived_ids.push(id);
         }
         for subd in before
             .added_mut::<cadmpeg_ir::SubdSurface>(&mut self.ir.model)
@@ -2419,8 +2444,12 @@ impl<'a> DecodeContext<'a> {
                     Ok(())
                 })
                 .map_err(|error| error.to_string())?;
-            links.push(subd.id.to_string());
-            derived_ids.push(subd.id.to_string());
+            ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", subd.id.as_str()), "Rhino transformed instance links")?;
+            links.push(id);
+            ctx.reserve_scoped_vec(scratch, &mut derived_ids, 1, "Rhino transformed instance annotations")?;
+            let id = ctx.format_scoped_text_with_work(scratch, format_args!("{}", subd.id.as_str()), "Rhino transformed instance annotations")?;
+            derived_ids.push(id);
         }
         let procedural_curve_start = before.arena_len::<ProceduralCurve>();
         let procedural_surface_start = before.arena_len::<ProceduralSurface>();
