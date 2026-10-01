@@ -315,11 +315,7 @@ fn build_result(
         }
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
-    source_fidelity
-        .attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("unknown-record retention failed: {error}"))
-        })?;
+    source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,
