@@ -155,27 +155,15 @@ fn new_support_uv_budget() -> SupportUvBudget<'static> {
 pub(super) fn linear_knots(
     parameters: &[f64],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
     if parameters.is_empty() {
         return Ok(Vec::new());
     }
-    let count =
-        parameters
-            .len()
-            .checked_add(2)
-            .ok_or_else(|| cadmpeg_core::decode::ResourceLimit {
-                dimension: cadmpeg_core::decode::ResourceDimension::Codec("nx linear knot count"),
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: 0,
-                used: 0,
-                additional: cadmpeg_core::decode::u64_from_index(parameters.len()),
-                operation: "nx linear knot count",
-            })?;
-    let mut knots = Vec::new();
-    let _reservation =
-        geometry_budget
-            .charges
-            .reserve_temporary_vec(&mut knots, count, "nx linear knots")?;
+    let ctx = geometry_budget.charges;
+    let count = parameters.len().checked_add(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("nx linear knot count", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "form nx linear knots")?;
+    let mut knots = ctx.retained_vec(count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
@@ -2890,6 +2878,18 @@ mod tests {
                 &geometry_budget,
             )
         })
+    }
+
+    #[test]
+    fn linear_knots_refuse_retained_storage_before_construction() {
+        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_retained_bytes = 0, |ctx| {
+            let budget = GeometryWorkBudget::from_context(ctx, 100);
+            assert!(matches!(super::linear_knots(&[0.0, 1.0], &budget), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "nx linear knots" && limit.dimension == ResourceDimension::RetainedBytes));
+        });
+        crate::test_support::with_decode_context(|ctx| {
+            let budget = GeometryWorkBudget::from_context(ctx, 100);
+            assert_eq!(super::linear_knots(&[0.0, 1.0], &budget).unwrap(), [0.0, 0.0, 1.0, 1.0]);
+        });
     }
 
     #[test]
