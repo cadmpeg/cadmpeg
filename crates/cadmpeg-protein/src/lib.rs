@@ -1476,7 +1476,7 @@ mod tests {
             framing::record_frames_admitted(&ctx, &stream),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "Protein temporary frames"
+                    && limit.operation == "Protein logical record frame"
         ));
     }
 

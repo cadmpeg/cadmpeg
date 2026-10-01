@@ -719,16 +719,12 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
         .work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK))
         .with_session_work_scale(scale);
 
-    let error =
-        sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, &ctx)
-            .err()
-            .expect("candidate identity copy exceeds the caller work budget");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "f3d arrangement candidate entity id")
+        sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, &ctx)
+            .expect("work refusal remains an absent arrangement")
+            .is_none()
     );
-    assert_eq!(budget.remaining(), MAX_ARRANGEMENT_WALK_WORK);
+    assert!(budget.exhausted());
 }
 
 #[test]
