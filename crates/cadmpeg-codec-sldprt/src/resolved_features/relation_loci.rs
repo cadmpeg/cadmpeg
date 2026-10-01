@@ -241,7 +241,7 @@ pub(super) fn relation_operand_loci(
         let next_bytes = locus_bytes
             .checked_add(bytes)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+        ctx.reserve_vec(&mut loci, 1, OPERATION)?;
         loci.push(locus);
         locus_bytes = next_bytes;
     }
@@ -293,7 +293,7 @@ pub(super) fn linked_single_entities(
         bytes = bytes
             .checked_add(length)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        ctx.reserve_vec(&mut result, 1, OPERATION)?;
         if let Some(entity) = entities.into_iter().next() {
             result.push(entity);
         }
@@ -569,11 +569,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    let text = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", parameter.id.as_str()),
-        OPERATION,
-    )?;
+    let text = ctx.format_retained(format_args!("{}", parameter.id.as_str()), OPERATION)?;
     let parameter_id = cadmpeg_ir::features::ParameterId::mint(text)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     macro_rules! resolved_or_none {
@@ -1823,7 +1819,7 @@ fn repeated_dimensioned_circular_entities(
         return Ok(None);
     }
     let mut entities = Vec::new();
-    ctx.reserve_collection_vec(&mut entities, count, OPERATION)?;
+    ctx.reserve_vec(&mut entities, count, OPERATION)?;
     for entity in sketch_entities {
         if matches(entity)? {
             entities.push(super::transforms::copy_sketch_entity_identity(
@@ -2262,7 +2258,7 @@ pub(super) fn canonical_profile_loci(
             continue;
         }
         for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
-            ctx.reserve_collection_vec(&mut indexed, 1, OPERATION)?;
+            ctx.reserve_vec(&mut indexed, 1, OPERATION)?;
             indexed.push((
                 source_index,
                 point,
@@ -2304,7 +2300,7 @@ pub(super) fn canonical_profile_loci(
         quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM)
     });
     let mut loci = Vec::new();
-    ctx.reserve_collection_vec(&mut loci, indexed.len(), OPERATION)?;
+    ctx.reserve_vec(&mut loci, indexed.len(), OPERATION)?;
     for (_, point, locus) in indexed {
         loci.push((point, locus));
     }
@@ -2864,7 +2860,7 @@ fn unique_dynamic_marker_point_pair(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut candidates,
                 additions.len(),
                 "append SLDPRT dynamic point candidates",
@@ -3059,7 +3055,7 @@ fn unique_dynamic_direct_point_roster_pair(
         if !direct_marker_ids.contains(reference) {
             continue;
         }
-        ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+        ctx.reserve_vec(&mut loci, 1, OPERATION)?;
         loci.push(super::transforms::SketchLocusRole::Entity.copy_locus(
             ctx,
             entity.id(),
@@ -3564,7 +3560,7 @@ fn dynamic_marker_point_candidates(
                 )?
                 .is_some()
             {
-                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                 candidates.push(locus);
             }
         }
@@ -3585,7 +3581,7 @@ fn dynamic_marker_point_candidates(
             continue;
         }
         if dynamic_entity_has_marker_identity(ctx, entity, &marker_ids, OPERATION)? {
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push(super::transforms::SketchLocusRole::Entity.copy_locus(
                 ctx,
                 entity.id(),
@@ -3717,7 +3713,7 @@ fn dynamic_marker_center_candidates(
                 SketchGeometryDefinition::Arc { .. }
             )
         {
-            ctx.reserve_collection_vec(&mut centers, 1, OPERATION)?;
+            ctx.reserve_vec(&mut centers, 1, OPERATION)?;
             centers.push(super::transforms::SketchLocusRole::Center.copy_locus(
                 ctx,
                 entity.id(),
@@ -3756,7 +3752,7 @@ fn dynamic_marker_line_candidates(
             SketchGeometryDefinition::Line { .. }
         ) && dynamic_entity_has_marker_identity(ctx, entity, &marker_ids, OPERATION)?
         {
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push(super::transforms::copy_sketch_entity_identity(
                 ctx,
                 entity.id(),
@@ -3768,7 +3764,7 @@ fn dynamic_marker_line_candidates(
         if let Some(entity) =
             single_marker_line_entity(ctx, marker, markers_by_id, loci_by_marker, sketch_entities)?
         {
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push(entity);
         }
     }
@@ -3948,7 +3944,7 @@ fn collect_profile_loci(
             continue;
         }
         for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
-            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push((point, role.copy_locus(ctx, entity.id(), OPERATION)?));
         }
     }
@@ -3975,7 +3971,7 @@ fn collect_profile_lines<'a>(
                 SketchGeometryDefinition::Line { .. }
             )
         {
-            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push(entity);
         }
     }
@@ -4328,7 +4324,7 @@ fn collect_relation_marker_candidates<'a>(
         {
             continue;
         }
-        ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+        ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
         candidates.push(marker);
     }
     Ok(candidates)
@@ -5397,7 +5393,7 @@ fn append_profile_endpoint_locus(
         .iter()
         .any(|locus| role.matches(locus) && locus_entity(locus) == entity)
     {
-        ctx.reserve_collection_vec(loci, 1, operation)?;
+        ctx.reserve_vec(loci, 1, operation)?;
         loci.push(role.copy_locus(ctx, entity, operation)?);
     }
     Ok(())
@@ -5421,7 +5417,7 @@ fn append_transformed_profile_locus(
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
         operation,
     )?;
-    ctx.reserve_collection_vec(loci, 1, operation)?;
+    ctx.reserve_vec(loci, 1, operation)?;
     loci.push(role.copy_locus(ctx, entity, operation)?);
     Ok(())
 }
@@ -5633,7 +5629,7 @@ pub(super) fn profile_loci_by_marker(
                     })?,
                 BUILD_OPERATION,
             )?;
-            ctx.reserve_collection_vec(loci, count, BUILD_OPERATION)?;
+            ctx.reserve_vec(loci, count, BUILD_OPERATION)?;
             for (point, role) in points.into_iter().flatten() {
                 loci.push((point, role.copy_locus(ctx, entity.id(), BUILD_OPERATION)?));
             }
@@ -5661,7 +5657,7 @@ pub(super) fn profile_loci_by_marker(
                     })?,
                 BUILD_OPERATION,
             )?;
-            ctx.reserve_collection_vec(midpoints, 1, BUILD_OPERATION)?;
+            ctx.reserve_vec(midpoints, 1, BUILD_OPERATION)?;
             midpoints.push((
                 Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
                 super::transforms::SketchLocusRole::Entity.copy_locus(
@@ -5779,13 +5775,9 @@ pub(super) fn profile_loci_by_marker(
             RESULT_OPERATION,
         )?;
         let marker = if qualified_point {
-            crate::text_admission::format_retained(
-                ctx,
-                format_args!("{marker}:qualified-point"),
-                RESULT_OPERATION,
-            )?
+            ctx.format_retained(format_args!("{marker}:qualified-point"), RESULT_OPERATION)?
         } else {
-            crate::text_admission::format_retained(ctx, format_args!("{marker}"), RESULT_OPERATION)?
+            ctx.format_retained(format_args!("{marker}"), RESULT_OPERATION)?
         };
         reserve_profile_locus_map_slot(
             ctx,
@@ -5796,7 +5788,7 @@ pub(super) fn profile_loci_by_marker(
             RESULT_OPERATION,
         )?;
         let mut loci = Vec::new();
-        ctx.reserve_collection_vec(&mut loci, 1, RESULT_OPERATION)?;
+        ctx.reserve_vec(&mut loci, 1, RESULT_OPERATION)?;
         loci.push(role.copy_locus(ctx, entity.id(), RESULT_OPERATION)?);
         result.insert(marker, loci);
     }
@@ -5863,17 +5855,9 @@ pub(super) fn profile_loci_by_marker(
                     ENDPOINT_OPERATION,
                 )?;
                 let key = if qualified_key {
-                    crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{marker}:qualified-point"),
-                        ENDPOINT_OPERATION,
-                    )?
+                    ctx.format_retained(format_args!("{marker}:qualified-point"), ENDPOINT_OPERATION)?
                 } else {
-                    crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{marker}"),
-                        ENDPOINT_OPERATION,
-                    )?
+                    ctx.format_retained(format_args!("{marker}"), ENDPOINT_OPERATION)?
                 };
                 reserve_profile_locus_set_slot(
                     ctx,
@@ -5883,11 +5867,7 @@ pub(super) fn profile_loci_by_marker(
                     cadmpeg_core::decode::u64_from_index(key.len()),
                     ENDPOINT_OPERATION,
                 )?;
-                endpoint_marker_keys.insert(crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{key}"),
-                    ENDPOINT_OPERATION,
-                )?);
+                endpoint_marker_keys.insert(ctx.format_retained(format_args!("{key}"), ENDPOINT_OPERATION)?);
                 reserve_profile_locus_map_slot(
                     ctx,
                     &mut result,
@@ -5980,7 +5960,7 @@ pub(super) fn profile_loci_by_marker(
                         })?,
                     GROUP_OPERATION,
                 )?;
-                ctx.reserve_collection_vec(group, 1, GROUP_OPERATION)?;
+                ctx.reserve_vec(group, 1, GROUP_OPERATION)?;
                 group.push(marker);
             }
         }
@@ -6053,7 +6033,7 @@ pub(super) fn profile_loci_by_marker(
                         })?,
                     GROUP_OPERATION,
                 )?;
-                ctx.reserve_collection_vec(bucket, 1, GROUP_OPERATION)?;
+                ctx.reserve_vec(bucket, 1, GROUP_OPERATION)?;
                 bucket.push(
                     super::transforms::SketchLocusRole::of_locus(locus).copy_locus(
                         ctx,
@@ -6085,17 +6065,9 @@ pub(super) fn profile_loci_by_marker(
                     TRANSFORM_OPERATION,
                 )?;
                 let result_key = if qualified_point {
-                    crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{}:qualified-point", marker.id()),
-                        TRANSFORM_OPERATION,
-                    )?
+                    ctx.format_retained(format_args!("{}:qualified-point", marker.id()), TRANSFORM_OPERATION)?
                 } else {
-                    crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{}", marker.id()),
-                        TRANSFORM_OPERATION,
-                    )?
+                    ctx.format_retained(format_args!("{}", marker.id()), TRANSFORM_OPERATION)?
                 };
                 ctx.charge_work(
                     result_key_byte_bound
@@ -6160,7 +6132,7 @@ pub(super) fn profile_loci_by_marker(
                         })?,
                     "collect SLDPRT transformed marker loci",
                 )?;
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut marker_loci,
                     translated_points.len(),
                     "collect SLDPRT transformed marker loci",
@@ -6497,11 +6469,7 @@ pub(super) fn profile_loci_by_marker(
                         })?,
                     PAIR_OPERATION,
                 )?;
-                let key = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{}", marker.id()),
-                    PAIR_OPERATION,
-                )?;
+                let key = ctx.format_retained(format_args!("{}", marker.id()), PAIR_OPERATION)?;
                 reserve_profile_locus_map_slot(
                     ctx,
                     &mut result,
@@ -6511,7 +6479,7 @@ pub(super) fn profile_loci_by_marker(
                     PAIR_OPERATION,
                 )?;
                 let mut loci = Vec::new();
-                ctx.reserve_collection_vec(&mut loci, 1, PAIR_OPERATION)?;
+                ctx.reserve_vec(&mut loci, 1, PAIR_OPERATION)?;
                 loci.push(super::transforms::SketchLocusRole::Entity.copy_locus(
                     ctx,
                     entity,
@@ -6585,14 +6553,10 @@ pub(super) fn profile_loci_by_marker(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            ctx.reserve_collection_vec(&mut additions, 1, OPERATION)?;
-            let key = crate::text_admission::format_retained(
-                ctx,
-                format_args!("{}", marker.id()),
-                OPERATION,
-            )?;
+            ctx.reserve_vec(&mut additions, 1, OPERATION)?;
+            let key = ctx.format_retained(format_args!("{}", marker.id()), OPERATION)?;
             let mut loci = Vec::new();
-            ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+            ctx.reserve_vec(&mut loci, 1, OPERATION)?;
             loci.push(locus);
             additions.push((key, loci));
         }
@@ -6654,7 +6618,7 @@ pub(super) fn unique_linked_endpoint_locus(
     let mut groups = Vec::<
         HashMap<GridPoint, Vec<(&SketchEntityId, super::transforms::SketchLocusRole)>>,
     >::new();
-    ctx.reserve_collection_vec(&mut groups, marker.links().len(), OPERATION)?;
+    ctx.reserve_vec(&mut groups, marker.links().len(), OPERATION)?;
     let mut sketch: Option<&cadmpeg_ir::sketches::SketchId> = None;
     for link in marker.links() {
         let entities = marker_entities(
@@ -6730,7 +6694,7 @@ pub(super) fn unique_linked_endpoint_locus(
                         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                     OPERATION,
                 )?;
-                ctx.reserve_collection_vec(loci, 1, OPERATION)?;
+                ctx.reserve_vec(loci, 1, OPERATION)?;
                 loci.push((entity.id(), role));
             }
         }
@@ -6906,7 +6870,7 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 }
                 let markers = markers_by_feature.entry(feature).or_default();
-                ctx.reserve_collection_vec(markers, 1, OPERATION)?;
+                ctx.reserve_vec(markers, 1, OPERATION)?;
                 markers.push(marker);
             }
         }

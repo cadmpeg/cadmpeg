@@ -77,7 +77,7 @@ fn refs(
             let Some(value) = p.checked_add(1).and_then(|at| View::u16_be_at(body, at)) else {
                 return Ok(None);
             };
-            ctx.reserve_collection_vec(&mut out, 1, "decode prefixed Parasolid entity references")?;
+            ctx.reserve_vec(&mut out, 1, "decode prefixed Parasolid entity references")?;
             out.push(value);
             let Some(next) = p.checked_add(3) else {
                 return Ok(None);
@@ -89,7 +89,7 @@ fn refs(
         }
     }
     let mut refs = Vec::new();
-    ctx.reserve_collection_vec(&mut refs, count, "decode Parasolid entity references")?;
+    ctx.reserve_vec(&mut refs, count, "decode Parasolid entity references")?;
     for index in 0..count {
         let Some(cell) = index.checked_mul(2).and_then(|delta| at.checked_add(delta)) else {
             return Ok(None);
@@ -150,7 +150,7 @@ fn scan_entities(
         let Some((refs, end)) = refs(ctx, body, p + entity_hdr::LEN, count, prefixed)? else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut out, 1, "collect Parasolid entity records")?;
+        ctx.reserve_vec(&mut out, 1, "collect Parasolid entity records")?;
         out.push(EntityRecord {
             attr,
             seq,
@@ -250,7 +250,7 @@ fn linked_colors(
                     })?;
                 }
                 let group = colors.entry(key).or_default();
-                ctx.reserve_collection_vec(group, 1, "collect Parasolid linked colors")?;
+                ctx.reserve_vec(group, 1, "collect Parasolid linked colors")?;
                 group.push(framed);
             }
             at = end;
@@ -300,7 +300,7 @@ pub(crate) fn scan_metadata(
         if !named_face_color && !unnamed_face_color {
             continue;
         }
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut face_color_versions,
             1,
             "collect Parasolid face color versions",
@@ -336,7 +336,7 @@ pub(crate) fn scan_metadata(
         let Some((color_attr, framed)) = framed else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut face_colors, 1, "collect Parasolid face colors")?;
+        ctx.reserve_vec(&mut face_colors, 1, "collect Parasolid face colors")?;
         face_colors.push(FaceColor {
             face_attr: face.attr,
             color_attr,

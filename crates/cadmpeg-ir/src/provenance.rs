@@ -262,7 +262,7 @@ impl SourceObjectAssociation {
         let name = self.name.as_deref().map(text).transpose()?;
         let layer = self.layer.as_deref().map(text).transpose()?;
         let mut instance_path = Vec::new();
-        ctx.reserve_collection_vec(&mut instance_path, self.instance_path.len(), operation)?;
+        ctx.reserve_vec(&mut instance_path, self.instance_path.len(), operation)?;
         for id in &self.instance_path {
             instance_path.push(text(id)?);
         }

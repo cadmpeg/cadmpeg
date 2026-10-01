@@ -462,7 +462,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     ctx,
                     &mut properties,
                     format_args!("declaration"),
-                    ctx.format_retained_with_work(
+                    ctx.format_retained(
                         format_args!("{}", declaration.id),
                         "NX feature projection text",
                     )?,
@@ -471,7 +471,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     ctx,
                     &mut properties,
                     format_args!("declaration_object_id"),
-                    ctx.format_retained_with_work(
+                    ctx.format_retained(
                         format_args!("{}", declaration.object_id),
                         "NX feature projection text",
                     )?,
@@ -496,7 +496,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     ctx,
                     &mut properties,
                     format_args!("parameter_use.{consumer_ordinal}"),
-                    ctx.format_retained_with_work(
+                    ctx.format_retained(
                         format_args!("{}", parameter_use.id),
                         "NX feature projection text",
                     )?,
@@ -535,11 +535,11 @@ pub(in crate::native) fn attach_expression_parameters(
                 id,
                 owner: Some(feature_id.clone()),
                 ordinal,
-                name: ctx.format_retained_with_work(
+                name: ctx.format_retained(
                     format_args!("{}", expression.name.as_str()),
                     "NX feature projection text",
                 )?,
-                expression: ctx.format_retained_with_work(
+                expression: ctx.format_retained(
                     format_args!("{}", expression.expression),
                     "NX feature projection text",
                 )?,
@@ -549,7 +549,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 properties,
                 pmi: None,
-                native_ref: Some(ctx.format_retained_with_work(
+                native_ref: Some(ctx.format_retained(
                     format_args!("{}", expression.id),
                     "NX feature projection text",
                 )?),
@@ -633,12 +633,12 @@ pub(super) fn attach_block_dimension_parameter_consumers(
     for dimension_set in dimensions {
         let mut reservation = ctx.reserve_scoped(0, "NX block dimension consumers")?;
         let consumer = match dimension_set.operation_label.split_once("operation-label") {
-            Some((prefix, suffix)) => ctx.format_scoped_text_with_work(
+            Some((prefix, suffix)) => ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("{prefix}feature{suffix}"),
                 "NX body selection text",
             )?,
-            None => ctx.format_scoped_text_with_work(
+            None => ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("{}", dimension_set.operation_label),
                 "NX body selection text",
@@ -668,7 +668,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                 ctx,
                 &mut parameter.properties,
                 format_args!("block_dimension.{ordinal}"),
-                ctx.format_retained_with_work(
+                ctx.format_retained(
                     format_args!("{}", dimension_set.id),
                     "NX feature projection text",
                 )?,
@@ -685,7 +685,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     ctx.charge_work(1, "NX block dimension consumer ordinal")?;
                     let mut key_reservation =
                         ctx.reserve_scoped(0, "NX block dimension consumer key")?;
-                    let key = ctx.format_scoped_text_with_work(
+                    let key = ctx.format_scoped_text(
                         &mut key_reservation,
                         format_args!("consumer.{candidate}"),
                         "NX body selection text",
@@ -704,7 +704,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     ctx,
                     &mut parameter.properties,
                     format_args!("consumer.{consumer_ordinal}"),
-                    ctx.format_retained_with_work(
+                    ctx.format_retained(
                         format_args!("{consumer}"),
                         "NX feature projection text",
                     )?,

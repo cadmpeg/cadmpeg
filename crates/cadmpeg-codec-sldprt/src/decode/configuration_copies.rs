@@ -18,7 +18,7 @@ fn copy_text(ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, OPERATION)?;
     let mut text = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut text, source.len(), OPERATION)?;
+    ctx.try_reserve_retained_text(&mut text, source.len(), OPERATION)?;
     text.push_str(source);
     Ok(text)
 }
@@ -43,7 +43,7 @@ pub(super) fn placements(
     source: &[HolePlacement],
 ) -> Result<Vec<HolePlacement>, CodecError> {
     let mut copied = Vec::new();
-    ctx.reserve_collection_vec(&mut copied, source.len(), OPERATION)?;
+    ctx.reserve_vec(&mut copied, source.len(), OPERATION)?;
     for placement in source {
         ctx.charge_work(1, OPERATION)?;
         copied.push(placement.clone());

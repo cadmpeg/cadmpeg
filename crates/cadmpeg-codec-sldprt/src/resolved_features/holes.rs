@@ -275,7 +275,7 @@ pub(crate) fn enrich_history_hole_constructions(
             let Some((profile, rank)) = profile else {
                 continue;
             };
-            ctx.reserve_collection_vec(&mut additions, 1, OPERATION)?;
+            ctx.reserve_vec(&mut additions, 1, OPERATION)?;
             additions.push((feature_index, copy_hole_profile_source(ctx, profile)?, rank));
         }
         let claimed_profiles = claimed_hole_profiles(ctx, &history.features)?;
@@ -287,11 +287,7 @@ pub(crate) fn enrich_history_hole_constructions(
                 profile_claim_ranks
                     .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                let copy = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{profile}"),
-                    OPERATION,
-                )?;
+                let copy = ctx.format_retained(format_args!("{profile}"), OPERATION)?;
                 profile_claim_ranks.insert(copy, (0, 0));
             }
             if let Some(entry) = profile_claim_ranks.get_mut(profile) {
@@ -359,7 +355,7 @@ pub(crate) fn enrich_history_hole_constructions(
             if profiles.next().is_some() {
                 continue;
             }
-            ctx.reserve_collection_vec(&mut interval_additions, 1, OPERATION)?;
+            ctx.reserve_vec(&mut interval_additions, 1, OPERATION)?;
             interval_additions.push((feature_index, copy_hole_profile_source(ctx, profile)?));
         }
         drop(claimed_profiles);
@@ -371,11 +367,7 @@ pub(crate) fn enrich_history_hole_constructions(
                 interval_claim_counts
                     .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                let copy = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{profile}"),
-                    OPERATION,
-                )?;
+                let copy = ctx.format_retained(format_args!("{profile}"), OPERATION)?;
                 interval_claim_counts.insert(copy, 0);
             }
             if let Some(count) = interval_claim_counts.get_mut(profile) {
@@ -406,16 +398,12 @@ fn copy_hole_profile_source(
     const OPERATION: &str = "copy SLDPRT hole profile ownership";
     match profile.source_id {
         Some(FeatureSource::Reserved) => {
-            crate::text_admission::format_retained(ctx, format_args!("-1"), OPERATION)
+            ctx.format_retained(format_args!("-1"), OPERATION)
         }
-        Some(FeatureSource::Id(source)) => crate::text_admission::format_retained(
-            ctx,
-            format_args!("{}", source.value()),
-            OPERATION,
-        ),
+        Some(FeatureSource::Id(source)) => ctx.format_retained(format_args!("{}", source.value()), OPERATION),
         None => {
             ctx.charge_work(u64_from_index(profile.id.len()), OPERATION)?;
-            crate::text_admission::format_retained(ctx, format_args!("{}", profile.id), OPERATION)
+            ctx.format_retained(format_args!("{}", profile.id), OPERATION)
         }
     }
 }
@@ -718,11 +706,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                         .try_reserve(1)
                         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                     ctx.charge_work(u64_from_index(thread.id.len()), OPERATION)?;
-                    let identity = crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{}", thread.id),
-                        OPERATION,
-                    )?;
+                    let identity = ctx.format_retained(format_args!("{}", thread.id), OPERATION)?;
                     candidates.insert(identity, Some(diameter));
                 }
             }
@@ -738,14 +722,10 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
             let Some(diameter) = cadmpeg_ir::scalar::Length::new(*diameter) else {
                 continue;
             };
-            let value = crate::text_admission::format_retained(
-                ctx,
-                format_args!(
+            let value = ctx.format_retained(format_args!(
                     "<MOD-DIAM>{}",
                     crate::history::literals::LengthLiteral(diameter)
-                ),
-                OPERATION,
-            )?;
+                ), OPERATION)?;
             ctx.charge_collection_items(1, OPERATION)?;
             feature
                 .parameters
@@ -795,7 +775,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
         };
         ctx.charge_work(u64_from_index(diameter.len()), OPERATION)?;
         let value =
-            crate::text_admission::format_retained(ctx, format_args!("{diameter}"), OPERATION)?;
+            ctx.format_retained(format_args!("{diameter}"), OPERATION)?;
         ctx.charge_collection_items(1, OPERATION)?;
         feature
             .parameters
@@ -896,11 +876,11 @@ fn profiled_hole_construction_with_evidence(
             .and_then(crate::history::literals::parse_dimension_length_mm)
             .and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok())
         {
-            ctx.reserve_collection_vec(&mut diameters, 1, OPERATION)?;
+            ctx.reserve_vec(&mut diameters, 1, OPERATION)?;
             diameters.push(value);
         }
         if let Some(angle) = crate::history::literals::parse_bounded_angle_rad(value) {
-            ctx.reserve_collection_vec(&mut angles, 1, OPERATION)?;
+            ctx.reserve_vec(&mut angles, 1, OPERATION)?;
             angles.push(angle);
         }
         flat_bottom |= crate::history::literals::parse_angle_rad(value).is_some_and(|angle| {
@@ -912,7 +892,7 @@ fn profiled_hole_construction_with_evidence(
             if let Some(length) = crate::history::literals::parse_dimension_length_mm(value)
                 .and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok())
             {
-                ctx.reserve_collection_vec(&mut lengths, 1, OPERATION)?;
+                ctx.reserve_vec(&mut lengths, 1, OPERATION)?;
                 lengths.push(length);
             }
         }
@@ -976,11 +956,11 @@ fn profiled_hole_construction_with_evidence(
         }
         match *entity.geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => {
-                ctx.reserve_collection_vec(&mut lines, 1, OPERATION)?;
+                ctx.reserve_vec(&mut lines, 1, OPERATION)?;
                 lines.push((start, end));
             }
             SketchGeometryDefinition::Point { position } => {
-                ctx.reserve_collection_vec(&mut points, 1, OPERATION)?;
+                ctx.reserve_vec(&mut points, 1, OPERATION)?;
                 points.push(position);
             }
             _ => {}
@@ -1456,16 +1436,8 @@ pub(crate) fn project_profiled_hole_constructions(
                         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                     OPERATION,
                 )?;
-                let native = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{native}"),
-                    OPERATION,
-                )?;
-                let sketch = SketchId::mint(crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{sketch}"),
-                    OPERATION,
-                )?)
+                let native = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                let sketch = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
                 .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
                 model_sketches.insert(native, sketch);
             }
@@ -1521,7 +1493,7 @@ pub(crate) fn project_profiled_hole_constructions(
             .properties
             .contains_key("DissectableChildren")
         {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut unowned_incomplete_holes[history_index],
                 1,
                 "SLDPRT unowned incomplete holes",
@@ -1570,7 +1542,7 @@ pub(crate) fn project_profiled_hole_constructions(
             else {
                 continue;
             };
-            ctx.reserve_collection_vec(&mut profiles, 1, OPERATION)?;
+            ctx.reserve_vec(&mut profiles, 1, OPERATION)?;
             profiles.push((profile.ordinal, index, construction));
         }
         charge_hole_sort_work(ctx, holes.len(), OPERATION)?;
@@ -1766,16 +1738,12 @@ pub(crate) fn project_hole_position_sketches(
             OPERATION,
         )?;
         let native_key =
-            crate::text_admission::format_retained(ctx, format_args!("{native}"), OPERATION)?;
+            ctx.format_retained(format_args!("{native}"), OPERATION)?;
         let feature_id = cadmpeg_ir::features::FeatureId::mint(
-            crate::text_admission::format_retained(ctx, format_args!("{}", feature.id), OPERATION)?,
+            ctx.format_retained(format_args!("{}", feature.id), OPERATION)?,
         )
         .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
-        let sketch_id = SketchId::mint(crate::text_admission::format_retained(
-            ctx,
-            format_args!("{sketch}"),
-            OPERATION,
-        )?)
+        let sketch_id = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
         .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
         model_sketch_features.insert(native_key, (feature_id, sketch_id));
     }
@@ -1842,7 +1810,7 @@ pub(crate) fn project_hole_position_sketches(
                             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                         )
                     {
-                        ctx.reserve_collection_vec(&mut authored_markers, 1, OPERATION)?;
+                        ctx.reserve_vec(&mut authored_markers, 1, OPERATION)?;
                         authored_markers.push(marker);
                     }
                 }
@@ -1885,7 +1853,7 @@ pub(crate) fn project_hole_position_sketches(
                             })?;
                         }
                         paired_marker_coordinates.insert(marker.id(), coordinates);
-                        ctx.reserve_collection_vec(&mut authored_markers, 1, OPERATION)?;
+                        ctx.reserve_vec(&mut authored_markers, 1, OPERATION)?;
                         authored_markers.push(marker);
                     }
                     if indexed_markers == 0
@@ -1927,7 +1895,7 @@ pub(crate) fn project_hole_position_sketches(
                             ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
                         })?;
                         unindexed_marker_coordinates.insert(marker.id(), coordinates);
-                        ctx.reserve_collection_vec(&mut authored_markers, 1, OPERATION)?;
+                        ctx.reserve_vec(&mut authored_markers, 1, OPERATION)?;
                         authored_markers.push(marker);
                         HashMap::new()
                     } else if complete_alternate_encoding {
@@ -1951,7 +1919,7 @@ pub(crate) fn project_hole_position_sketches(
             let marker_transform = sketch_frame_marker_transform(sketch, QUANTUM);
             let v_axis = normal.cross(u_axis.get());
             let mut resolved = Vec::new();
-            ctx.reserve_collection_vec(&mut resolved, authored_markers.len(), OPERATION)?;
+            ctx.reserve_vec(&mut resolved, authored_markers.len(), OPERATION)?;
             for marker in &authored_markers {
                 ctx.charge_work(u64_from_index(sketch_entities.len()), OPERATION)?;
                 let mut positions = sketch_entities.iter().filter_map(|entity| {
@@ -2021,11 +1989,7 @@ pub(crate) fn project_hole_position_sketches(
             if !feature.dependencies.contains(dependency) {
                 ctx.charge_work(u64_from_index(dependency.as_str().len()), OPERATION)?;
                 let dependency = cadmpeg_ir::features::FeatureId::mint(
-                    crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{dependency}"),
-                        OPERATION,
-                    )?,
+                    ctx.format_retained(format_args!("{dependency}"), OPERATION)?,
                 )
                 .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
                 feature
@@ -2233,7 +2197,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 if marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
                     && marker.object_index().is_some()
                 {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut authored_markers,
                         1,
                         "collect SLDPRT spatial position markers",
@@ -2283,7 +2247,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     _ => None,
                 };
                 if let Some(candidate_axis) = candidate_axis {
-                    ctx.reserve_collection_vec(&mut axes, 1, "collect SLDPRT spatial bore axes")?;
+                    ctx.reserve_vec(&mut axes, 1, "collect SLDPRT spatial bore axes")?;
                     axes.push(candidate_axis);
                 }
             }
@@ -2292,7 +2256,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 for surface in surfaces {
                     ctx.charge_work(1, "scan SLDPRT spatial support surfaces")?;
                     if let Some(axis) = cylindrical_support_normal(surface, point) {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut support_axes,
                             1,
                             "collect SLDPRT spatial support axes",
@@ -2313,7 +2277,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     let Some(axis) = FeatureDirection3::new(*axis) else {
                         continue;
                     };
-                    ctx.reserve_collection_vec(&mut axes, 1, "collect SLDPRT spatial bore axes")?;
+                    ctx.reserve_vec(&mut axes, 1, "collect SLDPRT spatial bore axes")?;
                     axes.push((point, axis));
                 }
             }
@@ -2324,7 +2288,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 ambiguous = true;
                 break;
             };
-            ctx.reserve_collection_vec(&mut resolved, 1, "collect SLDPRT spatial hole placements")?;
+            ctx.reserve_vec(&mut resolved, 1, "collect SLDPRT spatial hole placements")?;
             resolved.push(placement.clone());
         }
         if resolved.is_empty() && !ambiguous {
@@ -2335,7 +2299,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     if let SpatialSketchGeometryDefinition::Point { position } =
                         entity.geometry.definition()
                     {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut points,
                             1,
                             "collect SLDPRT spatial position points",
@@ -2383,7 +2347,7 @@ fn coplanar_spatial_position_placements(
     points: &[Point3],
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     let mut sorted_points = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut sorted_points,
         points.len(),
         "sort SLDPRT spatial position points",
@@ -2475,7 +2439,7 @@ fn coplanar_spatial_position_placements(
         let Some(axis) = FeatureDirection3::new(axis) else {
             return Ok(None);
         };
-        ctx.reserve_collection_vec(&mut placements, 1, "collect SLDPRT coplanar position axes")?;
+        ctx.reserve_vec(&mut placements, 1, "collect SLDPRT coplanar position axes")?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
     Ok(Some(placements))
@@ -2662,7 +2626,7 @@ pub(crate) fn project_generated_hole_axes(
                         continue;
                     }
                     let mut solution = Vec::new();
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut solution,
                         axes.len(),
                         "sort SLDPRT generated hole axes",
@@ -2671,13 +2635,13 @@ pub(crate) fn project_generated_hole_axes(
                     charge_hole_sort_work(ctx, solution.len(), "sort SLDPRT generated hole axes")?;
                     solution.sort_unstable_by_key(|(key, _)| *key);
                     let mut placements = Vec::new();
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut placements,
                         solution.len(),
                         "collect SLDPRT generated hole placements",
                     )?;
                     placements.extend(solution.into_iter().map(|(_, placement)| placement));
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut lane_solutions,
                         1,
                         "collect SLDPRT generated hole lanes",
@@ -2786,7 +2750,7 @@ pub(crate) fn project_hole_topology_axes(
         }
         *diameter_counts.entry(key).or_default() += 1;
         if placements.is_none() {
-            ctx.reserve_collection_vec(&mut unresolved, 1, "collect SLDPRT unresolved holes")?;
+            ctx.reserve_vec(&mut unresolved, 1, "collect SLDPRT unresolved holes")?;
             unresolved.push((index, diameter));
         }
     }
@@ -2823,7 +2787,7 @@ pub(crate) fn project_hole_topology_axes(
             if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
                 feature.evaluation.definition()
             {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut siblings,
                     1,
                     "collect SLDPRT counterbore siblings",
@@ -2893,7 +2857,7 @@ pub(crate) fn project_hole_topology_axes(
         for placement in candidates {
             ctx.charge_work(1, "select SLDPRT residual counterbore axes")?;
             if hole_axis_key(&placement).is_some_and(|key| !claimed.contains(&key)) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut residual,
                     1,
                     "collect SLDPRT residual counterbore axes",
@@ -2949,7 +2913,7 @@ fn project_flat_blind_topology_axes(
         });
     let mut unresolved = Vec::new();
     for candidate in candidates {
-        ctx.reserve_collection_vec(&mut unresolved, 1, "collect SLDPRT flat blind holes")?;
+        ctx.reserve_vec(&mut unresolved, 1, "collect SLDPRT flat blind holes")?;
         unresolved.push(candidate);
     }
 
@@ -3025,7 +2989,7 @@ fn project_drilled_hole_topology_axes(
         });
     let mut unresolved = Vec::new();
     for candidate in candidates {
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut unresolved,
             1,
             "collect SLDPRT unresolved drilled holes",
@@ -3119,7 +3083,7 @@ fn drilled_hole_topology_candidates(
     for placement in placements {
         ctx.charge_work(1, "match SLDPRT drilled hole cone axes")?;
         if hole_axis_key(&placement).is_some_and(|key| cone_keys.contains(&key)) {
-            ctx.reserve_collection_vec(&mut matched, 1, "collect SLDPRT drilled hole cone axes")?;
+            ctx.reserve_vec(&mut matched, 1, "collect SLDPRT drilled hole cone axes")?;
             matched.push(placement);
         }
     }
@@ -3188,7 +3152,7 @@ fn expand_seeded_drilled_hole_topology_axes(
             {
                 continue;
             }
-            ctx.reserve_collection_vec(&mut siblings, 1, "collect SLDPRT seeded hole siblings")?;
+            ctx.reserve_vec(&mut siblings, 1, "collect SLDPRT seeded hole siblings")?;
             siblings.push(sibling);
         }
         for &sibling in &siblings {
@@ -3300,7 +3264,7 @@ fn unclaimed_seeded_hole_candidates(
     for placement in candidates {
         ctx.charge_work(1, OPERATION)?;
         if hole_axis_key(&placement).is_some_and(|key| !claimed.contains(&key)) {
-            ctx.reserve_collection_vec(&mut available, 1, "collect SLDPRT unclaimed bore axes")?;
+            ctx.reserve_vec(&mut available, 1, "collect SLDPRT unclaimed bore axes")?;
             available.push(placement);
         }
     }
@@ -3755,12 +3719,8 @@ pub(crate) fn project_hole_axes(
                 .map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         let native =
-            crate::text_admission::format_retained(ctx, format_args!("{native}"), INDEX_OPERATION)?;
-        let sketch = SketchId::mint(crate::text_admission::format_retained(
-            ctx,
-            format_args!("{sketch}"),
-            INDEX_OPERATION,
-        )?)
+            ctx.format_retained(format_args!("{native}"), INDEX_OPERATION)?;
+        let sketch = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), INDEX_OPERATION)?)
         .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
         model_sketches.insert(native, sketch);
     }
@@ -3962,7 +3922,7 @@ pub(crate) fn project_hole_axes(
                 if let Some(solution) =
                     constrained_bore_axes(ctx, frame, radius, surfaces, &relations)?
                 {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut solutions,
                         1,
                         "collect SLDPRT hole position solutions",
@@ -3992,7 +3952,7 @@ pub(crate) fn project_hole_axes(
                         surfaces,
                         temporary_axis,
                     )? {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut solutions,
                             1,
                             "collect SLDPRT hole position solutions",
@@ -4091,7 +4051,7 @@ fn cylindrical_bore_axes(
         let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
         let candidate = cylinder_surface.radius().get();
         if (candidate - radius).abs() <= tolerance {
-            ctx.reserve_collection_vec(&mut axes, 1, "collect SLDPRT bore carrier axes")?;
+            ctx.reserve_vec(&mut axes, 1, "collect SLDPRT bore carrier axes")?;
             axes.push((origin, axis));
         }
     }
@@ -4152,12 +4112,12 @@ fn plane_owned_bore_placements(
         }
     }
     let mut placements = Vec::new();
-    ctx.reserve_collection_vec(&mut placements, by_position.len(), OPERATION)?;
+    ctx.reserve_vec(&mut placements, by_position.len(), OPERATION)?;
     placements.extend(by_position);
     charge_hole_sort_work(ctx, placements.len(), "sort SLDPRT plane-owned bore axes")?;
     placements.sort_unstable_by_key(|(key, _)| *key);
     let mut axes = Vec::new();
-    ctx.reserve_collection_vec(&mut axes, placements.len(), OPERATION)?;
+    ctx.reserve_vec(&mut axes, placements.len(), OPERATION)?;
     axes.extend(
         placements
             .into_iter()
@@ -4232,12 +4192,12 @@ fn carrier_placements(
         by_axis.insert(key, HolePlacement::Axis { origin, axis });
     }
     let mut carriers = Vec::new();
-    ctx.reserve_collection_vec(&mut carriers, by_axis.len(), OPERATION)?;
+    ctx.reserve_vec(&mut carriers, by_axis.len(), OPERATION)?;
     carriers.extend(by_axis);
     charge_hole_sort_work(ctx, carriers.len(), "sort SLDPRT hole carrier axes")?;
     carriers.sort_unstable_by_key(|(key, _)| *key);
     let mut placements = Vec::new();
-    ctx.reserve_collection_vec(&mut placements, carriers.len(), OPERATION)?;
+    ctx.reserve_vec(&mut placements, carriers.len(), OPERATION)?;
     placements.extend(carriers.into_iter().map(|(_, placement)| placement));
     Ok((!placements.is_empty()).then_some(placements))
 }
@@ -4333,7 +4293,7 @@ fn cylindrical_bore_face_spans(
         }
         let span = maximum - minimum;
         if span.is_finite() && span > 0.0 {
-            ctx.reserve_collection_vec(&mut spans, 1, "collect SLDPRT hole bore spans")?;
+            ctx.reserve_vec(&mut spans, 1, "collect SLDPRT hole bore spans")?;
             spans.push(BoreFaceSpan(
                 origin,
                 axis,
@@ -4402,7 +4362,7 @@ pub(crate) fn project_topological_hole_constructions(
                             axis.get(),
                         );
                         if parallel && distance <= EPS_HOLE_EXACT_GEOMETRY {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut candidates,
                                 1,
                                 "collect SLDPRT matching hole bores",
@@ -4441,7 +4401,7 @@ pub(crate) fn project_topological_hole_constructions(
                                     (candidate.0 - other.0).abs() <= EPS_HOLE_GEOMETRY
                                         && (candidate.1 - other.1).abs() <= EPS_HOLE_GEOMETRY
                                 }) {
-                                    ctx.reserve_collection_vec(
+                                    ctx.reserve_vec(
                                         &mut shared,
                                         1,
                                         "collect SLDPRT common hole bores",
@@ -4513,7 +4473,7 @@ pub(crate) fn project_bore_backed_position_sketches(
     }
     let copy_text = |text: &str| -> Result<String, CodecError> {
         ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
-        crate::text_admission::format_retained(ctx, format_args!("{text}"), OPERATION)
+        ctx.format_retained(format_args!("{text}"), OPERATION)
     };
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
@@ -4671,11 +4631,7 @@ pub(crate) fn project_bore_backed_position_sketches(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let Ok(sketch_id) = SketchId::mint(crate::text_admission::format_retained(
-            ctx,
-            format_args!("sldprt:model:sketch#bore:{lane_key}:{}", position.ordinal),
-            OPERATION,
-        )?) else {
+        let Ok(sketch_id) = SketchId::mint(ctx.format_retained(format_args!("sldprt:model:sketch#bore:{lane_key}:{}", position.ordinal), OPERATION)?) else {
             continue;
         };
         let v_axis = normal.cross(u_axis);
@@ -4683,11 +4639,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         let mut admitted_geometry = true;
         for (ordinal, (point, _)) in axes.enumerate() {
             ctx.charge_work(u64_from_index(sketch_id.as_str().len()), OPERATION)?;
-            let Ok(entity_id) = SketchEntityId::mint(crate::text_admission::format_retained(
-                ctx,
-                format_args!("{}:entity:{ordinal}", sketch_id.as_str()),
-                OPERATION,
-            )?) else {
+            let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(format_args!("{}:entity:{ordinal}", sketch_id.as_str()), OPERATION)?) else {
                 admitted_geometry = false;
                 break;
             };
@@ -4700,7 +4652,7 @@ pub(crate) fn project_bore_backed_position_sketches(
             };
             let sketch_ref = SketchId::mint(copy_text(sketch_id.as_str())?)
                 .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
-            ctx.reserve_collection_vec(&mut projected_entities, 1, OPERATION)?;
+            ctx.reserve_vec(&mut projected_entities, 1, OPERATION)?;
             projected_entities.push(SketchEntity::new(entity_id, sketch_ref, geometry));
         }
         if !admitted_geometry {
@@ -4714,7 +4666,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         let name = model_position.name.as_deref().map(copy_text).transpose()?;
         let configuration = lane.configuration.as_deref().map(copy_text).transpose()?;
         let native_ref = Some(copy_text(&lane.id)?);
-        ctx.reserve_collection_vec(&mut projections, 1, OPERATION)?;
+        ctx.reserve_vec(&mut projections, 1, OPERATION)?;
         projections.push(Projection {
             feature: feature_index,
             sketch: Sketch {
@@ -4743,8 +4695,8 @@ pub(crate) fn project_bore_backed_position_sketches(
         }
         let sketch_id = SketchId::mint(copy_text(projection.sketch.id.as_str())?)
             .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
-        ctx.reserve_collection_vec(entities, projection.entities.len(), OPERATION)?;
-        ctx.reserve_collection_vec(sketches, 1, OPERATION)?;
+        ctx.reserve_vec(entities, projection.entities.len(), OPERATION)?;
+        ctx.reserve_vec(sketches, 1, OPERATION)?;
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =
                 definition
@@ -4818,7 +4770,7 @@ fn marker_pattern_bore_axes(
                 continue;
             };
             let [u, v] = coordinates.get();
-            ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+            ctx.reserve_vec(&mut loci, 1, OPERATION)?;
             loci.push(Point2::new(u * 1000.0, v * 1000.0));
         }
         charge_hole_sort_work(ctx, loci.len(), OPERATION)?;
@@ -4933,7 +4885,7 @@ fn match_marker_loci_to_bore_axes(
                 .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         let origins = lines.entry(point_key).or_default();
-        ctx.reserve_collection_vec(origins, 1, OPERATION)?;
+        ctx.reserve_vec(origins, 1, OPERATION)?;
         origins.push((origin, axis));
     }
     let mut solutions = HashMap::new();
@@ -4961,13 +4913,13 @@ fn match_marker_loci_to_bore_axes(
                 continue;
             };
             let axis = direction.map_or_else(|| canonical_direction(*axis), |_| *axis);
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((point, *origin, axis));
         }
         charge_hole_sort_work(ctx, candidates.len(), OPERATION)?;
         candidates.sort_unstable_by_key(|(point, _, _)| *point);
         let mut candidate_loci = Vec::new();
-        ctx.reserve_collection_vec(&mut candidate_loci, candidates.len(), OPERATION)?;
+        ctx.reserve_vec(&mut candidate_loci, candidates.len(), OPERATION)?;
         for ([x, y, z], ..) in &candidates {
             ctx.charge_work(1, OPERATION)?;
             candidate_loci.push(Point3::new(
@@ -5022,8 +4974,8 @@ fn retain_bore_solution(
     for index in indices {
         ctx.charge_work(1, OPERATION)?;
         let (_, origin, axis) = candidates[index];
-        ctx.reserve_collection_vec(&mut placements, 1, OPERATION)?;
-        ctx.reserve_collection_vec(&mut key, 1, OPERATION)?;
+        ctx.reserve_vec(&mut placements, 1, OPERATION)?;
+        ctx.reserve_vec(&mut key, 1, OPERATION)?;
         placements.push(HolePlacement::Axis { origin, axis });
         key.push([
             quantize_scalar(origin.x),
@@ -5096,7 +5048,7 @@ impl BoreSubsetSearch<'_, '_> {
         if index == count {
             let mut subset = Vec::new();
             self.ctx
-                .reserve_collection_vec(&mut subset, assigned.len(), OPERATION)?;
+                .reserve_vec(&mut subset, assigned.len(), OPERATION)?;
             subset.extend_from_slice(assigned);
             charge_hole_sort_work(self.ctx, subset.len(), OPERATION)?;
             subset.sort_unstable();
@@ -5153,7 +5105,7 @@ impl BoreSubsetSearch<'_, '_> {
                     same_dimension_length(marker_distance, delta.norm())
                 });
             if valid {
-                self.ctx.reserve_collection_vec(assigned, 1, OPERATION)?;
+                self.ctx.reserve_vec(assigned, 1, OPERATION)?;
                 assigned.push(choice);
                 let ambiguous = self.collect(index + 1, assigned, used, subsets)?;
                 assigned.pop();
@@ -5209,7 +5161,7 @@ pub(super) fn feature_object_byte_ranges<'a>(
         let Some(name) = feature_object_name(feature, lane) else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+        ctx.reserve_vec(&mut objects, 1, OPERATION)?;
         objects.push((name.offset, input_index, feature));
     }
     let count = u64::try_from(objects.len())
@@ -5455,12 +5407,7 @@ pub(super) fn sketch_feature_frames(
                     )
                 })?;
                 let mut owner = String::new();
-                crate::text_admission::reserve_retained_string(
-                    ctx,
-                    &mut owner,
-                    feature.id.len(),
-                    "copy sketch feature frame owner",
-                )?;
+                ctx.try_reserve_retained_text(&mut owner, feature.id.len(), "copy sketch feature frame owner")?;
                 owner.push_str(&feature.id);
                 candidates.insert(owner, Some(frame));
             }
@@ -5522,7 +5469,7 @@ fn compact_position_relations(
         if !(scalar.role == FeatureInputScalarRole::Driving && scalar.value.get() >= 0.0) {
             continue;
         }
-        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        ctx.reserve_vec(&mut result, 1, OPERATION)?;
         result.push((
             relation.family,
             first.entity_index,
@@ -5565,7 +5512,7 @@ fn constrained_bore_axes(
             candidate.y - origin.y,
             candidate.z - origin.z,
         );
-        ctx.reserve_collection_vec(&mut axes, 1, OPERATION)?;
+        ctx.reserve_vec(&mut axes, 1, OPERATION)?;
         axes.push(quantize(
             Point2::new(delta.dot(u_axis), delta.dot(v_axis)),
             QUANTUM,
@@ -5584,7 +5531,7 @@ fn constrained_bore_axes(
         return Ok(None);
     }
     let mut loci = Vec::new();
-    ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+    ctx.reserve_vec(&mut loci, 1, OPERATION)?;
     loci.push(Point2::new(0.0, 0.0));
     let mut bore_loci = HashSet::new();
     for point in axes {
@@ -5593,7 +5540,7 @@ fn constrained_bore_axes(
         let index = if let Some(index) = loci.iter().position(|candidate| *candidate == point) {
             index
         } else {
-            ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+            ctx.reserve_vec(&mut loci, 1, OPERATION)?;
             loci.push(point);
             loci.len() - 1
         };
@@ -5622,7 +5569,7 @@ fn constrained_bore_axes(
         ) else {
             return Ok(None);
         };
-        ctx.reserve_collection_vec(&mut placements, 1, OPERATION)?;
+        ctx.reserve_vec(&mut placements, 1, OPERATION)?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
     Ok(Some(placements))
@@ -5638,7 +5585,7 @@ fn compact_position_loci(
     let mut nodes = Vec::new();
     for (_, first, second, _) in relations {
         ctx.charge_work(1, OPERATION)?;
-        ctx.reserve_collection_vec(&mut nodes, 2, OPERATION)?;
+        ctx.reserve_vec(&mut nodes, 2, OPERATION)?;
         nodes.extend([*first, *second]);
     }
     let node_count = u64_from_index(nodes.len());
@@ -5701,7 +5648,7 @@ impl CompactPositionSearch<'_, '_> {
                 self.ctx.charge_work(1, OPERATION)?;
                 if self.placement_loci.contains(&index) {
                     self.ctx
-                        .reserve_collection_vec(&mut solution, 1, OPERATION)?;
+                        .reserve_vec(&mut solution, 1, OPERATION)?;
                     solution.push(index);
                 }
             }

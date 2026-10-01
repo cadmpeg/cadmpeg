@@ -50,12 +50,8 @@ impl RelationScalars {
                 }
                 FeatureInputScalarRole::Native => {}
             }
-            ctx.reserve_collection_vec(&mut refs, 1, "collect SLDPRT relation scalar references")?;
-            refs.push(crate::text_admission::format_retained(
-                ctx,
-                format_args!("{}", scalar.id),
-                "retain SLDPRT relation scalar identity",
-            )?);
+            ctx.reserve_vec(&mut refs, 1, "collect SLDPRT relation scalar references")?;
+            refs.push(ctx.format_retained(format_args!("{}", scalar.id), "retain SLDPRT relation scalar identity")?);
         }
         Ok(Self {
             parameter: if duplicate_parameter { None } else { parameter },
@@ -101,16 +97,12 @@ impl RelationScalars {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut self.refs,
             1,
             "collect SLDPRT relation scalar references",
         )?;
-        self.refs.push(crate::text_admission::format_retained(
-            ctx,
-            format_args!("{id}"),
-            "retain SLDPRT relation scalar identity",
-        )?);
+        self.refs.push(ctx.format_retained(format_args!("{id}"), "retain SLDPRT relation scalar identity")?);
         Ok(())
     }
 

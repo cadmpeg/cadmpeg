@@ -270,7 +270,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
             continue;
         };
-        let id = ctx.format_retained_with_work(
+        let id = ctx.format_retained(
             format_args!("nx:feature-history:projected-curve-construction-payload#{operation_key}"),
             "NX projected curve payload identity",
         )?;
@@ -322,7 +322,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("{}-string-{ordinal:010}", payload.id),
                 "NX projected curve string identity",
             )?;
@@ -527,14 +527,14 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             ctx.copy_retained_text(&header.operation_label, "NX point scalar lane operation")?;
         let construction_header =
             ctx.copy_retained_text(&header.id, "NX point scalar lane header")?;
-        let first_block = ctx.format_retained_with_work(
+        let first_block = ctx.format_retained(
             format_args!(
                 "nx:om-data-blocks-{section_ordinal}:block#{}",
                 target_ordinal - 1
             ),
             "NX point scalar lane first block",
         )?;
-        let second_block = ctx.format_retained_with_work(
+        let second_block = ctx.format_retained(
             format_args!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
             "NX point scalar lane second block",
         )?;
@@ -1182,7 +1182,7 @@ pub(in crate::native) fn feature_operation_body_scalar_triples(
                     continue;
                 };
                 let projected = (|| -> Result<(), CodecError> {
-                    let id = ctx.format_retained_with_work(format_args!("nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
+                    let id = ctx.format_retained(format_args!("nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
                             triple.body_reference_ordinal), "NX operation body scalar triple identity")?;
                     let operation_label = format_feature_history_id(
                         ctx,
@@ -1242,7 +1242,7 @@ pub(in crate::native) fn feature_operation_body_members(
                         let ordinal = u32::try_from(ordinal).map_err(|_| {
                             ctx.refuse_codec_limit("NX operation body member ordinal", 0, 1)
                         })?;
-                        let id = ctx.format_retained_with_work(format_args!("nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{ordinal}",
+                        let id = ctx.format_retained(format_args!("nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{ordinal}",
                                 group.body_reference_ordinal), "NX operation body member identity")?;
                         let operation_label = format_feature_history_id(
                             ctx,
@@ -1485,7 +1485,7 @@ pub(in crate::native) fn feature_operation_body_11_continuations(
             };
             let projected = (|| -> Result<(), CodecError> {
                 for continuation in rows {
-                    let id = ctx.format_retained_with_work(format_args!("nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
+                    let id = ctx.format_retained(format_args!("nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
                             continuation.body_reference_ordinal), "NX trim body continuation identity")?;
                     let operation_label = format_feature_history_id(
                         ctx,
@@ -1621,7 +1621,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                             FeatureOperationBodyReferences::PayloadObjectIndex(references)
                         }
                     };
-                    let id = ctx.format_retained_with_work(format_args!("nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
+                    let id = ctx.format_retained(format_args!("nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
                         lane.body_reference_ordinal), "NX operation body reference lane identity")?;
                     let operation_label = format_feature_history_id(
                         ctx,
@@ -2234,7 +2234,7 @@ pub(in crate::native) fn feature_block_payload_scalars(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("{}-scalar-{ordinal}", payload.id),
                 "NX block payload scalar identity",
             )?;
@@ -2289,7 +2289,7 @@ pub(in crate::native) fn feature_block_payload_names(
             let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("{}-name-{ordinal}", payload.id),
                 "NX block payload name identity",
             )?;
@@ -2374,7 +2374,7 @@ pub(in crate::native) fn feature_block_payload_named_records(
                 "sort NX block payload scalars",
             )?;
             scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("{}-record-{ordinal}", payload.id),
                 "NX block payload named record identity",
             )?;
@@ -2450,7 +2450,7 @@ pub(in crate::native) fn feature_block_payload_points(
         let Some(second) = scalars.iter().rev().find(|scalar| scalar.id == *second_id) else {
             continue;
         };
-        let id = ctx.format_retained_with_work(
+        let id = ctx.format_retained(
             format_args!("{}-point", record.id),
             "NX block payload point identity",
         )?;
@@ -2519,7 +2519,7 @@ pub(in crate::native) fn feature_block_payload_point_groups(
             ctx.reserve_retained_vec(&mut witnesses, 1, "NX block payload point group witnesses")?;
             witnesses.push(id);
         }
-        let id = ctx.format_retained_with_work(
+        let id = ctx.format_retained(
             format_args!("{}-group", point.id),
             "NX block payload point group identity",
         )?;
@@ -2660,7 +2660,7 @@ pub(in crate::native) fn feature_block_dimensions(
             continue;
         }
         let id = if let Some((prefix, suffix)) = construction.id.split_once("block-construction") {
-            ctx.format_retained_with_work(
+            ctx.format_retained(
                 format_args!("{prefix}block-dimensions{suffix}"),
                 "NX block dimensions identity",
             )?

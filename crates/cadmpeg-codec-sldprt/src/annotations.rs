@@ -37,17 +37,13 @@ pub(crate) fn note(
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(bytes, OPERATION)?;
     let provenance_id =
-        crate::text_admission::format_retained(ctx, format_args!("{id}"), OPERATION)?;
+        ctx.format_retained(format_args!("{id}"), OPERATION)?;
     let exactness_id =
-        crate::text_admission::format_retained(ctx, format_args!("{id}"), OPERATION)?;
-    let stream_name = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", stream.as_str()),
-        OPERATION,
-    )?;
+        ctx.format_retained(format_args!("{id}"), OPERATION)?;
+    let stream_name = ctx.format_retained(format_args!("{}", stream.as_str()), OPERATION)?;
     let stream_name = StreamName::try_from(stream_name)
         .map_err(|_| CodecError::malformed("empty SLDPRT annotation stream"))?;
-    let tag = crate::text_admission::format_retained(ctx, format_args!("{tag}"), OPERATION)?;
+    let tag = ctx.format_retained(format_args!("{tag}"), OPERATION)?;
     ctx.charge_collection_items(1, OPERATION)?;
     if !annotations.provenance.contains_key(id) {
         ctx.charge_collection_items(1, OPERATION)?;
@@ -101,8 +97,8 @@ pub(crate) fn builder_note(
         .checked_add(tag.len())
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     admit_builder_entry(ctx, builder, bytes, 1, OPERATION)?;
-    let id = crate::text_admission::format_retained(ctx, format_args!("{id}"), OPERATION)?;
-    let tag = crate::text_admission::format_retained(ctx, format_args!("{tag}"), OPERATION)?;
+    let id = ctx.format_retained(format_args!("{id}"), OPERATION)?;
+    let tag = ctx.format_retained(format_args!("{tag}"), OPERATION)?;
     builder.note_owned(id, stream, offset).tag(tag);
     Ok(())
 }
@@ -121,7 +117,7 @@ pub(crate) fn builder_exactness(
         .get(id)
         .map_or(0, |note| note.fields().len());
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(fields), OPERATION)?;
-    let id = crate::text_admission::format_retained(ctx, format_args!("{id}"), OPERATION)?;
+    let id = ctx.format_retained(format_args!("{id}"), OPERATION)?;
     builder.exactness_owned(id, exactness);
     Ok(())
 }
@@ -152,8 +148,8 @@ pub(crate) fn builder_field(
         )
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(field_work, OPERATION)?;
-    let id = crate::text_admission::format_retained(ctx, format_args!("{id}"), OPERATION)?;
-    let field = crate::text_admission::format_retained(ctx, format_args!("{field}"), OPERATION)?;
+    let id = ctx.format_retained(format_args!("{id}"), OPERATION)?;
+    let field = ctx.format_retained(format_args!("{field}"), OPERATION)?;
     builder
         .field_exactness_owned(id, field, exactness)
         .map_err(CodecError::malformed)?;

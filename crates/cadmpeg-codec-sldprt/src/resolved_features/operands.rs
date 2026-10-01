@@ -27,7 +27,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
             operand.entity_index,
             |_| false,
         )?;
-        ctx.reserve_collection_vec(&mut resolved, 1, "collect SLDPRT resolved scalar operands")?;
+        ctx.reserve_vec(&mut resolved, 1, "collect SLDPRT resolved scalar operands")?;
         resolved.push(marker);
     }
     if let ([first_operand, second_operand], [Some(first), Some(second)]) =
@@ -88,7 +88,7 @@ fn collect_operand_candidates<T>(
     let mut result = Vec::new();
     for value in values {
         ctx.charge_work(1, "scan SLDPRT scalar operand markers")?;
-        ctx.reserve_collection_vec(&mut result, 1, "collect SLDPRT scalar operand markers")?;
+        ctx.reserve_vec(&mut result, 1, "collect SLDPRT scalar operand markers")?;
         result.push(value);
     }
     Ok(result)
@@ -498,7 +498,7 @@ fn linked_point_markers<'a>(
             continue;
         };
         if operand_accepts_marker(kind, entity.kind()) && !excluded(entity.id()) {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut compatible,
                 1,
                 "collect SLDPRT scalar operand markers",
@@ -507,7 +507,7 @@ fn linked_point_markers<'a>(
             continue;
         }
         for link in entity.links() {
-            ctx.reserve_collection_vec(&mut pending, 1, "collect SLDPRT scalar operand links")?;
+            ctx.reserve_vec(&mut pending, 1, "collect SLDPRT scalar operand links")?;
             pending.push(link.entity_ref.as_str());
         }
     }

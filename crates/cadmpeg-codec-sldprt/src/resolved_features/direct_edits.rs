@@ -164,7 +164,7 @@ fn push_move_face_candidate(
         ctx.charge_collection_items(1, "index SLDPRT move-face directions")?;
     }
     let values = candidates.entry(key).or_default();
-    ctx.reserve_collection_vec(values, 1, "collect SLDPRT move-face directions")?;
+    ctx.reserve_vec(values, 1, "collect SLDPRT move-face directions")?;
     values.push(candidate);
     Ok(())
 }
@@ -182,7 +182,7 @@ pub(crate) fn enrich_history_move_face_translations(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-face feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut starts,
                         1,
                         "collect SLDPRT move-face feature starts",
@@ -268,7 +268,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 end,
                 &excluded_handles,
             )?;
-            ctx.reserve_precharged_vec(
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
                 &mut directions,
                 compact.len(),
                 "merge SLDPRT move-face directions",
@@ -280,7 +280,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 .map(FeatureDirection3::from_unit_without_small_components)
             {
                 if !unique.contains(&direction) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut unique,
                         1,
                         "collect SLDPRT unique move-face directions",
@@ -322,11 +322,7 @@ pub(crate) fn enrich_history_move_face_translations(
         feature
             .properties
             .insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
-        let direction = crate::text_admission::format_retained(
-            ctx,
-            format_args!("{},{},{}", first.get().x, first.get().y, first.get().z),
-            "format SLDPRT move-face direction",
-        )?;
+        let direction = ctx.format_retained(format_args!("{},{},{}", first.get().x, first.get().y, first.get().z), "format SLDPRT move-face direction")?;
         feature
             .properties
             .insert(cadmpeg_core::nonblank_literal!("Direction"), direction);
@@ -347,7 +343,7 @@ pub(crate) fn enrich_history_move_body_translations(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-body feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut starts,
                         1,
                         "collect SLDPRT move-body feature starts",
@@ -397,7 +393,7 @@ pub(crate) fn enrich_history_move_body_translations(
                 ctx.charge_collection_items(1, "index SLDPRT move-body candidates")?;
             }
             let values = candidates.entry(key).or_default();
-            ctx.reserve_collection_vec(values, 1, "collect SLDPRT move-body candidates")?;
+            ctx.reserve_vec(values, 1, "collect SLDPRT move-body candidates")?;
             values.push(candidate);
         }
     }
@@ -413,16 +409,12 @@ pub(crate) fn enrich_history_move_body_translations(
         if !properties.contains_key("Translation") {
             ctx.charge_collection_items(1, "insert SLDPRT move-body translation")?;
         }
-        let translation = crate::text_admission::format_retained(
-            ctx,
-            format_args!(
+        let translation = ctx.format_retained(format_args!(
                 "{}mm,{}mm,{}mm",
                 first.x * 1000.0,
                 first.y * 1000.0,
                 first.z * 1000.0
-            ),
-            "format SLDPRT move-body translation",
-        )?;
+            ), "format SLDPRT move-body translation")?;
         properties.insert(cadmpeg_core::nonblank_literal!("Translation"), translation);
     }
     Ok(())

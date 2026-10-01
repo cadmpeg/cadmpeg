@@ -65,11 +65,7 @@ pub(crate) fn extract_streams_with_offsets(
         out.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit("collect direct Parasolid streams", u64::MAX - 1, u64::MAX)
         })?;
-        let payload = crate::byte_admission::copy_retained(
-            ctx,
-            &payload[start..end],
-            "retain direct Parasolid stream",
-        )?;
+        let payload = ctx.copy_retained(&payload[start..end], "retain direct Parasolid stream")?;
         out.push(ExtractedStream {
             offset: start,
             payload,
@@ -169,11 +165,7 @@ pub(crate) fn extract_streams_with_offsets(
                     if let Some(header) = stream_header(ctx, view.window())? {
                         Some(ExtractedStream {
                             offset: i,
-                            payload: crate::byte_admission::copy_retained(
-                                ctx,
-                                view.window(),
-                                "retain Parasolid zlib candidate",
-                            )?,
+                            payload: ctx.copy_retained(view.window(), "retain Parasolid zlib candidate")?,
                             header,
                         })
                     } else {
@@ -344,11 +336,7 @@ fn chained_wrapped_stream(
     let stream = if frame_outputs.len() == 1 {
         frame_outputs.remove(0)
     } else {
-        crate::byte_admission::concat_retained(
-            ctx,
-            &frame_outputs,
-            "retain concatenated Parasolid stream",
-        )?
+        ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?
     };
     extracted_stream(ctx, chain_len_at, stream)
 }

@@ -397,7 +397,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            ctx.reserve_collection_vec(&mut entities, additions.len(), OPERATION)?;
+            ctx.reserve_vec(&mut entities, additions.len(), OPERATION)?;
             entities.extend(additions);
         }
         sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
@@ -416,7 +416,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            ctx.reserve_collection_vec(&mut entities, additions.len(), OPERATION)?;
+            ctx.reserve_vec(&mut entities, additions.len(), OPERATION)?;
             entities.extend(additions);
         }
         sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
@@ -429,16 +429,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            ctx.reserve_collection_vec(&mut operands, 1, OPERATION)?;
+            ctx.reserve_vec(&mut operands, 1, OPERATION)?;
             operands.push(SketchNativeOperand {
                 native_kind: nonblank_literal!("sldprt:marker-local-id"),
                 field: None,
                 object_index: Some(u32::from(link.local_id)),
-                native_ref: Some(crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{}", link.entity_ref),
-                    OPERATION,
-                )?),
+                native_ref: Some(ctx.format_retained(format_args!("{}", link.entity_ref), OPERATION)?),
             });
         }
         for owner in owners {
@@ -449,16 +445,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            ctx.reserve_collection_vec(&mut operands, 1, OPERATION)?;
+            ctx.reserve_vec(&mut operands, 1, OPERATION)?;
             operands.push(SketchNativeOperand {
                 native_kind: nonblank_literal!("sldprt:marker-constraint-owner"),
                 field: None,
                 object_index: owner.object_index().or(owner.local_id()),
-                native_ref: Some(crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{}", owner.id()),
-                    OPERATION,
-                )?),
+                native_ref: Some(ctx.format_retained(format_args!("{}", owner.id()), OPERATION)?),
             });
         }
         Ok(SketchConstraintDefinitionInput::Native {
@@ -510,7 +502,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 {
                     continue;
                 }
-                ctx.reserve_collection_vec(&mut point_links, 1, POINT_OPERATION)?;
+                ctx.reserve_vec(&mut point_links, 1, POINT_OPERATION)?;
                 point_links.push(link);
             }
             if let [first_link, second_link] = point_links.as_slice() {
@@ -650,7 +642,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     if relation_link_identifies_owner(marker, link) {
                         continue;
                     }
-                    ctx.reserve_collection_vec(&mut point_links, 1, POINT_OPERATION)?;
+                    ctx.reserve_vec(&mut point_links, 1, POINT_OPERATION)?;
                     point_links.push(link);
                 }
                 if let [first_link, second_link] = point_links.as_slice() {
@@ -714,7 +706,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         loci_by_marker,
                         MarkerEntityFilter::All,
                     )?;
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut exact_entities,
                         additions.len(),
                         ENTITY_OPERATION,
@@ -759,7 +751,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     continue;
                 }
                 if let Some(identity) = selected {
-                    ctx.reserve_collection_vec(&mut exact_entities, 1, ENTITY_OPERATION)?;
+                    ctx.reserve_vec(&mut exact_entities, 1, ENTITY_OPERATION)?;
                     exact_entities.push(super::transforms::copy_sketch_entity_identity(
                         ctx,
                         identity,
@@ -929,7 +921,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     if entity.as_str().contains("sketch-entity#relation-point:") {
                         continue;
                     }
-                    ctx.reserve_collection_vec(&mut forward_entities, 1, BINARY_OPERATION)?;
+                    ctx.reserve_vec(&mut forward_entities, 1, BINARY_OPERATION)?;
                     ctx.charge_work(
                         u64_from_index(std::mem::size_of::<SketchEntityId>()),
                         BINARY_OPERATION,
@@ -1174,7 +1166,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         u64_from_index(std::mem::size_of::<SketchEntityId>()),
                         OPERATION,
                     )?;
-                    ctx.reserve_collection_vec(&mut entities, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut entities, 1, OPERATION)?;
                     let identity = match locus {
                         SketchLocus::Entity(identity)
                         | SketchLocus::Start(identity)
@@ -1256,7 +1248,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         u64_from_index(std::mem::size_of::<SketchLocus>()),
                         OPERATION,
                     )?;
-                    ctx.reserve_collection_vec(&mut points, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut points, 1, OPERATION)?;
                     points.push(locus);
                 }
             }
@@ -1864,7 +1856,7 @@ impl AxisRelationPointCollection<'_> {
             .locus_bytes
             .checked_add(bytes)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.reserve_collection_vec(&mut self.loci, 1, OPERATION)?;
+        ctx.reserve_vec(&mut self.loci, 1, OPERATION)?;
         self.loci.push(locus);
         self.locus_bytes = next_bytes;
         Ok(())
@@ -2174,7 +2166,7 @@ pub(super) fn relation_owner_markers<'a>(
             if link.entity_ref != relation.id() {
                 continue;
             }
-            ctx.reserve_collection_vec(&mut owners, 1, OPERATION)?;
+            ctx.reserve_vec(&mut owners, 1, OPERATION)?;
             owners.push(marker);
             break;
         }
@@ -2444,7 +2436,7 @@ pub(super) fn marker_relation_is_inactive(
             id,
             "resolve SLDPRT native relation activity",
         )? {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut resolved,
                 1,
                 "collect SLDPRT native relation activity",
@@ -2532,7 +2524,7 @@ fn relation_owner_curve_entities(
                 u64_from_index(std::mem::size_of::<SketchEntityId>()),
                 OPERATION,
             )?;
-            ctx.reserve_collection_vec(&mut entities, 1, OPERATION)?;
+            ctx.reserve_vec(&mut entities, 1, OPERATION)?;
             entities.push(entity);
         }
     }
@@ -2644,7 +2636,7 @@ pub(super) fn line_endpoint_markers<'a>(
         if endpoints.len() == endpoints.capacity() {
             charge_typed_endpoint_work(ctx, endpoints.len(), 4, OPERATION)?;
         }
-        ctx.reserve_collection_vec(&mut endpoints, 1, OPERATION)?;
+        ctx.reserve_vec(&mut endpoints, 1, OPERATION)?;
         endpoints.push(endpoint);
     }
     sort_endpoint_markers(ctx, &mut endpoints, OPERATION)?;
@@ -2695,7 +2687,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             });
             let mut endpoints = Vec::new();
             for endpoint in selected {
-                ctx.reserve_collection_vec(&mut endpoints, 1, OPERATION)?;
+                ctx.reserve_vec(&mut endpoints, 1, OPERATION)?;
                 endpoints.push(endpoint);
             }
             endpoints

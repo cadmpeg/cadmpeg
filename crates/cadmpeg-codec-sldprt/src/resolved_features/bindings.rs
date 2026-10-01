@@ -83,11 +83,7 @@ pub(crate) fn bind_pattern_inputs(
     let mut model_by_native = HashMap::new();
     for (index, feature) in model_features.iter().enumerate() {
         if let Some(native) = feature.native_ref.as_deref() {
-            let native = crate::text_admission::format_retained(
-                ctx,
-                format_args!("{native}"),
-                "retain SLDPRT pattern native identity",
-            )?;
+            let native = ctx.format_retained(format_args!("{native}"), "retain SLDPRT pattern native identity")?;
             reserve_feature_binding_map(ctx, &mut model_by_native, "index SLDPRT pattern inputs")?;
             model_by_native.insert(native, index);
         }
@@ -481,7 +477,7 @@ pub(crate) fn bind_pattern_inputs(
                         && class.offset > u64_from_index(starts[start_index].0)
                         && class.offset < u64_from_index(end)
                     {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut declarations,
                             1,
                             "collect SLDPRT pattern line declarations",
@@ -497,7 +493,7 @@ pub(crate) fn bind_pattern_inputs(
                         class.offset,
                         end,
                     )?;
-                    ctx.reserve_precharged_vec(
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
                         &mut directions,
                         declared.len(),
                         "merge SLDPRT declared line directions",
@@ -508,7 +504,7 @@ pub(crate) fn bind_pattern_inputs(
                     let mut excluded_handles = Vec::new();
                     for class in &declarations {
                         if let Ok(offset) = usize::try_from(class.offset) {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut excluded_handles,
                                 2,
                                 "collect SLDPRT excluded line handles",
@@ -523,7 +519,7 @@ pub(crate) fn bind_pattern_inputs(
                         end,
                         &excluded_handles,
                     )?;
-                    ctx.reserve_precharged_vec(
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
                         &mut directions,
                         compact.len(),
                         "merge SLDPRT compact line directions",
@@ -551,7 +547,7 @@ pub(crate) fn bind_pattern_inputs(
                             &lane.names,
                             [first_spacing_m, second_spacing_m],
                         );
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut directions,
                             display.len(),
                             "collect SLDPRT pattern display directions",
@@ -579,7 +575,7 @@ pub(crate) fn bind_pattern_inputs(
                     }
                 }
                 if matches!(unique_directions.len(), 1 | 2) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut linear_direction_assignments,
                         unique_directions.len(),
                         "collect SLDPRT pattern direction assignments",
@@ -650,7 +646,7 @@ pub(crate) fn bind_pattern_inputs(
             )?;
         }
     }
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut pattern_seed_assignments,
         curve_seed_assignments.len(),
         "merge SLDPRT pattern seed assignments",
@@ -875,7 +871,7 @@ pub(crate) fn bind_pattern_inputs(
                 }) = definition
                 {
                     if seed_slots.is_empty() {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             seed_slots,
                             seeds.len(),
                             "collect SLDPRT mirror pattern seeds",
@@ -955,7 +951,7 @@ fn push_feature_binding_candidate<T>(
     value: T,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_work(1, "collect SLDPRT feature binding assignments")?;
-    ctx.reserve_collection_vec(values, 1, "collect SLDPRT feature binding assignments")?;
+    ctx.reserve_vec(values, 1, "collect SLDPRT feature binding assignments")?;
     values.push(value);
     Ok(())
 }
@@ -1036,7 +1032,7 @@ pub(crate) fn bind_mirror_surface_planes(
             .entry((identity.feature_source_id, identity.local_id))
             .or_default();
         if !candidates.contains(&face.as_str()) {
-            ctx.reserve_collection_vec(candidates, 1, "collect SLDPRT mirror face identities")?;
+            ctx.reserve_vec(candidates, 1, "collect SLDPRT mirror face identities")?;
             candidates.push(face.as_str());
         }
     }
@@ -1115,7 +1111,7 @@ pub(crate) fn bind_mirror_surface_planes(
                             continue;
                         };
                         if !candidates.contains(&plane) {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut candidates,
                                 1,
                                 "collect SLDPRT mirror plane candidates",
@@ -1249,7 +1245,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             )?;
             let candidates = assignments.entry(model_index).or_default();
             if !candidates.contains(&candidate) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     candidates,
                     1,
                     "collect SLDPRT sweep profile assignments",
@@ -1319,11 +1315,7 @@ fn copy_feature_binding_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::features::FeatureId,
 ) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
-    let text = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", id.as_str()),
-        "retain SLDPRT feature binding identity",
-    )?;
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
     cadmpeg_ir::features::FeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -1331,11 +1323,7 @@ fn copy_feature_binding_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &SketchId,
 ) -> Result<SketchId, cadmpeg_core::CodecError> {
-    let text = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", id.as_str()),
-        "retain SLDPRT feature binding identity",
-    )?;
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
     SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -1360,7 +1348,7 @@ fn collect_feature_binding_vec<T>(
     let mut values = Vec::new();
     for item in items {
         ctx.charge_work(1, work_operation)?;
-        ctx.reserve_collection_vec(&mut values, 1, collection_operation)?;
+        ctx.reserve_vec(&mut values, 1, collection_operation)?;
         values.push(item);
     }
     Ok(values)
@@ -1474,7 +1462,7 @@ pub(crate) fn finalize_lane_bindings(
             if let Some(by_local) = marker_ids.get_mut(feature.as_str()) {
                 reserve_binding_map(ctx, by_local)?;
                 let candidates = by_local.entry(local_id).or_default();
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     candidates,
                     1,
                     "collect SLDPRT scalar marker candidates",
@@ -1494,7 +1482,7 @@ pub(crate) fn finalize_lane_bindings(
         let local_links =
             if let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset) {
                 let mut links = Vec::new();
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut links,
                     local_ids.len(),
                     "decode SLDPRT scalar local links",
@@ -1519,7 +1507,7 @@ pub(crate) fn finalize_lane_bindings(
             else {
                 continue;
             };
-            ctx.reserve_collection_vec(&mut links, 1, "collect SLDPRT scalar local links")?;
+            ctx.reserve_vec(&mut links, 1, "collect SLDPRT scalar local links")?;
             links.push(SketchInputLink {
                 local_id,
                 entity_ref: copy_binding_text(ctx, entity_ref)?,
@@ -1535,7 +1523,7 @@ pub(crate) fn finalize_lane_bindings(
         if let Some(feature) = entity.feature_ref.as_deref() {
             reserve_binding_map(ctx, &mut entities_by_feature)?;
             let entities = entities_by_feature.entry(feature).or_default();
-            ctx.reserve_collection_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
+            ctx.reserve_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
             entities.push(entity);
         }
     }
@@ -1696,7 +1684,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     let mut starts = ctx.alloc_filled(1, first, "collect SLDPRT detached sketch starts")?;
     for pair in markers.windows(2) {
         if pair[1] >= pair[0] && pair[1] - pair[0] >= OBJECT_GAP {
-            ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT detached sketch starts")?;
+            ctx.reserve_vec(&mut starts, 1, "collect SLDPRT detached sketch starts")?;
             starts.push(pair[1]);
         }
     }
@@ -1778,7 +1766,7 @@ pub(super) fn spatial_relation_manager_ranges_charged(
     )?;
     let mut ranges = Vec::new();
     for range in spatial_relation_manager_candidates(lane) {
-        ctx.reserve_collection_vec(&mut ranges, 1, "collect SLDPRT spatial relation ranges")?;
+        ctx.reserve_vec(&mut ranges, 1, "collect SLDPRT spatial relation ranges")?;
         ranges.push(range);
     }
     ranges.sort_unstable();
@@ -1846,7 +1834,7 @@ fn bind_detached_spatial_relation_objects(
             let Some(value) = crate::history::literals::parse_dimension_length_mm(value) else {
                 continue 'owner;
             };
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut dimensions,
                 1,
                 "collect SLDPRT spatial sketch dimensions",
@@ -1854,7 +1842,7 @@ fn bind_detached_spatial_relation_objects(
             dimensions.push((name.as_str(), value));
         }
         if dimensions.len() >= 3 {
-            ctx.reserve_collection_vec(&mut owners, 1, "collect SLDPRT spatial sketch owners")?;
+            ctx.reserve_vec(&mut owners, 1, "collect SLDPRT spatial sketch owners")?;
             owners.push((feature, dimensions));
         }
     }
@@ -1914,7 +1902,7 @@ fn bind_detached_spatial_relation_objects(
                 }
             }
             if exact {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut candidates,
                     1,
                     "collect SLDPRT spatial sketch candidates",
@@ -1949,7 +1937,7 @@ fn bind_detached_spatial_relation_objects(
             .count()
             == 1
         {
-            ctx.reserve_collection_vec(&mut bound, 1, "collect SLDPRT spatial sketch bindings")?;
+            ctx.reserve_vec(&mut bound, 1, "collect SLDPRT spatial sketch bindings")?;
             bound.push((start, end, copy_binding_text(ctx, owner)?));
         }
     }
@@ -2197,11 +2185,7 @@ fn copy_binding_text(
             )
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT scalar binding identity")?;
-    crate::text_admission::format_retained(
-        ctx,
-        format_args!("{text}"),
-        "retain SLDPRT scalar binding identity",
-    )
+    ctx.format_retained(format_args!("{text}"), "retain SLDPRT scalar binding identity")
 }
 
 fn reserve_binding_map<K: Eq + std::hash::Hash, V>(
@@ -2231,7 +2215,7 @@ fn collect_binding_vec<T>(
     let mut values = Vec::new();
     for item in items {
         ctx.charge_work(1, "scan SLDPRT scalar binding candidates")?;
-        ctx.reserve_collection_vec(&mut values, 1, "collect SLDPRT scalar binding candidates")?;
+        ctx.reserve_vec(&mut values, 1, "collect SLDPRT scalar binding candidates")?;
         values.push(item);
     }
     Ok(values)

@@ -37,7 +37,7 @@ fn copy_sequence<T, U>(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(u64_from_index(work), operation)?;
     let mut copied = Vec::new();
-    ctx.reserve_collection_vec(&mut copied, values.len(), operation)?;
+    ctx.reserve_vec(&mut copied, values.len(), operation)?;
     for value in values {
         copied.push(copy(value)?);
     }

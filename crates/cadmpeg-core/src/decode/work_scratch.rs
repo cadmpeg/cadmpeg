@@ -17,7 +17,7 @@ impl<'a> WorkScratch<'a> {
         operation: &'static str,
     ) -> Result<Self, ResourceLimit> {
         let reservation = session
-            .map(|session| session.reserve_scoped_resource(bytes, operation))
+            .map(|session| session.reserve_scoped_limit(bytes, operation))
             .transpose()?;
         Ok(Self { reservation })
     }

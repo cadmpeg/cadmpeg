@@ -124,7 +124,7 @@ pub(crate) fn spatial_sketches(
                         && scalar.offset > start
                         && scalar.offset < end
                 }) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut relation_ranges,
                         1,
                         "collect SLDPRT active spatial relation ranges",
@@ -165,12 +165,12 @@ pub(crate) fn spatial_sketches(
                             .flatten()
                     });
                 if let Some(point) = point {
-                    ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT spatial points")?;
+                    ctx.reserve_vec(&mut points, 1, "collect SLDPRT spatial points")?;
                     points.push((marker.id(), point, offset));
                 }
             }
             if !points.is_empty() {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut point_candidates,
                     1,
                     "collect SLDPRT spatial point lanes",
@@ -201,7 +201,7 @@ pub(crate) fn spatial_sketches(
                     break;
                 };
                 let native_ref = copy_spatial_text(ctx, native_ref)?;
-                ctx.reserve_collection_vec(&mut projected, 1, "project SLDPRT spatial points")?;
+                ctx.reserve_vec(&mut projected, 1, "project SLDPRT spatial points")?;
                 projected.push((*offset, Some(native_ref), geometry));
             }
             if !valid_points {
@@ -218,7 +218,7 @@ pub(crate) fn spatial_sketches(
                     valid_lines = false;
                     break;
                 };
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut projected_lines,
                     1,
                     "project SLDPRT spatial lines",
@@ -228,7 +228,7 @@ pub(crate) fn spatial_sketches(
             if !valid_lines {
                 continue;
             }
-            ctx.reserve_precharged_vec(
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
                 &mut projected,
                 projected_lines.len(),
                 "merge SLDPRT spatial lines",
@@ -250,7 +250,7 @@ pub(crate) fn spatial_sketches(
                 None
             };
             let native_lane_ref = copy_spatial_text(ctx, &lane.id)?;
-            ctx.reserve_collection_vec(&mut sketches, 1, "collect SLDPRT spatial sketches")?;
+            ctx.reserve_vec(&mut sketches, 1, "collect SLDPRT spatial sketches")?;
             sketches.push(SpatialSketch {
                 id: sketch_record_id,
                 name,
@@ -260,16 +260,12 @@ pub(crate) fn spatial_sketches(
                 native_ref: Some(native_lane_ref),
             });
             for (index, (_, native_ref, geometry)) in projected.into_iter().enumerate() {
-                let entity_id = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{}:entity:{index}", sketch_id.as_str()),
-                    "retain SLDPRT spatial entity identity",
-                )?;
+                let entity_id = ctx.format_retained(format_args!("{}:entity:{index}", sketch_id.as_str()), "retain SLDPRT spatial entity identity")?;
                 let Ok(entity_id) = SpatialSketchEntityId::mint(entity_id) else {
                     continue;
                 };
                 let owner = clone_spatial_sketch_id(ctx, &sketch_id)?;
-                ctx.reserve_collection_vec(&mut entities, 1, "collect SLDPRT spatial entities")?;
+                ctx.reserve_vec(&mut entities, 1, "collect SLDPRT spatial entities")?;
                 entities.push(
                     SpatialSketchEntity::new(entity_id, owner, geometry)
                         .with_native_ref(native_ref),
@@ -309,7 +305,7 @@ pub(crate) fn spatial_sketches(
             };
             let vertices = spatial_vertex_coordinates_charged(ctx, object)?;
             if vertices.len() >= 2 && vertices.len().is_multiple_of(2) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut candidates,
                     1,
                     "collect SLDPRT spatial line lanes",
@@ -332,11 +328,7 @@ pub(crate) fn spatial_sketches(
         let mut projected = Vec::new();
         let mut valid_lines = true;
         for (index, vertices) in vertices.chunks_exact(2).enumerate() {
-            let entity_id = crate::text_admission::format_retained(
-                ctx,
-                format_args!("{}:entity:{index}", sketch_id.as_str()),
-                "retain SLDPRT spatial entity identity",
-            )?;
+            let entity_id = ctx.format_retained(format_args!("{}:entity:{index}", sketch_id.as_str()), "retain SLDPRT spatial entity identity")?;
             let (Ok(entity_id), Ok(geometry)) = (
                 SpatialSketchEntityId::mint(entity_id),
                 SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1]),
@@ -345,7 +337,7 @@ pub(crate) fn spatial_sketches(
                 break;
             };
             let owner = clone_spatial_sketch_id(ctx, &sketch_id)?;
-            ctx.reserve_collection_vec(&mut projected, 1, "project SLDPRT spatial line entities")?;
+            ctx.reserve_vec(&mut projected, 1, "project SLDPRT spatial line entities")?;
             projected.push(SpatialSketchEntity::new(entity_id, owner, geometry));
         }
         if !valid_lines {
@@ -364,7 +356,7 @@ pub(crate) fn spatial_sketches(
             .map(|name| copy_spatial_text(ctx, name))
             .transpose()?;
         let native_lane_ref = copy_spatial_text(ctx, &lane.id)?;
-        ctx.reserve_collection_vec(&mut sketches, 1, "collect SLDPRT spatial sketches")?;
+        ctx.reserve_vec(&mut sketches, 1, "collect SLDPRT spatial sketches")?;
         sketches.push(SpatialSketch {
             id: sketch_record_id,
             name,
@@ -373,7 +365,7 @@ pub(crate) fn spatial_sketches(
             profiles: Vec::new(),
             native_ref: Some(native_lane_ref),
         });
-        ctx.reserve_precharged_vec(
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             &mut entities,
             projected.len(),
             "merge SLDPRT spatial line entities",
@@ -398,12 +390,7 @@ fn copy_spatial_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, Cod
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT spatial identity")?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut copy,
-        value.len(),
-        "retain SLDPRT spatial identity",
-    )?;
+    ctx.try_reserve_retained_text(&mut copy, value.len(), "retain SLDPRT spatial identity")?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -417,11 +404,7 @@ fn spatial_sketch_id_charged(
     let value = if let Some(index) = feature_id.find(FEATURE_PREFIX) {
         let (head, tail) = feature_id.split_at(index);
         let suffix = &tail[FEATURE_PREFIX.len()..];
-        crate::text_admission::format_retained(
-            ctx,
-            format_args!("{head}{SKETCH_PREFIX}{suffix}"),
-            "retain SLDPRT spatial sketch identity",
-        )?
+        ctx.format_retained(format_args!("{head}{SKETCH_PREFIX}{suffix}"), "retain SLDPRT spatial sketch identity")?
     } else {
         copy_spatial_text(ctx, feature_id)?
     };
@@ -867,7 +850,7 @@ pub(super) fn spatial_vertex_coordinates_charged(
         else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut vertices, 1, "collect SLDPRT spatial vertices")?;
+        ctx.reserve_vec(&mut vertices, 1, "collect SLDPRT spatial vertices")?;
         vertices.push(point);
     }
     Ok(vertices)
@@ -888,7 +871,7 @@ pub(super) fn spatial_vertex_offsets_charged(
         if bytes == SPATIAL_VERTEX_PREFIX
             && payload.get(offset + 43..offset + 45) == Some(&[0x0e, 0x00])
         {
-            ctx.reserve_collection_vec(&mut offsets, 1, "collect SLDPRT spatial vertex offsets")?;
+            ctx.reserve_vec(&mut offsets, 1, "collect SLDPRT spatial vertex offsets")?;
             offsets.push(offset);
         }
     }
@@ -912,10 +895,7 @@ pub(super) fn admit_sketch_input_entities(
         .enumerate()
         .try_fold(Vec::new(), |mut entities, (ordinal, offset)| {
             let Some(code) = marker_native_code(payload, offset) else {
-                return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx,
-                    format_args!("SolidWorks feature-input marker at byte {offset} has no native code"),
-                    "report SLDPRT marker native code",
-                )?));
+                return Err(CodecError::Malformed(ctx.format_retained(format_args!("SolidWorks feature-input marker at byte {offset} has no native code"), "report SLDPRT marker native code")?));
             };
             let linked_point = linked_profile_point(payload, offset);
             let legacy_alternate_profile_point =
@@ -1052,21 +1032,11 @@ pub(super) fn admit_sketch_input_entities(
                 SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
             };
             let Ok(ordinal) = u32::try_from(ordinal) else {
-                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx,
-                        format_args!("SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"),
-                        "report SLDPRT marker count",
-                    )?));
+                    return Err(CodecError::Malformed(ctx.format_retained(format_args!("SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"), "report SLDPRT marker count")?));
             };
-            let id = crate::text_admission::format_retained(ctx,
-                format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
-                "retain SLDPRT sketch marker identity",
-            )?;
+            let id = ctx.format_retained(format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"), "retain SLDPRT sketch marker identity")?;
             let mut parent_copy = String::new();
-            crate::text_admission::reserve_retained_string(ctx,
-                &mut parent_copy,
-                parent.len(),
-                "retain SLDPRT sketch marker parent",
-            )?;
+            ctx.try_reserve_retained_text(&mut parent_copy, parent.len(), "retain SLDPRT sketch marker parent")?;
             parent_copy.push_str(parent);
             let offset_u64 = u64::try_from(offset).map_err(|_| {
                 ctx.refuse_codec_limit("address SLDPRT sketch marker", u64::MAX - 1, u64::MAX)
@@ -1081,15 +1051,12 @@ pub(super) fn admit_sketch_input_entities(
             ) {
                 Ok(entity) => entity,
                 Err(error) => {
-                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx,
-                        format_args!("SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"),
-                        "report SLDPRT marker construction",
-                    )?));
+                    return Err(CodecError::Malformed(ctx.format_retained(format_args!("SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"), "report SLDPRT marker construction")?));
                 }
             };
             entity.state_value = marker_state_value(payload, offset);
             entity.coordinates_m = coordinates_m;
-            ctx.reserve_collection_vec(&mut entities, 1, "collect SLDPRT sketch markers")?;
+            ctx.reserve_vec(&mut entities, 1, "collect SLDPRT sketch markers")?;
             entities.push(entity);
             Ok(entities)
         })
@@ -1347,14 +1314,10 @@ pub(super) fn relation_bindings_scoped(
         let ordinal = u32::try_from(bindings.len()).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation bindings", u64::MAX - 1, u64::MAX)
         })?;
-        let id = crate::text_admission::format_retained(
-            ctx,
-            format_args!(
+        let id = ctx.format_retained(format_args!(
                 "sldprt:feature-input:relation-binding#{lane_key}:{}",
                 class.offset
-            ),
-            "retain SLDPRT relation binding identity",
-        )?;
+            ), "retain SLDPRT relation binding identity")?;
         let parent = copy_reference_text(ctx, parent)?;
         let class_ref = copy_reference_text(ctx, &class.id)?;
         let scalar_ref = copy_reference_text(ctx, &scalar.id)?;
@@ -1363,7 +1326,7 @@ pub(super) fn relation_bindings_scoped(
             .as_deref()
             .map(|feature| copy_reference_text(ctx, feature))
             .transpose()?;
-        ctx.reserve_collection_vec(&mut bindings, 1, "collect SLDPRT relation bindings")?;
+        ctx.reserve_vec(&mut bindings, 1, "collect SLDPRT relation bindings")?;
         bindings.push(FeatureInputRelationBinding {
             id,
             parent,
@@ -1393,7 +1356,7 @@ pub(crate) fn reference_cells_charged(
                 .as_deref()
                 .map(|feature| copy_reference_text(ctx, feature))
                 .transpose()?;
-            ctx.reserve_collection_vec(&mut cells, 1, "collect SLDPRT reference cells")?;
+            ctx.reserve_vec(&mut cells, 1, "collect SLDPRT reference cells")?;
             cells.push(FeatureInputReference {
                 id,
                 parent,
@@ -1452,7 +1415,7 @@ pub(crate) fn reference_cells_charged(
                 declarations.insert(cell.kind, Vec::new());
             }
             if let Some(group) = declarations.get_mut(&cell.kind) {
-                ctx.reserve_collection_vec(group, 1, "collect SLDPRT reference declarations")?;
+                ctx.reserve_vec(group, 1, "collect SLDPRT reference declarations")?;
                 group.push(class);
             }
         }
@@ -1477,12 +1440,7 @@ fn copy_reference_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, C
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT reference identity")?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut copy,
-        value.len(),
-        "retain SLDPRT reference identity",
-    )?;
+    ctx.try_reserve_retained_text(&mut copy, value.len(), "retain SLDPRT reference identity")?;
     copy.push_str(value);
     Ok(copy)
 }

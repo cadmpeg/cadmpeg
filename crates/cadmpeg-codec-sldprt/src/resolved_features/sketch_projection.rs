@@ -22,7 +22,7 @@ fn retained_text(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -43,7 +43,7 @@ fn retained_format(
     fmt::write(&mut count, args)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     let mut result = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut result, count.0, operation)?;
+    ctx.try_reserve_retained_text(&mut result, count.0, operation)?;
     fmt::write(&mut result, args)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     Ok(result)
@@ -236,12 +236,7 @@ fn project_brep(
                                 ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
                             })?;
                         let mut message = String::new();
-                        crate::text_admission::reserve_retained_string(
-                            ctx,
-                            &mut message,
-                            message_len,
-                            operation,
-                        )?;
+                        ctx.try_reserve_retained_text(&mut message, message_len, operation)?;
                         for (index, record) in edge_refusals.iter().enumerate() {
                             if index != 0 {
                                 message.push_str("; ");
@@ -284,7 +279,7 @@ fn project_brep(
                         })
                         .transpose()?;
                     let mut endpoint_refs = Vec::new();
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut endpoint_refs,
                         2,
                         "collect SLDPRT sketch edge endpoints",
@@ -308,7 +303,7 @@ fn project_brep(
                         "retain SLDPRT entity sketch ID",
                     )?)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                    ctx.reserve_collection_vec(entities, 1, "collect SLDPRT sketch edge entities")?;
+                    ctx.reserve_vec(entities, 1, "collect SLDPRT sketch edge entities")?;
                     entities.push(
                         SketchEntity::new(entity_id, entity_sketch_id, geometry)
                             .with_native_ref(Some(native_edge_ref))
@@ -329,7 +324,7 @@ fn project_brep(
                     id
                 };
                 if edge.curve().is_some() || edge.start != edge.end {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut profile,
                         1,
                         "collect SLDPRT sketch profile uses",
@@ -342,7 +337,7 @@ fn project_brep(
             }
             if !profile.is_empty() {
                 orient_closed_profile_by_topology(ctx, &mut profile, &entities[first_entity..])?;
-                ctx.reserve_collection_vec(&mut profiles, 1, "collect SLDPRT sketch profiles")?;
+                ctx.reserve_vec(&mut profiles, 1, "collect SLDPRT sketch profiles")?;
                 profiles.push(profile);
             }
         }
@@ -389,7 +384,7 @@ fn project_brep(
                 "retain SLDPRT sketch native vertex reference",
             )?;
             let mut endpoint_refs = Vec::new();
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut endpoint_refs,
                 1,
                 "collect SLDPRT sketch point endpoints",
@@ -399,7 +394,7 @@ fn project_brep(
                 format_args!("{stream_ordinal}:{}", vertex.point.as_str()),
                 "retain SLDPRT sketch point endpoint",
             )?);
-            ctx.reserve_collection_vec(entities, 1, "collect SLDPRT sketch point entities")?;
+            ctx.reserve_vec(entities, 1, "collect SLDPRT sketch point entities")?;
             entities.push(
                 SketchEntity::new(id, entity_sketch_id, geometry)
                     .with_native_ref(Some(native_vertex_ref))
@@ -439,7 +434,7 @@ fn project_brep(
             .map(|name| retained_text(ctx, name, "retain SLDPRT sketch configuration"))
             .transpose()?;
         let native_ref = retained_text(ctx, native_ref, "retain SLDPRT sketch native reference")?;
-        ctx.reserve_collection_vec(sketches, 1, "collect SLDPRT projected sketches")?;
+        ctx.reserve_vec(sketches, 1, "collect SLDPRT projected sketches")?;
         sketches.push(Sketch {
             id: sketch_id,
             name,
@@ -463,7 +458,7 @@ fn orient_closed_profile_by_topology(
     }
     let entities = index_brep(ctx, entities, |entity| (entity.id(), entity))?;
     let mut orientations = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut orientations,
         profile.len(),
         "collect SLDPRT sketch profile orientations",

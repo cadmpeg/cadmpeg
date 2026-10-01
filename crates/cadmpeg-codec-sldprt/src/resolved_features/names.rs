@@ -12,7 +12,7 @@ fn retained_text(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut retained = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut retained, text.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut retained, text.len(), operation)?;
     retained.push_str(text);
     Ok(retained)
 }
@@ -43,12 +43,7 @@ fn record_id(
             )
         })?;
     let mut id = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut id,
-        length,
-        "retain SLDPRT feature input record ID",
-    )?;
+    ctx.try_reserve_retained_text(&mut id, length, "retain SLDPRT feature input record ID")?;
     std::fmt::Write::write_fmt(
         &mut id,
         format_args!("sldprt:feature-input:{family}#{lane_key}:{offset}"),
@@ -101,12 +96,7 @@ pub(crate) fn object_names(
             continue;
         }
         let mut value = String::new();
-        crate::text_admission::reserve_retained_string(
-            ctx,
-            &mut value,
-            length,
-            "retain SLDPRT feature input name",
-        )?;
+        ctx.try_reserve_retained_text(&mut value, length, "retain SLDPRT feature input name")?;
         for character in std::char::decode_utf16(utf16_units(units)) {
             let Ok(character) = character else {
                 valid = false;
@@ -119,7 +109,7 @@ pub(crate) fn object_names(
         }
         let id = record_id(ctx, "name", lane_key, offset)?;
         let parent = retained_text(ctx, parent, "retain SLDPRT feature input name parent")?;
-        ctx.reserve_collection_vec(&mut names, 1, "collect SLDPRT feature input names")?;
+        ctx.reserve_vec(&mut names, 1, "collect SLDPRT feature input names")?;
         names.push(FeatureInputName {
             id,
             parent,
@@ -307,7 +297,7 @@ pub(crate) fn class_declarations(
         let id = record_id(ctx, "class", lane_key, offset)?;
         let parent = retained_text(ctx, parent, "retain SLDPRT feature input class parent")?;
         let name = retained_text(ctx, name, "retain SLDPRT feature input class name")?;
-        ctx.reserve_collection_vec(&mut classes, 1, "collect SLDPRT feature input classes")?;
+        ctx.reserve_vec(&mut classes, 1, "collect SLDPRT feature input classes")?;
         classes.push(FeatureInputClass {
             id,
             parent,

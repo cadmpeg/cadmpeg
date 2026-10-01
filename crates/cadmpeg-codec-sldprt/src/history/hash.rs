@@ -205,7 +205,7 @@ pub(crate) fn native_parameter_hash(
                     _ => None,
                 }),
             )?;
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut parameters,
                 1,
                 "retain SLDPRT native parameter hash view",
@@ -251,7 +251,7 @@ fn collect_hash_views<T>(
         let Some(value) = values.next() else {
             break;
         };
-        ctx.reserve_collection_vec(&mut views, 1, "retain SLDPRT canonical hash views")?;
+        ctx.reserve_vec(&mut views, 1, "retain SLDPRT canonical hash views")?;
         views.push(value);
     }
     Ok(views)

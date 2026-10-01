@@ -2140,7 +2140,7 @@ impl FeatureContent {
                 "source_content repeats a parameter or child-feature reference",
             ));
         }
-        ctx.reserve_collection_vec(&mut self.0, 1, operation)?;
+        ctx.reserve_vec(&mut self.0, 1, operation)?;
         self.0.push(value);
         Ok(())
     }
@@ -6455,7 +6455,7 @@ fn reserve_feature_selection_copy<T>(
         .and_then(|count| count.checked_mul(std::mem::size_of::<T>()))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-    ctx.reserve_collection_vec(values, 1, operation)
+    ctx.reserve_vec(values, 1, operation)
 }
 
 /// A nonempty sequence of members in source order.
@@ -6842,7 +6842,7 @@ impl<T: PartialEq> DistinctMembers<T> {
         if self.0.contains(&value) {
             return Ok(false);
         }
-        ctx.reserve_collection_vec(&mut self.0, 1, operation)?;
+        ctx.reserve_vec(&mut self.0, 1, operation)?;
         self.0.push(value);
         Ok(true)
     }

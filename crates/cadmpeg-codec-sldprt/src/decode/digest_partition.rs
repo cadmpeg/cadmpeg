@@ -40,9 +40,9 @@ impl<T> DigestPartition<T> {
         let mut kept = Vec::new();
         let mut excluded = Vec::new();
         let mut kept_positions = Vec::new();
-        ctx.reserve_collection_vec(&mut kept, kept_count, operation)?;
-        ctx.reserve_collection_vec(&mut excluded, excluded_count, operation)?;
-        ctx.reserve_collection_vec(&mut kept_positions, kept_count, operation)?;
+        ctx.reserve_vec(&mut kept, kept_count, operation)?;
+        ctx.reserve_vec(&mut excluded, excluded_count, operation)?;
+        ctx.reserve_vec(&mut kept_positions, kept_count, operation)?;
         Ok(Self {
             original_len: source.len(),
             original: Vec::new(),

@@ -39,7 +39,7 @@ pub(crate) fn lanes(
             continue;
         }
         let lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
-        ctx.reserve_collection_vec(&mut result, 1, "collect SLDPRT feature input lanes")?;
+        ctx.reserve_vec(&mut result, 1, "collect SLDPRT feature input lanes")?;
         result.push(lane);
     }
     Ok(result)
@@ -67,7 +67,7 @@ pub(crate) fn supplemental_config_lanes(
             && legacy_sketch_object_stream(ctx, source.payload())?
         {
             let lane = feature_input_lane(ctx, source, section, "config-objects", annotations)?;
-            ctx.reserve_collection_vec(&mut lanes, 1, "collect SLDPRT supplemental feature lanes")?;
+            ctx.reserve_vec(&mut lanes, 1, "collect SLDPRT supplemental feature lanes")?;
             lanes.push(lane);
         }
     }
@@ -128,11 +128,7 @@ fn feature_input_lane(
     Ok(FeatureInputLane {
         id: parent,
         configuration: configuration(ctx, section)?,
-        native_payload: crate::byte_admission::copy_retained(
-            ctx,
-            payload,
-            "retain SLDPRT feature input payload",
-        )?,
+        native_payload: ctx.copy_retained(payload, "retain SLDPRT feature input payload")?,
         classes,
         names,
         scalars,

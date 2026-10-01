@@ -71,7 +71,7 @@ impl BodyCandidate {
         })?;
         ctx.charge_collection_items(count, "copy Parasolid body ownership references")?;
         let mut ownership_refs = Vec::new();
-        ctx.reserve_precharged_vec(
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             &mut ownership_refs,
             self.ownership_len,
             "copy Parasolid body ownership references",
@@ -98,7 +98,7 @@ impl BodyNode {
             "copy typed Parasolid body ownership references",
         )?;
         let mut ownership_refs = Vec::new();
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut ownership_refs,
             self.ownership_refs.len(),
             "copy typed Parasolid body ownership references",
@@ -240,7 +240,7 @@ impl Facts {
     pub(super) fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         charge_record_copy::<BodyNode>(ctx, self.bodies.len(), "copy typed Parasolid bodies")?;
         let mut bodies = Vec::new();
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut bodies,
             self.bodies.len(),
             "copy typed Parasolid bodies",
@@ -252,7 +252,7 @@ impl Facts {
                 "copy typed Parasolid body references",
             )?;
             let mut ownership_refs = Vec::new();
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut ownership_refs,
                 body.ownership_refs.len(),
                 "copy typed Parasolid body references",
@@ -270,7 +270,7 @@ impl Facts {
         }
         charge_record_copy::<ShellNode>(ctx, self.shells.len(), "copy typed Parasolid shells")?;
         let mut shells = Vec::new();
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut shells,
             self.shells.len(),
             "copy typed Parasolid shells",
@@ -278,7 +278,7 @@ impl Facts {
         shells.extend_from_slice(&self.shells);
         charge_record_copy::<RegionNode>(ctx, self.regions.len(), "copy typed Parasolid regions")?;
         let mut regions = Vec::new();
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut regions,
             self.regions.len(),
             "copy typed Parasolid regions",
@@ -286,7 +286,7 @@ impl Facts {
         regions.extend_from_slice(&self.regions);
         charge_record_copy::<FaceNode>(ctx, self.faces.len(), "copy typed Parasolid faces")?;
         let mut faces = Vec::new();
-        ctx.reserve_collection_vec(&mut faces, self.faces.len(), "copy typed Parasolid faces")?;
+        ctx.reserve_vec(&mut faces, self.faces.len(), "copy typed Parasolid faces")?;
         faces.extend_from_slice(&self.faces);
         Ok(Self {
             bodies,
@@ -503,7 +503,7 @@ impl Facts {
                     && body_region_attrs.contains(&u16_from_ref_or_none(shell.refs[6]).unwrap_or(0))
                     && (shell.refs[1] == u32::from(body_attr) || shell.refs[1] <= 1)
             }) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut body_shells,
                     1,
                     "collect typed Parasolid body shells",
@@ -525,7 +525,7 @@ impl Facts {
                 if !assigned_faces.insert(*face_attr) {
                     return Ok(None);
                 }
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut hierarchy_faces,
                     1,
                     "collect typed Parasolid hierarchy faces",
@@ -533,7 +533,7 @@ impl Facts {
                 hierarchy_faces.push((*face_attr, shell.attr));
             }
 
-            ctx.reserve_collection_vec(&mut out, 1, "collect typed Parasolid hierarchies")?;
+            ctx.reserve_vec(&mut out, 1, "collect typed Parasolid hierarchies")?;
             out.push(Hierarchy {
                 body: body.try_clone(ctx)?,
                 regions: body_regions,
@@ -602,7 +602,7 @@ impl Facts {
             if shell_body.is_some_and(|shell_body| shell_body != body) {
                 continue;
             }
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut shell_candidates,
                 1,
                 "collect typed Parasolid shell candidates",
@@ -827,7 +827,7 @@ fn region_chain_from_head(
             return Ok(None);
         }
         let following = region.refs[2];
-        ctx.reserve_collection_vec(&mut out, 1, "collect typed Parasolid region chain")?;
+        ctx.reserve_vec(&mut out, 1, "collect typed Parasolid region chain")?;
         out.push(region.clone());
         if following <= 1 {
             break;
@@ -884,7 +884,7 @@ where
     for node in source {
         ctx.charge_work(1, "merge typed Parasolid records")?;
         if !present.contains(&key(&node)) {
-            ctx.reserve_collection_vec(target, 1, "merge typed Parasolid records")?;
+            ctx.reserve_vec(target, 1, "merge typed Parasolid records")?;
             target.push(node);
         }
     }
@@ -1135,7 +1135,7 @@ fn push_record<T, F: FnOnce() -> Result<T, CodecError>>(
             )
         })?;
     }
-    ctx.reserve_precharged_vec(records, 1, "admit typed Parasolid record")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(records, 1, "admit typed Parasolid record")?;
     let record = record()?;
     offsets.insert(offset);
     records.push(record);

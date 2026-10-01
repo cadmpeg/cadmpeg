@@ -95,7 +95,7 @@ pub(super) fn declared_line_reference_directions(
     };
     let mut directions = Vec::new();
     if let Some(direction) = line_reference_direction(&payload[..end], class_offset as u64) {
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut directions,
             1,
             "collect SLDPRT declared line directions",
@@ -145,7 +145,7 @@ pub(super) fn declared_line_reference_directions(
         };
         if let Some(candidate) = candidate {
             if !directions.contains(&candidate) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut directions,
                     1,
                     "collect SLDPRT declared line directions",
@@ -323,7 +323,7 @@ pub(super) fn compact_line_reference_directions(
             if directions.len() == 1 {
                 let candidate = directions[0];
                 if !unique_directions.contains(&candidate) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut unique_directions,
                         1,
                         "collect SLDPRT compact line directions",
@@ -445,7 +445,7 @@ pub(super) fn compact_line_reference_directions(
         if directions.len() == 1 {
             let candidate = directions[0];
             if !unique_directions.contains(&candidate) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut unique_directions,
                     1,
                     "collect SLDPRT compact line directions",
@@ -560,7 +560,7 @@ fn revolution_line_reference_inputs(
                     )),
                     square_sum_unit_direction([dx, dy, dz]),
                 ) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut candidates,
                         1,
                         "collect SLDPRT revolution line references",
@@ -589,7 +589,7 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(compact_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(compact_frame, 9) {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut candidates,
                             1,
                             "collect SLDPRT revolution line references",
@@ -606,7 +606,7 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(addressed_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(addressed_frame, 8) {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut candidates,
                             1,
                             "collect SLDPRT revolution line references",
@@ -633,7 +633,7 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(record_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(frame, 8) {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut candidates,
                             1,
                             "collect SLDPRT revolution line references",
@@ -662,7 +662,7 @@ fn revolution_line_reference_inputs(
                 source_cell(source_offset),
                 axis_record(handle_start + 24, 7),
             ) {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut candidates,
                     1,
                     "collect SLDPRT revolution line references",
@@ -704,7 +704,7 @@ fn revolution_line_reference_inputs(
                     let record_end = frame + scalar_count * 8;
                     if next_class_after_zeros(record_end, 24).is_some() {
                         if let Some(axis) = axis_record(frame, scalar_count) {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut candidates,
                                 1,
                                 "collect SLDPRT revolution line references",
@@ -806,7 +806,7 @@ fn revolution_line_reference_inputs(
                     let candidate = (source, origin, direction);
                     let ranked = (handle_start, scalar_count, candidate);
                     if !candidates.contains(&ranked) {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut candidates,
                             1,
                             "collect SLDPRT revolution line references",
@@ -833,7 +833,7 @@ fn revolution_line_reference_inputs(
     let mut selected = Vec::new();
     for (handle, rank, candidate) in candidates {
         if ranks.get(&handle) == Some(&rank) {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut selected,
                 1,
                 "collect SLDPRT ranked revolution references",
@@ -957,7 +957,7 @@ fn push_revolution_vote<T>(
 ) -> Result<(), CodecError> {
     ctx.charge_work(1, operation)?;
     if let Some(values) = votes.get_mut(id) {
-        ctx.reserve_collection_vec(values, 1, operation)?;
+        ctx.reserve_vec(values, 1, operation)?;
         values.push(value);
         return Ok(());
     }
@@ -965,13 +965,9 @@ fn push_revolution_vote<T>(
     votes
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    let id = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{id}"),
-        "retain SLDPRT revolution vote ID",
-    )?;
+    let id = ctx.format_retained(format_args!("{id}"), "retain SLDPRT revolution vote ID")?;
     let mut values = Vec::new();
-    ctx.reserve_collection_vec(&mut values, 1, operation)?;
+    ctx.reserve_vec(&mut values, 1, operation)?;
     values.push(value);
     votes.insert(id, values);
     Ok(())
@@ -1003,11 +999,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                     u64::MAX,
                 )
             })?;
-            let name = crate::text_admission::format_retained(
-                ctx,
-                format_args!("{}", feature.name),
-                "retain SLDPRT revolution feature name",
-            )?;
+            let name = ctx.format_retained(format_args!("{}", feature.name), "retain SLDPRT revolution feature name")?;
             name_counts.insert(name, 1);
         }
     }
@@ -1025,7 +1017,7 @@ pub(crate) fn enrich_history_revolution_inputs(
             if let Some(id) =
                 feature_object_name(feature, lane).and_then(|name| name.object_id?.value())
             {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut object_ids,
                     1,
                     "collect SLDPRT revolution profile sources",
@@ -1067,7 +1059,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                 }
             }
         }
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut profile_sources,
             1,
             "collect SLDPRT revolution profile sets",
@@ -1086,11 +1078,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                         u64::MAX,
                     )
                 })?;
-                let id = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{}", feature.id),
-                    "retain SLDPRT revolution profile owner",
-                )?;
+                let id = ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT revolution profile owner")?;
                 profile_source_owner.insert(id, history_index);
             }
         }
@@ -1104,7 +1092,7 @@ pub(crate) fn enrich_history_revolution_inputs(
             for feature in &history.features {
                 ctx.charge_work(1, "scan SLDPRT revolution feature objects")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut objects,
                         1,
                         "collect SLDPRT revolution feature objects",
@@ -1182,11 +1170,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                                 1,
                                 "insert SLDPRT revolution profile property",
                             )?;
-                            let value = crate::text_admission::format_retained(
-                                ctx,
-                                format_args!("{first}"),
-                                "retain SLDPRT revolution profile property",
-                            )?;
+                            let value = ctx.format_retained(format_args!("{first}"), "retain SLDPRT revolution profile property")?;
                             feature
                                 .properties
                                 .insert(cadmpeg_core::nonblank_literal!("Profile"), value);
@@ -1207,26 +1191,18 @@ pub(crate) fn enrich_history_revolution_inputs(
                 && !feature.properties.contains_key("AxisDirection")
             {
                 ctx.charge_collection_items(2, "insert SLDPRT revolution axis properties")?;
-                let origin = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!(
+                let origin = ctx.format_retained(format_args!(
                         "{}mm,{}mm,{}mm",
                         first.0.get().x,
                         first.0.get().y,
                         first.0.get().z
-                    ),
-                    "retain SLDPRT revolution axis origin",
-                )?;
-                let direction = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!(
+                    ), "retain SLDPRT revolution axis origin")?;
+                let direction = ctx.format_retained(format_args!(
                         "{},{},{}",
                         first.1.as_raw().x,
                         first.1.as_raw().y,
                         first.1.as_raw().z
-                    ),
-                    "retain SLDPRT revolution axis direction",
-                )?;
+                    ), "retain SLDPRT revolution axis direction")?;
                 feature
                     .properties
                     .insert(cadmpeg_core::nonblank_literal!("AxisOrigin"), origin);
@@ -1379,7 +1355,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 sketch,
                 generated_axis_surfaces,
             )? {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut candidates,
                     1,
                     "collect SLDPRT revolution axis candidates",
@@ -1412,7 +1388,7 @@ pub(crate) fn bind_profile_revolution_axes(
         )?;
         candidates.dedup();
         if let [axis] = candidates.as_slice() {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut assignments,
                 1,
                 "collect SLDPRT revolution axis assignments",
@@ -1451,7 +1427,7 @@ fn profile_roster_construction_axis(
 
     let mut markers = Vec::new();
     for marker in &lane.sketch_entities {
-        ctx.reserve_collection_vec(&mut markers, 1, "collect SLDPRT revolution profile markers")?;
+        ctx.reserve_vec(&mut markers, 1, "collect SLDPRT revolution profile markers")?;
         markers.push(marker);
     }
     let mut first_axis = None;
@@ -1812,7 +1788,7 @@ fn profile_roster_origin_axis_endpoints(
         });
     let mut candidates_sorted = Vec::new();
     for candidate in candidates {
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut candidates_sorted,
             1,
             "collect SLDPRT origin axis candidates",
@@ -1841,7 +1817,7 @@ fn profile_roster_origin_axis_endpoints(
         }) {
             continue;
         }
-        ctx.reserve_collection_vec(&mut lines, 1, "collect SLDPRT distinct origin axis lines")?;
+        ctx.reserve_vec(&mut lines, 1, "collect SLDPRT distinct origin axis lines")?;
         lines.push(candidate);
     }
     let incidence = |line: &[[f64; 2]; 2]| {
@@ -1963,7 +1939,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     });
     let mut unreferenced_points = Vec::new();
     for marker in candidates {
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut unreferenced_points,
             1,
             "collect SLDPRT unreferenced profile points",
@@ -1999,7 +1975,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native));
         let mut owned = Vec::new();
         for marker in owned_markers {
-            ctx.reserve_collection_vec(&mut owned, 1, "collect SLDPRT owned profile markers")?;
+            ctx.reserve_vec(&mut owned, 1, "collect SLDPRT owned profile markers")?;
             owned.push(marker);
         }
         owned.sort_unstable_by_key(|marker| marker.offset());
@@ -2042,7 +2018,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         if !bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
             continue;
         }
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut boundary_relations,
             1,
             "collect SLDPRT profile boundary relations",

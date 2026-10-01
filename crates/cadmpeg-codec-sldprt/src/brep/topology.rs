@@ -434,7 +434,7 @@ fn parse_point(
     })?;
     ctx.charge_collection_items(count, "copy Parasolid point references")?;
     let mut refs = Vec::new();
-    ctx.reserve_precharged_vec(
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut refs,
         reference_count,
         "copy Parasolid point references",
@@ -767,7 +767,7 @@ fn insert_candidates<T: Candidate>(
             {
                 let candidates = entry.get_mut();
                 ctx.charge_collection_items(count, "collect Parasolid topology frame candidates")?;
-                ctx.reserve_precharged_vec(
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
                     candidates,
                     records.len(),
                     "collect Parasolid topology frame candidates",
@@ -859,7 +859,7 @@ fn select_coedge(
         return Ok(candidates.first().cloned());
     }
     let mut evidence = Vec::new();
-    ctx.reserve_collection_vec(
+    ctx.reserve_vec(
         &mut evidence,
         candidates.len(),
         "collect Parasolid coedge evidence",
@@ -883,7 +883,7 @@ fn select_coedge(
         if !evidence.iter().enumerate().any(|(other, other_evidence)| {
             other != index && evidence_dominates(*other_evidence, evidence[index])
         }) {
-            ctx.reserve_collection_vec(&mut maximal, 1, "collect maximal Parasolid coedges")?;
+            ctx.reserve_vec(&mut maximal, 1, "collect maximal Parasolid coedges")?;
             maximal.push(index);
         }
     }
@@ -1051,7 +1051,7 @@ fn scan_with_point_framing(
             }
             0x0f => {
                 if let Some(record) = parse_loop(body, i) {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut loop_candidates,
                         1,
                         "collect Parasolid topology loop candidates",

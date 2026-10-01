@@ -116,7 +116,7 @@ fn copy_configuration_features(
         OPERATION,
     )?;
     let mut copied = Vec::new();
-    ctx.reserve_collection_vec(&mut copied, features.len(), OPERATION)?;
+    ctx.reserve_vec(&mut copied, features.len(), OPERATION)?;
     for feature in features {
         copied.push(feature.try_clone_charged(ctx, OPERATION)?);
     }
@@ -158,7 +158,7 @@ fn copy_configuration_state_features(
         let Some(state) = states.get(&feature.id) else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut copied, 1, OPERATION)?;
+        ctx.reserve_vec(&mut copied, 1, OPERATION)?;
         let mut feature = feature.try_clone_charged(ctx, OPERATION)?;
         apply_configuration_state(ctx, &mut feature, state)?;
         copied.push(feature);
@@ -764,13 +764,9 @@ pub(crate) fn project_configuration_sketch_states(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
                 let text = if let Some((prefix, suffix)) = id.split_once(":model:feature#") {
-                    crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{prefix}:model:spatial-sketch#{suffix}"),
-                        OPERATION,
-                    )?
+                    ctx.format_retained(format_args!("{prefix}:model:spatial-sketch#{suffix}"), OPERATION)?
                 } else {
-                    crate::text_admission::format_retained(ctx, format_args!("{id}"), OPERATION)?
+                    ctx.format_retained(format_args!("{id}"), OPERATION)?
                 };
                 let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(text) else {
                     continue;
@@ -810,11 +806,7 @@ pub(crate) fn project_configuration_sketch_states(
                     .and_then(|bytes| bytes.checked_add(1))
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-                let text = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{base_sketch}"),
-                    OPERATION,
-                )?;
+                let text = ctx.format_retained(format_args!("{base_sketch}"), OPERATION)?;
                 let copied = cadmpeg_ir::sketches::SpatialSketchId::mint(text)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 feature
@@ -857,7 +849,7 @@ pub(crate) fn project_configuration_sketch_states(
                     })
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-                ctx.reserve_collection_vec(&mut saved_values, 1, OPERATION)?;
+                ctx.reserve_vec(&mut saved_values, 1, OPERATION)?;
                 let copied = value.try_clone_charged(ctx, OPERATION)?;
                 saved_values.push((index, parameter.value.replace(copied)));
             }
@@ -1217,7 +1209,7 @@ fn inherit_configuration_hole_semantics(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
             let mut copied = Vec::new();
-            ctx.reserve_collection_vec(&mut copied, base_placements.len(), OPERATION)?;
+            ctx.reserve_vec(&mut copied, base_placements.len(), OPERATION)?;
             copied.extend(base_placements.iter().cloned());
             *placements = Some(copied);
         }
@@ -1422,11 +1414,7 @@ fn copy_configuration_feature_id(
         .and_then(|bytes| bytes.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-    FeatureId::mint(crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", id.as_str()),
-        operation,
-    )?)
+    FeatureId::mint(ctx.format_retained(format_args!("{}", id.as_str()), operation)?)
     .map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -1665,7 +1653,7 @@ fn configuration_surface_carriers(
     let Some(body_ids) = configuration.bodies.as_deref() else {
         // Unresolved membership uses every neutral surface carrier.
         let mut surfaces = Vec::new();
-        ctx.reserve_collection_vec(&mut surfaces, ir.model.surfaces.len(), OPERATION)?;
+        ctx.reserve_vec(&mut surfaces, ir.model.surfaces.len(), OPERATION)?;
         for surface in &ir.model.surfaces {
             surfaces.push(surface.try_clone_charged(ctx, OPERATION)?);
         }
@@ -1731,7 +1719,7 @@ fn configuration_surface_carriers(
                 })
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-            ctx.reserve_collection_vec(&mut surfaces, 1, OPERATION)?;
+            ctx.reserve_vec(&mut surfaces, 1, OPERATION)?;
             surfaces.push(surface.try_clone_charged(ctx, OPERATION)?);
         }
     }
@@ -1860,7 +1848,7 @@ pub(super) fn configuration_lane_assignments(
             ctx.charge_collection_items(1, "index SLDPRT configuration lane identities")?;
         }
         let indices = lanes_by_configuration.entry(slot_index).or_default();
-        ctx.reserve_collection_vec(indices, 1, "collect SLDPRT configuration lane indices")?;
+        ctx.reserve_vec(indices, 1, "collect SLDPRT configuration lane indices")?;
         indices.push(lane_index);
     }
     let mut result = Vec::new();
@@ -1871,7 +1859,7 @@ pub(super) fn configuration_lane_assignments(
         if let Some(configuration_index) =
             configuration_index_for_slot(ctx, configurations, slot_index)?
         {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut result,
                 1,
                 "collect SLDPRT configuration lane assignments",

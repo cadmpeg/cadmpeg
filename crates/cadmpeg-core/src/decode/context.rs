@@ -2,7 +2,6 @@
 //! Decode state, decompression limits, and session lifecycle.
 
 use std::cell::Cell;
-use std::fmt;
 use std::io::SeekFrom;
 
 use crate::{CodecError, ReadSeek};
@@ -32,27 +31,6 @@ pub struct DecodeContext<'a> {
     container_only: bool,
     budget: DecodeBudget,
     derived_spaces: Cell<usize>,
-}
-
-struct RetainedMessage<'ctx, 'arena> {
-    ctx: &'ctx DecodeContext<'arena>,
-    operation: &'static str,
-    text: String,
-    failure: Option<CodecError>,
-}
-
-impl fmt::Write for RetainedMessage<'_, '_> {
-    fn write_str(&mut self, fragment: &str) -> fmt::Result {
-        if let Err(error) =
-            self.ctx
-                .reserve_retained_string(&mut self.text, fragment.len(), self.operation)
-        {
-            self.failure = Some(error);
-            return Err(fmt::Error);
-        }
-        self.text.push_str(fragment);
-        Ok(())
-    }
 }
 
 impl<'a> DecodeContext<'a> {
@@ -276,21 +254,6 @@ impl<'a> DecodeContext<'a> {
         self.budget.reserve_scoped(bytes, operation)
     }
 
-    /// Reserves scoped bytes and fallible string capacity for temporary text.
-    pub fn reserve_scoped_text(
-        &self,
-        bytes: usize,
-        operation: &'static str,
-    ) -> Result<(String, ScopedReservation<'_>), CodecError> {
-        let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
-        let mut text = String::new();
-        text.try_reserve_exact(bytes).map_err(|_| {
-            self.budget
-                .scoped_allocation_failed(u64_from_index(bytes), operation)
-        })?;
-        Ok((text, reservation))
-    }
-
     /// Reserves temporary bytes and returns the typed resource refusal.
     pub fn reserve_scoped_limit(
         &self,
@@ -313,13 +276,23 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_retained_limit(bytes, operation)
     }
 
-    /// Checks a later retained-byte request without charging it twice.
-    pub fn preflight_retained(
+    /// Charges storage created by the closure as temporary until its reservation is dropped.
+    pub fn with_scoped_storage<T, E: From<CodecError>>(
         &self,
-        bytes: u64,
         operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.budget.preflight_retained(bytes, operation)
+        build: impl FnOnce() -> Result<T, E>,
+    ) -> Result<(T, ScopedReservation<'_>), E> {
+        let scope = self.budget.storage_scope(operation);
+        let value = build()?;
+        Ok((value, scope.finish()))
+    }
+
+    pub(crate) fn collection_allocation_failed_limit(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> ResourceLimit {
+        self.budget.collection_allocation_failed_limit(u64_from_index(count), operation)
     }
 
     /// Copies admitted text into retained storage with a typed resource refusal.
@@ -329,6 +302,7 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<String, ResourceLimit> {
         let bytes = super::u64_from_index(text.len());
+        self.budget.charge_work_limit(bytes, operation)?;
         self.budget.charge_retained_limit(bytes, operation)?;
         let mut copy = String::new();
         copy.try_reserve_exact(text.len()).map_err(|_| {
@@ -355,6 +329,7 @@ impl<'a> DecodeContext<'a> {
         bytes: &[u8],
         operation: &'static str,
     ) -> Result<Vec<u8>, CodecError> {
+        self.charge_work(u64_from_index(bytes.len()), operation)?;
         self.charge_retained(u64_from_index(bytes.len()), operation)?;
         let mut copy = Vec::new();
         copy.try_reserve_exact(bytes.len()).map_err(|_| {
@@ -481,70 +456,6 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_collection_items(count, operation)
     }
 
-    /// Charges items and reserves space before a decoded vector grows.
-    pub fn reserve_collection_vec<T>(
-        &self,
-        values: &mut Vec<T>,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_collection_items(u64_from_index(additional), operation)?;
-        values.try_reserve(additional).map_err(|_| {
-            self.budget
-                .collection_allocation_failed(u64_from_index(additional), operation)
-        })
-    }
-
-    /// Reserves space when already admitted decoded items move between vectors.
-    pub fn reserve_precharged_vec<T>(
-        &self,
-        values: &mut Vec<T>,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        values.try_reserve(additional).map_err(|_| {
-            self.budget.collection_allocation_failed_requested(
-                0,
-                u64_from_index(additional),
-                operation,
-            )
-        })
-    }
-
-    /// Charges retained bytes and reserves space before a decoded string grows.
-    pub fn reserve_retained_string(
-        &self,
-        value: &mut String,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_retained(u64_from_index(additional), operation)?;
-        value.try_reserve(additional).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(u64_from_index(additional), operation)
-        })
-    }
-
-    /// Formats retained text through charged, fallible string growth.
-    pub fn format_retained_incremental(
-        &self,
-        message: fmt::Arguments<'_>,
-        operation: &'static str,
-    ) -> Result<String, CodecError> {
-        let mut output = RetainedMessage {
-            ctx: self,
-            operation,
-            text: String::new(),
-            failure: None,
-        };
-        if fmt::write(&mut output, message).is_err() {
-            return Err(output
-                .failure
-                .unwrap_or_else(|| CodecError::malformed("cannot format retained text")));
-        }
-        Ok(output.text)
-    }
-
     /// Charges collection items before a fallible collection allocation.
     pub fn try_collection<T>(
         &self,
@@ -636,6 +547,7 @@ impl<'a> DecodeContext<'a> {
             .checked_mul(super::u64_from_index(std::mem::size_of::<usize>()))
             .and_then(|bytes| bytes.checked_mul(2))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        self.charge_collection_items(count.checked_mul(2).ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?, operation)?;
         let _scratch = self.reserve_scoped(scratch_bytes, operation)?;
         let mut order = Vec::new();
         order.try_reserve_exact(values.len()).map_err(|_| {
@@ -822,7 +734,8 @@ impl<'a> DecodeContext<'a> {
             })
         })?;
         let total_bytes = crate::decode::u64_from_index(total);
-        let reservation = self.reserve_scoped(total_bytes, operation)?;
+        self.charge_work(u64_from_index(inputs.len()), operation)?;
+        self.charge_work(total_bytes, operation)?;
         self.charge_retained(total_bytes, operation)?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {
@@ -832,7 +745,6 @@ impl<'a> DecodeContext<'a> {
         for input in inputs {
             buffer.extend_from_slice(input);
         }
-        drop(reservation);
         Ok(buffer)
     }
 
@@ -1026,6 +938,73 @@ mod tests {
     }
 
     #[test]
+    fn retained_collection_refuses_slot_before_copying_the_record() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let copied = std::cell::Cell::new(false);
+        let result = ctx.try_collect_retained_with([1_u8], "collect record", |value| {
+            copied.set(true);
+            Ok::<_, crate::CodecError>(value)
+        });
+        assert!(matches!(result, Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == super::ResourceDimension::RetainedBytes && limit.additional == 1));
+        assert!(!copied.get());
+    }
+
+    #[test]
+    fn scoped_copy_storage_is_released_and_does_not_charge_retained_bytes() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (text, reservation) = ctx.with_scoped_storage("temporary copy", || {
+            ctx.copy_retained_text("abcd", "temporary copy")
+        }).unwrap();
+        assert_eq!(text, "abcd");
+        drop(text);
+        drop(reservation);
+        assert!(ctx.reserve_scoped(4, "reuse scope").is_ok());
+    }
+
+    #[test]
+    fn scoped_copy_storage_refuses_materialized_bytes() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(ctx.with_scoped_storage("temporary copy", || {
+            ctx.copy_retained_text("abcd", "temporary copy")
+        }), Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == super::ResourceDimension::MaterializedBytes
+                && limit.additional == 4));
+    }
+
+    #[test]
+    fn nested_scoped_copies_hold_independent_reservations() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 6;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let ((first, second, inner), outer) = ctx.with_scoped_storage("outer", || {
+            let first = ctx.copy_retained_text("ab", "outer")?;
+            let (second, inner) = ctx.with_scoped_storage("inner", || ctx.copy_retained_text("cd", "inner"))?;
+            Ok::<_, crate::CodecError>((first, second, inner))
+        }).unwrap();
+        assert_eq!((first.as_str(), second.as_str()), ("ab", "cd"));
+        assert!(ctx.reserve_scoped(2, "remaining scope").is_ok());
+        drop(first);
+        drop(outer);
+        assert!(ctx.reserve_scoped(4, "outer released").is_ok());
+        drop(second);
+        drop(inner);
+        assert!(ctx.reserve_scoped(6, "all released").is_ok());
+    }
+
+    #[test]
     fn root_reader_propagates_failed_rewind_after_a_successful_size_probe() {
         let arena = DecodeArena::new();
         let mut reader = RewindFails(Cursor::new(b"not empty".to_vec()));
@@ -1208,7 +1187,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         assert_eq!(
-            ctx.format_retained_incremental(
+            ctx.format_retained(
                 format_args!("{number}", number = 1234),
                 "test retained format"
             )
@@ -1216,7 +1195,7 @@ mod tests {
             "1234"
         );
         let error = ctx
-            .format_retained_incremental(format_args!("{}", 5), "test retained format")
+            .format_retained(format_args!("{}", 5), "test retained format")
             .expect_err("one more byte exceeds the retained limit");
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes

@@ -78,10 +78,10 @@ impl PolygonalSurface {
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
         let mut vertices = Vec::new();
-        ctx.reserve_collection_vec(&mut vertices, self.vertices.len(), operation)?;
+        ctx.reserve_vec(&mut vertices, self.vertices.len(), operation)?;
         vertices.extend_from_slice(&self.vertices);
         let mut triangles = Vec::new();
-        ctx.reserve_collection_vec(&mut triangles, self.triangles.len(), operation)?;
+        ctx.reserve_vec(&mut triangles, self.triangles.len(), operation)?;
         triangles.extend_from_slice(&self.triangles);
         Ok(Self {
             vertices,
@@ -532,7 +532,7 @@ impl PolylineCurve {
         let samples = match &self.samples {
             PolylineSamples::Unparameterized { points } => {
                 let mut copied = Vec::new();
-                ctx.reserve_collection_vec(&mut copied, points.len(), operation)?;
+                ctx.reserve_vec(&mut copied, points.len(), operation)?;
                 copied.extend_from_slice(points.as_slice());
                 PolylineSamples::Unparameterized {
                     points: copied
@@ -542,7 +542,7 @@ impl PolylineCurve {
             }
             PolylineSamples::Parameterized { vertices } => {
                 let mut copied = Vec::new();
-                ctx.reserve_collection_vec(&mut copied, vertices.len(), operation)?;
+                ctx.reserve_vec(&mut copied, vertices.len(), operation)?;
                 copied.extend_from_slice(vertices.as_slice());
                 PolylineSamples::Parameterized {
                     vertices: copied

@@ -104,7 +104,7 @@ fn agreed_dimension_records<'a>(
             ctx.charge_collection_items(1, "group SLDPRT PMI dimension names")?;
         }
         let group = groups.entry(key).or_default();
-        ctx.reserve_collection_vec(group, 1, "group SLDPRT PMI dimension records")?;
+        ctx.reserve_vec(group, 1, "group SLDPRT PMI dimension records")?;
         group.push(record);
     }
 
@@ -119,7 +119,7 @@ fn agreed_dimension_records<'a>(
                 .iter()
                 .all(|record| record.item_count == 1 && equivalent_dimensions(canonical, record))
         {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut representatives,
                 1,
                 "collect SLDPRT PMI agreed dimensions",
@@ -141,7 +141,7 @@ pub(crate) fn unbound_dimension_count(
     let mut bound = Vec::new();
     for record in records {
         if bound_ids.contains(record.id.as_str()) {
-            ctx.reserve_collection_vec(&mut bound, 1, "collect SLDPRT bound PMI dimensions")?;
+            ctx.reserve_vec(&mut bound, 1, "collect SLDPRT bound PMI dimensions")?;
             bound.push(record);
         }
     }
@@ -176,13 +176,13 @@ pub(crate) fn enrich_history_parameters_with_features(
     for (history_index, history) in histories.iter().enumerate() {
         for (feature_index, feature) in history.features.iter().enumerate() {
             if let Some(owner) = owners.get_mut(&feature.name) {
-                ctx.reserve_collection_vec(owner, 1, "collect SLDPRT PMI owner positions")?;
+                ctx.reserve_vec(owner, 1, "collect SLDPRT PMI owner positions")?;
                 owner.push((history_index, feature_index));
             } else {
                 ctx.charge_collection_items(1, "index SLDPRT PMI history owners")?;
                 let name = copy_pmi_text(ctx, &feature.name, "copy SLDPRT PMI owner name")?;
                 let mut owner = Vec::new();
-                ctx.reserve_collection_vec(&mut owner, 1, "collect SLDPRT PMI owner positions")?;
+                ctx.reserve_vec(&mut owner, 1, "collect SLDPRT PMI owner positions")?;
                 owner.push((history_index, feature_index));
                 owners.insert(name, owner);
             }
@@ -403,7 +403,7 @@ pub(crate) fn apply_to_parameters(
                 ctx.charge_collection_items(1, "index SLDPRT PMI feature names")?;
             }
             let group = feature_names.entry(name).or_default();
-            ctx.reserve_collection_vec(group, 1, "collect SLDPRT PMI named features")?;
+            ctx.reserve_vec(group, 1, "collect SLDPRT PMI named features")?;
             group.push(feature);
         }
     }
@@ -513,7 +513,7 @@ pub(crate) fn apply_to_parameters(
             .map(|parameter| parameter.ordinal)
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
-        ctx.reserve_collection_vec(parameters, 1, "collect SLDPRT PMI parameters")?;
+        ctx.reserve_vec(parameters, 1, "collect SLDPRT PMI parameters")?;
         parameters.push(DesignParameter {
             id: ParameterId::compose(
                 &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
@@ -667,11 +667,7 @@ fn collect_dimensions(
     let DimensionOutput { records, seen } = output;
     ctx.charge_work(payload.len() as u64, "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
-        let (mut normalized, _reservation) = crate::text_admission::reserve_scoped_string(
-            ctx,
-            guid.len(),
-            "normalize SLDPRT PMI candidate GUID",
-        )?;
+        let (mut normalized, _reservation) = ctx.scoped_string(guid.len(), "normalize SLDPRT PMI candidate GUID")?;
         normalized.push_str(guid);
         normalized.make_ascii_lowercase();
         if seen.contains(&normalized) {
@@ -690,7 +686,7 @@ fn collect_dimensions(
                     "messagepack_dim_sem_data",
                     Exactness::ByteExact,
                 )?;
-                ctx.reserve_collection_vec(records, 1, "collect SLDPRT PMI dimensions")?;
+                ctx.reserve_vec(records, 1, "collect SLDPRT PMI dimensions")?;
                 records.push(record);
             }
             Ok(None) => {}
@@ -707,12 +703,7 @@ fn collect_dimensions(
                     + ") ".len()
                     + message.len();
                 let mut text = String::new();
-                crate::text_admission::reserve_retained_string(
-                    ctx,
-                    &mut text,
-                    capacity,
-                    "retain SLDPRT PMI malformed note",
-                )?;
+                ctx.try_reserve_retained_text(&mut text, capacity, "retain SLDPRT PMI malformed note")?;
                 std::fmt::Write::write_fmt(
                     &mut text,
                     format_args!(
@@ -726,7 +717,7 @@ fn collect_dimensions(
                         u64::MAX,
                     )
                 })?;
-                ctx.reserve_collection_vec(losses, 1, "collect SLDPRT PMI malformed notes")?;
+                ctx.reserve_vec(losses, 1, "collect SLDPRT PMI malformed notes")?;
                 losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(text));
             }
             Err(PmiParseError::Resource(error)) => return Err(error),
@@ -774,7 +765,7 @@ fn copy_pmi_text(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -850,12 +841,7 @@ fn extract_dimension(
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
     let mut id = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut id,
-        "sldprt:pmi:dimension#".len() + guid.len(),
-        "retain SLDPRT PMI dimension ID",
-    )?;
+    ctx.try_reserve_retained_text(&mut id, "sldprt:pmi:dimension#".len() + guid.len(), "retain SLDPRT PMI dimension ID")?;
     id.push_str("sldprt:pmi:dimension#");
     id.push_str(guid);
     let display_text = match outer.get("dimText") {

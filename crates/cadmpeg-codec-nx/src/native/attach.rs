@@ -8845,7 +8845,7 @@ pub(super) fn boolean_feature_definition(
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
     let empty_offset_store_body_blocks = BTreeMap::new();
-    let native_target = ctx.format_retained_with_work(
+    let native_target = ctx.format_retained(
         format_args!("nx:om-object-index#{}", operation.target.token.value()),
         "NX feature projection text",
     )?;
@@ -8937,7 +8937,7 @@ fn delete_body_feature_definition(
             &[body],
             body_alias_roots,
             bodies_by_object_index,
-            ctx.format_retained_with_work(
+            ctx.format_retained(
                 format_args!("nx:om-object-index#{body}"),
                 "NX feature projection text",
             )?,
@@ -8946,7 +8946,7 @@ fn delete_body_feature_definition(
                 let mut reservation = ctx.reserve_scoped(0, "NX DELETE local body")?;
                 let mut bodies = Vec::new();
                 ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE local body")?;
-                bodies.push(ctx.format_scoped_text_with_work(
+                bodies.push(ctx.format_scoped_text(
                     &mut reservation,
                     format_args!("nx:om-body-object#{body}"),
                     "NX body selection text",
@@ -8962,7 +8962,7 @@ fn delete_body_feature_definition(
             let mut reservation = ctx.reserve_scoped(0, "NX DELETE offset body")?;
             let mut bodies = Vec::new();
             ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE offset body")?;
-            bodies.push(ctx.format_scoped_text_with_work(
+            bodies.push(ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("{data_block}"),
                 "NX body selection text",
@@ -8970,7 +8970,7 @@ fn delete_body_feature_definition(
             local_body_selection(
                 ctx,
                 bodies,
-                ctx.format_retained_with_work(
+                ctx.format_retained(
                     format_args!("nx:om-object-index#{object_index}"),
                     "NX feature projection text",
                 )?,
@@ -8999,7 +8999,7 @@ fn extract_body_feature_definition(
             &[body],
             body_alias_roots,
             bodies_by_object_index,
-            ctx.format_retained_with_work(
+            ctx.format_retained(
                 format_args!("nx:om-object-index#{body}"),
                 "NX feature projection text",
             )?,
@@ -9009,7 +9009,7 @@ fn extract_body_feature_definition(
         let mut reservation = ctx.reserve_scoped(0, "NX EXTRACT local body")?;
         let mut bodies = Vec::new();
         ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX EXTRACT local body")?;
-        bodies.push(ctx.format_scoped_text_with_work(
+        bodies.push(ctx.format_scoped_text(
             &mut reservation,
             format_args!("{data_block}"),
             "NX body selection text",
@@ -9017,7 +9017,7 @@ fn extract_body_feature_definition(
         local_body_selection(
             ctx,
             bodies,
-            ctx.format_retained_with_work(
+            ctx.format_retained(
                 format_args!("nx:om-object-index#{object_index}"),
                 "NX feature projection text",
             )?,
@@ -9104,7 +9104,7 @@ fn offset_store_trim_body_feature_definition(
                     1,
                     "NX trim local tool bodies",
                 )?;
-                bodies.push(ctx.format_scoped_text_with_work(
+                bodies.push(ctx.format_scoped_text(
                     &mut reservation,
                     format_args!("{block}"),
                     "NX body selection text",
@@ -9126,7 +9126,7 @@ fn offset_store_trim_body_feature_definition(
         1,
         "NX trim local target body",
     )?;
-    target.push(ctx.format_scoped_text_with_work(
+    target.push(ctx.format_scoped_text(
         &mut reservation,
         format_args!("{data_block}"),
         "NX body selection text",
@@ -9134,7 +9134,7 @@ fn offset_store_trim_body_feature_definition(
     let target = local_body_selection(
         ctx,
         target,
-        ctx.format_retained_with_work(
+        ctx.format_retained(
             format_args!("nx:om-object-index#{object_index}"),
             "NX feature projection text",
         )?,
@@ -9242,7 +9242,7 @@ fn sew_body_feature_definition(
             let mut bodies = Vec::new();
             for block in std::iter::once(primary_data_block).chain(blocks) {
                 ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX sew local bodies")?;
-                bodies.push(ctx.format_scoped_text_with_work(
+                bodies.push(ctx.format_scoped_text(
                     &mut reservation,
                     format_args!("{block}"),
                     "NX body selection text",
@@ -9273,7 +9273,7 @@ fn trim_body_feature_definition(
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
-    let native_target = ctx.format_retained_with_work(
+    let native_target = ctx.format_retained(
         format_args!("nx:om-object-index#{target_object_index}"),
         "NX feature projection text",
     )?;

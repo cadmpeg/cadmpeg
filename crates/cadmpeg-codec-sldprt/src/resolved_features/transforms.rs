@@ -403,7 +403,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
             used.insert((*radius, center));
         }
         if complete {
-            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push(transform);
         }
     }
@@ -428,7 +428,7 @@ pub(super) fn dimensioned_circle_transform(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(work, OPERATION)?;
             let mut transformed = Vec::new();
-            ctx.reserve_collection_vec(&mut transformed, circles.len(), OPERATION)?;
+            ctx.reserve_vec(&mut transformed, circles.len(), OPERATION)?;
             for (center, radius) in circles {
                 let Some(center) = transform.apply(*center) else {
                     continue;
@@ -642,7 +642,7 @@ where
     )?;
     if let Some(transform) = unique_scored_transform(identity, translations) {
         let mut result = Vec::new();
-        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        ctx.reserve_vec(&mut result, 1, OPERATION)?;
         result.push(transform);
         return Ok(result);
     }
@@ -667,7 +667,7 @@ where
                         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                     OPERATION,
                 )?;
-                ctx.reserve_collection_vec(&mut scored, translations.len(), OPERATION)?;
+                ctx.reserve_vec(&mut scored, translations.len(), OPERATION)?;
                 scored.extend(translations.into_iter().map(|(translation, count)| {
                     (
                         MarkerTransform {
@@ -700,7 +700,7 @@ where
         if count != maximum {
             continue;
         }
-        ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+        ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
         candidates.push(transform);
     }
     if candidates.len() == 1 {
@@ -863,11 +863,7 @@ pub(super) fn copy_sketch_entity_identity(
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
         operation,
     )?;
-    let text = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", entity.as_str()),
-        operation,
-    )?;
+    let text = ctx.format_retained(format_args!("{}", entity.as_str()), operation)?;
     let entity = SketchEntityId::mint(text).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid decoded sketch entity identity: {error}"
@@ -1078,7 +1074,7 @@ pub(super) fn marker_entities<'a>(
         &mut HashSet::new(),
     )?;
     let mut result = Vec::new();
-    ctx.reserve_collection_vec(&mut result, identities.len(), OPERATION)?;
+    ctx.reserve_vec(&mut result, identities.len(), OPERATION)?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(identities.len())
             .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<

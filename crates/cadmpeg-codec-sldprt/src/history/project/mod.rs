@@ -103,11 +103,7 @@ pub(super) fn copy_projected_feature_text(
     text: &str,
 ) -> Result<String, CodecError> {
     charge_projected_text_work(ctx, text, "copy SLDPRT projected feature text")?;
-    crate::text_admission::format_retained(
-        ctx,
-        format_args!("{text}"),
-        "copy SLDPRT projected feature text",
-    )
+    ctx.format_retained(format_args!("{text}"), "copy SLDPRT projected feature text")
 }
 
 pub(super) fn neutral_feature_id_charged(
@@ -118,11 +114,7 @@ pub(super) fn neutral_feature_id_charged(
     let key = native_id
         .strip_prefix("sldprt:history:feature#")
         .unwrap_or(native_id);
-    let id = crate::text_admission::format_retained(
-        ctx,
-        format_args!("sldprt:model:feature#{}", EncodedNativeKey(key)),
-        "retain SLDPRT projected feature ID",
-    )?;
+    let id = ctx.format_retained(format_args!("sldprt:model:feature#{}", EncodedNativeKey(key)), "retain SLDPRT projected feature ID")?;
     FeatureId::mint(id).map_err(CodecError::malformed)
 }
 
@@ -135,16 +127,8 @@ pub(super) fn copy_projected_feature_id(
 
 fn source_lookup_key(ctx: &DecodeContext<'_>, source: FeatureSource) -> Result<String, CodecError> {
     match source {
-        FeatureSource::Reserved => crate::text_admission::format_retained(
-            ctx,
-            format_args!("-1"),
-            "retain SLDPRT source lookup key",
-        ),
-        FeatureSource::Id(id) => crate::text_admission::format_retained(
-            ctx,
-            format_args!("{}", id.value()),
-            "retain SLDPRT source lookup key",
-        ),
+        FeatureSource::Reserved => ctx.format_retained(format_args!("-1"), "retain SLDPRT source lookup key"),
+        FeatureSource::Id(id) => ctx.format_retained(format_args!("{}", id.value()), "retain SLDPRT source lookup key"),
     }
 }
 
@@ -229,17 +213,13 @@ impl FeatureProjection {
                 "retain SLDPRT regeneration edge loss",
             )?;
             charge_projected_text_work(ctx, &error, "retain SLDPRT regeneration edge loss")?;
-            let message = crate::text_admission::format_retained(
-                ctx,
-                format_args!(
+            let message = ctx.format_retained(format_args!(
                     "regeneration edge from child `{child}` (ordinal {}) to parent \
                      `{parent}` (ordinal {}) was not installed: {error}",
                     FeatureOrdinal(child_ordinal),
                     FeatureOrdinal(parent_ordinal),
-                ),
-                "retain SLDPRT regeneration edge loss",
-            )?;
-            ctx.reserve_collection_vec(losses, 1, "collect SLDPRT regeneration edge losses")?;
+                ), "retain SLDPRT regeneration edge loss")?;
+            ctx.reserve_vec(losses, 1, "collect SLDPRT regeneration edge losses")?;
             losses.push(crate::loss::SldprtLossCode::FeatureIncoherentEdges.note(message));
         }
         Ok(())
@@ -395,9 +375,9 @@ pub(crate) fn project_feature_model(
                     ),
                     native_ref: Some(copy_projected_feature_text(ctx, &feature.id)?),
                 };
-                ctx.reserve_collection_vec(&mut features, 1, "collect SLDPRT projected features")?;
+                ctx.reserve_vec(&mut features, 1, "collect SLDPRT projected features")?;
                 features.push(projected);
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut parents,
                     1,
                     "collect SLDPRT projected feature parents",
@@ -417,11 +397,7 @@ pub(crate) fn project_feature_model(
             features[child_index].id.as_str(),
             "copy SLDPRT tree child ID",
         )?;
-        let child_text = crate::text_admission::format_retained(
-            ctx,
-            format_args!("{}", features[child_index].id.as_str()),
-            "copy SLDPRT tree child ID",
-        )?;
+        let child_text = ctx.format_retained(format_args!("{}", features[child_index].id.as_str()), "copy SLDPRT tree child ID")?;
         let child = FeatureId::mint(child_text).map_err(CodecError::malformed)?;
         let mut tree_parent_index = None;
         for (index, feature) in features.iter().enumerate() {
@@ -437,7 +413,7 @@ pub(crate) fn project_feature_model(
             }
         }
         let Some(tree_parent_index) = tree_parent_index else {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut regeneration_parents,
                 1,
                 "collect SLDPRT regeneration parents",
@@ -485,7 +461,7 @@ pub(crate) fn project_semantic_notes(
     let copy = |value: &str| -> Result<String, CodecError> {
         charge_projected_text_work(ctx, value, OPERATION)?;
         let mut copied = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut copied, value.len(), OPERATION)?;
+        ctx.try_reserve_retained_text(&mut copied, value.len(), OPERATION)?;
         copied.push_str(value);
         Ok(copied)
     };
@@ -502,23 +478,19 @@ pub(crate) fn project_semantic_notes(
                 .id
                 .strip_prefix("sldprt:history:feature#")
                 .unwrap_or(&feature.id);
-            let id = crate::text_admission::format_retained(
-                ctx,
-                format_args!(
+            let id = ctx.format_retained(format_args!(
                     "sldprt:semantic-annotation:note#{}",
                     EncodedNativeKey(native_id)
-                ),
-                OPERATION,
-            )?;
+                ), OPERATION)?;
             let id = cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(id)
                 .map_err(|_| CodecError::malformed("invalid SLDPRT semantic note ID"))?;
             let mut text = Vec::new();
             if let Some(value) = &feature.text {
                 let value = copy(value)?;
-                ctx.reserve_collection_vec(&mut text, 1, OPERATION)?;
+                ctx.reserve_vec(&mut text, 1, OPERATION)?;
                 text.push(value);
             }
-            ctx.reserve_collection_vec(&mut notes, 1, OPERATION)?;
+            ctx.reserve_vec(&mut notes, 1, OPERATION)?;
             notes.push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
                 id,
                 object: copy(&feature.id)?,
@@ -995,7 +967,7 @@ pub(super) fn bind_offset_plane_references(
                 continue;
             }
             let reference = copy_projected_feature_id(ctx, reference)?;
-            ctx.reserve_collection_vec(&mut bindings, 1, "collect SLDPRT offset plane bindings")?;
+            ctx.reserve_vec(&mut bindings, 1, "collect SLDPRT offset plane bindings")?;
             bindings.push((index, (reference, distance)));
         }
         for (index, (reference, distance)) in bindings {
@@ -1260,40 +1232,26 @@ pub(crate) fn custom_property_attributes(
                 .id
                 .strip_prefix("sldprt:history:feature#")
                 .unwrap_or(&feature.id);
-            let id = crate::text_admission::format_retained(
-                ctx,
-                format_args!(
+            let id = ctx.format_retained(format_args!(
                     "sldprt:history:custom-property#{}",
                     EncodedNativeKey(native_id)
-                ),
-                OPERATION,
-            )?;
+                ), OPERATION)?;
             let id = AttributeId::mint(id)
                 .map_err(|_| CodecError::malformed("invalid SLDPRT custom-property ID"))?;
             charge_projected_text_work(ctx, &feature.name, OPERATION)?;
             let mut name = String::new();
-            crate::text_admission::reserve_retained_string(
-                ctx,
-                &mut name,
-                feature.name.len(),
-                OPERATION,
-            )?;
+            ctx.try_reserve_retained_text(&mut name, feature.name.len(), OPERATION)?;
             name.push_str(&feature.name);
             let mut values = Vec::new();
             if let Some(text) = &feature.text {
                 charge_projected_text_work(ctx, text, OPERATION)?;
                 let mut value = String::new();
-                crate::text_admission::reserve_retained_string(
-                    ctx,
-                    &mut value,
-                    text.len(),
-                    OPERATION,
-                )?;
+                ctx.try_reserve_retained_text(&mut value, text.len(), OPERATION)?;
                 value.push_str(text);
-                ctx.reserve_collection_vec(&mut values, 1, OPERATION)?;
+                ctx.reserve_vec(&mut values, 1, OPERATION)?;
                 values.push(AttributeValue::String(value));
             }
-            ctx.reserve_collection_vec(&mut attributes, 1, OPERATION)?;
+            ctx.reserve_vec(&mut attributes, 1, OPERATION)?;
             attributes.push(SourceAttribute {
                 id,
                 target: AttributeTarget::Document,
@@ -1434,7 +1392,7 @@ fn project_feature_content(
         if let FeatureContent::Dimension(name) = content {
             ctx.charge_work(names.len() as u64, OPERATION)?;
             if feature.parameters.contains_key(name.as_str()) && !names.contains(&name.as_str()) {
-                ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+                ctx.reserve_vec(&mut names, 1, OPERATION)?;
                 names.push(name);
             }
         }
@@ -1442,7 +1400,7 @@ fn project_feature_content(
     for name in feature.parameters.keys() {
         ctx.charge_work(names.len() as u64, OPERATION)?;
         if !names.contains(&name.as_str()) {
-            ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+            ctx.reserve_vec(&mut names, 1, OPERATION)?;
             names.push(name.as_str());
         }
     }
@@ -1463,11 +1421,7 @@ fn project_feature_content(
                     .id
                     .strip_prefix("sldprt:history:feature#")
                     .unwrap_or(&feature.id);
-                let id = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
-                    OPERATION,
-                )?;
+                let id = ctx.format_retained(format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)), OPERATION)?;
                 let parameter = ParameterId::mint(id).map_err(CodecError::malformed)?;
                 ctx.charge_work(result.len() as u64, OPERATION)?;
                 if result.iter().any(|value| matches!(value, FeatureSourceContent::Parameter(known) if known == &parameter)) {
@@ -1532,7 +1486,7 @@ pub(crate) fn project_configurations_charged(
     let copy = |value: &str| -> Result<String, CodecError> {
         charge_projected_text_work(ctx, value, OPERATION)?;
         let mut copied = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut copied, value.len(), OPERATION)?;
+        ctx.try_reserve_retained_text(&mut copied, value.len(), OPERATION)?;
         copied.push_str(value);
         Ok(copied)
     };
@@ -1546,11 +1500,7 @@ pub(crate) fn project_configurations_charged(
                 .id
                 .strip_prefix("sldprt:history:configuration#")
                 .unwrap_or(&configuration.id);
-            let id = crate::text_admission::format_retained(
-                ctx,
-                format_args!("sldprt:model:configuration#{}", EncodedNativeKey(native_id)),
-                OPERATION,
-            )?;
+            let id = ctx.format_retained(format_args!("sldprt:model:configuration#{}", EncodedNativeKey(native_id)), OPERATION)?;
             let id = ConfigurationId::mint(id)
                 .map_err(|_| CodecError::malformed("invalid SLDPRT configuration ID"))?;
             let mut properties = BTreeMap::new();
@@ -1566,7 +1516,7 @@ pub(crate) fn project_configurations_charged(
             let material = configuration.material.as_deref().map(copy).transpose()?;
             let native_ref = copy(&configuration.id)?;
             let name = copy(&configuration.name)?;
-            ctx.reserve_collection_vec(&mut projected, 1, OPERATION)?;
+            ctx.reserve_vec(&mut projected, 1, OPERATION)?;
             projected.push(DesignConfiguration {
                 id,
                 ordinal: configuration.ordinal,
@@ -1785,7 +1735,7 @@ fn parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<Str
         if let FeatureContent::Dimension(name) = content {
             if feature.parameters.contains_key(name.as_str()) {
                 let name = copy_projected_feature_text(ctx, name)?;
-                ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+                ctx.reserve_vec(&mut names, 1, OPERATION)?;
                 names.push(name);
             }
         }
@@ -1794,7 +1744,7 @@ fn parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<Str
         ctx.charge_work(names.len() as u64, OPERATION)?;
         if !names.iter().any(|known| known == name.as_str()) {
             let name = copy_projected_feature_text(ctx, name.as_str())?;
-            ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+            ctx.reserve_vec(&mut names, 1, OPERATION)?;
             names.push(name);
         }
     }
@@ -1818,7 +1768,7 @@ pub(super) fn projected_parameter_names(
         seen.try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         seen.insert(key);
-        ctx.reserve_collection_vec(&mut projected, 1, OPERATION)?;
+        ctx.reserve_vec(&mut projected, 1, OPERATION)?;
         projected.push(name);
     }
     Ok(projected)
@@ -1834,11 +1784,7 @@ pub(super) fn neutral_parameter_id(
         .id
         .strip_prefix("sldprt:history:feature#")
         .unwrap_or(&feature.id);
-    let id = crate::text_admission::format_retained(
-        ctx,
-        format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
-        "retain SLDPRT projected parameter ID",
-    )?;
+    let id = ctx.format_retained(format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)), "retain SLDPRT projected parameter ID")?;
     ParameterId::mint(id).map_err(CodecError::malformed)
 }
 
@@ -1848,11 +1794,7 @@ fn native_definition(
 ) -> Result<FeatureDefinition, CodecError> {
     charge_projected_text_work(ctx, &feature.kind, "retain SLDPRT native definition kind")?;
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
-        kind: crate::text_admission::format_retained(
-            ctx,
-            format_args!("{}", feature.kind),
-            "retain SLDPRT native definition kind",
-        )?
+        kind: ctx.format_retained(format_args!("{}", feature.kind), "retain SLDPRT native definition kind")?
         .into(),
         parameters: copy_projected_feature_properties(
             ctx,

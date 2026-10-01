@@ -67,7 +67,7 @@ fn copy_history_text(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, source.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut copy, source.len(), operation)?;
     copy.push_str(source);
     Ok(copy)
 }
@@ -102,12 +102,7 @@ fn report_unkeyed_property(
         )
     })?;
     let mut message = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut message,
-        needed,
-        "retain SLDPRT history property loss",
-    )?;
+    ctx.try_reserve_retained_text(&mut message, needed, "retain SLDPRT history property loss")?;
     match duplicate {
         Some(key) => write!(message, "{record}{RESTATED_BEFORE}{key}{RESTATED_AFTER}"),
         None => write!(message, "{record}{BLANK}"),
@@ -119,7 +114,7 @@ fn report_unkeyed_property(
             u64::MAX,
         )
     })?;
-    ctx.reserve_collection_vec(losses, 1, "collect SLDPRT history property losses")?;
+    ctx.reserve_vec(losses, 1, "collect SLDPRT history property losses")?;
     losses.push(crate::loss::SldprtLossCode::SourcePropertyKeyBlank.note(message));
     Ok(())
 }
@@ -187,7 +182,7 @@ pub(crate) fn histories(
                             })
                             .map(|attribute| (attribute.name(), attribute.value())),
                     )?;
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut configurations,
                         1,
                         "collect SLDPRT history configurations",
@@ -272,7 +267,7 @@ pub(crate) fn histories(
                             })
                             .map(|attribute| (attribute.name(), attribute.value())),
                     )?;
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut features,
                         1,
                         "collect SLDPRT history features",
@@ -311,7 +306,7 @@ pub(crate) fn histories(
                                 .map(FeatureContent::Feature)
                         };
                         if let Some(item) = item {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut content,
                                 1,
                                 "collect SLDPRT feature content",
@@ -458,7 +453,7 @@ pub(crate) fn histories(
                         .map(HistoryContent::Feature)
                 };
                 if let Some(item) = item {
-                    ctx.reserve_collection_vec(&mut content, 1, "collect SLDPRT history content")?;
+                    ctx.reserve_vec(&mut content, 1, "collect SLDPRT history content")?;
                     content.push(item);
                 }
                 Ok::<_, CodecError>(content)
@@ -481,7 +476,7 @@ pub(crate) fn histories(
                     .filter(|attribute| attribute.name() != "Name")
                     .map(|attribute| (attribute.name(), attribute.value())),
             )?;
-            ctx.reserve_collection_vec(&mut histories, 1, "collect SLDPRT feature histories")?;
+            ctx.reserve_vec(&mut histories, 1, "collect SLDPRT feature histories")?;
             histories.push(FeatureHistory {
                 id,
                 part_name: root

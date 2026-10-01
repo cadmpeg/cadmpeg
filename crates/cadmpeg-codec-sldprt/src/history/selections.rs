@@ -646,7 +646,7 @@ fn resolve_planar_face_selection(
     });
     let mut matching = Vec::new();
     for face in candidates {
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut matching,
             1,
             "collect SLDPRT topology selection identities",
@@ -773,7 +773,7 @@ fn resolve_ids<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
         let Some(Some(id)) = ids.get(token) else {
             return Ok(None);
         };
-        ctx.reserve_collection_vec(
+        ctx.reserve_vec(
             &mut resolved,
             1,
             "collect SLDPRT topology selection identities",
@@ -806,7 +806,7 @@ fn resolve_face_selection(
                         })
                 {
                     let mut copied = Vec::new();
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut copied,
                         1,
                         "collect SLDPRT topology selection identities",
@@ -921,11 +921,7 @@ fn copy_selection_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, C
         cadmpeg_core::decode::u64_from_index(value.len()),
         "retain SLDPRT topology selection identity",
     )?;
-    crate::text_admission::format_retained(
-        ctx,
-        format_args!("{value}"),
-        "retain SLDPRT topology selection identity",
-    )
+    ctx.format_retained(format_args!("{value}"), "retain SLDPRT topology selection identity")
 }
 
 fn copy_selection_id<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
@@ -942,11 +938,7 @@ fn copy_selection_id<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>
             )
         })?;
     ctx.charge_work(work, "retain SLDPRT topology selection identity")?;
-    let text = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{id}"),
-        "retain SLDPRT topology selection identity",
-    )?;
+    let text = ctx.format_retained(format_args!("{id}"), "retain SLDPRT topology selection identity")?;
     Id::try_from(text).map_err(CodecError::malformed)
 }
 

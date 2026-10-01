@@ -6653,7 +6653,7 @@ pub(super) fn feature_datum_csys_descriptors(
             else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("{}-descriptor-{reference_ordinal}", construction.id),
                 "NX datum CSYS descriptor identity",
             )?;
@@ -6703,7 +6703,7 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
             }
             let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!(
                     "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
                 ),
@@ -6802,7 +6802,7 @@ pub(super) fn feature_datum_plane_descriptors(
             let Some(descriptor) = crate::om::datum_plane_descriptor_block(ctx, bytes)? else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("{}-descriptor-{ordinal:010}", header.id),
                 "NX datum plane descriptor identity",
             )?;
@@ -6861,7 +6861,7 @@ pub(super) fn feature_datum_plane_block_uses(
                         DatumPlaneBlockLane::Descriptor => "descriptor",
                         DatumPlaneBlockLane::Object => "object",
                     };
-                    let id = ctx.format_retained_with_work(format_args!(
+                    let id = ctx.format_retained(format_args!(
                         "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
                         input.input_slot), "NX datum plane block use identity")?;
                     let datum_plane_header =
@@ -6930,7 +6930,7 @@ pub(super) fn feature_datum_csys_block_uses(
                     .operation_label
                     .rsplit_once('#')
                     .map_or(input.operation_label.as_str(), |(_, key)| key);
-                let id = ctx.format_retained_with_work(format_args!(
+                let id = ctx.format_retained(format_args!(
                     "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
                     input.input_slot), "NX datum CSYS block use identity")?;
                 let construction_id = ctx
@@ -7497,7 +7497,7 @@ pub(super) fn feature_sketch_payload_scalars(
             let key = construction_payload
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"),
                 "NX sketch payload scalar identity",
             )?;
@@ -7810,7 +7810,7 @@ pub(super) fn feature_sketch_points(
             continue;
         }
         let key = record.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let id = ctx.format_retained_with_work(
+        let id = ctx.format_retained(
             format_args!("nx:feature-history:sketch-point#{key}"),
             "NX sketch point identity",
         )?;
@@ -8040,7 +8040,7 @@ pub(super) fn offset_store_named_points(
             let point_ordinal = ordinal
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX named point ordinal", 0, 1))?;
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!("nx:offset-store:named-point#{section_ordinal}-{point_ordinal}"),
                 "NX named point identity",
             )?;
@@ -8050,7 +8050,7 @@ pub(super) fn offset_store_named_points(
                     .checked_add(relative)
                     .and_then(|ordinal| ordinal.checked_add(1))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
-                let block_id = ctx.format_retained_with_work(
+                let block_id = ctx.format_retained(
                     format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
                     "NX named point data block identity",
                 )?;
@@ -8105,7 +8105,7 @@ pub(super) fn feature_sketch_named_point_block_uses(
                 .id
                 .rsplit_once('#')
                 .map_or(point.id.as_str(), |(_, key)| key);
-            let id = ctx.format_retained_with_work(format_args!(
+            let id = ctx.format_retained(format_args!(
                 "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
                 reference.position.ordinal()), "NX sketch named point block use identity")?;
             let operation_label = ctx.copy_retained_text(
@@ -8234,7 +8234,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             .id
             .rsplit_once('#')
             .map_or(point.id.as_str(), |(_, key)| key);
-        let id = ctx.format_retained_with_work(
+        let id = ctx.format_retained(
             format_args!(
                 "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"
             ),
@@ -8710,7 +8710,7 @@ pub(super) fn feature_parameter_bindings(
                 .operation_label
                 .rsplit_once('#')
                 .map_or(input.operation_label.as_str(), |(_, key)| key);
-            let id = ctx.format_retained_with_work(
+            let id = ctx.format_retained(
                 format_args!(
                     "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
                     input.input_slot, reference.ordinal
@@ -8785,7 +8785,7 @@ pub(super) fn feature_parameter_uses(
         let expression_key = expression
             .rsplit_once('#')
             .map_or(expression, |(_, key)| key);
-        let id = ctx.format_retained_with_work(
+        let id = ctx.format_retained(
             format_args!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
             "NX parameter use identity",
         )?;

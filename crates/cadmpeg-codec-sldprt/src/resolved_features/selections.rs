@@ -74,7 +74,7 @@ fn selection_objects<'history, 'lane>(
         let Some(name) = feature_object_name(feature, lane) else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut objects, 1, operation)?;
+        ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name, feature, input_index));
     }
     let levels = if objects.len() > 1 {
@@ -99,7 +99,7 @@ fn copy_selection_text(
 ) -> Result<String, CodecError> {
     ctx.charge_work(u64_from_index(text.len()), operation)?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), operation)?;
+    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -170,11 +170,7 @@ pub(super) fn compact_body_selections(
             ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
         })?;
         ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-        let id = crate::text_admission::format_retained(
-            ctx,
-            format_args!("sldprt:feature-input:body-selection#{lane_key}:{offset}"),
-            OPERATION,
-        )?;
+        let id = ctx.format_retained(format_args!("sldprt:feature-input:body-selection#{lane_key}:{offset}"), OPERATION)?;
         let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
         let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
         let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
@@ -185,7 +181,7 @@ pub(super) fn compact_body_selections(
             ),
             _ => (Vec::new(), None),
         };
-        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        ctx.reserve_vec(&mut result, 1, OPERATION)?;
         result.push(FeatureInputBodySelection {
             id,
             parent,
@@ -347,7 +343,7 @@ fn compact_body_state_ids(
         let Some(body_id) = compact_body_state_id(payload, offset, token) else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        ctx.reserve_vec(&mut result, 1, OPERATION)?;
         result.push(body_id);
     }
     Ok(result)
@@ -440,17 +436,17 @@ pub(super) fn compact_edge_selections(
                 None => None,
             };
             if let Some(selection) = selection {
-                ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
+                ctx.reserve_vec(&mut selections, 1, OPERATION)?;
                 selections.push(selection);
             }
         }
         if let Some(token) = compact_edge_token {
             let repeated = repeated_edge_selections(ctx, &lane.native_payload, start, end, token)?;
-            ctx.reserve_collection_vec(&mut selections, repeated.len(), OPERATION)?;
+            ctx.reserve_vec(&mut selections, repeated.len(), OPERATION)?;
             selections.extend(repeated);
         }
         let interval = edge_selection_vectors_in_interval(ctx, &lane.native_payload, start, end)?;
-        ctx.reserve_collection_vec(&mut selections, interval.len(), OPERATION)?;
+        ctx.reserve_vec(&mut selections, interval.len(), OPERATION)?;
         selections.extend(interval);
         let levels = if selections.len() > 1 {
             selections.len().ilog2() + 1
@@ -499,15 +495,11 @@ pub(super) fn compact_edge_selections(
                 &feature.id,
             )?;
             ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-            let id = crate::text_admission::format_retained(
-                ctx,
-                format_args!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
-                OPERATION,
-            )?;
+            let id = ctx.format_retained(format_args!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"), OPERATION)?;
             let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
             let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
             let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
-            ctx.reserve_collection_vec(&mut feature_selections, 1, OPERATION)?;
+            ctx.reserve_vec(&mut feature_selections, 1, OPERATION)?;
             feature_selections.push(FeatureInputEdgeSelection {
                 id,
                 parent,
@@ -532,7 +524,7 @@ pub(super) fn compact_edge_selections(
             selection.ordinal = u32::try_from(result.len()).map_err(|_| {
                 ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
             })?;
-            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push(selection);
         }
     }
@@ -737,7 +729,7 @@ pub(super) fn compact_surface_selections(
                         if let Some(ids) =
                             compact_surface_selection_at(ctx, &lane.native_payload, marker)?
                         {
-                            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                             candidates.push((marker, ids));
                         }
                     }
@@ -781,7 +773,7 @@ pub(super) fn compact_surface_selections(
                             None => None,
                         };
                         if let Some((marker, ids)) = reference {
-                            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                             candidates.push((marker, ids));
                         }
                     }
@@ -818,7 +810,7 @@ pub(super) fn compact_surface_selections(
                         None => None,
                     };
                     if let Some(reference) = reference {
-                        ctx.reserve_collection_vec(&mut component_face_references, 1, OPERATION)?;
+                        ctx.reserve_vec(&mut component_face_references, 1, OPERATION)?;
                         component_face_references.push(reference);
                     }
                 }
@@ -839,7 +831,7 @@ pub(super) fn compact_surface_selections(
                     .chain(component_face_references)
                 {
                     ctx.charge_work(1, OPERATION)?;
-                    ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                     candidates.push(candidate);
                 }
                 candidates
@@ -867,7 +859,7 @@ pub(super) fn compact_surface_selections(
                         if let Some(components) =
                             counted_surface_component_path_at(ctx, &lane.native_payload, marker)?
                         {
-                            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                             candidates.push((marker, components));
                         }
                     }
@@ -875,7 +867,7 @@ pub(super) fn compact_surface_selections(
                 if let Some(prefix) = mirror_surface_prefix {
                     let inline =
                         inline_mirror_surface_paths(ctx, &lane.native_payload, start, end, prefix)?;
-                    ctx.reserve_collection_vec(&mut candidates, inline.len(), OPERATION)?;
+                    ctx.reserve_vec(&mut candidates, inline.len(), OPERATION)?;
                     candidates.extend(inline);
                 }
                 candidates
@@ -936,18 +928,14 @@ pub(super) fn compact_surface_selections(
                 &history_features,
             )?;
             ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-            let id = crate::text_admission::format_retained(
-                ctx,
-                format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
-                OPERATION,
-            )?;
+            let id = ctx.format_retained(format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"), OPERATION)?;
             let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
             let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
             let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
             let ordinal = u32::try_from(result.len()).map_err(|_| {
                 ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
             })?;
-            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push(FeatureInputSurfaceSelection {
                 id,
                 parent,
@@ -1034,7 +1022,7 @@ fn fillet_face_selection_candidates(
         else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut class_bodies, 1, OPERATION)?;
+        ctx.reserve_vec(&mut class_bodies, 1, OPERATION)?;
         class_bodies.push((body, token));
     }
     let levels = if class_bodies.len() > 1 {
@@ -1080,7 +1068,7 @@ fn fillet_face_selection_candidates(
                 if !is_component_vector_selector_for_role(selector, 3) {
                     continue;
                 }
-                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                 candidates.push((marker, components));
             }
         }
@@ -1119,7 +1107,7 @@ fn planar_surface_selection_candidates(
                 marker,
                 "decode SLDPRT component vector path",
             )? {
-                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                 candidates.push((marker, components));
             }
         }
@@ -1160,7 +1148,7 @@ fn face_reference_plane_selection_candidates(
                 if let Some(components) =
                     counted_surface_component_path_at(ctx, &lane.native_payload, marker)?
                 {
-                    ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                     candidates.push((marker, components));
                 }
             }
@@ -1187,7 +1175,7 @@ fn face_reference_plane_selection_candidates(
             None => None,
         };
         if let Some(candidate) = reference {
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push(candidate);
         }
     }
@@ -1205,7 +1193,7 @@ fn order_surface_candidates(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let mut indexed = Vec::new();
-    ctx.reserve_collection_vec(&mut indexed, candidates.len(), operation)?;
+    ctx.reserve_vec(&mut indexed, candidates.len(), operation)?;
     let levels = if candidates.len() > 1 {
         candidates.len().ilog2() + 1
     } else {
@@ -1227,7 +1215,7 @@ fn order_surface_candidates(
         ctx.charge_work(work, operation)?;
     }
     indexed.dedup_by(|left, right| left.0 == right.0 && left.1 == right.1);
-    ctx.reserve_precharged_vec(candidates, indexed.len(), operation)?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(candidates, indexed.len(), operation)?;
     for (offset, components, _) in indexed {
         candidates.push((offset, components));
     }
@@ -1271,7 +1259,7 @@ fn operation_surface_selection_candidates(
                         for reference in references {
                             for component in reference {
                                 ctx.charge_work(1, OPERATION)?;
-                                ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+                                ctx.reserve_vec(&mut components, 1, OPERATION)?;
                                 components.push(component);
                             }
                         }
@@ -1280,7 +1268,7 @@ fn operation_surface_selection_candidates(
                     None => compact_surface_selection_at(ctx, &lane.native_payload, marker)?,
                 };
                 if let Some(components) = components {
-                    ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                    ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                     candidates.push((marker, components));
                 }
             }
@@ -1322,7 +1310,7 @@ fn operation_surface_selection_candidates(
             let Ok(offset) = usize::try_from(identity.offset) else {
                 continue;
             };
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((offset, identity.components));
         }
         return Ok(candidates);
@@ -1381,7 +1369,7 @@ fn operation_surface_selection_candidates(
             if let Some(candidate) =
                 component_face_reference_at_for_operation(ctx, &lane.native_payload, body)?
             {
-                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                 candidates.push(candidate);
             }
         }
@@ -1401,7 +1389,7 @@ fn operation_surface_selection_candidates(
     for token in component_face_tokens {
         let repeated =
             component_face_reference_candidates(ctx, &lane.native_payload, token, start, end)?;
-        ctx.reserve_collection_vec(&mut candidates, repeated.len(), OPERATION)?;
+        ctx.reserve_vec(&mut candidates, repeated.len(), OPERATION)?;
         candidates.extend(repeated);
     }
     order_surface_candidates(ctx, &mut candidates, OPERATION)?;
@@ -1451,7 +1439,7 @@ fn compact_surface_selection_candidates_for_class(
     for marker in body..=last_marker {
         ctx.charge_work(1, OPERATION)?;
         if let Some(components) = compact_surface_selection_at(ctx, bounded_payload, marker)? {
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((marker, components));
         }
     }
@@ -1467,7 +1455,7 @@ fn history_features_with_object_sources(
     let mut features = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
-        ctx.reserve_collection_vec(&mut features, 1, OPERATION)?;
+        ctx.reserve_vec(&mut features, 1, OPERATION)?;
         features.push(feature.clone_charged(ctx, OPERATION)?);
     }
     enrich_feature_object_sources(ctx, &mut features, std::slice::from_ref(lane))?;
@@ -1543,7 +1531,7 @@ fn cosmetic_thread_cylinder_references(
         if View::u16_le_at(&lane.native_payload, offset)
             .is_some_and(|token| cylinder_reference_tokens.contains(&token))
         {
-            ctx.reserve_collection_vec(&mut offsets, 1, OPERATION)?;
+            ctx.reserve_vec(&mut offsets, 1, OPERATION)?;
             offsets.push(offset);
         }
     }
@@ -1566,7 +1554,7 @@ fn cosmetic_thread_cylinder_references(
         if let Some(reference) =
             cosmetic_thread_cylinder_reference_at(ctx, &lane.native_payload, offset)?
         {
-            ctx.reserve_collection_vec(&mut references, 1, OPERATION)?;
+            ctx.reserve_vec(&mut references, 1, OPERATION)?;
             references.push(reference);
             break;
         }
@@ -1599,7 +1587,7 @@ fn cosmetic_thread_component_references(
         else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut classes, 1, OPERATION)?;
+        ctx.reserve_vec(&mut classes, 1, OPERATION)?;
         classes.push((offset, class));
     }
     let levels = if classes.len() > 1 {
@@ -1635,7 +1623,7 @@ fn cosmetic_thread_component_references(
         if body >= direct_end {
             continue;
         }
-        ctx.reserve_collection_vec(&mut class_ranges, 1, OPERATION)?;
+        ctx.reserve_vec(&mut class_ranges, 1, OPERATION)?;
         class_ranges.push(body..direct_end);
 
         let Some((edge_ref_offset, edge_ref)) = classes.get(index + 1) else {
@@ -1653,7 +1641,7 @@ fn cosmetic_thread_component_references(
             .get(index + 2)
             .map_or(object_end, |(offset, _)| *offset);
         if edge_ref_body < edge_ref_end {
-            ctx.reserve_collection_vec(&mut class_ranges, 1, OPERATION)?;
+            ctx.reserve_vec(&mut class_ranges, 1, OPERATION)?;
             class_ranges.push(edge_ref_body..edge_ref_end);
         }
     }
@@ -1663,7 +1651,7 @@ fn cosmetic_thread_component_references(
         object_start,
         object_end,
     )?;
-    ctx.reserve_collection_vec(&mut class_ranges, repeated.len(), OPERATION)?;
+    ctx.reserve_vec(&mut class_ranges, repeated.len(), OPERATION)?;
     class_ranges.extend(repeated);
     let mut references = Vec::new();
     for marker in class_ranges.into_iter().flatten() {
@@ -1677,7 +1665,7 @@ fn cosmetic_thread_component_references(
         }
         if let Some(components) = compact_edge_component_path_at(ctx, &lane.native_payload, marker)?
         {
-            ctx.reserve_collection_vec(&mut references, 1, OPERATION)?;
+            ctx.reserve_vec(&mut references, 1, OPERATION)?;
             references.push((marker, components));
         }
     }
@@ -1740,7 +1728,7 @@ fn cosmetic_thread_repeated_component_edge_ranges(
                 }
             }
         }
-        ctx.reserve_collection_vec(&mut ranges, 1, OPERATION)?;
+        ctx.reserve_vec(&mut ranges, 1, OPERATION)?;
         if let Some(edge_ref_token) = child_token {
             ranges.push(edge_ref_token + 2..end);
         } else {
@@ -1803,7 +1791,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut markers, 1, OPERATION)?;
+        ctx.reserve_vec(&mut markers, 1, OPERATION)?;
         markers.push(marker);
     }
     let count = u64::try_from(markers.len())
@@ -1822,7 +1810,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     markers.sort_unstable();
     markers.dedup();
     let mut references = Vec::new();
-    ctx.reserve_collection_vec(&mut references, markers.len(), OPERATION)?;
+    ctx.reserve_vec(&mut references, markers.len(), OPERATION)?;
     for marker in markers {
         let path =
             match compact_sketch_surface_component_path_at(ctx, &lane.native_payload, marker)? {
@@ -2066,7 +2054,7 @@ fn component_face_reference_candidates(
             if let Some(candidate) =
                 component_face_reference_at_for_operation(ctx, bounded_payload, offset)?
             {
-                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                 candidates.push(candidate);
             }
         }
@@ -2218,7 +2206,7 @@ fn compact_surface_selection_at(
         let Some(entry) = entry else {
             return Ok(None);
         };
-        ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+        ctx.reserve_vec(&mut components, 1, OPERATION)?;
         components.push(entry);
         let Some(next) = cursor.checked_add(20) else {
             return Ok(None);
@@ -2249,7 +2237,7 @@ fn flatten_surface_references(
         ctx.charge_work(1, OPERATION)?;
         for component in reference {
             ctx.charge_work(1, OPERATION)?;
-            ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+            ctx.reserve_vec(&mut components, 1, OPERATION)?;
             components.push(component);
         }
     }
@@ -2349,7 +2337,7 @@ fn repeated_edge_selections(
             }
             let marker = offset + 108;
             if let Some(ids) = compact_edge_selection_at(ctx, payload, marker)? {
-                ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
+                ctx.reserve_vec(&mut selections, 1, OPERATION)?;
                 selections.push((marker, ids));
             }
         }
@@ -2377,7 +2365,7 @@ fn edge_selection_vectors_in_interval(
                 continue;
             }
             if let Some(ids) = compact_edge_selection_at(ctx, payload, marker)? {
-                ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
+                ctx.reserve_vec(&mut selections, 1, OPERATION)?;
                 selections.push((marker, ids));
             }
         }
@@ -2620,7 +2608,7 @@ pub(super) fn compact_mixed_component_path(
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, OPERATION)?;
     let mut components = Vec::new();
-    ctx.reserve_collection_vec(&mut components, count, reserve_operation)?;
+    ctx.reserve_vec(&mut components, count, reserve_operation)?;
     Ok((|| {
         for index in 0..count {
             let (component, len) = compact_mixed_component_at(payload, cursor, count - index)?;
@@ -2794,7 +2782,7 @@ fn inline_mirror_surface_paths(
             let Some(component) = component else {
                 continue 'terminals;
             };
-            ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+            ctx.reserve_vec(&mut components, 1, OPERATION)?;
             components.push(component);
         }
         let mut duplicate = false;
@@ -2811,7 +2799,7 @@ fn inline_mirror_surface_paths(
             }
         }
         if !duplicate {
-            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push((offset, components));
         }
     }
@@ -2894,7 +2882,7 @@ fn inline_surface_reference_at(
         let Some(component) = component else {
             return Ok(None);
         };
-        ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+        ctx.reserve_vec(&mut components, 1, OPERATION)?;
         components.push(component);
     }
     Ok(Some(components))
@@ -3033,7 +3021,7 @@ pub(crate) fn generated_surface_identities(
             let Some(component) = component else {
                 continue 'terminals;
             };
-            ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+            ctx.reserve_vec(&mut components, 1, OPERATION)?;
             components.push(component);
         }
         let mut duplicate = false;
@@ -3053,7 +3041,7 @@ pub(crate) fn generated_surface_identities(
             continue;
         }
         let local_identity = cadmpeg_core::bytes::assemble_u32_le(tail);
-        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        ctx.reserve_vec(&mut result, 1, OPERATION)?;
         let input_index = result.len();
         result.push(SurfaceIdentityFields {
             offset: u64_from_index(offset),
@@ -3081,7 +3069,7 @@ pub(crate) fn generated_surface_identities(
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut identities = Vec::new();
-    ctx.reserve_collection_vec(&mut identities, result.len(), OPERATION)?;
+    ctx.reserve_vec(&mut identities, result.len(), OPERATION)?;
     for (ordinal, fields) in result.into_iter().enumerate() {
         let ordinal = u32::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(ordinal))
@@ -3093,16 +3081,12 @@ pub(crate) fn generated_surface_identities(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        let id = crate::text_admission::format_retained(
-            ctx,
-            format_args!(
+        let id = ctx.format_retained(format_args!(
                 "sldprt:feature-input:generated-surface#{lane_key}:{}",
                 fields.offset
-            ),
-            OPERATION,
-        )?;
+            ), OPERATION)?;
         let parent =
-            crate::text_admission::format_retained(ctx, format_args!("{}", lane.id), OPERATION)?;
+            ctx.format_retained(format_args!("{}", lane.id), OPERATION)?;
         identities.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
             id,
             parent,
@@ -3169,7 +3153,7 @@ pub(crate) fn compact_edge_selection_at(
         for reference in references {
             ctx.charge_work(1, OPERATION)?;
             if let Some(id) = reference.last().and_then(|entry| entry.local_id) {
-                ctx.reserve_collection_vec(&mut ids, 1, OPERATION)?;
+                ctx.reserve_vec(&mut ids, 1, OPERATION)?;
                 ids.push(id);
             }
         }
@@ -3202,7 +3186,7 @@ pub(crate) fn compact_edge_selection_at(
         for component in components {
             ctx.charge_work(1, OPERATION)?;
             if let Some(id) = component.local_id {
-                ctx.reserve_collection_vec(&mut ids, 1, OPERATION)?;
+                ctx.reserve_vec(&mut ids, 1, OPERATION)?;
                 ids.push(id);
             }
         }
@@ -3251,7 +3235,7 @@ pub(crate) fn compact_edge_component_path_at(
             }
             for component in reference {
                 ctx.charge_work(1, OPERATION)?;
-                ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+                ctx.reserve_vec(&mut components, 1, OPERATION)?;
                 components.push(component);
             }
         }
@@ -3326,7 +3310,7 @@ fn compact_component_reference_list(
 
     let mut cursor = marker + 18;
     let mut references = Vec::new();
-    ctx.reserve_collection_vec(&mut references, count, OPERATION)?;
+    ctx.reserve_vec(&mut references, count, OPERATION)?;
     let mut has_reference_framing = false;
     for index in 0..count {
         let mut reference = Vec::new();
@@ -3335,7 +3319,7 @@ fn compact_component_reference_list(
             let Some(hop) = hop_at(cursor) else {
                 break;
             };
-            ctx.reserve_collection_vec(&mut reference, 1, OPERATION)?;
+            ctx.reserve_vec(&mut reference, 1, OPERATION)?;
             reference.push(hop);
             cursor += 16;
         }
@@ -3425,7 +3409,7 @@ pub(super) fn variable_fillet_control_references(
             continue;
         };
         if references.len() == 3 {
-            ctx.reserve_collection_vec(&mut controls, 1, OPERATION)?;
+            ctx.reserve_vec(&mut controls, 1, OPERATION)?;
             controls.push((marker, references));
         }
     }
@@ -3461,14 +3445,9 @@ pub(super) fn variable_fillet_control_references(
             return Ok(None);
         }
         let mut name_text = String::new();
-        crate::text_admission::reserve_retained_string(
-            ctx,
-            &mut name_text,
-            name.value.len(),
-            OPERATION,
-        )?;
+        ctx.try_reserve_retained_text(&mut name_text, name.value.len(), OPERATION)?;
         name_text.push_str(&name.value);
-        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        ctx.reserve_vec(&mut result, 1, OPERATION)?;
         result.push(VariableFilletControl(name_text, references));
         start = marker;
     }
@@ -3620,7 +3599,7 @@ fn compact_edge_component_path_candidates(
                 }
             }
             if !duplicate {
-                ctx.reserve_collection_vec(&mut distinct, 1, OPERATION)?;
+                ctx.reserve_vec(&mut distinct, 1, OPERATION)?;
                 distinct.push(candidate);
             }
         }
@@ -3631,7 +3610,7 @@ fn compact_edge_component_path_candidates(
         for (components, end) in component_paths(count - 1)? {
             ctx.charge_work(36, OPERATION)?;
             if let Some(source) = edge_terminal_source_at(payload, end) {
-                ctx.reserve_collection_vec(&mut terminal_paths, 1, OPERATION)?;
+                ctx.reserve_vec(&mut terminal_paths, 1, OPERATION)?;
                 terminal_paths.push((components, end, source));
             }
         }
@@ -3675,7 +3654,7 @@ fn compact_edge_component_path_candidates(
             }
         }
         if !duplicate {
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push(candidate);
         }
     }
@@ -3783,7 +3762,7 @@ pub(crate) fn compact_edge_producer_features_at(
             }
         }
         if !duplicate {
-            ctx.reserve_collection_vec(&mut producers, 1, OPERATION)?;
+            ctx.reserve_vec(&mut producers, 1, OPERATION)?;
             producers.push(owner);
         }
     }
@@ -3840,7 +3819,7 @@ fn compact_homogeneous_edge_ids(
         return Ok(None);
     };
     let mut ids = Vec::new();
-    ctx.reserve_collection_vec(&mut ids, count, OPERATION)?;
+    ctx.reserve_vec(&mut ids, count, OPERATION)?;
     ctx.charge_work(
         u64_from_index(count)
             .checked_mul(40)
@@ -3942,7 +3921,7 @@ fn compact_component_path_with_layout(
         OPERATION,
     )?;
     let mut entries = Vec::new();
-    ctx.reserve_collection_vec(&mut entries, count, reserve_operation)?;
+    ctx.reserve_vec(&mut entries, count, reserve_operation)?;
     Ok((|| {
         for index in 0..count {
             compact_component_entry_at(payload, cursor, wide)?;
@@ -4063,7 +4042,7 @@ fn compact_sparse_component_path(
             };
             if remaining == 1 {
                 let mut entries = Vec::new();
-                ctx.reserve_collection_vec(&mut entries, 1, OPERATION)?;
+                ctx.reserve_vec(&mut entries, 1, OPERATION)?;
                 entries.push(entry);
                 return Ok(Some((entries, end)));
             }
@@ -4080,7 +4059,7 @@ fn compact_sparse_component_path(
                     continue;
                 };
                 ctx.charge_work(u64_from_index(tail.len()), OPERATION)?;
-                ctx.reserve_collection_vec(&mut tail, 1, OPERATION)?;
+                ctx.reserve_vec(&mut tail, 1, OPERATION)?;
                 tail.insert(0, entry);
                 return Ok(Some((tail, path_end)));
             }
@@ -4122,7 +4101,7 @@ fn compact_u16_edge_ids(
         return Ok(None);
     };
     let mut ids = Vec::new();
-    ctx.reserve_collection_vec(&mut ids, count, OPERATION)?;
+    ctx.reserve_vec(&mut ids, count, OPERATION)?;
     ctx.charge_work(
         u64_from_index(count)
             .checked_mul(2)
@@ -4256,7 +4235,7 @@ pub(super) fn read_compact_body_ids(
     operation: &'static str,
 ) -> Result<Vec<u32>, CodecError> {
     let mut result = Vec::new();
-    ctx.reserve_collection_vec(&mut result, bytes.len() / 4, operation)?;
+    ctx.reserve_vec(&mut result, bytes.len() / 4, operation)?;
     ctx.charge_work(u64_from_index(bytes.len() / 4), operation)?;
     let mut view = View::over_retained(bytes);
     while let Some(id) = view.u32_le() {
@@ -4361,7 +4340,7 @@ pub(super) fn component_reference_curve_path_at(
                 return Ok(None);
             };
             let mut components = Vec::new();
-            ctx.reserve_collection_vec(&mut components, count, OPERATION)?;
+            ctx.reserve_vec(&mut components, count, OPERATION)?;
             for index in 0..count {
                 ctx.charge_work(64, OPERATION)?;
                 if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) {
@@ -4583,7 +4562,7 @@ pub(super) fn coordinate_marker_local_links(
         return Ok(None);
     };
     let mut links = Vec::new();
-    ctx.reserve_collection_vec(&mut links, count, OPERATION)?;
+    ctx.reserve_vec(&mut links, count, OPERATION)?;
     links.extend(local_ids.into_iter().take(count));
     Ok(Some((links, selector)))
 }

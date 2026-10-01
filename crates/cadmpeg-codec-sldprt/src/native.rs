@@ -7,10 +7,7 @@ use serde::{ser::SerializeMap, Deserialize, Serialize};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
-use self::admission::{
-    admit_validation_candidates, collect_index_map, collect_index_set, collect_retained_clones,
-    collect_temporary_clones, invalid_owner,
-};
+use crate::records::charged_clone::CloneCharged;
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
@@ -40,7 +37,6 @@ const SLDPRT_ARENA_NAMES: &[&str] = &[
 
 type SldprtFamilyRow = FamilyRow<SldprtNative, (), cadmpeg_ir::NativeNamespace, ()>;
 
-pub(crate) mod admission;
 
 struct HistoryArenaView<'a>(&'a FeatureHistory);
 
@@ -365,72 +361,43 @@ impl SldprtNative {
         let relation_instances: Vec<FeatureInputRelationInstance> =
             read_arena!("feature_input_relation_instances");
         let scalars: Vec<FeatureInputScalar> = read_arena!("feature_input_scalars");
-        let history_ids = collect_index_set(
-            ctx,
-            native.feature_histories.len(),
-            native
+        let (history_ids, _history_ids_reservation) = ctx.collect_scoped_string_set(native.feature_histories.len(), native
                 .feature_histories
                 .iter()
-                .map(|history| history.id.as_str()),
-            "index SLDPRT history ids",
-        )?;
+                .map(|history| history.id.as_str()), "index SLDPRT history ids")?;
         if let Some(record) = configurations
             .iter()
             .find(|record| !history_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!("configuration {} references {}", record.id, record.parent),
-            )?);
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!("configuration {} references {}", record.id, record.parent), "format SLDPRT native validation error")?));
         }
         if let Some(record) = features
             .iter()
             .find(|record| !history_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!("feature {} references {}", record.id, record.parent),
-            )?);
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!("feature {} references {}", record.id, record.parent), "format SLDPRT native validation error")?));
         }
-        let feature_ids = collect_index_set(
-            ctx,
-            features.len(),
-            features.iter().map(|record| record.id.as_str()),
-            "index SLDPRT feature ids",
-        )?;
-        let lane_ids = collect_index_set(
-            ctx,
-            native.feature_input_lanes.len(),
-            native
+        let (feature_ids, _feature_ids_reservation) = ctx.collect_scoped_string_set(features.len(), features.iter().map(|record| record.id.as_str()), "index SLDPRT feature ids")?;
+        let (lane_ids, _lane_ids_reservation) = ctx.collect_scoped_string_set(native.feature_input_lanes.len(), native
                 .feature_input_lanes
                 .iter()
-                .map(|lane| lane.id.as_str()),
-            "index SLDPRT lane ids",
-        )?;
-        let lane_payloads = collect_index_map(
-            ctx,
-            native.feature_input_lanes.len(),
-            native
+                .map(|lane| lane.id.as_str()), "index SLDPRT lane ids")?;
+        let (lane_payloads, _lane_payloads_reservation) = ctx.collect_scoped_string_map(native.feature_input_lanes.len(), native
                 .feature_input_lanes
                 .iter()
-                .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice())),
-            "index SLDPRT lane payloads",
-        )?;
+                .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice())), "index SLDPRT lane payloads")?;
         if let Some(record) = entity_wires
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "sketch input entity {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         let mut entities = Vec::new();
         {
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut entities,
                 entity_wires.len(),
                 "load SLDPRT sketch entities",
@@ -438,13 +405,10 @@ impl SldprtNative {
         }
         for wire in entity_wires {
             let Some(payload) = lane_payloads.get(wire.parent.as_str()).copied() else {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "sketch input entity {} references lane {} without a payload",
                         wire.id, wire.parent
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             };
             entities.push(
                 crate::records::SketchInputEntity::try_from_wire(wire, payload)
@@ -455,85 +419,64 @@ impl SldprtNative {
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input class {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = body_selections
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input body selection {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = edge_selections
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input edge selection {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = surface_selections
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input surface selection {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = generated_surface_identities
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input generated surface identity {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = names
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input name {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = scalars
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input scalar {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = scalars.iter().find(|record| {
             record
@@ -541,82 +484,59 @@ impl SldprtNative {
                 .as_deref()
                 .is_some_and(|feature| !feature_ids.contains(feature))
         }) {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input scalar {} references missing feature {}",
                     record.id,
                     record.feature_ref.as_deref().unwrap_or_default()
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = references
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input reference {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = relation_bindings
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input relation binding {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = relation_instances
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input relation instance {} references {}",
                     record.id, record.parent
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
-        let name_ids = collect_index_set(
-            ctx,
-            names.len(),
-            names.iter().map(|record| record.id.as_str()),
-            "index SLDPRT feature names",
-        )?;
+        let (name_ids, _name_ids_reservation) = ctx.collect_scoped_string_set(names.len(), names.iter().map(|record| record.id.as_str()), "index SLDPRT feature names")?;
         if let Some(record) = body_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
                 || record.local_body_ids.is_empty()
         }) {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input body selection {} has unresolved ownership",
                     record.id
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = edge_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
                 || record.local_edge_ids.is_empty()
         }) {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input edge selection {} has unresolved ownership",
                     record.id
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = surface_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
@@ -642,44 +562,23 @@ impl SldprtNative {
                         != Some(selector)
                 })
         }) {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input surface selection {} has unresolved ownership",
                     record.id
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = scalars
             .iter()
             .find(|record| !name_ids.contains(record.name.as_str()))
         {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input scalar {} references name {}",
                     record.id, record.name
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
-        let references_by_id = collect_index_map(
-            ctx,
-            references.len(),
-            references.iter().map(|record| (record.id.as_str(), record)),
-            "index SLDPRT references",
-        )?;
-        let class_ids = collect_index_set(
-            ctx,
-            classes.len(),
-            classes.iter().map(|record| record.id.as_str()),
-            "index SLDPRT classes",
-        )?;
-        let scalar_ids = collect_index_set(
-            ctx,
-            scalars.len(),
-            scalars.iter().map(|record| record.id.as_str()),
-            "index SLDPRT scalars",
-        )?;
+        let (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(references.len(), references.iter().map(|record| (record.id.as_str(), record)), "index SLDPRT references")?;
+        let (class_ids, _class_ids_reservation) = ctx.collect_scoped_string_set(classes.len(), classes.iter().map(|record| record.id.as_str()), "index SLDPRT classes")?;
+        let (scalar_ids, _scalar_ids_reservation) = ctx.collect_scoped_string_set(scalars.len(), scalars.iter().map(|record| record.id.as_str()), "index SLDPRT scalars")?;
         if let Some(record) = relation_bindings.iter().find(|record| {
             !class_ids.contains(record.class_ref.as_str())
                 || !scalar_ids.contains(record.scalar_ref.as_str())
@@ -688,13 +587,10 @@ impl SldprtNative {
                     .as_deref()
                     .is_some_and(|feature| !feature_ids.contains(feature))
         }) {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input relation binding {} has an unresolved class or scalar",
                     record.id
-                ),
-            )?);
+                ), "format SLDPRT native validation error")?));
         }
         if let Some(record) = relation_instances.iter().find(|record| {
             !class_ids.contains(record.class_ref.as_str())
@@ -738,47 +634,34 @@ impl SldprtNative {
                         })
                 })
         }) {
-            return Err(invalid_owner(
-                ctx,
-                format_args!(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                 "feature-input relation instance {} has an unresolved class, feature, or scalar",
                 record.id
-            ),
-            )?);
+            ), "format SLDPRT native validation error")?));
         }
         for scalar in &scalars {
             for operand in &scalar.operands {
                 let Some(reference) = references_by_id.get(operand.reference_ref.as_str()) else {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input scalar {} references missing cell {}",
                             scalar.id, operand.reference_ref
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 };
                 if reference.offset != operand.offset
                     || reference.kind != operand.kind
                     || reference.object_index != operand.entity_index
                 {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input scalar {} has inconsistent cell {}",
                             scalar.id, operand.reference_ref
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
             }
         }
         for history in &mut native.feature_histories {
-            history.configurations = collect_retained_clones(
-                ctx,
-                configurations
+            history.configurations = ctx.try_collect_retained_with(configurations
                     .iter()
-                    .filter(|record| record.parent == history.id),
-                "attach SLDPRT history configurations",
-            )?;
+                    .filter(|record| record.parent == history.id), "attach SLDPRT history configurations", |record| record.clone_charged(ctx, "attach SLDPRT history configurations"))?;
             ctx.stable_sort_by(
                 &mut history.configurations,
                 |left, right| left.ordinal.cmp(&right.ordinal),
@@ -790,19 +673,12 @@ impl SldprtNative {
                 .windows(2)
                 .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "SolidWorks history {} repeats configuration ordinal {}",
                         history.id, pair[1].ordinal
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
-            history.features = collect_retained_clones(
-                ctx,
-                features.iter().filter(|record| record.parent == history.id),
-                "attach SLDPRT history features",
-            )?;
+            history.features = ctx.try_collect_retained_with(features.iter().filter(|record| record.parent == history.id), "attach SLDPRT history features", |record| record.clone_charged(ctx, "attach SLDPRT history features"))?;
             ctx.stable_sort_by(
                 &mut history.features,
                 |left, right| left.ordinal.cmp(&right.ordinal),
@@ -814,93 +690,62 @@ impl SldprtNative {
                 .windows(2)
                 .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "SolidWorks history {} repeats feature ordinal {}",
                         history.id, pair[1].ordinal
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
         }
         for lane in &mut native.feature_input_lanes {
-            lane.classes = collect_retained_clones(
-                ctx,
-                classes.iter().filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane classes",
-            )?;
+            lane.classes = ctx.try_collect_retained_with(classes.iter().filter(|record| record.parent == lane.id), "attach SLDPRT lane classes", |record| record.clone_charged(ctx, "attach SLDPRT lane classes"))?;
             ctx.stable_sort_by(
                 &mut lane.classes,
                 |left, right| left.ordinal.cmp(&right.ordinal),
                 |_| 0,
                 "sort SLDPRT native records",
             )?;
-            lane.names = collect_retained_clones(
-                ctx,
-                names.iter().filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane names",
-            )?;
+            lane.names = ctx.try_collect_retained_with(names.iter().filter(|record| record.parent == lane.id), "attach SLDPRT lane names", |record| record.clone_charged(ctx, "attach SLDPRT lane names"))?;
             ctx.stable_sort_by(
                 &mut lane.names,
                 |left, right| left.ordinal.cmp(&right.ordinal),
                 |_| 0,
                 "sort SLDPRT native records",
             )?;
-            lane.scalars = collect_retained_clones(
-                ctx,
-                scalars.iter().filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane scalars",
-            )?;
+            lane.scalars = ctx.try_collect_retained_with(scalars.iter().filter(|record| record.parent == lane.id), "attach SLDPRT lane scalars", |record| record.clone_charged(ctx, "attach SLDPRT lane scalars"))?;
             ctx.stable_sort_by(
                 &mut lane.scalars,
                 |left, right| left.ordinal.cmp(&right.ordinal),
                 |_| 0,
                 "sort SLDPRT native records",
             )?;
-            lane.references = collect_retained_clones(
-                ctx,
-                references.iter().filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane references",
-            )?;
+            lane.references = ctx.try_collect_retained_with(references.iter().filter(|record| record.parent == lane.id), "attach SLDPRT lane references", |record| record.clone_charged(ctx, "attach SLDPRT lane references"))?;
             ctx.stable_sort_by(
                 &mut lane.references,
                 |left, right| left.ordinal.cmp(&right.ordinal),
                 |_| 0,
                 "sort SLDPRT native records",
             )?;
-            lane.relation_bindings = collect_retained_clones(
-                ctx,
-                relation_bindings
+            lane.relation_bindings = ctx.try_collect_retained_with(relation_bindings
                     .iter()
-                    .filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane relation bindings",
-            )?;
+                    .filter(|record| record.parent == lane.id), "attach SLDPRT lane relation bindings", |record| record.clone_charged(ctx, "attach SLDPRT lane relation bindings"))?;
             ctx.stable_sort_by(
                 &mut lane.relation_bindings,
                 |left, right| left.ordinal.cmp(&right.ordinal),
                 |_| 0,
                 "sort SLDPRT native records",
             )?;
-            lane.relation_instances = collect_retained_clones(
-                ctx,
-                relation_instances
+            lane.relation_instances = ctx.try_collect_retained_with(relation_instances
                     .iter()
-                    .filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane relation instances",
-            )?;
+                    .filter(|record| record.parent == lane.id), "attach SLDPRT lane relation instances", |record| record.clone_charged(ctx, "attach SLDPRT lane relation instances"))?;
             ctx.stable_sort_by(
                 &mut lane.relation_instances,
                 |left, right| left.ordinal.cmp(&right.ordinal),
                 |_| 0,
                 "sort SLDPRT native records",
             )?;
-            lane.body_selections = collect_retained_clones(
-                ctx,
-                body_selections
+            lane.body_selections = ctx.try_collect_retained_with(body_selections
                     .iter()
-                    .filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane body selections",
-            )?;
+                    .filter(|record| record.parent == lane.id), "attach SLDPRT lane body selections", |record| record.clone_charged(ctx, "attach SLDPRT lane body selections"))?;
             ctx.stable_sort_by(
                 &mut lane.body_selections,
                 |left, right| left.ordinal.cmp(&right.ordinal),
@@ -909,33 +754,22 @@ impl SldprtNative {
             )?;
             for record in &lane.body_selections {
                 if body_selection_disagrees_with_payload(ctx, lane, record)? {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input body selection {} disagrees with its payload",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
             }
-            lane.edge_selections = collect_retained_clones(
-                ctx,
-                edge_selections
+            lane.edge_selections = ctx.try_collect_retained_with(edge_selections
                     .iter()
-                    .filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane edge selections",
-            )?;
+                    .filter(|record| record.parent == lane.id), "attach SLDPRT lane edge selections", |record| record.clone_charged(ctx, "attach SLDPRT lane edge selections"))?;
             ctx.stable_sort_by(
                 &mut lane.edge_selections,
                 |left, right| left.ordinal.cmp(&right.ordinal),
                 |_| 0,
                 "sort SLDPRT native records",
             )?;
-            let (mut edge_features, _edge_features_reservation) = collect_temporary_clones(
-                ctx,
-                features.iter(),
-                "validate SLDPRT edge feature context",
-            )?;
+            let (mut edge_features, _edge_features_reservation) = ctx.with_scoped_storage("validate SLDPRT edge feature context", || ctx.try_collect_retained_with(features.iter(), "validate SLDPRT edge feature context", |record| record.clone_charged(ctx, "validate SLDPRT edge feature context")))?;
             crate::resolved_features::selections::enrich_feature_object_sources(
                 ctx,
                 &mut edge_features,
@@ -943,19 +777,11 @@ impl SldprtNative {
             )?;
             for record in &lane.edge_selections {
                 if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input edge selection {} disagrees with its payload",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
-                let _reference_reservation = admit_validation_candidates(
-                    ctx,
-                    selection_payload_span(lane, record.offset),
-                    "validate SLDPRT edge reference candidates",
-                )?;
                 let references = match usize::try_from(record.offset) {
                     Ok(offset) => {
                         let feature_kind = edge_features
@@ -971,32 +797,21 @@ impl SldprtNative {
                 };
                 let disagreement = references.unwrap_or_default() != record.references;
                 if disagreement {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input edge selection {} disagrees with its payload",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
             }
-            let (mut surface_features, _surface_features_reservation) = collect_temporary_clones(
-                ctx,
-                features.iter(),
-                "validate SLDPRT surface feature context",
-            )?;
+            let (mut surface_features, _surface_features_reservation) = ctx.with_scoped_storage("validate SLDPRT surface feature context", || ctx.try_collect_retained_with(features.iter(), "validate SLDPRT surface feature context", |record| record.clone_charged(ctx, "validate SLDPRT surface feature context")))?;
             crate::resolved_features::selections::enrich_feature_object_sources(
                 ctx,
                 &mut surface_features,
                 std::slice::from_ref(lane),
             )?;
-            lane.surface_selections = collect_retained_clones(
-                ctx,
-                surface_selections
+            lane.surface_selections = ctx.try_collect_retained_with(surface_selections
                     .iter()
-                    .filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane surface selections",
-            )?;
+                    .filter(|record| record.parent == lane.id), "attach SLDPRT lane surface selections", |record| record.clone_charged(ctx, "attach SLDPRT lane surface selections"))?;
             ctx.stable_sort_by(
                 &mut lane.surface_selections,
                 |left, right| left.ordinal.cmp(&right.ordinal),
@@ -1005,22 +820,15 @@ impl SldprtNative {
             )?;
             for record in &lane.surface_selections {
                 if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input surface selection {} disagrees with its payload",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
             }
-            let mut records = collect_retained_clones(
-                ctx,
-                generated_surface_identities
+            let mut records = ctx.try_collect_retained_with(generated_surface_identities
                     .iter()
-                    .filter(|record| record.parent == lane.id),
-                "attach SLDPRT lane generated surfaces",
-            )?;
+                    .filter(|record| record.parent == lane.id), "attach SLDPRT lane generated surfaces", |record| record.clone_charged(ctx, "attach SLDPRT lane generated surfaces"))?;
             ctx.stable_sort_by(
                 &mut records,
                 |left, right| left.ordinal.cmp(&right.ordinal),
@@ -1029,19 +837,12 @@ impl SldprtNative {
             )?;
             lane.generated_surface_identities = records;
             if generated_surface_identities_disagree_with_payload(ctx, lane)? {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "feature-input lane {} generated surface identities disagree with its payload",
                     lane.id
-                ),
-                )?);
+                ), "format SLDPRT native validation error")?));
             }
-            lane.sketch_entities = collect_retained_clones(
-                ctx,
-                entities.iter().filter(|record| record.parent() == lane.id),
-                "attach SLDPRT lane sketch entities",
-            )?;
+            lane.sketch_entities = ctx.try_collect_retained_with(entities.iter().filter(|record| record.parent() == lane.id), "attach SLDPRT lane sketch entities", |record| record.clone_charged(ctx, "attach SLDPRT lane sketch entities"))?;
             ctx.stable_sort_by(
                 &mut lane.sketch_entities,
                 |left, right| left.ordinal().cmp(&right.ordinal()),
@@ -1067,98 +868,54 @@ impl SldprtNative {
                 .iter()
                 .find(|record| record.parent != history.id)
             {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "configuration {} references {} instead of {}",
                         record.id, record.parent, history.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = history
                 .features
                 .iter()
                 .find(|record| record.parent != history.id)
             {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature {} references {} instead of {}",
                         record.id, record.parent, history.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
         }
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(self.feature_histories.len()),
             "validate SLDPRT store features",
         )?;
-        let (features, _features_reservation) = collect_temporary_clones(
-            ctx,
-            self.feature_histories
+        let (features, _features_reservation) = ctx.with_scoped_storage("validate SLDPRT store features", || ctx.try_collect_retained_with(self.feature_histories
                 .iter()
-                .flat_map(|history| &history.features),
-            "validate SLDPRT store features",
-        )?;
-        let feature_ids = collect_index_set(
-            ctx,
-            features.len(),
-            features.iter().map(|feature| feature.id.as_str()),
-            "index SLDPRT stored features",
-        )?;
+                .flat_map(|history| &history.features), "validate SLDPRT store features", |record| record.clone_charged(ctx, "validate SLDPRT store features")))?;
+        let (feature_ids, _feature_ids_reservation) = ctx.collect_scoped_string_set(features.len(), features.iter().map(|feature| feature.id.as_str()), "index SLDPRT stored features")?;
         for lane in &self.feature_input_lanes {
-            let name_ids = collect_index_set(
-                ctx,
-                lane.names.len(),
-                lane.names.iter().map(|record| record.id.as_str()),
-                "index SLDPRT stored names",
-            )?;
-            let references_by_id = collect_index_map(
-                ctx,
-                lane.references.len(),
-                lane.references
+            let (name_ids, _name_ids_reservation) = ctx.collect_scoped_string_set(lane.names.len(), lane.names.iter().map(|record| record.id.as_str()), "index SLDPRT stored names")?;
+            let (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(lane.references.len(), lane.references
                     .iter()
-                    .map(|record| (record.id.as_str(), record)),
-                "index SLDPRT stored references",
-            )?;
-            let class_ids = collect_index_set(
-                ctx,
-                lane.classes.len(),
-                lane.classes.iter().map(|record| record.id.as_str()),
-                "index SLDPRT stored classes",
-            )?;
-            let scalar_ids = collect_index_set(
-                ctx,
-                lane.scalars.len(),
-                lane.scalars.iter().map(|record| record.id.as_str()),
-                "index SLDPRT stored scalars",
-            )?;
+                    .map(|record| (record.id.as_str(), record)), "index SLDPRT stored references")?;
+            let (class_ids, _class_ids_reservation) = ctx.collect_scoped_string_set(lane.classes.len(), lane.classes.iter().map(|record| record.id.as_str()), "index SLDPRT stored classes")?;
+            let (scalar_ids, _scalar_ids_reservation) = ctx.collect_scoped_string_set(lane.scalars.len(), lane.scalars.iter().map(|record| record.id.as_str()), "index SLDPRT stored scalars")?;
             if let Some(record) = lane.classes.iter().find(|record| record.parent != lane.id) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input class {} references {} instead of {}",
                         record.id, record.parent, lane.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = lane.names.iter().find(|record| record.parent != lane.id) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input name {} references {} instead of {}",
                         record.id, record.parent, lane.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = lane.scalars.iter().find(|record| record.parent != lane.id) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input scalar {} references {} instead of {}",
                         record.id, record.parent, lane.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             for record in &lane.body_selections {
                 let invalid = record.parent != lane.id
@@ -1166,31 +923,21 @@ impl SldprtNative {
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_body_ids.is_empty();
                 if invalid {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input body selection {} has inconsistent ownership",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
                 let invalid = body_state_ids_disagree_with_payload(ctx, lane, record)?
                     || body_selection_disagrees_with_payload(ctx, lane, record)?;
                 if invalid {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input body selection {} has inconsistent ownership",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
             }
-            let (mut edge_features, _edge_features_reservation) = collect_temporary_clones(
-                ctx,
-                features.iter(),
-                "validate SLDPRT store edge features",
-            )?;
+            let (mut edge_features, _edge_features_reservation) = ctx.with_scoped_storage("validate SLDPRT store edge features", || ctx.try_collect_retained_with(features.iter(), "validate SLDPRT store edge features", |record| record.clone_charged(ctx, "validate SLDPRT store edge features")))?;
             crate::resolved_features::selections::enrich_feature_object_sources(
                 ctx,
                 &mut edge_features,
@@ -1204,20 +951,13 @@ impl SldprtNative {
                 if invalid
                     || edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)?
                 {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input edge selection {} has inconsistent ownership",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
             }
-            let (mut surface_features, _surface_features_reservation) = collect_temporary_clones(
-                ctx,
-                features.iter(),
-                "validate SLDPRT store surface features",
-            )?;
+            let (mut surface_features, _surface_features_reservation) = ctx.with_scoped_storage("validate SLDPRT store surface features", || ctx.try_collect_retained_with(features.iter(), "validate SLDPRT store surface features", |record| record.clone_charged(ctx, "validate SLDPRT store surface features")))?;
             crate::resolved_features::selections::enrich_feature_object_sources(
                 ctx,
                 &mut surface_features,
@@ -1236,13 +976,10 @@ impl SldprtNative {
                         &surface_features,
                     )?
                 {
-                    return Err(invalid_owner(
-                        ctx,
-                        format_args!(
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                             "feature-input surface selection {} has inconsistent ownership",
                             record.id
-                        ),
-                    )?);
+                        ), "format SLDPRT native validation error")?));
                 }
             }
             if let Some(record) = lane.scalars.iter().find(|record| {
@@ -1251,27 +988,21 @@ impl SldprtNative {
                     .as_deref()
                     .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input scalar {} references missing feature {}",
                         record.id,
                         record.feature_ref.as_deref().unwrap_or_default()
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = lane
                 .references
                 .iter()
                 .find(|record| record.parent != lane.id)
             {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input reference {} references {} instead of {}",
                         record.id, record.parent, lane.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
                 record.parent != lane.id
@@ -1282,13 +1013,10 @@ impl SldprtNative {
                         .as_deref()
                         .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input relation binding {} has inconsistent ownership",
                         record.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = lane.relation_instances.iter().find(|record| {
                 record.parent != lane.id
@@ -1316,13 +1044,10 @@ impl SldprtNative {
                             })
                     })
             }) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input relation instance {} has inconsistent ownership",
                         record.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
                 lane.scalars
@@ -1330,78 +1055,55 @@ impl SldprtNative {
                     .find(|scalar| scalar.id == record.scalar_ref)
                     .is_some_and(|scalar| scalar.feature_ref != record.feature_ref)
             }) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input relation binding {} disagrees with its scalar owner",
                         record.id
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             if let Some(record) = lane
                 .scalars
                 .iter()
                 .find(|record| !name_ids.contains(record.name.as_str()))
             {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "feature-input scalar {} references name {}",
                         record.id, record.name
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
-            let sketch_entities = collect_index_map(
-                ctx,
-                lane.sketch_entities.len(),
-                lane.sketch_entities
+            let (sketch_entities, _sketch_entities_reservation) = ctx.collect_scoped_string_map(lane.sketch_entities.len(), lane.sketch_entities
                     .iter()
-                    .map(|record| (record.id(), record)),
-                "index SLDPRT stored sketch entities",
-            )?;
+                    .map(|record| (record.id(), record)), "index SLDPRT stored sketch entities")?;
             for scalar in &lane.scalars {
                 let resolved_operands = resolved_scalar_operand_markers(ctx, lane, scalar)?;
                 for (operand, resolved) in scalar.operands.iter().zip(resolved_operands) {
                     let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
                     else {
-                        return Err(invalid_owner(
-                            ctx,
-                            format_args!(
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                                 "feature-input scalar {} references missing cell {}",
                                 scalar.id, operand.reference_ref
-                            ),
-                        )?);
+                            ), "format SLDPRT native validation error")?));
                     };
                     if reference.offset != operand.offset
                         || reference.kind != operand.kind
                         || reference.object_index != operand.entity_index
                     {
-                        return Err(invalid_owner(
-                            ctx,
-                            format_args!(
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                                 "feature-input scalar {} has inconsistent cell {}",
                                 scalar.id, operand.reference_ref
-                            ),
-                        )?);
+                            ), "format SLDPRT native validation error")?));
                     }
                     if let Some(entity_ref) = operand.entity_ref.as_deref() {
                         let Some(target) = sketch_entities.get(entity_ref) else {
-                            return Err(invalid_owner(
-                                ctx,
-                                format_args!(
+                            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                                     "feature-input scalar {} references missing sketch marker {}",
                                     scalar.id, entity_ref
-                                ),
-                            )?);
+                                ), "format SLDPRT native validation error")?));
                         };
                         if resolved != Some(*target) {
-                            return Err(invalid_owner(
-                                ctx,
-                                format_args!(
+                            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                                     "feature-input scalar {} has inconsistent sketch marker {}",
                                     scalar.id, entity_ref
-                                ),
-                            )?);
+                                ), "format SLDPRT native validation error")?));
                         }
                     }
                 }
@@ -1413,53 +1115,36 @@ impl SldprtNative {
                         .as_deref()
                         .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
-                return Err(invalid_owner(
-                    ctx,
-                    format_args!(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "sketch input entity {} has inconsistent lane or feature ownership",
                         record.id()
-                    ),
-                )?);
+                    ), "format SLDPRT native validation error")?));
             }
             for record in &lane.sketch_entities {
                 for link in record.links() {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
-                        return Err(invalid_owner(
-                            ctx,
-                            format_args!(
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                                 "sketch input entity {} references missing local-link target {}",
                                 record.id(),
                                 link.entity_ref
-                            ),
-                        )?);
+                            ), "format SLDPRT native validation error")?));
                     };
                     if target.feature_ref != record.feature_ref
                         || target.local_id() != Some(u32::from(link.local_id))
                     {
-                        return Err(invalid_owner(
-                            ctx,
-                            format_args!(
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                                 "sketch input entity {} has inconsistent local-link target {}",
                                 record.id(),
                                 link.entity_ref
-                            ),
-                        )?);
+                            ), "format SLDPRT native validation error")?));
                     }
                 }
             }
         }
-        let (mut expected_histories, _expected_histories_reservation) = collect_temporary_clones(
-            ctx,
-            self.feature_histories.iter(),
-            "validate SLDPRT expected histories",
-        )?;
-        let (history_lanes, _history_lanes_reservation) = collect_temporary_clones(
-            ctx,
-            self.feature_input_lanes.iter().filter(|lane| {
+        let (mut expected_histories, _expected_histories_reservation) = ctx.with_scoped_storage("validate SLDPRT expected histories", || ctx.try_collect_retained_with(self.feature_histories.iter(), "validate SLDPRT expected histories", |record| record.clone_charged(ctx, "validate SLDPRT expected histories")))?;
+        let (history_lanes, _history_lanes_reservation) = ctx.with_scoped_storage("validate SLDPRT history lanes", || ctx.try_collect_retained_with(self.feature_input_lanes.iter().filter(|lane| {
                 !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
-            }),
-            "validate SLDPRT history lanes",
-        )?;
+            }), "validate SLDPRT history lanes", |record| record.clone_charged(ctx, "validate SLDPRT history lanes")))?;
         crate::resolved_features::classes::bind_history_classes(
             ctx,
             &mut expected_histories,
@@ -1486,22 +1171,6 @@ fn resolved_scalar_operand_markers<'a>(
     lane: &'a FeatureInputLane,
     scalar: &crate::records::FeatureInputScalar,
 ) -> Result<Vec<Option<&'a crate::records::SketchInputEntity>>, cadmpeg_ir::NativeConvertError> {
-    let source_items = lane
-        .sketch_entities
-        .len()
-        .checked_add(scalar.operands.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "validate SLDPRT scalar operand candidates",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    let _reservation = admit_validation_candidates(
-        ctx,
-        source_items,
-        "validate SLDPRT scalar operand candidates",
-    )?;
     Ok(
         crate::resolved_features::operands::resolve_scalar_operand_markers(
             ctx,
@@ -1517,29 +1186,8 @@ fn generated_surface_identities_disagree_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let _reservation = if lane
-        .classes
-        .iter()
-        .any(|class| class.name.ends_with("SurfIdRep_c"))
-    {
-        admit_validation_candidates(
-            ctx,
-            lane.native_payload.len(),
-            "validate SLDPRT generated surface identities",
-        )
-        .map(Some)?
-    } else {
-        None
-    };
     Ok(lane.generated_surface_identities
         != crate::resolved_features::selections::generated_surface_identities(ctx, lane)?)
-}
-
-fn selection_payload_span(lane: &FeatureInputLane, offset: u64) -> usize {
-    usize::try_from(offset)
-        .ok()
-        .and_then(|start| lane.native_payload.len().checked_sub(start))
-        .unwrap_or(0)
 }
 
 fn body_state_ids_disagree_with_payload(
@@ -1547,15 +1195,6 @@ fn body_state_ids_disagree_with_payload(
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let source_units = lane
-        .names
-        .iter()
-        .find(|name| name.id == record.object_name_ref)
-        .and_then(|name| record.offset.checked_sub(name.offset))
-        .and_then(|span| usize::try_from(span).ok())
-        .unwrap_or(0);
-    let _reservation =
-        admit_validation_candidates(ctx, source_units, "validate SLDPRT body state candidates")?;
     Ok(
         crate::resolved_features::selections::compact_body_state_ids_for_selection(
             ctx, lane, record,
@@ -1569,11 +1208,6 @@ fn body_selection_disagrees_with_payload(
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let _reservation = admit_validation_candidates(
-        ctx,
-        selection_payload_span(lane, record.offset),
-        "validate SLDPRT body selection candidates",
-    )?;
     let selection = match usize::try_from(record.offset) {
         Ok(offset) => crate::resolved_features::selections::compact_body_selection_at(
             ctx,
@@ -1597,11 +1231,6 @@ fn edge_selection_disagrees_with_payload(
     record: &FeatureInputEdgeSelection,
     edge_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let _reservation = admit_validation_candidates(
-        ctx,
-        selection_payload_span(lane, record.offset),
-        "validate SLDPRT edge selection candidates",
-    )?;
     Ok(match usize::try_from(record.offset) {
         Ok(offset) => crate::resolved_features::selections::compact_edge_selection_at(
             ctx,
@@ -1655,11 +1284,6 @@ fn surface_selection_disagrees_with_payload(
     record: &FeatureInputSurfaceSelection,
     surface_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let _reservation = admit_validation_candidates(
-        ctx,
-        selection_payload_span(lane, record.offset),
-        "validate SLDPRT surface selection candidates",
-    )?;
     // An offset no index can name names no byte of the payload in memory, so
     // the selection states nothing the payload agrees with.
     let matches_payload = match usize::try_from(record.offset) {

@@ -92,7 +92,7 @@ fn declared_draft_operands(
             continue;
         }
         if let Some(record) = draft_plane_reference_at(ctx, &lane.native_payload, offset, end)? {
-            ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
+            ctx.reserve_vec(&mut records, 1, OPERATION)?;
             records.push(record);
         }
     }
@@ -113,7 +113,7 @@ fn declared_draft_operands(
             .iter()
             .any(|existing| same_component_path_semantics(existing, &path))
         {
-            ctx.reserve_collection_vec(&mut faces, 1, "collect SLDPRT declared draft faces")?;
+            ctx.reserve_vec(&mut faces, 1, "collect SLDPRT declared draft faces")?;
             faces.push(path);
         }
     }
@@ -154,7 +154,7 @@ fn compact_parting_line_draft_operands(
         if let Some(CompactDraftSelection(role, paths, selection_end)) =
             compact_draft_selection_at(ctx, &lane.native_payload, marker, OPERATION)?
         {
-            ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
+            ctx.reserve_vec(&mut records, 1, OPERATION)?;
             records.push((marker, role, paths, selection_end));
         }
     }
@@ -194,7 +194,7 @@ fn compact_parting_line_draft_operands(
                 .iter()
                 .any(|existing| same_component_path_semantics(existing, &path))
             {
-                ctx.reserve_collection_vec(&mut faces, 1, "collect SLDPRT compact draft faces")?;
+                ctx.reserve_vec(&mut faces, 1, "collect SLDPRT compact draft faces")?;
                 faces.push(path);
             }
         }
@@ -294,7 +294,7 @@ fn compact_draft_selection_at(
         let Some((path, path_end)) = candidate else {
             return Ok((!paths.is_empty()).then_some(CompactDraftSelection(role, paths, cursor)));
         };
-        ctx.reserve_collection_vec(&mut paths, 1, reserve_operation)?;
+        ctx.reserve_vec(&mut paths, 1, reserve_operation)?;
         paths.push(path);
         cursor = path_end + 8;
     }
@@ -465,7 +465,7 @@ pub(super) fn draft_operand_candidates(
         ctx.charge_work(1, OPERATION)?;
         ctx.charge_work(name_scan_work, NAME_OPERATION)?;
         if let Some(name) = feature_object_name(feature, lane) {
-            ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+            ctx.reserve_vec(&mut objects, 1, OPERATION)?;
             objects.push((name.offset, feature));
         }
     }
@@ -489,14 +489,9 @@ pub(super) fn draft_operand_candidates(
             .unwrap_or(lane.native_payload.len());
         if let Some(operands) = draft_operands(ctx, feature, lane, start, end)? {
             let mut id = String::new();
-            crate::text_admission::reserve_retained_string(
-                ctx,
-                &mut id,
-                feature.id.len(),
-                OPERATION,
-            )?;
+            ctx.try_reserve_retained_text(&mut id, feature.id.len(), OPERATION)?;
             id.push_str(&feature.id);
-            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((id, operands));
         }
     }

@@ -29,11 +29,7 @@ fn property_text(
         .properties
         .get(name)
         .map(|value| {
-            crate::text_admission::format_retained(
-                ctx,
-                format_args!("{value}"),
-                "retain SLDPRT edit selection reference",
-            )
+            ctx.format_retained(format_args!("{value}"), "retain SLDPRT edit selection reference")
         })
         .transpose()
 }
@@ -92,7 +88,7 @@ pub(super) fn project_fillet(
                 valid = false;
                 break;
             };
-            ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT variable fillet radii")?;
+            ctx.reserve_vec(&mut points, 1, "collect SLDPRT variable fillet radii")?;
             points.push((index, point));
         }
         points.sort_unstable_by_key(|(index, _)| *index);
@@ -104,7 +100,7 @@ pub(super) fn project_fillet(
                 .all(|(expected, (actual, _))| expected == *actual)
         {
             let mut radii = Vec::new();
-            ctx.reserve_collection_vec(
+            ctx.reserve_vec(
                 &mut radii,
                 points.len(),
                 "collect SLDPRT variable fillet controls",

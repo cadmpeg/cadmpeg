@@ -137,7 +137,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = feature_object_name(feature, lane) else {
                     continue;
                 };
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut starts,
                     1,
                     "collect SLDPRT parameter feature starts",
@@ -168,7 +168,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                     owned.insert(name.value.as_str(), Vec::new());
                 }
                 if let Some(group) = owned.get_mut(name.value.as_str()) {
-                    ctx.reserve_collection_vec(group, 1, "collect SLDPRT owned scalars")?;
+                    ctx.reserve_vec(group, 1, "collect SLDPRT owned scalars")?;
                     group.push(scalar);
                 }
             }
@@ -178,7 +178,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                     .iter()
                     .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
                 {
-                    ctx.reserve_collection_vec(&mut driving, 1, "collect SLDPRT driving scalars")?;
+                    ctx.reserve_vec(&mut driving, 1, "collect SLDPRT driving scalars")?;
                     driving.push(*scalar);
                 }
                 let candidates_for_name = if driving.is_empty() {
@@ -187,7 +187,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                         .into_iter()
                         .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
                     {
-                        ctx.reserve_collection_vec(
+                        ctx.reserve_vec(
                             &mut native,
                             1,
                             "collect SLDPRT native scalars",
@@ -211,15 +211,11 @@ pub(crate) fn enrich_history_parameters<'a>(
                     if value_only {
                         continue;
                     }
-                    let name = crate::text_admission::format_retained(
-                        ctx,
-                        format_args!("{name}"),
-                        "retain SLDPRT parameter candidate name",
-                    )?;
+                    let name = ctx.format_retained(format_args!("{name}"), "retain SLDPRT parameter candidate name")?;
                     let key = (history_index, feature_index, name);
                     match candidates.entry(key) {
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 entry.get_mut(),
                                 1,
                                 "collect SLDPRT parameter candidates",
@@ -229,7 +225,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                         std::collections::btree_map::Entry::Vacant(entry) => {
                             ctx.charge_collection_items(1, "index SLDPRT parameter candidates")?;
                             let mut values = Vec::new();
-                            ctx.reserve_collection_vec(
+                            ctx.reserve_vec(
                                 &mut values,
                                 1,
                                 "collect SLDPRT parameter candidates",

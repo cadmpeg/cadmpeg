@@ -50,7 +50,7 @@ pub(super) fn component_path_features<'a>(
         }
         if !duplicate {
             let identity = copy_component_text(ctx, feature)?;
-            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push(identity);
         }
     }
@@ -142,7 +142,7 @@ pub(crate) fn surface_selection_producer_features(
         }
         if !duplicate {
             let terminal = copy_component_text(ctx, terminal)?;
-            ctx.reserve_collection_vec(&mut producers, 1, "resolve SLDPRT surface producers")?;
+            ctx.reserve_vec(&mut producers, 1, "resolve SLDPRT surface producers")?;
             producers.push(terminal);
         }
     }
@@ -345,7 +345,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             if object_kind(name, feature) == NativeClassKind::Extrusion {
                 reserve_component_map(ctx, &mut profiles, "index SLDPRT adjacent profiles")?;
                 let votes = profiles.entry(feature.id.as_str()).or_default();
-                ctx.reserve_collection_vec(votes, 1, "collect SLDPRT adjacent profile votes")?;
+                ctx.reserve_vec(votes, 1, "collect SLDPRT adjacent profile votes")?;
                 votes.push(ProfileVote::Missing);
             }
         }
@@ -368,7 +368,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 _ => None,
             };
             if let Some(association) = association {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut associations,
                     1,
                     "collect SLDPRT adjacent profile associations",
@@ -399,7 +399,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 }
             }
             if let Some(profile) = selected {
-                ctx.reserve_collection_vec(
+                ctx.reserve_vec(
                     &mut associations,
                     1,
                     "collect SLDPRT adjacent profile associations",
@@ -760,7 +760,7 @@ pub(crate) fn project_dissected_sketches(
                             ctx.charge_work(1, "replace SLDPRT dissected loft profile")?;
                             if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
                                 if let Some(replacement) = replace(profile)? {
-                                    ctx.reserve_collection_vec(
+                                    ctx.reserve_vec(
                                         &mut replacements,
                                         1,
                                         "collect SLDPRT dissected profile replacements",
@@ -774,7 +774,7 @@ pub(crate) fn project_dissected_sketches(
                     _ => None,
                 };
                 if let Some(single) = single {
-                    ctx.reserve_collection_vec(
+                    ctx.reserve_vec(
                         &mut replacements,
                         1,
                         "collect SLDPRT dissected profile replacements",
@@ -808,11 +808,7 @@ fn copy_dissected_feature_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::features::FeatureId,
 ) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
-    let text = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", id.as_str()),
-        "retain SLDPRT dissected profile identity",
-    )?;
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
     cadmpeg_ir::features::FeatureId::mint(text).map_err(CodecError::malformed)
 }
 
@@ -820,11 +816,7 @@ fn copy_dissected_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::sketches::SketchId,
 ) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
-    let text = crate::text_admission::format_retained(
-        ctx,
-        format_args!("{}", id.as_str()),
-        "retain SLDPRT dissected profile identity",
-    )?;
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
     cadmpeg_ir::sketches::SketchId::mint(text).map_err(CodecError::malformed)
 }
 
@@ -838,31 +830,26 @@ fn append_compact_edge_path_charged(
         for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                crate::text_admission::reserve_retained_string(ctx, value, 1, OPERATION)?;
+                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
                 value.push(',');
             }
             let digits = edge_id.to_string();
-            crate::text_admission::reserve_retained_string(ctx, value, digits.len(), OPERATION)?;
+            ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
             value.push_str(&digits);
         }
     } else {
         for (index, component) in selection.components.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                crate::text_admission::reserve_retained_string(ctx, value, 1, OPERATION)?;
+                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
                 value.push(',');
             }
             if let Some(id) = component.local_id {
                 let digits = id.to_string();
-                crate::text_admission::reserve_retained_string(
-                    ctx,
-                    value,
-                    digits.len(),
-                    OPERATION,
-                )?;
+                ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
                 value.push_str(&digits);
             } else {
-                crate::text_admission::reserve_retained_string(ctx, value, 1, OPERATION)?;
+                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
                 value.push('_');
             }
         }
@@ -890,7 +877,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
         "sldprt:feature-input:edge-selection-vectors:"
     };
     let mut value = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut value, prefix.len(), OPERATION)?;
+    ctx.try_reserve_retained_text(&mut value, prefix.len(), OPERATION)?;
     value.push_str(prefix);
     if let [selection] = selections {
         if selection
@@ -901,16 +888,11 @@ pub(crate) fn compact_edge_selection_set_value_charged(
             for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
                 ctx.charge_work(1, OPERATION)?;
                 if index != 0 {
-                    crate::text_admission::reserve_retained_string(ctx, &mut value, 1, OPERATION)?;
+                    ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
                     value.push(',');
                 }
                 let digits = edge_id.to_string();
-                crate::text_admission::reserve_retained_string(
-                    ctx,
-                    &mut value,
-                    digits.len(),
-                    OPERATION,
-                )?;
+                ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;
                 value.push_str(&digits);
             }
             return Ok(value);
@@ -919,7 +901,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
     for (index, selection) in selections.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            crate::text_admission::reserve_retained_string(ctx, &mut value, 1, OPERATION)?;
+            ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
             value.push(';');
         }
         append_compact_edge_path_charged(ctx, &mut value, selection)?;
@@ -934,16 +916,16 @@ pub(crate) fn compact_body_selection_value_charged(
     const OPERATION: &str = "format SLDPRT compact body selection";
     let prefix = "sldprt:feature-input:body-ids:";
     let mut value = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut value, prefix.len(), OPERATION)?;
+    ctx.try_reserve_retained_text(&mut value, prefix.len(), OPERATION)?;
     value.push_str(prefix);
     for (index, body_id) in local_body_ids.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            crate::text_admission::reserve_retained_string(ctx, &mut value, 1, OPERATION)?;
+            ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
             value.push(',');
         }
         let digits = body_id.to_string();
-        crate::text_admission::reserve_retained_string(ctx, &mut value, digits.len(), OPERATION)?;
+        ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;
         value.push_str(&digits);
     }
     Ok(value)
@@ -958,11 +940,7 @@ fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Co
         cadmpeg_core::decode::u64_from_index(text.len()),
         "retain SLDPRT adjacent profile identity",
     )?;
-    crate::text_admission::format_retained(
-        ctx,
-        format_args!("{text}"),
-        "retain SLDPRT adjacent profile identity",
-    )
+    ctx.format_retained(format_args!("{text}"), "retain SLDPRT adjacent profile identity")
 }
 
 fn reserve_component_map<K: Eq + std::hash::Hash, V>(
@@ -994,7 +972,7 @@ fn collect_component_vec<T>(
     let mut values = Vec::new();
     for item in items {
         ctx.charge_work(1, "collect SLDPRT adjacent profile objects")?;
-        ctx.reserve_collection_vec(&mut values, 1, "collect SLDPRT adjacent profile objects")?;
+        ctx.reserve_vec(&mut values, 1, "collect SLDPRT adjacent profile objects")?;
         values.push(item);
     }
     Ok(values)
