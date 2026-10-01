@@ -91,8 +91,11 @@ fn parse_document(
             )
         })?;
     let mut actual_count = 0_usize;
-    for _node in objects_node.children().filter(|node| node.has_tag_name(record_tag)) {
+    for node in objects_node.children() {
         ctx.charge_work(1, "FCStd object declaration framing")?;
+        if !node.has_tag_name(record_tag) {
+            continue;
+        }
         actual_count = actual_count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("FCStd object declaration framing", u64::MAX, u64::MAX)
         })?;
@@ -266,6 +269,8 @@ fn parse_document(
     {
         let name = retained_attr(ctx, node, "name", "FCStd object name")?;
         for prior in &objects {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(prior.name.len()), "FCStd duplicate object names")?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "FCStd duplicate object names")?;
             ctx.charge_work(1, "FCStd duplicate object names")?;
             if prior.name == name {
                 return Err(crate::resource::malformed_charged(
@@ -648,8 +653,17 @@ fn parse_properties(
             )
         })?;
         for prior in all_nodes.clone().take(index) {
-            ctx.charge_work(1, "FCStd duplicate property names")?;
-            if prior.attribute("name") == Some(name) {
+            let lookup_work = cadmpeg_core::decode::u64_from_index(prior.attributes().len())
+                .checked_mul(5)
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit("FCStd duplicate property names", u64::MAX, u64::MAX))?;
+            ctx.charge_work(lookup_work, "FCStd duplicate property names")?;
+            let prior_name = prior.attribute("name");
+            if let Some(prior_name) = prior_name {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(prior_name.len()), "FCStd duplicate property names")?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "FCStd duplicate property names")?;
+            }
+            if prior_name == Some(name) {
                 return Err(crate::resource::malformed_charged(
                     ctx,
                     format_args!("duplicate property name {name} for {owner}"),
@@ -1076,8 +1090,11 @@ fn counted_children<'a, 'input>(
         })?;
     let mut actual_count = 0_usize;
     let mut valid_tags = true;
-    for child in parent.children().filter(roxmltree::Node::is_element) {
+    for child in parent.children() {
         ctx.charge_work(1, "FCStd link child framing")?;
+        if !child.is_element() {
+            continue;
+        }
         actual_count = actual_count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("FCStd link child framing", u64::MAX, u64::MAX)
         })?;
