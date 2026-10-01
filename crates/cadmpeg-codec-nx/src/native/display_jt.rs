@@ -2965,7 +2965,7 @@ pub(super) fn display_jt_indices(
             let Some((source_offset, byte_len)) = entry.file_span() else {
                 return Ok(None);
             };
-            let Some(payload) = container.bounded_entry_bytes(source_offset, byte_len) else {
+            let Some(payload) = container.bounded_entry_bytes(ctx, source_offset, byte_len)? else {
                 return Ok(None);
             };
             let (Some(version), Some(declared_count)) =
@@ -3105,7 +3105,7 @@ pub(super) fn display_jt_documents(
     let Some((stream_source_offset, stream_byte_len)) = entry.file_span() else {
         return Ok(Vec::new());
     };
-    let Some(stream) = container.bounded_entry_bytes(stream_source_offset, stream_byte_len) else {
+    let Some(stream) = container.bounded_entry_bytes(ctx, stream_source_offset, stream_byte_len)? else {
         return Ok(Vec::new());
     };
     let [index] = indices else {
@@ -3268,7 +3268,7 @@ pub(super) fn display_jt_segments(
             .split_once('#')
             .map_or(document.id.as_str(), |(_, key)| key);
         let Some(bytes) =
-            container.bounded_entry_bytes(document.source_offset, document.physical_byte_len)
+            container.bounded_entry_bytes(ctx, document.source_offset, document.physical_byte_len)?
         else {
             return Ok(Vec::new());
         };
@@ -3399,7 +3399,7 @@ pub(super) fn display_jt_shape_lod_elements(
     let mut elements = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 7) {
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -3477,7 +3477,7 @@ pub(super) fn display_jt_tri_strip_lod_headers(
             return Ok(Vec::new());
         };
         let Some(body) =
-            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
+            container.bounded_entry_bytes(ctx, body_start, u64::from(element.body_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -3543,7 +3543,7 @@ pub(super) fn display_jt_initial_face_degree_symbols(
             return Ok(Vec::new());
         };
         let Some(body) =
-            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
+            container.bounded_entry_bytes(ctx, body_start, u64::from(element.body_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -3611,7 +3611,7 @@ pub(super) fn display_jt_topology_packet_sequences(
             return Ok(DisplayJtTopologyArrays::default());
         };
         let Some(body) =
-            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
+            container.bounded_entry_bytes(ctx, body_start, u64::from(element.body_byte_len))?
         else {
             return Ok(DisplayJtTopologyArrays::default());
         };
@@ -3860,7 +3860,7 @@ pub(super) fn display_jt_vertex_coordinates(
             return Ok(Vec::new());
         };
         let Some(bytes) =
-            container.bounded_entry_bytes(start, u64::from(header.compressed_components_byte_len))
+            container.bounded_entry_bytes(ctx, start, u64::from(header.compressed_components_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -4080,7 +4080,7 @@ pub(super) fn display_jt_vertex_normals(
         else {
             return Ok(Vec::new());
         };
-        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+        let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
             return Ok(Vec::new());
         };
         let Some(crate::jt::DecodedVertexArray {
@@ -4164,7 +4164,7 @@ pub(super) fn display_jt_vertex_colors(
             };
             source_offset = next;
         }
-        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+        let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
             return Ok(Vec::new());
         };
         let Some(crate::jt::DecodedVertexArray {
@@ -4269,7 +4269,7 @@ pub(super) fn display_jt_vertex_texture_coordinates(
         for channel in (0..8)
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
         {
-            let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+            let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
                 return Ok(Vec::new());
             };
             let Some(crate::jt::DecodedVertexArray {
@@ -4406,7 +4406,7 @@ pub(super) fn display_jt_vertex_flags(
             };
             source_offset = next;
         }
-        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+        let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
             return Ok(Vec::new());
         };
         let Some((values, byte_len)) = crate::jt::decode_vertex_flags(
@@ -4459,7 +4459,7 @@ pub(super) fn display_jt_compressed_element_sequences(
         .filter(|segment| segment.compression.is_some())
     {
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok((Vec::new(), Vec::new()));
         };
@@ -4654,7 +4654,7 @@ pub(super) fn display_jt_string_property_atoms(
             return Ok(Vec::new());
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -4736,10 +4736,10 @@ pub(super) fn display_jt_shape_lod_bindings(
     const SHAPE_IMPLEMENTATION_KEY: &str = "JT_LLPROP_SHAPEIMPL";
     let mut bindings = Vec::new();
     for scene_segment in segments.iter().filter(|segment| segment.segment_type == 1) {
-        let Some(bytes) = container.bounded_entry_bytes(
+        let Some(bytes) = container.bounded_entry_bytes(ctx, 
             scene_segment.source_offset,
             u64::from(scene_segment.segment_byte_len),
-        ) else {
+        )? else {
             return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
@@ -4946,7 +4946,7 @@ pub(super) fn display_jt_base_node_data(
             return Ok(Vec::new());
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -5048,7 +5048,7 @@ pub(super) fn display_jt_group_node_data(
             continue;
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -5150,7 +5150,7 @@ pub(super) fn display_jt_instance_nodes(
             continue;
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -5234,7 +5234,7 @@ pub(super) fn display_jt_geometric_transform_attributes(
             continue;
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -5329,7 +5329,7 @@ pub(super) fn display_jt_material_attributes(
             continue;
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -5430,7 +5430,7 @@ pub(super) fn display_jt_partition_nodes(
             continue;
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -5517,7 +5517,7 @@ pub(super) fn display_jt_range_lod_nodes(
             continue;
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -5603,7 +5603,7 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             continue;
         }
         let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+            .bounded_entry_bytes(ctx, segment.source_offset, u64::from(segment.segment_byte_len))?
         else {
             return Ok(Vec::new());
         };

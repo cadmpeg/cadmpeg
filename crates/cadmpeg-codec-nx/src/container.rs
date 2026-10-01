@@ -248,16 +248,28 @@ impl Region {
 
 impl<'a> Container<'a> {
     /// Number of directory entries in a region.
-    pub(crate) fn entry_count(&self, region: Region) -> usize {
-        self.entries
+    pub(crate) fn entry_count(&self, ctx: &DecodeContext<'_>, region: Region) -> Result<usize, CodecError> {
+        ctx.charge_work(u64_from_index(self.entries.len()), "count NX directory entries")?;
+        Ok(self.entries
             .iter()
             .filter(|entry| entry.region == region)
-            .count()
+            .count())
+    }
+
+    pub(crate) fn has_external_references(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(u64_from_index(entry.name.len()), "scan NX external reference names")?;
+            if entry.name.contains("ExternalReferences") { return Ok(true); }
+        }
+        Ok(false)
     }
 
     /// Return an absolute source span only when it is wholly owned by one
     /// catalogued directory entry.
-    pub(crate) fn bounded_entry_bytes(&self, offset: u64, byte_len: u64) -> Option<&[u8]> {
+    pub(crate) fn bounded_entry_bytes(&self, ctx: &DecodeContext<'_>, offset: u64, byte_len: u64) -> Result<Option<&[u8]>, CodecError> {
+        ctx.charge_work(u64_from_index(self.entries.len()), "bound NX directory entry")?;
+        let bytes = (|| {
         let offset = usize::try_from(offset).ok()?;
         let byte_len = usize::try_from(byte_len).ok()?;
         let end = offset.checked_add(byte_len)?;
@@ -275,11 +287,15 @@ impl<'a> Container<'a> {
         (end <= owner_end)
             .then(|| self.data.get(offset..end))
             .flatten()
+        })();
+        Ok(bytes)
     }
 
     /// Return bytes from an absolute offset through the end of its bounded
     /// directory-entry span.
-    pub(crate) fn bounded_entry_tail(&self, offset: u64) -> Option<&[u8]> {
+    pub(crate) fn bounded_entry_tail(&self, ctx: &DecodeContext<'_>, offset: u64) -> Result<Option<&[u8]>, CodecError> {
+        ctx.charge_work(u64_from_index(self.entries.len()), "bound NX directory entry")?;
+        let bytes = (|| {
         let offset = usize::try_from(offset).ok()?;
         let end = self
             .entries
@@ -293,6 +309,8 @@ impl<'a> Container<'a> {
             })
             .min()?;
         self.data.get(offset..end)
+        })();
+        Ok(bytes)
     }
 
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
@@ -563,11 +581,15 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<(&DirEntry, usize, String)>, CodecError> {
         let mut out = Vec::new();
-        for entry in self
-            .entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-        {
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if !entry.name.contains("ExternalReferences") {
+                continue;
+            }
             let Some((offset, size)) = entry.file_span() else {
                 continue;
             };
@@ -600,11 +622,15 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<(&DirEntry, ExtrefRecord)>, CodecError> {
         let mut out = Vec::new();
-        for entry in self
-            .entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-        {
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if !entry.name.contains("ExternalReferences") {
+                continue;
+            }
             let Some((offset, size)) = entry.file_span() else {
                 continue;
             };
@@ -631,11 +657,15 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<(&DirEntry, ExtrefIndexedRecord)>, CodecError> {
         let mut out = Vec::new();
-        for entry in self
-            .entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-        {
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if !entry.name.contains("ExternalReferences") {
+                continue;
+            }
             let Some((offset, size)) = entry.file_span() else {
                 continue;
             };
@@ -792,32 +822,24 @@ fn locate_extref_string_table(
             cadmpeg_core::decode::u64_from_index(count),
             "nx external reference string table entries",
         )?;
-        let mut pos = start;
-        let valid = (0..count).all(|_| {
-            let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
-                return false;
-            };
-            let Some(string_offset) = pos.checked_add(2) else {
-                return false;
-            };
-            let Some(end) = string_offset.checked_add(length) else {
-                return false;
-            };
-            let Some(raw) = payload.get(string_offset..end) else {
-                return false;
-            };
-            let Ok(value) = std::str::from_utf8(raw) else {
-                return false;
-            };
-            if value.is_empty() || value.chars().any(char::is_control) {
-                return false;
+        let valid = (|| -> Result<Option<usize>, CodecError> {
+            let mut pos = start;
+            for _ in 0..count {
+                let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
+                    return Ok(None);
+                };
+                let Some(string_offset) = pos.checked_add(2) else { return Ok(None); };
+                let Some(end) = string_offset.checked_add(length) else { return Ok(None); };
+                let Some(raw) = payload.get(string_offset..end) else { return Ok(None); };
+                ctx.charge_work(u64_from_index(raw.len()), "validate NX external reference UTF-8")?;
+                let Ok(value) = std::str::from_utf8(raw) else { return Ok(None); };
+                ctx.charge_work(u64_from_index(raw.len()), "validate NX external reference controls")?;
+                if value.is_empty() || value.chars().any(char::is_control) { return Ok(None); }
+                pos = end;
             }
-            pos = end;
-            true
-        });
-        if !valid || pos != payload.len() {
-            continue;
-        }
+            Ok(Some(pos))
+        })()?;
+        if valid != Some(payload.len()) { continue; }
         return Ok(Some((marker, count, start)));
     }
     Ok(None)
