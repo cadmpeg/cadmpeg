@@ -183,7 +183,7 @@ fn index_model_identities<'a>(
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (slot_index, entity) in model.$field.iter().enumerate() {
                 ctx.charge_work(u64_from_index(entity.identity().len()), "draft identity scan")?;
-                if identity_index_contains(model, &identity_index, entity.identity()) {
+                if identity_index_contains(model, &identity_index, entity.identity(), ctx)? {
                     return Ok(Err(entity.identity()));
                 }
                 insert_identity(&mut identity_index, identity_hash(entity.identity()), IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: slot_index }, &storage, "draft identity slots")?;
@@ -194,12 +194,38 @@ fn index_model_identities<'a>(
     Ok(Ok(identity_index))
 }
 
-fn identity_index_contains(model: &Model, index: &IdentityIndex, identity: &str) -> bool {
-    index
-        .get(&identity_hash(identity))
-        .into_iter()
-        .flatten()
-        .any(|slot| model.identity_at(slot.kind, slot.index) == Some(identity))
+fn identity_index_contains(
+    model: &Model,
+    index: &IdentityIndex,
+    identity: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(u64_from_index(identity.len()), "hash draft identity lookup")?;
+    let hash = identity_hash(identity);
+    ctx.charge_work(1, "draft identity bucket lookup")?;
+    for slot in index.get(&hash).into_iter().flatten() {
+        ctx.charge_work(1, "draft identity collision scan")?;
+        if let Some(candidate) = model.identity_at(slot.kind, slot.index) {
+            if identities_equal(ctx, candidate, identity, "compare draft identities")? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn identities_equal(
+    ctx: &DecodeContext<'_>,
+    left: &str,
+    right: &str,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(1, operation)?;
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    ctx.charge_work(u64_from_index(left.len()), operation)?;
+    Ok(left == right)
 }
 
 /// Error returned before an atomic draft commit mutates its destination.
@@ -378,7 +404,7 @@ impl<A> ModelDraft<A> {
     fn validate_with_contains(
         &mut self,
         base: &Model,
-        contains: impl Fn(&str) -> bool,
+        contains: impl Fn(&str) -> Result<bool, CodecError>,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
         let (identity_index, _storage) = ctx
@@ -396,8 +422,8 @@ impl<A> ModelDraft<A> {
         macro_rules! check_external_identities {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for entity in &self.model.$field {
-                    ctx.charge_work(u64_from_index(entity.identity().len()), "draft external identity scan")?;
-                    if contains(entity.identity()) {
+                    ctx.charge_work(1, "draft external identity scan")?;
+                    if contains(entity.identity())? {
                         let identity = ctx.copy_retained_text(entity.identity(), "draft external identity collision")?;
                         return Ok(Err(DraftError::IdentityCollision(identity)));
                     }
@@ -412,16 +438,23 @@ impl<A> ModelDraft<A> {
                     let mut missing = None;
                     let mut refusal = None;
                     let walk = entity.visit_reference_ids(&mut |target| {
-                        if let Err(error) = ctx.charge_work(u64_from_index(target.len()), "draft reference scan") { refusal = Some(error); return; }
-                        if missing.is_none()
-                            && refusal.is_none()
-                            && !contains(target)
-                            && !identity_index_contains(&self.model, &identity_index, target)
-                        {
-                            match ctx.copy_retained_text(target, "draft missing reference") {
+                        if missing.is_some() || refusal.is_some() {
+                            return;
+                        }
+                        let resolved = contains(target).and_then(|committed| {
+                            if committed {
+                                Ok(true)
+                            } else {
+                                identity_index_contains(&self.model, &identity_index, target, ctx)
+                            }
+                        });
+                        match resolved {
+                            Ok(true) => {}
+                            Ok(false) => match ctx.copy_retained_text(target, "draft missing reference") {
                                 Ok(target) => missing = Some(target),
                                 Err(error) => refusal = Some(error),
-                            }
+                            },
+                            Err(error) => refusal = Some(error),
                         }
                     });
                     if let Some(error) = refusal {
@@ -617,17 +650,17 @@ impl<'ctx, 'doc> CommitSession<'ctx, 'doc> {
     }
 }
 
-fn index_committed_identities<S: IndexStorage>(
+fn index_committed_identities(
     base: &CadIr,
-    storage: &S,
-    copy_native: impl Fn(&str) -> Result<String, S::Error>,
-) -> Result<CommittedIdentityIndex, S::Error> {
+    ctx: &DecodeContext<'_>,
+) -> Result<CommittedIdentityIndex, CodecError> {
+    let storage = DecodeStorage(ctx);
     let mut identities = CommittedIdentityIndex::new();
     macro_rules! collect_model_identities {
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.model.$field.iter().enumerate() {
                 storage.work(entity.identity().len(), "committed identity scan")?;
-                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }), storage, "committed identity slots")?;
+                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }), &storage, "committed identity slots")?;
             })*
         };
     }
@@ -642,8 +675,8 @@ fn index_committed_identities<S: IndexStorage>(
         insert_identity(
             &mut identities,
             identity_hash(record.id()),
-            CommittedIdentity::Native(copy_native(record.id())?),
-            storage,
+            CommittedIdentity::Native(ctx.copy_retained_text(record.id(), "committed native identity")?),
+            &storage,
             "committed identity slots",
         )?;
     }
@@ -654,17 +687,24 @@ fn committed_identity_contains(
     base: &CadIr,
     identities: &CommittedIdentityIndex,
     identity: &str,
-) -> bool {
-    identities
-        .get(&identity_hash(identity))
-        .into_iter()
-        .flatten()
-        .any(|owner| match owner {
-            CommittedIdentity::Neutral(slot) => {
-                base.model.identity_at(slot.kind, slot.index) == Some(identity)
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(u64_from_index(identity.len()), "committed identity lookup")?;
+    let hash = identity_hash(identity);
+    ctx.charge_work(1, "committed identity bucket lookup")?;
+    for owner in identities.get(&hash).into_iter().flatten() {
+        ctx.charge_work(1, "committed identity collision scan")?;
+        let candidate = match owner {
+            CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
+            CommittedIdentity::Native(candidate) => Some(candidate.as_str()),
+        };
+        if let Some(candidate) = candidate {
+            if identities_equal(ctx, candidate, identity, "compare committed identities")? {
+                return Ok(true);
             }
-            CommittedIdentity::Native(candidate) => candidate == identity,
-        })
+        }
+    }
+    Ok(false)
 }
 
 impl CommitState<'_> {
@@ -674,21 +714,16 @@ impl CommitState<'_> {
         ctx: &DecodeContext<'_>,
         storage: &mut ScopedReservation<'_>,
     ) -> Result<bool, CodecError> {
-        ctx.charge_work(u64_from_index(identity.len()), "committed identity lookup")?;
         storage.with_storage(|| self.ensure_identities(ctx))?;
-        Ok(self
-            .identities
-            .as_ref()
-            .is_some_and(|index| committed_identity_contains(self.base, index, identity)))
+        match &self.identities {
+            Some(index) => committed_identity_contains(self.base, index, identity, ctx),
+            None => Err(CodecError::malformed("committed identity index is absent")),
+        }
     }
 
     fn ensure_identities(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         if self.identities.is_none() {
-            self.identities = Some(index_committed_identities(
-                self.base,
-                &DecodeStorage(ctx),
-                |id| ctx.copy_retained_text_limit(id, "committed native identity"),
-            )?);
+            self.identities = Some(index_committed_identities(self.base, ctx)?);
         }
         Ok(())
     }
@@ -711,7 +746,7 @@ impl CommitState<'_> {
             .ok_or_else(|| CodecError::Malformed("committed identity index is absent".into()))?;
         if let Err(error) = draft.validate_with_contains(
             &self.base.model,
-            |identity| committed_identity_contains(self.base, identities, identity),
+            |identity| committed_identity_contains(self.base, identities, identity, ctx),
             ctx,
         )? {
             return Ok(Err(error));
@@ -733,6 +768,7 @@ impl CommitState<'_> {
             macro_rules! stage_identities {
                 ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                     $(for (offset, entity) in draft.model.$field.iter().enumerate() {
+                        ctx.charge_work(u64_from_index(entity.identity().len()), "hash staged committed identity")?;
                         insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: self.base.model.$field.len() + offset }), &DecodeStorage(ctx), "draft committed identity slots")?;
                     })*
                 };
@@ -796,6 +832,36 @@ mod tests {
             })
             .expect("insert vertex into draft");
         draft
+    }
+
+    #[test]
+    fn draft_and_committed_identity_collisions_admit_string_comparison_work() {
+        let candidate = "test:model:point#one";
+        let target = "test:model:point#two";
+        assert_eq!(candidate.len(), target.len());
+        for committed in [false, true] {
+            let mut ir = CadIr::empty();
+            ir.model.points.push(point(candidate));
+            let slot = super::IdentitySlot { kind: crate::schema::EntityKind::Point, index: 0 };
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // The target hash, bucket lookup, slot scan and length comparison fit.
+            policy.limits.max_work_units = u64::try_from(target.len()).unwrap() + 3;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let hash = crate::index::identity_hash(target);
+            let error = if committed {
+                let index = std::collections::HashMap::from([(hash, vec![super::CommittedIdentity::Neutral(slot)])]);
+                super::committed_identity_contains(&ir, &index, target, &ctx).unwrap_err()
+            } else {
+                let index = std::collections::HashMap::from([(hash, vec![slot])]);
+                super::identity_index_contains(&ir.model, &index, target, &ctx).unwrap_err()
+            };
+            let CodecError::ResourceLimit(limit) = error else { panic!("comparison admission must retain its refusal"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.additional, u64::try_from(target.len()).unwrap());
+            assert_eq!(limit.operation, if committed { "compare committed identities" } else { "compare draft identities" });
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        }
     }
 
     #[test]
