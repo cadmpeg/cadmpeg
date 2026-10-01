@@ -1386,7 +1386,7 @@ fn type_144_rejects_a_self_intersecting_linear_outer_boundary() {
     ]];
     assert!(rings
         .into_iter()
-        .map(SimpleRing::new)
+        .map(|points| crate::test_support::with_service_context(&[], |ctx| SimpleRing::new(points, ctx).unwrap()))
         .collect::<Result<Vec<_>, _>>()
         .is_err());
 }
@@ -1422,7 +1422,8 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
             &plane,
             None,
             [false, false],
-        ),
+            &ctx,
+        ).unwrap(),
         Some(false)
     );
 }
@@ -1950,3 +1951,5 @@ fn boundary_clustering_root_walk_refuses_before_traversal() {
                 && limit.used == 0 && limit.additional == 1));
     });
 }
+
+mod work_admission;

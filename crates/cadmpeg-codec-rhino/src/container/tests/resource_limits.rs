@@ -157,3 +157,33 @@ fn scan_retained_records_refuse_collection_growth() {
     assert_scan_descriptor_refusal(&bytes, "Rhino scanned opaque records");
     assert_scan_descriptor_refusal(&bytes, "Rhino scanned table records");
 }
+
+#[test]
+fn view_list_refuses_work_before_framing_truncated_children() {
+    let bytes = crc_chunk(ArchiveVersion::V5, 0x2000_803b, &1_i32.to_le_bytes());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "fixture ranges").unwrap();
+    let error = crate::container::list_checksum_children(&ctx, &bytes, &chunk, ArchiveVersion::V5, &mut storage).unwrap_err();
+    assert!(matches!(error, crate::chunks::FramingError::Resource(limit)
+        if limit.operation == "Rhino view checksum child ranges" && limit.used == 0 && limit.additional == 1));
+}
+
+#[test]
+fn view_list_second_walk_has_separate_work_admission() {
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(crate::test_support::test_dump::short_chunk(ArchiveVersion::V5, 0x8000_0001, 0));
+    let bytes = crc_chunk(ArchiveVersion::V5, 0x2000_803b, &body);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "fixture ranges").unwrap();
+    let error = crate::container::list_checksum_children(&ctx, &bytes, &chunk, ArchiveVersion::V5, &mut storage).unwrap_err();
+    assert!(matches!(error, crate::chunks::FramingError::Resource(limit)
+        if limit.operation == "Rhino view checksum second walk" && limit.used == 1 && limit.additional == 1));
+}

@@ -204,7 +204,7 @@ pub(crate) struct DecodedMesh {
     /// Number of stored quadrilateral faces converted to neutral triangles.
     pub(crate) quad_count: usize,
     /// Native mesh arrays used to validate an attached `SubD` proxy.
-    pub(crate) proxy_fingerprint: MeshProxyFingerprint,
+    pub(crate) proxy_fingerprint: Option<MeshProxyFingerprint>,
 }
 
 /// Caller-owned identity and archive metadata for one mesh decode.
@@ -585,11 +585,14 @@ pub(crate) fn decode(
             }
         }
     }
-    let proxy_fingerprint = MeshProxyFingerprint {
-        face_count: faces.len(),
-        vertex_count: decoded.vertices.len(),
-        face_sha1: native_face_sha1(&faces),
-        vertex_sha1: native_vertex_sha1(&decoded.vertices),
+    expand.ctx().charge_work(u64_from_index(userdata.len()), "Rhino mesh proxy userdata scan")?;
+    let proxy_fingerprint = if userdata.iter().filter_map(UserdataDescriptor::known).any(|extra| {
+        extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+            && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+    }) {
+        Some(native_proxy_fingerprint(&faces, &decoded.vertices, expand.ctx())?)
+    } else {
+        None
     };
     let mut vertices = expand
         .ctx()
@@ -689,24 +692,30 @@ fn parse_mesh_correspondence_userdata(
     Ok(())
 }
 
-fn native_face_sha1(faces: &[[u32; 4]]) -> [u8; 20] {
-    let mut digest = Sha1::new();
+fn native_proxy_fingerprint(
+    faces: &[[u32; 4]], vertices: &[[FiniteBinary32; 3]], ctx: &DecodeContext<'_>,
+) -> Result<MeshProxyFingerprint, CodecError> {
+    let bytes = u64_from_index(faces.len()).checked_mul(16)
+        .and_then(|face_bytes| u64_from_index(vertices.len()).checked_mul(12)
+            .and_then(|vertex_bytes| face_bytes.checked_add(vertex_bytes)))
+        .ok_or_else(|| ctx.refuse_codec_limit("Rhino mesh proxy SHA-1", u64::MAX, u64::MAX))?;
+    ctx.charge_work(bytes, "Rhino mesh proxy SHA-1")?;
+    let mut face_digest = Sha1::new();
     for face in faces {
         for index in face {
-            digest.update(index.to_ne_bytes());
+            face_digest.update(index.to_ne_bytes());
         }
     }
-    digest.finalize().into()
-}
-
-fn native_vertex_sha1(vertices: &[[FiniteBinary32; 3]]) -> [u8; 20] {
-    let mut digest = Sha1::new();
+    let mut vertex_digest = Sha1::new();
     for vertex in vertices {
         for coordinate in vertex {
-            digest.update(coordinate.get().to_ne_bytes());
+            vertex_digest.update(coordinate.get().to_ne_bytes());
         }
     }
-    digest.finalize().into()
+    Ok(MeshProxyFingerprint {
+        face_count: faces.len(), vertex_count: vertices.len(),
+        face_sha1: face_digest.finalize().into(), vertex_sha1: vertex_digest.finalize().into(),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1157,7 +1166,7 @@ fn read_buffer<'a>(
                 ));
             }
             if matches!(
-                verify_checksum(reader.backing_bytes(), &chunk)?,
+                verify_checksum(expand.ctx(), reader.backing_bytes(), &chunk)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
                 warnings.push_coded_admitted(
@@ -1187,6 +1196,7 @@ fn read_buffer<'a>(
         )?;
         return Ok(None);
     }
+    expand.ctx().charge_work(u64_from_index(bytes.len()), "Rhino mesh buffer checksum bytes")?;
     if crc32fast::hash(&bytes) != crc {
         warnings.push_coded_admitted(
             expand.ctx(),
@@ -1270,12 +1280,15 @@ fn read_ngons(
         ));
     }
     let count = checked_u32(&mut child, 1 << 20)?;
+    ctx.charge_work(u64_from_index(count), "Rhino current mesh ngon records")?;
     for _ in 0..count {
         let boundary = checked_u32(&mut child, vertices)?;
         if boundary == 0 {
             continue;
         }
         let face_count = checked_u32(&mut child, faces)?;
+        let indices = boundary.checked_add(face_count).ok_or_else(|| ctx.refuse_codec_limit("Rhino current mesh ngon indices", u64::MAX, u64::MAX))?;
+        ctx.charge_work(u64_from_index(indices), "Rhino current mesh ngon indices")?;
         for _ in 0..boundary {
             checked_u32(&mut child, vertices)?;
         }
@@ -1402,7 +1415,7 @@ fn read_double_chunk<'a>(
     child.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested_buffer.as_slice())?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(expand.ctx(), reader.backing_bytes(), &chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -1511,7 +1524,7 @@ fn read_v4v5_ngon_userdata(
         ));
     }
     if matches!(
-        verify_checksum(data, &chunk)?,
+        verify_checksum(ctx, data, &chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         return Ok(None);
@@ -1750,6 +1763,7 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 
 #[cfg(test)]
 mod tests {
+    mod work_admission;
     #[test]
     fn document_mesh_budget_commit_refuses_overflow() {
         let mut budget = super::MeshBudget {

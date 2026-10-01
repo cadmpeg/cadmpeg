@@ -993,7 +993,7 @@ impl<'a> DecodeContext<'a> {
                             })
                             .cloned();
                         let mut proxy_transferred = false;
-                        if let Some(extra) = proxy {
+                        if let (Some(extra), Some(fingerprint)) = (proxy, mesh.proxy_fingerprint) {
                             let subd_id = {
                                 let mut copied_storage = self
                                     .expand
@@ -1020,7 +1020,7 @@ impl<'a> DecodeContext<'a> {
                                 self.archive(),
                                 scale,
                                 subd_id,
-                                mesh.proxy_fingerprint,
+                                fingerprint,
                             ) {
                                 Ok(Some(decoded)) => {
                                     proxy_transferred = self.commit_subd_surface(

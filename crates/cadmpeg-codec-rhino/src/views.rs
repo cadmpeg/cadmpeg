@@ -1037,6 +1037,7 @@ fn parse_attributes(
 }
 
 fn view_child_checksum_warning<I>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
     direct_ranges: I,
@@ -1045,7 +1046,7 @@ where
     I: Clone + IntoIterator,
     I::Item: std::borrow::Borrow<std::ops::Range<usize>>,
 {
-    match verify_checksum_ranges(data, child, direct_ranges)? {
+    match verify_checksum_ranges(ctx, data, child, direct_ranges)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             child.header_start, child.typecode
@@ -1055,19 +1056,21 @@ where
 }
 
 fn direct_view_child_checksum_warning(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    view_child_checksum_warning(data, child, std::slice::from_ref(&child.body()))
+    view_child_checksum_warning(ctx, data, child, std::slice::from_ref(&child.body()))
 }
 
 fn view_child_checksum_warning_excluding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
     nested_children: &[std::ops::Range<usize>],
 ) -> Result<Option<String>, FramingError> {
     let direct = direct_checksum_ranges(&child.body(), nested_children)?;
-    view_child_checksum_warning(data, child, &direct)
+    view_child_checksum_warning(ctx, data, child, &direct)
 }
 
 fn scan_viewport_userdata(
@@ -1190,7 +1193,7 @@ fn parse_view(
             child.typecode,
             VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
-            if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
+            if let Some(warning) = direct_view_child_checksum_warning(ctx, data, &child)? {
                 push_view_loss(
                     ctx,
                     losses,
@@ -1236,7 +1239,7 @@ fn parse_view(
                     parse_trace_image(ctx, data, child.body().clone(), archive, scale, losses)?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, nested_children)?
+                    view_child_checksum_warning_excluding(ctx, data, &child, nested_children)?
                 {
                     push_view_loss(
                         ctx,
@@ -1265,7 +1268,7 @@ fn parse_view(
                     parse_wallpaper(ctx, data, child.body().clone(), archive, losses)?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, nested_children)?
+                    view_child_checksum_warning_excluding(ctx, data, &child, nested_children)?
                 {
                     push_view_loss(
                         ctx,
@@ -1309,7 +1312,7 @@ fn parse_view(
                 let (attributes, nested_children) =
                     parse_attributes(ctx, data, child.body().clone(), archive, scale)?;
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                    view_child_checksum_warning_excluding(ctx, data, &child, &nested_children)?
                 {
                     push_view_loss(
                         ctx,
@@ -1339,7 +1342,7 @@ fn parse_view(
                     match scan_viewport_userdata(ctx, data, child.body().clone(), archive, losses) {
                         Ok(scan) => {
                             if let Some(warning) =
-                                view_child_checksum_warning_excluding(data, &child, &scan.children)?
+                                view_child_checksum_warning_excluding(ctx, data, &child, &scan.children)?
                             {
                                 push_view_loss(
                                     ctx,
@@ -1420,7 +1423,7 @@ fn parse_view(
         ));
     }
     let direct = direct_checksum_ranges(&record.body(), &checksum_children)?;
-    let checksum_warning = match verify_checksum_ranges(data, record, &direct)? {
+    let checksum_warning = match verify_checksum_ranges(ctx, data, record, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             record.header_start, record.typecode

@@ -993,7 +993,7 @@ fn finish_anonymous(
     child.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), checksum.children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -1020,7 +1020,7 @@ fn finish_payload(
     reader.skip_remaining()?;
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(

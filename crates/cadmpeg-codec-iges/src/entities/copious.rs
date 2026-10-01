@@ -197,9 +197,7 @@ fn has_form_63_self_intersection(
             let point = points[index];
             Ok([point.x, point.y])
         })?;
-    Ok(super::geometry::planar_polyline_has_self_intersection(
-        &planar_points,
-    ))
+    super::geometry::planar_polyline_has_self_intersection(&planar_points, ctx)
 }
 
 pub(super) fn project(
