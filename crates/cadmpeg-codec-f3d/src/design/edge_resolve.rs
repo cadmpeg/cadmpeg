@@ -34,7 +34,7 @@ fn sorted_transition_slots(
     for &slot in slots {
         ctx.push_vec(&mut sorted, slot, operation)?;
     }
-    sorted.sort_unstable();
+    ctx.sort_unstable_by(&mut sorted, Ord::cmp, |_| 0, "f3d transition slot sort")?;
     sorted.dedup();
     Ok(sorted)
 }
@@ -1371,7 +1371,12 @@ fn transition_chain_is_supported_by_recipe(
             ctx.push_vec(&mut all_recipe_edges, edge, "f3d transition recipe edge")?;
         }
     }
-    all_recipe_edges.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut all_recipe_edges,
+        Ord::cmp,
+        |_| 0,
+        "f3d transition recipe edge sort",
+    )?;
     all_recipe_edges.dedup();
     Ok(all_recipe_edges.is_empty() || chain.iter().all(|edge| all_recipe_edges.contains(edge)))
 }
@@ -1439,7 +1444,12 @@ fn unique_hem_transition_edge_candidate<'a>(
     {
         ctx.push_vec(&mut support_edges, edge, "f3d hem support edge")?;
     }
-    support_edges.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut support_edges,
+        Ord::cmp,
+        |_| 0,
+        "f3d hem support edge sort",
+    )?;
     support_edges.dedup();
     if support_edges.is_empty()
         || support_edges
@@ -1456,7 +1466,12 @@ fn unique_hem_transition_edge_candidate<'a>(
     {
         ctx.push_vec(&mut candidates, edge, "f3d hem candidate edge")?;
     }
-    candidates.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "f3d hem candidate edge sort",
+    )?;
     candidates.dedup();
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
@@ -1580,7 +1595,12 @@ pub(super) fn changed_reference_edge_group_candidates(
         for changed in changed_sets {
             candidates.retain(|candidate| changed.contains(candidate));
         }
-        candidates.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut candidates,
+            Ord::cmp,
+            |_| 0,
+            "f3d changed reference candidate sort",
+        )?;
         candidates.dedup();
         if candidates.is_empty() {
             return Ok(None);
@@ -1609,7 +1629,12 @@ fn deleted_reference_edge_group_candidates(
         {
             ctx.push_vec(&mut candidates, edge, "f3d deleted reference candidate")?;
         }
-        candidates.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut candidates,
+            Ord::cmp,
+            |_| 0,
+            "f3d deleted reference candidate sort",
+        )?;
         candidates.dedup();
         ctx.push_vec(
             &mut reference_candidates,
@@ -1647,7 +1672,12 @@ fn unique_deleted_reference_assignment(
         {
             ctx.push_vec(&mut candidates, edge, "f3d deleted reference shared edge")?;
         }
-        candidates.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut candidates,
+            Ord::cmp,
+            |_| 0,
+            "f3d deleted reference shared edge sort",
+        )?;
         candidates.dedup();
         if candidates.is_empty() {
             return Ok(None);
@@ -1697,7 +1727,12 @@ fn edge_group_assignment_candidates<'a>(
         )?;
     }
     candidates.retain(|candidate| second.contains(candidate));
-    candidates.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "f3d edge assignment candidate sort",
+    )?;
     candidates.dedup();
     Ok((!candidates.is_empty()).then_some(EdgeAssignmentCandidates::Edges(candidates)))
 }
@@ -1725,7 +1760,7 @@ pub(super) fn radius_edge_group_candidates(
             ctx.push_vec(&mut chain, edge, "f3d radius candidate edge")?;
         }
     }
-    chain.sort_unstable();
+    ctx.sort_unstable_by(&mut chain, Ord::cmp, |_| 0, "f3d radius edge sort")?;
     chain.dedup();
     if chain.is_empty() {
         return Ok(None);
@@ -1792,7 +1827,7 @@ fn radius_edge_identity_group_candidates(
             ctx.push_vec(&mut chain, edge, "f3d radius identity chain edge")?;
         }
     }
-    chain.sort_unstable();
+    ctx.sort_unstable_by(&mut chain, Ord::cmp, |_| 0, "f3d radius identity edge sort")?;
     chain.dedup();
     Ok((!chain.is_empty()).then_some(chain))
 }
@@ -1855,7 +1890,12 @@ fn unique_bipartite_assignment(
     for (source, candidates) in candidate_sets.iter().zip(&mut normalized) {
         *candidates = ctx.alloc_filled(source.len(), 0, "f3d edge normalized candidates")?;
         candidates.copy_from_slice(source);
-        candidates.sort_unstable();
+        ctx.sort_unstable_by(
+            candidates,
+            Ord::cmp,
+            |_| 0,
+            "f3d edge normalized candidate sort",
+        )?;
         candidates.dedup();
         if candidates.is_empty() {
             return Ok(None);
@@ -2057,7 +2097,12 @@ fn partition_unique_incomplete_edge_group(
         for edge in member.deleted_boundary_edges {
             ctx.push_vec(&mut deleted, *edge, "f3d edge partition deleted edge")?;
         }
-        deleted.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut deleted,
+            Ord::cmp,
+            |_| 0,
+            "f3d edge partition deleted edge sort",
+        )?;
         deleted.dedup();
         if deleted.is_empty()
             || universe
@@ -2130,7 +2175,12 @@ fn common_deleted_edge_group_candidates<'a>(
     for candidate in first {
         ctx.push_vec(&mut candidates, *candidate, "f3d common deleted candidate")?;
     }
-    candidates.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "f3d common deleted candidate sort",
+    )?;
     candidates.dedup();
     for candidate_set in candidate_sets {
         member_count += 1;
@@ -2142,7 +2192,12 @@ fn common_deleted_edge_group_candidates<'a>(
                 "f3d common deleted normalized edge",
             )?;
         }
-        normalized.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut normalized,
+            Ord::cmp,
+            |_| 0,
+            "f3d common deleted normalized sort",
+        )?;
         normalized.dedup();
         if normalized != candidates {
             return Ok(None);
@@ -2204,9 +2259,19 @@ fn deleted_boundary_edge_group_candidates(
             ctx.push_vec(&mut deleted, *edge, "f3d deleted boundary edge")?;
         }
     }
-    deleted.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut deleted,
+        Ord::cmp,
+        |_| 0,
+        "f3d deleted boundary edge sort",
+    )?;
     deleted.dedup();
-    contextual.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut contextual,
+        Ord::cmp,
+        |_| 0,
+        "f3d deleted boundary contextual sort",
+    )?;
     contextual.dedup();
     Ok((deleted.len() == operands.len()
         && deleted
@@ -2253,7 +2318,12 @@ fn contextual_deleted_edge_group_candidates(
     if !has_deleted_member {
         return Ok(None);
     }
-    deleted.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut deleted,
+        Ord::cmp,
+        |_| 0,
+        "f3d contextual deleted edge sort",
+    )?;
     deleted.dedup();
     if deleted.len() != operands.len() {
         return Ok(None);
@@ -2270,7 +2340,12 @@ fn contextual_deleted_edge_group_candidates(
         {
             ctx.push_vec(&mut candidates, edge, "f3d contextual deleted candidate")?;
         }
-        candidates.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut candidates,
+            Ord::cmp,
+            |_| 0,
+            "f3d contextual deleted candidate sort",
+        )?;
         candidates.dedup();
         ctx.push_vec(
             &mut candidate_sets,
@@ -2281,7 +2356,12 @@ fn contextual_deleted_edge_group_candidates(
     let Some(mut assignment) = unique_bipartite_assignment(&candidate_sets, ctx)? else {
         return Ok(None);
     };
-    assignment.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut assignment,
+        Ord::cmp,
+        |_| 0,
+        "f3d contextual deleted assignment sort",
+    )?;
     Ok(Some(assignment))
 }
 
@@ -2325,7 +2405,12 @@ fn result_boundary_reference_edge_group_candidates(
     {
         ctx.push_vec(&mut candidates, edge, "f3d result boundary candidate")?;
     }
-    candidates.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "f3d result boundary candidate sort",
+    )?;
     candidates.dedup();
     let [candidate] = candidates.as_slice() else {
         return Ok(None);
@@ -2363,7 +2448,12 @@ fn changed_boundary_count_edge_group_candidates<'a>(
             ctx.push_vec(&mut candidates, edge, "f3d boundary-count candidate")?;
         }
     }
-    candidates.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "f3d boundary-count candidate sort",
+    )?;
     candidates.dedup();
     Ok((member_count > 0 && candidates.len() == member_count).then_some(candidates))
 }
@@ -2691,7 +2781,12 @@ fn corroborated_edge_candidates<'a>(
     for &edge in first {
         ctx.push_vec(&mut candidates, edge, "f3d corroborated edge candidate")?;
     }
-    candidates.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "f3d corroborated edge candidate sort",
+    )?;
     candidates.dedup();
     for selector in selectors {
         let selector_edges = selector_candidate_edges(selector, slots);
@@ -2803,9 +2898,26 @@ pub(super) fn project_fixed_fillet_with_corners(
     }) {
         ctx.push_vec(&mut scope_groups, group, "f3d fixed fillet scope group")?;
     }
-    crate::design::sort::sort_by_key(ctx, &mut scope_groups[..], |group| {
-        group.scope_reference_ordinal
-    })?;
+    ctx.stable_sort_by(
+        &mut scope_groups[..],
+        |left, right| {
+            let left_key = {
+                let group = left;
+                {
+                    group.scope_reference_ordinal
+                }
+            };
+            let right_key = {
+                let group = right;
+                {
+                    group.scope_reference_ordinal
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design edge_resolve 1",
+    )?;
     let mut complete_edge_groups = Vec::new();
     for group in scope_groups.iter().copied().filter(|group| {
         group

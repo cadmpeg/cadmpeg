@@ -49,7 +49,14 @@ pub(super) fn exact_rectangular_pattern_construction(
         if lanes.next().is_some() {
             return None;
         }
-        ordered_lanes.sort_by_key(|owner| owner.local_ordinal());
+        if let Err(error) = ctx.stable_sort_by(
+            &mut ordered_lanes,
+            |left, right| left.local_ordinal().cmp(&right.local_ordinal()),
+            |_| 0,
+            "sort f3d rectangular pattern lanes",
+        ) {
+            return Some(Err(error));
+        }
         let [u_count, v_count, u_extent, v_extent] = ordered_lanes;
         if [u_count, v_count, u_extent, v_extent]
             .iter()
@@ -87,11 +94,12 @@ pub(super) fn exact_rectangular_pattern_construction(
             },
         )
         .ok()?;
-        Some(construction)
+        Some(Ok(construction))
     })();
-    let Some(mut construction) = parsed else {
+    let Some(construction) = parsed else {
         return Ok(None);
     };
+    let mut construction = construction?;
     let instances = exact_rectangular_pattern_instances(ctx, bytes, records, scope, &construction)?;
     construction
         .try_set_instances(instances)
@@ -297,11 +305,16 @@ fn exact_rectangular_pattern_instances(
                 }
             }
         }
-        if let Err(error) = crate::design::sort::sort_by(ctx, &mut runs[..], |a, b| {
-            a.iter()
-                .map(|(_, offset)| *offset)
-                .cmp(b.iter().map(|(_, offset)| *offset))
-        }) {
+        if let Err(error) = ctx.stable_sort_by(
+            &mut runs[..],
+            |a, b| {
+                a.iter()
+                    .map(|(_, offset)| *offset)
+                    .cmp(b.iter().map(|(_, offset)| *offset))
+            },
+            |_| 0,
+            "sort f3d design pattern 1",
+        ) {
             return Some(Err(error));
         }
         runs.dedup_by(|left, right| left == right);
@@ -536,7 +549,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 }
             }
         }
-        count_candidates.sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut count_candidates,
+            Ord::cmp,
+            |_| 0,
+            "sort f3d circular pattern count candidates",
+        ) {
+            return Some(Err(error));
+        }
         count_candidates.dedup();
         let [(count, count_record_index, count_offset)] = count_candidates.as_slice() else {
             return None;
@@ -585,15 +605,18 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 angle_candidates.push((angle, *record_index, scalar.value_offset));
             }
         }
-        if let Err(error) =
-            crate::design::sort::sort_by(ctx, &mut angle_candidates[..], |left, right| {
+        if let Err(error) = ctx.stable_sort_by(
+            &mut angle_candidates[..],
+            |left, right| {
                 left.0
                     .get()
                     .total_cmp(&right.0.get())
                     .then_with(|| left.1.cmp(&right.1))
                     .then_with(|| left.2.cmp(&right.2))
-            })
-        {
+            },
+            |_| 0,
+            "sort f3d design pattern 2",
+        ) {
             return Some(Err(error));
         }
         angle_candidates.dedup();

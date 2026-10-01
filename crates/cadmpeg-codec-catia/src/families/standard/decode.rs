@@ -5083,7 +5083,12 @@ fn standard_limit_curve_point_parameter(
             &mut parameters,
         )?;
     }
-    parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
+    ctx.stable_sort_by(
+        &mut parameters,
+        |left, right| left.1.total_cmp(&right.1),
+        |_| 0,
+        "catia_limit_curve_point_parameters_sort",
+    )?;
     let Some(&(parameter, _)) = parameters.first() else {
         return Ok(None);
     };
@@ -5485,7 +5490,9 @@ fn attach_standard_topology(
             crate::families::standard::records::StandardCurveGeometry::Line
             | crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
-                faces.sort_unstable();
+                ctx
+                    .sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "catia_standard_curve_support_faces_sort")
+                    .map_err(StandardTopologyError::Resource)?;
                 for (face, surface) in [
                     (support.faces[0], &surface0.geometry),
                     (support.faces[1], &surface1.geometry),
@@ -5712,12 +5719,20 @@ fn attach_standard_topology(
                 "catia_limit_endpoint_pairs",
             )
             .map_err(StandardTopologyError::Resource)?;
-            limit_pairs.extend(bindings.iter().map(|binding| {
+            for binding in bindings {
                 let mut points = binding.points;
-                points.sort_unstable();
-                points
-            }));
-            limit_pairs.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut points,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_limit_endpoint_pair_sort",
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                limit_pairs.push(points);
+            }
+            ctx
+                .sort_unstable_by(&mut limit_pairs, Ord::cmp, |_| 0, "catia_limit_endpoint_pairs_sort")
+                .map_err(StandardTopologyError::Resource)?;
             limit_pairs.dedup();
             if options[edge].is_empty() {
                 options[edge] = limit_pairs;
@@ -6238,7 +6253,9 @@ fn attach_standard_topology(
             if let Some(limit) = refusal {
                 return Err(StandardTopologyError::Resource(CodecError::from(limit)));
             }
-            pairs.sort_unstable();
+            ctx
+                .sort_unstable_by(pairs, Ord::cmp, |_| 0, "catia_standard_endpoint_pairs_sort")
+                .map_err(StandardTopologyError::Resource)?;
             pairs.dedup();
         }
         for (candidates, options) in endpoint_candidates.iter_mut().zip(&mut *options) {
@@ -8030,14 +8047,18 @@ fn standard_curve_edge_classes(
     let mut classes = Vec::new();
     ctx.reserve_vec(&mut classes, supports.len(), "catia_standard_edge_classes")?;
     for (edge, support) in supports.iter().enumerate() {
-        let class = supports[..edge]
-            .iter()
-            .position(|candidate| {
-                let mut candidate_faces = candidate.faces;
-                candidate_faces.sort_unstable();
-                let mut support_faces = support.faces;
-                support_faces.sort_unstable();
-                candidate_faces == support_faces
+        let mut support_faces = support.faces;
+        ctx.sort_unstable_by(&mut support_faces, Ord::cmp, |_| 0, "catia_standard_edge_class_faces")?;
+        let mut found = None;
+        for (index, candidate) in supports[..edge].iter().enumerate() {
+            let mut candidate_faces = candidate.faces;
+            ctx.sort_unstable_by(
+                &mut candidate_faces,
+                Ord::cmp,
+                |_| 0,
+                "catia_standard_edge_class_faces",
+            )?;
+            if candidate_faces == support_faces
                     && match (&candidate.geometry, &support.geometry) {
                         (
                             crate::families::standard::records::StandardCurveGeometry::Circle {
@@ -8060,8 +8081,12 @@ fn standard_curve_edge_classes(
                         ) => true,
                         _ => false,
                     }
-            })
-            .map_or(edge, |candidate| classes[candidate]);
+            {
+                found = Some(index);
+                break;
+            }
+        }
+        let class = found.map_or(edge, |candidate| classes[candidate]);
         classes.push(class);
     }
     Ok(classes)
@@ -9085,7 +9110,7 @@ fn standard_shared_boundary_group_domains(
             continue;
         }
         let mut faces = support.faces;
-        faces.sort_unstable();
+        ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "catia_shared_boundary_faces_sort")?;
         if let Some(edges) = groups.get_mut(&faces) {
             ctx.push_vec(edges, edge, "catia_shared_boundary_group_edges")?;
         } else {
@@ -9110,7 +9135,7 @@ fn standard_shared_boundary_group_domains(
             .iter()
             .flat_map(|edge| filtered[*edge].iter().copied())
         {
-            pair.sort_unstable();
+            ctx.sort_unstable_by(&mut pair, Ord::cmp, |_| 0, "catia_shared_boundary_filtered_pair_sort")?;
             ctx.insert_hash_set(
                 &mut filtered_pairs,
                 pair,

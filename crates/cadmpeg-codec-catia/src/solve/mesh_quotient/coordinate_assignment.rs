@@ -78,7 +78,12 @@ fn partial_compact_assignment_viable(
             {
                 ctx.push_vec(&mut edges, edge, "catia coordinate relevant edges")?;
             }
-            edges.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut edges,
+                Ord::cmp,
+                |_| 0,
+                "catia coordinate relevant edges sort",
+            )?;
             edges.dedup();
             edges
         }
@@ -819,7 +824,12 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     )?;
                 }
             }
-            scanned_roots.sort_unstable_by_key(|root| (domains[*root].len(), *root));
+            ctx.sort_unstable_by(
+                &mut scanned_roots,
+                |left, right| (domains[*left].len(), *left).cmp(&(domains[*right].len(), *right)),
+                |_| 0,
+                "catia_coordinate_closure_scanned_roots_sort",
+            )?;
             let partial_scan = scanned_roots.len() < domains.len();
             let bounded_scan = !partial_scan
                 && budget.is_some_and(|budget| {
@@ -984,7 +994,12 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     "catia_coordinate_closure_point_supports",
                 )?;
             }
-            point_supports.sort_unstable_by_key(|(point, _)| *point);
+            ctx.sort_unstable_by(
+                &mut point_supports,
+                |left, right| left.0.cmp(&right.0),
+                |_| 0,
+                "catia_coordinate_closure_point_supports_sort",
+            )?;
             let mut uniquely_required = Vec::new();
             for (point, roots) in &point_supports {
                 if let Ok(&[root]) = <&[usize; 1]>::try_from(roots.as_slice()) {
@@ -1421,7 +1436,12 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         {
             ctx.push_vec(&mut domain, point, "catia_coordinate_closure_domain_points")?;
         }
-        domain.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut domain,
+            Ord::cmp,
+            |_| 0,
+            "catia_coordinate_closure_domain_points_sort",
+        )?;
         ctx.push_vec(&mut domains, domain, "catia_coordinate_closure_domains")?;
     }
     if domains.iter().any(Vec::is_empty) {
@@ -1480,7 +1500,12 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         )?;
     }
     let mut components = ordered_components;
-    components.sort_by_key(|component| component[0]);
+    ctx.stable_sort_by(
+        &mut components,
+        |left, right| left[0].cmp(&right[0]),
+        |_| 0,
+        "catia_coordinate_closure_components_sort",
+    )?;
     let incidence = if let Some((edge_faces, boundary_domains)) = incidence {
         if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
             exhausted.set(true);

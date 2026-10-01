@@ -185,13 +185,6 @@ pub(in crate::native) fn material_texture_assets(
         .iter()
         .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
         .count();
-    let entry_bytes = count
-        .checked_mul(std::mem::size_of::<&crate::container::DirEntry>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX material texture entry slots", 0, 1))?;
-    let _entry_reservation = ctx.reserve_scoped(
-        u64_from_index(entry_bytes),
-        "sort NX material texture entries",
-    )?;
     let mut entries = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut entries,
@@ -204,14 +197,12 @@ pub(in crate::native) fn material_texture_assets(
             .iter()
             .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX)),
     );
-    let sort_work = count
-        .checked_mul(count)
-        .ok_or_else(|| ctx.refuse_codec_limit("NX material texture sort work", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(sort_work),
+    ctx.stable_sort_by(
+        &mut entries,
+        |first, second| first.name.cmp(&second.name),
+        |entry| entry.name.len(),
         "sort NX material texture entries",
     )?;
-    entries.sort_by(|first, second| first.name.cmp(&second.name));
     let mut assets = Vec::new();
     for entry in entries {
         let parsed = (|| {
@@ -283,18 +274,28 @@ mod tests {
     const TIFF: &[u8] = &[b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
 
     fn container() -> Container<'static> {
+        container_of(1)
+    }
+
+    fn container_of(count: usize) -> Container<'static> {
         Container {
             data: Cow::Borrowed(TIFF),
             physical_size: cadmpeg_core::decode::u64_from_index(TIFF.len()),
             layout: crate::container::test_modern_layout(6),
-            entries: vec![DirEntry {
-                name: "/Root/materialsTif/Steel".to_owned(),
-                region: Region::Header,
-                body: DirEntryBody::File {
-                    offset: 0,
-                    len: cadmpeg_core::decode::u64_from_index(TIFF.len()),
-                },
-            }],
+            entries: (0..count)
+                .map(|ordinal| DirEntry {
+                    name: if count == 1 {
+                        "/Root/materialsTif/Steel".to_owned()
+                    } else {
+                        format!("/Root/materialsTif/Steel{ordinal}")
+                    },
+                    region: Region::Header,
+                    body: DirEntryBody::File {
+                        offset: 0,
+                        len: cadmpeg_core::decode::u64_from_index(TIFF.len()),
+                    },
+                })
+                .collect(),
             fastload_table: None,
             indexed_section_layouts: OnceLock::new(),
             om_section_cache: OnceLock::new(),
@@ -334,9 +335,15 @@ mod tests {
 
     #[test]
     fn material_texture_assets_refuse_scoped_limit() {
-        assert_limit(
+        // The stable sort reserves scratch only above 20 entries.
+        crate::test_support::with_decode_context_over(
+            TIFF,
             |policy| policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::MaterializedBytes,
+            |ctx| {
+                let error = material_texture_assets(ctx, &container_of(21)).unwrap_err();
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::MaterializedBytes));
+            },
         );
     }
 

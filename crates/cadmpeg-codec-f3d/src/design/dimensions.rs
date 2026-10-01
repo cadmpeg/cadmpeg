@@ -1584,7 +1584,22 @@ fn project_all_dimension_constraints(
         }
     }
     for records in recipes_by_companion.values_mut() {
-        crate::design::sort::sort_by_key(ctx, &mut records[..], |record| record.recipe_ordinal)?;
+        ctx.stable_sort_by(
+            &mut records[..],
+            |left, right| {
+                let left_key = {
+                    let record = left;
+                    record.recipe_ordinal
+                };
+                let right_key = {
+                    let record = right;
+                    record.recipe_ordinal
+                };
+                left_key.cmp(&right_key)
+            },
+            |_| 0,
+            "sort f3d design dimensions 1",
+        )?;
     }
     for ((scope, companion_record_index), records) in recipes_by_companion {
         let Some(companion) = companions_by_key.get(&(scope, companion_record_index)) else {
@@ -1984,7 +1999,12 @@ fn project_all_dimension_constraints(
             )?;
         }
     }
-    crate::design::sort::sort_by(ctx, &mut constraints[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut constraints[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design dimensions 2",
+    )?;
     Ok(constraints)
 }
 
@@ -3755,9 +3775,12 @@ pub(crate) fn project_spatial_dimension_constraints(
     for parameter_id in source_parameters.difference(&retained_parameters) {
         ctx.push_vec(&mut missing, parameter_id, "f3d missing spatial parameter")?;
     }
-    crate::design::sort::sort_by(ctx, &mut missing[..], |first, second| {
-        first.as_str().cmp(second.as_str())
-    })?;
+    ctx.stable_sort_by(
+        &mut missing[..],
+        |first, second| first.as_str().cmp(second.as_str()),
+        |_| 0,
+        "sort f3d design dimensions 3",
+    )?;
     for parameter_id in missing {
         let Some(parameter) = parameters_by_id.get(parameter_id) else {
             continue;

@@ -11,6 +11,7 @@ mod context;
 mod error;
 mod policy;
 mod probe;
+mod sort;
 mod space;
 mod utf16;
 mod view;

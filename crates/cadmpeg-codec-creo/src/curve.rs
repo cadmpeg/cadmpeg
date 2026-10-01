@@ -1039,7 +1039,12 @@ pub(crate) fn expression_records_with_model_name(
             start = offset + label.len();
         }
     }
-    labels.sort_unstable_by_key(|(offset, _, _)| *offset);
+    ctx.sort_unstable_by(
+        &mut labels,
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
+        "creo expression record labels sort",
+    )?;
 
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
@@ -7851,7 +7856,12 @@ pub(crate) fn depdb_cross_section_rows(
             search = offset + marker.len();
         }
     }
-    boundaries.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut boundaries,
+        Ord::cmp,
+        |_| 0,
+        "creo cross-section row boundaries sort",
+    )?;
     boundaries.dedup();
     while rows.len() < positional_count {
         let first_candidate = boundaries.partition_point(|(end, _)| *end < cursor);
@@ -8109,7 +8119,12 @@ fn framed_segment_with_face_ids(
             prefixes.push((row_start, prefix.end));
         }
     }
-    prefixes.sort_unstable_by_key(|(_, end)| *end);
+    ctx.sort_unstable_by(
+        &mut prefixes,
+        |left, right| left.1.cmp(&right.1),
+        |_| 0,
+        "creo framed curve prefixes sort",
+    )?;
     let closes = segment
         .iter()
         .enumerate()

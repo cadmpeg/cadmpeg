@@ -1798,6 +1798,108 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+SLICE_SORT_METHODS = {
+    "sort", "sort_by", "sort_by_key", "sort_unstable", "sort_unstable_by",
+    "sort_unstable_by_key", "sort_by_cached_key",
+}
+DECODE_SORT_EXEMPT_FILES = {
+    "crates/cadmpeg-core/src/decode/context.rs",
+    "crates/cadmpeg-core/src/decode/sort.rs",
+}
+DECODE_CONTEXT_BINDING = re.compile(
+    r"\b([A-Za-z_]\w*)\s*:\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
+    r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*DecodeContext\b"
+)
+
+
+def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
+    """Reject slice sorts in functions borrowing a decode context.
+
+    Function scopes exclude nested function items. Closures keep their enclosing
+    context. Struct fields identify context access through a method's self value.
+    """
+    parsed = {}
+    context_fields: dict[tuple[str, str], set[str]] = {}
+    for path, source in sources.items():
+        if not is_production_rs(path):
+            continue
+        code, _ = production_source(source)
+        tokens, pairs, parents = evaluation_tokens(code)
+        words = [token[0] for token in tokens]
+        crate = Path(relative_path(path)).parts[1]
+        parsed[path] = code, tokens, pairs, parents, words, crate
+        for index, word in enumerate(words):
+            if word != "struct" or index + 1 >= len(words):
+                continue
+            opening = index + 2
+            while opening < len(words) and words[opening] not in {"{", ";", "("}:
+                opening += 1
+            if opening not in pairs or words[opening] != "{":
+                continue
+            fields = DECODE_CONTEXT_BINDING.findall(
+                code[tokens[opening].end():tokens[pairs[opening]].start()])
+            context_fields.setdefault((crate, words[index + 1]), set()).update(fields)
+
+    findings = []
+    for path, (code, tokens, pairs, parents, words, crate) in parsed.items():
+        if relative_path(path) in DECODE_SORT_EXEMPT_FILES:
+            continue
+        functions = []
+        for index, _, _, owner in evaluation_signatures(tokens, pairs, parents):
+            opening = index + 2
+            if words[opening] == "<":
+                depth = 1
+                opening += 1
+                while opening < len(words) and depth:
+                    depth += (words[opening] == "<") - (words[opening] == ">")
+                    opening += 1
+            body = pairs[opening] + 1
+            while body < len(words) and words[body] not in {"{", ";"}:
+                body += 1
+            if body not in pairs or words[body] != "{":
+                continue
+            functions.append((index, body, pairs[body], owner))
+        # A nested function does not borrow its enclosing function's locals.
+        contexts = {}
+        for index, body, end, owner in functions:
+            pieces = []
+            cursor = tokens[index].start()
+            for child, _, child_end, _ in functions:
+                if body < child < end:
+                    if tokens[child].start() >= cursor:
+                        pieces.append(code[cursor:tokens[child].start()])
+                        cursor = tokens[child_end].end()
+            pieces.append(code[cursor:tokens[end].end()])
+            scope = "".join(pieces)
+            fields = context_fields.get((crate, owner), set())
+            bindings = set(DECODE_CONTEXT_BINDING.findall(scope))
+            contexts[index] = bindings, fields, bool(bindings) or any(
+                re.search(r"\bself\s*\.\s*" + re.escape(field) + r"\b", scope)
+                for field in fields
+            )
+        for index, word in enumerate(words):
+            if word not in SLICE_SORT_METHODS or index == 0 or words[index - 1] != ".":
+                continue
+            if evaluation_call_open(words, index) is None:
+                continue
+            enclosing = [scope for scope in functions if scope[1] < index < scope[2]]
+            if not enclosing:
+                continue
+            bindings, fields, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
+            if not has_context:
+                continue
+            # The context operation shares the slice method's unstable name.
+            receiver = words[index - 2] if index >= 2 else ""
+            if receiver in bindings or (receiver in fields and words[index - 4:index - 2] == ["self", "."]):
+                continue
+            findings.append(Finding(
+                "uncharged_decode_sort", relative_path(path),
+                code.count("\n", 0, tokens[index].start()) + 1,
+                f"Slice .{word} in decode code must use ctx.stable_sort_by or ctx.sort_unstable_by to admit comparison work and scratch.",
+            ))
+    return findings
+
+
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
@@ -1807,6 +1909,7 @@ def check_source() -> list[Finding]:
     for path, source in sources.items():
         if is_production_rs(path):
             findings.extend(scan_patterns(path, source))
+    findings.extend(scan_decode_sorts(sources))
     findings.extend(scan_evaluation_refusals(sources))
     findings.extend(scan_wire_mirror_docs(sources))
     findings.extend(scan_module_visibility(sources))
@@ -1818,8 +1921,16 @@ def check_source() -> list[Finding]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit structured findings")
+    parser.add_argument("--crate", action="append", default=[], metavar="NAME",
+                        help="report findings only for this crate (repeatable)")
     args = parser.parse_args(argv)
     findings = check_source()
+    if args.crate:
+        for name in args.crate:
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", name) or not (ROOT / "crates" / name).is_dir():
+                parser.error(f"unknown crate: {name}")
+        roots = {f"crates/{name}/" for name in args.crate}
+        findings = [item for item in findings if any(item.path.startswith(root) for root in roots)]
     if args.json:
         print(json.dumps({"status": "fail" if findings else "ok",
                           "findings": [asdict(item) for item in findings]}, indent=2))

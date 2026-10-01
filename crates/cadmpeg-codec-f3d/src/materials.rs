@@ -704,7 +704,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
             "collect F3D asset appearances",
         )?;
     }
-    out.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
+    ctx.stable_sort_by(
+        &mut out,
+        |a, b| a.id.as_str().cmp(b.id.as_str()),
+        |item| item.id.as_str().len(),
+        "sort F3D appearance assets",
+    )?;
     if let Some(pair) = out
         .windows(2)
         .find(|pair| pair[0].id == pair[1].id && pair[0] != pair[1])
@@ -896,11 +901,16 @@ fn appearances_from_schema_records(
                 }
             }
         }
-        connected.sort_by(|left, right| {
-            left.slot
-                .cmp(&right.slot)
-                .then_with(|| left.asset_guid.cmp(&right.asset_guid))
-        });
+        ctx.stable_sort_by(
+            &mut connected,
+            |left, right| {
+                left.slot
+                    .cmp(&right.slot)
+                    .then_with(|| left.asset_guid.cmp(&right.asset_guid))
+            },
+            |texture| texture.slot.len() + texture.asset_guid.len(),
+            "sort F3D connected textures",
+        )?;
         let base_color = appearance_base_color(record);
         let appearance = Appearance {
             id: crate::ids::appearance_id_charged(ctx, &record.guid)?,
@@ -1139,12 +1149,17 @@ fn decode_body_appearance_overrides(
             )?;
         }
     }
-    out.sort_by(|left, right| {
-        left.body
-            .cmp(&right.body)
-            .then_with(|| left.entity_suffix.cmp(&right.entity_suffix))
-            .then_with(|| left.visual_guid.cmp(&right.visual_guid))
-    });
+    ctx.stable_sort_by(
+        &mut out,
+        |left, right| {
+            left.body
+                .cmp(&right.body)
+                .then_with(|| left.entity_suffix.cmp(&right.entity_suffix))
+                .then_with(|| left.visual_guid.cmp(&right.visual_guid))
+        },
+        |item| item.body.as_str().len() + item.visual_guid.len(),
+        "sort F3D body appearance overrides",
+    )?;
     out.dedup_by(|left, right| {
         left.body == right.body
             && left.entity_suffix == right.entity_suffix

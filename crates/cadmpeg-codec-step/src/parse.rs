@@ -1233,7 +1233,12 @@ impl Parser<'_, '_, '_> {
                     "step_parse_canonical_partial_names",
                 )?;
             }
-            canonical_names.sort_unstable();
+            self.budget.sort_unstable_by(
+                &mut canonical_names,
+                Ord::cmp,
+                |item| item.len(),
+                "step_parse_canonical_partial_name_sort",
+            )?;
             if canonical_names
                 .windows(2)
                 .any(|window| window[0] == window[1])

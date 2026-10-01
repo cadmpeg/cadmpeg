@@ -2459,7 +2459,12 @@ pub(crate) fn carrier_census(
         }
         census.push(record);
     }
-    census.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(
+        &mut census,
+        |left, right| left.id.cmp(&right.id),
+        |item| item.id.len(),
+        "FreeCAD carrier census sort",
+    )?;
     Ok(census)
 }
 

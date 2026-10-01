@@ -1028,7 +1028,12 @@ pub(crate) fn enrich_history_revolution_inputs(
                 object_ids.push(id);
             }
         }
-        object_ids.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut object_ids,
+            Ord::cmp,
+            |_| 0,
+            "sort SLDPRT revolution profile sources",
+        )?;
         object_ids.dedup();
         if let [object_id] = object_ids.as_slice() {
             feature.source_id = FeatureSource::from_value(*object_id);
@@ -1098,7 +1103,12 @@ pub(crate) fn enrich_history_revolution_inputs(
                     objects.push((name.offset, feature));
                 }
             }
-            objects.sort_unstable_by_key(|(offset, _)| *offset);
+            ctx.sort_unstable_by(
+                &mut objects,
+                |(left, _), (right, _)| left.cmp(right),
+                |_| 0,
+                "sort SLDPRT revolution feature objects",
+            )?;
             for (index, &(start, feature)) in objects.iter().enumerate() {
                 if !matches!(
                     feature.input_class.as_deref(),

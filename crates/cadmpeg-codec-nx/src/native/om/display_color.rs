@@ -111,24 +111,12 @@ fn finalize_assignments(
     ctx: &DecodeContext<'_>,
     mut assignments: Vec<RmDisplayColorAssignment>,
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
-    let sort_bytes = assignments
-        .len()
-        .checked_mul(std::mem::size_of::<RmDisplayColorAssignment>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX display color sort bytes", 0, 1))?;
-    let sort_reservation = ctx.reserve_scoped(
-        u64_from_index(sort_bytes),
+    ctx.stable_sort_by(
+        &mut assignments,
+        |first, second| first.frame.offset().cmp(&second.frame.offset()),
+        |_| 0,
         "sort NX display color assignments",
     )?;
-    let sort_work = assignments
-        .len()
-        .checked_mul(assignments.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX display color sort work", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(sort_work),
-        "sort NX display color assignments",
-    )?;
-    assignments.sort_by_key(|assignment| assignment.frame.offset());
-    drop(sort_reservation);
     for (ordinal, assignment) in assignments.iter_mut().enumerate() {
         assignment.ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX display color ordinal", 0, 1))?;
@@ -298,12 +286,15 @@ mod admission_tests {
 
     #[test]
     fn display_color_finalization_refuses_scoped_limit() {
-        let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
+        // The stable sort reserves scratch only above 20 values.
+        let rows: Vec<RmDisplayColorAssignment> = (0..21)
+            .map(|_| serde_json::from_str(ROW).unwrap())
+            .collect();
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
             policy.limits.max_materialized_bytes = 0;
         };
         let error = crate::test_support::with_decode_context_over(&[], adjust_policy, |ctx| {
-            finalize_assignments(ctx, vec![row]).unwrap_err()
+            finalize_assignments(ctx, rows).unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes));

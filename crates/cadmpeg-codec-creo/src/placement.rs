@@ -1183,7 +1183,12 @@ pub(crate) fn resolve(
                 reference_ids.push(id);
             }
         }
-        reference_ids.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut reference_ids,
+            Ord::cmp,
+            |_| 0,
+            "creo placement reference ID sort",
+        )?;
         reference_ids.dedup();
         let direct_sketch = plane_equation(
             sketch_id,

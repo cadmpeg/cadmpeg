@@ -105,24 +105,12 @@ fn finalize_relations(
     ctx: &DecodeContext<'_>,
     mut relations: Vec<RmCreationDisplayDataRelation>,
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
-    let sort_bytes = relations
-        .len()
-        .checked_mul(std::mem::size_of::<RmCreationDisplayDataRelation>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX creation display sort bytes", 0, 1))?;
-    let sort_reservation = ctx.reserve_scoped(
-        u64_from_index(sort_bytes),
+    ctx.stable_sort_by(
+        &mut relations,
+        |left, right| left.encoding.offset().cmp(&right.encoding.offset()),
+        |_| 0,
         "sort NX creation display relations",
     )?;
-    let sort_work = relations
-        .len()
-        .checked_mul(relations.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX creation display sort work", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(sort_work),
-        "sort NX creation display relations",
-    )?;
-    relations.sort_by_key(|relation| relation.encoding.offset());
-    drop(sort_reservation);
     for (ordinal, relation) in relations.iter_mut().enumerate() {
         relation.ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX creation display ordinal", 0, 1))?;
@@ -285,12 +273,15 @@ mod admission_tests {
 
     #[test]
     fn creation_display_finalization_refuses_scoped_limit() {
-        let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
+        // The stable sort reserves scratch only above 20 values.
+        let rows: Vec<RmCreationDisplayDataRelation> = (0..21)
+            .map(|_| serde_json::from_str(ROW).unwrap())
+            .collect();
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
             policy.limits.max_materialized_bytes = 0;
         };
         let error = crate::test_support::with_decode_context_over(&[], adjust_policy, |ctx| {
-            finalize_relations(ctx, vec![row]).unwrap_err()
+            finalize_relations(ctx, rows).unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes));

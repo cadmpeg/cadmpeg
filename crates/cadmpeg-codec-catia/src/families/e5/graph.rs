@@ -720,7 +720,14 @@ pub(crate) fn parse_topology(
                 }
             }
         }
-        vertex_refs.sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut vertex_refs,
+            Ord::cmp,
+            |_| 0,
+            "catia_e5_vertex_refs_sort",
+        ) {
+            return Some(Err(error));
+        }
         vertex_refs.dedup();
         let bodies = match parse_bodies(ctx, &records, &by_id) {
             Ok(Some(bodies)) => bodies,

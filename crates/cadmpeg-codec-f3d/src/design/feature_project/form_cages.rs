@@ -1039,15 +1039,12 @@ fn form_cage_serializers(
             ctx.push_vec(&mut offsets, *offset, "f3d form serializer offset")?;
         }
     }
-    let sort_work = offsets
-        .len()
-        .checked_mul(offsets.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("sort f3d form serializer offsets", 0, u64::MAX))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sort_work),
-        "sort f3d form serializer offsets",
+    ctx.sort_unstable_by(
+        &mut offsets,
+        Ord::cmp,
+        |_| 0,
+        "f3d form serializer offset sort",
     )?;
-    offsets.sort_unstable();
     let mut ordered = Vec::new();
     let mut entries = HashMap::new();
     for offset in offsets {
