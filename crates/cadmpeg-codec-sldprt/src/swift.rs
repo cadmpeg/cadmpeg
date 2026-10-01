@@ -40,6 +40,33 @@ struct ObjectSection {
     entities: Vec<Entity>,
 }
 
+impl ObjectSection {
+    /// Admits distinct references and their matching embedded entity prefix.
+    fn new(ctx: &DecodeContext<'_>, references: Vec<Reference>, entities: Vec<Entity>) -> Result<Option<Self>, CodecError> {
+        let mut ids = std::collections::HashSet::new();
+        for reference in &references {
+            let work = u64_from_index(reference.id.len()).checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("validate SWIFT reference identities", u64::MAX, u64::MAX))?;
+            ctx.charge_work(work, "validate SWIFT reference identities")?;
+            if !ctx.insert_hash_set(&mut ids, reference.id.as_str(), "admit distinct SWIFT object references")? {
+                return Err(CodecError::malformed(format_args!("duplicate SWIFT object reference ID {}", reference.id)));
+            }
+        }
+        if entities.len() > references.len() {
+            return Ok(None);
+        }
+        for (reference, entity) in references.iter().zip(&entities) {
+            let work = reference.class.len().checked_add(entity.class.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("bind SWIFT reference classes", u64::MAX, u64::MAX))?;
+            ctx.charge_work(u64_from_index(work), "bind SWIFT reference classes")?;
+            if !reference_matches_entity(reference, entity) {
+                return Ok(None);
+            }
+        }
+        Ok(Some(Self { references, entities }))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct RelatedObject {
     name: String,
@@ -856,20 +883,10 @@ fn read_objects(
         ctx.reserve_vec(&mut entities, 1, "collect SWIFT object entities")?;
         entities.push(entity);
     }
-    if !references
-        .iter()
-        .zip(&entities)
-        .all(|(reference, entity)| reference_matches_entity(reference, entity))
-    {
-        return Ok(None);
-    }
     if pstr(cursor) != Some(end) {
         return Ok(None);
     }
-    Ok(Some(ObjectSection {
-        references,
-        entities,
-    }))
+    ObjectSection::new(ctx, references, entities)
 }
 
 fn read_related(
