@@ -18,6 +18,7 @@ mod sort;
 mod space;
 pub mod tree;
 mod utf16;
+mod unique;
 mod view;
 pub mod work_scratch;
 
