@@ -1418,9 +1418,9 @@ fn pmi_nested_messagepack_refuses_instead_of_malformed_map() {
 }
 
 #[test]
-fn pmi_patch_loads_records_at_the_maximum_field_depth() {
+fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     // NativeRecord admits fields nested 256 deep; loading such a record stays within the depth
-    // limit, so a valid record never turns into a depth refusal when patched.
+    // limit, so neither the load nor the patch refuses on resources.
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut nested = serde_json::Value::Null;
     for _ in 0..256 {
@@ -1437,7 +1437,14 @@ fn pmi_patch_loads_records_at_the_maximum_field_depth() {
     namespace
         .arenas_mut()
         .insert("pmi_dimensions".into(), vec![record]);
-    assert!(crate::native::SldprtNative::load(namespace).is_ok());
+    // The fixture is not a complete dimension record; only the absence of a resource refusal
+    // is asserted.
+    if let Err(error) = crate::native::SldprtNative::load(namespace) {
+        assert!(!matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(_)
+        ));
+    }
     assert!(!matches!(
         patch_payload(&ir, "block", &mut []),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
