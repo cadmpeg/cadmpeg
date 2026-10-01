@@ -271,7 +271,7 @@ fn topology_bound_plane_refuses_curve_plane_vector() {
 #[test]
 fn topology_bound_plane_refuses_face_point_vector() {
     let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
-    let vertex_faces = BTreeMap::from([(1, BTreeSet::from([5]))]);
+    let vertex_faces = BTreeMap::from([(std::num::NonZeroU32::new(1).expect("one-based vertex fixture"), BTreeSet::from([5]))]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -624,11 +624,7 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         .zip(1..=8)
         .chain(inner.half_edges().iter().copied().zip(9..=11))
         .map(
-            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
-                half_edge,
-                start_vertex_id,
-                end_vertex_id: None,
-            },
+            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence { half_edge: half_edge, start_vertex_id: std::num::NonZeroU32::new(start_vertex_id).expect("one-based vertex fixture"), end_vertex_id: None },
         )
         .collect::<Vec<_>>();
     let incidence = bindings
@@ -668,11 +664,7 @@ fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
         .zip(1..=3)
         .chain(inner.half_edges().iter().copied().zip(4..=6))
         .map(
-            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
-                half_edge,
-                start_vertex_id,
-                end_vertex_id: None,
-            },
+            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence { half_edge: half_edge, start_vertex_id: std::num::NonZeroU32::new(start_vertex_id).expect("one-based vertex fixture"), end_vertex_id: None },
         )
         .collect::<Vec<_>>();
     let incidence = bindings

@@ -140,9 +140,19 @@ impl FaceComponent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TopologicalVertex {
     /// Deterministic one-based vertex identifier.
-    pub(crate) id: u32,
+    pub(crate) id: NonZeroU32,
     /// Sorted half-edges sharing this start vertex.
-    pub(crate) half_edges: Vec<HalfEdgeId>,
+    half_edges: Vec<HalfEdgeId>,
+}
+
+impl TopologicalVertex {
+    pub(crate) fn new(ctx: &DecodeContext<'_>, id: u32, half_edges: Vec<HalfEdgeId>) -> Result<Option<Self>, CodecError> {
+        let Some(id) = NonZeroU32::new(id) else { return Ok(None); };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(half_edges.len()), "creo vertex orbit validation work")?;
+        if half_edges.is_empty() || half_edges.windows(2).any(|pair| pair[0] >= pair[1]) { return Ok(None); }
+        Ok(Some(Self { id, half_edges }))
+    }
+    pub(crate) fn half_edges(&self) -> &[HalfEdgeId] { &self.half_edges }
 }
 
 /// Start/end vertex binding for one oriented half-edge.
@@ -151,9 +161,9 @@ pub(crate) struct HalfEdgeVertexIncidence {
     /// Bound oriented half-edge.
     pub(crate) half_edge: HalfEdgeId,
     /// Vertex orbit containing this half-edge.
-    pub(crate) start_vertex_id: u32,
+    pub(crate) start_vertex_id: NonZeroU32,
     /// Start vertex of the resolved successor half-edge.
-    pub(crate) end_vertex_id: Option<u32>,
+    pub(crate) end_vertex_id: Option<NonZeroU32>,
 }
 
 /// Return each uniquely identified curve's two half-edge start vertices.
@@ -164,8 +174,8 @@ pub(crate) struct HalfEdgeVertexIncidence {
 pub(crate) fn edge_start_vertex_pairs(
     ctx: &DecodeContext<'_>,
     incidence: &[HalfEdgeVertexIncidence],
-) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
-    let mut by_curve = BTreeMap::<u32, [SingleSide<u32>; 2]>::new();
+) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
+    let mut by_curve = BTreeMap::<u32, [SingleSide<NonZeroU32>; 2]>::new();
     for binding in incidence {
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -217,7 +227,7 @@ pub(crate) fn vertex_incident_faces(
     ctx: &DecodeContext<'_>,
     vertices: &[TopologicalVertex],
     edges: &[HalfEdge],
-) -> Result<BTreeMap<u32, BTreeSet<u32>>, CodecError> {
+) -> Result<BTreeMap<NonZeroU32, BTreeSet<u32>>, CodecError> {
     let mut by_id = BTreeMap::new();
     for edge in edges {
         match by_id.entry(edge.id) {
@@ -268,7 +278,7 @@ pub(crate) fn vertex_incident_faces(
 pub(crate) fn edge_vertex_pairs(
     ctx: &DecodeContext<'_>,
     incidence: &[HalfEdgeVertexIncidence],
-) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
     let mut by_curve = BTreeMap::<u32, [SingleSide<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
@@ -424,7 +434,8 @@ pub(crate) fn vertex_orbits(
         ctx.reserve_vec(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
         half_edges.extend(orbit);
         ctx.reserve_vec(&mut vertices, 1, "creo topological vertices")?;
-        vertices.push(TopologicalVertex { id, half_edges });
+        let vertex = TopologicalVertex::new(ctx, id, half_edges)?.ok_or_else(|| CodecError::malformed("invalid derived Creo vertex orbit"))?;
+        vertices.push(vertex);
     }
     let mut start_vertex = BTreeMap::new();
     for vertex in &vertices {

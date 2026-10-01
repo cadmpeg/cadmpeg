@@ -1832,8 +1832,8 @@ pub(super) fn topological_vertex_records<'a>(
         ctx.reserve_vec(&mut records, 1, "creo native topological vertex records")?;
         records.push(CreoTopologicalVertexRecord {
             id,
-            vertex_id: record.id,
-            half_edges: &record.half_edges,
+            vertex_id: record.id.get(),
+            half_edges: record.half_edges(),
         });
     }
     Ok(records)
@@ -1860,8 +1860,8 @@ pub(super) fn half_edge_vertex_incidence_records(
         records.push(CreoHalfEdgeVertexIncidenceRecord {
             id,
             half_edge: half_edge_ref(record.half_edge),
-            start_vertex_id: record.start_vertex_id,
-            end_vertex_id: record.end_vertex_id,
+            start_vertex_id: record.start_vertex_id.get(),
+            end_vertex_id: record.end_vertex_id.map(std::num::NonZeroU32::get),
         });
     }
     Ok(records)
@@ -1897,7 +1897,7 @@ mod topology_projection_limit_tests {
     use crate::curve::CurveTopologyRow;
     use crate::loop_array::{LoopArrayFrame, LoopArrayRecord};
     use crate::topology::{
-        HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Side, TopologicalVertex,
+        HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Side,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::num::NonZeroU32;
@@ -1923,17 +1923,10 @@ mod topology_projection_limit_tests {
             next: Some(half_edge),
         });
         scan.topology.loops.push(crate::test_support::closed_loop(NonZeroU32::new(1), vec![half_edge]));
-        scan.topology.vertices.push(TopologicalVertex {
-            id: 1,
-            half_edges: vec![half_edge],
-        });
+        scan.topology.vertices.push(crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])).expect("vertex admission").expect("valid vertex fixture"));
         scan.topology
             .half_edge_vertex_incidence
-            .push(HalfEdgeVertexIncidence {
-                half_edge,
-                start_vertex_id: 1,
-                end_vertex_id: Some(1),
-            });
+            .push(HalfEdgeVertexIncidence { half_edge: half_edge, start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(1) });
         scan.topology.face_components.push(crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![1], vec![8])).expect("component admission").expect("valid component fixture"));
         scan.loop_arrays.frames.push(LoopArrayFrame {
             offset: 17,

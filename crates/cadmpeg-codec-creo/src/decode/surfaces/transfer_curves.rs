@@ -130,8 +130,8 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         let points = (|| {
             let vertices = edge_vertices.get(&row.id)?;
             let points = [
-                *solved_vertices.get(&vertices[0])?,
-                *solved_vertices.get(&vertices[1])?,
+                *solved_vertices.get(&vertices[0].get())?,
+                *solved_vertices.get(&vertices[1].get())?,
             ];
             Some(points)
         })();
@@ -516,7 +516,7 @@ mod tests {
         .expect("carrier intersection admission")
     }
     use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
-    use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
+    use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence};
     use crate::{container, curve, surface};
 
     #[test]
@@ -735,38 +735,24 @@ mod tests {
             },
         ];
         scan.topology.vertices = vec![
-            TopologicalVertex {
-                id: 1,
-                half_edges: vec![HalfEdgeId {
+            crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 1, vec![HalfEdgeId {
                     curve_id: 10,
                     side: crate::topology::Side::Zero,
-                }],
-            },
-            TopologicalVertex {
-                id: 2,
-                half_edges: vec![HalfEdgeId {
+                }])).expect("vertex admission").expect("valid vertex fixture"),
+            crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 2, vec![HalfEdgeId {
                     curve_id: 10,
                     side: crate::topology::Side::One,
-                }],
-            },
+                }])).expect("vertex admission").expect("valid vertex fixture"),
         ];
         scan.topology.half_edge_vertex_incidence = vec![
-            HalfEdgeVertexIncidence {
-                half_edge: HalfEdgeId {
+            HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
                     curve_id: 10,
                     side: crate::topology::Side::Zero,
-                },
-                start_vertex_id: 1,
-                end_vertex_id: Some(2),
-            },
-            HalfEdgeVertexIncidence {
-                half_edge: HalfEdgeId {
+                }, start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(2) },
+            HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
                     curve_id: 10,
                     side: crate::topology::Side::One,
-                },
-                start_vertex_id: 2,
-                end_vertex_id: Some(1),
-            },
+                }, start_vertex_id: std::num::NonZeroU32::new(2).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(1) },
         ];
 
         let mut ir = CadIr::empty();

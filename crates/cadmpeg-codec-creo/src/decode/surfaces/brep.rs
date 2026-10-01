@@ -196,25 +196,25 @@ impl FaceAdmissionDetail {
             }
             if let Some(binding) = incidence.get(half_edge) {
                 if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
-                    && !detail.vertex_ids.contains(&binding.start_vertex_id)
+                    && !detail.vertex_ids.contains(&binding.start_vertex_id.get())
                 {
                     ctx.reserve_vec(
                         &mut detail.vertex_ids,
                         1,
                         "creo B-rep rejection vertex samples",
                     )?;
-                    detail.vertex_ids.push(binding.start_vertex_id);
+                    detail.vertex_ids.push(binding.start_vertex_id.get());
                 }
                 if let Some(end_vertex_id) = binding.end_vertex_id {
                     if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
-                        && !detail.vertex_ids.contains(&end_vertex_id)
+                        && !detail.vertex_ids.contains(&end_vertex_id.get())
                     {
                         ctx.reserve_vec(
                             &mut detail.vertex_ids,
                             1,
                             "creo B-rep rejection vertex samples",
                         )?;
-                        detail.vertex_ids.push(end_vertex_id);
+                        detail.vertex_ids.push(end_vertex_id.get());
                     }
                 }
             }
@@ -1172,8 +1172,8 @@ fn native_parameter_loop_polygon(
             return Ok(None);
         };
         let [Some(start), Some(end)] = [
-            solved_vertices.get(&binding.start_vertex_id).copied(),
-            solved_vertices.get(&end_vertex_id).copied(),
+            solved_vertices.get(&binding.start_vertex_id.get()).copied(),
+            solved_vertices.get(&end_vertex_id.get()).copied(),
         ] else {
             return Ok(None);
         };
@@ -1446,13 +1446,13 @@ impl BrepEdgeIndexes {
     fn from_rows(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         rows: &[crate::curve::CurveTopologyRow],
-        native_edge_vertices: &BTreeMap<u32, [u32; 2]>,
+        native_edge_vertices: &BTreeMap<u32, [std::num::NonZeroU32; 2]>,
         solved_vertices: &BTreeMap<u32, [f64; 3]>,
         ir: &CadIr,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut edge_vertices = BTreeMap::new();
         for row in crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)? {
-            let Some(vertices) = native_edge_vertices.get(&row.id).copied() else {
+            let Some(vertices) = native_edge_vertices.get(&row.id).copied().map(|pair| pair.map(std::num::NonZeroU32::get)) else {
                 continue;
             };
             if vertices
@@ -2151,7 +2151,7 @@ pub(in super::super) fn transfer_native_brep(
             native_edge_vertices.get(curve_id).is_some_and(|vertices| {
                 vertices
                     .iter()
-                    .any(|vertex| !solved_vertices.contains_key(vertex))
+                    .any(|vertex| !solved_vertices.contains_key(&vertex.get()))
             })
         })
         .count();
@@ -2935,8 +2935,8 @@ pub(in super::super) fn transfer_native_brep(
                             let binding = incidence.get(half_edge)?;
                             let end = binding.end_vertex_id?;
                             let traversal = [
-                                solved_vertices[&binding.start_vertex_id],
-                                solved_vertices[&end],
+                                solved_vertices[&binding.start_vertex_id.get()],
+                                solved_vertices[&end.get()],
                             ];
                             let surface =
                                 exactly_one(ir.model.surfaces.iter().filter(|candidate| {
