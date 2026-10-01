@@ -15,7 +15,6 @@ pub fn identities<T: typed::RewriteIdentities>(
 ) -> Result<T, CodecError> {
     let mut identities = typed::IdentityMap::new(ctx, operation, map)?;
     let rewritten = value.rewrite_identities(ctx, &mut identities);
-    ctx.charge_work(0, operation)?;
     identities.finish(ctx)?;
     rewritten
 }
