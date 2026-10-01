@@ -81,6 +81,13 @@ pub fn texture_asset(
     ) {
         return Ok(TextureAssetResult::NotTexture);
     }
+    // Projection performs at most eighteen searches, each with two name comparisons.
+    const PROPERTY_SEARCHES: u64 = 18;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.properties.len()), "inventory Protein texture search work")?;
+    let search_work = record.properties.keys().try_fold(0_u64, |total, id| {
+        cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(2)?.checked_add(1)?.checked_mul(PROPERTY_SEARCHES)?.checked_add(total)
+    }).ok_or_else(|| ctx.refuse_codec_limit("Protein texture property searches", u64::MAX, u64::MAX))?;
+    ctx.charge_work(search_work, "Protein texture property searches")?;
     let mut distances = [Length::ZERO; 5];
     let mut unknown_count = 0_usize;
     for (index, suffix) in [

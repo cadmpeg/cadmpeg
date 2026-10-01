@@ -157,3 +157,15 @@ fn a_non_finite_texture_float_property_is_refused() {
         assert!(texture_for_test(&finite).is_ok(), "{suffix}");
     }
 }
+
+#[test]
+fn texture_projection_admits_work_before_searching_properties() {
+    let mut record = distance_record(0x200e, 1.0);
+    record.schema = "UnifiedBitmapSchema".into();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = match super::texture_asset(&ctx, &record) { Err(error) => error, Ok(_) => panic!("search is admitted") };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
