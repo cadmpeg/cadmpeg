@@ -448,3 +448,48 @@ fn swift_serialized_entity_depth_refuses_instead_of_unresolved_root() {
         matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "parse SWIFT entity")
     );
 }
+
+#[test]
+fn duplicate_swift_annotation_reference_ids_refuse_before_projection() {
+    let mut annotation = super::entity("GdtFlatness");
+    annotation.doubles.insert("Tolerance".into(), 0.25);
+    let mut root = super::entity("GdtPart");
+    root.class = crate::swift::ROOT_CLASS.into();
+    root.annotations.references = vec![super::reference("A42", "GdtFlatness"); 2];
+    root.annotations.entities = vec![annotation.clone(), annotation];
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let error = parse_unique_root(&ctx, &payload).unwrap_err();
+    assert!(matches!(&error, CodecError::Malformed(message) if message == "duplicate SWIFT object reference ID A42"));
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    source.extend(crate::test_support::container::make_block(0x40, "SWIFT/Schema", &payload));
+    use cadmpeg_ir::Codec as _;
+    let error = crate::SldprtCodec.decode(&mut std::io::Cursor::new(source), &cadmpeg_ir::DecodeOptions::default()).unwrap_err();
+    assert!(matches!(&error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message)) if message == "duplicate SWIFT object reference ID A42"));
+}
+
+#[test]
+fn swift_roster_constructor_rejects_duplicate_ids_and_wrong_bindings() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let reference = super::reference("A42", "GdtFlatness");
+    let entity = super::entity("GdtFlatness");
+    assert!(matches!(ObjectSection::new(&ctx, vec![reference.clone(), reference.clone()], vec![entity.clone(), entity.clone()]), Err(CodecError::Malformed(_))));
+    assert!(matches!(ObjectSection::new(&ctx, vec![reference.clone()], vec![super::entity("GdtDatum")]), Ok(None)));
+    assert!(matches!(ObjectSection::new(&ctx, vec![], vec![entity.clone()]), Ok(None)));
+    assert!(ObjectSection::new(&ctx, vec![reference], vec![entity]).unwrap().is_some());
+    assert!(ObjectSection::new(&ctx, vec![], vec![]).unwrap().is_some());
+}
+
+#[test]
+fn swift_roster_identity_admission_preserves_resource_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ObjectSection::new(&ctx, vec![super::reference("A42", "GdtFlatness")], vec![super::entity("GdtFlatness")]).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("identity admission refusal"); };
+    assert_eq!(limit.operation, "admit distinct SWIFT object references");
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
