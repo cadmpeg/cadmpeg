@@ -3773,7 +3773,7 @@ fn e5_ownership_plan(
                 .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
             {
                 if let Some(other) = first_face_by_edge.get_mut(&edge) {
-                    parents.union(face_index, *other);
+                    parents.union(ctx, face_index, *other)?;
                     *other = face_index;
                 } else {
                     ctx.insert_hash_map(
@@ -3789,7 +3789,7 @@ fn e5_ownership_plan(
         let mut components = Vec::<Vec<u32>>::new();
         let mut face_components = Vec::new();
         for (face_index, face) in faces.iter().copied().enumerate() {
-            let root = parents.find(face_index);
+            let root = parents.find(ctx, face_index)?;
             let component = if let Some(&existing) = labels.get(&root) {
                 existing
             } else {

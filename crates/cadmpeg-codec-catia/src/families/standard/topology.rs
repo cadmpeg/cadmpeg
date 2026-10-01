@@ -91,7 +91,7 @@ fn classify_body_groups(
                     return Ok(None);
                 }
                 if let Some((first_face, count)) = uses.get_mut(&coedge.edge_row) {
-                    union.union(face, *first_face);
+                    union.union(ctx, face, *first_face)?;
                     *count += 1;
                 } else {
                     ctx.insert_hash_map(
@@ -107,7 +107,7 @@ fn classify_body_groups(
         for face in 0..faces.len() {
             ctx.insert_hash_set(
                 &mut components,
-                union.find(face),
+                union.find(ctx, face)?,
                 "catia_body_group_components",
             )?;
         }
@@ -117,7 +117,7 @@ fn classify_body_groups(
             if !ctx.insert_hash_set(&mut seen_edges, edge, "catia_body_group_seen_edges")? {
                 return Ok(None);
             }
-            let component = union.find(first_face);
+            let component = union.find(ctx, first_face)?;
             if count == 2 {
                 ctx.insert_hash_set(&mut paired_components, component, "catia_body_group_paired")?;
             } else {
@@ -218,7 +218,7 @@ impl StandardTopology {
                 .map(|coedge| coedge.edge_row)
             {
                 if let Some(&other) = first_face_by_edge.get(&edge) {
-                    union.union(face, other);
+                    union.union(ctx, face, other)?;
                 } else {
                     ctx.insert_hash_map(
                         &mut first_face_by_edge,
@@ -232,7 +232,7 @@ impl StandardTopology {
         let mut labels = HashMap::<usize, usize>::new();
         let mut components = Vec::<Vec<usize>>::new();
         for face in 0..self.faces.len() {
-            let root = union.find(face);
+            let root = union.find(ctx, face)?;
             let next = labels.len();
             if !labels.contains_key(&root) {
                 ctx.insert_hash_map(&mut labels, root, next, "catia_face_component_labels")?;
@@ -1440,7 +1440,7 @@ pub(super) fn reconstruct(
 
     let mut roots = HashMap::new();
     for node in 0..union.len() {
-        let root = union.find(node);
+        let root = union.find(ctx, node)?;
         let next = roots.len();
         if !roots.contains_key(&root) {
             ctx.insert_hash_map(&mut roots, root, next, "catia_reconstruct_roots")?;
@@ -1449,8 +1449,8 @@ pub(super) fn reconstruct(
     for face in &mut faces {
         for boundary in &mut face.boundaries {
             for coedge in &mut boundary.coedges {
-                coedge.start_vertex = roots[&union.find(coedge.start_vertex)];
-                coedge.end_vertex = roots[&union.find(coedge.end_vertex)];
+                coedge.start_vertex = roots[&union.find(ctx, coedge.start_vertex)?];
+                coedge.end_vertex = roots[&union.find(ctx, coedge.end_vertex)?];
             }
         }
     }
@@ -1501,39 +1501,39 @@ pub(crate) fn reconstruct_mesh_selection(
             let mut admit_coedge = |use_index: usize,
                                     use_: &MeshBoundaryEdgeCandidate,
                                     unmatched_reversed: bool|
-             -> Option<CoedgeUse> {
+             -> Result<Option<CoedgeUse>, CodecError> {
                 let reversed = use_.reversed.unwrap_or(unmatched_reversed);
                 if use_.reversed.is_some() && unmatched_reversed != reversed {
-                    return None;
+                    return Ok(None);
                 }
                 let start_vertex = corners[use_index];
                 let end_vertex = corners[(use_index + 1) % corners.len()];
-                let edge_start = use_.edge.checked_mul(2)?;
-                let edge_end = edge_start.checked_add(1)?;
+                let Some(edge_end) = use_.edge.checked_mul(2).and_then(|start| start.checked_add(1)) else { return Ok(None); };
+                let edge_start = edge_end - 1;
                 if edge_end >= node_count {
-                    return None;
+                    return Ok(None);
                 }
                 if reversed {
-                    union.union(edge_end, start_vertex);
-                    union.union(edge_start, end_vertex);
+                    union.union(ctx, edge_end, start_vertex)?;
+                    union.union(ctx, edge_start, end_vertex)?;
                 } else {
-                    union.union(edge_start, start_vertex);
-                    union.union(edge_end, end_vertex);
+                    union.union(ctx, edge_start, start_vertex)?;
+                    union.union(ctx, edge_end, end_vertex)?;
                 }
-                Some(CoedgeUse {
+                Ok(Some(CoedgeUse {
                     edge_row: use_.edge,
                     reversed,
                     start_vertex,
                     end_vertex,
-                })
+                }))
             };
-            let Some(first) = admit_coedge(first_index, first_use, first_reversed) else {
+            let Some(first) = admit_coedge(first_index, first_use, first_reversed)? else {
                 return Ok(None);
             };
             let mut coedges = Vec::new();
             ctx.push_vec(&mut coedges, first, "catia_mesh_selection_coedges")?;
             for (use_index, (use_, &unmatched_reversed)) in paired_uses {
-                let Some(coedge) = admit_coedge(use_index, use_, unmatched_reversed) else {
+                let Some(coedge) = admit_coedge(use_index, use_, unmatched_reversed)? else {
                     return Ok(None);
                 };
                 ctx.push_vec(&mut coedges, coedge, "catia_mesh_selection_coedges")?;
@@ -1555,7 +1555,7 @@ pub(crate) fn reconstruct_mesh_selection(
     }
     let mut roots = HashMap::new();
     for node in 0..union.len() {
-        let root = union.find(node);
+        let root = union.find(ctx, node)?;
         let next = roots.len();
         if !roots.contains_key(&root) {
             ctx.insert_hash_map(&mut roots, root, next, "catia_mesh_selection_roots")?;
@@ -1564,8 +1564,8 @@ pub(crate) fn reconstruct_mesh_selection(
     for face in &mut faces {
         for boundary in &mut face.boundaries {
             for coedge in &mut boundary.coedges {
-                coedge.start_vertex = roots[&union.find(coedge.start_vertex)];
-                coedge.end_vertex = roots[&union.find(coedge.end_vertex)];
+                coedge.start_vertex = roots[&union.find(ctx, coedge.start_vertex)?];
+                coedge.end_vertex = roots[&union.find(ctx, coedge.end_vertex)?];
             }
         }
     }

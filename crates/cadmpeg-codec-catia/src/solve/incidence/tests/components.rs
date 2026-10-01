@@ -817,8 +817,8 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     .expect("service resource budget")
     .expect("forced deferred quotient");
 
-    assert_eq!(quotient.find(0), quotient.find(3));
-    assert_eq!(quotient.find(1), quotient.find(2));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
 }
 
 #[test]
@@ -856,7 +856,7 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     .expect("service resource budget")
     .expect("unknown exact direction is deferred");
 
-    assert_ne!(quotient.find(0), quotient.find(3));
+    assert_ne!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"));
 }
 
 #[test]
@@ -895,10 +895,10 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     .expect("service resource budget")
     .expect("deferred gap quotient");
 
-    assert_eq!(quotient.find(1), quotient.find(4));
-    assert_eq!(quotient.find(5), quotient.find(2));
-    assert_eq!(quotient.find(3), quotient.find(6));
-    assert_eq!(quotient.find(7), quotient.find(0));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 6)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 7)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"));
 }
 
 #[test]
@@ -924,8 +924,8 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     ])];
     let candidates = vec![vec![[0, 0]], vec![[0, 0]]];
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
-    quotient.merge(0, 1).expect("first closed edge");
-    quotient.merge(2, 3).expect("second closed edge");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1)).expect("service merge").expect("first closed edge");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 2, 3)).expect("service merge").expect("second closed edge");
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
@@ -938,7 +938,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     .expect("service resource budget")
     .expect("structural quotient");
 
-    assert_eq!(quotient.find(0), quotient.find(2));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
 }
 
 #[test]
@@ -963,17 +963,15 @@ fn ordered_face_options_preflight_exact_signature_work() {
     let mut quotient = MeshQuotient::new(vec![broad; 4]);
     let budget = WorkBudget::new(100);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
-        &ctx,
-        &domains,
-        &candidates,
-        &mut quotient,
-        &budget,
-    )
-    .expect("service resource budget")
-    .expect("bounded common quotient propagation");
+    let error = crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx, &domains, &candidates, &mut quotient, &budget,
+    ).expect_err("signature work exceeds the ordered-face slice");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+    assert_eq!(limit.operation, "catia_ordered_face_constraint_work");
+    assert_eq!(limit.limit, 64);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
 
-    assert_eq!(quotient.root_count(), 4);
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 4);
     assert!(!budget.exhausted());
 }
 
@@ -1017,8 +1015,8 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
     .expect("service resource budget")
     .expect("supported cycle quotient");
 
-    assert_eq!(quotient.find(0), quotient.find(3));
-    assert_eq!(quotient.find(1), quotient.find(2));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
 }
 
 #[test]
@@ -1054,8 +1052,8 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     .expect("service resource budget")
     .expect("ordered component quotient");
 
-    assert_eq!(quotient.find(0), quotient.find(3));
-    assert_eq!(quotient.find(1), quotient.find(2));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
 }
 
 #[test]
@@ -1079,9 +1077,9 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     .expect("service resource budget")
     .expect("unordered component quotient");
 
-    assert_eq!(quotient.find(1), quotient.find(2));
-    assert_eq!(quotient.find(3), quotient.find(4));
-    assert_eq!(quotient.find(5), quotient.find(0));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"));
 }
 
 #[test]
@@ -1299,10 +1297,10 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
     .expect("service resource budget")
     .expect("deferred component quotient");
 
-    assert_eq!(quotient.find(1), quotient.find(4));
-    assert_eq!(quotient.find(5), quotient.find(2));
-    assert_eq!(quotient.find(3), quotient.find(6));
-    assert_eq!(quotient.find(7), quotient.find(0));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 6)).expect("service forest traversal"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 7)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"));
 }
 
 #[test]

@@ -460,8 +460,8 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
     }
     let mut result = Vec::new();
     for (edge, candidates) in edge_candidates.iter().enumerate() {
-        let left = quotient.find(edge * 2);
-        let right = quotient.find(edge * 2 + 1);
+        let left = quotient.find(ctx, edge * 2)?;
+        let right = quotient.find(ctx, edge * 2 + 1)?;
         let mut filtered = Vec::new();
         for &pair in candidates {
             let supported = if left == right {
@@ -2275,11 +2275,11 @@ fn cover_cycle_by_rows(
         let edge_start = edge_row * 2;
         let edge_end = edge_start + 1;
         if reversed {
-            union.union(edge_end, start_node);
-            union.union(edge_start, end_node);
+            union.union(ctx, edge_end, start_node)?;
+            union.union(ctx, edge_start, end_node)?;
         } else {
-            union.union(edge_start, start_node);
-            union.union(edge_end, end_node);
+            union.union(ctx, edge_start, start_node)?;
+            union.union(ctx, edge_end, end_node)?;
         }
         coedges.push(CoedgeUse {
             edge_row,

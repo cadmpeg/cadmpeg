@@ -1452,8 +1452,8 @@ fn complete_mesh_endpoint_candidates_from_quotient(
                 pair_count = pair_count.checked_add(candidates.len())?;
                 return (pair_count <= max_pairs_total).then(|| candidates.clone());
             }
-            let left = quotient.union.find(edge * 2);
-            let right = quotient.union.find(edge * 2 + 1);
+            let left = crate::test_support::with_service_context(|ctx| quotient.union.find(ctx, edge * 2)).expect("service forest traversal");
+            let right = crate::test_support::with_service_context(|ctx| quotient.union.find(ctx, edge * 2 + 1)).expect("service forest traversal");
             let relation_count = if left == right {
                 quotient.domains[left].len()
             } else {
@@ -1557,12 +1557,12 @@ impl<'storage> MeshQuotient<'storage> {
         self.domains.len()
     }
 
-    pub(crate) fn find(&mut self, node: usize) -> usize {
-        self.union.find(node)
+    pub(crate) fn find(&mut self, ctx: &DecodeContext<'_>, node: usize) -> Result<usize, CodecError> {
+        self.union.find(ctx, node)
     }
 
-    pub(crate) fn root(&self, node: usize) -> usize {
-        self.union.root(node)
+    pub(crate) fn root(&self, ctx: &DecodeContext<'_>, node: usize) -> Result<usize, CodecError> {
+        self.union.root(ctx, node)
     }
 
     pub(crate) fn domains(&self) -> &[Arc<HashSet<usize>>] {
@@ -1575,16 +1575,18 @@ impl<'storage> MeshQuotient<'storage> {
 
     pub(super) fn coordinate_domain_preparation_limit(
         &mut self,
+        ctx: &DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-    ) -> Option<usize> {
+    ) -> Result<Option<usize>, CodecError> {
+        (|| -> Option<Result<usize, CodecError>> {
         if self.union.len() != edge_candidates.len().checked_mul(2)? {
             return None;
         }
         let mut root_count = 0usize;
         let mut root_supports = 0usize;
         for node in 0..self.union.len() {
-            if self.union.find(node) != node {
+            if match self.union.find(ctx, node) { Ok(root) => root, Err(error) => return Some(Err(error)) } != node {
                 continue;
             }
             root_count += 1;
@@ -1601,36 +1603,44 @@ impl<'storage> MeshQuotient<'storage> {
             .isqrt()
             .checked_add(1)?;
         let traversal_bound = matching_phase_bound.checked_add(8)?;
-        Some(
+        Some(Ok(
             root_supports
                 .checked_add(explicit_pair_supports)?
                 .checked_mul(traversal_bound)?
                 .max(MAX_MESH_CONSTRAINT_OPERATIONS),
-        )
+        ))
+
+        })().transpose()
     }
 
-    pub(super) fn signature_work(&mut self) -> Option<usize> {
+    pub(super) fn signature_work(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
+        (|| -> Option<Result<usize, CodecError>> {
         let mut work = 0usize;
         for node in 0..self.union.len() {
-            if self.union.find(node) == node {
+            if match self.union.find(ctx, node) { Ok(root) => root, Err(error) => return Some(Err(error)) } == node {
                 work = work
                     .checked_add(self.members(node).len())?
                     .checked_add(self.domains[node].len())?;
             }
         }
-        Some(work_units(work))
+        Some(Ok(work_units(work)))
+
+        })().transpose()
     }
 
-    fn monotone_measure(&mut self) -> Option<(usize, usize)> {
+    fn monotone_measure(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<(usize, usize)>, CodecError> {
+        (|| -> Option<Result<(usize, usize), CodecError>> {
         let mut root_count = 0usize;
         let mut domain_cardinality = 0usize;
         for node in 0..self.union.len() {
-            if self.union.find(node) == node {
+            if match self.union.find(ctx, node) { Ok(root) => root, Err(error) => return Some(Err(error)) } == node {
                 root_count += 1;
                 domain_cardinality = domain_cardinality.checked_add(self.domains[node].len())?;
             }
         }
-        Some((root_count, domain_cardinality))
+        Some(Ok((root_count, domain_cardinality)))
+
+        })().transpose()
     }
 
     pub(super) fn signature_charged(
@@ -1639,7 +1649,7 @@ impl<'storage> MeshQuotient<'storage> {
     ) -> Result<MeshQuotientSignature, CodecError> {
         let mut components = Vec::new();
         for node in 0..self.union.len() {
-            if self.union.find(node) != node {
+            if self.union.find(ctx, node)? != node {
                 continue;
             }
             let mut members =
@@ -1675,43 +1685,24 @@ impl<'storage> MeshQuotient<'storage> {
         Ok(components)
     }
 
-    pub(super) fn root_count(&mut self) -> usize {
-        (0..self.union.len())
-            .filter(|node| self.union.find(*node) == *node)
-            .count()
+    pub(super) fn root_count(&mut self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+        let mut count = 0;
+        for node in 0..self.union.len() {
+            if self.union.find(ctx, node)? == node { count += 1; }
+        }
+        Ok(count)
     }
 
-    #[cfg(test)]
-    pub(crate) fn merge(&mut self, left: usize, right: usize) -> Option<usize> {
-        let left = self.union.find(left);
-        let right = self.union.find(right);
-        if left == right {
-            return Some(left);
-        }
-        let intersection = self.domains[left]
-            .intersection(&self.domains[right])
-            .copied()
-            .collect::<HashSet<_>>();
-        if intersection.is_empty() {
-            return None;
-        }
-        self.union.union(left, right);
-        let root = self.union.find(left);
-        self.domains[root] = Arc::new(intersection);
-        let child = if root == left { right } else { left };
-        let child_members = std::mem::take(&mut self.members[child]);
-        self.members[root].extend(child_members);
-        Some(root)
-    }
+
 
     pub(crate) fn merge_charged(
         &mut self,
-        ctx: &'storage DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         left: usize,
         right: usize,
     ) -> Result<Option<usize>, CodecError> {
-        let left = self.union.find(left);
-        let right = self.union.find(right);
+        let left = self.union.find(ctx, left)?;
+        let right = self.union.find(ctx, right)?;
         if left == right {
             return Ok(Some(left));
         }
@@ -1728,8 +1719,8 @@ impl<'storage> MeshQuotient<'storage> {
             child_members,
             "catia_quotient_merged_members",
         )?;
-        self.union.union(left, right);
-        let root = self.union.find(left);
+        self.union.union(ctx, left, right)?;
+        let root = self.union.find(ctx, left)?;
         self.domains[root] = Arc::new(intersection);
         let child_members = std::mem::take(&mut self.members[right]);
         self.members[root].extend(child_members);
@@ -1764,7 +1755,7 @@ impl<'storage> MeshQuotient<'storage> {
         }
         let mut roots = Vec::new();
         for node in 0..self.union.len() {
-            if self.union.find(node) == node {
+            if self.union.find(ctx, node)? == node {
                 ctx.push_vec(&mut roots, node, "catia_quotient_roots")?;
             }
         }
@@ -1782,10 +1773,10 @@ impl<'storage> MeshQuotient<'storage> {
         }
         let mut edges = Vec::new();
         for edge in 0..edge_candidates.len() {
-            let Some(&left) = root_indices.get(&self.union.find(edge * 2)) else {
+            let Some(&left) = root_indices.get(&self.union.find(ctx, edge * 2)?) else {
                 return Ok(None);
             };
-            let Some(&right) = root_indices.get(&self.union.find(edge * 2 + 1)) else {
+            let Some(&right) = root_indices.get(&self.union.find(ctx, edge * 2 + 1)?) else {
                 return Ok(None);
             };
             ctx.push_vec(&mut edges, [left, right], "catia_quotient_edges")?;
@@ -1962,7 +1953,7 @@ impl<'storage> MeshQuotient<'storage> {
     ) -> Result<HashSet<usize>, CodecError> {
         let mut affected = HashSet::new();
         for &node in nodes {
-            let root = self.union.find(node);
+            let root = self.union.find(ctx, node)?;
             for edge in self.members(root).iter().map(|member| member / 2) {
                 if !edge_candidates[edge].is_empty() {
                     ctx.insert_hash_set(&mut affected, edge, "catia_quotient_affected_edges")?;
@@ -2010,8 +2001,8 @@ impl<'storage> MeshQuotient<'storage> {
             if candidates.is_empty() {
                 continue;
             }
-            let start = self.union.find(edge * 2);
-            let end = self.union.find(edge * 2 + 1);
+            let start = self.union.find(ctx, edge * 2)?;
+            let end = self.union.find(ctx, edge * 2 + 1)?;
             if start == end {
                 let (mut supported, _support_reservation) =
                     ctx.temporary_set(candidates.len(), "catia_quotient_self_support")?;
@@ -2105,7 +2096,7 @@ impl<'storage> MeshQuotient<'storage> {
         loop {
             let mut roots_by_point = HashMap::<usize, Vec<usize>>::new();
             for node in 0..self.union.len() {
-                let root = self.union.find(node);
+                let root = self.union.find(ctx, node)?;
                 if root != node || self.domains[root].len() != 1 {
                     continue;
                 }
@@ -2428,7 +2419,7 @@ impl<'storage> MeshQuotient<'storage> {
                     let Some(current_start) = edge_start(boundary[at], reversed) else {
                         return;
                     };
-                    let Some(root) = quotient.merge(previous_end, current_start) else {
+                    let Some(root) = quotient.merge_charged(ctx, previous_end, current_start).expect("service merge") else {
                         return;
                     };
                     if !quotient
@@ -2470,7 +2461,7 @@ impl<'storage> MeshQuotient<'storage> {
                     let Some(first_start) = edge_start(boundary[0], directions[0]) else {
                         return;
                     };
-                    let Some(root) = quotient.merge(last_end, first_start) else {
+                    let Some(root) = quotient.merge_charged(ctx, last_end, first_start).expect("service merge") else {
                         return;
                     };
                     if quotient
@@ -2777,8 +2768,8 @@ impl<'storage> MeshQuotient<'storage> {
                 continue;
             }
             let left_node = right_node - 1;
-            let left_root = direction_union.find(left_node);
-            let right_root = direction_union.find(right_node);
+            let left_root = direction_union.find(ctx, left_node)?;
+            let right_root = direction_union.find(ctx, right_node)?;
             if left_root == right_root
                 || (self.domains[left_root] == self.domains[right_root]
                     && self.members(left_root) == [left_node]
@@ -3447,7 +3438,7 @@ impl<'storage> MeshQuotient<'storage> {
 
         let mut roots = Vec::new();
         for node in 0..self.union.len() {
-            let root = self.union.find(node);
+            let root = self.union.find(ctx, node)?;
             if root == node {
                 ctx.push_vec(&mut roots, root, "catia_point_assignment_roots")?;
             }
@@ -3475,8 +3466,8 @@ impl<'storage> MeshQuotient<'storage> {
         )?;
         for edge in 0..edge_candidates.len() {
             let (Some(left), Some(right)) = (
-                root_indices.get(&self.union.find(edge * 2)),
-                root_indices.get(&self.union.find(edge * 2 + 1)),
+                root_indices.get(&self.union.find(ctx, edge * 2)?),
+                root_indices.get(&self.union.find(ctx, edge * 2 + 1)?),
             ) else {
                 return Ok(PointAssignmentOutcome::Complete(Vec::new()));
             };
@@ -3616,7 +3607,7 @@ fn materialize_deferred_quotient_option<'storage>(
 ) -> Result<Option<MeshQuotient<'storage>>, CodecError> {
     let mut materialized = base.clone_charged(ctx)?;
     for local_node in 0..base_nodes.len() {
-        let local_root = local.union.root(local_node);
+        let local_root = local.union.root(ctx, local_node)?;
         if local_root != local_node
             && materialized
                 .merge_charged(ctx, base_nodes[local_root], base_nodes[local_node])?
@@ -3748,7 +3739,7 @@ fn deferred_face_quotient_options_limited<'storage>(
                 if next.merge_charged(ctx, previous_end, start)?.is_none() {
                     continue;
                 }
-                let end_root = next.union.find(end);
+                let end_root = next.union.find(ctx, end)?;
                 if !ctx.insert_hash_set(
                     &mut seen,
                     (rank, end_root, next.signature_charged(ctx)?),
@@ -3974,7 +3965,7 @@ fn deferred_face_quotient_options_limited<'storage>(
         for node in [gap.left_end, gap.right_start] {
             ctx.push_vec(
                 &mut base_nodes,
-                quotient.union.root(node),
+                quotient.union.root(ctx, node)?,
                 "catia_deferred_base_nodes",
             )?;
         }
@@ -3983,7 +3974,7 @@ fn deferred_face_quotient_options_limited<'storage>(
         for node in [edge * 2, edge * 2 + 1] {
             ctx.push_vec(
                 &mut base_nodes,
-                quotient.union.root(node),
+                quotient.union.root(ctx, node)?,
                 "catia_deferred_base_nodes",
             )?;
         }
@@ -4005,16 +3996,16 @@ fn deferred_face_quotient_options_limited<'storage>(
         )?;
     }
     for gap in &mut gaps {
-        gap.left_end = local_by_base[&quotient.union.root(gap.left_end)];
-        gap.right_start = local_by_base[&quotient.union.root(gap.right_start)];
+        gap.left_end = local_by_base[&quotient.union.root(ctx, gap.left_end)?];
+        gap.right_start = local_by_base[&quotient.union.root(ctx, gap.right_start)?];
     }
     let mut missing_nodes = Vec::new();
     for &edge in &domain.missing_edges {
         ctx.push_vec(
             &mut missing_nodes,
             [
-                local_by_base[&quotient.union.root(edge * 2)],
-                local_by_base[&quotient.union.root(edge * 2 + 1)],
+                local_by_base[&quotient.union.root(ctx, edge * 2)?],
+                local_by_base[&quotient.union.root(ctx, edge * 2 + 1)?],
             ],
             "catia_deferred_missing_nodes",
         )?;
@@ -4104,7 +4095,7 @@ fn propagate_common_deferred_quotients<'storage>(
         for alternative in &mut options.alternatives {
             ctx.push_vec(
                 &mut signature,
-                alternative.union.find(node),
+                alternative.union.find(ctx, node)?,
                 "catia_deferred_common_signature",
             )?;
         }
@@ -4141,12 +4132,12 @@ fn propagate_common_deferred_quotients<'storage>(
     for local in 0..node_count {
         let mut allowed = HashSet::new();
         for alternative in &mut options.alternatives {
-            let root = alternative.union.find(local);
+            let root = alternative.union.find(ctx, local)?;
             for &point in alternative.domains[root].iter() {
                 ctx.insert_hash_set(&mut allowed, point, "catia_deferred_common_allowed")?;
             }
         }
-        let root = quotient.union.find(options.base_nodes[local]);
+        let root = quotient.union.find(ctx, options.base_nodes[local])?;
         let mut narrowed = HashSet::new();
         for &point in quotient.domains[root].intersection(&allowed) {
             ctx.insert_hash_set(&mut narrowed, point, "catia_deferred_common_narrowed")?;
@@ -4158,7 +4149,7 @@ fn propagate_common_deferred_quotients<'storage>(
     }
     let mut affected_edges = HashSet::new();
     for node in options.base_nodes {
-        let root = quotient.union.find(node);
+        let root = quotient.union.find(ctx, node)?;
         for edge in quotient.members(root).iter().map(|node| node / 2) {
             if !edge_candidates[edge].is_empty() {
                 ctx.insert_hash_set(&mut affected_edges, edge, "catia_deferred_common_edges")?;
@@ -4176,10 +4167,10 @@ fn common_supported_corner_equations<'storage>(
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<HashSet<[usize; 2]>>, CodecError> {
-    fn compatible(quotient: &MeshQuotient<'_>, left: usize, right: usize) -> bool {
-        let left = quotient.union.root(left);
-        let right = quotient.union.root(right);
-        left == right || !quotient.domains[left].is_disjoint(&quotient.domains[right])
+    fn compatible(ctx: &DecodeContext<'_>, quotient: &MeshQuotient<'_>, left: usize, right: usize) -> Result<bool, CodecError> {
+        let left = quotient.union.root(ctx, left)?;
+        let right = quotient.union.root(ctx, right)?;
+        Ok(left == right || !quotient.domains[left].is_disjoint(&quotient.domains[right]))
     }
 
     (|| -> Option<Result<HashSet<[usize; 2]>, CodecError>> {
@@ -4255,7 +4246,7 @@ fn common_supported_corner_equations<'storage>(
                                     port(boundary[index], directions[index][left], true)?;
                                 let right_node =
                                     port(boundary[index + 1], directions[index + 1][right], false)?;
-                                if compatible(quotient, left_node, right_node) {
+                                if match compatible(ctx, quotient, left_node, right_node) { Ok(value) => value, Err(error) => return Some(Err(error)) } {
                                     forward[index + 1][right] = true;
                                 }
                             }
@@ -4278,29 +4269,21 @@ fn common_supported_corner_equations<'storage>(
                         let left_node = port(boundary[last], directions[last][state], true)?;
                         let right_node = port(boundary[0], directions[0][first], false)?;
                         backward[last][state] =
-                            forward[last][state] && compatible(quotient, left_node, right_node);
+                            forward[last][state] && match compatible(ctx, quotient, left_node, right_node) { Ok(value) => value, Err(error) => return Some(Err(error)) };
                     }
                     for index in (0..last).rev() {
                         for left in 0..directions[index].len() {
-                            backward[index][left] = forward[index][left]
-                                && (0..directions[index + 1].len()).any(|right| {
-                                    if !backward[index + 1][right] {
-                                        return false;
-                                    }
-                                    let Some(left_node) =
-                                        port(boundary[index], directions[index][left], true)
-                                    else {
-                                        return false;
-                                    };
-                                    let Some(right_node) = port(
-                                        boundary[index + 1],
-                                        directions[index + 1][right],
-                                        false,
-                                    ) else {
-                                        return false;
-                                    };
-                                    compatible(quotient, left_node, right_node)
-                                });
+                            if !forward[index][left] { continue; }
+                            for right in 0..directions[index + 1].len() {
+                                if !backward[index + 1][right] { continue; }
+                                let left_node = port(boundary[index], directions[index][left], true)?;
+                                let right_node = port(boundary[index + 1], directions[index + 1][right], false)?;
+                                match compatible(ctx, quotient, left_node, right_node) {
+                                    Ok(true) => { backward[index][left] = true; break; }
+                                    Ok(false) => {},
+                                    Err(error) => return Some(Err(error)),
+                                }
+                            }
                         }
                     }
                     if !backward[0][first] {
@@ -4320,7 +4303,7 @@ fn common_supported_corner_equations<'storage>(
                                         directions[index + 1][right],
                                         false,
                                     )?;
-                                    if compatible(quotient, left_node, right_node) {
+                                    if match compatible(ctx, quotient, left_node, right_node) { Ok(value) => value, Err(error) => return Some(Err(error)) } {
                                         supported[index][left][right] = true;
                                     }
                                 }
@@ -4345,16 +4328,16 @@ fn common_supported_corner_equations<'storage>(
                     for left in 0..directions[index].len() {
                         for right in 0..directions[next].len() {
                             if supported[index][left][right] {
-                                let left = quotient.union.find(port(
+                                let left = match quotient.union.find(ctx, port(
                                     boundary[index],
                                     directions[index][left],
                                     true,
-                                )?);
-                                let right = quotient.union.find(port(
+                                )?) { Ok(root) => root, Err(error) => return Some(Err(error)) };
+                                let right = match quotient.union.find(ctx, port(
                                     boundary[next],
                                     directions[next][right],
                                     false,
-                                )?);
+                                )?) { Ok(root) => root, Err(error) => return Some(Err(error)) };
                                 let equation = if left <= right {
                                     [left, right]
                                 } else {
@@ -4406,7 +4389,7 @@ fn propagate_common_full_quotients<'storage>(
         for alternative in &mut alternatives {
             ctx.push_vec(
                 &mut signature,
-                alternative.union.find(node),
+                alternative.union.find(ctx, node)?,
                 "catia_common_quotient_signature",
             )?;
         }
@@ -4436,7 +4419,7 @@ fn propagate_common_full_quotients<'storage>(
 
     let mut roots = Vec::new();
     for node in 0..node_count {
-        if quotient.union.find(node) == node {
+        if quotient.union.find(ctx, node)? == node {
             ctx.push_vec(&mut roots, node, "catia_common_quotient_roots")?;
         }
     }
@@ -4444,7 +4427,7 @@ fn propagate_common_full_quotients<'storage>(
         let representative = quotient.members(root)[0];
         let mut allowed = HashSet::new();
         for alternative in &mut alternatives {
-            let alternative_root = alternative.union.find(representative);
+            let alternative_root = alternative.union.find(ctx, representative)?;
             for &point in alternative.domains[alternative_root].iter() {
                 ctx.insert_hash_set(&mut allowed, point, "catia_common_quotient_allowed")?;
             }
@@ -4495,7 +4478,7 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
             return Some(Err(error));
         }
         loop {
-            let before = quotient.monotone_measure()?;
+            let before = match quotient.monotone_measure(ctx) { Ok(measure) => measure?, Err(error) => return Some(Err(error)) };
             for &face in &face_order {
                 let domain = &domains[face];
                 let face_limit = match domain {
@@ -4651,7 +4634,7 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                 }
                 let mut alternatives = Vec::new();
                 for assignment in assignments {
-                    let Some(work) = quotient.signature_work() else {
+                    let Some(work) = (match quotient.signature_work(ctx) { Ok(work) => work, Err(error) => return Some(Err(error)) }) else {
                         return Some(Err(refuse_face()));
                     };
                     if !face_budget.charge_by(work) {
@@ -4693,7 +4676,7 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            if quotient.monotone_measure()? == before {
+            if match quotient.monotone_measure(ctx) { Ok(measure) => measure?, Err(error) => return Some(Err(error)) } == before {
                 return Some(Ok(()));
             }
         }
@@ -4842,9 +4825,9 @@ pub(super) fn bounded_unordered_cycle_assignments<'storage>(
     }
     let mut compatible = HashSet::new();
     for &left in &nodes {
-        let left_root = quotient.union.find(left);
+        let left_root = quotient.union.find(ctx, left)?;
         for &right in &nodes {
-            let right_root = quotient.union.find(right);
+            let right_root = quotient.union.find(ctx, right)?;
             if left_root == right_root
                 || !quotient.domains[left_root].is_disjoint(&quotient.domains[right_root])
             {
@@ -4994,8 +4977,7 @@ fn advance_boundary_component_states<'storage>(
             for &edge in oriented_edges.iter().chain(domain_edges.iter()) {
                 ctx.insert_hash_set(&mut next_oriented, edge, "catia_component_oriented_edges")?;
             }
-            let Some(work) = candidate
-                .signature_work()
+            let Some(work) = candidate.signature_work(ctx)?
                 .and_then(|work| work.checked_add(work_units(next_oriented.len())))
             else {
                 return Ok(None);
@@ -5084,13 +5066,13 @@ pub(super) fn propagate_common_boundary_components<'storage>(
             if let Some(previous) =
                 ctx.insert_hash_map(&mut edge_owner, edge, index, "catia_component_edge_owner")?
             {
-                components.union(previous, index);
+                components.union(ctx, previous, index)?;
             }
         }
     }
     let mut faces_by_component = HashMap::<usize, (usize, Vec<usize>)>::new();
     for face in active_faces {
-        let root = components.find(active_index[&face]);
+        let root = components.find(ctx, active_index[&face])?;
         // `active_faces` is built by an ascending enumeration, so the face that
         // creates a component's entry is that component's smallest face.
         if let Some((_, faces)) = faces_by_component.get_mut(&root) {
@@ -5170,8 +5152,8 @@ pub(super) fn propagate_common_boundary_components<'storage>(
             ctx.push_vec(&mut ordered_faces, face, "catia_component_ordered_faces")?;
         }
         let budget = ctx.work_budget(u64_from_index(MAX_COMPONENT_OPERATIONS));
-        for _ in 0..MAX_COMPONENT_ROUNDS {
-            let Some(before) = quotient.monotone_measure() else {
+        for round in 0..MAX_COMPONENT_ROUNDS {
+            let Some(before) = quotient.monotone_measure(ctx)? else {
                 return Ok(None);
             };
             let mut cursor = 0usize;
@@ -5213,11 +5195,12 @@ pub(super) fn propagate_common_boundary_components<'storage>(
                 }
                 cursor += processed;
             }
-            let Some(after) = quotient.monotone_measure() else {
+            let Some(after) = quotient.monotone_measure(ctx)? else {
                 return Ok(None);
             };
-            if after == before {
-                break;
+            if after == before { break; }
+            if round + 1 == MAX_COMPONENT_ROUNDS {
+                return Err(ctx.refuse_codec_limit("catia_component_rounds", u64_from_index(MAX_COMPONENT_ROUNDS), u64_from_index(MAX_COMPONENT_ROUNDS + 1)));
             }
         }
     }
@@ -5288,11 +5271,11 @@ fn canonical_direction_bit(row: &[bool], index: usize) -> bool {
     row[index] ^ row.first().copied().unwrap_or(false)
 }
 
-fn orientation_fingerprint(quotient: &MeshQuotient<'_>, directions: &[Vec<bool>]) -> u64 {
+fn orientation_fingerprint(ctx: &DecodeContext<'_>, quotient: &MeshQuotient<'_>, directions: &[Vec<bool>]) -> Result<u64, CodecError> {
     let mut hasher = DefaultHasher::new();
     quotient.union.len().hash(&mut hasher);
     for node in 0..quotient.union.len() {
-        let root = quotient.union.root(node);
+        let root = quotient.union.root(ctx, node)?;
         quotient.members(root).iter().min().hash(&mut hasher);
         let domain = &quotient.domains[root];
         domain.len().hash(&mut hasher);
@@ -5315,31 +5298,32 @@ fn orientation_fingerprint(quotient: &MeshQuotient<'_>, directions: &[Vec<bool>]
             canonical_direction_bit(row, index).hash(&mut hasher);
         }
     }
-    hasher.finish()
+    Ok(hasher.finish())
 }
 
 fn orientation_options_equivalent<'storage>(
+    ctx: &DecodeContext<'_>,
     left_quotient: &MeshQuotient<'storage>,
     left_directions: &[Vec<bool>],
     right_quotient: &MeshQuotient<'storage>,
     right_directions: &[Vec<bool>],
-) -> bool {
+) -> Result<bool, CodecError> {
     if left_quotient.union.len() != right_quotient.union.len()
         || left_directions.len() != right_directions.len()
     {
-        return false;
+        return Ok(false);
     }
     for node in 0..left_quotient.union.len() {
-        let left_root = left_quotient.union.root(node);
-        let right_root = right_quotient.union.root(node);
+        let left_root = left_quotient.union.root(ctx, node)?;
+        let right_root = right_quotient.union.root(ctx, node)?;
         if left_quotient.members(left_root).iter().min()
             != right_quotient.members(right_root).iter().min()
             || left_quotient.domains[left_root] != right_quotient.domains[right_root]
         {
-            return false;
+            return Ok(false);
         }
     }
-    left_directions
+    Ok(left_directions
         .iter()
         .zip(right_directions)
         .all(|(left, right)| {
@@ -5347,7 +5331,7 @@ fn orientation_options_equivalent<'storage>(
                 && (0..left.len()).all(|index| {
                     canonical_direction_bit(left, index) == canonical_direction_bit(right, index)
                 })
-        })
+        }))
 }
 
 fn admit_orientation_option<'storage>(
@@ -5359,17 +5343,18 @@ fn admit_orientation_option<'storage>(
 ) -> Result<bool, CodecError> {
     let work = u64_from_index(quotient.union.len());
     ctx.charge_work(work, "catia_orientation_dedup_work")?;
-    let fingerprint = orientation_fingerprint(quotient, directions);
+    let fingerprint = orientation_fingerprint(ctx, quotient, directions)?;
     if let Some(indices) = seen.get(&fingerprint) {
         for &index in indices {
             ctx.charge_work(1, "catia_orientation_dedup_compare")?;
             let (prior_directions, prior_quotient) = &output[index];
             if orientation_options_equivalent(
+                ctx,
                 quotient,
                 directions,
                 prior_quotient,
                 prior_directions,
-            ) {
+            )? {
                 return Ok(false);
             }
         }
@@ -5488,8 +5473,8 @@ fn changed_quotient_edges<'storage>(
     let mut right = right.clone_charged(ctx)?;
     let mut changed = HashSet::new();
     for node in 0..left.union.len() {
-        let left_root = left.union.find(node);
-        let right_root = right.union.find(node);
+        let left_root = left.union.find(ctx, node)?;
+        let right_root = right.union.find(ctx, node)?;
         if left_root != right_root
             || left.members(left_root) != right.members(right_root)
             || left.domains[left_root] != right.domains[right_root]
@@ -5505,7 +5490,7 @@ fn changed_quotient_edges_refuse_before_result_set_growth() {
     let points = Arc::new(HashSet::from([0]));
     let left = MeshQuotient::new(vec![Arc::clone(&points), Arc::clone(&points)]);
     let mut right = left.clone();
-    assert!(right.merge(0, 1).is_some());
+    assert!(crate::test_support::with_service_context(|ctx| right.merge_charged(ctx, 0, 1)).expect("service merge").is_some());
     assert_eq!(
         crate::test_support::with_service_context(|ctx| changed_quotient_edges(ctx, &left, &right))
             .expect("service resource budget"),
@@ -9855,9 +9840,8 @@ fn resolve_standard_mesh_endpoint_candidates<'storage>(
     )? {
         return Ok(resolved);
     }
-    let coordinate_domains = if let Some(preparation_limit) = quotient
-        .clone_charged(ctx)?
-        .coordinate_domain_preparation_limit(vertex_points.len(), &edge_candidates)
+    let coordinate_domains = if let Some(preparation_limit) = crate::test_support::with_service_context(|ctx| quotient
+        .clone_charged(ctx)?.coordinate_domain_preparation_limit(ctx, vertex_points.len(), &edge_candidates)).expect("service quotient traversal")
     {
         let preparation_budget = budget.session_child_slice(preparation_limit);
         let mut coordinate_quotient = quotient.clone_charged(ctx)?;
@@ -12619,8 +12603,8 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
                 .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
                 .collect(),
         );
-        quotient.merge(0, 2).expect("shared left endpoint");
-        quotient.merge(1, 3).expect("shared right endpoint");
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 2)).expect("service merge").expect("shared left endpoint");
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 3)).expect("service merge").expect("shared right endpoint");
         quotient
     };
     let refused_budget = WorkBudget::new(38);
@@ -12685,8 +12669,8 @@ fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
                 .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
                 .collect(),
         );
-        quotient.merge(0, 2).expect("shared left endpoint");
-        quotient.merge(1, 3).expect("shared right endpoint");
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 2)).expect("service merge").expect("shared left endpoint");
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 3)).expect("service merge").expect("shared right endpoint");
         let budget = WorkBudget::new(1_000);
         quotient.coordinate_root_closure_outcome(
             ctx,
@@ -12809,8 +12793,8 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
             .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
             .collect(),
     );
-    quotient.merge(0, 2).expect("shared left endpoint");
-    quotient.merge(1, 3).expect("shared right endpoint");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 2)).expect("service merge").expect("shared left endpoint");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 3)).expect("service merge").expect("shared right endpoint");
     let result = quotient.coordinate_root_closure_outcome(
         &ctx,
         2,
@@ -12856,8 +12840,8 @@ fn coordinate_root_closure_charges_matching_support_rows() {
     let run = |ctx: &DecodeContext<'_>| {
         let mut quotient =
             MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
-        quotient.merge(0, 2).expect("shared left endpoint");
-        quotient.merge(1, 3).expect("shared right endpoint");
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 2)).expect("service merge").expect("shared left endpoint");
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 3)).expect("service merge").expect("shared right endpoint");
         quotient.coordinate_root_closure_outcome(
             ctx,
             2,
@@ -13266,11 +13250,9 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
         let point = component * 3;
-        quotient
-            .merge(node + 1, node + 2)
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, node + 1, node + 2)).expect("service merge")
             .expect("disjoint coordinate roots merge");
-        quotient
-            .merge(node + 3, node + 4)
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, node + 3, node + 4)).expect("service merge")
             .expect("disjoint coordinate roots merge");
         candidates.extend([
             vec![[point, point + 1]],
@@ -13743,8 +13725,9 @@ fn boundary_component_face_keys_refuse_unadmitted_scan() {
     let use_ = MeshBoundaryEdgeCandidate { edge: 0, start: 0, end: 1, reversed: None };
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment { boundaries: vec![vec![use_]] }])];
     let candidates = [Vec::new()];
-    // The singleton edge and component sorts precede face-key admission.
-    let before_keys = 2 + 16 * u64::try_from(std::mem::size_of::<usize>() + std::mem::size_of::<(usize, Vec<usize>)>()).expect("sort bytes");
+    // Domain discovery, one singleton parent initialization and its root read
+    // precede the singleton edge and component sorts.
+    let before_keys = 2 + 1 + 1 + 16 * u64::try_from(std::mem::size_of::<usize>() + std::mem::size_of::<(usize, Vec<usize>)>()).expect("sort bytes");
     crate::test_support::with_work_limit(before_keys, |ctx| {
         let mut quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0, 1])), Arc::new(HashSet::from([0, 1]))]);
         let CodecError::ResourceLimit(limit) = propagate_common_boundary_components(ctx, &domains, &candidates, &mut quotient).expect_err("face keys require work") else { panic!("resource refusal") };
