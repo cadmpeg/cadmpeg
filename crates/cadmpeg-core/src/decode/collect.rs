@@ -63,7 +63,6 @@ enum VecGrowth {
 }
 
 impl DecodeContext<'_> {
-
     /// Reserve backing storage without admitting values not yet inserted.
     pub fn reserve_capacity_limit<T>(
         &self,
@@ -110,7 +109,9 @@ impl DecodeContext<'_> {
         let maximum = usize::try_from(isize::MAX)
             .map_err(|_| self.retained_size_overflow_limit(operation))?;
         if bytes > maximum {
-            return Err(self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation));
+            return Err(self
+                .budget
+                .retained_allocation_failed_limit(u64_from_index(bytes), operation));
         }
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
         if let Some(items) = items {
@@ -384,7 +385,8 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         let count = usize::try_from(self.policy().limits.max_collection_items)
             .map_err(|_| self.retained_size_overflow_limit(operation))?;
-        let bytes = self.tree_growth_bytes::<K, V>(count, operation)?
+        let bytes = self
+            .tree_growth_bytes::<K, V>(count, operation)?
             .checked_add(u64_from_index(owned_bytes))
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.charge_collection_items(1, operation)?;
@@ -461,9 +463,15 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> CodecError {
         match dimension {
-            ResourceDimension::CollectionItems => self.collection_allocation_failed(count, operation),
-            ResourceDimension::MaterializedBytes => self.budget.scoped_allocation_failed(u64_from_index(count), operation),
-            _ => self.budget.retained_allocation_failed(u64_from_index(count), operation),
+            ResourceDimension::CollectionItems => {
+                self.collection_allocation_failed(count, operation)
+            }
+            ResourceDimension::MaterializedBytes => self
+                .budget
+                .scoped_allocation_failed(u64_from_index(count), operation),
+            _ => self
+                .budget
+                .retained_allocation_failed(u64_from_index(count), operation),
         }
     }
 
@@ -474,7 +482,13 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         let mut values = Vec::new();
-        self.reserve_retained_vec_storage(&mut values, count, VecGrowth::Exact, Some(count), operation)?;
+        self.reserve_retained_vec_storage(
+            &mut values,
+            count,
+            VecGrowth::Exact,
+            Some(count),
+            operation,
+        )?;
         Ok(values)
     }
 
@@ -688,9 +702,14 @@ impl DecodeContext<'_> {
         self.charge_collection_items(1, value_operation)?;
         let mut group = self.vector_storage(1, value_operation)?;
         let bytes = self.charge_hash_growth::<(K, Vec<V>)>(
-            values.len(), values.capacity(), 1, index_operation)?;
+            values.len(),
+            values.capacity(),
+            1,
+            index_operation,
+        )?;
         values.try_reserve(1).map_err(|_| {
-            self.budget.retained_allocation_failed(u64_from_index(bytes), index_operation)
+            self.budget
+                .retained_allocation_failed(u64_from_index(bytes), index_operation)
         })?;
         group.push(value);
         values.insert(key, group);
@@ -732,14 +751,32 @@ impl DecodeContext<'_> {
         reservation.with_storage(|| self.copy_retained_text(text, operation))
     }
 
-    fn linear_growth<T>(&self, len: usize, capacity: usize, count: usize, operation: &'static str) -> Result<(usize, usize), CodecError> {
-        let required = len.checked_add(count).ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+    fn linear_growth<T>(
+        &self,
+        len: usize,
+        capacity: usize,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(usize, usize), CodecError> {
+        let required = len
+            .checked_add(count)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if std::mem::size_of::<T>() == 0 || required <= capacity {
             return Ok((0, 0));
         }
-        let minimum = match std::mem::size_of::<T>() { 1 => 8, 2..=1024 => 4, _ => 1 };
-        let target = capacity.checked_mul(2).ok_or_else(|| self.retained_size_overflow_limit(operation))?.max(required).max(minimum);
-        let bytes = (target - capacity).checked_mul(std::mem::size_of::<T>()).ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        let minimum = match std::mem::size_of::<T>() {
+            1 => 8,
+            2..=1024 => 4,
+            _ => 1,
+        };
+        let target = capacity
+            .checked_mul(2)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?
+            .max(required)
+            .max(minimum);
+        let bytes = (target - capacity)
+            .checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.charge_retained(u64_from_index(bytes), operation)?;
         Ok((target - len, bytes))
     }
@@ -751,11 +788,13 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let (additional, bytes) = self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
+        let (additional, bytes) =
+            self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
         self.charge_collection_items(1, operation)?;
-        values
-            .try_reserve_exact(additional)
-            .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))?;
+        values.try_reserve_exact(additional).map_err(|_| {
+            self.budget
+                .retained_allocation_failed(u64_from_index(bytes), operation)
+        })?;
         values.push_back(value);
         Ok(())
     }
@@ -767,11 +806,13 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let (additional, bytes) = self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
+        let (additional, bytes) =
+            self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
         self.charge_collection_items(1, operation)?;
-        values
-            .try_reserve_exact(additional)
-            .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))?;
+        values.try_reserve_exact(additional).map_err(|_| {
+            self.budget
+                .retained_allocation_failed(u64_from_index(bytes), operation)
+        })?;
         values.push_front(value);
         Ok(())
     }
@@ -783,15 +824,20 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let (additional, bytes) = self.linear_growth::<T>(values.len(), values.capacity(), count, operation)?;
+        let (additional, bytes) =
+            self.linear_growth::<T>(values.len(), values.capacity(), count, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
-        values
-            .try_reserve_exact(additional)
-            .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))
+        values.try_reserve_exact(additional).map_err(|_| {
+            self.budget
+                .retained_allocation_failed(u64_from_index(bytes), operation)
+        })
     }
 
     /// Allocates the fixed vector used by the context's aggregate fill operation.
-    pub(crate) fn admitted_vec<T>(count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
+    pub(crate) fn admitted_vec<T>(
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
         let mut values = Vec::new();
         values.try_reserve_exact(count).map_err(|_| {
             CodecError::ResourceLimit(ResourceLimit::allocation_failed(
@@ -953,7 +999,11 @@ impl DecodeContext<'_> {
     // SwissTable has a maximum 7/8 load, power-of-two bucket storage, and
     // at most 16 trailing control bytes. Small elements require 16 bytes
     // of bucket storage. Alignment padding is bounded by max(align, 16)-1.
-    fn hash_storage_bytes<T>(&self, capacity: usize, operation: &'static str) -> Result<usize, ResourceLimit> {
+    fn hash_storage_bytes<T>(
+        &self,
+        capacity: usize,
+        operation: &'static str,
+    ) -> Result<usize, ResourceLimit> {
         if capacity == 0 {
             return Ok(0);
         }
@@ -962,18 +1012,30 @@ impl DecodeContext<'_> {
         } else if capacity < 8 {
             Some(8)
         } else {
-            capacity.checked_mul(8).and_then(|slots| (slots / 7).checked_next_power_of_two())
-        }.ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+            capacity
+                .checked_mul(8)
+                .and_then(|slots| (slots / 7).checked_next_power_of_two())
+        }
+        .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         let alignment = std::mem::align_of::<T>().max(16);
-        buckets.checked_mul(std::mem::size_of::<T>())
+        buckets
+            .checked_mul(std::mem::size_of::<T>())
             .and_then(|bytes| bytes.checked_add(alignment - 1))
             .and_then(|bytes| bytes.checked_add(buckets))
             .and_then(|bytes| bytes.checked_add(16))
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
-    fn charge_hash_growth<T>(&self, len: usize, capacity: usize, count: usize, operation: &'static str) -> Result<usize, ResourceLimit> {
-        let required = len.checked_add(count).ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+    fn charge_hash_growth<T>(
+        &self,
+        len: usize,
+        capacity: usize,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<usize, ResourceLimit> {
+        let required = len
+            .checked_add(count)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required <= capacity {
             return Ok(0);
         }
@@ -995,10 +1057,13 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let bytes = self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
+        let bytes =
+            self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
-        values.try_reserve(count)
-            .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))
+        values.try_reserve(count).map_err(|_| {
+            self.budget
+                .retained_allocation_failed(u64_from_index(bytes), operation)
+        })
     }
 
     /// Reserves hash map entries after charging their slots.
@@ -1008,10 +1073,13 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let bytes = self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
+        let bytes =
+            self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
-        values.try_reserve(count)
-            .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))
+        values.try_reserve(count).map_err(|_| {
+            self.budget
+                .retained_allocation_failed(u64_from_index(bytes), operation)
+        })
     }
 
     // A B-tree node stores at most 11 key/value lanes, 12 child pointers,
@@ -1019,10 +1087,23 @@ impl DecodeContext<'_> {
     // four pointer-width metadata slots and padding for both lane arrays.
     // An insertion can split each node on its path and add a new root;
     // the path has at most log2(len) + 1 nodes since each level branches.
-    fn tree_growth_bytes<K, V>(&self, len: usize, operation: &'static str) -> Result<u64, ResourceLimit> {
-        let alignment = std::mem::align_of::<K>().max(std::mem::align_of::<V>()).max(std::mem::align_of::<usize>());
-        let nodes = if len == 0 { 1 } else { usize::try_from(len.ilog2()).map_err(|_| self.retained_size_overflow_limit(operation))? + 2 };
-        std::mem::size_of::<K>().checked_add(std::mem::size_of::<V>())
+    fn tree_growth_bytes<K, V>(
+        &self,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<u64, ResourceLimit> {
+        let alignment = std::mem::align_of::<K>()
+            .max(std::mem::align_of::<V>())
+            .max(std::mem::align_of::<usize>());
+        let nodes = if len == 0 {
+            1
+        } else {
+            usize::try_from(len.ilog2())
+                .map_err(|_| self.retained_size_overflow_limit(operation))?
+                + 2
+        };
+        std::mem::size_of::<K>()
+            .checked_add(std::mem::size_of::<V>())
             .and_then(|bytes| bytes.checked_mul(11))
             .and_then(|bytes| bytes.checked_add(16 * std::mem::size_of::<usize>()))
             .and_then(|bytes| bytes.checked_add(2 * alignment))
@@ -1076,7 +1157,10 @@ impl DecodeContext<'_> {
         if values.contains(&value) {
             return Ok(false);
         }
-        self.charge_retained(self.tree_growth_bytes::<T, ()>(values.len(), operation)?, operation)?;
+        self.charge_retained(
+            self.tree_growth_bytes::<T, ()>(values.len(), operation)?,
+            operation,
+        )?;
         self.charge_collection_items(1, operation)?;
         Ok(values.insert(value))
     }
@@ -1197,7 +1281,8 @@ impl DecodeContext<'_> {
             let bytes = self.charge_hash_growth::<T>(0, 0, count, operation)?;
             self.charge_collection_items_limit(u64_from_index(count), operation)?;
             values.try_reserve(count).map_err(|_| {
-                self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation)
+                self.budget
+                    .retained_allocation_failed_limit(u64_from_index(bytes), operation)
             })
         })?;
         Ok((values, reservation))
@@ -1214,9 +1299,13 @@ impl DecodeContext<'_> {
         let mut remaining = count;
         reservation.with_storage(|| {
             for value in values {
-                self.charge_work(u64_from_index(value.len()).checked_mul(2)
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?, operation)?;
+                self.charge_work(
+                    u64_from_index(value.len())
+                        .checked_mul(2)
+                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+                    operation,
+                )?;
                 if !output.contains(value) {
                     if remaining == 0 {
                         self.reserve_set(&mut output, 1, operation)?;
@@ -1244,9 +1333,13 @@ impl DecodeContext<'_> {
             self.reserve_map(&mut output, count, operation)?;
             let mut remaining = count;
             for (key, value) in values {
-                self.charge_work(u64_from_index(key.len()).checked_mul(2)
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?, operation)?;
+                self.charge_work(
+                    u64_from_index(key.len())
+                        .checked_mul(2)
+                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+                    operation,
+                )?;
                 if !output.contains_key(key) {
                     if remaining == 0 {
                         self.reserve_map(&mut output, 1, operation)?;
@@ -1270,12 +1363,15 @@ impl DecodeContext<'_> {
         let mut reservation = self.reserve_scoped(0, operation)?;
         let mut values = VecDeque::new();
         reservation.with_storage(|| {
-            let bytes = count.checked_mul(std::mem::size_of::<T>())
+            let bytes = count
+                .checked_mul(std::mem::size_of::<T>())
                 .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
             self.charge_retained(u64_from_index(bytes), operation)?;
             self.charge_collection_items(u64_from_index(count), operation)?;
-            values.try_reserve_exact(count)
-                .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))
+            values.try_reserve_exact(count).map_err(|_| {
+                self.budget
+                    .retained_allocation_failed(u64_from_index(bytes), operation)
+            })
         })?;
         Ok((values, reservation))
     }
@@ -1454,7 +1550,10 @@ impl DecodeContext<'_> {
         }
         impl Write for ChargedText<'_, '_> {
             fn write_str(&mut self, fragment: &str) -> fmt::Result {
-                if let Err(error) = self.ctx.append_retained(&mut self.text, fragment, self.operation) {
+                if let Err(error) =
+                    self.ctx
+                        .append_retained(&mut self.text, fragment, self.operation)
+                {
                     self.refusal = Some(error);
                     return Err(fmt::Error);
                 }

@@ -425,7 +425,7 @@ fn uncharged_scratch_reports_an_allocation_refusal_instead_of_no_value() {
     let refusal = scratch
         .refused()
         .expect("the allocation refusal is recorded");
-    assert_eq!(refusal.reason, ResourceFailure::BudgetExceeded);
+    assert_eq!(refusal.reason, ResourceFailure::AllocationFailed);
     assert_eq!(refusal.operation, "IR test scratch");
     assert!(matches!(
         scratch.settle::<(), ()>(Ok(())),
