@@ -148,7 +148,11 @@ pub(crate) fn with_service_context<T>(
     input: &[u8],
     use_context: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {
-    with_policy_context(input, &cadmpeg_core::decode::DecodePolicy::service(), use_context)
+    with_policy_context(
+        input,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+        use_context,
+    )
 }
 
 pub(crate) fn with_policy_context<T>(

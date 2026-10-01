@@ -12,8 +12,8 @@ mod dialect;
 mod inspection;
 mod parsing;
 mod resolution;
-mod units;
 mod text_admission;
+mod units;
 
 fn valid_global_fields() -> Vec<String> {
     [

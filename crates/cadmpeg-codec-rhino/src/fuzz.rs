@@ -54,7 +54,11 @@ pub fn container(data: &[u8]) {
 pub fn chunks(data: &[u8]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let Ok((ctx, _root)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy) else { return; };
+    let Ok((ctx, _root)) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
     if data.is_empty() {
         return;
     }

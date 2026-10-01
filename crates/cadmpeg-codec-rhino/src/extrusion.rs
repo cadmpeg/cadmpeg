@@ -1980,9 +1980,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn optional_mesh_cache_over_document_budget_is_dropped() {
+    fn optional_mesh_cache_over_document_budget_propagates_resource_refusal() {
         let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let decoded = decode(
+        let refusal = decode(
             &bytes,
             0..bytes.len(),
             ArchiveVersion::V5,
@@ -1990,10 +1990,11 @@ pub(crate) mod tests {
             MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::with_limit(0),
         )
-        .expect("extrusion remains usable");
-        assert!(decoded.meshes.is_empty());
-        assert_eq!(decoded.warnings.len(), 1);
-        assert!(decoded.warnings[0].contains("document mesh buffer budget exceeded"));
+        .expect_err("optional cache resource refusal reaches the caller");
+        assert!(matches!(refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino document mesh buffer bytes"
+                    && limit.limit == 0 && limit.used == 0 && limit.additional == 12));
     }
 
     #[test]

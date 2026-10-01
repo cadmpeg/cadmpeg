@@ -33,7 +33,8 @@ const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
 pub(super) fn planar_polyline_has_self_intersection(
-    points: &[[f64; 2]], ctx: &DecodeContext<'_>,
+    points: &[[f64; 2]],
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if points.len() < 3 {
         return Ok(false);
@@ -69,14 +70,17 @@ pub(super) fn planar_polyline_has_self_intersection(
 }
 
 pub(super) fn planar_polylines_intersect(
-    first: &[[f64; 2]], second: &[[f64; 2]], ctx: &DecodeContext<'_>,
+    first: &[[f64; 2]],
+    second: &[[f64; 2]],
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     for first_segment in first.windows(2) {
         for second_segment in second.windows(2) {
             ctx.charge_work(1, "iges planar ring intersection comparisons")?;
             if planar_segments_intersect_beyond_endpoint(
                 [first_segment[0], first_segment[1]],
-                [second_segment[0], second_segment[1]], None,
+                [second_segment[0], second_segment[1]],
+                None,
             ) {
                 return Ok(true);
             }
@@ -86,7 +90,9 @@ pub(super) fn planar_polylines_intersect(
 }
 
 pub(super) fn closed_polyline_has_duplicate<T>(
-    points: &[T], coincident: impl Fn(&T, &T) -> bool, ctx: &DecodeContext<'_>,
+    points: &[T],
+    coincident: impl Fn(&T, &T) -> bool,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     for (first, left) in points.iter().enumerate() {
         for (second, right) in points.iter().enumerate().skip(first + 1) {

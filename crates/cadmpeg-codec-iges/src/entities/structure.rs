@@ -1463,7 +1463,11 @@ fn linear_nurbs_is_simple_closed(
     };
     if points.len() < 3
         || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
-        || super::geometry::closed_polyline_has_duplicate(&points, |left, right| points_coincident(*left, *right, resolution), ctx)?
+        || super::geometry::closed_polyline_has_duplicate(
+            &points,
+            |left, right| points_coincident(*left, *right, resolution),
+            ctx,
+        )?
     {
         return Ok(false);
     }
@@ -1609,14 +1613,21 @@ fn bounded_plane_curve_is_simple(
                     *points.last().unwrap_or(&points[0]),
                     context.resolution,
                 )
-                && !super::geometry::closed_polyline_has_duplicate(&points, |left, right| points_coincident(*left, *right, context.resolution), context.ctx)?)
+                && !super::geometry::closed_polyline_has_duplicate(
+                    &points,
+                    |left, right| points_coincident(*left, *right, context.resolution),
+                    context.ctx,
+                )?)
             {
                 return Ok(false);
             }
             let Some(projected) = plane_coordinates(&points, context.plane, context.ctx)? else {
                 return Ok(false);
             };
-            Ok(!planar_polyline_has_self_intersection(&projected, context.ctx)?)
+            Ok(!planar_polyline_has_self_intersection(
+                &projected,
+                context.ctx,
+            )?)
         }
     }
 }

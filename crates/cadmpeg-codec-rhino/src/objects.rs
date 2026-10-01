@@ -1876,9 +1876,12 @@ pub(crate) fn parse_object_record(
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
                 let descriptor = parse_history(bytes, &item, archive)?;
                 let checksum = match (&descriptor.header_range, &descriptor.data_range) {
-                    (Some(header), Some(data)) => {
-                        checksum_warning_excluding(ctx, bytes, &item, &[header.clone(), data.clone()])?
-                    }
+                    (Some(header), Some(data)) => checksum_warning_excluding(
+                        ctx,
+                        bytes,
+                        &item,
+                        &[header.clone(), data.clone()],
+                    )?,
                     (Some(header), None) => {
                         checksum_warning_excluding(ctx, bytes, &item, std::slice::from_ref(header))?
                     }

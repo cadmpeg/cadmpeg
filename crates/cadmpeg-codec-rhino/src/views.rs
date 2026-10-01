@@ -1341,9 +1341,12 @@ fn parse_view(
                 } else {
                     match scan_viewport_userdata(ctx, data, child.body().clone(), archive, losses) {
                         Ok(scan) => {
-                            if let Some(warning) =
-                                view_child_checksum_warning_excluding(ctx, data, &child, &scan.children)?
-                            {
+                            if let Some(warning) = view_child_checksum_warning_excluding(
+                                ctx,
+                                data,
+                                &child,
+                                &scan.children,
+                            )? {
                                 push_view_loss(
                                     ctx,
                                     losses,
