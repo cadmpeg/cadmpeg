@@ -220,8 +220,8 @@ pub(crate) fn classify_layers(
             crate::container::KernelFraming::as_header_ref,
         );
         add_layer(cadmpeg_asm::dialect::classify_layer(
-            header, &brep.name, instance,
-        ))?;
+            ctx, header, &brep.name, instance,
+        )?)?;
     }
     for name in crate::container::text_brep_names(scan) {
         let matched = match scan.text_breps.get(name) {
@@ -235,13 +235,14 @@ pub(crate) fn classify_layers(
                         cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
                     }
                 };
-                cadmpeg_asm::dialect::classify_layer(reference, name, instance)
+                cadmpeg_asm::dialect::classify_layer(ctx, reference, name, instance)?
             }
             _ => cadmpeg_asm::dialect::classify_layer(
+                ctx,
                 cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
                 name,
                 instance,
-            ),
+            )?,
         };
         add_layer(matched)?;
     }
