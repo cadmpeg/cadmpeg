@@ -83,18 +83,12 @@ impl FeatureRegenerationParents {
         let mut parents = BTreeMap::new();
         for (child, parent) in &self.0 {
             ctx.charge_work(1, operation)?;
-            ctx.charge_collection_items(1, operation)?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                    crate::features::FeatureId,
-                    crate::features::FeatureId,
-                )>()),
-                operation,
-            )?;
-            parents.insert(
+            ctx.insert_btree_map(
+                &mut parents,
                 child.try_clone_for_decode(ctx, operation)?,
                 parent.try_clone_for_decode(ctx, operation)?,
-            );
+                operation,
+            )?;
         }
         Ok(Self(parents))
     }
@@ -1247,10 +1241,8 @@ impl Model {
         if let Some(existing) = self.feature_regeneration_parents.0.get_mut(child) {
             *existing = parent;
         } else {
-            ctx.charge_collection_items(1, OPERATION)?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureRegenerationEdge>()), OPERATION)?;
             let child = child.try_clone_for_decode(ctx, OPERATION)?;
-            self.feature_regeneration_parents.0.insert(child, parent);
+            ctx.insert_btree_map(&mut self.feature_regeneration_parents.0, child, parent, OPERATION)?;
         }
         Ok(())
     }

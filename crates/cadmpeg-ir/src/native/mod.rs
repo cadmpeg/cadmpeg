@@ -650,7 +650,6 @@ impl NativeNamespace {
     ) -> Result<(), NativeConvertError> {
         let name = name.as_ref();
         let name = ctx.copy_retained_text(name, "retain native arena name")?;
-        ctx.charge_collection_items(1, "store native arena")?;
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
             Ok(converted) => converted,
@@ -666,7 +665,7 @@ impl NativeNamespace {
                 });
             }
         };
-        self.arenas.insert(name, converted);
+        ctx.insert_btree_map(&mut self.arenas, name, converted, "store native arena")?;
         Ok(())
     }
 

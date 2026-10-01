@@ -426,12 +426,7 @@ impl Coverage {
             *value = count;
             return Ok(());
         }
-        ctx.charge_collection_items(1, "decode coverage nodes")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, usize)>()),
-            "decode coverage nodes",
-        )?;
-        self.entries.insert(name, count);
+        ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
         Ok(())
     }
 

@@ -854,6 +854,175 @@ class DiscardedValues(TempSourceCase):
         self.assertEqual(self.findings("discarded_value"), [])
 
 
+class HandChargedCollectionInserts(TempSourceCase):
+    RULE = "hand_charged_collection_insert"
+
+    def lines(self, body: str, path: str = "crates/demo/src/lib.rs") -> list[int]:
+        self.write(path, body)
+        return [f.line for f in self.findings(self.RULE)]
+
+    def test_charge_then_set_insert_is_rejected(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut BTreeSet<u32>, x: u32) {
+    if !set.contains(&x) {
+        ctx.charge_collection_items(1, "op")?;
+        set.insert(x);
+    }
+}
+"""
+        self.assertEqual(self.lines(body), [3])
+        self.assertIn("insert_btree_set", self.findings(self.RULE)[0].message)
+        self.assertIn("admit_btree_entry", self.findings(self.RULE)[0].message)
+
+    def test_charge_then_map_insert_is_rejected(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, k: u32) {
+    let mut map: HashMap<u32, u32> = HashMap::new();
+    self.ctx.charge_collection_items(u64_from_index(1), "op")?;
+    map.insert(k, 1);
+}
+"""
+        self.assertEqual(self.lines(body), [3])
+
+    def test_charge_then_map_entry_is_rejected(self) -> None:
+        body = """fn f(budget: &mut Budget, map: &mut BTreeMap<u32, Vec<u32>>, k: u32) {
+    budget.charge_collection_items(1, "op")?;
+    map.entry(k).or_default().push(1);
+}
+"""
+        self.assertEqual(self.lines(body), [2])
+
+    def test_nx_charge_for_appended_vector_member_is_accepted(self) -> None:
+        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, Vec<&Record>>, key: String, record: &Record) {
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, "groups")?;
+        reservation.grow(64)?;
+    }
+    ctx.charge_collection_items(1, "reference")?;
+    reservation.grow(8)?;
+    let references = groups.entry(key).or_default();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(references, 1, "reference")?;
+    references.push(record);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_step_charge_for_new_inner_set_member_is_accepted(self) -> None:
+        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, BTreeSet<String>>, id: String, member: String) {
+    ctx.admit_btree_entry(groups, &id, "groups")?;
+    ctx.charge_collection_items(1, "members")?;
+    groups.insert(id, BTreeSet::from([member]));
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_inner_set_without_outer_admission_is_rejected(self) -> None:
+        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, BTreeSet<String>>, id: String, member: String) {
+    ctx.charge_collection_items(1, "members")?;
+    groups.insert(id, BTreeSet::from([member]));
+}
+"""
+        self.assertEqual(self.lines(body), [2])
+
+    def test_other_dimensions_and_key_copies_may_intervene(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
+    ctx.charge_collection_items(1, "op")?;
+    ctx.charge_retained(4, "op")?;
+    ctx.charge_work(1, "op")?;
+    let key = x;
+    set.insert(key);
+}
+"""
+        self.assertEqual(self.lines(body), [2])
+
+    def test_block_end_and_control_flow_stop_the_search(self) -> None:
+        for between in ("return Ok(());", "continue;", "break;"):
+            body = f"""fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {{
+    ctx.charge_collection_items(1, "op")?;
+    {between}
+    set.insert(x);
+}}
+"""
+            self.assertEqual(self.lines(body), [], between)
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
+    if x > 0 {
+        ctx.charge_collection_items(1, "op")?;
+    }
+    set.insert(x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_vacant_entry_and_non_set_receivers_are_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, draft: &mut ModelDraft, m: &mut Other, x: u32) {
+    match map.entry(x) {
+        Entry::Vacant(slot) => {
+            ctx.charge_collection_items(1, "op")?;
+            slot.insert(x);
+        }
+    }
+    ctx.charge_collection_items(1, "op")?;
+    draft.insert(x)?;
+    ctx.charge_collection_items(1, "op")?;
+    m.members.insert(x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_core_operations_are_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, k: u32) {
+    ctx.insert_btree_set(&mut a, k, "op")?;
+    ctx.insert_btree_map(&mut b, k, 1, "op")?;
+    ctx.admit_btree_entry(&mut b, k, "op")?;
+    ctx.insert_hash_set(&mut c, k, "op")?;
+    ctx.insert_hash_map(&mut d, k, 1, "op")?;
+    ctx.admit_hash_map_entry(&mut d, k, "op")?;
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_vec_insert_after_a_charge_is_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, v: &mut Vec<u32>, i: usize, x: u32) {
+    ctx.charge_collection_items(1, "op")?;
+    v.insert(i, x);
+}
+fn g(ctx: &mut DecodeContext, x: u32) {
+    let mut v = Vec::new();
+    ctx.charge_collection_items(1, "op")?;
+    v.insert(0, x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_multi_item_charge_is_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, n: u64, x: u32) {
+    ctx.charge_collection_items(n, "op")?;
+    set.insert(x);
+    ctx.charge_collection_items(2, "op")?;
+    set.insert(x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_cfg_test_module_is_not_production(self) -> None:
+        body = """#[cfg(test)]
+mod tests {
+    fn t(ctx: &mut DecodeContext, set: &mut HashSet<u32>) {
+        ctx.charge_collection_items(1, "op").unwrap();
+        set.insert(1);
+    }
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_core_implementation_files_are_excluded(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
+    ctx.charge_collection_items(1, "op")?;
+    set.insert(x);
+}
+"""
+        for name in ("collect.rs", "context.rs"):
+            self.assertEqual(self.lines(body, f"crates/cadmpeg-core/src/decode/{name}"), [])
+
+
 class ScriptTestCollection(TempSourceCase):
     GUARD = 'if __name__ == "__main__":\n    unittest.main()\n'
     CASE = (
