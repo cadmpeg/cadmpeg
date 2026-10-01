@@ -116,3 +116,12 @@ fn value_node_count_nodes_refuse_in_the_node_dimension() {
         assert_local_refusal(crate::parse::value_node_count(&Value::Integer(1), 0, ctx).expect_err("local ceiling refuses"), "step_value_node_count_node_limit");
     });
 }
+
+#[test]
+fn unknown_record_rejects_non_finite_real_at_lex_admission() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1.E9999);ENDSEC;END-ISO-10303-21;";
+    with_service_context(SOURCE, |source, ctx| {
+        assert!(matches!(crate::parse::parse_with_context(source, ctx), Err(CodecError::Malformed(message))
+            if message.contains("finite binary64 range")));
+    });
+}

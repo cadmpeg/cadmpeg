@@ -2336,7 +2336,7 @@ fn measure_inner(
     Ok(match value {
         Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value)
             .and_then(|value| PmiValue::new(value, PmiQuantity::Ratio)),
-        Value::Real(value) => PmiValue::new(*value, PmiQuantity::Ratio),
+        Value::Real(value) => PmiValue::new(value.get(), PmiQuantity::Ratio),
         Value::Typed(name, value) => value.number().and_then(|number| {
             PmiValue::new(
                 if name.contains("LENGTH") {

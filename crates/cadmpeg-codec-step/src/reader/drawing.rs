@@ -1153,7 +1153,7 @@ fn value_text(
             ctx.format_retained(format_args!("{value}"), "step_drawing_value_text")?
         }
         Value::Real(value) => {
-            ctx.format_retained(format_args!("{value}"), "step_drawing_value_text")?
+            ctx.format_retained(format_args!("{}", value.get()), "step_drawing_value_text")?
         }
         Value::Enumeration(value) => {
             ctx.format_retained(format_args!(".{value}."), "step_drawing_value_text")?
