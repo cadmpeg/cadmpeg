@@ -1116,11 +1116,7 @@ pub(crate) fn project(
                 cadmpeg_core::decode::u64_from_index(native.len()),
                 "retain Inventor sketch parameter native id",
             )?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(parameter.id.as_str().len()),
-                "retain Inventor sketch parameter id",
-            )?;
-            parameter_index.insert(native.clone(), parameter.id.clone());
+            parameter_index.insert(native.clone(), parameter.id.try_clone_for_decode(ctx, "retain Inventor sketch parameter id")?);
         }
     }
 
@@ -1327,15 +1323,9 @@ pub(crate) fn project(
         cadmpeg_core::decode::u64_from_index(sketches.len()),
         "collect projected Inventor sketch ids",
     )?;
-    for sketch in &sketches {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len()),
-            "retain Inventor projected sketch id copy",
-        )?;
-    }
     let projected_sketch_ids = sketches
         .iter()
-        .map(|sketch| sketch.id.clone())
+        .map(|sketch| &sketch.id)
         .collect::<HashSet<_>>();
     let previous_entity_count = projected_entities.len();
     projected_entities.retain(|entity| projected_sketch_ids.contains(&entity.sketch));
@@ -1493,15 +1483,9 @@ pub(crate) fn project(
         cadmpeg_core::decode::u64_from_index(sketches.len()),
         "index closed Inventor sketch ids",
     )?;
-    for sketch in &sketches {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len()),
-            "retain closed Inventor sketch id",
-        )?;
-    }
     let closed_sketch_ids = sketches
         .iter()
-        .map(|sketch| sketch.id.clone())
+        .map(|sketch| &sketch.id)
         .collect::<HashSet<_>>();
     let previous_entity_count = projected_entities.len();
     projected_entities.retain(|entity| closed_sketch_ids.contains(&entity.sketch));
@@ -1604,16 +1588,7 @@ fn project_constraint(
             }
         };
     }
-    macro_rules! admit_entity_ids {
-        ($members:expr) => {
-            for member in $members {
-                admit!(ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(member.id().as_str().len()),
-                    "retain Inventor sketch constraint entity id",
-                ));
-            }
-        };
-    }
+
     macro_rules! admitted_value {
         ($result:expr) => {
             match $result {
@@ -1640,11 +1615,9 @@ fn project_constraint(
     let (definition, orientation, members) = match constraint.kind {
         PmDcSketchConstraintKind::Coincident { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
-            admit!(ctx.charge_collection_items(2, "collect Inventor coincident constraint members"));
-            admit_entity_ids!(members);
             (
                 SketchConstraintDefinitionInput::Coincident {
-                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
+                    entities: admitted_value!(ctx.try_collect_retained_with(members, "collect Inventor coincident constraint members", |entity| entity.id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id"))),
                 },
                 None,
                 members,
@@ -1656,11 +1629,10 @@ fn project_constraint(
             orientation,
         } => {
             let members = [resolve(first)?, resolve(second)?];
-            admit_entity_ids!(members);
             (
                 SketchConstraintDefinitionInput::Parallel {
-                    first: members[0].id().clone(),
-                    second: members[1].id().clone(),
+                    first: admitted_value!(members[0].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                    second: admitted_value!(members[1].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                 },
                 Some(u32::from(orientation)),
                 members,
@@ -1672,11 +1644,10 @@ fn project_constraint(
             orientation,
         } => {
             let members = [resolve(first)?, resolve(second)?];
-            admit_entity_ids!(members);
             (
                 SketchConstraintDefinitionInput::Perpendicular {
-                    first: members[0].id().clone(),
-                    second: members[1].id().clone(),
+                    first: admitted_value!(members[0].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                    second: admitted_value!(members[1].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                 },
                 Some(u32::from(orientation)),
                 members,
@@ -1688,11 +1659,10 @@ fn project_constraint(
             extension,
         } => {
             let members = [resolve(first)?, resolve(second)?];
-            admit_entity_ids!(members);
             (
                 SketchConstraintDefinitionInput::Tangent {
-                    first: members[0].id().clone(),
-                    second: members[1].id().clone(),
+                    first: admitted_value!(members[0].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                    second: admitted_value!(members[1].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                 },
                 extension,
                 members,
@@ -1700,10 +1670,9 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::Horizontal { entity, state } => {
             let member = resolve(entity)?;
-            admit_entity_ids!([member]);
             (
                 SketchConstraintDefinitionInput::Horizontal {
-                    entity: member.id().clone(),
+                    entity: admitted_value!(member.id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                 },
                 Some(u32::from(state)),
                 [member, member],
@@ -1711,10 +1680,9 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::Vertical { entity, state } => {
             let member = resolve(entity)?;
-            admit_entity_ids!([member]);
             (
                 SketchConstraintDefinitionInput::Vertical {
-                    entity: member.id().clone(),
+                    entity: admitted_value!(member.id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                 },
                 Some(u32::from(state)),
                 [member, member],
@@ -1729,11 +1697,10 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter =
                 admitted_value!(resolve_parameter(ctx, constraint, parameter, parameters)?);
-            admit_entity_ids!(members);
             (
                 SketchConstraintDefinitionInput::HorizontalDistance {
-                    first: SketchLocus::Entity(members[0].id().clone()),
-                    second: SketchLocus::Entity(members[1].id().clone()),
+                    first: SketchLocus::Entity(admitted_value!(members[0].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id"))),
+                    second: SketchLocus::Entity(admitted_value!(members[1].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id"))),
                     parameter,
                 },
                 None,
@@ -1749,11 +1716,10 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter =
                 admitted_value!(resolve_parameter(ctx, constraint, parameter, parameters)?);
-            admit_entity_ids!(members);
             (
                 SketchConstraintDefinitionInput::VerticalDistance {
-                    first: SketchLocus::Entity(members[0].id().clone()),
-                    second: SketchLocus::Entity(members[1].id().clone()),
+                    first: SketchLocus::Entity(admitted_value!(members[0].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id"))),
+                    second: SketchLocus::Entity(admitted_value!(members[1].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id"))),
                     parameter,
                 },
                 None,
@@ -1768,10 +1734,9 @@ fn project_constraint(
                 constraint.header.parameter,
                 parameters
             )?);
-            admit_entity_ids!([member]);
             (
                 SketchConstraintDefinitionInput::Radius {
-                    entity: member.id().clone(),
+                    entity: admitted_value!(member.id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                     parameter,
                 },
                 None,
@@ -1786,10 +1751,9 @@ fn project_constraint(
                 constraint.header.parameter,
                 parameters
             )?);
-            admit_entity_ids!([member]);
             (
                 SketchConstraintDefinitionInput::Diameter {
-                    entity: member.id().clone(),
+                    entity: admitted_value!(member.id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                     parameter,
                 },
                 None,
@@ -1802,8 +1766,6 @@ fn project_constraint(
                 cadmpeg_core::decode::u64_from_index("circle_center_alignment".len()),
                 "retain Inventor circle center kind"
             ));
-            admit!(ctx.charge_collection_items(2, "collect Inventor circle center entities"));
-            admit_entity_ids!(members);
             admit!(ctx.charge_collection_items(2, "collect Inventor circle center operands"));
             (
                 SketchConstraintDefinitionInput::Native {
@@ -1813,7 +1775,7 @@ fn project_constraint(
                     native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),
-                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
+                    entities: admitted_value!(ctx.try_collect_retained_with(members, "collect Inventor circle center entities", |entity| entity.id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id"))),
                     parameter: None,
                     operands: vec![
                         admitted_value!(native_operand(
@@ -1836,11 +1798,10 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::EqualRadius { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
-            admit_entity_ids!(members);
             (
                 SketchConstraintDefinitionInput::Equal {
-                    first: members[0].id().clone(),
-                    second: members[1].id().clone(),
+                    first: admitted_value!(members[0].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                    second: admitted_value!(members[1].id().try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                 },
                 None,
                 members,
@@ -1859,10 +1820,6 @@ fn project_constraint(
         "retain projected Inventor sketch constraint id",
     ));
     admit!(ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(members[0].sketch.as_str().len()),
-        "retain Inventor sketch constraint owner id",
-    ));
-    admit!(ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(record_id_len(
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
@@ -1877,7 +1834,7 @@ fn project_constraint(
             constraint.identity.segment_token, constraint.identity.record_ordinal
         ))
         .ok()?,
-        sketch: members[0].sketch.clone(),
+        sketch: admitted_value!(members[0].sketch.try_clone_for_decode(ctx, "retain Inventor sketch constraint owner id")),
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?,
         name: None,
         driving: None,
@@ -2247,12 +2204,8 @@ fn build_profiles(
     {
         ctx.charge_collection_items(1, "project Inventor circular profile")?;
         ctx.charge_collection_items(1, "project Inventor circular profile use")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()),
-            "retain Inventor circular profile entity id",
-        )?;
         profiles.push(vec![SketchEntityUse {
-            entity: entity.id().clone(),
+            entity: entity.id().try_clone_for_decode(ctx, "retain Inventor circular profile entity id")?,
             reversed: false,
         }]);
     }
@@ -2319,12 +2272,8 @@ fn build_profiles(
         let mut point = first.endpoint_refs[1].as_str();
         let mut current = start_index;
         ctx.charge_collection_items(1, "collect Inventor profile use")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(first.id().as_str().len()),
-            "retain Inventor profile use id",
-        )?;
         let mut loop_uses = vec![SketchEntityUse {
-            entity: first.id().clone(),
+            entity: first.id().try_clone_for_decode(ctx, "retain Inventor profile use id")?,
             reversed: false,
         }];
         ctx.charge_collection_items(1, "visit Inventor profile line")?;
@@ -2355,12 +2304,8 @@ fn build_profiles(
                 visited.insert(next);
             }
             ctx.charge_collection_items(1, "collect Inventor profile use")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(line.id().as_str().len()),
-                "retain Inventor profile use id",
-            )?;
             loop_uses.push(SketchEntityUse {
-                entity: line.id().clone(),
+                entity: line.id().try_clone_for_decode(ctx, "retain Inventor profile use id")?,
                 reversed,
             });
         }
@@ -2609,12 +2554,10 @@ mod tests {
         });
         let inventory = SketchInventory {
             sketches: Vec::new(),
-            entities: vec![Located::new(
-                point,
-                type_id_string(POINT_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                0,
-            )],
+            entities: vec![Located::new(point,
+type_id_string(POINT_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0)],
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
@@ -2658,18 +2601,14 @@ mod tests {
             parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
         });
         let inventory = SketchInventory {
-            sketches: vec![Located::new(
-                sketch,
-                type_id_string(SKETCH_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                0,
-            )],
-            entities: vec![Located::new(
-                point,
-                type_id_string(POINT_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                1,
-            )],
+            sketches: vec![Located::new(sketch,
+type_id_string(SKETCH_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0)],
+            entities: vec![Located::new(point,
+type_id_string(POINT_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1)],
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
@@ -2708,18 +2647,14 @@ mod tests {
             parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
         });
         let inventory = SketchInventory {
-            sketches: vec![Located::new(
-                sketch,
-                type_id_string(SKETCH_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                0,
-            )],
-            entities: vec![Located::new(
-                point,
-                type_id_string(POINT_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                u32::MAX,
-            )],
+            sketches: vec![Located::new(sketch,
+type_id_string(SKETCH_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0)],
+            entities: vec![Located::new(point,
+type_id_string(POINT_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+u32::MAX)],
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
@@ -2768,25 +2703,19 @@ mod tests {
             parse_sketch(ctx, source, 22).expect("sketch")
         });
         let inventory = SketchInventory {
-            sketches: vec![Located::new(
-                sketch,
-                type_id_string(SKETCH_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                2,
-            )],
+            sketches: vec![Located::new(sketch,
+type_id_string(SKETCH_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+2)],
             entities: Vec::new(),
-            transforms: vec![Located::new(
-                transform,
-                type_id_string(TRANSFORM_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                0,
-            )],
-            directions: vec![Located::new(
-                direction,
-                type_id_string(DIRECTION_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                1,
-            )],
+            transforms: vec![Located::new(transform,
+type_id_string(TRANSFORM_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0)],
+            directions: vec![Located::new(direction,
+type_id_string(DIRECTION_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1)],
             constraints: Vec::new(),
             issues: Vec::new(),
         };
@@ -2821,12 +2750,10 @@ mod tests {
             parse_constraint(ctx, SketchConstraintTag::Horizontal, source, 22)
                 .expect("horizontal constraint")
         });
-        let constraint = Located::new(
-            payload,
-            type_id_string(HORIZONTAL_TYPE),
-            &cadmpeg_ir::identity_key!("segment"),
-            0,
-        );
+        let constraint = Located::new(payload,
+type_id_string(HORIZONTAL_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0);
         let entity = cadmpeg_ir::sketches::SketchEntity::new(
             cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
                 .expect("entity id"),
@@ -2870,12 +2797,10 @@ mod tests {
             parse_constraint(ctx, SketchConstraintTag::Horizontal, source, 22)
                 .expect("horizontal constraint")
         });
-        let constraint = Located::new(
-            payload,
-            type_id_string(HORIZONTAL_TYPE),
-            &cadmpeg_ir::identity_key!("segment"),
-            0,
-        );
+        let constraint = Located::new(payload,
+type_id_string(HORIZONTAL_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0);
         let entity = cadmpeg_ir::sketches::SketchEntity::new(
             cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
                 .expect("entity id"),
@@ -3424,35 +3349,27 @@ mod tests {
             entities.push(line);
         }
         transform.header.source_index = 0;
-        let transform = Located::new(
-            transform,
-            type_id_string(TRANSFORM_TYPE),
-            &cadmpeg_ir::identity_key!("segment"),
-            0,
-        );
-        let direction = Located::new(
-            direction,
-            type_id_string(DIRECTION_TYPE),
-            &cadmpeg_ir::identity_key!("segment"),
-            1,
-        );
-        let located_sketch = Located::new(
-            sketch.clone(),
-            type_id_string(SKETCH_TYPE),
-            &cadmpeg_ir::identity_key!("segment"),
-            2,
-        );
+        let transform = Located::new(transform,
+type_id_string(TRANSFORM_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0);
+        let direction = Located::new(direction,
+type_id_string(DIRECTION_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1);
+        let located_sketch = Located::new(sketch.clone(),
+type_id_string(SKETCH_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+2);
         let entities = entities
             .into_iter()
             .enumerate()
             .map(|(index, value)| {
                 let type_id = if index < 4 { POINT_TYPE } else { LINE_TYPE };
-                Located::new(
-                    value,
-                    type_id_string(type_id),
-                    &cadmpeg_ir::identity_key!("segment"),
-                    u32::try_from(index).expect("fixture value fits u32") + 3,
-                )
+                Located::new(value,
+type_id_string(type_id),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+u32::try_from(index).expect("fixture value fits u32") + 3)
             })
             .collect();
         let mut inventory = SketchInventory {
@@ -3492,12 +3409,10 @@ mod tests {
             parse_constraint(ctx, SketchConstraintTag::Coincident, source, 22)
                 .expect("mapped coincident")
         });
-        inventory.constraints.push(Located::new(
-            mapped_constraint,
-            type_id_string(COINCIDENT_TYPE),
-            &cadmpeg_ir::identity_key!("segment"),
-            11,
-        ));
+        inventory.constraints.push(Located::new(mapped_constraint,
+type_id_string(COINCIDENT_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+11));
         let mut sketch = sketch;
         let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
         references.push(PmDcReference {
@@ -3506,12 +3421,10 @@ mod tests {
         });
         sketch.entities =
             PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
-        inventory.sketches[0] = Located::new(
-            sketch,
-            type_id_string(SKETCH_TYPE),
-            &cadmpeg_ir::identity_key!("segment"),
-            2,
-        );
+        inventory.sketches[0] = Located::new(sketch,
+type_id_string(SKETCH_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+2);
         let incomplete = project(&ctx, &inventory, &[]).expect("incomplete sketch projection");
         assert_eq!(incomplete.unresolved_sketches, 1);
         assert_eq!(incomplete.unresolved_constraints, 1);

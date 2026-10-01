@@ -32,6 +32,23 @@ pub enum AttributeTarget {
     Vertex(VertexId),
 }
 
+impl AttributeTarget {
+    /// Copy the owning identity under the decode budget.
+    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
+        Ok(match self {
+            Self::Document => Self::Document,
+            Self::Body(id) => Self::Body(id.try_clone_for_decode(ctx, operation)?),
+            Self::Face(id) => Self::Face(id.try_clone_for_decode(ctx, operation)?),
+            Self::Shell(id) => Self::Shell(id.try_clone_for_decode(ctx, operation)?),
+            Self::Loop(id) => Self::Loop(id.try_clone_for_decode(ctx, operation)?),
+            Self::Coedge(id) => Self::Coedge(id.try_clone_for_decode(ctx, operation)?),
+            Self::Edge(id) => Self::Edge(id.try_clone_for_decode(ctx, operation)?),
+            Self::Vertex(id) => Self::Vertex(id.try_clone_for_decode(ctx, operation)?),
+        })
+    }
+}
+
 /// One ordered typed value from a source attribute record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -83,4 +100,29 @@ pub struct SourceAttribute {
     /// Ordered typed values carried by this attribute; length and types are
     /// source-defined and vary per attribute name.
     pub values: Vec<AttributeValue>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AttributeTarget;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn attribute_target_copy_charges_only_owned_identity() {
+        let target = AttributeTarget::Face(crate::ids::FaceId::mint("test:model:face#17").unwrap());
+        let identity_len = "test:model:face#17".len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(identity_len).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(target.try_clone_for_decode(&ctx, "attribute target copy").unwrap(), target);
+        let error = target.try_clone_for_decode(&ctx, "attribute target copy").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "attribute target copy"));
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(AttributeTarget::Document.try_clone_for_decode(&ctx, "document target copy").unwrap(), AttributeTarget::Document);
+    }
 }

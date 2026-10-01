@@ -360,10 +360,9 @@ fn parse_carrier<'a>(
             "Inventor kernel-carrier footer is not exactly exhausted".into(),
         ));
     }
-    let token_bytes = cadmpeg_core::decode::u64_from_index(segment_token.as_str().len());
-    ctx.charge_retained(token_bytes, "retain Inventor selected carrier token")?;
+
     Ok(ActiveCarrier {
-        segment_token: segment_token.clone(),
+        segment_token: segment_token.try_clone_for_decode(ctx, "retain Inventor selected carrier token")?,
         carrier_len,
         record_ordinal,
         segment_version_major,

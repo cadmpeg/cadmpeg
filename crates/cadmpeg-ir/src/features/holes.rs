@@ -1204,3 +1204,10 @@ cadmpeg_core::named_optional_field!(deserialize_major_diameter, PositiveLength, 
 
 selection_field_deserializer!(deserialize_local_standard, "standard");
 
+
+impl HolePlacement {
+    /// Copy admitted fields through the caller's decode context.
+    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+    }
+}

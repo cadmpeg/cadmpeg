@@ -538,11 +538,7 @@ fn attach_configurations<'a>(
                 "NX active configuration bodies",
             )?;
             for body in &ir.model.bodies {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
-                    "NX active configuration bodies",
-                )?;
-                selected.push(body.id.clone());
+                selected.push(body.id.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
             }
             Some(
                 cadmpeg_ir::features::DistinctMembers::try_from_for_decode(selected, ctx).map_err(cadmpeg_core::CodecError::from)?,
@@ -862,11 +858,7 @@ fn attach_rm_appearances(
         if existing_color.is_some_and(|existing| existing != color) {
             continue;
         }
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(face.id.as_str().len()),
-            "NX RM appearance face target",
-        )?;
-        let face_id = face.id.clone();
+        let face_id = face.id.try_clone_for_decode(ctx, "NX decoded IR value copy")?;
         let appearance_id = ensure_rm_color_appearance(
             ctx,
             ir,
@@ -959,11 +951,7 @@ fn ensure_rm_color_appearance(
         "NX RM appearance reuse lookup",
     )?;
     if let Some(id) = appearances.get(&definition.id) {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id.as_str().len()),
-            "NX RM reused appearance identity",
-        )?;
-        return Ok(id.clone());
+        return Ok(id.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
     }
     let identity_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(definition.id.len().checked_add(128).ok_or_else(
@@ -995,8 +983,7 @@ fn ensure_rm_color_appearance(
     annotations
         .derived_for_decode(ctx, id.as_str(), "base_color").map_err(cadmpeg_core::CodecError::from)?;
     let appearance_bytes = std::mem::size_of::<Appearance>()
-        .checked_add(id.as_str().len())
-        .and_then(|bytes| bytes.checked_add(definition.name.len()))
+        .checked_add(definition.name.len())
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "NX RM color appearance",
@@ -1009,17 +996,13 @@ fn ensure_rm_color_appearance(
         cadmpeg_core::decode::u64_from_index(appearance_bytes),
         "NX RM color appearance",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(id.as_str().len()),
-        "NX RM color appearance binding identity",
-    )?;
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut ir.model.appearances,
         1,
         "NX RM color appearances",
     )?;
     ir.model.appearances.push(Appearance {
-        id: id.clone(),
+        id: id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
         name: Some(definition.name.clone()),
         asset_guid: None,
         library_id: None,
@@ -1033,7 +1016,7 @@ fn ensure_rm_color_appearance(
     });
     let lookup_bytes = std::mem::size_of::<(String, AppearanceId)>()
         .checked_add(definition.id.len())
-        .and_then(|bytes| bytes.checked_add(id.as_str().len()))
+
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "NX RM appearance identity lookup",
@@ -1043,7 +1026,7 @@ fn ensure_rm_color_appearance(
         })?;
     ctx.charge_collection_items(1, "NX RM appearance identity lookup")?;
     appearances_reservation.grow(cadmpeg_core::decode::u64_from_index(lookup_bytes))?;
-    appearances.insert(definition.id.clone(), id.clone());
+    appearances.insert(definition.id.clone(), appearances_reservation.with_storage(|| id.try_clone_for_decode(ctx, "NX RM appearance identity lookup"))?);
     Ok(id)
 }
 
@@ -1847,15 +1830,7 @@ fn attach_initial_segment_bodies(
         }
         if matched {
             ctx.charge_collection_items(2, "NX retained-history output bodies")?;
-            let body_bytes = std::mem::size_of::<BodyId>()
-                .checked_add(body.id.as_str().len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX retained-history output body",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
-                    )
-                })?;
+            let body_bytes = std::mem::size_of::<BodyId>();
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(body_bytes),
                 "NX retained-history output bodies",
@@ -1874,8 +1849,8 @@ fn attach_initial_segment_bodies(
                 1,
                 "NX retained-history output bodies",
             )?;
-            selection_bodies.push(body.id.clone());
-            feature_outputs.push(body.id.clone());
+            selection_bodies.push(body.id.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
+            feature_outputs.push(body.id.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
         }
     }
 
@@ -1903,7 +1878,7 @@ fn attach_initial_segment_bodies(
         "NX retained-history input features",
     )?;
     ir.model.features.push(Feature {
-        id: id.clone(),
+        id: id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
         ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
         name: Some("Retained history input".to_string()),
         suppressed: Some(false),
@@ -3190,6 +3165,7 @@ fn attach_feature_operations(
             "NX feature operation group index",
         )?;
     }
+    let mut body_identity_writer_storage = ctx.reserve_scoped(0, "NX body identity writer")?;
     let mut body_identity_writers = BTreeMap::<u8, FeatureId>::new();
     let mut payload_strings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadString>>::new();
@@ -3211,25 +3187,14 @@ fn attach_feature_operations(
     let mut parameter_owner_reservation = ctx.reserve_scoped(0, "NX parameter owner index")?;
     for parameter in &ir.model.parameters {
         ctx.charge_work(1, "NX parameter owner index")?;
-        let owner_len = parameter
-            .owner
-            .as_ref()
-            .map_or(0, |owner| owner.as_str().len());
-        let bytes = std::mem::size_of::<(ParameterId, Option<FeatureId>)>()
-            .checked_add(parameter.id.as_str().len())
-            .and_then(|bytes| bytes.checked_add(owner_len))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX parameter owner index",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(owner_len),
-                )
-            })?;
+        let bytes = std::mem::size_of::<(ParameterId, Option<FeatureId>)>();
         if !parameter_owners.contains_key(&parameter.id) {
             ctx.charge_collection_items(1, "NX parameter owner index")?;
         }
         parameter_owner_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        parameter_owners.insert(parameter.id.clone(), parameter.owner.clone());
+        let key = parameter_owner_reservation.with_storage(|| parameter.id.try_clone_for_decode(ctx, "NX parameter owner index"))?;
+        let owner = parameter_owner_reservation.with_storage(|| parameter.owner.as_ref().map(|owner| owner.try_clone_for_decode(ctx, "NX parameter owner index")).transpose())?;
+        parameter_owners.insert(key, owner);
     }
     let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
     for (annotation_ordinal, label) in labels
@@ -3301,13 +3266,8 @@ fn attach_feature_operations(
         let Some(source_id) = feature_ids_by_operation.get(label.id.as_str()) else {
             continue;
         };
-        let _feature_id_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FeatureId>() + source_id.as_str().len(),
-            ),
-            "NX current feature identity",
-        )?;
-        let id = source_id.clone();
+        let mut feature_copy_storage = ctx.reserve_scoped(0, "NX current feature identity")?;
+        let id = feature_copy_storage.with_storage(|| source_id.try_clone_for_decode(ctx, "NX current feature identity"))?;
         let boolean_offset_store_resolution = booleans
             .get(label.id.as_str())
             .map(|operation| {
@@ -4961,7 +4921,7 @@ fn attach_feature_operations(
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
                 ctx.reserve_retained_vec(&mut outputs, 1, "NX block output bodies")?;
-                outputs.push(body.clone());
+                outputs.push(body.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
             }
         }
         let sphere_projection = if label.value == "SPHERE" {
@@ -5018,7 +4978,7 @@ fn attach_feature_operations(
         if sphere_op == BooleanOp::NewBody && outputs.is_empty() {
             if let Some((body, _, _)) = &sphere_projection {
                 ctx.reserve_retained_vec(&mut outputs, 1, "NX sphere output bodies")?;
-                outputs.push(body.clone());
+                outputs.push(body.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
             }
         }
         if block_op == BooleanOp::NewBody || sphere_op == BooleanOp::NewBody {
@@ -5331,7 +5291,7 @@ fn attach_feature_operations(
                 ] {
                     for placement in source {
                         ctx.reserve_retained_vec(&mut placements, 1, "NX feature hole placements")?;
-                        placements.push(placement.clone());
+                        placements.push(placement.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
                     }
                 }
                 non_boolean_feature_definition_with_parameters(
@@ -5414,13 +5374,9 @@ fn attach_feature_operations(
             if !body_identity_writers.contains_key(&write.frame.body_identity()) {
                 ctx.charge_collection_items(1, "NX body identity writers")?;
             }
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(u8, FeatureId)>() + id.as_str().len(),
-                ),
-                "NX body identity writer",
-            )?;
-            body_identity_writers.insert(write.frame.body_identity(), id.clone());
+            body_identity_writer_storage.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u8, FeatureId)>()))?;
+            let writer = body_identity_writer_storage.with_storage(|| id.try_clone_for_decode(ctx, "NX body identity writer"))?;
+            body_identity_writers.insert(write.frame.body_identity(), writer);
         }
         if let Some(operation) = (!deletes_body)
             .then(|| booleans.get(label.id.as_str()))
@@ -5459,11 +5415,8 @@ fn attach_feature_operations(
             cadmpeg_core::decode::u64_from_index(dependency_check_work),
             "NX feature dependency validation",
         )?;
-        let feature_text_bytes = id
-            .as_str()
-            .len()
+        let feature_text_bytes = label.value.len()
             .checked_add(label.value.len())
-            .and_then(|bytes| bytes.checked_add(label.value.len()))
             .and_then(|bytes| bytes.checked_add(label.id.len()))
             .and_then(|bytes| bytes.checked_add(std::mem::size_of::<Feature>()))
             .ok_or_else(|| {
@@ -5484,7 +5437,7 @@ fn attach_feature_operations(
             "allocate NX feature records",
         )?;
         ir.model.features.push(Feature {
-            id: id.clone(),
+            id: id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
@@ -5764,7 +5717,7 @@ fn append_feature_result_topology(
         })?;
     let retained_bytes = std::mem::size_of::<FeatureResultTopology>()
         .checked_add(member_storage)
-        .and_then(|bytes| bytes.checked_add(output_of.as_str().len()))
+
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "NX result topology record",
@@ -5806,7 +5759,7 @@ fn append_feature_result_topology(
     )?;
     let result = FeatureResultTopology::new(
         result_id,
-        output_of.clone(),
+        output_of.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
         bodies,
         members.faces,
         members.edges,
@@ -6188,11 +6141,8 @@ fn attach_sketch_graph(
             let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
                 return Ok(None);
             };
-            let copy_bytes = sketch_id
-                .as_str()
-                .len()
-                .checked_add(pair.id.len())
-                .and_then(|bytes| bytes.checked_add("nx-coordinate-pair".len()))
+            let copy_bytes = pair.id.len().checked_add("nx-coordinate-pair".len())
+
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit(
                         "NX coordinate-pair sketch entity",
@@ -6219,7 +6169,7 @@ fn attach_sketch_graph(
                 pair.source_offset,
                 SketchEntity::new(
                     entity_id,
-                    sketch_id.clone(),
+                    sketch_id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
                     SketchGeometry::native(native_kind),
                 )
                 .with_native_ref(Some(native_ref)),
@@ -6380,17 +6330,7 @@ fn attach_sketch_graph(
         let Some(entity_id) = sketch_entity_identity(ctx, "point-", entity_key)? else {
             return Ok(None);
         };
-        let copy_bytes = sketch_id
-            .as_str()
-            .len()
-            .checked_add(native_ref_source.len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX sketch point entity",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(native_ref_source.len()),
-                )
-            })?;
+        let copy_bytes = native_ref_source.len();
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(copy_bytes),
             "NX sketch point entity",
@@ -6409,7 +6349,7 @@ fn attach_sketch_graph(
             &mut reservation,
             &mut entities,
             source_offset,
-            SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+            SketchEntity::new(entity_id, sketch_id.try_clone_for_decode(ctx, "NX decoded IR value copy")?, geometry)
                 .with_native_ref(Some(native_ref)),
         )?;
     }
@@ -6609,8 +6549,7 @@ fn emit_sketch(
         "NX sketch output entities",
     )?;
     let sketch_bytes = std::mem::size_of::<Sketch>()
-        .checked_add(sketch_id.as_str().len())
-        .and_then(|bytes| bytes.checked_add(label.id.len()))
+        .checked_add(label.id.len())
         .and_then(|bytes| bytes.checked_add(label.value.len()))
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -6641,7 +6580,7 @@ fn emit_sketch(
         .sketch_entities
         .extend(entities.into_iter().map(|(_, entity)| entity));
     ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
+        id: sketch_id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
         name: Some(name),
         configuration: None,
         visible: None,
@@ -6693,11 +6632,8 @@ fn native_fixed_point_entities(
         let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
             return Ok(None);
         };
-        let copy_bytes = sketch_id
-            .as_str()
-            .len()
-            .checked_add(point.id.len())
-            .and_then(|bytes| bytes.checked_add("nx-fixed-point".len()))
+        let copy_bytes = point.id.len().checked_add("nx-fixed-point".len())
+
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX fixed-point sketch entity",
@@ -6723,7 +6659,7 @@ fn native_fixed_point_entities(
             point.source_offset,
             SketchEntity::new(
                 entity_id,
-                sketch_id.clone(),
+                sketch_id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
                 SketchGeometry::native(native_kind),
             )
             .with_native_ref(Some(native_ref)),
@@ -6790,15 +6726,7 @@ fn segment_binding_body_indexes<'a, 'ctx>(
             if stream_bodies.contains(&body.id) {
                 continue;
             }
-            let bytes = std::mem::size_of::<BodyId>()
-                .checked_add(body.id.as_str().len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX segment body identity",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
-                    )
-                })?;
+            let bytes = std::mem::size_of::<BodyId>();
             ctx.charge_collection_items(1, "NX segment body identity")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
             cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
@@ -6806,7 +6734,7 @@ fn segment_binding_body_indexes<'a, 'ctx>(
                 1,
                 "NX segment body identity",
             )?;
-            stream_bodies.push(body.id.clone());
+            stream_bodies.push(reservation.with_storage(|| body.id.try_clone_for_decode(ctx, "NX segment body identity"))?);
         }
         for identity in [binding.body_object_index, binding.body_alias_object_index] {
             for body in &stream_bodies {
@@ -7522,12 +7450,12 @@ fn parasolid_topology_attribute_targets(
             reservation,
             &mut targets,
             shell.id.as_str(),
-            || AttributeTarget::Shell(shell.id.clone()),
+            || shell.id.try_clone_for_decode(ctx, "NX Parasolid topology target identity").map(AttributeTarget::Shell),
         )?;
     }
     for face in &ir.model.faces {
         insert_parasolid_topology_target(ctx, reservation, &mut targets, face.id.as_str(), || {
-            AttributeTarget::Face(face.id.clone())
+            face.id.try_clone_for_decode(ctx, "NX Parasolid topology target identity").map(AttributeTarget::Face)
         })?;
     }
     for loop_ in &ir.model.loops {
@@ -7536,12 +7464,12 @@ fn parasolid_topology_attribute_targets(
             reservation,
             &mut targets,
             loop_.id.as_str(),
-            || AttributeTarget::Loop(loop_.id.clone()),
+            || loop_.id.try_clone_for_decode(ctx, "NX Parasolid topology target identity").map(AttributeTarget::Loop),
         )?;
     }
     for edge in &ir.model.edges {
         insert_parasolid_topology_target(ctx, reservation, &mut targets, edge.id.as_str(), || {
-            AttributeTarget::Edge(edge.id.clone())
+            edge.id.try_clone_for_decode(ctx, "NX Parasolid topology target identity").map(AttributeTarget::Edge)
         })?;
     }
     for coedge in &ir.model.coedges {
@@ -7550,7 +7478,7 @@ fn parasolid_topology_attribute_targets(
             reservation,
             &mut targets,
             coedge.id.as_str(),
-            || AttributeTarget::Coedge(coedge.id.clone()),
+            || coedge.id.try_clone_for_decode(ctx, "NX Parasolid topology target identity").map(AttributeTarget::Coedge),
         )?;
     }
     for vertex in &ir.model.vertices {
@@ -7559,7 +7487,7 @@ fn parasolid_topology_attribute_targets(
             reservation,
             &mut targets,
             vertex.id.as_str(),
-            || AttributeTarget::Vertex(vertex.id.clone()),
+            || vertex.id.try_clone_for_decode(ctx, "NX Parasolid topology target identity").map(AttributeTarget::Vertex),
         )?;
     }
     Ok(targets)
@@ -7570,19 +7498,13 @@ fn insert_parasolid_topology_target(
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     targets: &mut BTreeMap<String, AttributeTarget>,
     id: &str,
-    target: impl FnOnce() -> AttributeTarget,
+    target: impl FnOnce() -> Result<AttributeTarget, CodecError>,
 ) -> Result<(), CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(targets.len()),
         "NX Parasolid topology target lookup",
     )?;
-    let text_bytes = id.len().checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX Parasolid topology target identity",
-            0,
-            cadmpeg_core::decode::u64_from_index(id.len()),
-        )
-    })?;
+    let text_bytes = id.len();
     let bytes = std::mem::size_of::<(String, AttributeTarget)>()
         .checked_mul(4)
         .and_then(|bytes| bytes.checked_add(text_bytes))
@@ -7602,7 +7524,7 @@ fn insert_parasolid_topology_target(
         "allocate NX Parasolid topology target key",
     )?;
     key.push_str(id);
-    targets.insert(key, target());
+    targets.insert(key, reservation.with_storage(target)?);
     Ok(())
 }
 
@@ -7793,15 +7715,7 @@ fn parasolid_topology_attribute_contexts<'a>(
             } else {
                 None
             };
-            let entry_bytes = std::mem::size_of::<ParasolidTopologyAttributeContext<'_>>()
-                .checked_add(target_key.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX Parasolid attribute context",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(target_key.len()),
-                    )
-                })?;
+            let entry_bytes = std::mem::size_of::<ParasolidTopologyAttributeContext<'_>>();
             ctx.charge_collection_items(1, "NX Parasolid attribute contexts")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(entry_bytes))?;
             cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
@@ -7813,7 +7727,7 @@ fn parasolid_topology_attribute_contexts<'a>(
                 reference,
                 entity,
                 id_suffix,
-                target: target.clone(),
+                target: reservation.with_storage(|| target.try_clone_for_decode(ctx, "NX Parasolid attribute context"))?,
             });
         }
     }
@@ -7991,25 +7905,8 @@ fn push_topology_attribute(
     name: String,
     values: Vec<AttributeValue>,
 ) -> Result<(), CodecError> {
-    let target_len = match &context.target {
-        AttributeTarget::Document => 0,
-        AttributeTarget::Body(id) => id.as_str().len(),
-        AttributeTarget::Face(id) => id.as_str().len(),
-        AttributeTarget::Shell(id) => id.as_str().len(),
-        AttributeTarget::Loop(id) => id.as_str().len(),
-        AttributeTarget::Coedge(id) => id.as_str().len(),
-        AttributeTarget::Edge(id) => id.as_str().len(),
-        AttributeTarget::Vertex(id) => id.as_str().len(),
-    };
-    let bytes = std::mem::size_of::<SourceAttribute>()
-        .checked_add(target_len)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid attribute output",
-                0,
-                cadmpeg_core::decode::u64_from_index(target_len),
-            )
-        })?;
+
+    let bytes = std::mem::size_of::<SourceAttribute>();
     ctx.charge_collection_items(1, "NX Parasolid attribute output")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(bytes),
@@ -8022,7 +7919,7 @@ fn push_topology_attribute(
     )?;
     ir.model.attributes.push(SourceAttribute {
         id,
-        target: context.target.clone(),
+        target: context.target.try_clone_for_decode(ctx, "NX Parasolid attribute output")?,
         name,
         values,
     });
@@ -8389,15 +8286,7 @@ fn push_unique_feature_dependency(
     if dependencies.contains(candidate) {
         return Ok(());
     }
-    let bytes = std::mem::size_of::<FeatureId>()
-        .checked_add(candidate.as_str().len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX feature dependency",
-                0,
-                cadmpeg_core::decode::u64_from_index(candidate.as_str().len()),
-            )
-        })?;
+    let bytes = std::mem::size_of::<FeatureId>();
     ctx.charge_collection_items(1, "NX feature dependencies")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(bytes),
@@ -8408,7 +8297,7 @@ fn push_unique_feature_dependency(
         1,
         "NX feature dependencies",
     )?;
-    dependencies.push(candidate.clone());
+    dependencies.push(candidate.try_clone_for_decode(ctx, "NX feature dependency")?);
     Ok(())
 }
 
@@ -8551,15 +8440,7 @@ pub(super) fn parameter_owner_dependencies(
             continue;
         };
         if !dependencies.contains(owner) {
-            let bytes = std::mem::size_of::<FeatureId>()
-                .checked_add(owner.as_str().len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX parameter owner dependency",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(owner.as_str().len()),
-                    )
-                })?;
+            let bytes = std::mem::size_of::<FeatureId>();
             ctx.charge_collection_items(1, "NX parameter owner dependencies")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(bytes),
@@ -8570,7 +8451,7 @@ pub(super) fn parameter_owner_dependencies(
                 1,
                 "NX parameter owner dependencies",
             )?;
-            dependencies.push(owner.clone());
+            dependencies.push(owner.try_clone_for_decode(ctx, "NX parameter owner dependency")?);
         }
     }
     Ok(dependencies)
@@ -9173,15 +9054,7 @@ fn feature_body_outputs(
     let Some([body]) = bodies_by_object_index.get(&object_index).map(Vec::as_slice) else {
         return Ok(Vec::new());
     };
-    let bytes = std::mem::size_of::<BodyId>()
-        .checked_add(body.as_str().len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX feature body output",
-                0,
-                cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-            )
-        })?;
+    let bytes = std::mem::size_of::<BodyId>();
     ctx.charge_collection_items(1, "NX feature body output")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(bytes),
@@ -9193,7 +9066,7 @@ fn feature_body_outputs(
         1,
         "NX feature body output",
     )?;
-    outputs.push(body.clone());
+    outputs.push(body.try_clone_for_decode(ctx, "NX feature body output")?);
     Ok(outputs)
 }
 
@@ -9267,17 +9140,9 @@ fn merge_operation_body_outputs<'a>(
         match outputs.entry(write) {
             Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "NX merged body output")?;
-                let bytes = std::mem::size_of::<(&str, BodyId)>()
-                    .checked_add(body.as_str().len())
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "NX merged body output",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-                        )
-                    })?;
+                let bytes = std::mem::size_of::<(&str, BodyId)>();
                 reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-                entry.insert(body.clone());
+                entry.insert(reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX merged body output"))?);
             }
             Entry::Occupied(entry) if entry.get() == body => {}
             Entry::Occupied(entry) => {
@@ -9317,17 +9182,9 @@ fn operation_body_identity_outputs_by_write<'a, 'ctx>(
         match outputs.entry(use_.operation_body_write.as_str()) {
             Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "NX body identity output index")?;
-                let bytes = std::mem::size_of::<(&str, BodyId)>()
-                    .checked_add(body.as_str().len())
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "NX body identity output index",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-                        )
-                    })?;
+                let bytes = std::mem::size_of::<(&str, BodyId)>();
                 reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-                entry.insert(body.clone());
+                entry.insert(reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX body identity output index"))?);
             }
             Entry::Occupied(entry) if entry.get() == body => {}
             Entry::Occupied(entry) => {
@@ -9451,15 +9308,7 @@ fn complete_operation_body_image_outputs(
         if outputs.contains(body) {
             return Ok(Vec::new());
         }
-        let bytes = std::mem::size_of::<BodyId>()
-            .checked_add(body.as_str().len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX complete body image output",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-                )
-            })?;
+        let bytes = std::mem::size_of::<BodyId>();
         ctx.charge_collection_items(1, "NX complete body image output")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(bytes),
@@ -9470,7 +9319,7 @@ fn complete_operation_body_image_outputs(
             1,
             "NX complete body image output",
         )?;
-        outputs.push(body.clone());
+        outputs.push(body.try_clone_for_decode(ctx, "NX complete body image output")?);
     }
     Ok(outputs)
 }

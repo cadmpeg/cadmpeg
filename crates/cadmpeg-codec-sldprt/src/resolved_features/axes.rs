@@ -1393,7 +1393,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 1,
                 "collect SLDPRT revolution axis assignments",
             )?;
-            assignments.push((feature_index, axis.clone()));
+            assignments.push((feature_index, axis.try_clone_for_decode(ctx, "SLDPRT revolution axis assignment copy")?));
         }
     }
 

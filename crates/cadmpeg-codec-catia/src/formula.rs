@@ -333,7 +333,7 @@ pub(crate) fn transfer_parameters(
                             TypedParameterEvaluation::Value(value) => {
                                 if let Some(evaluated) = evaluated_expression.as_ref() {
                                     evaluated.agrees_with(&TypedParameterEvaluation::Value(
-                                        copy_parameter_value(ctx, value)?,
+                                        (value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?,
                                     ))
                                 } else {
                                     false
@@ -1174,7 +1174,7 @@ fn collect_legacy_parameters(
                 continue;
             }
             if let Some(stored) = candidate.parameter.value.as_ref() {
-                let stored = copy_parameter_value(ctx, stored)?;
+                let stored = (stored).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?;
                 if !evaluation
                     .evaluated
                     .agrees_with(&TypedParameterEvaluation::Value(stored))
@@ -1746,9 +1746,7 @@ fn relation_program_output_candidate(
         TypedParameterEvaluation::Unset => true,
         TypedParameterEvaluation::Value(value) => {
             if let Some(evaluated) = evaluated_expression.as_ref() {
-                evaluated.agrees_with(&TypedParameterEvaluation::Value(copy_parameter_value(
-                    ctx, value,
-                )?))
+                evaluated.agrees_with(&TypedParameterEvaluation::Value((value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")?))
             } else {
                 false
             }
@@ -1913,18 +1911,6 @@ fn parameter_expression(
     }
 }
 
-fn copy_parameter_value(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &ParameterValue,
-) -> Result<ParameterValue, cadmpeg_core::CodecError> {
-    Ok(match value {
-        ParameterValue::String(text) => ParameterValue::String(
-            ctx.copy_retained_text(text, "catia_formula_parameter_value_copy")?,
-        ),
-        other => other.clone(),
-    })
-}
-
 fn copy_design_parameter(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &DesignParameter,
@@ -1941,7 +1927,7 @@ fn copy_design_parameter(
     let value = source
         .value
         .as_ref()
-        .map(|value| copy_parameter_value(ctx, value))
+        .map(|value| (value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy"))
         .transpose()?;
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
     if !source.dependencies.is_empty() {
@@ -4490,14 +4476,14 @@ mod parser_tests {
     fn formula_string_value_copy_refuses_retained_limit() {
         let value = ParameterValue::String("source string".to_string());
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            super::copy_parameter_value(ctx, &value)
+            (&value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_formula_parameter_value_copy")
         );
         let admitted = crate::test_support::with_service_context(|ctx| {
-            super::copy_parameter_value(ctx, &value)
+            (&value).try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")
         })
         .expect("service profile admits string copy");
         assert_eq!(admitted, value);

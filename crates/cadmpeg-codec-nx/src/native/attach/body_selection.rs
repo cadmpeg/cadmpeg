@@ -226,16 +226,14 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
             break;
         }
         ctx.charge_collection_items(1, "NX feature body resolved candidates")?;
-        let bytes = std::mem::size_of::<BodyId>()
-            .checked_add(body.as_str().len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX feature body resolved candidate", 0, 1))?;
+        let bytes = std::mem::size_of::<BodyId>();
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
         cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             &mut resolved,
             1,
             "NX feature body resolved candidates",
         )?;
-        resolved.push(body.clone());
+        resolved.push(reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX resolved body identity"))?);
     }
     if all_resolved {
         let mut identity_keys = Vec::new();
@@ -326,16 +324,14 @@ pub(super) fn feature_body_set_selection(
             break;
         }
         ctx.charge_collection_items(1, "NX feature body set resolved candidates")?;
-        let bytes = std::mem::size_of::<BodyId>()
-            .checked_add(body.as_str().len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX feature body set candidate", 0, 1))?;
+        let bytes = std::mem::size_of::<BodyId>();
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
         cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             &mut resolved,
             1,
             "NX feature body set resolved candidates",
         )?;
-        resolved.push(body.clone());
+        resolved.push(reservation.with_storage(|| body.try_clone_for_decode(ctx, "NX resolved body identity"))?);
     }
     if all_resolved && !resolved.is_empty() {
         return FeatureBodySelection::Resolved {

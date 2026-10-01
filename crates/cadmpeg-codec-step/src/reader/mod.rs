@@ -527,12 +527,9 @@ fn decode_exchange_mode(
                 }
             }
             let unknown_id = &opaque_ids[&id];
-            session.ctx.charge_retained(
-                u64_from_index(unknown_id.as_str().len()),
-                "step_opaque_source_identity",
-            )?;
+
             opaque_sources.push(OpaqueSourceRecord {
-                unknown_id: unknown_id.clone(),
+                unknown_id: unknown_id.try_clone_for_decode(session.ctx, "step_opaque_source_identity")?,
                 span: record.span.clone(),
                 links,
                 reference_work,

@@ -15,8 +15,7 @@ use crate::record_identity::Located;
 fn presentation_default_native_record_refuses_before_id_creation() {
     let bytes = [];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-    let style = Located::new(
-        PmAppDefaultStyle {
+    let style = Located::new(PmAppDefaultStyle {
             segment_version_major: 0,
             header_value: 0,
             header_id: 0,
@@ -27,10 +26,9 @@ fn presentation_default_native_record_refuses_before_id_creation() {
             terminal_reference: 0,
             suffix: View::over_retained(&bytes),
         },
-        "type".into(),
-        &token,
-        1,
-    );
+"type".into(),
+(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1);
     let mut inventory = PresentationInventory {
         default_styles: vec![style],
         rendering_styles: Vec::new(),
@@ -84,8 +82,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
     };
     let mut inventory = PresentationInventory {
         default_styles: Vec::new(),
-        rendering_styles: vec![Located::new(
-            PmAppRenderingStyle {
+        rendering_styles: vec![Located::new(PmAppRenderingStyle {
                 segment_version_major: 17,
                 header_value: 0,
                 header_id: 0,
@@ -109,12 +106,10 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 }),
                 suffix: View::over_retained(&suffix),
             },
-            "type".into(),
-            &token,
-            1,
-        )],
-        graphics_faces: vec![Located::new(
-            PmGraphicsFace {
+"type".into(),
+(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1)],
+        graphics_faces: vec![Located::new(PmGraphicsFace {
                 segment_version_major: 0,
                 header_value: 0,
                 header_id: 0,
@@ -130,22 +125,18 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 key: 0,
                 values: [0; 2],
             },
-            "type".into(),
-            &token,
-            1,
-        )],
-        graphics_style_collections: vec![Located::new(
-            PmGraphicsStyleCollection {
+"type".into(),
+(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1)],
+        graphics_style_collections: vec![Located::new(PmGraphicsStyleCollection {
                 segment_version_major: 0,
                 style_references: PmDcPairedReferenceList::new(Some([0; 2]), vec![reference])
                     .expect("paired references"),
             },
-            "type".into(),
-            &token,
-            1,
-        )],
-        graphics_primary_color_styles: vec![Located::new(
-            PmGraphicsPrimaryColorStyle {
+"type".into(),
+(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1)],
+        graphics_primary_color_styles: vec![Located::new(PmGraphicsPrimaryColorStyle {
                 segment_version_major: 0,
                 header_value: 0,
                 controls: [0; 7],
@@ -156,10 +147,9 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 values: [0; 2],
                 terminal_state: 0,
             },
-            "type".into(),
-            &token,
-            1,
-        )],
+"type".into(),
+(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1)],
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
@@ -251,8 +241,7 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
     let mut inventory = PresentationInventory {
         default_styles: Vec::new(),
-        rendering_styles: vec![Located::new(
-            PmAppRenderingStyle {
+        rendering_styles: vec![Located::new(PmAppRenderingStyle {
                 segment_version_major: 17,
                 header_value: 0,
                 header_id: 0,
@@ -268,10 +257,9 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
                 extension: None,
                 suffix: View::over_retained(&bytes),
             },
-            "type".into(),
-            &token,
-            1,
-        )],
+"type".into(),
+(&token).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+1)],
         graphics_faces: Vec::new(),
         graphics_style_collections: Vec::new(),
         graphics_primary_color_styles: Vec::new(),

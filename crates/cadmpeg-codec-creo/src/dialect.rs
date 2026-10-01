@@ -79,32 +79,6 @@ impl DialectClassification {
         }
     }
 
-    pub(crate) fn copy_matched_admitted(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
-        let matched = self.matched();
-        let mut declared = BTreeMap::new();
-        for (key, value) in matched.declared() {
-            ctx.charge_collection_items(1, "creo source dialect declaration nodes")?;
-            let key = cadmpeg_core::text::NonBlankString::new(
-                ctx.copy_retained_text(key.as_str(), "creo source dialect declaration key")?,
-            )
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("declared dialect key is blank"))?;
-            declared.insert(
-                key,
-                ctx.copy_retained_text(value, "creo source dialect declaration value")?,
-            );
-        }
-        let copied = match &self.0 {
-            ClassificationState::Admitted(_) => DialectMatch::admitted(matched.dialect().clone()),
-            ClassificationState::Recovered { .. } => {
-                DialectMatch::residual(matched.dialect().clone())
-            }
-        };
-        Ok(copied.with_declared(declared))
-    }
-
     pub(crate) fn into_matched(self) -> DialectMatch {
         match self.0 {
             ClassificationState::Admitted(matched)

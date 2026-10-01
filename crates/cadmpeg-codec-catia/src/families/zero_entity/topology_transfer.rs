@@ -291,7 +291,7 @@ pub(super) fn transfer_closed_face_topology(
                 .curves
                 .iter()
                 .find(|curve| curve.id == occurrence.curve)
-                .map(|curve| super::decode::copy_zero_curve(admission.context(), &curve.geometry))
+                .map(|curve| (&curve.geometry).try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy"))
                 .transpose())?;
             let source_range = occurrence
                 .model_parameters

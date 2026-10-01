@@ -1068,7 +1068,7 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
             end = *last;
         }
         edge.carrier =
-            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([start, end]))
+            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().map(|curve| curve.try_clone_for_decode(ctx, "ASM edge carrier identity")).transpose()?, Some([start, end]))
                 .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(())
@@ -1083,8 +1083,8 @@ pub(super) fn classify_body_kinds(
         for shell in &region.shells {
             ctx.insert_hash_map(
                 &mut shell_bodies,
-                shell.clone(),
-                region.body.clone(),
+                shell,
+                &region.body,
                 "ASM shell bodies",
             )?;
         }
@@ -1093,59 +1093,59 @@ pub(super) fn classify_body_kinds(
     let mut body_has_wires = HashSet::new();
     let mut face_bodies = HashMap::new();
     for shell in &out.shells {
-        let Some(body) = shell_bodies.get(&shell.id) else {
+        let Some(body) = shell_bodies.get(&shell.id).copied() else {
             continue;
         };
         if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
-            ctx.insert_hash_set(&mut body_has_wires, body.clone(), "ASM bodies with wires")?;
+            ctx.insert_hash_set(&mut body_has_wires, body, "ASM bodies with wires")?;
         }
         if !shell.faces().is_empty() {
-            ctx.insert_hash_set(&mut body_has_faces, body.clone(), "ASM bodies with faces")?;
+            ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces")?;
         }
         for face in shell.faces() {
             ctx.insert_hash_map(
                 &mut face_bodies,
-                face.clone(),
-                body.clone(),
+                face,
+                body,
                 "ASM face bodies",
             )?;
         }
     }
     let mut loop_bodies = HashMap::new();
     for face in &out.faces {
-        let Some(body) = face_bodies.get(&face.id) else {
+        let Some(body) = face_bodies.get(&face.id).copied() else {
             continue;
         };
         for loop_id in &face.loops {
             ctx.insert_hash_map(
                 &mut loop_bodies,
-                loop_id.clone(),
-                body.clone(),
+                loop_id,
+                body,
                 "ASM loop bodies",
             )?;
         }
     }
     let mut coedge_bodies = HashMap::new();
     for loop_ in &out.loops {
-        let Some(body) = loop_bodies.get(&loop_.id) else {
+        let Some(body) = loop_bodies.get(&loop_.id).copied() else {
             continue;
         };
         for coedge in loop_.coedges() {
             ctx.insert_hash_map(
                 &mut coedge_bodies,
-                coedge.clone(),
-                body.clone(),
+                coedge,
+                body,
                 "ASM coedge bodies",
             )?;
         }
     }
-    let mut edge_use_counts = HashMap::<_, HashMap<EdgeId, usize>>::new();
+    let mut edge_use_counts = HashMap::<_, HashMap<&EdgeId, usize>>::new();
     for coedge in &out.coedges {
-        if let Some(body) = coedge_bodies.get(&coedge.id) {
-            ctx.admit_hash_map_entry(&mut edge_use_counts, body, "ASM body edge use counts")?;
-            let counts = edge_use_counts.entry(body.clone()).or_default();
-            ctx.admit_hash_map_entry(counts, &coedge.edge, "ASM edge use counts")?;
-            *counts.entry(coedge.edge.clone()).or_default() += 1;
+        if let Some(body) = coedge_bodies.get(&coedge.id).copied() {
+            ctx.admit_hash_map_entry(&mut edge_use_counts, &body, "ASM body edge use counts")?;
+            let counts = edge_use_counts.entry(body).or_default();
+            ctx.admit_hash_map_entry(counts, &&coedge.edge, "ASM edge use counts")?;
+            *counts.entry(&coedge.edge).or_default() += 1;
         }
     }
     for body in &mut out.bodies {

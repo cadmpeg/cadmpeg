@@ -204,35 +204,5 @@ pub(crate) fn classify(
     Ok(matched(scan.variant).with_declared(declared(ctx, scan)?))
 }
 
-pub(crate) fn copy_match(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    original: &DialectMatch,
-) -> Result<DialectMatch, cadmpeg_core::CodecError> {
-    let mut copied = match original.admission() {
-        Admission::Admitted => DialectMatch::admitted(original.dialect().clone()),
-        Admission::Residual => DialectMatch::residual(original.dialect().clone()),
-        _ => {
-            return Err(cadmpeg_core::CodecError::malformed(
-                "CATIA dialect copy received an unsupported admission",
-            ))
-        }
-    };
-    let mut declared = BTreeMap::new();
-    for (key, value) in original.declared() {
-        resource::source_attribute(
-            ctx,
-            &mut declared,
-            format_args!("{}", key.as_str()),
-            format_args!("{value}"),
-            "catia_dialect_copy",
-        )?;
-    }
-    copied = copied.with_declared(declared);
-    if let Some(instance) = original.instance() {
-        copied = copied.with_instance(ctx.copy_retained_text(instance, "catia_dialect_instance")?);
-    }
-    Ok(copied)
-}
-
 #[cfg(test)]
 mod tests;

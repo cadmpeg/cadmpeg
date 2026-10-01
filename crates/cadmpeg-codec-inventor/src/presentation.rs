@@ -310,14 +310,6 @@ fn project_default_bindings(
     for body in bodies {
         ctx.charge_collection_items(1, "project Inventor default appearance binding")?;
         ctx.charge_entities(1, "project Inventor default appearance binding")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-            "retain Inventor bound body id",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(appearance.as_str().len()),
-            "retain Inventor default appearance id",
-        )?;
         let _digest_reservation = ctx.reserve_scoped(16, "compose Inventor default binding key")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index("inventor:presentation:body-default#".len() + 16),
@@ -345,8 +337,8 @@ fn project_default_bindings(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
                 short_digest_key(body.as_str().as_bytes()),
             ),
-            target: AppearanceTarget::Body(body.clone()),
-            appearance: appearance.clone(),
+            target: AppearanceTarget::Body(body.try_clone_for_decode(ctx, "retain Inventor bound body id")?),
+            appearance: appearance.try_clone_for_decode(ctx, "retain Inventor default appearance id")?,
             source_entity_id: Some(format!(
                 "inventor:presentation:rendering-style#{}-{}",
                 style.identity.segment_token, style.identity.record_ordinal
@@ -486,11 +478,7 @@ fn project_face_bindings(
             style.identity.record_ordinal,
         );
         let appearance_id = if let Some(id) = appearance_ids.get(&appearance_key) {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(id.as_str().len()),
-                "copy Inventor face appearance id",
-            )?;
-            id.clone()
+            id.try_clone_for_decode(ctx, "copy Inventor face appearance id")?
         } else {
             ctx.charge_collection_items(1, "index Inventor face appearance")?;
             ctx.charge_collection_items(1, "project Inventor face appearance")?;
@@ -501,25 +489,22 @@ fn project_face_bindings(
                     CodecError::Malformed("Inventor numeric value exceeds target range".into())
                 })?
                 + 1;
-            let _key_reservation = ctx.reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(key_len),
-                "compose Inventor face appearance key",
-            )?;
+            
             let id_len = "inventor:presentation:face-color#".len() + key_len;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(id_len * 3),
+                cadmpeg_core::decode::u64_from_index(id_len),
                 "retain Inventor face appearance ids",
             )?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index("InventorPrimaryColorStyle".len()),
                 "retain Inventor face appearance schema",
             )?;
-            let id = AppearanceId::compose(
+            let id = { let mut copied_storage = ctx.reserve_scoped(0, "compose Inventor face appearance key")?; copied_storage.with_storage(|| Ok::<_, CodecError>(AppearanceId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-color"),
-                style.identity.key(),
-            );
+                style.identity.key(ctx)?,
+            ))) }?;
             projection.appearances.push(Appearance {
-                id: id.clone(),
+                id: id.try_clone_for_decode(ctx, "retain Inventor face appearance ids")?,
                 name: None,
                 asset_guid: None,
                 library_id: None,
@@ -531,16 +516,12 @@ fn project_face_bindings(
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
             });
-            appearance_ids.insert(appearance_key, id.clone());
+            appearance_ids.insert(appearance_key, id.try_clone_for_decode(ctx, "retain Inventor face appearance ids")?);
             id
         };
         ctx.charge_collection_items(1, "project Inventor face appearance binding")?;
         ctx.charge_entities(1, "project Inventor face appearance binding")?;
         ctx.charge_collection_items(1, "project Inventor face binding channel")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(face_id.as_str().len()),
-            "retain Inventor bound face id",
-        )?;
         let _digest_reservation = ctx.reserve_scoped(16, "compose Inventor face binding key")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index("inventor:presentation:face-override#".len() + 16),
@@ -568,7 +549,7 @@ fn project_face_bindings(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
                 short_digest_key(face_id.as_str().as_bytes()),
             ),
-            target: AppearanceTarget::Face(face_id.clone()),
+            target: AppearanceTarget::Face(face_id.try_clone_for_decode(ctx, "retain Inventor bound face id")?),
             appearance: appearance_id,
             source_entity_id: Some(format!(
                 "inventor:presentation:graphics-face#{}-{}",
@@ -724,11 +705,11 @@ fn push_presentation_record<T>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
     ctx.charge_retained(32, "retain Inventor presentation record type id")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(token.as_str().len()),
-        "retain Inventor presentation record segment token",
-    )?;
-    records.push(Located::new(value, type_id_string(type_id), token, ordinal));
+
+    records.push(Located::new(value,
+type_id_string(type_id),
+token.try_clone_for_decode(ctx, "retain Inventor presentation record segment token")?,
+ordinal));
     Ok(())
 }
 
@@ -1372,18 +1353,14 @@ mod tests {
         let default = parse_default_style(parse_ctx, default_root, 26).expect("default style");
         let style = parse_rendering_style(parse_ctx, style_root, 26).expect("rendering style");
         let inventory = PresentationInventory {
-            default_styles: vec![Located::new(
-                default,
-                type_id_string(DEFAULT_STYLE_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                0,
-            )],
-            rendering_styles: vec![Located::new(
-                style,
-                type_id_string(RENDERING_STYLE_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                8,
-            )],
+            default_styles: vec![Located::new(default,
+type_id_string(DEFAULT_STYLE_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0)],
+            rendering_styles: vec![Located::new(style,
+type_id_string(RENDERING_STYLE_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+8)],
             graphics_faces: Vec::new(),
             graphics_style_collections: Vec::new(),
             graphics_primary_color_styles: Vec::new(),
@@ -1686,18 +1663,14 @@ mod tests {
         let default = parse_default_style(&ctx, default_root, 26).expect("default parses");
         let style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
         let inventory = PresentationInventory {
-            default_styles: vec![Located::new(
-                default,
-                type_id_string(DEFAULT_STYLE_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                0,
-            )],
-            rendering_styles: vec![Located::new(
-                style,
-                type_id_string(RENDERING_STYLE_TYPE),
-                &cadmpeg_ir::identity_key!("segment"),
-                8,
-            )],
+            default_styles: vec![Located::new(default,
+type_id_string(DEFAULT_STYLE_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+0)],
+            rendering_styles: vec![Located::new(style,
+type_id_string(RENDERING_STYLE_TYPE),
+(&cadmpeg_ir::identity_key!("segment")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+8)],
             graphics_faces: Vec::new(),
             graphics_style_collections: Vec::new(),
             graphics_primary_color_styles: Vec::new(),
@@ -1903,8 +1876,7 @@ mod tests {
     }
 
     fn face_override_inventory() -> PresentationInventory<'static> {
-        let face = Located::new(
-            PmGraphicsFace {
+        let face = Located::new(PmGraphicsFace {
                 segment_version_major: 26,
                 header_value: 0,
                 header_id: 0,
@@ -1928,12 +1900,10 @@ mod tests {
                 key: 42,
                 values: [0; 2],
             },
-            type_id_string(GRAPHICS_FACE_TYPE),
-            &cadmpeg_ir::identity_key!("graphics"),
-            2,
-        );
-        let collection = Located::new(
-            PmGraphicsStyleCollection {
+type_id_string(GRAPHICS_FACE_TYPE),
+(&cadmpeg_ir::identity_key!("graphics")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+2);
+        let collection = Located::new(PmGraphicsStyleCollection {
                 segment_version_major: 26,
                 style_references: PmDcPairedReferenceList::new(
                     Some([1, 2]),
@@ -1944,12 +1914,10 @@ mod tests {
                 )
                 .expect("valid reference list"),
             },
-            type_id_string(GRAPHICS_STYLE_COLLECTION_TYPE),
-            &cadmpeg_ir::identity_key!("graphics"),
-            4,
-        );
-        let style = Located::new(
-            PmGraphicsPrimaryColorStyle {
+type_id_string(GRAPHICS_STYLE_COLLECTION_TYPE),
+(&cadmpeg_ir::identity_key!("graphics")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+4);
+        let style = Located::new(PmGraphicsPrimaryColorStyle {
                 segment_version_major: 26,
                 header_value: 0,
                 controls: [0; 7],
@@ -1964,10 +1932,9 @@ mod tests {
                 values: [0; 2],
                 terminal_state: 0,
             },
-            type_id_string(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
-            &cadmpeg_ir::identity_key!("graphics"),
-            6,
-        );
+type_id_string(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
+(&cadmpeg_ir::identity_key!("graphics")).try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "Inventor located fixture token").expect("service fixture token"),
+6);
         PresentationInventory {
             default_styles: Vec::new(),
             rendering_styles: Vec::new(),

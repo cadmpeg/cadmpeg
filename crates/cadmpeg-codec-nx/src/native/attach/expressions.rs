@@ -250,15 +250,7 @@ pub(in crate::native) fn attach_expression_parameters(
             annotations
                 .derived_for_decode(ctx, &feature_id, "source_content").map_err(cadmpeg_core::CodecError::from)?;
         }
-        let feature_bytes = std::mem::size_of::<Feature>()
-            .checked_add(feature_id.as_str().len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX expression feature",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(feature_id.as_str().len()),
-                )
-            })?;
+        let feature_bytes = std::mem::size_of::<Feature>();
         ctx.charge_collection_items(1, "NX expression feature")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(feature_bytes),
@@ -273,7 +265,7 @@ pub(in crate::native) fn attach_expression_parameters(
             .checked_add(cadmpeg_core::decode::u64_from_index(table_ordinal))
             .ok_or_else(|| ctx.refuse_codec_limit("NX expression feature ordinal", 0, 1))?;
         ir.model.features.push(Feature {
-            id: feature_id.clone(),
+            id: feature_id.try_clone_for_decode(ctx, "NX expression feature identity")?,
             ordinal,
             name: Some("NX expressions".to_string()),
             suppressed: Some(false),
@@ -373,15 +365,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     if dependencies.contains(candidate) {
                         continue;
                     }
-                    let bytes = std::mem::size_of::<ParameterId>()
-                        .checked_add(candidate.as_str().len())
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit(
-                                "NX parameter dependency",
-                                0,
-                                cadmpeg_core::decode::u64_from_index(candidate.as_str().len()),
-                            )
-                        })?;
+                    let bytes = std::mem::size_of::<ParameterId>();
                     ctx.charge_collection_items(1, "NX parameter dependencies")?;
                     ctx.charge_retained(
                         cadmpeg_core::decode::u64_from_index(bytes),
@@ -392,7 +376,7 @@ pub(in crate::native) fn attach_expression_parameters(
                         1,
                         "NX parameter dependencies",
                     )?;
-                    dependencies.push(candidate.clone());
+                    dependencies.push(candidate.try_clone_for_decode(ctx, "NX expression dependency identity")?);
                 }
             }
             if !dependencies.is_empty() {
@@ -475,15 +459,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 annotations
                     .derived_for_decode(ctx, id.as_str(), "properties").map_err(cadmpeg_core::CodecError::from)?;
             }
-            let bytes = std::mem::size_of::<DesignParameter>()
-                .checked_add(feature_id.as_str().len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX expression parameter",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(feature_id.as_str().len()),
-                    )
-                })?;
+            let bytes = std::mem::size_of::<DesignParameter>();
             ctx.charge_collection_items(1, "NX expression parameters")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(bytes),
@@ -503,7 +479,7 @@ pub(in crate::native) fn attach_expression_parameters(
             })?;
             ir.model.parameters.push(DesignParameter {
                 id,
-                owner: Some(feature_id.clone()),
+                owner: Some(feature_id.try_clone_for_decode(ctx, "NX expression feature identity")?),
                 ordinal,
                 name: ctx.format_retained(
                     format_args!("{}", expression.name.as_str()),

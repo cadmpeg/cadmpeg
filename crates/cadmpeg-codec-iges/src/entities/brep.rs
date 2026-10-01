@@ -1173,9 +1173,9 @@ pub(super) fn project(
                             } else {
                                 (1..=uses.len()).find_map(|distance| {
                                     let prior = (use_index + uses.len() - distance) % uses.len();
-                                    coedge_by_use.get(&prior).cloned()
+                                    coedge_by_use.get(&prior)
                                 })
-                            };
+                            }.map(|id| id.try_clone_for_decode(ctx, "iges loop predecessor identity")).transpose()?;
                             let expected = vertex_lists[vertex_list][*vertex_index];
                             let Some(resolved) = (match resolve_pcurve_uses(
                                 ir,

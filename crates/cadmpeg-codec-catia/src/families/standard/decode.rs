@@ -2696,7 +2696,7 @@ fn try_decode_standard_population(
                 .get(&prefix.target)
                 .and_then(crate::families::standard::records::decode_plane)
         } else {
-            curved_surfaces[i].clone()
+            admitted!(curved_surfaces[i].as_ref().map(|surface| surface.try_clone_for_decode(ctx, "catia_standard_curved_surface_copy")).transpose())
         };
         match decoded {
             Some(geom) => {

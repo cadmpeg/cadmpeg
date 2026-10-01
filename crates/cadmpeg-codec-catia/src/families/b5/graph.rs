@@ -1709,6 +1709,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
             let jet =
                 cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(jet.degree(), stations, ctx)?
                     .map_err(CodecError::malformed)?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ProceduralSurfaceDefinition>()), "catia_b5_copied_rolling_ball_definition")?;
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,
                 definition: Box::new(ProceduralSurfaceDefinition::RollingBallJet(jet)),

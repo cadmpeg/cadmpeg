@@ -454,7 +454,11 @@ fn select_composite_edge(
             first = Some(edge);
         }
     }
-    Ok(first.filter(|_| agreement).cloned())
+    first.filter(|_| agreement).map(|edge| Ok(CompositeEdge {
+        start: edge.start.try_clone_for_decode(ctx, "iges composite endpoint identity")?,
+        end: edge.end.try_clone_for_decode(ctx, "iges composite endpoint identity")?,
+        param_range: edge.param_range,
+    })).transpose()
 }
 
 fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
