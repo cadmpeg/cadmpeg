@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::num::NonZeroUsize;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
@@ -261,7 +262,7 @@ impl NativeField {
 ///
 /// Every field is at most [`MAX_NATIVE_NESTING_DEPTH`] containers deep: the
 /// four ways to build one are [`NativeRecord::new`], which measures the
-/// caller's map, `Deserialize`, which calls it, [`NativeRecord::from_typed`],
+/// caller's map, `Deserialize`, which calls it, [`NativeNamespace::set_arena`],
 /// whose serializer counts the containers it enters, and
 /// [`NativeRecord::from_identity`], whose fields cannot nest. Readers of a
 /// stored record therefore descend a bounded value and measure nothing.
@@ -328,6 +329,7 @@ impl NativeRecord {
     /// not: a NaN or infinite number is refused by its member path, object
     /// keys must be distinct, and a `RawValue` payload is read through
     /// one-container replay rather than a recursion-limited parse.
+    #[cfg(test)]
     pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(
@@ -352,10 +354,38 @@ impl NativeRecord {
         let Some(Value::String(id)) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);
         };
+        ctx.charge_work(u64_from_index(id.len()), "admit canonical native identity")?;
         Ok(Self {
             id: crate::ids::Identity::new(id)?,
             fields,
         })
+    }
+
+    pub(crate) fn digest_unknown(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let operation = "validate digest unknown fields";
+        for key in self.fields.keys() {
+            ctx.charge_work(u64_from_index(key.len()), operation)?;
+            if key != "links" {
+                return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} has unexpected field {key}", self.id), operation)?));
+            }
+        }
+        ctx.charge_work(u64_from_index(self.fields.len()).checked_mul(5).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+        let links = match self.fields.get("links") {
+            None => &[][..],
+            Some(Value::Array(links)) => links.as_slice(),
+            Some(_) => return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} links is not a sequence", self.id), operation)?)),
+        };
+        for value in links {
+            ctx.charge_work(1, operation)?;
+            let Value::String(link) = value else {
+                return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} link is not text", self.id), operation)?));
+            };
+            ctx.charge_work(u64_from_index(link.len()), operation)?;
+            if !crate::ids::is_valid_identity(link) {
+                return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} has invalid link {link}", self.id), operation)?));
+            }
+        }
+        Self::from_typed_for_decode(ctx, &DigestUnknown { id: self.id.as_str(), links }, None).map_err(CodecError::from)
     }
 
     /// Globally unique record identity.
@@ -430,6 +460,13 @@ impl NativeRecord {
             }),
         }
     }
+}
+
+#[derive(Serialize)]
+struct DigestUnknown<'a> {
+    id: &'a str,
+    #[serde(skip_serializing_if = "<[Value]>::is_empty")]
+    links: &'a [Value],
 }
 
 /// Copies a value through the canonical serializer's charged allocations.

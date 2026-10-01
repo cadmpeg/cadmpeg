@@ -311,47 +311,28 @@ macro_rules! sorted_model_type {
 }
 
 macro_rules! sorted_model_value {
-    ($model:expr, surfaces) => {
-        sorted_refs(&$model.surfaces)
-            .into_iter()
-            .map(SurfaceWire)
-            .collect()
+    ($model:expr, $ctx:expr, surfaces) => { sorted_rows($ctx, &$model.surfaces, |value| Ok(SurfaceWire(value)))? };
+    ($model:expr, $ctx:expr, curves) => { sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))? };
+    ($model:expr, $ctx:expr, procedural_surfaces) => {
+        sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
+            admit_owner_scan($ctx, &$model.surfaces, procedural.id.as_str())?;
+            Ok(ProceduralSurfaceWire { owner: $model.procedural_surface_owner(&procedural.id), procedural })
+        })?
     };
-    ($model:expr, curves) => {
-        sorted_refs(&$model.curves)
-            .into_iter()
-            .map(CurveWire)
-            .collect()
+    ($model:expr, $ctx:expr, procedural_curves) => {
+        sorted_rows($ctx, &$model.procedural_curves, |procedural| {
+            admit_owner_scan($ctx, &$model.curves, procedural.id.as_str())?;
+            Ok(ProceduralCurveWire { owner: $model.procedural_curve_owner(&procedural.id), procedural })
+        })?
     };
-    ($model:expr, procedural_surfaces) => {
-        sorted_refs(&$model.procedural_surfaces)
-            .into_iter()
-            .map(|procedural| ProceduralSurfaceWire {
-                owner: $model.procedural_surface_owner(&procedural.id),
-                procedural,
-            })
-            .collect()
+    ($model:expr, $ctx:expr, features) => {
+        sorted_rows($ctx, &$model.features, |feature| {
+            let count = cadmpeg_core::decode::u64_from_index($model.feature_regeneration_parents.0.len());
+            $ctx.charge_work(count.checked_mul(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len())).ok_or_else(|| $ctx.refuse_codec_limit("find digest feature parent", u64::MAX - 1, u64::MAX))?, "find digest feature parent")?;
+            Ok(FeatureWriteWire::new(feature, $model.feature_regeneration_parent(&feature.id)))
+        })?
     };
-    ($model:expr, procedural_curves) => {
-        sorted_refs(&$model.procedural_curves)
-            .into_iter()
-            .map(|procedural| ProceduralCurveWire {
-                owner: $model.procedural_curve_owner(&procedural.id),
-                procedural,
-            })
-            .collect()
-    };
-    ($model:expr, features) => {
-        sorted_refs(&$model.features)
-            .into_iter()
-            .map(|feature| {
-                FeatureWriteWire::new(feature, $model.feature_regeneration_parent(&feature.id))
-            })
-            .collect()
-    };
-    ($model:expr, $field:ident) => {
-        sorted_refs(&$model.$field)
-    };
+    ($model:expr, $ctx:expr, $field:ident) => { sorted_rows($ctx, &$model.$field, Ok)? };
 }
 
 macro_rules! declare_model {
@@ -568,36 +549,43 @@ macro_rules! declare_model_view {
     ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Every model arena borrowed in canonical identity order.
         #[derive(Serialize)]
-        #[serde(remote = "Self")]
         pub(crate) struct SortedModel<'a> {
             $($(#[$attribute])* $field: sorted_model_type!($field, $ty, 'a),)*
             #[serde(skip)]
-            owner: &'a Model,
-        }
-
-        impl Serialize for SortedModel<'_> {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                validate_feature_parents(&[self.owner]).map_err(serde::ser::Error::custom)?;
-                Self::serialize(self, serializer)
-            }
+            _storage: cadmpeg_core::decode::ScopedReservation<'a>,
         }
 
         impl Model {
-            /// Borrow every arena in canonical identity order.
-            pub(crate) fn sorted(&self) -> SortedModel<'_> {
-                SortedModel {
-                    $($field: sorted_model_value!(self, $field),)*
-                    owner: self,
+            /// Borrow every arena after admitting its order and temporary storage.
+            pub(crate) fn sorted<'a>(&'a self, ctx: &'a DecodeContext<'_>) -> Result<SortedModel<'a>, CodecError> {
+                if let Err(error) = validate_feature_parents_for_decode(&[self], ctx)? {
+                    return Err(CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "digest feature parent diagnostic")?));
                 }
+                let mut storage = ctx.reserve_scoped(0, "sorted digest model")?;
+                let value = storage.with_storage(|| Ok::<_, CodecError>(( $(sorted_model_value!(self, ctx, $field),)* )))?;
+                let ($($field,)*) = value;
+                Ok(SortedModel { $($field,)* _storage: storage })
             }
         }
     };
 }
 
-fn sorted_refs<T: crate::schema::EntitySchema>(entities: &[T]) -> Vec<&T> {
-    let mut refs = entities.iter().collect::<Vec<_>>();
-    refs.sort_by(|left, right| left.identity().cmp(right.identity()));
-    refs
+fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
+    ctx: &DecodeContext<'_>,
+    entities: &'a [T],
+    mut project: impl FnMut(&'a T) -> Result<U, CodecError>,
+) -> Result<Vec<U>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "digest arena order")?;
+    let mut refs = storage.with_storage(|| ctx.collect_vec(entities.iter(), "digest arena order"))?;
+    ctx.stable_sort_by(&mut refs, |left, right| left.identity().cmp(right.identity()), |value| value.identity().len(), "sort digest arena")?;
+    let result = ctx.try_collect_vec(refs.into_iter().map(&mut project), "digest arena projection");
+    drop(storage);
+    result
+}
+
+fn admit_owner_scan<T>(ctx: &DecodeContext<'_>, owners: &[T], identity: &str) -> Result<(), CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(owners.len()).checked_mul(cadmpeg_core::decode::u64_from_index(identity.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("find digest procedural owner", u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit("find digest procedural owner", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, "find digest procedural owner")
 }
 
 macro_rules! declare_arena_name {
@@ -1992,6 +1980,25 @@ impl SourceMeta {
             identity: FormatIdentity::classified(dialects),
             attributes,
         }
+    }
+
+    pub(crate) fn normalized_digest_copy(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        let identity = match &self.identity {
+            FormatIdentity::Classified { dialects } => FormatIdentity::classified(dialects.try_clone_for_decode(ctx, operation)?),
+            FormatIdentity::Unclassified { format } => FormatIdentity::unclassified(ctx.copy_retained_text(format, operation)?),
+        };
+        let mut attributes = BTreeMap::new();
+        let mut longest = crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.len();
+        for (key, value) in &self.attributes {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(key.as_str().len()), operation)?;
+            if key.as_str() == crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE { continue; }
+            longest = longest.max(key.as_str().len());
+            crate::hash::admit_digest_key(ctx, attributes.len(), longest, operation)?;
+            let key = key.try_clone_for_decode(ctx, operation)?;
+            let value = ctx.copy_retained_text(value, operation)?;
+            ctx.insert_btree_map(&mut attributes, key, value, operation)?;
+        }
+        Ok(Self { identity, attributes })
     }
 
     /// The complete source identity: format plus classified layers, if any.

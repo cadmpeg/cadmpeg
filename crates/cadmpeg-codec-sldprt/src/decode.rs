@@ -5427,7 +5427,7 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             }
         }
     }
-    let hash = document_local_sha256(ir)?;
+    let hash = cadmpeg_ir::hash::document_local_sha256(ctx, ir, ir.source.as_ref(), "sldprt", "sldprt:file:source-image#0", "record SLDPRT document digest")?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
@@ -5757,11 +5757,12 @@ fn brep_partition_sha256(
 ///
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    Ok(cadmpeg_ir::hash::document_local_sha256(
-        ir,
-        "sldprt",
-        "sldprt:file:source-image#0",
-    )?)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let digest = cadmpeg_ir::hash::document_local_sha256(&ctx, ir, ir.source.as_ref(), "sldprt", "sldprt:file:source-image#0", "record SLDPRT document digest")?;
+    ctx.finish_session()?;
+    Ok(digest)
 }
 
 fn preserve_source_image(

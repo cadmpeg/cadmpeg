@@ -4457,7 +4457,7 @@ fn decode_result(
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize(ctx)?;
-    let hash = document_local_sha256_with_source(&ir, &source)?;
+    let hash = cadmpeg_ir::hash::document_local_sha256(ctx, &ir, Some(&source), "f3d", crate::ids::FILE_SOURCE_IMAGE_ID, "record F3D document digest")?;
     ctx.insert_btree_map(
         &mut source.attributes,
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
@@ -4489,26 +4489,12 @@ pub(crate) fn preserve_source_image(
 ///
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    Ok(cadmpeg_ir::hash::document_local_sha256(
-        ir,
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?)
-}
-
-/// Computes the digest for a document whose source metadata is still local to
-/// its author. The digest covers that metadata without its own digest
-/// attribute, as defined by [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256_with_source(
-    ir: &CadIr,
-    source: &cadmpeg_ir::SourceMeta,
-) -> Result<String, CodecError> {
-    Ok(cadmpeg_ir::hash::document_local_sha256_with_source(
-        ir,
-        source,
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let digest = cadmpeg_ir::hash::document_local_sha256(&ctx, ir, ir.source.as_ref(), "f3d", crate::ids::FILE_SOURCE_IMAGE_ID, "record F3D document digest")?;
+    ctx.finish_session()?;
+    Ok(digest)
 }
 
 fn annotation_stream(
