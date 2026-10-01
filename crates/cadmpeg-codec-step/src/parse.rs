@@ -1294,7 +1294,11 @@ impl Parser<'_, '_, '_> {
         let budget = self.budget;
         let _nested = budget.enter_nested("step_parse_parameter_nesting")?;
         if self.depth >= recursion_cap(budget, MAX_VALUE_DEPTH) {
-            return self.err("parameter nesting exceeds 256 levels");
+            return Err(budget.refuse_codec_limit(
+                "step_parse_parameter_depth_limit",
+                u64_from_index(recursion_cap(budget, MAX_VALUE_DEPTH)),
+                u64_from_index(self.depth + 1),
+            ).into());
         }
         self.depth += 1;
         let result = self.parameters_inner();
@@ -2428,9 +2432,17 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             .remaining_nodes
             .checked_sub(expanded_nodes)
             .ok_or_else(|| {
-                ResolveError::Syntax("aggregate expanded anchor graph exceeds 1000000 nodes".into())
+                self.node_limit_error()
             })?;
         Ok(value)
+    }
+
+    fn node_limit_error(&self) -> ResolveError {
+        self.budget.refuse_codec_limit(
+            "step_anchor_output_node_limit",
+            u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES)),
+            u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES) + 1),
+        ).into()
     }
 
     fn charge_nodes(&self, count: usize) -> Result<(), ResolveError> {
@@ -2465,14 +2477,18 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             .enter_nested("step_anchor_reference")
             .map_err(ResolveError::Resource)?;
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err("expanded anchor graph exceeds its node or depth limit".into());
+            return Err(self.budget.refuse_codec_limit(
+                "step_anchor_depth_limit",
+                u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
+                u64_from_index(depth + 1),
+            ).into());
         }
         if let Value::Resource(name) = value {
             if let Some((name, source)) = self.anchors.get_key_value(name) {
                 let name = name.as_str();
                 if let Some((value, nodes)) = self.memo.get(name) {
                     if *nodes > budget {
-                        return Err("expanded anchor value exceeds 1000000 nodes".into());
+                        return Err(self.node_limit_error());
                     }
                     self.charge_nodes(*nodes)?;
                     self.charge_storage(value)?;
@@ -2512,7 +2528,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 stack.pop();
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
-                    return Err("expanded anchor value exceeds 1000000 nodes".into());
+                    return Err(self.node_limit_error());
                 }
                 self.charge_nodes(nodes)?;
                 self.charge_storage(&value)?;
@@ -2556,15 +2572,15 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 for value in values {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
-                        .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
+                        .ok_or_else(|| self.node_limit_error())?;
                     let (value, child_nodes, child_expanded_nodes) =
                         self.resolve(value, stack, remaining, depth + 1)?;
                     nodes = nodes
                         .checked_add(child_nodes)
-                        .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
+                        .ok_or_else(|| self.node_limit_error())?;
                     expanded_nodes = expanded_nodes
                         .checked_add(child_expanded_nodes)
-                        .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
+                        .ok_or_else(|| self.node_limit_error())?;
                     resolved.push(value);
                 }
                 Ok((Value::List(resolved), nodes, expanded_nodes))
@@ -2657,7 +2673,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         Ok(())
     }
 
-    fn clone_leaf(&self, value: &Value) -> Result<Value, ResolveError> {
+    fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
+        self.consume_materialized_node()?;
         self.admit_copy(1, value_node_storage_bytes(value)?)?;
         try_clone_value(value, self.budget, "step_reference_leaf_copy")
             .map_err(ResolveError::Resource)
@@ -2669,7 +2686,11 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             .enter_nested("step_reference_expansion")
             .map_err(ResolveError::Resource)?;
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err("REFERENCE expansion exceeds its depth limit".into());
+            return Err(self.budget.refuse_codec_limit(
+                "step_reference_depth_limit",
+                u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
+                u64_from_index(depth + 1),
+            ).into());
         }
         match value {
             Value::Reference(id) => {
@@ -2679,6 +2700,14 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
             }
             Value::List(values) => {
+                self.consume_materialized_node()?;
+                if !self.stack.is_empty() && values.len() > self.remaining_nodes {
+                    return Err(self.budget.refuse_codec_limit(
+                        "step_reference_output_node_limit",
+                        u64_from_index(self.remaining_nodes),
+                        u64_from_index(values.len()),
+                    ).into());
+                }
                 let bytes = u64_from_index(size_of::<Value>())
                     .checked_add(allocation_bytes(values.len(), size_of::<Value>())?)
                     .ok_or("reference list storage exceeds u64")?;
@@ -2693,6 +2722,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 Ok(Value::List(resolved))
             }
             Value::Typed(name, value) => {
+                self.consume_materialized_node()?;
                 let resolved = self.resolve_value(value, depth + 1)?;
                 let bytes = allocation_bytes(2, size_of::<Value>())?
                     .checked_add(u64_from_index(name.len()))
@@ -2761,15 +2791,19 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         if !reference_target_matches(key, &resolved) {
             return Ok(Value::Omitted);
         }
-        self.count_materialized_nodes(&resolved)?;
         Ok(resolved)
     }
 
-    fn count_materialized_nodes(&mut self, value: &Value) -> Result<(), ResolveError> {
-        let nodes = value_node_count(value, self.remaining_nodes, self.budget)?;
-        self.remaining_nodes = self.remaining_nodes.checked_sub(nodes).ok_or_else(|| {
-            ResolveError::Syntax("REFERENCE expansion exceeds 1000000 nodes".into())
-        })?;
+    fn consume_materialized_node(&mut self) -> Result<(), ResolveError> {
+        if !self.stack.is_empty() {
+            self.remaining_nodes = self.remaining_nodes.checked_sub(1).ok_or_else(|| {
+                self.budget.refuse_codec_limit(
+                    "step_reference_output_node_limit",
+                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
+                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1),
+                )
+            })?;
+        }
         Ok(())
     }
 }
@@ -2862,11 +2896,15 @@ fn value_node_count(
             .enter_nested("step_value_node_count")
             .map_err(ResolveError::Resource)?;
         if depth >= 256 {
-            return Err("REFERENCE expansion exceeds 1000000 nodes".into());
+            return Err(budget.refuse_codec_limit(
+                "step_value_node_count_depth_limit", 256, u64_from_index(depth + 1),
+            ).into());
         }
         *remaining = remaining
             .checked_sub(1)
-            .ok_or("REFERENCE expansion exceeds 1000000 nodes")?;
+            .ok_or_else(|| budget.refuse_codec_limit(
+                "step_value_node_count_node_limit", 0, 1,
+            ))?;
         budget
             .charge_work(1, "step_value_node_count")
             .map_err(ResolveError::Resource)?;
