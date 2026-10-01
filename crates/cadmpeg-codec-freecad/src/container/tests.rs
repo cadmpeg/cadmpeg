@@ -312,7 +312,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("fcstd:native:gui#owner".len()) - 1;
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>() + "fcstd:native:gui#owner".len()) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut entry = resource_entry_record();

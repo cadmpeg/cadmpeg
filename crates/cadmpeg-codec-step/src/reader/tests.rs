@@ -165,7 +165,11 @@ fn decode_reference_note_text_refuses_retained_limit() {
     )
     .expect("valid reference exchange");
     let arena = DecodeArena::new();
-    let refused = (0..512).any(|limit| {
+    // Two dialect declarations admit one and two ordered-node bounds.
+    let declaration_nodes = 3 * (11 * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + std::mem::size_of::<String>())
+        + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>());
+    let note_slots = 4 * std::mem::size_of::<String>();
+    let refused = (0..512 + cadmpeg_core::decode::u64_from_index(declaration_nodes + note_slots)).any(|limit| {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(REFERENCE_NOTE_LIMIT_SOURCE, &arena, &policy)
@@ -305,6 +309,7 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
         if !matches!(
             limit.operation,
             "step_lex_token"
+                | "step_schema_matching_name"
                 | "step_parse_record"
                 | "step_parse_parameter"
                 | "step_anchor_materialization"

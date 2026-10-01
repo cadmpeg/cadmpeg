@@ -125,7 +125,7 @@ fn uri_base_member_refuses_temporary_byte_limit() {
 fn root_reference_note_refuses_retained_byte_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
+    policy.limits.max_retained_bytes = 4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("test context");
     let mut notes = Vec::new();
