@@ -188,7 +188,7 @@ fn hatch_feature_link_text_refuses_retained_limit() {
 #[test]
 fn class_outcome_keys_refuse_collection_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    let error = with_transaction_limits(&scan, 4, None, |expand| {
+    let error = with_transaction_limits(&scan, 4, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .class_outcomes()
@@ -198,7 +198,7 @@ fn class_outcome_keys_refuse_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
         if refusal.operation == "Rhino class outcome keys")
     );
-    let outcomes = with_transaction_limits(&scan, 6, None, |expand| {
+    let outcomes = with_transaction_limits(&scan, 6, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .class_outcomes()
@@ -211,7 +211,7 @@ fn class_outcome_keys_refuse_collection_limit() {
 #[test]
 fn class_outcome_rows_refuse_collection_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    let error = with_transaction_limits(&scan, 5, None, |expand| {
+    let error = with_transaction_limits(&scan, 5, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .class_outcomes()
@@ -228,7 +228,7 @@ fn class_outcome_label_refuses_retained_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     let retained_record_bytes =
         u64::try_from(scan.objects[0].range().len()).expect("bounded point-cloud fixture");
-    let error = with_transaction_limits(&scan, 6, Some(retained_record_bytes), |expand| {
+    let error = with_transaction_limits(&scan, 6, Some(retained_record_bytes), None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .class_outcomes()
@@ -244,7 +244,7 @@ fn class_outcome_label_refuses_retained_limit() {
 fn source_association_refuses_retained_copy_and_path_limits() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     let identity = scan.objects[0].identity().expect("source identity");
-    let refusal = with_transaction_limits(&scan, 1, Some(35), |expand| {
+    let refusal = with_transaction_limits(&scan, 1, Some(35), None, |expand| {
         source_association(expand.ctx(), identity, &[], None, None)
             .expect_err("UUID text exceeds 35 retained bytes")
     });
@@ -256,7 +256,7 @@ fn source_association_refuses_retained_copy_and_path_limits() {
 
     let mut named = identity.clone();
     named.name = "part".to_string();
-    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+    let refusal = with_transaction_limits(&scan, 1, Some(36), None, |expand| {
         source_association(expand.ctx(), &named, &[], None, None)
             .expect_err("name exceeds UUID-only retained budget")
     });
@@ -271,7 +271,7 @@ fn source_association_refuses_retained_copy_and_path_limits() {
         id: None,
         name: "layer".to_string(),
     });
-    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+    let refusal = with_transaction_limits(&scan, 1, Some(36), None, |expand| {
         source_association(expand.ctx(), &layered, &[], None, None)
             .expect_err("layer name exceeds UUID-only retained budget")
     });
@@ -281,7 +281,7 @@ fn source_association_refuses_retained_copy_and_path_limits() {
             if limit.operation == "Rhino source association layer name"
     ));
     layered.layer.as_mut().expect("fixture layer").id = Some(identity.object_id);
-    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+    let refusal = with_transaction_limits(&scan, 1, Some(36), None, |expand| {
         source_association(expand.ctx(), &layered, &[], None, None)
             .expect_err("layer UUID exceeds object UUID-only retained budget")
     });
@@ -292,7 +292,7 @@ fn source_association_refuses_retained_copy_and_path_limits() {
     ));
 
     let path = vec!["instance".to_string()];
-    let refusal = with_transaction_limits(&scan, 0, None, |expand| {
+    let refusal = with_transaction_limits(&scan, 0, None, None, |expand| {
         source_association(expand.ctx(), identity, &path, None, None)
             .expect_err("one instance path exceeds zero collection items")
     });
@@ -301,7 +301,7 @@ fn source_association_refuses_retained_copy_and_path_limits() {
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino source association instance path"
     ));
-    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+    let refusal = with_transaction_limits(&scan, 1, Some(36), None, |expand| {
         source_association(expand.ctx(), identity, &path, None, None)
             .expect_err("instance ID exceeds object UUID-only retained budget")
     });
@@ -310,7 +310,7 @@ fn source_association_refuses_retained_copy_and_path_limits() {
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino source association instance ID"
     ));
-    let association = with_transaction_limits(&scan, 1, None, |expand| {
+    let association = with_transaction_limits(&scan, 1, None, None, |expand| {
         source_association(expand.ctx(), identity, &path, None, None)
             .expect("service profile admits source association")
     });
@@ -372,7 +372,7 @@ fn feature_property_map_refuses_collection_limit() {
 #[test]
 fn scan_warning_and_diagnostic_refuse_collection_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+    let refusal = with_transaction_limits(&scan, 4, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .scan_warning(0, format_args!("decode failed"))
@@ -387,7 +387,7 @@ fn scan_warning_and_diagnostic_refuse_collection_limit() {
         code: Some(RhinoLossCode::IntegrityFailure),
         message: "checksum mismatch".to_string(),
     };
-    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+    let refusal = with_transaction_limits(&scan, 4, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .scan_diagnostic(0, &diagnostic)
@@ -398,7 +398,7 @@ fn scan_warning_and_diagnostic_refuse_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino diagnostics"
     ));
-    with_transaction_limits(&scan, 6, None, |expand| {
+    with_transaction_limits(&scan, 6, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .scan_warning(0, format_args!("decode failed"))

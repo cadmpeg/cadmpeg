@@ -74,7 +74,9 @@ fn parser_resolves_local_value_reference_anchors_and_nulls_invalid_targets() {
     assert_eq!(
         exchange.records()[&1].partials[0].parameters,
         vec![
-            crate::parse::Value::Real(3.0),
+            crate::parse::Value::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite fixture")
+            ),
             crate::parse::Value::Omitted,
             crate::parse::Value::Omitted,
             crate::parse::Value::Omitted,

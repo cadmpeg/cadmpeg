@@ -27,7 +27,7 @@ fn presentation_default_native_record_refuses_before_id_creation() {
             terminal_reference: 0,
             suffix: View::over_retained(&bytes),
         },
-        "type".into(),
+        crate::record_identity::RecordTypeId::from_bytes([0; 16]),
         &token,
         1,
     );
@@ -78,10 +78,7 @@ fn presentation_default_native_record_refuses_before_id_creation() {
 fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies() {
     let suffix = [1_u8];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-    let reference = PmDcReference {
-        index: 1,
-        qualified: false,
-    };
+    let reference = PmDcReference::new(1, false).expect("test reference index fits 31 bits");
     let mut inventory = PresentationInventory {
         default_styles: Vec::new(),
         rendering_styles: vec![Located::new(
@@ -109,7 +106,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 }),
                 suffix: View::over_retained(&suffix),
             },
-            "type".into(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             1,
         )],
@@ -130,7 +127,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 key: 0,
                 values: [0; 2],
             },
-            "type".into(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             1,
         )],
@@ -140,7 +137,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 style_references: PmDcPairedReferenceList::new(Some([0; 2]), vec![reference])
                     .expect("paired references"),
             },
-            "type".into(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             1,
         )],
@@ -156,7 +153,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 values: [0; 2],
                 terminal_state: 0,
             },
-            "type".into(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             1,
         )],
@@ -268,7 +265,7 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
                 extension: None,
                 suffix: View::over_retained(&bytes),
             },
-            "type".into(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             1,
         )],

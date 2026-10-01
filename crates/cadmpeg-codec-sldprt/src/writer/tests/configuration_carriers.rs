@@ -95,7 +95,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
     let mut output = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
-    let scan = container::scan_bytes(&output);
+    let scan = crate::test_support::container::scan(&output);
     for index in 0..2 {
         let section = format!("Contents/Config-{index}-Partition");
         assert_eq!(
@@ -263,7 +263,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert!(scan
         .blocks
         .iter()
@@ -473,7 +473,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert!(scan
         .blocks
         .iter()
@@ -561,7 +561,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         &mut written,
     )
     .unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks
         .iter()
@@ -638,7 +638,7 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
         &mut written,
     )
     .unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks
         .iter()
@@ -956,7 +956,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
         &mut solid_bytes,
     )
     .unwrap();
-    let solid_scan = container::scan_bytes(&solid_bytes);
+    let solid_scan = crate::test_support::container::scan(&solid_bytes);
     let solid_payload = &solid_scan.blocks[0].payload;
     assert!(count_entity51_family(solid_payload, 2, 0x0013) >= 1);
     assert!(count_entity51_family(solid_payload, 1, 0x0015) >= 1);
@@ -985,7 +985,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
         &mut sheet_bytes,
     )
     .unwrap();
-    let sheet_scan = container::scan_bytes(&sheet_bytes);
+    let sheet_scan = crate::test_support::container::scan(&sheet_bytes);
     let sheet_payload = &sheet_scan.blocks[0].payload;
     assert!(count_entity51_family(sheet_payload, 2, 0x0015) >= 1);
     assert!(count_entity51_family(sheet_payload, 1, 0x001f) >= 1);
@@ -1657,7 +1657,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
         &mut written,
     )
     .unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks
         .iter()
@@ -1669,7 +1669,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
     });
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(&unscoped, &fidelity, &mut written).unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks
         .iter()

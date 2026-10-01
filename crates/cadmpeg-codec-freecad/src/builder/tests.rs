@@ -82,8 +82,8 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
     assert_eq!(
         entries
             .iter()
-            .find(|entry| entry.name == "Payload.bin")
-            .map(|entry| entry.data.as_slice()),
+            .find(|entry| entry.name() == "Payload.bin")
+            .map(crate::native::EntryRecord::data),
         Some(b"edited payload".as_slice())
     );
 }

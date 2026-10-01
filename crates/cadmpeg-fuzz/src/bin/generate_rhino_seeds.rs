@@ -60,48 +60,48 @@ fn value_width(version: u64) -> usize {
     }
 }
 
-fn long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
+fn long_chunk(version: u64, typecode: u32, body: &[u8]) -> io::Result<Vec<u8>> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if value_width(version) == 8 {
         bytes.extend(
             i64::try_from(body.len())
-                .expect("chunk body length fits a 64-bit chunk value")
+                .map_err(|_| io::Error::other("chunk body length fits a 64-bit chunk value"))?
                 .to_le_bytes(),
         );
     } else {
         bytes.extend(
             i32::try_from(body.len())
-                .expect("chunk body length fits a 32-bit chunk value")
+                .map_err(|_| io::Error::other("chunk body length fits a 32-bit chunk value"))?
                 .to_le_bytes(),
         );
     }
     bytes.extend(body);
-    bytes
+    Ok(bytes)
 }
 
-fn short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
+fn short_chunk(version: u64, typecode: u32, value: i64) -> io::Result<Vec<u8>> {
     let mut bytes = (typecode | 0x8000_0000).to_le_bytes().to_vec();
     if value_width(version) == 8 {
         bytes.extend(value.to_le_bytes());
     } else {
         bytes.extend(
             i32::try_from(value)
-                .expect("short chunk value fits a 32-bit chunk value")
+                .map_err(|_| io::Error::other("short chunk value fits a 32-bit chunk value"))?
                 .to_le_bytes(),
         );
     }
-    bytes
+    Ok(bytes)
 }
 
-fn crc_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
+fn crc_chunk(version: u64, typecode: u32, body: &[u8]) -> io::Result<Vec<u8>> {
     let mut with_crc = body.to_vec();
     with_crc.extend(crc32fast::hash(body).to_le_bytes());
     long_chunk(version, typecode | 0x8000, &with_crc)
 }
 
-fn minimal_document(version: u64) -> Vec<u8> {
+fn minimal_document(version: u64) -> io::Result<Vec<u8>> {
     let mut bytes = header(version);
-    bytes.extend(long_chunk(version, 1, b"fuzz"));
+    bytes.extend(long_chunk(version, 1, b"fuzz")?);
     let eof_offset = bytes.len();
     let eof_body_width = value_width(version);
     let eof_len = 4 + value_width(version) + eof_body_width;
@@ -112,21 +112,21 @@ fn minimal_document(version: u64) -> Vec<u8> {
             .to_vec()
     } else {
         u32::try_from(final_size)
-            .expect("seed size fits a 32-bit chunk value")
+            .map_err(|_| io::Error::other("seed size fits a 32-bit chunk value"))?
             .to_le_bytes()
             .to_vec()
     };
-    bytes.extend(long_chunk(version, 0x7fff, &body));
-    bytes
+    bytes.extend(long_chunk(version, 0x7fff, &body)?);
+    Ok(bytes)
 }
 
 fn generate_container_seeds() -> io::Result<()> {
     let versions = [1_u64, 2, 3, 4, 5, 50, 60, 70, 80];
     let mut seeds = versions
         .into_iter()
-        .map(|version| (format!("archive_{version}"), minimal_document(version)))
-        .collect::<Vec<_>>();
-    let valid = minimal_document(50);
+        .map(|version| Ok((format!("archive_{version}"), minimal_document(version)?)))
+        .collect::<io::Result<Vec<_>>>()?;
+    let valid = minimal_document(50)?;
     seeds.push(("truncated".into(), valid[..valid.len() / 2].to_vec()));
     let mut oversize = header(50);
     oversize.extend(1_u32.to_le_bytes());
@@ -139,15 +139,15 @@ fn generate_container_seeds() -> io::Result<()> {
     replace("seeds/rhino_container", &borrowed)?;
 
     let mut mutated = vec![0_u8];
-    mutated.extend(minimal_document(80));
+    mutated.extend(minimal_document(80)?);
     write_seed("seeds/decode_pipeline_mutated", "rhino_minimal", &mutated)?;
     Ok(())
 }
 
 fn generate_chunk_seeds() -> io::Result<()> {
-    let short = short_chunk(50, 0x1234, 7);
-    let long = long_chunk(50, 0x1234, b"body");
-    let crc = crc_chunk(50, 0x1234, b"body");
+    let short = short_chunk(50, 0x1234, 7)?;
+    let long = long_chunk(50, 0x1234, b"body")?;
+    let crc = crc_chunk(50, 0x1234, b"body")?;
     let mut mismatch = crc.clone();
     let Some(last) = mismatch.last_mut() else {
         return Err(io::Error::other("a CRC chunk is never empty"));
@@ -166,23 +166,23 @@ fn generate_chunk_seeds() -> io::Result<()> {
     Ok(())
 }
 
-fn object_body(version: u64, payload: &[u8]) -> Vec<u8> {
-    let object_type = short_chunk(version, 0x02a0_0071, 1);
+fn object_body(version: u64, payload: &[u8]) -> io::Result<Vec<u8>> {
+    let object_type = short_chunk(version, 0x02a0_0071, 1)?;
     let class_uuid = [
         0xdd, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
         0xf0,
     ];
-    let uuid = crc_chunk(version, 0x0002_7ffb, &class_uuid);
-    let data = crc_chunk(version, 0x0002_7ffc, payload);
-    let class_end = short_chunk(version, 0x0202_7fff, 0);
-    let class = long_chunk(version, 0x0002_7ffa, &[uuid, data, class_end].concat());
-    let object_end = short_chunk(version, 0x02a0_007f, 0);
-    [object_type, class, object_end].concat()
+    let uuid = crc_chunk(version, 0x0002_7ffb, &class_uuid)?;
+    let data = crc_chunk(version, 0x0002_7ffc, payload)?;
+    let class_end = short_chunk(version, 0x0202_7fff, 0)?;
+    let class = long_chunk(version, 0x0002_7ffa, &[uuid, data, class_end].concat())?;
+    let object_end = short_chunk(version, 0x02a0_007f, 0)?;
+    Ok([object_type, class, object_end].concat())
 }
 
 fn generate_object_seeds() -> io::Result<()> {
     let mut valid = vec![5];
-    valid.extend(object_body(50, &nurbs_curve(false, true)));
+    valid.extend(object_body(50, &nurbs_curve(false, true))?);
     let mut truncated = valid.clone();
     truncated.truncate(truncated.len() - 5);
     let mut mismatch = valid.clone();
@@ -348,12 +348,12 @@ fn generate_brep_seeds() -> io::Result<()> {
     polymorphic_body.extend(0_i32.to_le_bytes());
     polymorphic_body.extend(0_i32.to_le_bytes());
     for _ in 0..3 {
-        empty.extend(anonymous_chunk(&polymorphic_body));
+        empty.extend(anonymous_chunk(&polymorphic_body)?);
     }
     let mut packed_body = vec![0x10];
     packed_body.extend(0_i32.to_le_bytes());
     for _ in 0..5 {
-        empty.extend(anonymous_chunk(&packed_body));
+        empty.extend(anonymous_chunk(&packed_body)?);
     }
     push_f64s(&mut empty, &[0.0; 6]);
     let mut truncated = empty.clone();
@@ -374,7 +374,7 @@ fn generate_brep_seeds() -> io::Result<()> {
     Ok(())
 }
 
-fn anonymous_chunk(body: &[u8]) -> Vec<u8> {
+fn anonymous_chunk(body: &[u8]) -> io::Result<Vec<u8>> {
     crc_chunk(50, 0x4000_0000, body)
 }
 
@@ -432,7 +432,7 @@ fn subd_face(bytes: &mut Vec<u8>) {
     bytes.push(0);
 }
 
-fn subd_quad() -> Vec<u8> {
+fn subd_quad() -> io::Result<Vec<u8>> {
     let mut level = Vec::new();
     level.extend(1_i32.to_le_bytes());
     level.extend(1_i32.to_le_bytes());
@@ -461,15 +461,15 @@ fn subd_quad() -> Vec<u8> {
         dimple.extend(value.to_le_bytes());
     }
     push_f64s(&mut dimple, &[0.0, 0.0, 0.0, 1.0, 1.0, 0.0]);
-    dimple.extend(anonymous_chunk(&level));
+    dimple.extend(anonymous_chunk(&level)?);
 
     let mut payload = vec![5, 1];
-    payload.extend(anonymous_chunk(&dimple));
-    payload
+    payload.extend(anonymous_chunk(&dimple)?);
+    Ok(payload)
 }
 
 fn generate_subd_seeds() -> io::Result<()> {
-    let quad = subd_quad();
+    let quad = subd_quad()?;
     let mut truncated_quad = quad.clone();
     truncated_quad.truncate(truncated_quad.len() / 2);
     replace(

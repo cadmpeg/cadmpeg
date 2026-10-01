@@ -475,21 +475,21 @@ parser_vector_limit_test!(
 );
 
 #[test]
-fn anchor_binding_value_copy_refuses_retained_limit() {
-    let refused = (0..=8192).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(ANCHOR_VECTOR_SOURCE, &arena, &policy)
-            .expect("input fits retained policy");
-        matches!(
-            crate::parse::parse_with_context(ANCHOR_VECTOR_SOURCE, &ctx),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_anchor_binding_value_copy"
-        )
+fn anchor_binding_reference_copy_allocates_no_retained_storage() {
+    let (exchange, _) =
+        crate::test_support::with_service_context(ANCHOR_VECTOR_SOURCE, crate::parse::parse_inner)
+            .expect("valid anchor source");
+    let value = &exchange.anchors()[0].value;
+    assert_eq!(value, &Value::Reference(1));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        assert_eq!(
+            crate::parse::try_clone_value(value, ctx, "step_anchor_binding_value_copy")
+                .expect("a reference copy allocates no buffer"),
+            *value
+        );
     });
-    assert!(refused, "anchor value copy must reach the parser caller");
 }
 parser_vector_limit_test!(
     reference_entry_vector_refuses_collection_limit,
@@ -656,7 +656,7 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
         .resolve_root(&value)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
     assert!(
-        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_anchor_materialization_storage")
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_anchor_typed_name_copy")
     );
 }
 
@@ -861,7 +861,7 @@ fn reference_typed_wrapper_is_charged_before_its_clone() {
         .resolve_value(&value, 0)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
     assert!(
-        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_reference_materialization_storage")
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_reference_typed_name_copy")
     );
 }
 
@@ -938,7 +938,7 @@ fn parser_accounts_for_owned_value_storage() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.operation == "step_parse_value_storage" {
+        if limit.operation == "step_parse_parameter" {
             value_storage_limit = Some(limit);
             break;
         }
@@ -1102,7 +1102,7 @@ fn parser_bounds_exponential_anchor_expansion() {
     assert!(matches!(
         error,
         crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.used <= limit.limit
                 && limit.additional > limit.limit - limit.used
     ));
@@ -1128,7 +1128,7 @@ fn parser_bounds_aggregate_anchor_materialization() {
     assert!(matches!(
         error,
         crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.used <= limit.limit
                 && limit.additional > limit.limit - limit.used
     ));
