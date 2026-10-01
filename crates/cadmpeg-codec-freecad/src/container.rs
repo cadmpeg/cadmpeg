@@ -199,41 +199,26 @@ pub(crate) fn source_attributes(
     scan: &Scan<'_>,
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
     let mut attributes = BTreeMap::new();
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("document_root"),
-        scan.document.root_name.clone(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("object_count"),
-        scan.document.object_count.to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("document_kind"),
-        scan.document.document_kind().as_str().to_owned(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("application_domains"),
-        ctx.join_retained(&scan.document.domains, ",", "FCStd source domain list")?,
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("archive_entry_count"),
-        scan.entries.len().to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("physical_ledger_spans"),
-        scan.ledger.len().to_string(),
-    );
-    if let Some(last) = scan.ledger.last() {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("physical_archive_bytes"),
-            last.span.end().to_string(),
-        );
-    }
-    if let Some(value) = &scan.document.program_version {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("program_version"),
-            ctx.copy_retained_text(value, "FCStd source program version")?,
-        );
+    for (key, value) in [
+        ("document_root", ctx.copy_retained_text(&scan.document.root_name, "FCStd source root")?),
+        ("object_count", ctx.format_retained_with_work(format_args!("{}", scan.document.object_count), "FCStd source object count")?),
+        ("document_kind", ctx.copy_retained_text(scan.document.document_kind().as_str(), "FCStd source kind")?),
+        ("application_domains", ctx.join_retained(&scan.document.domains, ",", "FCStd source domain list")?),
+        ("archive_entry_count", ctx.format_retained_with_work(format_args!("{}", scan.entries.len()), "FCStd source entry count")?),
+        ("physical_ledger_spans", ctx.format_retained_with_work(format_args!("{}", scan.ledger.len()), "FCStd source ledger spans")?),
+    ].into_iter().chain(
+        scan.ledger.last().map(|last| {
+            Ok::<_, CodecError>(("physical_archive_bytes", ctx.format_retained_with_work(format_args!("{}", last.span.end()), "FCStd source archive bytes")?))
+        }).transpose()?
+    ).chain(
+        scan.document.program_version.as_ref().map(|value| {
+            Ok::<_, CodecError>(("program_version", ctx.copy_retained_text(value, "FCStd source program version")?))
+        }).transpose()?
+    ) {
+        ctx.admit_retained_btree_record::<NonBlankString, String>(key.len(), "FCStd source attribute records")?;
+        let key = NonBlankString::new(DecodeContext::copy_admitted_text(key, "FCStd source attribute key")?)
+            .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
+        attributes.insert(key, value);
     }
     Ok(attributes)
 }
