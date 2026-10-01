@@ -7,6 +7,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 
 pub(crate) mod charged_clone;
 pub(crate) mod operand_tag;
@@ -28,7 +29,7 @@ pub(crate) struct PmiDimension {
     pub(crate) cad_text: String,
     /// Number of elements in the source `dimItems` array.
     #[serde(default = "default_pmi_item_count", skip_serializing_if = "is_one")]
-    pub(crate) item_count: u32,
+    pub(crate) item_count: NonZeroU32,
     /// Native PMI dimension subtype.
     pub(crate) subtype: String,
     /// Stored dimension value.
@@ -114,14 +115,14 @@ mod pmi_display_text_wire {
     );
 }
 
-fn default_pmi_item_count() -> u32 {
-    1
+fn default_pmi_item_count() -> NonZeroU32 {
+    NonZeroU32::MIN
 }
 
 // Serde's `skip_serializing_if` contract passes the field by reference.
-fn is_one(value: &impl std::borrow::Borrow<u32>) -> bool {
-    let value: &u32 = value.borrow();
-    *value == 1
+fn is_one(value: &impl std::borrow::Borrow<NonZeroU32>) -> bool {
+    let value: &NonZeroU32 = value.borrow();
+    value.get() == 1
 }
 
 /// A named parametric-model variant (e.g. CAD "configuration") with its own

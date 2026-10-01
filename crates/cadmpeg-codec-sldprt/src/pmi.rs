@@ -115,10 +115,10 @@ fn agreed_dimension_records<'a>(
         let Some(&canonical) = group.first() else {
             continue;
         };
-        if canonical.item_count == 1
+        if canonical.item_count.get() == 1
             && group
                 .iter()
-                .all(|record| record.item_count == 1 && equivalent_dimensions(canonical, record))
+                .all(|record| record.item_count.get() == 1 && equivalent_dimensions(canonical, record))
         {
             ctx.reserve_collection_vec(
                 &mut representatives,
@@ -282,7 +282,7 @@ pub(crate) fn patch_payload(
         .iter()
         .filter(|record| record.parent == block_id)
     {
-        if record.item_count != 1 {
+        if record.item_count.get() != 1 {
             continue;
         }
         let mut parameters = ir.model.parameters.iter().filter_map(|parameter| {
@@ -846,6 +846,9 @@ fn extract_dimension(
     };
     let Ok(item_count) = u32::try_from(items.len()) else {
         return Err("dimItems length exceeds u32".into());
+    };
+    let Some(item_count) = std::num::NonZeroU32::new(item_count) else {
+        return Err("dimItems is empty".into());
     };
     let Some(item_value) = items.first() else {
         return Err("dimItems is empty".into());
