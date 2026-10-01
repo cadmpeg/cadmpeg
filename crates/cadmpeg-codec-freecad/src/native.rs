@@ -230,6 +230,31 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn entries_check_names_identities_references_and_charge_cached_digest() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            for (id, name, references) in [("invalid", "safe", vec![]), ("fcstd:native:entry#safe", "../x", vec![]), ("fcstd:native:entry#safe", "safe", vec!["invalid".to_owned()])] {
+                assert!(super::EntryRecord::new(ctx, id.into(), name.into(), cadmpeg_core::container::ContainerRole::Auxiliary, references, vec![1, 2, 3]).is_err());
+            }
+            let record = super::EntryRecord::new(ctx, "fcstd:native:entry#safe".into(), "safe".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![1, 2, 3]).expect("entry");
+            let wire = serde_json::to_value(&record).expect("wire");
+            assert_eq!(wire["sha256"], "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81");
+            for (key, value) in [("id", serde_json::json!("invalid")), ("name", serde_json::json!("../x")), ("referenced_by", serde_json::json!(["invalid"]))] {
+                let mut invalid = wire.clone(); invalid[key] = value;
+                assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
+            }
+            let mut record = record;
+            assert!(record.add_reference(ctx, "invalid").is_err());
+            assert!(record.referenced_by().is_empty());
+        });
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD entry digest", |ctx| super::EntryRecord::new(ctx, "fcstd:native:entry#safe".into(), "safe".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![1, 2, 3]));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index("fcstd:native:entry#safe".len() + "safe".len()) + 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(matches!(super::EntryRecord::new(&ctx, "fcstd:native:entry#safe".into(), "safe".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![1, 2, 3]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD entry digest"));
+    }
+
+    #[test]
     fn duplicate_property_diagnostic_refuses_at_retained_limit() {
         let property = super::PropertyRecord {
             id: "fcstd:native:property#LongProperty".into(),
@@ -3379,16 +3404,34 @@ pub(crate) enum PropertyFamily {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "EntryRecordWire")]
 pub(crate) struct EntryRecord {
-    /// Stable entry identity.
-    pub(crate) id: String,
-    /// Exact archive entry name.
-    pub(crate) name: String,
-    /// Classified entry role.
+    id: cadmpeg_ir::ids::Identity,
+    name: ArchiveEntryName,
     pub(crate) role: cadmpeg_core::container::ContainerRole,
-    /// Application property, GUI property, and GUI state identities that reference this entry.
-    pub(crate) referenced_by: Vec<String>,
-    /// Complete logical bytes.
-    pub(crate) data: Vec<u8>,
+    referenced_by: EntryReferences,
+    data: Vec<u8>,
+    sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ArchiveEntryName(String);
+
+impl TryFrom<String> for ArchiveEntryName {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if is_safe_entry_name(&value) { Ok(Self(value)) }
+        else { Err("unsafe ZIP entry path") }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EntryReferences(Vec<String>);
+
+impl TryFrom<Vec<String>> for EntryReferences {
+    type Error = String;
+    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
+        if value.iter().all(|id| cadmpeg_ir::ids::is_valid_identity(id)) { Ok(Self(value)) }
+        else { Err("entry reference identity is invalid".into()) }
+    }
 }
 
 /// Check the exact ZIP name used by source scans and retained entry records.
@@ -3400,14 +3443,54 @@ pub(crate) fn is_safe_entry_name(name: &str) -> bool {
 }
 
 impl EntryRecord {
-    /// Logical byte length.
-    pub(crate) fn byte_len(&self) -> u64 {
-        cadmpeg_core::decode::u64_from_index(self.data.len())
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        id: String,
+        name: String,
+        role: cadmpeg_core::container::ContainerRole,
+        referenced_by: Vec<String>,
+        data: Vec<u8>,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), "FreeCAD entry identity validation")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "FreeCAD entry name validation")?;
+        for reference in &referenced_by {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(reference.len()), "FreeCAD entry reference validation")?;
+        }
+        let id = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
+        let name = ArchiveEntryName::try_from(name).map_err(CodecError::malformed)?;
+        let referenced_by = EntryReferences::try_from(referenced_by).map_err(CodecError::malformed)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "FreeCAD entry digest")?;
+        ctx.charge_retained(64, "FreeCAD entry digest")?;
+        let sha256 = sha256_hex(&data);
+        Ok(Self { id, name, role, referenced_by, data, sha256 })
     }
 
-    /// Lowercase SHA-256 of logical bytes.
-    pub(crate) fn sha256(&self) -> String {
-        sha256_hex(&self.data)
+    pub(crate) fn id(&self) -> &str { self.id.as_str() }
+    pub(crate) fn name(&self) -> &str { &self.name.0 }
+    pub(crate) fn referenced_by(&self) -> &[String] { &self.referenced_by.0 }
+    pub(crate) fn data(&self) -> &[u8] { &self.data }
+    pub(crate) fn byte_len(&self) -> u64 { cadmpeg_core::decode::u64_from_index(self.data.len()) }
+    pub(crate) fn sha256(&self) -> &str { &self.sha256 }
+
+    pub(crate) fn add_reference(&mut self, ctx: &DecodeContext<'_>, owner: &str) -> Result<(), CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(owner.len()), "FreeCAD entry reference validation")?;
+        if !cadmpeg_ir::ids::is_valid_identity(owner) {
+            return Err(CodecError::malformed("entry reference identity is invalid"));
+        }
+        for candidate in &self.referenced_by.0 {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidate.len()), "FreeCAD entry reference comparison")?;
+            if candidate == owner { return Ok(()); }
+        }
+        ctx.reserve_vec(&mut self.referenced_by.0, 1, "FCStd GUI entry references")?;
+        let owner = ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?;
+        self.referenced_by.0.push(owner);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_data(&mut self, bytes: Vec<u8>) {
+        self.sha256 = sha256_hex(&bytes);
+        self.data = bytes;
     }
 }
 
@@ -3428,7 +3511,7 @@ struct EntryRecordOut<'a> {
     name: &'a str,
     role: &'static str,
     byte_len: u64,
-    sha256: String,
+    sha256: &'a str,
     referenced_by: &'a [String],
     data: &'a [u8],
 }
@@ -3436,14 +3519,13 @@ struct EntryRecordOut<'a> {
 impl Serialize for EntryRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         EntryRecordOut {
-            id: &self.id,
-            name: &self.name,
+            id: self.id(),
+            name: self.name(),
             role: self.role.as_str(),
             byte_len: self.byte_len(),
-            // The digest is the written value, computed over the entry's own bytes.
             sha256: self.sha256(),
-            referenced_by: &self.referenced_by,
-            data: &self.data,
+            referenced_by: self.referenced_by(),
+            data: self.data(),
         }
         .serialize(serializer)
     }
@@ -3453,20 +3535,20 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
     type Error = String;
 
     fn try_from(wire: EntryRecordWire) -> Result<Self, Self::Error> {
-        if !is_safe_entry_name(&wire.name) {
-            return Err(format!("unsafe ZIP entry path {:?}", wire.name));
-        }
-        let record = Self {
-            id: wire.id,
-            name: wire.name,
-            role: serde_json::from_value(serde_json::Value::String(wire.role))
-                .map_err(|error| format!("entry role: {error}"))?,
-            referenced_by: wire.referenced_by,
-            data: wire.data,
-        };
-        if wire.byte_len != record.byte_len() || wire.sha256 != record.sha256() {
+        let id = cadmpeg_ir::ids::Identity::new(wire.id).map_err(|error| error.to_string())?;
+        let name = ArchiveEntryName::try_from(wire.name).map_err(str::to_owned)?;
+        let referenced_by = EntryReferences::try_from(wire.referenced_by)?;
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(wire.data.len()) || wire.sha256 != sha256_hex(&wire.data) {
             return Err("entry byte_len/sha256 disagrees with data".to_owned());
         }
+        let record = Self {
+            id,
+            name,
+            role: serde_json::from_value(serde_json::Value::String(wire.role)).map_err(|error| format!("entry role: {error}"))?,
+            referenced_by,
+            data: wire.data,
+            sha256: wire.sha256,
+        };
         Ok(record)
     }
 }

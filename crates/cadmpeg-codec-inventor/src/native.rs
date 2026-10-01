@@ -561,7 +561,7 @@ impl Serialize for PmAppRenderingStyleRecord {
         let extension = self.extension.as_ref();
         let mut fields = serializer.serialize_struct("PmAppRenderingStyleRecordWire", 24)?;
         fields.serialize_field("id", &self.id)?;
-        fields.serialize_field("segment_token", &self.segment_token)?;
+        fields.serialize_field("segment_token", self.segment_token.as_str())?;
         fields.serialize_field("record_ordinal", &self.record_ordinal)?;
         fields.serialize_field("segment_version_major", &self.segment_version_major)?;
         fields.serialize_field("header_value", &self.header_value)?;
@@ -758,7 +758,7 @@ impl Serialize for PmGraphicsFaceRecord {
         let references = self.edge_references.references();
         let mut fields = serializer.serialize_struct("PmGraphicsFaceRecordWire", 21)?;
         fields.serialize_field("id", &self.id)?;
-        fields.serialize_field("segment_token", &self.segment_token)?;
+        fields.serialize_field("segment_token", self.segment_token.as_str())?;
         fields.serialize_field("record_ordinal", &self.record_ordinal)?;
         fields.serialize_field("segment_version_major", &self.segment_version_major)?;
         fields.serialize_field("header_value", &self.header_value)?;
@@ -845,11 +845,37 @@ impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "PmGraphicsStyleCollectionRecordWire")]
 pub(crate) struct PmGraphicsStyleCollectionRecord {
-    pub(crate) id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+    id: String,
+    segment_token: cadmpeg_ir::ids::IdentityKey,
+    record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) style_references: PmDcPairedReferenceList<[u32; 2]>,
+}
+
+impl PmGraphicsStyleCollectionRecord {
+    pub(crate) fn new(
+        id: String,
+        segment_token: cadmpeg_ir::ids::IdentityKey,
+        record_ordinal: u32,
+        segment_version_major: u8,
+        style_references: PmDcPairedReferenceList<[u32; 2]>,
+    ) -> Result<Self, String> {
+        let suffix = id.strip_prefix("inventor:presentation:graphics-style-collection#")
+            .and_then(|value| value.rsplit_once('-'));
+        if !suffix.is_some_and(|(token, ordinal)| {
+            token == segment_token.as_str()
+                && (ordinal == "0" || !ordinal.starts_with('0'))
+                && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                && ordinal.parse::<u32>() == Ok(record_ordinal)
+        }) {
+            return Err("graphics style collection id disagrees with its location".into());
+        }
+        Ok(Self { id, segment_token, record_ordinal, segment_version_major, style_references })
+    }
+
+    pub(crate) fn id(&self) -> &str { &self.id }
+    pub(crate) fn segment_token(&self) -> &str { self.segment_token.as_str() }
+    pub(crate) fn record_ordinal(&self) -> u32 { self.record_ordinal }
 }
 
 impl Serialize for PmGraphicsStyleCollectionRecord {
@@ -857,7 +883,7 @@ impl Serialize for PmGraphicsStyleCollectionRecord {
         let references = self.style_references.references();
         let mut fields = serializer.serialize_struct("PmGraphicsStyleCollectionRecordWire", 7)?;
         fields.serialize_field("id", &self.id)?;
-        fields.serialize_field("segment_token", &self.segment_token)?;
+        fields.serialize_field("segment_token", self.segment_token.as_str())?;
         fields.serialize_field("record_ordinal", &self.record_ordinal)?;
         fields.serialize_field("segment_version_major", &self.segment_version_major)?;
         fields.serialize_field("style_references", &ReferenceIndexes(references))?;
@@ -885,17 +911,16 @@ impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionR
     type Error = String;
 
     fn try_from(wire: PmGraphicsStyleCollectionRecordWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            segment_token: wire.segment_token,
-            record_ordinal: wire.record_ordinal,
-            segment_version_major: wire.segment_version_major,
-            style_references: PmDcPairedReferenceList::new(
+        Self::new(
+            wire.id,
+            cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token).map_err(|error| error.to_string())?,
+            wire.record_ordinal,
+            wire.segment_version_major,
+            PmDcPairedReferenceList::new(
                 wire.list_metadata,
                 PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
-            )
-            .ok_or("list_metadata disagrees with style_references")?,
-        })
+            ).ok_or("list_metadata disagrees with style_references")?,
+        )
     }
 }
 
@@ -1616,6 +1641,22 @@ mod tests {
         ActiveCarrierRecord, PmAppRenderingStyleRecord, SegmentBulkFrame, SegmentBulkRecord,
     };
     use cadmpeg_test_support::native_serialization::assert_native_limit;
+
+    #[test]
+    fn graphics_style_collection_checks_location_and_reference_indices() {
+        let valid = serde_json::json!({"id": "inventor:presentation:graphics-style-collection#segment-0", "segment_token": "segment", "record_ordinal": 0, "segment_version_major": 26, "style_references": [], "style_reference_qualifiers": [], "list_metadata": null});
+        let record: super::PmGraphicsStyleCollectionRecord = serde_json::from_value(valid.clone()).expect("valid location");
+        assert_eq!(serde_json::to_value(record).expect("wire"), valid);
+        for (field, value) in [("id", serde_json::json!("")), ("id", serde_json::json!("inventor:presentation:graphics-style-collection#other-0")), ("segment_token", serde_json::json!("")), ("segment_token", serde_json::json!("has#separator")), ("record_ordinal", serde_json::json!(1))] {
+            let mut wire = valid.clone(); wire[field] = value;
+            assert!(serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err());
+        }
+        let mut wire = valid;
+        wire["style_references"] = serde_json::json!([2147483648_u32]);
+        wire["style_reference_qualifiers"] = serde_json::json!([false]);
+        wire["list_metadata"] = serde_json::json!([0, 0]);
+        assert!(serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err());
+    }
 
     #[test]
     fn property_record_streams_once_with_retained_limit() {

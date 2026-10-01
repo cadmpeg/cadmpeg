@@ -455,7 +455,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         if !record_is_exact(
             sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
-            &sketch.identity.type_id,
+            sketch.identity.type_id.as_str(),
         ) || !references_resolve(sketch.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
@@ -517,7 +517,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         if !record_is_exact(
             entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
-            &entity.identity.type_id,
+            entity.identity.type_id.as_str(),
         ) || !references_resolve(entity.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
@@ -531,7 +531,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         if !record_is_exact(
             transform.identity.segment_token.as_str(),
             transform.identity.record_ordinal,
-            &transform.identity.type_id,
+            transform.identity.type_id.as_str(),
         ) || !references_resolve(
             transform.identity.segment_token.as_str(),
             &[transform.header.next.index(), transform.header.context.index()],
@@ -596,7 +596,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         if !record_is_exact(
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
-            &constraint.identity.type_id,
+            constraint.identity.type_id.as_str(),
         ) || !references_resolve(constraint.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
@@ -610,7 +610,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         if !record_is_exact(
             direction.identity.segment_token.as_str(),
             direction.identity.record_ordinal,
-            &direction.identity.type_id,
+            direction.identity.type_id.as_str(),
         ) || !references_resolve(
             direction.identity.segment_token.as_str(),
             &[direction.header.next.index(), direction.header.context.index()],
@@ -1135,14 +1135,14 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         findings,
         data.pm_graphics_style_collections
             .iter()
-            .map(|record| record.id.as_str()),
+            .map(|record| record.id()),
         "PmGraphics style-collection id",
     );
     unique(
         findings,
         data.pm_graphics_style_collections
             .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+            .map(|record| (record.segment_token(), record.record_ordinal())),
         "PmGraphics style-collection record key",
     );
     unique(
@@ -1282,17 +1282,17 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         }
     }
     for record in &data.pm_graphics_style_collections {
-        let key = (record.segment_token.as_str(), record.record_ordinal);
+        let key = (record.segment_token(), record.record_ordinal());
         if raw_records.get(&key) != Some(&"0786eb48d2110c076000f99ac5361ab0") {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmGraphics style collection does not resolve to its RSe record".into(),
-                Some(record.id.clone()),
+                Some(record.id().to_owned()),
             ));
         }
         for reference in record.style_references.references() {
             if reference.index() == 0
-                || !raw_keys.contains(&(record.segment_token.as_str(), reference.index() - 1))
+                || !raw_keys.contains(&(record.segment_token(), reference.index() - 1))
             {
                 findings.push(finding(
                     Check::NativeLinks,
@@ -1300,7 +1300,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                         "Inventor PmGraphics style-collection reference {} does not resolve",
                         reference.index()
                     ),
-                    Some(record.id.clone()),
+                    Some(record.id().to_owned()),
                 ));
             }
         }

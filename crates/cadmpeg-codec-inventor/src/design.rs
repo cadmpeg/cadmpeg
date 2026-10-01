@@ -458,7 +458,7 @@ pub(crate) fn inventory(
                     family: RecordIssueFamily::Design {
                         type_id: type_id_string(record.type_id),
                     },
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: error.to_string(),
                 });
@@ -1707,7 +1707,7 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             0,
         );
@@ -1723,7 +1723,7 @@ mod tests {
                     state: 0,
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             0,
         );
@@ -1916,7 +1916,7 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             0,
         );
@@ -1937,7 +1937,7 @@ mod tests {
                     derived: reference(0, false),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             1,
         );
@@ -1953,7 +1953,7 @@ mod tests {
                     state: 0,
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             2,
         );
@@ -1977,7 +1977,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             3,
         );
@@ -1991,7 +1991,7 @@ mod tests {
                     operand: reference(4, true),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             4,
         );
@@ -2015,7 +2015,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             5,
         );
@@ -2073,7 +2073,7 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             0,
         );
@@ -2094,7 +2094,7 @@ mod tests {
                     derived: reference(0, false),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             1,
         );
@@ -2110,7 +2110,7 @@ mod tests {
                     state: 0,
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             2,
         );
@@ -2134,7 +2134,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             3,
         );
@@ -2413,7 +2413,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: 0,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             &token,
             0,
         );
@@ -2429,7 +2429,7 @@ mod tests {
                         unit: reference(0, false),
                         kind,
                     },
-                    String::new(),
+                    crate::record_identity::RecordTypeId::from_bytes([0; 16]),
                     &token,
                     u32::try_from(ordinal).expect("small fixture"),
                 )

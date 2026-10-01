@@ -55,7 +55,7 @@ pub(crate) fn transfer(
         let Some(entry_name) = root_entry else {
             continue;
         };
-        let Some(entry) = entries.iter().find(|entry| entry.name == *entry_name) else {
+        let Some(entry) = entries.iter().find(|entry| entry.name() == entry_name) else {
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!(
                     "geometry property {} references missing side entry {entry_name}",
@@ -68,10 +68,10 @@ pub(crate) fn transfer(
             ctx.reserve_vec(&mut ir.model.tessellations, 1, "FreeCAD mesh tessellations")?;
             ir.model
                 .tessellations
-                .push(parse_mesh(ctx, property, &entry.data)?);
+                .push(parse_mesh(ctx, property, entry.data())?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
-            let points = parse_points(ctx, property, &entry.data, cadmpeg_core::decode::u64_from_index(ir.model.entity_count()), admitted_entities)?;
+            let points = parse_points(ctx, property, entry.data(), cadmpeg_core::decode::u64_from_index(ir.model.entity_count()), admitted_entities)?;
             ctx.reserve_vec(&mut ir.model.points, points.len(), "FreeCAD point records")?;
             ir.model.points.extend(points);
             transferred = true;

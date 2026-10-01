@@ -497,7 +497,7 @@ pub(crate) fn inventory(
                     family: RecordIssueFamily::Sketch {
                         type_id: type_id_string(record.type_id),
                     },
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
                 });
@@ -2482,7 +2482,7 @@ mod tests {
         HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
-    use crate::pmdc::{type_id_string, PmDcReference, PmDcReferenceList};
+    use crate::pmdc::{PmDcReference, PmDcReferenceList};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
     use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
@@ -2612,7 +2612,7 @@ mod tests {
             sketches: Vec::new(),
             entities: vec![Located::new(
                 point,
-                type_id_string(POINT_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(POINT_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
@@ -2661,13 +2661,13 @@ mod tests {
         let inventory = SketchInventory {
             sketches: vec![Located::new(
                 sketch,
-                type_id_string(SKETCH_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             entities: vec![Located::new(
                 point,
-                type_id_string(POINT_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(POINT_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 1,
             )],
@@ -2711,13 +2711,13 @@ mod tests {
         let inventory = SketchInventory {
             sketches: vec![Located::new(
                 sketch,
-                type_id_string(SKETCH_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             entities: vec![Located::new(
                 point,
-                type_id_string(POINT_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(POINT_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 u32::MAX,
             )],
@@ -2771,20 +2771,20 @@ mod tests {
         let inventory = SketchInventory {
             sketches: vec![Located::new(
                 sketch,
-                type_id_string(SKETCH_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 2,
             )],
             entities: Vec::new(),
             transforms: vec![Located::new(
                 transform,
-                type_id_string(TRANSFORM_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(TRANSFORM_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             directions: vec![Located::new(
                 direction,
-                type_id_string(DIRECTION_TYPE),
+                crate::record_identity::RecordTypeId::from_bytes(DIRECTION_TYPE),
                 &cadmpeg_ir::identity_key!("segment"),
                 1,
             )],
@@ -2824,7 +2824,7 @@ mod tests {
         });
         let constraint = Located::new(
             payload,
-            type_id_string(HORIZONTAL_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(HORIZONTAL_TYPE),
             &cadmpeg_ir::identity_key!("segment"),
             0,
         );
@@ -2873,7 +2873,7 @@ mod tests {
         });
         let constraint = Located::new(
             payload,
-            type_id_string(HORIZONTAL_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(HORIZONTAL_TYPE),
             &cadmpeg_ir::identity_key!("segment"),
             0,
         );
@@ -3427,19 +3427,19 @@ mod tests {
         transform.header.source_index = 0;
         let transform = Located::new(
             transform,
-            type_id_string(TRANSFORM_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(TRANSFORM_TYPE),
             &cadmpeg_ir::identity_key!("segment"),
             0,
         );
         let direction = Located::new(
             direction,
-            type_id_string(DIRECTION_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(DIRECTION_TYPE),
             &cadmpeg_ir::identity_key!("segment"),
             1,
         );
         let located_sketch = Located::new(
             sketch.clone(),
-            type_id_string(SKETCH_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
             &cadmpeg_ir::identity_key!("segment"),
             2,
         );
@@ -3450,7 +3450,7 @@ mod tests {
                 let type_id = if index < 4 { POINT_TYPE } else { LINE_TYPE };
                 Located::new(
                     value,
-                    type_id_string(type_id),
+                    crate::record_identity::RecordTypeId::from_bytes(type_id),
                     &cadmpeg_ir::identity_key!("segment"),
                     u32::try_from(index).expect("fixture value fits u32") + 3,
                 )
@@ -3495,7 +3495,7 @@ mod tests {
         });
         inventory.constraints.push(Located::new(
             mapped_constraint,
-            type_id_string(COINCIDENT_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(COINCIDENT_TYPE),
             &cadmpeg_ir::identity_key!("segment"),
             11,
         ));
@@ -3506,7 +3506,7 @@ mod tests {
             PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
         inventory.sketches[0] = Located::new(
             sketch,
-            type_id_string(SKETCH_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
             &cadmpeg_ir::identity_key!("segment"),
             2,
         );

@@ -91,9 +91,9 @@ pub(crate) fn replace_entry(
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let entry = entries
         .iter_mut()
-        .find(|candidate| candidate.name == entry_name)
+        .find(|candidate| candidate.name() == entry_name)
         .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd entry {entry_name}")))?;
-    entry.data = bytes;
+    entry.replace_data(bytes);
     namespace.set_arena(
         &cadmpeg_test_support::service_decode_context(),
         "entries",
