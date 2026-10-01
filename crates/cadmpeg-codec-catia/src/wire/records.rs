@@ -470,9 +470,9 @@ impl ConsolidatedRawFrame {
     ) -> Result<Self, CodecError> {
         Self::new(
             record.byte_offset(),
-            record.width,
+            record.width(),
             record.flag,
-            record.header_token,
+            record.header_token(),
             payload,
         )
         .map_err(CodecError::malformed)
@@ -511,21 +511,19 @@ pub(crate) enum ConsolidatedFamily {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConsolidatedRecord {
     /// Zero-based logical record-source ordinal supplied by the container.
-    pub(crate) source_index: usize,
+    source_index: usize,
     /// Byte range in the reconstructed logical record source.
-    pub(crate) source_range: Range<usize>,
+    source_range: Range<usize>,
     /// Physical placement of the frame.
     placement: ConsolidatedPlacement,
     /// Record family.
-    pub(crate) family: ConsolidatedFamily,
-    /// Header-token width in bytes.
-    pub(crate) width: ConsolidatedFrameWidth,
+    family: ConsolidatedFamily,
+    /// Header token admitted together with its byte width.
+    token: WidthCodedToken,
     /// Independent flag byte (`0x03`, `0x13`, or `0x83`).
-    pub(crate) flag: ConsolidatedFrameFlag,
+    flag: ConsolidatedFrameFlag,
     /// Record class byte.
-    pub(crate) class: u8,
-    /// Little-endian width-coded header token.
-    pub(crate) header_token: u32,
+    class: u8,
 }
 
 /// Physical placement of a consolidated frame.
@@ -546,6 +544,14 @@ enum ConsolidatedPlacement {
 }
 
 impl ConsolidatedRecord {
+    pub(crate) fn width(&self) -> ConsolidatedFrameWidth { self.token.width() }
+    pub(crate) fn header_token(&self) -> u32 { self.token.value() }
+    pub(crate) fn source_index(&self) -> usize { self.source_index }
+    pub(crate) fn source_range(&self) -> &Range<usize> { &self.source_range }
+    pub(crate) fn family(&self) -> ConsolidatedFamily { self.family }
+    pub(crate) fn flag(&self) -> ConsolidatedFrameFlag { self.flag }
+    pub(crate) fn class(&self) -> u8 { self.class }
+
     pub(crate) fn byte_offset(&self) -> usize {
         match &self.placement {
             ConsolidatedPlacement::Contiguous { range, .. } => range.start,
@@ -929,10 +935,9 @@ fn parse_spanning_consolidated_record(
         source_range: source_start..source_end,
         placement: ConsolidatedPlacement::Spanning { byte_offset },
         family,
-        width,
+        token: WidthCodedToken::new(width, header_token).ok()?,
         flag,
         class,
-        header_token,
     })
 }
 
@@ -984,10 +989,9 @@ fn parse_consolidated_record(
         source_index: 0,
         source_range: pos..end,
         family,
-        width,
+        token: WidthCodedToken::new(width, header_token).ok()?,
         flag,
         class,
-        header_token,
         placement: ConsolidatedPlacement::Contiguous {
             range: pos..end,
             payload: payload_start..end,
@@ -1008,7 +1012,7 @@ pub(crate) fn family_frames_from_records(
                 pos: record.byte_offset(),
                 payload: record.payload()?.start,
                 end: record.range()?.end,
-                header_token: record.header_token,
+                header_token: record.header_token(),
             })
         })
 }
@@ -1460,10 +1464,9 @@ mod tests {
             source_index: 0,
             source_range: 0..4,
             family: ConsolidatedFamily::A,
-            width: ConsolidatedFrameWidth::One,
+            token: super::WidthCodedToken::new(ConsolidatedFrameWidth::One, 0).expect("width-coded token"),
             flag: ConsolidatedFrameFlag::Flag03,
             class: 0x20,
-            header_token: 0,
             placement: ConsolidatedPlacement::Contiguous {
                 range: 0..4,
                 payload: 3..4,
@@ -1535,5 +1538,20 @@ mod source_image_admission_tests {
         });
         assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))));
         assert!(super::parse_consolidated_record(&short, 0, larger.len()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod width_token_admission_tests {
+    #[test]
+    fn consolidated_record_retains_an_immutable_width_coded_token() {
+        for (marker, width, maximum) in [(0xb2, super::ConsolidatedFrameWidth::One, 0xff), (0xb3, super::ConsolidatedFrameWidth::Two, 0xffff), (0xb4, super::ConsolidatedFrameWidth::Three, 0xff_ffff)] {
+            let mut bytes = vec![marker, 3, 0x24, 0];
+            bytes.resize(4 + usize::from(u8::from(width)), 0xff);
+            let record = super::parse_consolidated_record(&bytes, 0, bytes.len()).expect("complete frame");
+            assert_eq!(record.width(), width);
+            assert_eq!(record.header_token(), maximum);
+            assert!(super::WidthCodedToken::new(width, maximum + 1).is_err());
+        }
     }
 }

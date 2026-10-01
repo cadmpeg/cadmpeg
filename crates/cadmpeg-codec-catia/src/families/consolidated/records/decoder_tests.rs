@@ -240,7 +240,7 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
                 crate::test_support::test_b5::finite(1.0),
                 crate::test_support::test_b5::finite(-0.5),
                 crate::test_support::test_b5::finite(1.0e-6)
-            ],
+            ].try_into().expect("admitted scalar arity"),
         })
     );
     let mut class24_nine_scalars = payload.clone();
@@ -281,7 +281,7 @@ fn class23_nine_scalar_definition_requires_three_equal_triples() {
                 crate::test_support::test_b5::finite(0.0),
                 crate::test_support::test_b5::finite(2.0),
                 crate::test_support::test_b5::finite(1.0)
-            ],
+            ].try_into().expect("admitted scalar arity"),
         })
     );
 
@@ -612,17 +612,17 @@ fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
     bytes.extend_from_slice(&second);
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].family, ConsolidatedFamily::A);
+    assert_eq!(records[0].family(), ConsolidatedFamily::A);
     assert_eq!(
         (
-            u8::from(records[0].width),
-            u8::from(records[0].flag),
-            records[0].class
+            u8::from(records[0].width()),
+            u8::from(records[0].flag()),
+            records[0].class()
         ),
         (2, 0x03, 0x20)
     );
     assert_eq!(records[0].range(), Some(0..first.len()));
-    assert_eq!(records[1].family, ConsolidatedFamily::B);
+    assert_eq!(records[1].family(), ConsolidatedFamily::B);
     assert_eq!(
         records[1].range(),
         Some(first.len()..first.len() + second.len())
@@ -929,7 +929,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     assert_eq!(
         records
             .iter()
-            .map(|record| record.class)
+            .map(|record| record.class())
             .collect::<Vec<_>>(),
         [0x5e, 0x05, 0x18, 0x18]
     );
@@ -1108,7 +1108,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
                 crate::test_support::test_b5::finite(1.0),
                 crate::test_support::test_b5::finite(5.0),
                 crate::test_support::test_b5::finite(1.0e-6)
-            ],
+            ].try_into().expect("admitted scalar arity"),
         })
     );
 
@@ -1611,4 +1611,16 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
             "catia:consolidated:line-profile-curve#1",
         ]
     );
+}
+
+#[test]
+fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+    for (kind, lower, upper) in [("scalar", 8, 9), ("scalar25", 7, 10)] {
+        for count in 0..=11 {
+            let wire = serde_json::json!({"kind": kind, "operands": [1, 2, 3], "persistent_lead": 10, "values": vec![0.0; count]});
+            let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
+            assert_eq!(result.is_ok(), (lower..=upper).contains(&count), "{kind} {count}");
+        }
+    }
 }
