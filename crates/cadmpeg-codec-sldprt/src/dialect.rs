@@ -199,9 +199,9 @@ pub(crate) fn classify_layers(
     let declaration = crate::container::declared_sw_version(scan);
     let host = SldprtDialect::from_declaration(declaration);
     let mut layers = DialectLayers::of(host.matched(ctx, declaration)?);
-    let extra = cadmpeg_parasolid::extra_layers(kernels, &VERIFIED_KERNELS);
+    let extra = cadmpeg_parasolid::extra_layers(ctx, kernels, &VERIFIED_KERNELS)?;
     let mut losses = Vec::new();
-    for message in cadmpeg_parasolid::push_extras(&mut layers, extra) {
+    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
         ctx.reserve_collection_vec(&mut losses, 1, "collect SLDPRT dialect collision losses")?;
         losses.push(SldprtLossCode::DialectLayerCollision.note(message));
     }
@@ -322,12 +322,7 @@ fn dialect_loss(
     match matched.admission() {
         Admission::Admitted | Admission::Refused => Ok(None),
         Admission::Unverified { .. } | Admission::Residual => {
-            if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
-                let message = crate::text_admission::format_retained(
-                    ctx,
-                    format_args!("{message}"),
-                    "retain SLDPRT kernel dialect loss",
-                )?;
+            if let Some(message) = cadmpeg_parasolid::unverified_message(ctx, matched)? {
                 return Ok(Some(SldprtLossCode::KernelDialectUnverified.note(message)));
             }
             if matched.format() != FORMAT {
