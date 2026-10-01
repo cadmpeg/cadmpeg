@@ -148,9 +148,16 @@ pub(crate) fn with_service_context<T>(
     input: &[u8],
     use_context: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {
+    with_policy_context(input, &cadmpeg_core::decode::DecodePolicy::service(), use_context)
+}
+
+pub(crate) fn with_policy_context<T>(
+    input: &[u8],
+    policy: &cadmpeg_core::decode::DecodePolicy,
+    use_context: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
-        .expect("test input is within service limits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, policy)
+        .expect("test input is within policy limits");
     use_context(&ctx)
 }

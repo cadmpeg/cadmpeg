@@ -136,13 +136,33 @@ fn point_order(left: Point3, right: Point3) -> Ordering {
         .then_with(|| left.z.total_cmp(&right.z))
 }
 
-fn find_cluster_root(parents: &mut [usize], index: usize) -> usize {
-    if parents[index] == index {
-        return index;
+fn find_cluster_root(
+    parents: &mut [usize],
+    index: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<usize, CodecError> {
+    let mut root = index;
+    loop {
+        ctx.charge_work(1, "iges boundary cluster root traversal")?;
+        let parent = *parents.get(root).ok_or_else(|| {
+            CodecError::malformed("boundary cluster parent is out of range")
+        })?;
+        if parent == root {
+            break;
+        }
+        root = parent;
     }
-    let root = find_cluster_root(parents, parents[index]);
-    parents[index] = root;
-    root
+    let mut current = index;
+    while current != root {
+        ctx.charge_work(1, "iges boundary cluster path compression")?;
+        let parent = parents.get_mut(current).ok_or_else(|| {
+            CodecError::malformed("boundary cluster parent is out of range")
+        })?;
+        let next = *parent;
+        *parent = root;
+        current = next;
+    }
+    Ok(root)
 }
 
 fn cluster_boundary_positions(
@@ -166,21 +186,27 @@ fn cluster_boundary_positions(
     ctx.charge_work(pair_count, "iges boundary clustering comparisons")?;
     let mut parents = ctx.collection_vec(positions.len(), "iges boundary cluster parents")?;
     parents.extend(0..positions.len());
+    let mut sizes = ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes")?;
     for (left_index, left) in positions.iter().enumerate() {
         for (right_index, right) in positions.iter().enumerate().skip(left_index + 1) {
             if !close(left.get(), right.get(), tolerance) {
                 continue;
             }
-            let left_root = find_cluster_root(&mut parents, left_index);
-            let right_root = find_cluster_root(&mut parents, right_index);
+            let mut left_root = find_cluster_root(&mut parents, left_index, ctx)?;
+            let mut right_root = find_cluster_root(&mut parents, right_index, ctx)?;
             if left_root != right_root {
+                if sizes[left_root] < sizes[right_root] {
+                    std::mem::swap(&mut left_root, &mut right_root);
+                }
+                sizes[left_root] = sizes[left_root].checked_add(sizes[right_root])
+                    .ok_or_else(|| ctx.refuse_codec_limit("iges boundary cluster size", u64::MAX, u64::MAX))?;
                 parents[right_root] = left_root;
             }
         }
     }
     let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
     for index in 0..positions.len() {
-        let root = find_cluster_root(&mut parents, index);
+        let root = find_cluster_root(&mut parents, index, ctx)?;
         ctx.admit_btree_entry(&members_by_root, &root, "iges boundary cluster roots")?;
         let members = members_by_root.entry(root).or_default();
         ctx.reserve_vec(members, 1, "iges boundary cluster members")?;
