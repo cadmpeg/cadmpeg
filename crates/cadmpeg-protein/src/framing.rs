@@ -73,6 +73,7 @@ fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<RecordFram
     let mut records = Vec::new();
     let mut current: Option<RecordFrame> = None;
     let mut logical_offset = 0usize;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len() - STREAM_HEADER_LEN), "Protein page framing scan")?;
     for page in bytes[STREAM_HEADER_LEN..].chunks_exact(PAGE_SIZE) {
         if page.get(record_start_page::MARKER..record_start_page::BODY) == Some(RECORD_MARKER) {
             if let Some(record) = current.take() {
@@ -156,4 +157,20 @@ fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<RecordFram
         records.push(record);
     }
     Ok(records)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn page_framing_admits_work_before_scanning_pages() {
+        let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + crate::PAGE_SIZE];
+        let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
+        bytes[offset..offset + 4].copy_from_slice(&u32::try_from(crate::PAGE_SIZE).expect("page size").to_le_bytes());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let error = super::record_frames_admitted(&ctx, &bytes).expect_err("scan must be admitted before marker checks");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
 }

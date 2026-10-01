@@ -248,6 +248,7 @@ impl<'a> ArchiveSnapshot<'a> {
             ZipCompression::Stored => self.open_stored(ctx, entry, range),
             ZipCompression::Deflate => {
                 let source = self.compressed_source(entry, range)?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(source.window().len()), "ZIP compressed input")?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
                 let view = Self::open_expanded(ctx, entry, &mut decoder)?;
                 if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len())
@@ -260,6 +261,7 @@ impl<'a> ArchiveSnapshot<'a> {
             }
             ZipCompression::Zstd => {
                 let source = self.compressed_source(entry, range)?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(source.window().len()), "ZIP compressed input")?;
                 let decoder =
                     zstd::stream::read::Decoder::with_buffer(source.window()).map_err(|error| {
                         CodecError::malformed(format_args!(
@@ -302,6 +304,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 entry.name
             )));
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(view.window().len()), "ZIP payload CRC")?;
         if crc32fast::hash(view.window()) != entry.crc32 {
             return Err(CodecError::malformed(format_args!(
                 "CRC mismatch for {}",
@@ -319,15 +322,18 @@ impl<'a> ArchiveSnapshot<'a> {
         let mut writer = ctx.begin_expand(ExpandSpec::Exact(entry.uncompressed_size))?;
         let mut chunk = [0_u8; 16 * 1024];
         loop {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "ZIP expansion step")?;
             let read = decoder.read(&mut chunk).map_err(|error| {
                 CodecError::malformed(format_args!("cannot inflate {}: {error}", entry.name))
             })?;
             if read == 0 {
                 break;
             }
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(read), "ZIP expansion copy")?;
             writer.write(&chunk[..read])?;
         }
         let view = writer.finalize()?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(view.window().len()), "ZIP payload CRC")?;
         if crc32fast::hash(view.window()) != entry.crc32 {
             return Err(CodecError::malformed(format_args!(
                 "CRC mismatch for {}",
@@ -347,13 +353,10 @@ impl<'a> ArchiveSnapshot<'a> {
         for entry in &self.entries {
             let mut attributes = BTreeMap::new();
             ctx.charge_collection_items(4, "ZIP summary attributes")?;
-            attributes.insert("crc32".into(), format!("{:08x}", entry.crc32));
-            attributes.insert("header_offset".into(), entry.header_start.to_string());
-            attributes.insert("data_offset".into(), entry.data_start.to_string());
-            attributes.insert(
-                "central_header_offset".into(),
-                entry.central_start.to_string(),
-            );
+            attributes.insert(ctx.copy_retained_text("crc32", "ZIP summary attribute key")?, ctx.format_retained_with_work(format_args!("{:08x}", entry.crc32), "ZIP summary attribute value")?);
+            for (key, value) in [("header_offset", entry.header_start), ("data_offset", entry.data_start), ("central_header_offset", entry.central_start)] {
+                attributes.insert(ctx.copy_retained_text(key, "ZIP summary attribute key")?, ctx.format_retained_with_work(format_args!("{value}"), "ZIP summary attribute value")?);
+            }
             let storage = declared_storage(
                 ctx,
                 entry.compression,
@@ -384,6 +387,7 @@ fn preflight_central_directory(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<
     let mut first_error = None;
     let mut max_count = None::<u64>;
     let mut max_name_bytes = 0_u64;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "ZIP end record search")?;
     for (end, signature) in bytes.windows(4).enumerate().rev() {
         if signature != b"PK\x05\x06" {
             continue;
@@ -430,6 +434,7 @@ fn central_directory_inventory(
             .checked_sub(20)
             .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()))
         {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(locator_start), "ZIP64 end record search")?;
             let record_start = bytes[..locator_start]
                 .windows(4)
                 .rposition(|signature| signature == b"PK\x06\x06")
@@ -1064,8 +1069,8 @@ fn declared_storage(
         Err(message) => {
             ctx.charge_collection_items(1, "ZIP storage declaration attribute")?;
             attributes.insert(
-                "storage_declaration".into(),
-                format!("{message}: {compressed_size}/{uncompressed_size}"),
+                ctx.copy_retained_text("storage_declaration", "ZIP storage declaration key")?,
+                ctx.format_retained_with_work(format_args!("{message}: {compressed_size}/{uncompressed_size}"), "ZIP storage declaration value")?,
             );
             Ok(cadmpeg_core::container::EntryStorage::payload_only(
                 cadmpeg_core::container::VerbatimLabel::Stored,
@@ -1138,12 +1143,57 @@ mod tests {
     }
 
     #[test]
-    fn zip_summary_name_refuses_retained_limit() {
+    fn zip_summary_text_refuses_retained_limit() {
         summary_refuses(
             ResourceDimension::RetainedBytes,
             3,
-            "ZIP summary entry name",
+            "ZIP summary attribute key",
         );
+    }
+
+    #[test]
+    fn zip_end_search_admits_work_before_scanning_non_candidates() {
+        let bytes = [0_u8; 4096];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let error = super::preflight_central_directory(&ctx, &bytes).expect_err("search must be admitted even without a candidate");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "ZIP end record search"));
+    }
+
+    #[test]
+    fn zip64_end_search_admits_its_full_span() {
+        let mut bytes = [0_u8; 130];
+        bytes[88..92].copy_from_slice(b"PK\x06\x07");
+        bytes[108..112].copy_from_slice(b"PK\x05\x06");
+        cadmpeg_test_support::bytes::put_u16(&mut bytes, 118, u16::MAX);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let error = super::central_directory_inventory(&ctx, &bytes, 108).expect_err("ZIP64 search is admitted before seeking a record");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "ZIP64 end record search"));
+    }
+
+    #[test]
+    fn zip_payload_hash_and_expansion_admit_caller_work() {
+        for method in [CompressionMethod::Stored, CompressionMethod::Deflated, CompressionMethod::Zstd] {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            writer.start_file("part", SimpleFileOptions::default().compression_method(method)).expect("entry");
+            writer.write_all(b"part").expect("payload");
+            let bytes = writer.finish().expect("archive").into_inner();
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshot");
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            let other_arena = DecodeArena::new();
+            let (other, _) = DecodeContext::from_root_bytes(&[], &other_arena, &policy).expect("fresh context");
+            let error = snapshot.open(&other, "part").expect_err("hash or input work is admitted");
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits));
+        }
     }
 
     #[test]
