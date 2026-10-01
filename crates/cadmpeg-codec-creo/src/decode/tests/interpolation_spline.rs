@@ -1040,6 +1040,7 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
 
 #[test]
 fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
+    crate::decode::with_test_decode_ctx(|ctx| {
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(822),
@@ -1087,35 +1088,35 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     )
     .expect("valid section frame");
     assert_eq!(
-        unique_feature_profile_definition(
+        unique_feature_profile_definition(ctx,
             std::slice::from_ref(&definition),
             std::slice::from_ref(&transform),
             822,
-        )
+        ).expect("admitted unique lookup")
         .map(|definition| definition.identity.id()),
         Some(822)
     );
     assert_eq!(
-        unique_feature_profile_definition(std::slice::from_ref(&definition), &[], 822)
+        unique_feature_profile_definition(ctx, std::slice::from_ref(&definition), &[], 822).expect("admitted unique lookup")
             .map(|definition| definition.identity.id()),
         Some(822)
     );
     assert!(
-        unique_feature_profile_definition(&[definition.clone(), definition.clone()], &[], 822,)
+        unique_feature_profile_definition(ctx, &[definition.clone(), definition.clone()], &[], 822,).expect("admitted unique lookup")
             .is_none()
     );
-    assert!(unique_feature_profile_definition(
+    assert!(unique_feature_profile_definition(ctx,
         std::slice::from_ref(&definition),
         &[transform.clone(), transform.clone()],
         822,
-    )
+    ).expect("admitted unique lookup")
     .is_none());
     assert_eq!(
-        unique_feature_profile_definition(
+        unique_feature_profile_definition(ctx,
             std::slice::from_ref(&definition),
             std::slice::from_ref(&mismatched_transform),
             822,
-        )
+        ).expect("admitted unique lookup")
         .map(|definition| definition.identity.id()),
         Some(822)
     );
@@ -1129,11 +1130,11 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         transform.offset,
     )
     .expect("valid section frame");
-    assert!(unique_feature_profile_definition(
+    assert!(unique_feature_profile_definition(ctx,
         std::slice::from_ref(&definition),
         std::slice::from_ref(&mismatched_section_transform),
         822,
-    )
+    ).expect("admitted unique lookup")
     .is_none());
 
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
@@ -1199,6 +1200,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             ..
         })
     ));
+    });
 }
 
 #[test]

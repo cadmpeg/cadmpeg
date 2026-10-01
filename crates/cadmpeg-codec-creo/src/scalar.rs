@@ -155,7 +155,9 @@ pub(crate) fn double_xar_tables(
     const LABEL: &[u8] = b"double_xar\0";
     let mut tables = Vec::new();
     let mut search = 0;
-    while let Some(offset) = find_from(data, LABEL, search) {
+    loop {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - search), "creo double_xar discovery")?;
+        let Some(offset) = find_from(data, LABEL, search) else { break; };
         let count_offset = offset + LABEL.len();
         if data.get(count_offset) != Some(&0xf8) {
             search = count_offset;
@@ -166,6 +168,7 @@ pub(crate) fn double_xar_tables(
             search = count_offset + 1;
             continue;
         }
+        ctx.charge_work(u64::from(count), "creo double_xar slot parsing")?;
         let mut entries = Vec::new();
         for _ in 0..count {
             let Some(head) = data.get(cursor).copied() else {
@@ -276,6 +279,7 @@ impl ScalarCache {
         let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
         let mut paired_byte_1_by_tail = BTreeMap::new();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(section.len()), "creo scalar cache discovery")?;
         for offset in 0..section.len() {
             if section[offset] != 0x46 {
                 continue;
@@ -288,10 +292,10 @@ impl ScalarCache {
             let raw = [
                 byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
             ];
-            if seen.contains(&raw) {
+            ctx.charge_work(16, "creo scalar cache image hashing")?;
+            if !ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")? {
                 continue;
             }
-            ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")?;
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];

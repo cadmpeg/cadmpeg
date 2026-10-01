@@ -246,7 +246,7 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
 fn closed_extrusion_reaches_brep_admission() {
     let (scan, mut ir) = admitted_extrusion_fixture();
     assert!(super::feature_allows_additive_linear_extrusion(&scan, 7));
-    assert!(super::feature_is_first_material_operation(&scan, 7));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::feature_is_first_material_operation(ctx, &scan, 7)).expect("admitted material lookup"));
     let definition = &scan.features.definitions[0];
     let transform = &scan.features.section_transforms[0];
     let sketch_id =

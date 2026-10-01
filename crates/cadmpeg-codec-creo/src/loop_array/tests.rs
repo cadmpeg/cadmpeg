@@ -221,3 +221,13 @@ fn container_and_native_arenas_retain_loop_roster() {
         Some("loop_array_record")
     );
 }
+
+#[test]
+fn impossible_loop_extent_is_incomplete_not_overfull() {
+    let bytes = frame(100, &[1, 1, 1, 1, 0, 1, 0, 0xe3]);
+    let result = scan(&bytes);
+    assert_eq!(result.frames.len(), 1);
+    assert!(!result.frames[0].overfull);
+    assert_eq!(result.frames[0].declared_count, 100);
+    assert!(result.records.is_empty());
+}
