@@ -21,13 +21,30 @@ fn reference_limit_error(
 }
 
 #[test]
+fn display_reference_scan_refuses_before_prefix_search() {
+    let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(reference_limit_error(&payload, &policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan display-list reference names"));
+}
+
+#[test]
 fn display_reference_units_need_no_collection_slots() {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 6;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let references = persistent_surface_references(&ctx, &payload, ByteRange::new(0, payload.len()).expect("range")).expect("only field and result slots");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let references = persistent_surface_references(
+        &ctx,
+        &payload,
+        ByteRange::new(0, payload.len()).expect("range"),
+    )
+    .expect("only field and result slots");
     assert_eq!(references.len(), 1);
 }
 

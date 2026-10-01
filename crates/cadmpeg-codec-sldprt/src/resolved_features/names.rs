@@ -80,19 +80,37 @@ pub(crate) fn object_names(
 ) -> Result<Vec<FeatureInputName>, cadmpeg_core::CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut names = Vec::new();
-    ctx.charge_work(u64_from_index(payload.len()), "scan SLDPRT feature input names")?;
+    ctx.charge_work(
+        u64_from_index(payload.len()),
+        "scan SLDPRT feature input names",
+    )?;
+    ctx.charge_work(
+        u64_from_index(payload.len()),
+        "find SLDPRT feature input name class",
+    )?;
     for (offset, object_id, units) in payload_name_candidates(payload) {
-        let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(units, units.len() / 2, false, "decode SLDPRT feature input name") {
+        let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(
+            units,
+            units.len() / 2,
+            false,
+            "decode SLDPRT feature input name",
+        ) {
             Ok(text) => text,
             Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        ctx.charge_work(u64_from_index(decoded.len()), "validate SLDPRT feature input name")?;
+        ctx.charge_work(
+            u64_from_index(decoded.len()),
+            "validate SLDPRT feature input name",
+        )?;
         if decoded.chars().any(char::is_control) {
             continue;
         }
         let ordinal = names.len();
-        ctx.charge_work(u64_from_index(decoded.len()), "retain SLDPRT feature input name")?;
+        ctx.charge_work(
+            u64_from_index(decoded.len()),
+            "retain SLDPRT feature input name",
+        )?;
         let value = ctx.copy_retained_text(&decoded, "retain SLDPRT feature input name")?;
         let id = record_id(ctx, "name", lane_key, offset)?;
         let parent = retained_text(ctx, parent, "retain SLDPRT feature input name parent")?;
@@ -130,7 +148,9 @@ pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
     (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
-fn payload_name_candidates(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+fn payload_name_candidates(
+    payload: &[u8],
+) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
     let mut name_marker = [0; 5];
     name_marker.copy_from_slice(NAME_MARKER);
     if let Some(token) = name_class_token(payload) {
@@ -158,7 +178,8 @@ fn payload_name_candidates(payload: &[u8]) -> impl Iterator<Item = (usize, Optio
 
 fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
     payload_name_candidates(payload).filter(|(_, _, units)| {
-        std::char::decode_utf16(utf16_units(units)).all(|character| character.is_ok_and(|character| !character.is_control()))
+        std::char::decode_utf16(utf16_units(units))
+            .all(|character| character.is_ok_and(|character| !character.is_control()))
     })
 }
 
