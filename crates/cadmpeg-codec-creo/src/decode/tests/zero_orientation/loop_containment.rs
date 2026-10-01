@@ -16,18 +16,14 @@ fn planar_loop_containment_selects_one_outer_boundary() {
     let outer = make_loop(9, 1);
     let inner = make_loop(9, 5);
     let incidences = (1..=8)
-        .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
-            half_edge: HalfEdgeId {
+        .map(|vertex| crate::topology::HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
                 curve_id: vertex,
                 side: crate::topology::Side::Zero,
-            },
-            start_vertex_id: vertex,
-            end_vertex_id: Some(if vertex % 4 == 0 {
+            }, start_vertex_id: std::num::NonZeroU32::new(vertex).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(if vertex % 4 == 0 {
                 vertex - 3
             } else {
                 vertex + 1
-            }),
-        })
+            }) })
         .collect::<Vec<_>>();
     let incidence = incidences
         .iter()
@@ -90,18 +86,14 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
     let outer = make_loop(1);
     let inner = make_loop(5);
     let incidences = (1..=8)
-        .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
-            half_edge: HalfEdgeId {
+        .map(|vertex| crate::topology::HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
                 curve_id: vertex,
                 side: crate::topology::Side::Zero,
-            },
-            start_vertex_id: vertex,
-            end_vertex_id: Some(if vertex % 4 == 0 {
+            }, start_vertex_id: std::num::NonZeroU32::new(vertex).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(if vertex % 4 == 0 {
                 vertex - 3
             } else {
                 vertex + 1
-            }),
-        })
+            }) })
         .collect::<Vec<_>>();
     let incidence = incidences
         .iter()

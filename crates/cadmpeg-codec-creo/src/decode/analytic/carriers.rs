@@ -240,13 +240,13 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
 fn topology_bound_face_points(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
-    vertex_faces: &BTreeMap<u32, BTreeSet<u32>>,
+    vertex_faces: &BTreeMap<std::num::NonZeroU32, BTreeSet<u32>>,
     face_id: u32,
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     for (vertex_id, point) in solved_vertices {
-        if vertex_faces
-            .get(vertex_id)
+        if std::num::NonZeroU32::new(*vertex_id)
+            .and_then(|id| vertex_faces.get(&id))
             .is_some_and(|faces| faces.contains(&face_id))
         {
             ctx.reserve_vec(&mut points, 1, "creo topology-bound face points")?;
@@ -699,7 +699,7 @@ fn projected_loop_polygon(
     for half_edge in lp.half_edges() {
         let Some(point) = incidence
             .get(half_edge)
-            .and_then(|binding| solved_vertices.get(&binding.start_vertex_id))
+            .and_then(|binding| solved_vertices.get(&binding.start_vertex_id.get()))
         else {
             return Ok(None);
         };
@@ -898,7 +898,7 @@ fn face_boundary_plane(
             lp.half_edges()
                 .iter()
                 .filter_map(|half_edge| incidence.get(half_edge))
-                .filter_map(|binding| solved_vertices.get(&binding.start_vertex_id).copied())
+                .filter_map(|binding| solved_vertices.get(&binding.start_vertex_id.get()).copied())
         }),
     )
 }

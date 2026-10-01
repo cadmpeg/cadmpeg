@@ -2,7 +2,7 @@
 
 use crate::curve::CurveTopologyRow;
 use crate::decode::surfaces::transfer_curves::transfer_carrier_intersection_curves;
-use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
+use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
@@ -41,11 +41,7 @@ fn incidence(
     start_vertex_id: u32,
     end_vertex_id: u32,
 ) -> HalfEdgeVertexIncidence {
-    HalfEdgeVertexIncidence {
-        half_edge: HalfEdgeId { curve_id, side },
-        start_vertex_id,
-        end_vertex_id: Some(end_vertex_id),
-    }
+    HalfEdgeVertexIncidence { half_edge: HalfEdgeId { curve_id, side }, start_vertex_id: std::num::NonZeroU32::new(start_vertex_id).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(end_vertex_id) }
 }
 
 fn carrier_scan() -> crate::container::ContainerScan<'static> {
@@ -81,9 +77,7 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
         half_edge(31, crate::topology::Side::One, 0),
     ];
     scan.topology.vertices = vec![
-        TopologicalVertex {
-            id: 1,
-            half_edges: vec![
+        crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 1, vec![
                 HalfEdgeId {
                     curve_id: 10,
                     side: crate::topology::Side::Zero,
@@ -100,11 +94,8 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
                     curve_id: 31,
                     side: crate::topology::Side::Zero,
                 },
-            ],
-        },
-        TopologicalVertex {
-            id: 2,
-            half_edges: vec![
+            ])).expect("vertex admission").expect("valid vertex fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 2, vec![
                 HalfEdgeId {
                     curve_id: 10,
                     side: crate::topology::Side::One,
@@ -113,8 +104,7 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
                     curve_id: 20,
                     side: crate::topology::Side::One,
                 },
-            ],
-        },
+            ])).expect("vertex admission").expect("valid vertex fixture"),
     ];
     scan.topology.half_edge_vertex_incidence = vec![
         incidence(10, crate::topology::Side::Zero, 1, 2),

@@ -98,11 +98,7 @@ fn ordered_face_loops_refuse_boundary_point_vector() {
         side: crate::topology::Side::Zero,
     };
     let lp = crate::test_support::closed_loop(std::num::NonZeroU32::new(9), vec![half_edge]);
-    let binding = crate::topology::HalfEdgeVertexIncidence {
-        half_edge,
-        start_vertex_id: 1,
-        end_vertex_id: None,
-    };
+    let binding = crate::topology::HalfEdgeVertexIncidence { half_edge: half_edge, start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"), end_vertex_id: None };
     let incidence = BTreeMap::from([(half_edge, &binding)]);
     let points = BTreeMap::from([(1, [0.0, 0.0, 0.0])]);
     let arena = cadmpeg_core::decode::DecodeArena::new();

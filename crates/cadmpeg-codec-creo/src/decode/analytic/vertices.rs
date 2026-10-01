@@ -573,7 +573,7 @@ pub(in crate::decode) fn solve_topological_vertices(
                     diagnostics
                         .carrier_rejection_samples
                         .push(CarrierVertexDiagnostic {
-                            vertex_id: vertex.id,
+                            vertex_id: vertex.id.get(),
                             incident_face_ids: sample_face_ids,
                             carrier_kinds,
                             pair_intersections: carrier_diagnostics.pair_intersections,
@@ -584,10 +584,10 @@ pub(in crate::decode) fn solve_topological_vertices(
             }
             1 => {
                 if let Some(point) = point {
-                    if !carrier_points.contains_key(&vertex.id) {
+                    if !carrier_points.contains_key(&vertex.id.get()) {
                         ctx.charge_collection_items(1, "creo carrier vertex point nodes")?;
                     }
-                    carrier_points.insert(vertex.id, point);
+                    carrier_points.insert(vertex.id.get(), point);
                 }
             }
             _ => diagnostics.carrier_ambiguous_candidate_vertices += 1,
@@ -619,7 +619,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         let Some((points, complete, authoritative)) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
-        let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
+        let Some(vertices) = edge_start_vertices.get(&row.id).copied().map(|pair| pair.map(std::num::NonZeroU32::get)) else {
             continue;
         };
         if !pcurve_candidate_agrees_with_fixed_points(
@@ -696,7 +696,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         }
     }
     for row in &topology_rows {
-        let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
+        let Some(vertices) = edge_start_vertices.get(&row.id).copied().map(|pair| pair.map(std::num::NonZeroU32::get)) else {
             continue;
         };
         let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
@@ -755,17 +755,17 @@ pub(in crate::decode) fn solve_topological_vertices(
     let mut incident_curves = BTreeMap::new();
     for vertex in &scan.topology.vertices {
         let mut curves = Vec::new();
-        for half_edge in &vertex.half_edges {
+        for half_edge in vertex.half_edges() {
             if let Some(curve) = analytic_curves.get(&half_edge.curve_id).copied() {
                 ctx.reserve_vec(&mut curves, 1, "creo incident analytic curves")?;
                 curves.push(curve);
             }
         }
         if !curves.is_empty() {
-            if !incident_curves.contains_key(&vertex.id) {
+            if !incident_curves.contains_key(&vertex.id.get()) {
                 ctx.charge_collection_items(1, "creo incident analytic curve nodes")?;
             }
-            incident_curves.insert(vertex.id, curves);
+            incident_curves.insert(vertex.id.get(), curves);
         }
     }
     let mut analytic_domains = BTreeMap::new();
