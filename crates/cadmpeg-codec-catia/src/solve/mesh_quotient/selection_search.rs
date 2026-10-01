@@ -293,7 +293,12 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             "catia_face_projection_root_order",
         )?;
         roots.extend(root_set);
-        self.ctx.sort_unstable_by(&mut roots, Ord::cmp, |_| 0, "catia_face_projection_root_order_sort")?;
+        self.ctx.sort_unstable_by(
+            &mut roots,
+            Ord::cmp,
+            |_| 0,
+            "catia_face_projection_root_order_sort",
+        )?;
         let mut signature = Vec::new();
         self.ctx.reserve_vec(
             &mut signature,
@@ -308,7 +313,12 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 "catia_face_projection_domain_points",
             )?;
             domain.extend(quotient.domains[root].iter().copied());
-            self.ctx.sort_unstable_by(&mut domain, Ord::cmp, |_| 0, "catia_face_projection_domain_points_sort")?;
+            self.ctx.sort_unstable_by(
+                &mut domain,
+                Ord::cmp,
+                |_| 0,
+                "catia_face_projection_domain_points_sort",
+            )?;
             signature.push((
                 self.ctx
                     .copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?,
@@ -1718,7 +1728,12 @@ pub(super) fn singleton_mesh_boundary_directions(
             )?;
         }
     }
-    ctx.sort_unstable_by(&mut solutions, Ord::cmp, |item| item.len(), "catia_singleton_direction_solutions_sort")?;
+    ctx.sort_unstable_by(
+        &mut solutions,
+        Ord::cmp,
+        |item| std::mem::size_of_val(item.as_slice()),
+        "catia_singleton_direction_solutions_sort",
+    )?;
     solutions.dedup();
     if solutions.len() == 2
         && boundary.iter().all(|use_| {
@@ -1807,7 +1822,12 @@ pub(super) fn canonical_singleton_coordinate_cycles(
         }
         cycles.push(canonical_cycle(ctx, &points)?);
     }
-    ctx.sort_unstable_by(&mut cycles, Ord::cmp, |item| item.len(), "catia_singleton_cycle_rows_sort")?;
+    ctx.sort_unstable_by(
+        &mut cycles,
+        Ord::cmp,
+        |item| std::mem::size_of_val(item.as_slice()),
+        "catia_singleton_cycle_rows_sort",
+    )?;
     Ok(Some(cycles))
 }
 
@@ -2221,7 +2241,12 @@ pub(super) fn resolve_singleton_mesh_selection(
         let mut values = Vec::new();
         ctx.reserve_vec(&mut values, domain.len(), "catia_singleton_domain_values")?;
         values.extend(domain.iter().copied());
-        ctx.sort_unstable_by(&mut values, Ord::cmp, |_| 0, "catia_singleton_domain_values_sort")?;
+        ctx.sort_unstable_by(
+            &mut values,
+            Ord::cmp,
+            |_| 0,
+            "catia_singleton_domain_values_sort",
+        )?;
         domain_values.push(values);
     }
     let first_assignment =

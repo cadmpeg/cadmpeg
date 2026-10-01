@@ -1138,7 +1138,7 @@ fn incidence_cycles_refuse_work_limit_before_unseen_scan() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = 1154;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let result = incidence_cycles(&ctx, &[0, 1], &[[0, 1], [1, 0]]);

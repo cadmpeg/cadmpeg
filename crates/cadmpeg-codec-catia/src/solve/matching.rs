@@ -570,7 +570,12 @@ pub(crate) fn unique_coordinate_bijection(
                 "catia_bijection_domain_classes",
             )?;
         }
-        ctx.sort_unstable_by(&mut classes, Ord::cmp, |_| 0, "catia_bijection_domain_classes_sort")?;
+        ctx.sort_unstable_by(
+            &mut classes,
+            Ord::cmp,
+            |_| 0,
+            "catia_bijection_domain_classes_sort",
+        )?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(classes.len()),
             "catia_bijection_class_deduplication",
@@ -646,7 +651,7 @@ mod tests {
     #[test]
     fn coordinate_bijection_refuses_unadmitted_matching_visits() {
         let domains = [HashSet::from([0_usize])];
-        crate::test_support::with_work_limit(4, |ctx| {
+        crate::test_support::with_work_limit(262, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
                     .expect_err("matching visit must be admitted")
