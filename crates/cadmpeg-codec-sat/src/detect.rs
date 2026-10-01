@@ -169,7 +169,10 @@ pub(crate) fn inspect(
             let parsed = match sat::parse(ctx, bytes) {
                 Ok(stream) => Ok((stream.header.as_kernel_header(ctx)?, stream)),
                 Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
-                    return Err(error);
+                    return Err(error.into());
+                }
+                Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+                    return Err(error.into_codec_error());
                 }
                 Err(error) => Err(error),
             };

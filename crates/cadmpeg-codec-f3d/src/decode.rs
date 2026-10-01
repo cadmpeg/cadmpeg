@@ -5522,7 +5522,8 @@ fn try_decode_brep(
     };
     let records = match framed {
         Ok(r) if !r.is_empty() => r,
-        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => return Err(error.into_codec_error()),
         _ => return Ok(None),
     };
 
