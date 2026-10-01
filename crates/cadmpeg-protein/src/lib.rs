@@ -495,6 +495,11 @@ fn parse_schema_document(
         let Some(id) = node.attribute("id") else {
             continue;
         };
+        let lookup_work = id.len().checked_add(1).and_then(|width| width.checked_mul(schema.properties.len())).ok_or_else(|| ctx.refuse_codec_limit("Protein local property uniqueness", u64::MAX, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(lookup_work), "Protein local property uniqueness")?;
+        if schema.properties.contains_key(id) {
+            return Err(CodecError::malformed(format_args!("Protein schema {uid} declares property {id} more than once")));
+        }
         ctx.charge_collection_items(1, "Protein schema property")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(id.len()),
@@ -1086,6 +1091,28 @@ mod tests {
             .expect("unused schema is not resolved");
         assert_eq!(outcome.records.len(), 1);
         assert!(outcome.rejected.is_empty());
+    }
+
+    #[test]
+    fn duplicate_local_protein_properties_are_rejected() {
+        let xml = br#"<Schema><UID val="Simple"/><Float id="value"/><String id="value"/></Schema>"#;
+        with_service_context(xml, |ctx| {
+            let error = super::parse_schema_document(ctx, "schema", xml, &mut std::collections::HashMap::new()).expect_err("local ids must be unique");
+            assert!(matches!(error, CodecError::Malformed(message) if message == "Protein schema Simple declares property value more than once"));
+        });
+    }
+
+    #[test]
+    fn schema_archive_size_ceiling_is_a_resource_refusal() {
+        let mut bytes = schema_archive(&[("Schemas/SimpleSchema.xml", "<Schema><UID val=\"Simple\"/></Schema>")]);
+        let size = u32::try_from(super::MAX_SCHEMA_BYTES + 1).expect("local ceiling fits ZIP32").to_le_bytes();
+        let central = bytes.windows(4).position(|bytes| bytes == b"PK\x01\x02").expect("central header");
+        bytes[central + 24..central + 28].copy_from_slice(&size);
+        bytes[22..26].copy_from_slice(&size);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        let error = super::SchemaCatalog::load(&ctx, root).err().expect("local size ceiling");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein schema bytes"))));
     }
 
     #[test]
