@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{with_expand, CandidateError, DecodeContext};
+use super::{with_expand, with_transaction_limits, CandidateError, DecodeContext};
 use crate::chunks::ArchiveVersion;
 use crate::test_support::test_dump::{object_record_with_payload, point_payload, scan_with_objects, set_test_units, POINT_CLASS};
 use cadmpeg_ir::math::Point3;
@@ -55,5 +55,65 @@ fn brep_commit_propagates_local_entity_limit() {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino instance entity limit" && refusal.limit == 0));
         assert!(context.ir.model.bodies.is_empty());
+    });
+}
+
+#[test]
+fn instance_selection_path_refuses_scoped_storage_before_copy() {
+    let scan = scan_with_objects(&[]);
+    with_transaction_limits(&scan, 100, None, Some(0), |expand| {
+        let error = super::super::InstanceSelection::new(expand.ctx(), 0,
+            &["root".to_string()], crate::wire::Uuid::from_wire([0x51; 16]))
+            .expect_err("path copy needs scoped storage");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && refusal.operation == "Rhino instance selection scratch"));
+    });
+}
+
+#[test]
+fn instance_selection_key_refuses_scoped_storage_before_formatting() {
+    let scan = scan_with_objects(&[]);
+    let path_bytes = std::mem::size_of::<String>() + "root".len();
+    with_transaction_limits(&scan, 100, None, Some(u64::try_from(path_bytes).expect("size")), |expand| {
+        let error = super::super::InstanceSelection::new(expand.ctx(), 0,
+            &["root".to_string()], crate::wire::Uuid::from_wire([0x51; 16]))
+            .expect_err("key needs storage beyond the copied path");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && refusal.operation == "Rhino instance selection scratch"
+                && refusal.used == u64::try_from(path_bytes).expect("size")));
+    });
+    with_expand(&scan, |expand| {
+        let (selection, _bytes) = super::super::InstanceSelection::new(expand.ctx(), 0,
+            &["root".to_string(), "child".to_string()], crate::wire::Uuid::from_wire([0x51; 16]))
+            .expect("selection admitted");
+        assert_eq!(selection.path, ["root", "child"]);
+        assert_eq!(selection.key.as_str(), "root.child.51515151-5151-5151-5151-515151515151");
+    });
+}
+
+#[test]
+fn instance_selection_rejects_invalid_identity_key() {
+    let scan = scan_with_objects(&[]);
+    with_expand(&scan, |expand| {
+        let error = super::super::InstanceSelection::new(expand.ctx(), 0,
+            &["bad path".to_string()], crate::wire::Uuid::from_wire([0x51; 16]))
+            .expect_err("whitespace cannot enter an identity key");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    });
+}
+
+#[test]
+fn instance_path_segment_refuses_scoped_storage_before_formatting() {
+    let scan = scan_with_objects(&[crate::test_support::test_dump::object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    with_transaction_limits(&scan, 100, None, Some(0), |expand| {
+        let context = DecodeContext::new(&scan, expand).expect("transaction");
+        let mut scratch = expand.ctx().reserve_scoped(0, "Rhino instance traversal scratch").expect("empty scope");
+        let error = context.reference_segment(0, scan.objects[0].identity().expect("identity"), &mut scratch)
+            .expect_err("path UUID needs scoped storage");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && refusal.operation == "Rhino instance traversal scratch"));
     });
 }
