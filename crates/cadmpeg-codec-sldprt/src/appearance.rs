@@ -110,46 +110,18 @@ fn definition_at(
     else {
         return Ok(None);
     };
-    let mut units = [0_u16; 255];
-    for (index, unit) in units[..count].iter_mut().enumerate() {
-        let Some(value) = View::u16_le_at(raw_name, index * 2) else {
-            return Ok(None);
-        };
-        *unit = value;
-    }
-    let mut decoded = ['\0'; 255];
-    let mut decoded_count = 0usize;
-    for scalar in char::decode_utf16(units[..count].iter().copied()) {
-        let Ok(scalar) = scalar else {
-            return Ok(None);
-        };
-        decoded[decoded_count] = scalar;
-        decoded_count += 1;
-    }
-    let Some(first) = decoded[..decoded_count]
-        .iter()
-        .position(|scalar| !scalar.is_whitespace())
-    else {
-        return Ok(None);
+    let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(raw_name, count, false, "decode SLDPRT appearance name") {
+        Ok(text) => text,
+        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+        Err(error) => return Err(error),
     };
-    let Some(last) = decoded[..decoded_count]
-        .iter()
-        .rposition(|scalar| !scalar.is_whitespace())
-    else {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(decoded.len()), "trim SLDPRT appearance name")?;
+    let trimmed = decoded.trim();
+    if trimmed.is_empty() {
         return Ok(None);
-    };
-    let trimmed = &decoded[first..=last];
-    let trimmed_len = trimmed
-        .iter()
-        .try_fold(0usize, |size, scalar| size.checked_add(scalar.len_utf8()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("retain SLDPRT appearance name", u64::MAX - 1, u64::MAX)
-        })?;
-    let mut name = String::new();
-    ctx.reserve_retained_string(&mut name, trimmed_len, "retain SLDPRT appearance name")?;
-    for scalar in trimmed {
-        name.push(*scalar);
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(trimmed.len()), "retain SLDPRT appearance name")?;
+    let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
     let source_name = clone_stream_name(ctx, section.source_stream())?;
     Ok(Some(AppearanceDefinition {
         name,

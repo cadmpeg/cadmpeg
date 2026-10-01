@@ -21,21 +21,21 @@ fn reference_limit_error(
 }
 
 #[test]
-fn display_reference_units_refuse_collection_limit_before_allocation() {
+fn display_reference_units_need_no_collection_slots() {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = u64::from(payload[3]) - 1;
-    assert!(matches!(reference_limit_error(&payload, &policy),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "decode display-list reference units"));
+    policy.limits.max_collection_items = 6;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let references = persistent_surface_references(&ctx, &payload, ByteRange::new(0, payload.len()).expect("range")).expect("only field and result slots");
+    assert_eq!(references.len(), 1);
 }
 
 #[test]
 fn display_reference_text_refuses_materialized_limit_before_allocation() {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = u64::from(payload[3]) * 3 - 1;
+    policy.limits.max_materialized_bytes = u64::from(payload[3]) - 1;
     assert!(matches!(reference_limit_error(&payload, &policy),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -45,7 +45,7 @@ fn display_reference_text_refuses_materialized_limit_before_allocation() {
 fn reference_collection_refusal(extra: u64, operation: &'static str) {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = u64::from(payload[3]) + extra;
+    policy.limits.max_collection_items = extra;
     assert!(matches!(reference_limit_error(&payload, &policy),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
