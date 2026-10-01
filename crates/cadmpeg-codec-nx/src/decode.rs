@@ -91,7 +91,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
         let (ir, annotations, unknowns, native_losses) =
-            build_metadata_ir(ctx, root, &scan, &dialects)?;
+            build_metadata_ir(ctx, &scan, &dialects)?;
         let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
         ctx.extend_vec(&mut body.losses, native_losses, "nx decode losses")?;
         report_untransferred_streams(ctx, &scan, &mut body, TypedNative::ContainerOnly)?;
@@ -100,7 +100,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 
     if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
         ctx,
-        root,
         &scan,
         &dialects,
         &dialect_losses,
@@ -111,7 +110,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     }
 
     let (ir, annotations, unknowns, native_losses) =
-        build_metadata_ir(ctx, root, &scan, &dialects)?;
+        build_metadata_ir(ctx, &scan, &dialects)?;
     let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
     ctx.extend_vec(&mut body.losses, native_losses, "nx decode losses")?;
     report_untransferred_streams(ctx, &scan, &mut body, TypedNative::Available)?;
@@ -262,7 +261,6 @@ impl Counts {
 
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
-    root: View<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
 ) -> Result<
@@ -315,7 +313,6 @@ fn build_metadata_ir(
         let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, scan)?;
         let model = crate::native::model::NativeModel::extract(
             ctx,
-            root,
             &scan.container,
             &scan.streams,
             &mut parsed,

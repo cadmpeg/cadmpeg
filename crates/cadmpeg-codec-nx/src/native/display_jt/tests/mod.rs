@@ -1,23 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn with_jt_budget<T>(
+fn with_jt_context<T>(
     container: &crate::container::Container,
-    run: impl FnOnce(
-        (
-            &cadmpeg_core::decode::DecodeContext<'_>,
-            cadmpeg_core::decode::View<'_>,
-        ),
-    ) -> T,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {
-    crate::test_support::with_decode_context_over(
-        container.data.as_ref(),
-        |_| {},
-        |ctx| {
-            let root = cadmpeg_core::decode::View::over_retained(container.data.as_ref());
-
-            run((ctx, root))
-        },
-    )
+    crate::test_support::with_decode_context_over(container.data.as_ref(), |_| {}, run)
 }
 
 fn high_degree_lane_count(representation: &[u8], bindings: u64) -> Option<usize> {
@@ -436,8 +423,8 @@ fn display_jt_index_requires_every_declared_header() {
             segment_byte_len
         );
         assert_eq!(documents[0].toc_entries[0].attributes, [0, 0, 0, 1]);
-        let segments = with_jt_budget(&container, |budget| {
-            super::display_jt_segments(budget, &container, &documents)
+        let segments = with_jt_context(&container, |ctx| {
+            super::display_jt_segments(ctx, &container, &documents)
         })
         .unwrap();
         assert_eq!(segments.len(), 1);
@@ -476,8 +463,8 @@ fn display_jt_index_requires_every_declared_header() {
             },
         });
         assert!(
-            with_jt_budget(&cross_entry, |budget| super::display_jt_segments(
-                budget,
+            with_jt_context(&cross_entry, |ctx| super::display_jt_segments(
+                ctx,
                 &cross_entry,
                 &documents
             ))
@@ -485,8 +472,8 @@ fn display_jt_index_requires_every_declared_header() {
             .is_empty()
         );
 
-        let (compressed_elements, sequences) = with_jt_budget(&container, |budget| {
-            super::display_jt_compressed_element_sequences(budget, &container, &segments)
+        let (compressed_elements, sequences) = with_jt_context(&container, |ctx| {
+            super::display_jt_compressed_element_sequences(ctx, &container, &segments)
         })
         .unwrap();
         assert_eq!(compressed_elements.len(), 1);
@@ -504,8 +491,8 @@ fn display_jt_index_requires_every_declared_header() {
             &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 2).to_le_bytes(),
         );
         assert!(
-            with_jt_budget(&malformed_compression, |budget| super::display_jt_segments(
-                budget,
+            with_jt_context(&malformed_compression, |ctx| super::display_jt_segments(
+                ctx,
                 &malformed_compression,
                 &documents
             ))
@@ -569,8 +556,8 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
         compression: None,
         source_offset: 0,
     };
-    let elements = with_jt_budget(&container, |budget| {
-        super::display_jt_shape_lod_elements(budget, &container, std::slice::from_ref(&segment))
+    let elements = with_jt_context(&container, |ctx| {
+        super::display_jt_shape_lod_elements(ctx, &container, std::slice::from_ref(&segment))
     })
     .unwrap();
     assert_eq!(elements.len(), 1);
@@ -595,8 +582,8 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
         .last_mut()
         .expect("required invariant") = 1;
     assert!(
-        with_jt_budget(&malformed, |budget| super::display_jt_shape_lod_elements(
-            budget,
+        with_jt_context(&malformed, |ctx| super::display_jt_shape_lod_elements(
+            ctx,
             &malformed,
             &[segment]
         ))
@@ -702,8 +689,8 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         compression: None,
         source_offset: 0,
     };
-    let bindings = with_jt_budget(&container, |budget| {
-        super::display_jt_shape_lod_bindings(budget, &container, &[scene, shape])
+    let bindings = with_jt_context(&container, |ctx| {
+        super::display_jt_shape_lod_bindings(ctx, &container, &[scene, shape])
     })
     .unwrap();
     assert_eq!(bindings.len(), 1);
