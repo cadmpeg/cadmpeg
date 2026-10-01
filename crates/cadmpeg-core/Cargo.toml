@@ -18,6 +18,7 @@ schema = ["dep:schemars"]
 
 [dependencies]
 memchr.workspace = true
+roxmltree.workspace = true
 serde.workspace = true
 schemars = { workspace = true, optional = true }
 serde_json.workspace = true
