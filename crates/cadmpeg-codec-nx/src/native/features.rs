@@ -3708,15 +3708,12 @@ fn assign_operation_header_identities(
     labels: &mut [FeatureOperationLabel],
     block_identities: &BTreeMap<u32, Option<String>>,
 ) -> Result<(), CodecError> {
-    let key_bytes = labels
-        .len()
-        .checked_mul(std::mem::size_of::<Option<String>>())
-        .ok_or_else(|| ctx.refuse_codec_limit("reserve NX operation header keys", 0, 1))?;
-    let _keys_guard = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(key_bytes),
+
+    let mut keys_guard = ctx.reserve_scoped(
+        0,
         "reserve NX operation header keys",
     )?;
-    let mut keys = ctx.collection_vec(labels.len(), "NX operation header keys")?;
+    let mut keys = keys_guard.with_storage(|| ctx.collection_vec(labels.len(), "NX operation header keys"))?;
     for label in labels.iter() {
         keys.push(operation_header_identity_key(
             ctx,
@@ -3724,26 +3721,23 @@ fn assign_operation_header_identities(
             block_identities,
         )?);
     }
-    let map_bytes = labels
-        .len()
-        .checked_mul(std::mem::size_of::<(String, usize)>() * 4)
-        .ok_or_else(|| ctx.refuse_codec_limit("reserve NX operation header counts", 0, 1))?;
+
     let mut counts_guard = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(map_bytes),
+        0,
         "reserve NX operation header counts",
     )?;
     let mut counts = BTreeMap::<String, usize>::new();
     for key in keys.iter().flatten() {
         if !counts.contains_key(key.as_str()) {
-            counts_guard.grow(cadmpeg_core::decode::u64_from_index(key.len()))?;
+
             let mut copy = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            counts_guard.with_storage(|| ctx.try_reserve_retained_text(
                 &mut copy,
                 key.len(),
                 "allocate NX operation header count key",
-            )?;
+            ))?;
             copy.push_str(key);
-            ctx.insert_btree_map(&mut counts, copy, 0, "NX operation header counts")?;
+            counts_guard.with_storage(|| ctx.insert_btree_map(&mut counts, copy, 0, "NX operation header counts"))?;
         }
         let count = counts
             .get_mut(key.as_str())
@@ -3856,16 +3850,16 @@ pub(super) fn feature_operation_labels(
             .checked_ilog10()
             .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1)
             .max(10);
-        let _section_key_guard = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(section_key_len),
+        let mut section_key_guard = ctx.reserve_scoped(
+            0,
             "NX feature label section key",
         )?;
         let mut section_key = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        section_key_guard.with_storage(|| ctx.try_reserve_retained_text(
             &mut section_key,
             section_key_len,
             "allocate NX feature label section key",
-        )?;
+        ))?;
         write!(&mut section_key, "{section_ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("write NX feature label section key", 0, 1))?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -4047,25 +4041,20 @@ pub(super) fn feature_operation_records(
                             ctx.refuse_codec_limit("count NX operation record identities", 0, 1)
                         })?;
                     } else {
-                        let bytes = (std::mem::size_of::<(String, usize)>() * 4)
-                            .checked_add(key.len())
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit("NX operation record identity counts", 0, 1)
-                            })?;
-                        counts_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+
                         let mut copy = String::new();
-                        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                        counts_reservation.with_storage(|| ctx.try_reserve_retained_text(
                             &mut copy,
                             key.len(),
                             "allocate NX operation record identity key",
-                        )?;
+                        ))?;
                         copy.push_str(key);
-                        ctx.insert_btree_map(
+                        counts_reservation.with_storage(|| ctx.insert_btree_map(
                             &mut identity_counts,
                             copy,
                             1,
                             "NX operation record identity counts",
-                        )?;
+                        ))?;
                     }
                 }
                 let ordinal = u32::try_from(operation_ordinal)
@@ -5491,10 +5480,7 @@ pub(super) fn feature_input_store_operations(
         if sections.is_empty() {
             continue;
         }
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>() * 4),
-            "NX offset-store operations",
-        )?;
+
         ctx.insert_btree_set(&mut operations, label, "NX offset-store operations")?;
     }
     Ok(operations)
@@ -5509,15 +5495,13 @@ fn feature_input_store_sections(
     let mut block_reservation = ctx.reserve_scoped(0, "NX input-store block index")?;
     let mut blocks_by_id = BTreeMap::new();
     for block in blocks {
-        block_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(&str, &crate::native::om::DataBlock)>() * 4,
-        ))?;
-        ctx.insert_btree_map(
+
+        block_reservation.with_storage(|| ctx.insert_btree_map(
             &mut blocks_by_id,
             block.id.as_str(),
             block,
             "NX input-store block index",
-        )?;
+        ))?;
     }
     let work = inputs
         .len()
@@ -5534,33 +5518,25 @@ fn feature_input_store_sections(
             continue;
         };
         ctx.charge_collection_items(1, "NX input-store section identities")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>() * 4),
-            "NX input-store section identities",
-        )?;
+
         if let Some(sections) = sections_by_operation.get_mut(input.operation_label.as_str()) {
+            if !sections.contains(&block.section_ordinal) {
+                ctx.admit_btree_node_storage::<u32, ()>(sections.len(), "NX input-store section identities")?;
+            }
             sections.insert(block.section_ordinal);
             continue;
         }
         let key_len = input.operation_label.len();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                (std::mem::size_of::<(String, BTreeSet<u32>)>() * 4)
-                    .checked_add(key_len)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("NX input-store operation groups", 0, 1)
-                    })?,
-            ),
-            "NX input-store operation groups",
-        )?;
+
         let mut label = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut label,
             key_len,
             "allocate NX input-store operation label",
         )?;
         label.push_str(&input.operation_label);
         let mut sections = BTreeSet::new();
+        ctx.admit_btree_node_storage::<u32, ()>(0, "NX input-store section identities")?;
         sections.insert(block.section_ordinal);
         ctx.insert_btree_map(
             &mut sections_by_operation,
@@ -6327,12 +6303,13 @@ pub(super) fn feature_datum_plane_payloads(
         {
             continue;
         }
-        let (data_blocks, reservation) = ctx.collect_scoped_texts(
-            header
-                .resolved_data_blocks(DatumPlaneBlockLane::Object)
-                .map(String::as_str),
-            "copy NX datum plane source blocks",
-        )?;
+        let mut reservation = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
+        let mut data_blocks = Vec::new();
+        for source in header.resolved_data_blocks(DatumPlaneBlockLane::Object).map(String::as_str) {
+            ctx.charge_work(1, "copy NX datum plane source blocks")?;
+            let owned = ctx.copy_retained_text(source, "copy NX datum plane source blocks")?;
+            reservation.with_storage(|| ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks"))?;
+        }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
@@ -6380,17 +6357,10 @@ pub(super) fn feature_datum_csys_payloads(
     for construction in constructions {
         let first = &construction.frame.members()[0].1;
         let second = &construction.frame.members()[1].1;
-        let string_bytes = first
-            .len()
-            .checked_add(second.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("copy NX datum CSYS source blocks", 0, 1))?;
-        let reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(string_bytes),
-            "copy NX datum CSYS source blocks",
-        )?;
+
         let copy = |value: &str| -> Result<String, CodecError> {
             let mut id = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            ctx.try_reserve_retained_text(
                 &mut id,
                 value.len(),
                 "allocate NX datum CSYS source block identity",
@@ -6402,7 +6372,7 @@ pub(super) fn feature_datum_csys_payloads(
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
-        drop(reservation);
+
         let id = replace_operation_text(
             ctx,
             &construction.id,
@@ -7163,8 +7133,13 @@ pub(super) fn feature_sketch_construction_payloads(
             .iter()
             .map(|member| member.data_block.as_str())
             .chain(std::iter::once(construction.terminal_data_block.as_str()));
-        let (data_blocks, reservation) =
-            ctx.collect_scoped_texts(source_ids, "copy NX sketch construction source blocks")?;
+        let mut reservation = ctx.reserve_scoped(0, "copy NX sketch construction source blocks")?;
+        let mut data_blocks = Vec::new();
+        for source in source_ids {
+            ctx.charge_work(1, "copy NX sketch construction source blocks")?;
+            let owned = ctx.copy_retained_text(source, "copy NX sketch construction source blocks")?;
+            reservation.with_storage(|| ctx.push_vec(&mut data_blocks, owned, "copy NX sketch construction source blocks"))?;
+        }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
@@ -7377,32 +7352,29 @@ fn offset_data_block_bytes_for_section<'a>(
                 )
             })
             .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view key length", 0, 1))?;
-        let map_bytes = std::mem::size_of::<(String, (&[u8], u64))>()
-            .checked_add(length)
-            .and_then(|bytes| bytes.checked_add(64))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view storage", 0, 1))?;
+
         ctx.charge_work(
             u64::from(usize::BITS - blocks.len().leading_zeros()),
             "index NX offset block view",
         )?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(map_bytes))?;
+
         let mut key = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        reservation.with_storage(|| ctx.try_reserve_retained_text(
             &mut key,
             length,
-            "allocate NX offset block view key",
-        )?;
+            "NX offset block view storage",
+        ))?;
         write!(&mut key, "{prefix}{section_ordinal}{infix}{block_ordinal}")
             .map_err(|_| ctx.refuse_codec_limit("format NX offset block view key", 0, 1))?;
         let offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view source offset", 0, 1))?;
-        ctx.insert_btree_map(
+        reservation.with_storage(|| ctx.insert_btree_map(
             blocks,
             key,
             (block.bytes, offset),
             "NX offset block view entries",
-        )?;
+        ))?;
     }
     Ok(())
 }

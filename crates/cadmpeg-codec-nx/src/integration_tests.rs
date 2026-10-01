@@ -141,6 +141,13 @@ fn inspect_summary_refuses_attribute_node_at_collection_limit() {
     );
 }
 
+// Two ordered attributes admit one initial node and at most two split nodes.
+fn two_summary_attribute_nodes() -> usize {
+    3 * (22 * std::mem::size_of::<String>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>()))
+}
+
 #[test]
 fn inspect_summary_refuses_attribute_text_at_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
@@ -150,7 +157,7 @@ fn inspect_summary_refuses_attribute_text_at_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::ContainerEntry>());
         },
         |ctx| {
             let error = crate::inspect::summarize(ctx, &scan)
@@ -191,7 +198,7 @@ fn inspect_summary_refuses_stream_name_at_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes = 23;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes()) + 23;
         },
         |ctx| {
             let error = crate::inspect::summarize(ctx, &scan)
@@ -225,7 +232,7 @@ fn inspect_summary_refuses_directory_name_at_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes = u64::try_from(preceding).expect("small fixture");
+            policy.limits.max_retained_bytes = u64::try_from(preceding + std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes()).expect("small fixture");
         },
         |ctx| {
             let error = crate::inspect::summarize(ctx, &scan)
@@ -356,7 +363,7 @@ fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
         &[],
         |policy| {
             policy.limits.max_retained_bytes =
-    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::ContainerEntry>()) + 23;
+    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes()) + 23;
         },
         |ctx| {
             let error = crate::inspect::summarize(ctx, &scan)

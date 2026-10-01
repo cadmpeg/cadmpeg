@@ -233,16 +233,10 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
                 complete = false;
                 break;
             };
-            block_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<String>()
-                    .checked_add(block.len())
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("retain NX projected curve block IDs", 0, 1)
-                    })?,
-            ))?;
-            ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs")?;
+
+            block_reservation.with_storage(|| ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs"))?;
             let mut copy = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            ctx.try_reserve_retained_text(
                 &mut copy,
                 block.len(),
                 "copy NX projected curve block ID",
@@ -807,12 +801,13 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         else {
             continue;
         };
+        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
         let mut data_blocks = Vec::new();
-        ctx.reserve_vec(
+        source_id_storage.with_storage(|| ctx.reserve_vec(
             &mut data_blocks,
             14,
             "NX surface construction source blocks",
-        )?;
+        ))?;
         for reference in graph {
             let Some(block) = reference.data_block.as_deref() else {
                 break;
@@ -1335,23 +1330,20 @@ pub(in crate::native) fn feature_operation_body_operands(
                 .len()
                 .checked_add(7 + 10)
                 .ok_or_else(|| ctx.refuse_codec_limit("retain NX operand data block id", 0, 1))?;
-            let _candidate = ctx.reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(length),
+            let mut candidate = ctx.reserve_scoped(
+                0,
                 "format NX operand data block id",
             )?;
             let mut id = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            candidate.with_storage(|| ctx.try_reserve_retained_text(
                 &mut id,
                 length,
                 "allocate NX operand data block id",
-            )?;
+            ))?;
             write!(id, "{store}:block#{}", member.member.atom.value())
                 .map_err(|_| ctx.refuse_codec_limit("write NX operand data block id", 0, 1))?;
             if blocks.iter().any(|block| block.id == id) {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(id.len()),
-                    "retain NX operand data block id",
-                )?;
+                candidate.commit()?;
                 Some(id)
             } else {
                 None
@@ -2178,14 +2170,13 @@ pub(in crate::native) fn feature_block_construction_payloads(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut payloads = Vec::new();
     for construction in constructions {
-        let (data_blocks, reservation) = ctx.collect_scoped_texts(
-            construction
-                .members
-                .iter()
-                .map(|member| member.data_block.as_str())
-                .chain(std::iter::once(construction.terminal_data_block.as_str())),
-            "NX block construction source blocks",
-        )?;
+        let mut reservation = ctx.reserve_scoped(0, "NX block construction source blocks")?;
+        let mut data_blocks = Vec::new();
+        for source in construction.members.iter().map(|member| member.data_block.as_str()).chain(std::iter::once(construction.terminal_data_block.as_str())) {
+            ctx.charge_work(1, "NX block construction source blocks")?;
+            let owned = ctx.copy_retained_text(source, "NX block construction source blocks")?;
+            reservation.with_storage(|| ctx.push_vec(&mut data_blocks, owned, "NX block construction source blocks"))?;
+        }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };

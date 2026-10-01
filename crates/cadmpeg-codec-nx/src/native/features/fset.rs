@@ -297,38 +297,27 @@ fn fset_construction_payload_from_group(
     if source_blocks.iter().any(|(_, target)| target.is_none()) {
         return Ok(None);
     }
-    let text_bytes = source_blocks
-        .iter()
-        .try_fold(0usize, |total, (_, target)| {
-            total
-                .checked_add(target.as_ref().map_or(0, String::len))
-                .ok_or_else(|| ctx.refuse_codec_limit("NX FSET source block references", 0, 1))
-        })?;
-    let slot_bytes = source_blocks
-        .len()
-        .checked_mul(std::mem::size_of::<String>())
-        .and_then(|bytes| bytes.checked_add(text_bytes))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX FSET source block references", 0, 1))?;
+
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(source_blocks.len()),
         "NX FSET source block references",
     )?;
-    let _source_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(slot_bytes),
+    let mut source_reservation = ctx.reserve_scoped(
+        0,
         "NX FSET source block references",
     )?;
     let mut data_blocks = Vec::new();
-    ctx.reserve_capacity(
+    source_reservation.with_storage(|| ctx.reserve_capacity(
         &mut data_blocks,
         source_blocks.len(),
         "allocate NX FSET source block references",
-    )?;
+    ))?;
     for (_, target) in source_blocks {
         let Some(block) = target else {
             return Ok(None);
         };
         let mut id = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut id,
             block.len(),
             "allocate NX FSET source block reference",

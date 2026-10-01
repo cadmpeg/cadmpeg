@@ -820,7 +820,8 @@ pub(in crate::native) fn feature_draft_construction_payloads(
             continue;
         };
         let count = tokens.indices().count();
-        let mut data_blocks = ctx.collection_vec(count, "NX draft construction source blocks")?;
+        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
+        let mut data_blocks = source_id_storage.with_storage(|| ctx.collection_vec(count, "NX draft construction source blocks"))?;
         for row in tokens.indices() {
             data_blocks
                 .push(ctx.copy_retained_text(row.target, "NX draft construction source block")?);
@@ -907,7 +908,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         let Ok(graph): Result<[&FeatureDraftConstructionReference; 4], _> = graph.try_into() else {
             continue;
         };
-        let mut data_blocks = ctx.collection_vec(4, "NX draft graph source blocks")?;
+        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
+        let mut data_blocks = source_id_storage.with_storage(|| ctx.collection_vec(4, "NX draft graph source blocks"))?;
         for reference in graph {
             let Some(block) = reference.data_block.as_deref() else {
                 break;

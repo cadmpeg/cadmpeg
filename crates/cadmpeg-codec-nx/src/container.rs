@@ -1442,6 +1442,7 @@ pub(crate) fn scan_legacy<'a>(
         ));
     }
     let part_id = part.id();
+    let mut workspace = ctx.reserve_scoped(0, "legacy NX stream index")?;
     let mut stream_views = Vec::new();
     let mut stream_spans = BTreeMap::new();
     let mut logical_offset = 0_u64;
@@ -1461,31 +1462,21 @@ pub(crate) fn scan_legacy<'a>(
         logical_offset = logical_offset
             .checked_add(byte_len)
             .ok_or_else(|| CodecError::Malformed("legacy CFB logical image overflows".into()))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&(stream.id(), span))),
-            "legacy NX stream spans",
-        )?;
-        ctx.insert_btree_map(
+
+        workspace.with_storage(|| ctx.insert_btree_map(
             &mut stream_spans,
             stream.id(),
             span,
             "legacy NX stream spans",
-        )?;
-        ctx.reserve_vec(&mut stream_views, 1, "legacy NX stream views")?;
+        ))?;
+        workspace.with_storage(|| ctx.reserve_vec(&mut stream_views, 1, "legacy NX stream views"))?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;
     let mut entries = Vec::new();
     for entry in snapshot.entries() {
         ctx.charge_collection_items(1, "retain legacy NX directory entry")?;
-        let retained = "/Root/"
-            .len()
-            .checked_add(entry.path().len())
-            .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(retained),
-            "retain legacy NX directory entry",
-        )?;
+
         let body = match entry {
             CompoundEntry::Stream(stream) => stream_spans
                 .get(&stream.id())
@@ -1504,7 +1495,7 @@ pub(crate) fn scan_legacy<'a>(
             .checked_add(entry.path().len())
             .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
         let mut name = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut name,
             name_len,
             "retain legacy NX directory entry",

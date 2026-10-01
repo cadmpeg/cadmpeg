@@ -255,40 +255,27 @@ fn delete_construction_payload_from_field(
     }) {
         return Ok(None);
     }
-    let text_bytes = slots.iter().try_fold(0usize, |total, reference| {
-        let length = reference
-            .as_ref()
-            .and_then(|(_, block)| block.as_ref())
-            .map_or(0, String::len);
-        total
-            .checked_add(length)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE source block references", 0, 1))
-    })?;
-    let slot_bytes = slots
-        .len()
-        .checked_mul(std::mem::size_of::<String>())
-        .and_then(|bytes| bytes.checked_add(text_bytes))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE source block references", 0, 1))?;
+
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(slots.len()),
         "NX DELETE source block references",
     )?;
-    let _source_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(slot_bytes),
+    let mut source_reservation = ctx.reserve_scoped(
+        0,
         "NX DELETE source block references",
     )?;
     let mut data_blocks = Vec::new();
-    ctx.reserve_capacity(
+    source_reservation.with_storage(|| ctx.reserve_capacity(
         &mut data_blocks,
         slots.len(),
         "allocate NX DELETE source block references",
-    )?;
+    ))?;
     for reference in slots {
         let Some((_, Some(block))) = reference else {
             return Ok(None);
         };
         let mut id = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut id,
             block.len(),
             "allocate NX DELETE source block reference",

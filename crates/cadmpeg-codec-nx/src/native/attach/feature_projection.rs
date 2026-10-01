@@ -1039,17 +1039,14 @@ pub(in crate::native) fn feature_source_content(
     let mut content = Vec::new();
     for value in sorted {
         let text = value.value.as_str();
-        let bytes = text.len();
+
         ctx.charge_collection_items(1, "NX feature source text")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX feature source text",
-        )?;
+
         let mut owned = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut owned,
             text.len(),
-            "allocate NX feature source text",
+            "NX feature source text",
         )?;
         owned.push_str(text);
         ctx.reserve_capacity(

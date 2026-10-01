@@ -58,6 +58,13 @@ fn container_summary_attribute_refuses_before_insert() {
     let entry = entries.first_mut().expect("fixture entry");
     insert_attribute(&setup, entry, "test", format_args!("value")).expect("service attribute");
     assert_eq!(entry.attributes["test"], "value");
+    let node_bytes = 22 * std::mem::size_of::<String>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
+    let nodes = if entry.attributes.is_empty() { 1 } else {
+        usize::try_from(entry.attributes.len().ilog2()).expect("test tree height") + 2
+    };
+    let storage = cadmpeg_core::decode::u64_from_index(node_bytes * nodes);
     for (collection_cap, retained_cap, dimension, operation) in [
         (
             0,
@@ -73,7 +80,7 @@ fn container_summary_attribute_refuses_before_insert() {
         ),
         (
             u64::MAX,
-            8,
+            storage + 8,
             ResourceDimension::RetainedBytes,
             "retain Inventor summary attribute value",
         ),

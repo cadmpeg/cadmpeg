@@ -64,7 +64,6 @@ enum VecGrowth {
 
 impl DecodeContext<'_> {
 
-
     /// Reserve backing storage without admitting values not yet inserted.
     pub fn reserve_capacity_limit<T>(
         &self,
@@ -127,8 +126,6 @@ impl DecodeContext<'_> {
         }
         Ok(())
     }
-
-
 
     /// Retains vector storage whose slots were admitted in aggregate.
     pub fn reserve_capacity<T>(
@@ -300,7 +297,7 @@ impl DecodeContext<'_> {
     }
 
     /// Reserves text bytes charged by aggregate admission.
-    pub fn reserve_admitted_string(
+    pub(crate) fn reserve_admitted_string(
         text: &mut String,
         additional: usize,
         operation: &'static str,
@@ -595,7 +592,6 @@ impl DecodeContext<'_> {
         }
         Ok(out)
     }
-
 
     /// Inserts a unique tree value after admitting its scoped value storage.
     pub fn insert_scoped_btree_value<T: Ord>(
@@ -928,7 +924,6 @@ impl DecodeContext<'_> {
         }
         Ok(collected)
     }
-
 
     /// Copies retained rows and charges row and item slots.
     pub fn copy_retained_rows<T: Copy>(
@@ -2546,10 +2541,9 @@ mod tests {
     fn admitted_string_reserve_preserves_prefix_under_service_profile() {
         let arena = DecodeArena::new();
         let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
-        ctx.charge_retained(2, "test admitted text slots")
-            .expect("service admits text");
+
         let mut text = String::from("a");
-        DecodeContext::reserve_admitted_string(&mut text, 2, "test admitted text slots")
+        ctx.try_reserve_retained_text(&mut text, 2, "test admitted text slots")
             .expect("text allocation");
         assert_eq!(text, "a");
         assert!(text.capacity() >= 3);
@@ -2559,11 +2553,7 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
         let mut text = String::new();
-        let result = ctx
-            .charge_retained(2, "test admitted text slots")
-            .and_then(|()| {
-                DecodeContext::reserve_admitted_string(&mut text, 2, "test admitted text slots")
-            });
+        let result = ctx.try_reserve_retained_text(&mut text, 2, "test admitted text slots");
         assert!(
             matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
