@@ -574,20 +574,6 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             .checked_mul(std::mem::size_of::<Token>())
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))?;
         scratch.grow(cadmpeg_core::decode::u64_from_index(token_bytes))?;
-        let string_bytes = prims
-            .iter()
-            .try_fold(0usize, |used, prim| {
-                let extra = match prim {
-                    Prim::Str(value) | Prim::Word(value) => value.len(),
-                    _ => 0,
-                };
-                used.checked_add(extra)
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(string_bytes),
-            "retain SAT typed strings",
-        )?;
         let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
             TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
             TypedRecordFailure::Type(failure) => {
@@ -2091,8 +2077,8 @@ mod tests {
     #[test]
     fn sat_typed_string_copies_refuse_retained_limit() {
         for (body, limit) in [
-            ("mystery @3 abc #\n", 73),
-            ("asmheader $-1 -1 @3 abc #\n", 75),
+            ("mystery @3 abc #\n", 70),
+            ("asmheader $-1 -1 @3 abc #\n", 72),
         ] {
             let source = asm_stream(body);
             let arena = DecodeArena::new();
@@ -2106,6 +2092,36 @@ mod tests {
             };
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(refusal.operation, "retain SAT typed string");
+        }
+    }
+
+    #[test]
+    fn sat_typed_text_charges_only_its_retained_copy() {
+        for (body, name, payload, token_count) in [
+            ("mystery @4 test #\n", "mystery", 4, 1),
+            ("face $-1 -1 $-1 $-1 $-1 $-1 $-1 $-1 forward single #\n", "face", 0, 10),
+        ] {
+            let source = asm_stream(body);
+            crate::test_support::with_service_context(&source, |service| {
+                let mut policy = *service.policy();
+                // Header strings, record and terminator names, typed payload,
+                // and retained tokens are the surviving allocations.
+                policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                    61 + name.len() + "End-of-ASM-data".len() + payload
+                        + token_count * std::mem::size_of::<Token>(),
+                );
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                    .expect("source fits input limit");
+                let stream = super::parse(&ctx, &source).expect("one retained text copy fits");
+                assert_eq!(stream.records.len(), 1);
+                assert_eq!(stream.records[0].tokens.len(), token_count);
+                if payload != 0 {
+                    assert_eq!(stream.records[0].tokens[0], Token::Str("test".into()));
+                } else {
+                    assert_eq!(&stream.records[0].tokens[8..], &[Token::False, Token::False]);
+                }
+            }).expect("service test context");
         }
     }
 
