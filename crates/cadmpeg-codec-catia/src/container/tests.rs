@@ -1558,3 +1558,21 @@ fn brep_surface_source_is_scoped_and_destination_is_retained_once() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
+
+#[test]
+fn jpeg_candidate_suffix_walks_refuse_caller_work_limit() {
+    let mut bytes = summary_preview_segment();
+    let image_start = bytes.windows(3).position(|value| value == [0xff, 0xd8, 0xff]).expect("SOI");
+    bytes.truncate(image_start);
+    for _ in 0..32 {
+        bytes.extend([0xff, 0xd8, 0xff, 0xda, 0, 2]);
+    }
+    let segments = finjpl_service(&super::BodyExtent::whole(&bytes));
+    crate::test_support::with_work_limit(u64::try_from(bytes.len() * 2).expect("work"), |ctx| {
+        let error = super::preview_images_in_segments(ctx, &bytes, &segments).expect_err("repeated suffix walks exceed work");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "catia_jpeg_marker_walk");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    assert!(preview_service(&bytes).is_empty());
+}
