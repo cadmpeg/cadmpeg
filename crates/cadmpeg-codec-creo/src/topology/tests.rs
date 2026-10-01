@@ -453,7 +453,7 @@ fn builds_closed_face_side_rings_without_guessing() {
     assert_eq!(loops.len(), 2);
     assert_eq!(loops[0].face_id, std::num::NonZeroU32::new(10));
     assert_eq!(
-        loops[0].half_edges,
+        loops[0].half_edges(),
         vec![
             HalfEdgeId {
                 curve_id: 1,
@@ -709,8 +709,8 @@ fn scan_groups_connected_nonzero_face_references() {
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.topology.face_components.len(), 1);
-    assert_eq!(scan.topology.face_components[0].face_ids, vec![10, 11, 12]);
-    assert_eq!(scan.topology.face_components[0].curve_ids, vec![7, 8]);
+    assert_eq!(scan.topology.face_components[0].face_ids(), vec![10, 11, 12]);
+    assert_eq!(scan.topology.face_components[0].curve_ids(), vec![7, 8]);
 }
 
 #[test]
@@ -1011,4 +1011,53 @@ fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
     assert!(model.shells.is_empty());
     assert!(model.regions.is_empty());
     assert!(model.bodies.is_empty());
+}
+
+#[test]
+fn closed_ring_constructor_rejects_empty_repeated_disconnected_and_mixed_faces() {
+    let a = HalfEdgeId { curve_id: 1, side: crate::topology::Side::Zero };
+    let b = HalfEdgeId { curve_id: 2, side: crate::topology::Side::Zero };
+    let face = std::num::NonZeroU32::new(10);
+    let graph = [HalfEdge { id: a, face_id: face, next: Some(b) }, HalfEdge { id: b, face_id: face, next: Some(a) }];
+    with_service_context(|ctx| {
+        for ring in [vec![], vec![a, a], vec![a], vec![b]] {
+            assert!(super::Loop::new(ctx, face, ring, &graph).expect("ring validation").is_none());
+        }
+        let ring = super::Loop::new(ctx, face, vec![a, b], &graph).expect("ring validation").expect("closed ring");
+        assert_eq!(ring.half_edges(), [a, b]);
+        let mut mixed = graph.clone(); mixed[1].face_id = std::num::NonZeroU32::new(11);
+        assert!(super::Loop::new(ctx, face, vec![a, b], &mixed).expect("ring validation").is_none());
+        let mut duplicate = graph.to_vec(); duplicate.push(graph[0].clone());
+        assert!(super::Loop::new(ctx, face, vec![a, b], &duplicate).expect("ring validation").is_none());
+    });
+}
+
+#[test]
+fn face_component_constructor_rejects_zero_repeated_and_unordered_identity_sets() {
+    with_service_context(|ctx| {
+        for faces in [vec![], vec![0], vec![2, 0, 2, 1], vec![2, 1], vec![1, 1]] {
+            assert!(super::FaceComponent::new(ctx, faces, vec![1]).expect("component validation").is_none());
+        }
+        for curves in [vec![2, 1], vec![1, 1]] {
+            assert!(super::FaceComponent::new(ctx, vec![1], curves).expect("component validation").is_none());
+        }
+        let component = super::FaceComponent::new(ctx, vec![1, 2], vec![0, 1]).expect("component validation").expect("ordered component");
+        assert_eq!(component.face_ids(), [1, 2]); assert_eq!(component.curve_ids(), [0, 1]);
+    });
+}
+
+#[test]
+fn checked_topology_constructors_propagate_work_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let id = HalfEdgeId { curve_id: 1, side: crate::topology::Side::Zero };
+    let graph = [HalfEdge { id, face_id: None, next: Some(id) }];
+    let error = super::Loop::new(&ctx, None, vec![id], &graph).expect_err("ring work refused");
+    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = super::FaceComponent::new(&ctx, vec![1], vec![]).expect_err("component work refused");
+    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    assert_eq!(ctx.resource_refusal(), Some(limit));
 }

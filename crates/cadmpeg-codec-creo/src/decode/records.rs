@@ -1742,8 +1742,8 @@ pub(super) fn loop_records<'a>(
         ctx.reserve_vec(&mut records, 1, "creo native loop records")?;
         records.push(CreoLoopRecord {
             id,
-            face_id: record.face_id.map_or(0, std::num::NonZeroU32::get),
-            half_edges: &record.half_edges,
+            face_id: record.face_id().map_or(0, std::num::NonZeroU32::get),
+            half_edges: record.half_edges(),
         });
     }
     Ok(records)
@@ -1880,8 +1880,8 @@ pub(super) fn face_component_records<'a>(
         ctx.reserve_vec(&mut records, 1, "creo native face component records")?;
         records.push(CreoFaceComponentRecord {
             id,
-            face_ids: &record.face_ids,
-            curve_ids: &record.curve_ids,
+            face_ids: record.face_ids(),
+            curve_ids: record.curve_ids(),
         });
     }
     Ok(records)
@@ -1897,7 +1897,7 @@ mod topology_projection_limit_tests {
     use crate::curve::CurveTopologyRow;
     use crate::loop_array::{LoopArrayFrame, LoopArrayRecord};
     use crate::topology::{
-        FaceComponent, HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Loop, Side, TopologicalVertex,
+        HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Side, TopologicalVertex,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::num::NonZeroU32;
@@ -1922,10 +1922,7 @@ mod topology_projection_limit_tests {
             face_id: NonZeroU32::new(1),
             next: Some(half_edge),
         });
-        scan.topology.loops.push(Loop {
-            face_id: NonZeroU32::new(1),
-            half_edges: vec![half_edge],
-        });
+        scan.topology.loops.push(crate::test_support::closed_loop(NonZeroU32::new(1), vec![half_edge]));
         scan.topology.vertices.push(TopologicalVertex {
             id: 1,
             half_edges: vec![half_edge],
@@ -1937,10 +1934,7 @@ mod topology_projection_limit_tests {
                 start_vertex_id: 1,
                 end_vertex_id: Some(1),
             });
-        scan.topology.face_components.push(FaceComponent {
-            face_ids: vec![1],
-            curve_ids: vec![8],
-        });
+        scan.topology.face_components.push(crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![1], vec![8])).expect("component admission").expect("valid component fixture"));
         scan.loop_arrays.frames.push(LoopArrayFrame {
             offset: 17,
             variant: None,

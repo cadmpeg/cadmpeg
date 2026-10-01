@@ -355,3 +355,9 @@ pub(crate) fn assert_retained_boundaries<T>(
     }
     panic!("retained route did not finish within boundary bound");
 }
+
+/// Build a closed graph for the ring used by a synthetic geometry fixture.
+pub(crate) fn closed_loop(face_id: Option<std::num::NonZeroU32>, half_edges: Vec<crate::topology::HalfEdgeId>) -> crate::topology::Loop {
+    let graph = half_edges.iter().zip(half_edges.iter().cycle().skip(1)).map(|(id, next)| crate::topology::HalfEdge { id: *id, face_id, next: Some(*next) }).collect::<Vec<_>>();
+    crate::decode::with_test_decode_ctx(|ctx| crate::topology::Loop::new(ctx, face_id, half_edges, &graph)).expect("ring admission").expect("valid closed ring fixture")
+}

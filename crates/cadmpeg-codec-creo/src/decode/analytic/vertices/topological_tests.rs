@@ -244,10 +244,7 @@ fn pcurve_vertex_case() -> (
         face_1_endpoints: [[1.0, 2.0], [3.0, 4.0]],
         offset: 0,
     });
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(10),
-        half_edges: vec![side_zero],
-    });
+    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(10), vec![side_zero]));
     for (vertex_id, id, face_id, end_vertex_id) in [(1, side_zero, 10, 2), (2, side_one, 11, 1)] {
         scan.topology
             .vertices
@@ -397,10 +394,7 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
         face_1_endpoints: [[5.0, 6.0], [7.0, 8.0]],
         offset: 0,
     });
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(10),
-        half_edges: vec![side_zero],
-    });
+    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(10), vec![side_zero]));
     for (vertex_index, id, face_id, end_vertex_id) in [(0, side_zero, 10, 2), (1, side_one, 11, 1)]
     {
         scan.topology.vertices[vertex_index].half_edges.push(id);

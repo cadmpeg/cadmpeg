@@ -1078,13 +1078,10 @@ mod tests {
                 offset: 21,
             },
         ];
-        scan.topology.loops.push(crate::topology::Loop {
-            face_id: std::num::NonZeroU32::new(5),
-            half_edges: vec![crate::topology::HalfEdgeId {
+        scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId {
                 curve_id: 10,
                 side: crate::topology::Side::Zero,
-            }],
-        });
+            }]));
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
