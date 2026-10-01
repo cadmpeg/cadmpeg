@@ -114,15 +114,25 @@ fn assert_scan_descriptor_refusal(bytes: &[u8], operation: &str) {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("fixture");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("fixture");
         match crate::container::scan(&ctx, bytes) {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+                assert_eq!(
+                    limit.dimension,
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems
+                );
                 if limit.operation == operation {
-                    assert_eq!(ctx.finish_session().unwrap_err().to_string(), cadmpeg_core::CodecError::ResourceLimit(limit).to_string());
+                    assert_eq!(
+                        ctx.finish_session().unwrap_err().to_string(),
+                        cadmpeg_core::CodecError::ResourceLimit(limit).to_string()
+                    );
                     return;
                 }
-                cap = limit.used.checked_add(limit.additional).expect("small fixture");
+                cap = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("small fixture");
             }
             other => panic!("descriptor refusal was not reached: {other:?}"),
         }
@@ -133,8 +143,11 @@ fn assert_scan_descriptor_refusal(bytes: &[u8], operation: &str) {
 #[test]
 fn scan_object_descriptors_refuse_collection_growth() {
     let bytes = crate::test_support::test_archive::archive(&[
-        crate::test_support::test_archive::object_record(1, crate::test_support::test_dump::POINT_CLASS,
-            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0])),
+        crate::test_support::test_archive::object_record(
+            1,
+            crate::test_support::test_dump::POINT_CLASS,
+            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0]),
+        ),
     ]);
     assert_scan_descriptor_refusal(&bytes, "Rhino scanned object descriptors");
 }
@@ -147,13 +160,20 @@ fn scan_table_descriptors_refuse_collection_growth() {
 
 #[test]
 fn scan_retained_records_refuse_collection_growth() {
-    use crate::test_support::test_dump::{minimal_document, table, long_chunk};
+    use crate::test_support::test_dump::{long_chunk, minimal_document, table};
     let archive = ArchiveVersion::V5;
-    let bytes = minimal_document("50", &[
-        table(archive, 0x1000_0014, &[long_chunk(archive, 0x7000_0001, &[])]),
-        table(archive, 0x1000_0015, &[]),
-        table(archive, 0x1000_0013, &[]),
-    ]);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(
+                archive,
+                0x1000_0014,
+                &[long_chunk(archive, 0x7000_0001, &[])],
+            ),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
     assert_scan_descriptor_refusal(&bytes, "Rhino scanned opaque records");
     assert_scan_descriptor_refusal(&bytes, "Rhino scanned table records");
 }
@@ -164,10 +184,18 @@ fn view_list_refuses_work_before_framing_truncated_children() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
     let mut storage = ctx.reserve_scoped(0, "fixture ranges").unwrap();
-    let error = crate::container::list_checksum_children(&ctx, &bytes, &chunk, ArchiveVersion::V5, &mut storage).unwrap_err();
+    let error = crate::container::list_checksum_children(
+        &ctx,
+        &bytes,
+        &chunk,
+        ArchiveVersion::V5,
+        &mut storage,
+    )
+    .unwrap_err();
     assert!(matches!(error, crate::chunks::FramingError::Resource(limit)
         if limit.operation == "Rhino view checksum child ranges" && limit.used == 0 && limit.additional == 1));
 }
@@ -175,15 +203,27 @@ fn view_list_refuses_work_before_framing_truncated_children() {
 #[test]
 fn view_list_second_walk_has_separate_work_admission() {
     let mut body = 1_i32.to_le_bytes().to_vec();
-    body.extend(crate::test_support::test_dump::short_chunk(ArchiveVersion::V5, 0x8000_0001, 0));
+    body.extend(crate::test_support::test_dump::short_chunk(
+        ArchiveVersion::V5,
+        0x8000_0001,
+        0,
+    ));
     let bytes = crc_chunk(ArchiveVersion::V5, 0x2000_803b, &body);
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 1;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
     let mut storage = ctx.reserve_scoped(0, "fixture ranges").unwrap();
-    let error = crate::container::list_checksum_children(&ctx, &bytes, &chunk, ArchiveVersion::V5, &mut storage).unwrap_err();
+    let error = crate::container::list_checksum_children(
+        &ctx,
+        &bytes,
+        &chunk,
+        ArchiveVersion::V5,
+        &mut storage,
+    )
+    .unwrap_err();
     assert!(matches!(error, crate::chunks::FramingError::Resource(limit)
         if limit.operation == "Rhino view checksum second walk" && limit.used == 1 && limit.additional == 1));
 }

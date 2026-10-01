@@ -680,7 +680,11 @@ pub(crate) fn warn_checksum(
 }
 
 /// Verifies a parsed chunk's checksum without changing its recoverable boundary.
-pub(crate) fn verify_checksum(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], chunk: &Chunk) -> Result<ChecksumStatus, FramingError> {
+pub(crate) fn verify_checksum(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    chunk: &Chunk,
+) -> Result<ChecksumStatus, FramingError> {
     let body = chunk.body();
     verify_checksum_ranges(ctx, bytes, chunk, std::slice::from_ref(&body))
 }
@@ -706,16 +710,23 @@ where
     else {
         return Ok(ChecksumStatus::NotPresent);
     };
-    let checksum_end = body.end.checked_add(kind.width()).ok_or(FramingError::Overflow { offset: body.end })?;
+    let checksum_end = body
+        .end
+        .checked_add(kind.width())
+        .ok_or(FramingError::Overflow { offset: body.end })?;
     let checksum = body.end..checksum_end;
     let stored = bytes.get(checksum.clone()).ok_or(FramingError::Truncated {
-        offset: body.end, needed: kind.width(),
+        offset: body.end,
+        needed: kind.width(),
     })?;
     for range in ranges.clone() {
         ctx.charge_work(1, "Rhino checksum range validation")?;
         let range = range.borrow();
         if range.start < body.start || range.end > body.end || range.start > range.end {
-            return Err(FramingError::structural(body.start, "checksum range escapes chunk body"));
+            return Err(FramingError::structural(
+                body.start,
+                "checksum range escapes chunk body",
+            ));
         }
     }
     match kind {
@@ -727,8 +738,13 @@ where
             let mut crc = 1;
             for range in ranges {
                 let range = range.borrow();
-                let data = bytes.get(range.clone()).ok_or_else(|| FramingError::structural(range.start, "checksum range escapes input"))?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "Rhino chunk checksum bytes")?;
+                let data = bytes.get(range.clone()).ok_or_else(|| {
+                    FramingError::structural(range.start, "checksum range escapes input")
+                })?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(data.len()),
+                    "Rhino chunk checksum bytes",
+                )?;
                 crc = crc16(crc, data);
             }
             let expected = u32::from(crc);
@@ -746,8 +762,13 @@ where
             let mut hasher = crc32fast::Hasher::new();
             for range in ranges {
                 let range = range.borrow();
-                let data = bytes.get(range.clone()).ok_or_else(|| FramingError::structural(range.start, "checksum range escapes input"))?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "Rhino chunk checksum bytes")?;
+                let data = bytes.get(range.clone()).ok_or_else(|| {
+                    FramingError::structural(range.start, "checksum range escapes input")
+                })?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(data.len()),
+                    "Rhino chunk checksum bytes",
+                )?;
                 hasher.update(data);
             }
             let expected = hasher.finalize();

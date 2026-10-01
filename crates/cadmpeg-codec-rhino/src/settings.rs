@@ -1898,7 +1898,8 @@ pub(crate) fn parse_rendering_attributes(
             material_payload.skip(16 + 4)?;
         }
         material_payload.skip_remaining()?;
-        if let Some(warning) = checksum_warning_excluding(ctx, data, &material, &obsolete_mappings)? {
+        if let Some(warning) = checksum_warning_excluding(ctx, data, &material, &obsolete_mappings)?
+        {
             warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::IntegrityFailure,

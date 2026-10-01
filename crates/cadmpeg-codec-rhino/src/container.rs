@@ -818,8 +818,16 @@ fn list_checksum_children(
         offset = child.next_offset();
     }
     let mut children = Vec::new();
-    ctx.reserve_scoped_vec(reservation, &mut children, child_count, "Rhino view checksum ranges")?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(child_count), "Rhino view checksum second walk")?;
+    ctx.reserve_scoped_vec(
+        reservation,
+        &mut children,
+        child_count,
+        "Rhino view checksum ranges",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(child_count),
+        "Rhino view checksum second walk",
+    )?;
     offset = first_child_offset;
     for _ in 0..child_count {
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
@@ -1066,7 +1074,11 @@ fn scan_with_record_limit<'a>(
             let mut metadata =
                 crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)?;
             let all_objects = resolve_identities(ctx, all_objects, &metadata, &mut warnings)?;
-            ctx.reserve_retained_vec(&mut opaque_records, metadata.opaque_records.len(), "Rhino scanned opaque records")?;
+            ctx.reserve_retained_vec(
+                &mut opaque_records,
+                metadata.opaque_records.len(),
+                "Rhino scanned opaque records",
+            )?;
             opaque_records.append(&mut metadata.opaque_records);
             return Ok(Scan {
                 data,
@@ -1220,13 +1232,22 @@ fn scan_with_record_limit<'a>(
                 };
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 count_object_typecode(ctx, &mut object_typecodes, typecode)?;
-                ctx.push_scoped_vec(&mut object_storage, &mut all_objects, descriptor, "Rhino scanned object descriptors")?;
+                ctx.push_scoped_vec(
+                    &mut object_storage,
+                    &mut all_objects,
+                    descriptor,
+                    "Rhino scanned object descriptors",
+                )?;
             }
             if opaque {
-                ctx.push_retained_vec(&mut opaque_records, OpaqueRecord {
-                    table_typecode: chunk.typecode,
-                    record: record.clone(),
-                }, "Rhino scanned opaque records")?;
+                ctx.push_retained_vec(
+                    &mut opaque_records,
+                    OpaqueRecord {
+                        table_typecode: chunk.typecode,
+                        record: record.clone(),
+                    },
+                    "Rhino scanned opaque records",
+                )?;
             }
             if retain_records {
                 ctx.push_retained_vec(&mut records, record, "Rhino scanned table records")?;
@@ -1256,7 +1277,11 @@ fn scan_with_record_limit<'a>(
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
             definitions = parsed.scan;
-            ctx.reserve_retained_vec(&mut opaque_records, parsed.opaque_records.len(), "Rhino scanned opaque records")?;
+            ctx.reserve_retained_vec(
+                &mut opaque_records,
+                parsed.opaque_records.len(),
+                "Rhino scanned opaque records",
+            )?;
             opaque_records.extend(parsed.opaque_records);
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
@@ -1269,7 +1294,11 @@ fn scan_with_record_limit<'a>(
                 chunk.typecode,
             )?;
             history = parsed.records;
-            ctx.reserve_retained_vec(&mut opaque_records, parsed.opaque_records.len(), "Rhino scanned opaque records")?;
+            ctx.reserve_retained_vec(
+                &mut opaque_records,
+                parsed.opaque_records.len(),
+                "Rhino scanned opaque records",
+            )?;
             opaque_records.extend(parsed.opaque_records);
         }
         let table = Table::new(

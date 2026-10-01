@@ -458,18 +458,29 @@ fn negative_bounded_plane_without_an_owner_is_not_invented_as_a_face() {
 
 #[test]
 fn bounded_plane_linear_nurbs_proofs_propagate_work_refusals() {
-    let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 126,
-        "126,4,1,1,1,1,0,0,0,1,2,3,4,4,1,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,0,0,0,0,0,4,0,0,1;");
-    for operation in ["iges closed polyline duplicate comparisons", "iges planar self-intersection comparisons"] {
+    let bytes = bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        126,
+        "126,4,1,1,1,1,0,0,0,1,2,3,4,4,1,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,0,0,0,0,0,4,0,0,1;",
+    );
+    for operation in [
+        "iges closed polyline duplicate comparisons",
+        "iges planar self-intersection comparisons",
+    ] {
         let mut cap = 0;
         let mut reached = false;
         for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             match cadmpeg_test_support::decode::full(&crate::IgesCodec, &bytes, &policy) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
                     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                    if limit.operation == operation { reached = true; break; }
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 other => panic!("proof refusal was not reached: {other:?}"),
@@ -482,22 +493,51 @@ fn bounded_plane_linear_nurbs_proofs_propagate_work_refusals() {
 #[test]
 fn bounded_plane_polyline_proofs_propagate_work_refusals() {
     use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples};
-    let points = vec![Point3::new(0.0,0.0,0.0), Point3::new(1.0,0.0,0.0),
-        Point3::new(1.0,1.0,0.0), Point3::new(0.0,1.0,0.0), Point3::new(0.0,0.0,0.0)];
-    let geometry = SolvedCurveGeometry::Polyline(PolylineCurve::new(
-        PolylineSamples::Unparameterized { points: points.try_into().unwrap() },0.0).unwrap());
+    let points = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+    ];
+    let geometry = SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(
+            PolylineSamples::Unparameterized {
+                points: points.try_into().unwrap(),
+            },
+            0.0,
+        )
+        .unwrap(),
+    );
     let ir = CadIr::empty();
     let index = ModelIndex::new(&ir);
-    for operation in ["iges closed polyline duplicate comparisons", "iges planar self-intersection comparisons"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            crate::test_support::with_policy_context(&[], &policy, |ctx| {
-                let context = super::super::PlaneBoundarySimplicity { index: &index,
-                    plane:(Point3::new(0.0,0.0,0.0),Vector3::new(0.0,0.0,1.0)),
-                    resolution:0.001, transform:Transform::identity(), ctx };
-                super::super::bounded_plane_curve_is_simple(&geometry,context,false,None,&mut BTreeSet::new())
-            })
-        });
+    for operation in [
+        "iges closed polyline duplicate comparisons",
+        "iges planar self-intersection comparisons",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                    let context = super::super::PlaneBoundarySimplicity {
+                        index: &index,
+                        plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+                        resolution: 0.001,
+                        transform: Transform::identity(),
+                        ctx,
+                    };
+                    super::super::bounded_plane_curve_is_simple(
+                        &geometry,
+                        context,
+                        false,
+                        None,
+                        &mut BTreeSet::new(),
+                    )
+                })
+            },
+        );
     }
 }
