@@ -236,8 +236,25 @@ enum DirectoryColor {
 }
 
 #[derive(Debug, Clone)]
+struct DirectoryName(String);
+
+impl DirectoryName {
+    fn new(name: String) -> Result<Self, CodecError> {
+        if name.is_empty() {
+            return Err(CodecError::NotImplemented("CFB empty live directory names cannot be represented as paths".into()));
+        }
+        if name.encode_utf16().count() > 31 || name.chars().any(|character| matches!(character, '/' | '\\' | ':' | '!')) {
+            return malformed("CFB directory name contains a forbidden character or exceeds 31 UTF-16 units");
+        }
+        Ok(Self(name))
+    }
+
+    fn as_str(&self) -> &str { &self.0 }
+}
+
+#[derive(Debug, Clone)]
 struct LiveEntry {
-    name: String,
+    name: DirectoryName,
     kind: DirectoryKind,
     color: DirectoryColor,
     left: u32,
@@ -862,7 +879,7 @@ impl CompoundState {
             ctx,
             snapshot_id,
             directory_root(&self.directory)?.child,
-            "",
+            None,
             &mut reached,
             &mut output,
         )?;
@@ -892,7 +909,7 @@ impl CompoundState {
         ctx: &DecodeContext<'_>,
         snapshot_id: u64,
         root: u32,
-        parent: &str,
+        parent: Option<&str>,
         reached: &mut (BTreeSet<u32>, ScopedReservation<'_>),
         output: &mut Vec<CompoundEntry>,
     ) -> Result<(), CodecError> {
@@ -920,10 +937,9 @@ impl CompoundState {
                 ctx.push_scoped_vec(&mut pending.1, &mut pending.0, entry.right, "traverse CFB pending siblings")?;
             }
             ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<CompoundEntry>()), "retain CFB entry")?;
-            let path = if parent.is_empty() {
-                ctx.format_retained_with_work(format_args!("{}", entry.name), "retain CFB entry path")?
-            } else {
-                ctx.format_retained_with_work(format_args!("{parent}/{}", entry.name), "retain CFB entry path")?
+            let path = match parent {
+                None => ctx.format_retained_with_work(format_args!("{}", entry.name.as_str()), "retain CFB entry path")?,
+                Some(parent) => ctx.format_retained_with_work(format_args!("{parent}/{}", entry.name.as_str()), "retain CFB entry path")?,
             };
             match entry.kind {
                 DirectoryKind::Storage => {
@@ -934,7 +950,7 @@ impl CompoundState {
                         id: CompoundStorageId(id),
                         path,
                     }), "retain CFB storage entry")?;
-                    self.walk_tree(ctx, snapshot_id, entry.child, &parent_path, reached, output)?;
+                    self.walk_tree(ctx, snapshot_id, entry.child, Some(&parent_path), reached, output)?;
                 }
                 DirectoryKind::Stream => {
                     let allocation = if entry.size < MINI_STREAM_CUTOFF {
@@ -1342,9 +1358,9 @@ impl CompoundPrefixProbe {
                 return Self::Malformed("CFB directory link cycle".into());
             }
             let path = if parent.is_empty() {
-                entry.name.clone()
+                entry.name.as_str().to_owned()
             } else {
-                format!("{parent}/{}", entry.name)
+                format!("{parent}/{}", entry.name.as_str())
             };
             names.push(path.clone());
             pending.push((entry.left, parent.clone()));
@@ -1504,15 +1520,10 @@ fn parse_directory(
             {
                 return malformed("invalid CFB directory name length or terminator");
             }
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(name_len) * 3, "decode and check CFB directory name")?;
             let (name, _) = View::utf16le_at(raw, 0, (name_len - 2) / 2)
                 .ok_or_else(|| CodecError::Malformed("invalid UTF-16 CFB directory name".into()))?;
-            if name
-                .chars()
-                .any(|character| matches!(character, '/' | '\\' | ':' | '!'))
-            {
-                return malformed("CFB directory name contains a forbidden character");
-            }
-            name
+            DirectoryName::new(name)?
         };
         let color = match raw[67] {
             0 => DirectoryColor::Red,
@@ -1548,7 +1559,7 @@ fn directory_root(directory: &[DirectorySlot]) -> Result<&LiveEntry, CodecError>
 fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
     let root = directory_root(directory)?;
     if root.kind != DirectoryKind::Root
-        || root.name != "Root Entry"
+        || root.name.as_str() != "Root Entry"
         || root.left != NO_STREAM
         || root.right != NO_STREAM
     {
@@ -1610,12 +1621,12 @@ fn visit_sibling_tree(
         return malformed("CFB sibling tree contains an invalid node or cycle");
     }
     let comparison_work = lower.into_iter().chain(upper).try_fold(0usize, |total, name| {
-        total.checked_add(name.len())?.checked_add(entry.name.len())
+        total.checked_add(name.len())?.checked_add(entry.name.as_str().len())
     }).and_then(|bytes| bytes.checked_mul(2))
         .ok_or_else(|| ctx.refuse_codec_limit("compare CFB sibling names", u64::MAX, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(comparison_work), "compare CFB sibling names")?;
-    if lower.is_some_and(|name| cfb_name_cmp(name, &entry.name) != Ordering::Less)
-        || upper.is_some_and(|name| cfb_name_cmp(&entry.name, name) != Ordering::Less)
+    if lower.is_some_and(|name| cfb_name_cmp(name, entry.name.as_str()) != Ordering::Less)
+        || upper.is_some_and(|name| cfb_name_cmp(entry.name.as_str(), name) != Ordering::Less)
     {
         return malformed("CFB sibling tree violates directory-name ordering");
     }
@@ -1623,8 +1634,8 @@ fn visit_sibling_tree(
     if red && parent_red {
         return malformed("CFB sibling tree contains adjacent red nodes");
     }
-    visit_sibling_tree(ctx, directory, entry.left, lower, Some(&entry.name), red, seen)?;
-    visit_sibling_tree(ctx, directory, entry.right, Some(&entry.name), upper, red, seen)
+    visit_sibling_tree(ctx, directory, entry.left, lower, Some(entry.name.as_str()), red, seen)?;
+    visit_sibling_tree(ctx, directory, entry.right, Some(entry.name.as_str()), upper, red, seen)
 }
 
 fn cfb_name_cmp(left: &str, right: &str) -> Ordering {
@@ -2508,6 +2519,24 @@ mod tests {
         .expect("unallocated slot is skipped");
         assert_eq!(entries.len(), 1);
         assert!(matches!(entries[0], DirectorySlot::Free));
+    }
+
+    #[test]
+    fn empty_live_directory_names_are_refused_before_path_construction() {
+        for kind in [1, 2] {
+            let mut directory = [0_u8; 384];
+            directory_entry(&mut directory, 0, "Root Entry", 5, NO_STREAM, NO_STREAM, 1, END_OF_CHAIN, 0);
+            directory_entry(&mut directory, 1, "", kind, NO_STREAM, NO_STREAM,
+                if kind == 1 { 2 } else { NO_STREAM }, END_OF_CHAIN, 0);
+            directory_entry(&mut directory, 2, "Child", 2, NO_STREAM, NO_STREAM, NO_STREAM, END_OF_CHAIN, 0);
+            let error = with_context(&directory, &DecodePolicy::service(), |ctx|
+                parse_directory(ctx, &directory, CompoundVersion::V3))
+                .expect_err("empty live name has no path representation");
+            assert!(matches!(error, CodecError::NotImplemented(message)
+                if message == "CFB empty live directory names cannot be represented as paths"));
+        }
+        assert!(super::DirectoryName::new(String::new()).is_err());
+        assert_eq!(super::DirectoryName::new(" ".into()).unwrap().as_str(), " ");
     }
 
     #[test]
