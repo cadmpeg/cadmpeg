@@ -1179,3 +1179,31 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
         ));
     }
 }
+
+#[test]
+fn link_child_framing_precedes_collection_admission() {
+    for xml in [
+        r#"<Links count="0"><Link/><Link/><Link/></Links>"#,
+        r#"<Links count="1000000"/>"#,
+        r#"<Links count="1"><Sub/></Links>"#,
+    ] {
+        let tree = roxmltree::Document::parse(xml).expect("framed XML");
+        crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
+            let result = super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx);
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))));
+        });
+    }
+}
+
+#[test]
+fn link_child_scan_propagates_work_refusal() {
+    let xml = r#"<Links count="0"><Link/></Links>"#;
+    let tree = roxmltree::Document::parse(xml).expect("framed XML");
+    crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
+        let refusal = ctx.refuse_codec_limit("test link work", 0, 1);
+        let error = super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx)
+            .err().expect("fused context");
+        assert_eq!(error.to_string(), refusal.to_string());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    });
+}
