@@ -4498,7 +4498,7 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
             let before = quotient.monotone_measure()?;
             for &face in &face_order {
                 let domain = &domains[face];
-                let face_budget = WorkBudget::new(match domain {
+                let face_limit = match domain {
                     MeshFaceBoundaryDomain::DeferredValidation(_) => {
                         MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS
                     }
@@ -4506,7 +4506,12 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                     | MeshFaceBoundaryDomain::UnorderedFullCycle(_) => {
                         MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS
                     }
-                });
+                };
+                let face_budget = ctx.work_budget(u64_from_index(face_limit));
+                let refuse_face = || match ctx.resource_refusal() {
+                    Some(limit) => CodecError::ResourceLimit(limit),
+                    None => ctx.refuse_codec_limit("catia_ordered_face_constraint_work", u64_from_index(face_limit), u64_from_index(face_limit + 1)),
+                };
                 if let MeshFaceBoundaryDomain::DeferredValidation(domain) = domain {
                     let mut merged_nodes = Vec::new();
                     for cycle in &domain.cycles {
@@ -4571,12 +4576,17 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                         &face_budget,
                     ) {
                         Ok(Some(options)) => options,
-                        Ok(None) => continue,
+                        Ok(None) => {
+                            if face_budget.exhausted() { return Some(Err(refuse_face())); }
+                            continue;
+                        },
                         Err(error) => return Some(Err(error)),
                     };
-                    if options.alternatives.len() <= MAX_FACE_OPTIONS
-                        && !options.alternatives.is_empty()
-                    {
+                    if face_budget.exhausted() { return Some(Err(refuse_face())); }
+                    if options.alternatives.len() > MAX_FACE_OPTIONS {
+                        return Some(Err(ctx.refuse_codec_limit("catia_ordered_face_options", u64_from_index(MAX_FACE_OPTIONS), u64_from_index(options.alternatives.len()))));
+                    }
+                    if !options.alternatives.is_empty() {
                         match propagate_common_deferred_quotients(
                             ctx,
                             options,
@@ -4637,18 +4647,15 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                     }
                 }
                 if face_budget.exhausted() {
-                    continue;
+                    return Some(Err(refuse_face()));
                 }
                 let mut alternatives = Vec::new();
-                let mut truncated = false;
                 for assignment in assignments {
                     let Some(work) = quotient.signature_work() else {
-                        truncated = true;
-                        break;
+                        return Some(Err(refuse_face()));
                     };
                     if !face_budget.charge_by(work) {
-                        truncated = true;
-                        break;
+                        return Some(Err(refuse_face()));
                     }
                     let options = match quotient.assignment_options_limited(
                         ctx,
@@ -4662,24 +4669,19 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                         Err(error) => return Some(Err(error)),
                     };
                     if face_budget.exhausted() {
-                        truncated = true;
-                        break;
+                        return Some(Err(refuse_face()));
                     }
                     if options.len() > MAX_FACE_OPTIONS {
-                        truncated = true;
-                        break;
+                        return Some(Err(refuse_face()));
                     }
-                    alternatives.extend(options.into_iter().map(|(_, quotient)| quotient));
+                    for (_, quotient) in options {
+                        if let Err(error) = ctx.push_vec(&mut alternatives, quotient, "catia_ordered_face_alternatives") {
+                            return Some(Err(error));
+                        }
+                    }
                     if alternatives.len() > MAX_FACE_OPTIONS {
-                        truncated = true;
-                        break;
+                        return Some(Err(refuse_face()));
                     }
-                }
-                if truncated {
-                    continue;
-                }
-                if alternatives.len() > MAX_FACE_OPTIONS {
-                    continue;
                 }
                 if alternatives.is_empty() {
                     continue;
@@ -4884,6 +4886,8 @@ fn advance_boundary_component_states<'storage>(
     limit: usize,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<MeshQuotientGaugeState<'storage>>>, CodecError> {
+    let outcome = (|| -> Result<Option<Vec<MeshQuotientGaugeState<'storage>>>, CodecError> {
+
     let mut next = Vec::new();
     let mut signatures = HashSet::new();
     let domain_edges = mesh_boundary_domain_edges(ctx, domain)?;
@@ -4895,7 +4899,7 @@ fn advance_boundary_component_states<'storage>(
             return Ok(None);
         };
         if remaining == 0 {
-            return Ok(None);
+            return Err(ctx.refuse_codec_limit("catia_boundary_component_states", u64_from_index(limit), u64_from_index(next.len())));
         }
         let candidates = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => {
@@ -5025,7 +5029,7 @@ fn advance_boundary_component_states<'storage>(
                 )?;
             }
             if next.len() > limit {
-                return Ok(None);
+                return Err(ctx.refuse_codec_limit("catia_boundary_component_states", u64_from_index(limit), u64_from_index(next.len())));
             }
         }
         if budget.exhausted() {
@@ -5033,6 +5037,15 @@ fn advance_boundary_component_states<'storage>(
         }
     }
     Ok((!next.is_empty()).then_some(next))
+    })()?;
+    ctx.charge_work(0, "catia_boundary_component_work")?;
+    if budget.exhausted() {
+        let limit = u64_from_index(budget.consumed());
+        let requested = limit.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("catia_boundary_component_work", u64::MAX - 1, u64::MAX))?;
+        return Err(ctx.refuse_codec_limit("catia_boundary_component_work", limit, requested));
+    }
+    Ok(outcome)
+
 }
 
 pub(super) fn propagate_common_boundary_components<'storage>(
@@ -5156,7 +5169,7 @@ pub(super) fn propagate_common_boundary_components<'storage>(
             }
             ctx.push_vec(&mut ordered_faces, face, "catia_component_ordered_faces")?;
         }
-        let budget = WorkBudget::new(MAX_COMPONENT_OPERATIONS);
+        let budget = ctx.work_budget(u64_from_index(MAX_COMPONENT_OPERATIONS));
         for _ in 0..MAX_COMPONENT_ROUNDS {
             let Some(before) = quotient.monotone_measure() else {
                 return Ok(None);
@@ -13766,5 +13779,32 @@ fn mesh_work_guard_preserves_the_existing_session_refusal() {
         let result = MeshSolve::<()>::Failed(MeshCandidateFailure::Exhausted(MeshCandidateExhaustion::EndpointResolution)).require_work(ctx, &budget);
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit == original));
         assert_eq!(ctx.resource_refusal(), Some(original));
+    });
+}
+
+#[cfg(test)]
+#[test]
+fn ordered_face_local_ceiling_refuses_constraint_propagation() {
+    crate::test_support::with_service_context(|ctx| {
+        let mut quotient = MeshQuotient::new((0..80).map(|_| Arc::new(HashSet::from([0]))).collect());
+        let domains = [MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment { boundaries: Vec::new() }])];
+        let candidates = vec![vec![[0, 0]]; 40];
+        let budget = ctx.work_budget(1_000_000);
+        let CodecError::ResourceLimit(limit) = propagate_common_ordered_face_quotients(ctx, &domains, &candidates, &mut quotient, &budget).expect_err("face work ceiling refuses") else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "catia_ordered_face_constraint_work");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[cfg(test)]
+#[test]
+fn boundary_component_exhausted_slice_refuses_instead_of_absence() {
+    crate::test_support::with_service_context(|ctx| {
+        let budget = ctx.work_budget(0);
+        assert!(!budget.charge());
+        let domain = MeshFaceBoundaryDomain::Ordered(Vec::new());
+        let CodecError::ResourceLimit(limit) = advance_boundary_component_states(ctx, &domain, &[], &[], 128, &budget).map(|value| value.is_some()).expect_err("component work ceiling refuses") else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "catia_boundary_component_work");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }

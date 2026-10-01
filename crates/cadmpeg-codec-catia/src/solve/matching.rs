@@ -18,10 +18,19 @@ fn charge_matching_work(
     ctx: &DecodeContext<'_>,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<(), CodecError> {
-    if budget.is_some_and(|budget| !budget.charge()) {
+    ctx.charge_work(0, "catia matching work")?;
+    if budget.is_some_and(|budget| budget.exhausted() || budget.remaining() == 0) {
         return Err(ctx.refuse_codec_limit("catia matching work", 0, 1));
     }
-    ctx.charge_work(1, "catia matching work")
+    let visit = ctx.work_budget(1);
+    if !visit.charge() {
+        if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
+        return Err(ctx.refuse_codec_limit("catia matching work", 0, 1));
+    }
+    if budget.is_some_and(|budget| budget.consume_child(&visit).is_err()) {
+        return Err(ctx.refuse_codec_limit("catia matching work", 0, 1));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -642,6 +651,27 @@ pub(crate) fn unique_coordinate_bijection(
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeSet, HashSet};
+
+    #[test]
+    fn matching_visit_charges_the_attached_session_once() {
+        crate::test_support::with_work_limit(1, |ctx| {
+            let budget = ctx.work_budget(1);
+            super::charge_matching_work(ctx, Some(&budget)).expect("one visit fits exactly");
+            assert_eq!(budget.remaining(), 0);
+            assert!(ctx.resource_refusal().is_none());
+            assert!(matches!(super::charge_matching_work(ctx, Some(&budget)), Err(CodecError::ResourceLimit(_))));
+        });
+    }
+
+    #[test]
+    fn matching_detached_slice_still_charges_the_caller() {
+        crate::test_support::with_work_limit(0, |ctx| {
+            let budget = cadmpeg_core::decode::WorkBudget::new(1);
+            let CodecError::ResourceLimit(limit) = super::charge_matching_work(ctx, Some(&budget)).expect_err("caller work must be admitted") else { panic!("resource refusal") };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 
     #[test]
     fn coordinate_bijection_refuses_unadmitted_sort_key_scan() {
