@@ -1397,17 +1397,50 @@ fn geom_census(
     })
 }
 
-/// Decode the active unit-system selector. `51` is millimeter-Newton-Second,
-/// `54` is the Creo default inch-pound-mass-second system, and `55` is
-/// millimeter-Kilogram-Second.
-fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
-    let start = find(data, PRINCIPAL_UNIT_ID, 0)? + PRINCIPAL_UNIT_ID.len();
-    match *data.get(start)? {
-        51 => Some(legacy::PrincipalUnitSystem::MillimeterNewtonSecond),
-        54 => Some(legacy::PrincipalUnitSystem::InchPoundMassSecond),
-        55 => Some(legacy::PrincipalUnitSystem::MillimeterKilogramSecond),
-        value => Some(legacy::PrincipalUnitSystem::UnknownBinarySelector(value)),
+/// Agreement of all binary unit declarations in the image.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BinaryUnitSelection {
+    Absent,
+    Selected(legacy::PrincipalUnitSystem),
+    Unsupported,
+    Conflicting,
+}
+
+fn binary_principal_unit(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<BinaryUnitSelection, CodecError> {
+    let mut selector = None;
+    let mut conflicting = false;
+    let mut from = 0;
+    loop {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - from),
+            "creo binary unit declaration scan",
+        )?;
+        let Some(found) = find(data, PRINCIPAL_UNIT_ID, from) else { break; };
+        let start = found + PRINCIPAL_UNIT_ID.len();
+        let Some(&value) = data.get(start) else {
+            return Ok(BinaryUnitSelection::Unsupported);
+        };
+        if let Some(previous) = selector {
+            conflicting |= previous != value;
+        } else {
+            selector = Some(value);
+        }
+        from = start;
     }
+    Ok(if conflicting {
+        BinaryUnitSelection::Conflicting
+    } else {
+        match selector {
+            None => BinaryUnitSelection::Absent,
+            Some(51) => BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::MillimeterNewtonSecond),
+            Some(54) => BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::InchPoundMassSecond),
+            Some(55) => BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::MillimeterKilogramSecond),
+            Some(_) => BinaryUnitSelection::Unsupported,
+        }
+    })
 }
 
 fn cmnm_model_name(
@@ -2978,13 +3011,13 @@ pub(crate) fn scan_bytes<'a>(
         .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(ctx, &sections)?;
     let census = geom_census(ctx, &sections)?;
-    let principal_unit = if let Some(unit) = binary_principal_unit(&data) {
-        Some(unit)
-    } else {
-        legacy_ascii
+    let principal_unit = match binary_principal_unit(ctx, &data)? {
+        BinaryUnitSelection::Selected(unit) => Some(unit),
+        BinaryUnitSelection::Absent => legacy_ascii
             .map(|framing| framing.persistence.principal_unit_system(ctx))
             .transpose()?
-            .flatten()
+            .flatten(),
+        BinaryUnitSelection::Unsupported | BinaryUnitSelection::Conflicting => None,
     };
     let family_table = family_table(&data, &sections);
     let legacy_family_table = legacy_ascii
