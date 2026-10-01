@@ -82,7 +82,6 @@ impl<'a> Utf16View<'a> {
     ) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
         ctx.utf16le_scoped_text(self.raw, self.raw.len() / 2, false, operation)
     }
-
 }
 
 impl std::fmt::Display for Utf16View<'_> {

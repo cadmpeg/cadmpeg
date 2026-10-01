@@ -489,7 +489,11 @@ impl<'a> Cursor<'a> {
             )));
         }
         crate::reader::utf16_text(
-            ctx, &mut self.source, units, "PmDc text", "retain Inventor PmDc string",
+            ctx,
+            &mut self.source,
+            units,
+            "PmDc text",
+            "retain Inventor PmDc string",
         )
     }
 
@@ -879,7 +883,12 @@ mod tests {
         policy.limits.max_materialized_bytes = 0;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("PmDc string fits input cap");
-        assert_eq!(Cursor::new(root).utf16(&ctx, "name").expect("direct UTF-16 decode needs no temporary storage"), "A");
+        assert_eq!(
+            Cursor::new(root)
+                .utf16(&ctx, "name")
+                .expect("direct UTF-16 decode needs no temporary storage"),
+            "A"
+        );
     }
 
     #[test]

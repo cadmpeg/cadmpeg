@@ -417,8 +417,10 @@ fn form_serializer_name_refuses_work_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(matches!(form_cage_serializers(&ctx, &bytes, &records), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "f3d form serializer name materialization"));
+    assert!(
+        matches!(form_cage_serializers(&ctx, &bytes, &records), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "f3d form serializer name materialization")
+    );
 }
 
 #[test]

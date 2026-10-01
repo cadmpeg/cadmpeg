@@ -556,11 +556,12 @@ pub(super) fn exact_ruled_surface_operation(
             return Some(Err(error));
         }
         edge_group_record_indices.extend(trailing_edge_groups);
-        let (direction_entity_id, direction_end) = match fixed_relaxed_guid_text(ctx, bytes, cursor) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (direction_entity_id, direction_end) = match fixed_relaxed_guid_text(ctx, bytes, cursor)
+        {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let direction_absent =
             direction_entity_id.as_str() == "00000000-0000-0000-0000-000000000000";
         if direction_end.checked_add(3)? != reference_count_at

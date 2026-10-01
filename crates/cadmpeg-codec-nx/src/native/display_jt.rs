@@ -2747,77 +2747,85 @@ fn parse_jt9_partition_node_body(
     body: &[u8],
 ) -> Result<Option<ParsedJtPartitionNode>, CodecError> {
     let parsed = (|| {
-    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
-    let mut view = View::over_retained(family);
-    let partition_flags = view.u32_le()?;
-    if partition_flags & !1 != 0 {
-        return None;
-    }
-    let name_count = usize::try_from(view.u32_le()?).ok()?;
-    let name_bytes = view.take(name_count.checked_mul(2)?)?;
-    let file_name = match ctx.utf16le_text(name_bytes, name_count, false, "retain DisplayJT partition name") {
-        Ok(value) => value,
-        Err(CodecError::Malformed(_)) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if let Err(error) = ctx.charge_work(cadmpeg_core::decode::u64_from_index(file_name.len()), "validate DisplayJT partition name") {
-        return Some(Err(error));
-    }
-    if file_name.is_empty() || file_name.chars().any(char::is_control) {
-        return None;
-    }
-    let name_end = view.position();
-    let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
-    let bounds_at = |offset: usize| {
-        let bounds = [
-            [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
-            [
-                f32_at(offset + 12)?,
-                f32_at(offset + 16)?,
-                f32_at(offset + 20)?,
-            ],
-        ];
-        JtBounds::from_finite(bounds)
-    };
-    let first_bounds = bounds_at(name_end)?;
-    let mut cursor = name_end.checked_add(24)?;
-    let transformed_bounds = if partition_flags & 1 == 0 {
-        let transformed = bounds_at(cursor)?;
+        let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+        let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
+        let mut view = View::over_retained(family);
+        let partition_flags = view.u32_le()?;
+        if partition_flags & !1 != 0 {
+            return None;
+        }
+        let name_count = usize::try_from(view.u32_le()?).ok()?;
+        let name_bytes = view.take(name_count.checked_mul(2)?)?;
+        let file_name = match ctx.utf16le_text(
+            name_bytes,
+            name_count,
+            false,
+            "retain DisplayJT partition name",
+        ) {
+            Ok(value) => value,
+            Err(CodecError::Malformed(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if let Err(error) = ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(file_name.len()),
+            "validate DisplayJT partition name",
+        ) {
+            return Some(Err(error));
+        }
+        if file_name.is_empty() || file_name.chars().any(char::is_control) {
+            return None;
+        }
+        let name_end = view.position();
+        let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
+        let bounds_at = |offset: usize| {
+            let bounds = [
+                [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
+                [
+                    f32_at(offset + 12)?,
+                    f32_at(offset + 16)?,
+                    f32_at(offset + 20)?,
+                ],
+            ];
+            JtBounds::from_finite(bounds)
+        };
+        let first_bounds = bounds_at(name_end)?;
+        let mut cursor = name_end.checked_add(24)?;
+        let transformed_bounds = if partition_flags & 1 == 0 {
+            let transformed = bounds_at(cursor)?;
+            cursor = cursor.checked_add(24)?;
+            transformed
+        } else {
+            first_bounds
+        };
+        let area = JtArea::new(View::f32_le_at(family, cursor)?)?;
+        cursor = cursor.checked_add(4)?;
+        let count_range = |offset: usize| {
+            let minimum = View::i32_le_at(family, offset)?;
+            let maximum = View::i32_le_at(family, offset.checked_add(4)?)?;
+            (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
+        };
+        let vertex_count_range = count_range(cursor)?;
+        let node_count_range = count_range(cursor + 8)?;
+        let polygon_count_range = count_range(cursor + 16)?;
         cursor = cursor.checked_add(24)?;
-        transformed
-    } else {
-        first_bounds
-    };
-    let area = JtArea::new(View::f32_le_at(family, cursor)?)?;
-    cursor = cursor.checked_add(4)?;
-    let count_range = |offset: usize| {
-        let minimum = View::i32_le_at(family, offset)?;
-        let maximum = View::i32_le_at(family, offset.checked_add(4)?)?;
-        (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
-    };
-    let vertex_count_range = count_range(cursor)?;
-    let node_count_range = count_range(cursor + 8)?;
-    let polygon_count_range = count_range(cursor + 16)?;
-    cursor = cursor.checked_add(24)?;
-    let bounds = if partition_flags & 1 != 0 {
-        let bounds = bounds_at(cursor)?;
-        cursor = cursor.checked_add(24)?;
-        DisplayJtPartitionBounds::Untransformed(bounds)
-    } else {
-        DisplayJtPartitionBounds::Reserved(first_bounds)
-    };
-    (cursor == family.len()).then_some(Ok(ParsedJtPartitionNode {
-        group_version,
-        child_object_ids,
-        file_name,
-        transformed_bounds,
-        area,
-        vertex_count_range,
-        node_count_range,
-        polygon_count_range,
-        bounds,
-    }))
+        let bounds = if partition_flags & 1 != 0 {
+            let bounds = bounds_at(cursor)?;
+            cursor = cursor.checked_add(24)?;
+            DisplayJtPartitionBounds::Untransformed(bounds)
+        } else {
+            DisplayJtPartitionBounds::Reserved(first_bounds)
+        };
+        (cursor == family.len()).then_some(Ok(ParsedJtPartitionNode {
+            group_version,
+            child_object_ids,
+            file_name,
+            transformed_bounds,
+            area,
+            vertex_count_range,
+            node_count_range,
+            polygon_count_range,
+            bounds,
+        }))
     })();
     parsed.transpose()
 }

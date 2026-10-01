@@ -195,28 +195,32 @@ pub(super) fn exact_legacy_class_383_operand_paths(
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Result<Option<[DesignAssemblyOperandPath; 2]>, CodecError> {
     (|| {
-    if !crate::design::assembly::legacy_class_383_258_scope(
-        scope.frame_length(),
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-    ) || scope.reference_members().len() != 38
-    {
-        return None;
-    }
-    let [first, second] = CLASS_383_OPERAND_SPECS;
-    Some(Ok([
-        match exact_legacy_class_383_operand_path(ctx, bytes, records, scope, &frames[0], first) {
+        if !crate::design::assembly::legacy_class_383_258_scope(
+            scope.frame_length(),
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+        ) || scope.reference_members().len() != 38
+        {
+            return None;
+        }
+        let [first, second] = CLASS_383_OPERAND_SPECS;
+        Some(Ok([
+            match exact_legacy_class_383_operand_path(ctx, bytes, records, scope, &frames[0], first)
+            {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             },
-        match exact_legacy_class_383_operand_path(ctx, bytes, records, scope, &frames[1], second) {
+            match exact_legacy_class_383_operand_path(
+                ctx, bytes, records, scope, &frames[1], second,
+            ) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             },
-    ]))
-    })().transpose()
+        ]))
+    })()
+    .transpose()
 }
 
 fn exact_legacy_class_383_operand_path(
@@ -228,257 +232,261 @@ fn exact_legacy_class_383_operand_path(
     spec: LegacyClass383OperandSpec,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
-    let member = |ordinal| scope.reference_members().values().nth(ordinal).copied();
-    let leading_record_index = member(spec.leading_ordinal)?;
-    let leading_identity_record_index = member(spec.leading_identity_ordinal)?;
-    let child_record_index = member(spec.child_ordinal)?;
-    let child_identity_record_index = member(spec.child_identity_ordinal)?;
-    let first_face_record_index = member(spec.first_face_ordinal)?;
-    let first_face_identity_record_index = member(spec.first_face_identity_ordinal)?;
-    let second_face_record_index = member(spec.second_face_ordinal)?;
-    let second_face_identity_record_index = member(spec.second_face_identity_ordinal)?;
-    let carrier_record_index = member(spec.carrier_ordinal)?;
-    let [Some(a), Some(b), Some(c), Some(d)] =
-        [0, 1, 2, 3].map(|ordinal| member(spec.placement_owner_start.checked_add(ordinal)?))
-    else {
-        return None;
-    };
-    let placement_owners = [a, b, c, d];
-    let (leading_at, leading_paired_at) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        leading_record_index,
-        "387",
-        class_383_leading::LEN,
-    )?;
-    let (leading_identity_at, _) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        leading_identity_record_index,
-        "359",
-        class_383_identity::LEN,
-    )?;
-    let (child_at, child_paired_at) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        child_record_index,
-        "387",
-        class_383_child::LEN,
-    )?;
-    let (child_identity_at, _) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        child_identity_record_index,
-        "359",
-        class_383_identity::LEN,
-    )?;
-    let (first_face_at, _) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        first_face_record_index,
-        "394",
-        class_383_face::LEN,
-    )?;
-    let (first_face_identity_at, _) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        first_face_identity_record_index,
-        "359",
-        class_383_identity::LEN,
-    )?;
-    let (second_face_at, _) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        second_face_record_index,
-        "394",
-        class_383_face::LEN,
-    )?;
-    let (second_face_identity_at, _) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        second_face_identity_record_index,
-        "359",
-        class_383_identity::LEN,
-    )?;
-    let (carrier_at, carrier_paired_at) = exact_legacy_class_383_record_frame(
-        bytes,
-        records,
-        carrier_record_index,
-        "378",
-        class_383_carrier::LEN,
-    )?;
-    let structural_checks = [
-        leading_paired_at == leading_at.checked_add(class_383_leading::LEN)?,
-        child_paired_at == child_at.checked_add(class_383_child::LEN)?,
-        marked_record_reference(
+        let member = |ordinal| scope.reference_members().values().nth(ordinal).copied();
+        let leading_record_index = member(spec.leading_ordinal)?;
+        let leading_identity_record_index = member(spec.leading_identity_ordinal)?;
+        let child_record_index = member(spec.child_ordinal)?;
+        let child_identity_record_index = member(spec.child_identity_ordinal)?;
+        let first_face_record_index = member(spec.first_face_ordinal)?;
+        let first_face_identity_record_index = member(spec.first_face_identity_ordinal)?;
+        let second_face_record_index = member(spec.second_face_ordinal)?;
+        let second_face_identity_record_index = member(spec.second_face_identity_ordinal)?;
+        let carrier_record_index = member(spec.carrier_ordinal)?;
+        let [Some(a), Some(b), Some(c), Some(d)] =
+            [0, 1, 2, 3].map(|ordinal| member(spec.placement_owner_start.checked_add(ordinal)?))
+        else {
+            return None;
+        };
+        let placement_owners = [a, b, c, d];
+        let (leading_at, leading_paired_at) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            leading_record_index,
+            "387",
+            class_383_leading::LEN,
+        )?;
+        let (leading_identity_at, _) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            leading_identity_record_index,
+            "359",
+            class_383_identity::LEN,
+        )?;
+        let (child_at, child_paired_at) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            child_record_index,
+            "387",
+            class_383_child::LEN,
+        )?;
+        let (child_identity_at, _) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            child_identity_record_index,
+            "359",
+            class_383_identity::LEN,
+        )?;
+        let (first_face_at, _) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            first_face_record_index,
+            "394",
+            class_383_face::LEN,
+        )?;
+        let (first_face_identity_at, _) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            first_face_identity_record_index,
+            "359",
+            class_383_identity::LEN,
+        )?;
+        let (second_face_at, _) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            second_face_record_index,
+            "394",
+            class_383_face::LEN,
+        )?;
+        let (second_face_identity_at, _) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            second_face_identity_record_index,
+            "359",
+            class_383_identity::LEN,
+        )?;
+        let (carrier_at, carrier_paired_at) = exact_legacy_class_383_record_frame(
+            bytes,
+            records,
+            carrier_record_index,
+            "378",
+            class_383_carrier::LEN,
+        )?;
+        let structural_checks = [
+            leading_paired_at == leading_at.checked_add(class_383_leading::LEN)?,
+            child_paired_at == child_at.checked_add(class_383_child::LEN)?,
+            marked_record_reference(
+                bytes,
+                leading_at.checked_add(class_383_leading::IDENTITY_REFERENCE)?,
+            ) == Some(leading_identity_record_index),
+            marked_record_reference(
+                bytes,
+                leading_at.checked_add(class_383_leading::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                child_at.checked_add(class_383_child::IDENTITY_REFERENCE)?,
+            ) == Some(child_identity_record_index),
+            marked_record_reference(
+                bytes,
+                child_at.checked_add(class_383_child::LEADING_REFERENCE)?,
+            ) == Some(leading_record_index),
+            marked_record_reference(
+                bytes,
+                child_at.checked_add(class_383_child::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                first_face_at.checked_add(class_383_face::IDENTITY_REFERENCE)?,
+            ) == Some(first_face_identity_record_index),
+            marked_record_reference(
+                bytes,
+                first_face_at.checked_add(class_383_face::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                second_face_at.checked_add(class_383_face::IDENTITY_REFERENCE)?,
+            ) == Some(second_face_identity_record_index),
+            marked_record_reference(
+                bytes,
+                second_face_at.checked_add(class_383_face::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                leading_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                child_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                first_face_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                second_face_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::CHILD_REFERENCE)?,
+            ) == Some(child_record_index),
+            marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::SECOND_FACE_REFERENCE)?,
+            ) == Some(second_face_record_index),
+            marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::FIRST_FACE_REFERENCE)?,
+            ) == Some(first_face_record_index),
+            marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::REPEATED_CHILD_REFERENCE)?,
+            ) == Some(child_record_index),
+            marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::REPEATED_FIRST_FACE_REFERENCE)?,
+            ) == Some(first_face_record_index),
+            marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::REPEATED_SECOND_FACE_REFERENCE)?,
+            ) == Some(second_face_record_index),
+            marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::SCOPE_REFERENCE)?,
+            ) == Some(scope.record_index),
+            carrier_paired_at == carrier_at.checked_add(class_383_carrier::LEN)?,
+            rigid_transform_at(bytes, carrier_at.checked_add(class_383_carrier::TRANSFORM)?)?
+                == frame.transform,
+        ];
+        if structural_checks.iter().any(|check| !check) {
+            return None;
+        }
+        for (ordinal, record_index) in placement_owners.into_iter().enumerate() {
+            if marked_record_reference(
+                bytes,
+                carrier_at.checked_add(
+                    class_383_carrier::PLACEMENT_OWNER_REFERENCES
+                        .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
+                )?,
+            ) != Some(record_index)
+            {
+                return None;
+            }
+        }
+        let (
+            leading_occurrence_guid,
+            leading_identity_guid,
+            occurrence_guid_offset,
+            identity_guid_offset,
+        ) = match exact_legacy_class_383_identity_guids(ctx, bytes, leading_identity_at) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        for identity_at in [
+            child_identity_at,
+            first_face_identity_at,
+            second_face_identity_at,
+        ] {
+            let (occurrence_guid, identity_guid, _, _) =
+                match exact_legacy_class_383_identity_guids(ctx, bytes, identity_at) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+            if occurrence_guid != leading_occurrence_guid || identity_guid != leading_identity_guid
+            {
+                return None;
+            }
+        }
+        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+        let locator_reference_at = scope_at.checked_add(spec.scope_operand_reference_offset)?;
+        let (locator_record_index, locator_reference_offset) =
+            exact_same_segment_record_reference(bytes, locator_reference_at)?;
+        if locator_record_index != carrier_record_index {
+            return None;
+        }
+        let (scope_record_index, locator_scope_reference_offset) =
+            exact_same_segment_record_reference(
+                bytes,
+                carrier_at.checked_add(class_383_carrier::SCOPE_REFERENCE)?,
+            )?;
+        if scope_record_index != scope.record_index {
+            return None;
+        }
+        let (_, wrapper_reference_offset) = exact_same_segment_record_reference(
             bytes,
             leading_at.checked_add(class_383_leading::IDENTITY_REFERENCE)?,
-        ) == Some(leading_identity_record_index),
-        marked_record_reference(
-            bytes,
-            leading_at.checked_add(class_383_leading::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            child_at.checked_add(class_383_child::IDENTITY_REFERENCE)?,
-        ) == Some(child_identity_record_index),
-        marked_record_reference(
-            bytes,
-            child_at.checked_add(class_383_child::LEADING_REFERENCE)?,
-        ) == Some(leading_record_index),
-        marked_record_reference(
-            bytes,
-            child_at.checked_add(class_383_child::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            first_face_at.checked_add(class_383_face::IDENTITY_REFERENCE)?,
-        ) == Some(first_face_identity_record_index),
-        marked_record_reference(
-            bytes,
-            first_face_at.checked_add(class_383_face::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            second_face_at.checked_add(class_383_face::IDENTITY_REFERENCE)?,
-        ) == Some(second_face_identity_record_index),
-        marked_record_reference(
-            bytes,
-            second_face_at.checked_add(class_383_face::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            leading_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            child_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            first_face_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            second_face_identity_at.checked_add(class_383_identity::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_383_carrier::CHILD_REFERENCE)?,
-        ) == Some(child_record_index),
-        marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_383_carrier::SECOND_FACE_REFERENCE)?,
-        ) == Some(second_face_record_index),
-        marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_383_carrier::FIRST_FACE_REFERENCE)?,
-        ) == Some(first_face_record_index),
-        marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_383_carrier::REPEATED_CHILD_REFERENCE)?,
-        ) == Some(child_record_index),
-        marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_383_carrier::REPEATED_FIRST_FACE_REFERENCE)?,
-        ) == Some(first_face_record_index),
-        marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_383_carrier::REPEATED_SECOND_FACE_REFERENCE)?,
-        ) == Some(second_face_record_index),
-        marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_383_carrier::SCOPE_REFERENCE)?,
-        ) == Some(scope.record_index),
-        carrier_paired_at == carrier_at.checked_add(class_383_carrier::LEN)?,
-        rigid_transform_at(bytes, carrier_at.checked_add(class_383_carrier::TRANSFORM)?)?
-            == frame.transform,
-    ];
-    if structural_checks.iter().any(|check| !check) {
-        return None;
-    }
-    for (ordinal, record_index) in placement_owners.into_iter().enumerate() {
-        if marked_record_reference(
-            bytes,
-            carrier_at.checked_add(
-                class_383_carrier::PLACEMENT_OWNER_REFERENCES
-                    .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
-            )?,
-        ) != Some(record_index)
-        {
-            return None;
-        }
-    }
-    let (
-        leading_occurrence_guid,
-        leading_identity_guid,
-        occurrence_guid_offset,
-        identity_guid_offset,
-    ) = match exact_legacy_class_383_identity_guids(ctx, bytes, leading_identity_at) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-    for identity_at in [
-        child_identity_at,
-        first_face_identity_at,
-        second_face_identity_at,
-    ] {
-        let (occurrence_guid, identity_guid, _, _) =
-            match exact_legacy_class_383_identity_guids(ctx, bytes, identity_at) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-        if occurrence_guid != leading_occurrence_guid || identity_guid != leading_identity_guid {
-            return None;
-        }
-    }
-    let scope_at = usize::try_from(scope.byte_offset()).ok()?;
-    let locator_reference_at = scope_at.checked_add(spec.scope_operand_reference_offset)?;
-    let (locator_record_index, locator_reference_offset) =
-        exact_same_segment_record_reference(bytes, locator_reference_at)?;
-    if locator_record_index != carrier_record_index {
-        return None;
-    }
-    let (scope_record_index, locator_scope_reference_offset) = exact_same_segment_record_reference(
-        bytes,
-        carrier_at.checked_add(class_383_carrier::SCOPE_REFERENCE)?,
-    )?;
-    if scope_record_index != scope.record_index {
-        return None;
-    }
-    let (_, wrapper_reference_offset) = exact_same_segment_record_reference(
-        bytes,
-        leading_at.checked_add(class_383_leading::IDENTITY_REFERENCE)?,
-    )?;
-    DesignAssemblyOperandPath::try_new(
-        DesignAssemblyOperandPathLink {
-            locator_reference_offset,
-            locator_record_index,
-            locator_class_tag: "378".to_owned().try_into().ok()?,
-            locator_byte_offset: u64::try_from(carrier_at).ok()?,
-            locator_scope_reference_offset,
-            wrapper_record_index: leading_identity_record_index,
-            wrapper_reference_offset,
-            wrapper_class_tag: "359".to_owned().try_into().ok()?,
-            wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
-            path_reference_offset: occurrence_guid_offset,
-        },
-        leading_identity_record_index,
-        "386".to_owned().try_into().ok()?,
-        u64::try_from(leading_identity_at).ok()?,
-        vec![crate::records::identity::Located {
-            value: leading_occurrence_guid,
-            offset: occurrence_guid_offset,
-        }],
-        vec![crate::records::identity::Located {
-            value: leading_identity_guid,
-            offset: identity_guid_offset,
-        }],
-    )
-    .ok().map(Ok)
-    })().transpose()
+        )?;
+        DesignAssemblyOperandPath::try_new(
+            DesignAssemblyOperandPathLink {
+                locator_reference_offset,
+                locator_record_index,
+                locator_class_tag: "378".to_owned().try_into().ok()?,
+                locator_byte_offset: u64::try_from(carrier_at).ok()?,
+                locator_scope_reference_offset,
+                wrapper_record_index: leading_identity_record_index,
+                wrapper_reference_offset,
+                wrapper_class_tag: "359".to_owned().try_into().ok()?,
+                wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
+                path_reference_offset: occurrence_guid_offset,
+            },
+            leading_identity_record_index,
+            "386".to_owned().try_into().ok()?,
+            u64::try_from(leading_identity_at).ok()?,
+            vec![crate::records::identity::Located {
+                value: leading_occurrence_guid,
+                offset: occurrence_guid_offset,
+            }],
+            vec![crate::records::identity::Located {
+                value: leading_identity_guid,
+                offset: identity_guid_offset,
+            }],
+        )
+        .ok()
+        .map(Ok)
+    })()
+    .transpose()
 }
 
 fn exact_legacy_class_383_record_frame(
@@ -501,40 +509,45 @@ fn exact_legacy_class_383_identity_guids(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-) -> Result<Option<(
-    crate::records::mesh::DesignRelaxedGuidText,
-    crate::records::mesh::DesignRelaxedGuidText,
-    u64,
-    u64,
-)>, CodecError> {
+) -> Result<
+    Option<(
+        crate::records::mesh::DesignRelaxedGuidText,
+        crate::records::mesh::DesignRelaxedGuidText,
+        u64,
+        u64,
+    )>,
+    CodecError,
+> {
     (|| {
-    let first_at = start.checked_add(class_383_identity::OCCURRENCE_GUID)?;
-    let second_at = start.checked_add(class_383_identity::IDENTITY_GUID)?;
-    let (occurrence_guid, after_occurrence) = match fixed_relaxed_guid_text(ctx, bytes, first_at) {
+        let first_at = start.checked_add(class_383_identity::OCCURRENCE_GUID)?;
+        let second_at = start.checked_add(class_383_identity::IDENTITY_GUID)?;
+        let (occurrence_guid, after_occurrence) =
+            match fixed_relaxed_guid_text(ctx, bytes, first_at) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-    let (identity_guid, after_identity) = match fixed_relaxed_guid_text(ctx, bytes, second_at) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-    if after_occurrence != second_at
-        || after_identity
-            != start
-                .checked_add(class_383_identity::IDENTITY_GUID)?
-                .checked_add(76)?
-    {
-        return None;
-    }
-    Some(Ok((
-        occurrence_guid,
-        identity_guid,
-        u64::try_from(first_at.checked_add(4)?).ok()?,
-        u64::try_from(second_at.checked_add(4)?).ok()?,
-    )))
-    })().transpose()
+        let (identity_guid, after_identity) = match fixed_relaxed_guid_text(ctx, bytes, second_at) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if after_occurrence != second_at
+            || after_identity
+                != start
+                    .checked_add(class_383_identity::IDENTITY_GUID)?
+                    .checked_add(76)?
+        {
+            return None;
+        }
+        Some(Ok((
+            occurrence_guid,
+            identity_guid,
+            u64::try_from(first_at.checked_add(4)?).ok()?,
+            u64::try_from(second_at.checked_add(4)?).ok()?,
+        )))
+    })()
+    .transpose()
 }
 
 struct LegacyClass412Path {
@@ -836,12 +849,15 @@ fn exact_legacy_class_412_path(
         {
             return None;
         }
-        let (occurrence_guid, occurrence_end) =
-            match fixed_relaxed_guid_text(ctx, bytes, start.checked_add(class_412_path::OCCURRENCE_GUID)?) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (occurrence_guid, occurrence_end) = match fixed_relaxed_guid_text(
+            ctx,
+            bytes,
+            start.checked_add(class_412_path::OCCURRENCE_GUID)?,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)? {
             return None;
         }
@@ -860,11 +876,12 @@ fn exact_legacy_class_412_path(
         };
         for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
             let identity_at = start.checked_add(relative_offset)?;
-            let (identity_guid, identity_end) = match fixed_relaxed_guid_text(ctx, bytes, identity_at) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            let (identity_guid, identity_end) =
+                match fixed_relaxed_guid_text(ctx, bytes, identity_at) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
             let expected_end = match ordinal {
                 0 => class_412_path::SECOND_IDENTITY_GUID,
                 1 => class_412_path::IDENTITY_SEPARATOR,

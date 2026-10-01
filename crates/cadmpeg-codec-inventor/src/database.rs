@@ -409,7 +409,11 @@ impl<'a> Cursor<'a> {
     ) -> Result<String, CodecError> {
         let count = self.count(field, maximum)?;
         crate::reader::utf16_text(
-            ctx, &mut self.source, count, field, "retain RSe table UTF-16 field",
+            ctx,
+            &mut self.source,
+            count,
+            field,
+            "retain RSe table UTF-16 field",
         )
     }
 

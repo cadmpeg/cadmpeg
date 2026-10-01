@@ -87,7 +87,12 @@ fn decodes_bounded_utf8_and_utf16_strings() {
     let mut utf16_reader =
         BoundedReader::new(&utf16_bytes, 0, utf16_bytes.len()).expect("bounded UTF-16 reader");
     assert_eq!(
-        settings::utf16_retained(&cadmpeg_test_support::service_decode_context(), &mut utf16_reader, "Rhino test UTF-16 text").expect("required invariant"),
+        settings::utf16_retained(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut utf16_reader,
+            "Rhino test UTF-16 text"
+        )
+        .expect("required invariant"),
         "😀"
     );
 
@@ -136,7 +141,8 @@ fn retained_utf16_preserves_invalid_surrogate_error() {
     bytes.extend(2_u32.to_le_bytes());
     bytes.extend(0xd83d_u16.to_le_bytes());
     bytes.extend(0_u16.to_le_bytes());
-    let expected = crate::chunks::FramingError::structural(bytes.len(), "invalid UTF-16 surrogate sequence");
+    let expected =
+        crate::chunks::FramingError::structural(bytes.len(), "invalid UTF-16 surrogate sequence");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &bytes,
@@ -159,7 +165,8 @@ fn deferred_utf16_refuses_work_before_validation_without_retaining() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
     assert!(matches!(settings::utf16_deferred(&ctx, &mut reader),
         Err(crate::chunks::FramingError::Resource(limit))
@@ -604,7 +611,13 @@ fn parses_plugin_list_entries_and_bounded_future_minors() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8135, body);
-    settings::parse_plugin_list(&cadmpeg_test_support::service_decode_context(), &data, &record, archive).expect("plugin list");
+    settings::parse_plugin_list(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        archive,
+    )
+    .expect("plugin list");
 }
 
 #[test]

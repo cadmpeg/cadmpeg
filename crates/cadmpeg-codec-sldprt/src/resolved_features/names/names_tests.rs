@@ -106,8 +106,10 @@ fn object_names_class_search_refuses_work_budget() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(payload.len());
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(matches!(object_names(&ctx, &payload, "lane"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "find SLDPRT feature input name class"));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(object_names(&ctx, &payload, "lane"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "find SLDPRT feature input name class")
+    );
 }
