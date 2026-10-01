@@ -2398,7 +2398,7 @@ fn bool_selector(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: 
     let Some(property) = property(properties, name) else {
         return Ok(Some(absent_default));
     };
-    Ok(direct_bool_value(ctx, property)?)
+    direct_bool_value(ctx, property)
 }
 
 fn finite_float_selector(ctx: &DecodeContext<'_>,
@@ -6229,7 +6229,7 @@ fn scalar_value(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Op
 
 fn scalar_text<T>(ctx: &DecodeContext<'_>, property: &PropertyRecord, use_value: impl FnOnce(&str) -> T) -> Result<Option<T>, CodecError> {
     let tag = required!(text_value_tag(&property.type_name));
-    Ok(direct_root_value(ctx, property, tag, "value", use_value)?)
+    direct_root_value(ctx, property, tag, "value", use_value)
 }
 
 fn direct_root_value<T>(ctx: &DecodeContext<'_>,
