@@ -464,11 +464,24 @@ fn reference_bound_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::Code
             &std::collections::BTreeSet::new(),
             0,
         ));
-    scan.references
-        .circles
-        .push(crate::reference::ReferenceCircle::try_new(99, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::ZERO), cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"), cadmpeg_ir::units::UnitVector3::Z_AXIS, [cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.0].into())
-                .expect("finite start"), cadmpeg_ir::features::FinitePoint3::new([0.0, 1.0, 0.0].into())
-                .expect("finite end")], 0).expect("checked reference geometry"));
+    scan.references.circles.push(
+        crate::reference::ReferenceCircle::try_new(
+            99,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::ZERO,
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            [
+                cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.0].into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new([0.0, 1.0, 0.0].into())
+                    .expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -1849,13 +1862,29 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
 
 #[test]
 fn round_envelope_rejects_an_extra_reference_circle() {
-    let circle =
-        |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
-            let mut center = start;
-            let radial_lane = (0..3).find(|lane| start[*lane] != end[*lane]).expect("distinct cap endpoints");
-            center[radial_lane] = end[radial_lane];
-            crate::reference::ReferenceCircle::try_new(entity_id, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite circle center")), cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"), cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
-                .expect("unit axis"), [cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"), cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end")], 0).expect("checked reference geometry") };
+    let circle = |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
+        let mut center = start;
+        let radial_lane = (0..3)
+            .find(|lane| start[*lane] != end[*lane])
+            .expect("distinct cap endpoints");
+        center[radial_lane] = end[radial_lane];
+        crate::reference::ReferenceCircle::try_new(
+            entity_id,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                    .expect("finite circle center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
+    };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
         extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],

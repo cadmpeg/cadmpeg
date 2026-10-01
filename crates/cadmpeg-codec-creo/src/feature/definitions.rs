@@ -1400,23 +1400,36 @@ pub(crate) struct DefinitionBodyPosition<'a> {
 pub(crate) struct SourcePosition(usize);
 
 impl FeatureDefinition {
-    pub(crate) fn body_position(&self, relative: usize) -> Result<DefinitionBodyPosition<'_>, CodecError> {
+    pub(crate) fn body_position(
+        &self,
+        relative: usize,
+    ) -> Result<DefinitionBodyPosition<'_>, CodecError> {
         if relative >= self.body.len() {
-            return Err(CodecError::malformed("Creo definition body position is outside its body"));
+            return Err(CodecError::malformed(
+                "Creo definition body position is outside its body",
+            ));
         }
-        Ok(DefinitionBodyPosition { definition: self, relative })
+        Ok(DefinitionBodyPosition {
+            definition: self,
+            relative,
+        })
     }
 }
 
 impl DefinitionBodyPosition<'_> {
     pub(crate) fn source(self) -> Result<SourcePosition, CodecError> {
-        self.definition.offset.checked_add(self.relative).map(SourcePosition)
+        self.definition
+            .offset
+            .checked_add(self.relative)
+            .map(SourcePosition)
             .ok_or_else(|| CodecError::malformed("Creo definition source position overflows"))
     }
 }
 
 impl SourcePosition {
-    pub(crate) fn get(self) -> usize { self.0 }
+    pub(crate) fn get(self) -> usize {
+        self.0
+    }
 }
 
 /// Definition naming before and after a join selects the owner as its identity.
@@ -6340,7 +6353,12 @@ fn saved_positional_generated_entities(
             starts.push(row_start);
         }
     }
-    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo saved generated row starts sort")?;
+    ctx.sort_unstable_by(
+        &mut starts,
+        Ord::cmp,
+        |_| 0,
+        "creo saved generated row starts sort",
+    )?;
     starts.dedup();
 
     let mut entities = Vec::new();

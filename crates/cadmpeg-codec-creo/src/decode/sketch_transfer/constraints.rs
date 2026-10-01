@@ -3810,10 +3810,16 @@ mod binding_tests {
         retained.offset = 13;
         table.rows.extend([skipped, retained]);
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| super::section_dimension_constraints(ctx, &definition, &sketch)).expect("constraints");
+        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+            super::section_dimension_constraints(ctx, &definition, &sketch)
+        })
+        .expect("constraints");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].1, 13);
         assert_eq!(constraints[0].2, 2);
-        assert_eq!(constraints[0].0.id.as_str(), "creo:featdefs:sketch_constraint#5:relation:8");
+        assert_eq!(
+            constraints[0].0.id.as_str(),
+            "creo:featdefs:sketch_constraint#5:relation:8"
+        );
     }
 }

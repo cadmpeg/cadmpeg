@@ -55,7 +55,11 @@ fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
     with_reference_ctx(&[], |ctx| super::ellipse_carriers(ctx, conics))
 }
 
-fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<super::ReferenceCircle> {
+fn arc_z_fields(
+    body: &[u8],
+    cache: &ScalarCache,
+    entity_id: u32,
+) -> Option<super::ReferenceCircle> {
     with_reference_ctx(body, |ctx| super::arc_z_fields(ctx, body, cache, entity_id))
 }
 
@@ -316,10 +320,19 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
 
     assert_eq!(
         ellipse_carriers(std::slice::from_ref(&conic)),
-        [ReferenceEllipse::try_new(7, cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                2.0, 2.0, 4.0,
-            ))
-            .expect("finite center"), cadmpeg_ir::units::UnitVector3::Z_AXIS, cadmpeg_ir::units::UnitVector3::X_AXIS.reversed(), [PositiveLength::new(5.0).expect("positive radius"), PositiveLength::new(2.0).expect("positive radius")], 10).expect("checked reference geometry")]
+        [ReferenceEllipse::try_new(
+            7,
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 2.0, 4.0,))
+                .expect("finite center"),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS.reversed(),
+            [
+                PositiveLength::new(5.0).expect("positive radius"),
+                PositiveLength::new(2.0).expect("positive radius")
+            ],
+            10
+        )
+        .expect("checked reference geometry")]
     );
 
     let mut invalid = conic.clone();
