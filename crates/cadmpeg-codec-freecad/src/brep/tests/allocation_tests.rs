@@ -7,7 +7,7 @@ use super::super::{
     CurveTransfer, NestedCurve, NestedSurface, ShapePayload, ShapePayloadRecord, ShapeSet,
     SurfaceTransfer, TextCurve, TextSurface, TextTShapes, TextTopologyVersion, TokenCursor,
 };
-use crate::native::{EntryRecord, PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -299,13 +299,13 @@ fn shape_property_carrier_diagnostic_refuses_at_retained_limit() {
 #[test]
 fn uppercase_binary_shape_extension_selects_binary_reader() {
     let property = shape_property("<Property><Part file=\"Body.BIN\"/></Property>");
-    let entry = EntryRecord {
-        id: "fcstd:native:entry#Body.BIN".into(),
-        name: "Body.BIN".into(),
-        role: cadmpeg_core::container::ContainerRole::Brep,
-        referenced_by: Vec::new(),
-        data: b"garbage\n".to_vec(),
-    };
+    let entry = crate::test_support::entry_record(
+        "fcstd:native:entry#Body.BIN".into(),
+        "Body.BIN".into(),
+        cadmpeg_core::container::ContainerRole::Brep,
+        Vec::new(),
+        b"garbage\n".to_vec(),
+    );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) =

@@ -40,23 +40,31 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    pub(crate) fn from_present_values_charged(
-        ctx: &DecodeContext<'_>,
+    fn present_with_storage(
         values: Vec<[f64; 2]>,
-    ) -> Result<Option<Self>, CodecError> {
-        let count = values.len();
-        let operation = "NX chart support-UV lane";
-        let mut checked = ctx.retained_vec(count, operation)?;
+        mut checked: Vec<FiniteVector<2>>,
+    ) -> Option<Self> {
+        (checked.is_empty() && checked.capacity() >= values.len()).then_some(())?;
         for pair in values {
-            let Some(value) = FiniteVector::new(pair) else {
-                return Ok(None);
-            };
             if pair.contains(&MISSING_PARAMETER) {
-                return Ok(None);
+                return None;
             }
-            checked.push(value);
+            checked.push(FiniteVector::new(pair)?);
         }
-        Ok(Some(Self(checked)))
+        Some(Self(checked))
+    }
+
+    pub(crate) fn from_present_values_scoped<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        values: Vec<[f64; 2]>,
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(values.len()),
+            "admit NX chart support-UV lane",
+        )?;
+        let (checked, reservation) = ctx.temporary_vec(values.len(), "NX chart support-UV lane")?;
+        let lane = Self::present_with_storage(values, checked);
+        Ok(lane.map(|lane| (lane, reservation)))
     }
     /// Construct one parameter pair per chart sample.
     #[cfg(test)]
@@ -76,17 +84,8 @@ impl SupportUvLane {
     }
 
     pub(crate) fn from_present_values(values: Vec<[f64; 2]>) -> Option<Self> {
-        Some(Self(
-            values
-                .into_iter()
-                .map(|pair| {
-                    let checked = FiniteVector::new(pair)?;
-                    pair.iter()
-                        .all(|value| *value != MISSING_PARAMETER)
-                        .then_some(checked)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        ))
+        let checked = DecodeContext::admitted_vec(values.len(), "NX chart support-UV lane").ok()?;
+        Self::present_with_storage(values, checked)
     }
 
     /// Ordered support parameter pairs.
@@ -338,8 +337,8 @@ impl RejectionCounts {
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CurveScan {
-    /// Every structurally valid construction found in the source graph before
-    /// chart enrichment filters it. Native record extraction reuses this lane
+    /// Constructions remaining after cross-form collision selection and before
+    /// chart enrichment. Native record extraction reuses this lane
     /// so it does not parse the same graph a second time.
     pub(crate) source_constructions: Vec<CompositeCurve>,
     /// Structurally valid constructions with a solved chart or a typed inbound
@@ -1147,7 +1146,6 @@ pub(crate) fn chart_source_record_at(
         let Some(mut head) = View::over_retained(stream).child(preamble, stream.len()) else {
             continue;
         };
-        // Keep the sequential preamble unpack dense; rustfmt would undo the net deletion.
         #[rustfmt::skip]
         let (
             Some(base_parameter), Some(base_scale), Some(chart_count), Some(chordal_error),

@@ -104,6 +104,29 @@ impl TrimPacket {
     }
 
     fn expand_triangles(&self, ctx: &DecodeContext<'_>) -> Result<Vec<[u32; 3]>, CodecError> {
+        let operation = "catia_trim_expansion_work";
+        let lengths = self
+            .strip_lengths
+            .len()
+            .checked_add(self.fan_lengths.len())
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        ctx.charge_work(u64_from_index(lengths), operation)?;
+        let triangle_count = self
+            .strip_lengths
+            .iter()
+            .chain(&self.fan_lengths)
+            .try_fold(self.independent_count, |count, &length| {
+                count.checked_add(match length {
+                    0 | 1 => 0,
+                    length => length - 2,
+                })
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let work = u64_from_index(triangle_count)
+            .checked_mul(3)
+            .and_then(|work| work.checked_add(u64_from_index(self.handles.len())))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
         let mut triangles = Vec::new();
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
         for triple in independent.chunks_exact(3) {
@@ -120,7 +143,7 @@ impl TrimPacket {
         for &length in &self.strip_lengths {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for index in 0..length - length.min(2) {
+            for (index, triple) in strip.windows(3).enumerate() {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
@@ -128,9 +151,9 @@ impl TrimPacket {
                 ctx.push_vec(
                     &mut triangles,
                     if index % 2 == 0 {
-                        [strip[index], strip[index + 1], strip[index + 2]]
+                        [triple[0], triple[1], triple[2]]
                     } else {
-                        [strip[index + 1], strip[index], strip[index + 2]]
+                        [triple[1], triple[0], triple[2]]
                     },
                     "catia_trim_triangles",
                 )?;
@@ -139,14 +162,17 @@ impl TrimPacket {
         for &length in &self.fan_lengths {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
-            for index in 1..length - length.min(1) {
+            let Some((&center, rim)) = fan.split_first() else {
+                continue;
+            };
+            for pair in rim.windows(2) {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
                 )?;
                 ctx.push_vec(
                     &mut triangles,
-                    [fan[0], fan[index], fan[index + 1]],
+                    [center, pair[0], pair[1]],
                     "catia_trim_triangles",
                 )?;
             }
@@ -159,6 +185,23 @@ impl TrimPacket {
 mod tests {
     use super::TrimPacket;
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn trim_expansion_refuses_work_before_cache_installation() {
+        let packet =
+            TrimPacket::try_from((1, vec![], vec![], vec![0, 1, 2])).expect("complete partition");
+        crate::test_support::with_work_limit(0, |ctx| {
+            let CodecError::ResourceLimit(limit) = packet
+                .triangles(ctx)
+                .expect_err("triangle work must be admitted")
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_trim_expansion_work");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+        assert!(packet.triangles.get().is_none());
+    }
 
     #[test]
     fn packet_rejects_overflow_and_incomplete_partitions() {

@@ -289,13 +289,13 @@ fn float_list_entry(name: &str, values: &[f64]) -> crate::native::EntryRecord {
     for value in values {
         data.extend(value.to_le_bytes());
     }
-    crate::native::EntryRecord {
-        id: name.into(),
-        name: name.into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
+    crate::test_support::entry_record(
+        crate::native::native_id("entry", name),
+        name.into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
         data,
-    }
+    )
 }
 
 #[test]

@@ -25,10 +25,7 @@ impl CloneCharged for String {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
-        let mut copy = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut copy, self.len(), operation)?;
-        copy.push_str(self);
-        Ok(copy)
+        ctx.copy_retained_text(self, operation)
     }
 }
 
@@ -91,15 +88,7 @@ fn copy_history_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, Cod
         cadmpeg_core::decode::u64_from_index(value.len()),
         "clone SLDPRT history text",
     )?;
-    let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(
-        ctx,
-        &mut copy,
-        value.len(),
-        "clone SLDPRT history text",
-    )?;
-    copy.push_str(value);
-    Ok(copy)
+    ctx.copy_retained_text(value, "clone SLDPRT history text")
 }
 
 fn clone_history_properties<K>(

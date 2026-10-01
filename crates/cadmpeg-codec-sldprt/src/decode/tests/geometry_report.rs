@@ -619,7 +619,8 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         &scan,
         &mut decoded,
         &classification,
-        crate::container::notes(&scan),
+        crate::container::notes_charged(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap(),
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {
@@ -641,7 +642,7 @@ fn unresolved_swift_source() -> Vec<u8> {
 #[test]
 fn unsupported_swift_loss_retains_exact_text() {
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut losses = Vec::new();
     super::super::append_swift_pmi_losses(&ctx, &scan, &mut losses).unwrap();
@@ -656,7 +657,7 @@ fn unsupported_swift_loss_retains_exact_text() {
 fn unsupported_swift_loss_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -673,7 +674,7 @@ fn unsupported_swift_loss_refuses_collection_limit() {
 fn unsupported_swift_loss_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -690,7 +691,7 @@ fn unsupported_swift_loss_refuses_retained_limit() {
 fn unsupported_swift_loss_refuses_scoped_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes =

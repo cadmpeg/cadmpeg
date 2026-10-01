@@ -33,9 +33,14 @@ pub(crate) struct CatalogEntry {
 
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
 pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Catalog>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "catia_catalog_scan",
+    )?;
     let mut catalogs = Vec::<Catalog>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {
+        ctx.charge_work(1, "catia_catalog_candidate")?;
         let Some(marker_tail) = pos.checked_add(1) else {
             continue;
         };
@@ -80,6 +85,10 @@ fn parse_candidate(
         if total_len < 8 || end > bytes.len() {
             return None;
         }
+        let work = admitted!(cadmpeg_core::decode::u64_from_index(total_len)
+            .checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("catia_catalog_candidate", u64::MAX, u64::MAX)));
+        admitted!(ctx.charge_work(work, "catia_catalog_candidate"));
         let (declared_count, mut at) = compact_atom(bytes, pos + 6)?;
         let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
         if entry_count > end.checked_sub(at)? {

@@ -720,7 +720,7 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
     };
     let definition = run.definition.as_ref().expect("adjacent definition");
     assert_eq!(u8::from(definition.class), 0x24);
-    assert_eq!(definition.frame.header_token, 5);
+    assert_eq!(definition.frame.header_token(), 5);
     assert_eq!(definition.frame.payload, [0x81, 0x05, 0x0f, 0x87]);
     assert_eq!(
         definition.data(),
@@ -734,7 +734,7 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
                 .definition
                 .as_ref()
                 .expect("native definition")
-                .class
+                .class()
         ),
         0x24
     );
@@ -1261,7 +1261,7 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         crate::test_support::test_b5::finite_vector([12.0, 34.0])
     );
     assert_eq!(run.circle.radius.get(), 5.0);
-    assert_eq!(run.descriptor.header_token, 0x15);
+    assert_eq!(run.descriptor.header_token(), 0x15);
     assert_eq!(
         run.definition.frame.pos,
         parameter.len() + circle.len() + 10

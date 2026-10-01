@@ -105,3 +105,17 @@ pub(crate) fn with_service_context<T>(
         .expect("test input is within service limits");
     use_context(&ctx)
 }
+
+/// Builds a checked entry with charged digest storage for synthetic fixtures.
+pub(crate) fn entry_record(
+    id: String,
+    name: String,
+    role: cadmpeg_core::container::ContainerRole,
+    references: Vec<String>,
+    data: Vec<u8>,
+) -> crate::native::EntryRecord {
+    with_service_context(&[], |ctx| {
+        crate::native::EntryRecord::new(ctx, id, name, role, references, data)
+            .expect("valid entry fixture")
+    })
+}
