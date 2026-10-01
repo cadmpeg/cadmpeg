@@ -25,6 +25,7 @@ pub(crate) fn transfer(
     ir: &mut CadIr,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
+    admitted_entities: &mut u64,
 ) -> Result<bool, CodecError> {
     let mut transferred = false;
     for property in properties {
@@ -70,7 +71,7 @@ pub(crate) fn transfer(
                 .push(parse_mesh(ctx, property, &entry.data)?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
-            let points = parse_points(ctx, property, &entry.data)?;
+            let points = parse_points(ctx, property, &entry.data, cadmpeg_core::decode::u64_from_index(ir.model.entity_count()), admitted_entities)?;
             ctx.reserve_vec(&mut ir.model.points, points.len(), "FreeCAD point records")?;
             ir.model.points.extend(points);
             transferred = true;
@@ -223,11 +224,16 @@ fn parse_points(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     bytes: &[u8],
+    current_entities: u64,
+    admitted_entities: &mut u64,
 ) -> Result<Vec<Point>, CodecError> {
     let mut reader = Reader::new(bytes);
     let count = reader.count(ByteOrder::Little, "point-cloud point count")?;
     reader.counted(cadmpeg_core::decode::u64_from_index(count), 12)
         .ok_or_else(|| CodecError::malformed("point-cloud count exceeds remaining payload"))?;
+    let population = current_entities.checked_add(cadmpeg_core::decode::u64_from_index(count))
+        .ok_or_else(|| ctx.refuse_codec_limit("FreeCAD point-cloud entities", u64::MAX, u64::MAX))?;
+    ctx.admit_entities(population, admitted_entities, "FreeCAD point-cloud entities")?;
     let transform = point_transform(ctx, property)?;
     let mut points = ctx.retained_vec(count, "FreeCAD point-cloud points")?;
     for index in 0..count {
@@ -474,6 +480,25 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn point_cloud_entities_refuse_before_records_and_are_not_admitted_twice() {
+        let mut bytes = 2_u32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&[0; 24]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        let mut admitted = 0;
+        assert!(matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.additional == 2));
+        assert_eq!(admitted, 0);
+        policy.limits.max_entities = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert_eq!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted).expect("admitted points").len(), 2);
+        ctx.admit_entities(2, &mut admitted, "aggregate").expect("already admitted");
+        assert!(matches!(ctx.charge_entities(1, "next entity"), Err(CodecError::ResourceLimit(_))));
+    }
+
+    #[test]
     fn unsupported_mesh_header_refuses_diagnostic_at_retained_limit() {
         let property = resource_test_property();
         crate::test_support::assert_retained_refusal_at(
@@ -501,6 +526,7 @@ pub(crate) mod tests {
                     &mut cadmpeg_ir::CadIr::empty(),
                     std::slice::from_ref(&property),
                     &[],
+                    &mut 0,
                 )
             },
         );
@@ -529,6 +555,7 @@ pub(crate) mod tests {
                     &mut cadmpeg_ir::CadIr::empty(),
                     std::slice::from_ref(&property),
                     &[],
+                    &mut 0,
                 )
             },
         );
@@ -628,7 +655,7 @@ pub(crate) mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
             .expect("root points are within the input limit");
         assert!(
-            matches!(parse_points(&ctx, &resource_test_property(), &points),
+            matches!(parse_points(&ctx, &resource_test_property(), &points, 0, &mut 0),
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD point-cloud points")
         );
@@ -638,7 +665,7 @@ pub(crate) mod tests {
     fn truncated_point_cloud_is_malformed_before_collection_admission() {
         let bytes = 1_000_000_u32.to_le_bytes();
         crate::test_support::with_service_context(&bytes, |ctx| {
-            assert!(matches!(parse_points(ctx, &resource_test_property(), &bytes),
+            assert!(matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0),
                 Err(CodecError::Malformed(message))
                     if message == "point-cloud count exceeds remaining payload"));
             assert_eq!(ctx.policy().limits.max_collection_items, DecodePolicy::service().limits.max_collection_items);
@@ -647,7 +674,7 @@ pub(crate) mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert!(matches!(parse_points(&ctx, &resource_test_property(), &bytes), Err(CodecError::Malformed(_))));
+        assert!(matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut 0), Err(CodecError::Malformed(_))));
     }
 
     #[test]
@@ -655,7 +682,7 @@ pub(crate) mod tests {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         bytes.extend_from_slice(&[0; 12]);
         crate::test_support::assert_retained_refusal_at(&bytes, "FreeCAD point-cloud points", |ctx| {
-            parse_points(ctx, &resource_test_property(), &bytes)
+            parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0)
         });
     }
 
@@ -672,7 +699,7 @@ pub(crate) mod tests {
         ) + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::topology::Point>()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
             .expect("root points are within the input limit");
-        assert!(matches!(parse_points(&ctx, &property, &points),
+        assert!(matches!(parse_points(&ctx, &property, &points, 0, &mut 0),
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD model identity"));
     }
