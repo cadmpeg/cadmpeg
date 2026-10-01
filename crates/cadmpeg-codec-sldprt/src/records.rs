@@ -1043,6 +1043,7 @@ pub(crate) struct FeatureInputScalar {
     pub(crate) operands: Vec<FeatureInputOperand>,
 }
 
+#[cfg(test)]
 impl FeatureInputScalar {
     /// Local sketch-entity indices carried by D6 dimension operands.
     pub(crate) fn entity_indices(&self) -> Vec<u16> {

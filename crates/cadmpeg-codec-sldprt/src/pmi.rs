@@ -1134,28 +1134,22 @@ fn parse_scalar<'a>(
             })
         }
         Marker::I8 => Some(SpannedValue {
-            kind: ValueKind::Int(i64::from(i8::from_be_bytes(
-                take_u8(bytes, cursor)?.to_be_bytes(),
-            ))),
+            kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)?.cast_signed())),
             start,
             data_offset: start + 1,
         }),
         Marker::I16 => Some(SpannedValue {
-            kind: ValueKind::Int(i64::from(i16::from_be_bytes(
-                take_u16(bytes, cursor)?.to_be_bytes(),
-            ))),
+            kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)?.cast_signed())),
             start,
             data_offset: start + 1,
         }),
         Marker::I32 => Some(SpannedValue {
-            kind: ValueKind::Int(i64::from(i32::from_be_bytes(
-                take_u32(bytes, cursor)?.to_be_bytes(),
-            ))),
+            kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)?.cast_signed())),
             start,
             data_offset: start + 1,
         }),
         Marker::I64 => Some(SpannedValue {
-            kind: ValueKind::Int(i64::from_be_bytes(take_u64(bytes, cursor)?.to_be_bytes())),
+            kind: ValueKind::Int(take_u64(bytes, cursor)?.cast_signed()),
             start,
             data_offset: start + 1,
         }),
