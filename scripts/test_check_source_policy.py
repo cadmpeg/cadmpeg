@@ -984,7 +984,10 @@ pub mod admitted {
             "cadmpeg_ir::eval::curve_point(0.).map_err(|_| malformed());",
             "cadmpeg_ir::eval::curve_point(0.).map_err(|failure| malformed());",
             "cadmpeg_ir::eval::curve_point(0.).map_err(|_failure| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(move |_| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|failure: EvaluationFailure<Point>| EvaluationFailure::NoValue);",
             "cadmpeg_ir::eval::admitted::surface_point(0.)?.ok();",
+            "match cadmpeg_ir::eval::admitted::surface_point(0.) { Ok(inner) => inner.ok(), Err(CodecError::ResourceLimit(limit)) => return Err(limit.into()), Err(_) => None }",
         ]:
             with self.subTest(body=body):
                 self.assertEqual(len(self.scan(body)), 1)
@@ -1000,8 +1003,13 @@ pub mod admitted {
             "match cadmpeg_ir::eval::curve_point(0.) { Ok(point) => Some(point), Err(_) => None }",
             "match cadmpeg_ir::eval::curve_point(0.) { Ok(point) => Some(point), _ => None }",
             "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => None, _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::InvalidInput(limit.to_string())), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(_) | Err(_) => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { _ if condition => None, _ => None }",
             "match cadmpeg_ir::eval::curve_point(0.) { Err(_) => None, Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit) }",
             "items.flat_map(|item| cadmpeg_ir::eval::curve_point(item));",
+            "items.flat_map(cadmpeg_ir::eval::curve_point);",
+            "items.map(cadmpeg_ir::eval::curve_point).flatten();",
             "items.filter_map(|item| cadmpeg_ir::eval::curve_point(item).ok());",
             "items.find_map(|item| cadmpeg_ir::eval::curve_point(item).ok());",
             "items.map(|item| cadmpeg_ir::eval::curve_point(item)).flatten();",
@@ -1032,15 +1040,22 @@ impl NewEvaluator {
     fn point(&self) -> Result<Point, EvaluationFailure<Point>> { todo!() }
     fn reader(&self) { self.point().ok(); }
 }
+fn borrowed<'a>(evaluator: &'a mut NewEvaluator) { evaluator.point().ok(); }
 fn make_evaluator() -> Result<NewEvaluator, OtherError> { todo!() }
 """
         for body in [
             "new_evaluator().ok();",
             "let evaluator = NewEvaluator::new(); evaluator.point().ok();",
             "let evaluator = make_evaluator()?; evaluator.point().ok();",
+            "let evaluator = NewEvaluator::new(); let value = evaluator.point(); value.ok();",
+            "let evaluator = NewEvaluator::new(); (evaluator.point()).ok();",
+            "NewEvaluator::new().point().ok();",
+            "new_evaluator::<Point>().map::<Point>(|point| point).ok();",
+            "NewEvaluator::point(&evaluator).ok();",
+            "items.flat_map(NewEvaluator::point);",
         ]:
             with self.subTest(body=body):
-                self.assertEqual(len(self.scan(body, declarations=declarations)), 2)
+                self.assertEqual(len(self.scan(body, declarations=declarations)), 3)
 
     def test_evaluation_refusal_resolves_imports_without_same_name_false_positives(self) -> None:
         for imports, call in [
@@ -1052,6 +1067,23 @@ fn make_evaluator() -> Result<NewEvaluator, OtherError> { todo!() }
                 self.assertEqual(len(self.scan(call + ".ok();", imports=imports)), 1)
         self.assertEqual(self.scan("curve_point(0.).ok();", declarations="fn curve_point(x: f64) -> Result<Point, OtherError> { todo!() }"), [])
         self.assertEqual(self.scan("other::curve_point(0.).ok();"), [])
+
+    def test_evaluation_refusal_accepts_retained_resource_carriers_and_returning_guards(self) -> None:
+        declarations = """
+struct Evaluation { resource: Option<ResourceLimit> }
+impl Evaluation {
+    fn resource(limit: ResourceLimit) -> Self { Self { resource: Some(limit) } }
+}
+fn resource(limit: ResourceLimit) -> Evaluation { Evaluation { resource: Some(limit) } }
+"""
+        for body in [
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(Evaluation::resource(limit)), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)), _ => None }",
+            "let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { return Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(self.scan(body, declarations=declarations), [])
+        self.assertEqual(len(self.scan("let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { let saved = Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }", declarations=declarations)), 1)
 
     def test_evaluation_refusal_respects_binding_scope_and_shadowing(self) -> None:
         self.assertEqual(len(self.scan("let value = cadmpeg_ir::eval::curve_point(0.); { let value = other(); value.ok(); } value.ok();")), 1)
