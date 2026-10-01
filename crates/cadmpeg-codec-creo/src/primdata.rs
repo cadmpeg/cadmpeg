@@ -46,19 +46,43 @@ pub(crate) struct PrimitiveScalarArray {
     pub(crate) values: Vec<FiniteReal>,
 }
 
-/// One complete triangle-strip primitive.
+#[derive(Debug, Clone, PartialEq)]
+struct PrimitiveShadedVertex { position: FiniteVector<3>, normal: FiniteVector<3> }
+#[derive(Debug, Clone, PartialEq)]
+enum PrimitiveVertices { Unshaded(Vec<FiniteVector<3>>), Shaded(Vec<PrimitiveShadedVertex>) }
+
+/// A strip set with complete vertex lanes and exact, nonempty span coverage.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PrimitiveTriangleStrip {
-    /// Byte offset of `value(prim_tristripsetwithatt)` in the expanded section.
     pub(crate) offset: usize,
-    /// Consecutive model-space positions.
-    pub(crate) positions: Vec<FiniteVector<3>>,
-    /// Per-vertex normals when the primitive uses the interleaved normal and
-    /// position lane. A primitive that carries only the position lane states
-    /// an unshaded strip set and no normal lane at all.
-    pub(crate) normals: Option<Vec<FiniteVector<3>>>,
-    /// Vertex count of each consecutive triangle strip.
-    pub(crate) strip_lengths: Vec<u32>,
+    vertices: PrimitiveVertices,
+    strip_lengths: Vec<u32>,
+}
+impl PrimitiveTriangleStrip {
+    pub(crate) fn new(ctx: &DecodeContext<'_>, offset: usize, positions: Vec<FiniteVector<3>>, normals: Option<Vec<FiniteVector<3>>>, strip_lengths: Vec<u32>) -> Result<Option<Self>, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(strip_lengths.len()), "creo primitive strip validation")?;
+        let Some(total) = strip_lengths.iter().try_fold(0usize, |total, length| {
+            if *length < 3 { return None; }
+            total.checked_add(usize::try_from(*length).ok()?)
+        }) else { return Ok(None); };
+        if strip_lengths.is_empty() || total != positions.len() || normals.as_ref().is_some_and(|normals| normals.len() != positions.len()) { return Ok(None); }
+        let vertices = match normals {
+            None => PrimitiveVertices::Unshaded(positions),
+            Some(normals) => {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(positions.len()), "creo primitive vertex pairing")?;
+                PrimitiveVertices::Shaded(ctx.collect_retained_vec(positions.into_iter().zip(normals).map(|(position, normal)| PrimitiveShadedVertex { position, normal }), "creo primitive shaded vertices")?)
+            }
+        };
+        Ok(Some(Self { offset, vertices, strip_lengths }))
+    }
+    pub(crate) fn positions(&self) -> impl ExactSizeIterator<Item = &FiniteVector<3>> {
+        let count = match &self.vertices { PrimitiveVertices::Unshaded(rows) => rows.len(), PrimitiveVertices::Shaded(rows) => rows.len() };
+        (0..count).map(|index| match &self.vertices { PrimitiveVertices::Unshaded(rows) => &rows[index], PrimitiveVertices::Shaded(rows) => &rows[index].position })
+    }
+    pub(crate) fn normals(&self) -> Option<impl ExactSizeIterator<Item = &FiniteVector<3>>> {
+        match &self.vertices { PrimitiveVertices::Unshaded(_) => None, PrimitiveVertices::Shaded(rows) => Some(rows.iter().map(|row| &row.normal)) }
+    }
+    pub(crate) fn strip_lengths(&self) -> &[u32] { &self.strip_lengths }
 }
 
 /// Complete triangle strips and conflicts found in one primitive-data stream.
@@ -263,12 +287,7 @@ pub(crate) fn triangle_strips(
             Err(TriangleStripGeometryError::Resource(error)) => return Err(error),
         };
         ctx.reserve_vec(&mut strips, 1, "creo triangle strip records")?;
-        strips.push(PrimitiveTriangleStrip {
-            offset,
-            positions: geometry.positions,
-            normals: geometry.normals,
-            strip_lengths,
-        });
+        if let Some(strip) = PrimitiveTriangleStrip::new(ctx, offset, geometry.positions, geometry.normals, strip_lengths)? { strips.push(strip); }
     }
     Ok(PrimitiveTriangleStripScan {
         strips,
@@ -637,8 +656,8 @@ mod tests {
         assert_eq!(scan.conflicting_representation_count, 0);
         let strips = scan.strips;
         assert_eq!(strips.len(), 1);
-        assert_eq!(strips[0].positions.len(), 3);
-        assert!(strips[0].normals.is_none());
+        assert_eq!(strips[0].positions().len(), 3);
+        assert!(strips[0].normals().is_none());
         assert_eq!(strips[0].strip_lengths, [3]);
     }
 
@@ -659,11 +678,11 @@ mod tests {
         let strips = scan.strips;
         assert_eq!(strips.len(), 1);
         assert_eq!(
-            strips[0].positions,
+            strips[0].positions().map(|position| position.get()).collect::<Vec<_>>(),
             [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
         );
         assert_eq!(
-            strips[0].normals,
+            strips[0].normals().map(|normals| normals.copied().collect::<Vec<_>>()),
             Some(finite_points(vec![[0.0, 1.0, 0.0]; 3]))
         );
         assert_eq!(strips[0].strip_lengths, [3]);
@@ -778,6 +797,20 @@ mod tests {
         assert!(with_collection_limit(scalar, 0, |ctx| scalar_arrays(ctx, scalar)).expect("truncated candidate").is_empty());
         let strip = b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\xbf\xff";
         assert!(with_collection_limit(strip, 0, |ctx| triangle_strips(ctx, strip)).expect("truncated strip").strips.is_empty());
+    }
+
+    #[test]
+    fn checked_primitive_strips_reject_invalid_lanes_and_spans() {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let positions = || finite_points(vec![[0.0;3];3]);
+            for spans in [vec![], vec![2], vec![4], vec![3,3]] {
+                assert!(super::PrimitiveTriangleStrip::new(ctx, 0, positions(), None, spans).expect("service").is_none());
+            }
+            assert!(super::PrimitiveTriangleStrip::new(ctx, 0, positions(), Some(finite_points(vec![[0.0;3];2])), vec![3]).expect("service").is_none());
+            let shaded = super::PrimitiveTriangleStrip::new(ctx, 0, positions(), Some(finite_points(vec![[0.0,1.0,0.0];3])), vec![3]).expect("service").expect("paired strip");
+            assert_eq!(shaded.positions().len(),3);
+            assert_eq!(shaded.normals().expect("shaded").len(),3);
+        });
     }
 
 }

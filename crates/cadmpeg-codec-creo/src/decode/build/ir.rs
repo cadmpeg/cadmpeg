@@ -556,10 +556,10 @@ fn transfer_display_tessellations(
         let mut positions = Vec::new();
         ctx.reserve_vec(
             &mut positions,
-            strip.positions.len(),
+            strip.positions().len(),
             "creo display tessellation positions",
         )?;
-        for position in &strip.positions {
+        for position in strip.positions() {
             let mut point = Point3::from(position.get());
             if let Some(scale) = length_scale {
                 point = Point3::new(
@@ -583,17 +583,7 @@ fn transfer_display_tessellations(
             };
             positions.push(point);
         }
-        let mesh = if let Some(normals) = &strip.normals {
-            if normals.len() != positions.len() {
-                return Err(display_strip_error(
-                    ctx,
-                    strip.offset,
-                    TessellationLaneError::VertexNormalLane {
-                        vertices: positions.len(),
-                        normals: normals.len(),
-                    },
-                )?);
-            }
+        let mesh = if let Some(normals) = strip.normals() {
             let mut rows = Vec::new();
             ctx.reserve_vec(
                 &mut rows,
@@ -610,25 +600,25 @@ fn transfer_display_tessellations(
                 };
                 rows.push(ShadedVertex { position, normal });
             }
-            let Some(strips) = admitted_display_strips(ctx, rows, &strip.strip_lengths)? else {
+            let Some(strips) = admitted_display_strips(ctx, rows, strip.strip_lengths())? else {
                 return Err(display_strip_error(
                     ctx,
                     strip.offset,
                     TessellationLaneError::Strips {
-                        spans: strip.strip_lengths.len(),
+                        spans: strip.strip_lengths().len(),
                     },
                 )?);
             };
             TessellationMesh::ShadedStrips { strips }
         } else {
             // An absent normal lane is an unshaded strip set.
-            let Some(strips) = admitted_display_strips(ctx, positions, &strip.strip_lengths)?
+            let Some(strips) = admitted_display_strips(ctx, positions, strip.strip_lengths())?
             else {
                 return Err(display_strip_error(
                     ctx,
                     strip.offset,
                     TessellationLaneError::Strips {
-                        spans: strip.strip_lengths.len(),
+                        spans: strip.strip_lengths().len(),
                     },
                 )?);
             };
