@@ -158,7 +158,8 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
         tag::CYLINDER => values[6] > 0.0,
         tag::CONE => {
             values[6] >= 0.0
-                && values[7].abs() > f64::EPSILON
+                && values[7] > f64::EPSILON
+                && values[7] < 1.0
                 && values[8] > 0.0
                 && (values[7] * values[7] + values[8] * values[8] - 1.0).abs()
                     <= EPS_BREP_VALID_CARRIER_SCALARS_E9
@@ -331,26 +332,9 @@ fn decode_carrier_values(
             ),
         ))),
         tag::CONE => {
-            // origin(3) axis(3) radius sin cos refdir(3): the half-angle is the
-            // stored sine's arcsine.
-            //
-            // `valid_carrier_scalars` admitted this record only when `cos` is
-            // positive and `sin^2 + cos^2` is one within
-            // `EPS_BREP_VALID_CARRIER_SCALARS_E9`, so `sin^2` is at most
-            // `1 + EPS_BREP_VALID_CARRIER_SCALARS_E9` and the magnitude is at
-            // most its square root. A magnitude the unit identity does not hold
-            // is not a CONE record and never reaches here.
-            //
-            // A magnitude above one is therefore a unit sine the file
-            // serialised with a rounding error, and it is read as exactly one:
-            // a stated repair of the representation, not a clamp on the parsed
-            // range.
-            let sine = v[7].abs();
-            let half_angle = if sine <= 1.0 {
-                sine.asin()
-            } else {
-                std::f64::consts::FRAC_PI_2
-            };
+            // origin(3) axis(3) radius sin cos refdir(3). Admission requires
+            // a positive sine below one and a positive cosine.
+            let half_angle = v[7].asin();
             return Some(surface(SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cone(ConeSurface::new(
                     FinitePoint3::new(scale_point(&v[0..3]))?,
@@ -816,27 +800,20 @@ mod tests {
         assert_eq!(cone_surface.half_angle().get(), 0.6_f64.asin());
     }
 
-    /// A stored cone sine just above one is a unit sine the file serialised
-    /// with a rounding error, and the half-angle is a right angle exactly.
     #[test]
-    fn a_cone_sine_just_above_one_is_read_as_a_unit_sine() {
+    fn a_cone_sine_just_above_one_is_refused() {
         let sine = 1.0 + 4.0e-10;
-        let bytes = compact_carrier(
-            tag::CONE,
-            8,
-            &[
-                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, sine, 1.0e-8, 1.0, 0.0, 0.0,
-            ],
-        );
-        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("required invariant")
-        else {
-            panic!("expected surface carrier");
-        };
-        let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = carrier.geometry.solved() else {
-            panic!("expected cone");
-        };
+        let bytes = compact_carrier(tag::CONE, 8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, sine, 1.0e-8, 1.0, 0.0, 0.0]);
+        assert!(parse_carrier(&bytes, 0).is_none());
+    }
 
-        assert_eq!(cone_surface.half_angle().get(), std::f64::consts::FRAC_PI_2);
+    #[test]
+    fn a_negative_cone_sine_is_refused_without_changing_its_chart() {
+        let root_half = std::f64::consts::FRAC_1_SQRT_2;
+        let bytes = compact_carrier(tag::CONE, 8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, -root_half, root_half, 1.0, 0.0, 0.0]);
+        assert!(parse_carrier(&bytes, 0).is_none());
     }
 
     #[test]
