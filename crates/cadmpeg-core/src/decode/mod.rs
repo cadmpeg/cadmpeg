@@ -10,6 +10,7 @@ pub mod collect;
 mod context;
 mod error;
 mod deflate;
+pub mod zstd;
 mod input;
 mod policy;
 mod probe;
