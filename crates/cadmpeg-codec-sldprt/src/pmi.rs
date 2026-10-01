@@ -996,7 +996,7 @@ fn parse_value<'a>(
     let _depth = ctx.enter_nested("parse SLDPRT PMI MessagePack")?;
     ctx.charge_work(1, "parse SLDPRT PMI MessagePack")?;
     if depth > 16 {
-        return Ok(None);
+        return Err(ctx.refuse_codec_limit("parse SLDPRT PMI MessagePack depth", 16, cadmpeg_core::decode::u64_from_index(depth)));
     }
     let start = *cursor;
     let Some(marker) = take_u8(bytes, cursor).map(Marker::from_u8) else {
@@ -1222,14 +1222,15 @@ fn parse_map<'a>(
         return Ok(None);
     };
     let mut values = BTreeMap::new();
+    let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SLDPRT PMI depth", 16, u64::MAX))?;
     for _ in 0..len {
-        let Some(key_value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
+        let Some(key_value) = parse_value(ctx, bytes, cursor, next_depth)? else {
             return Ok(None);
         };
         let ValueKind::String(key) = key_value.kind else {
             return Ok(None);
         };
-        let Some(value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
+        let Some(value) = parse_value(ctx, bytes, cursor, next_depth)? else {
             return Ok(None);
         };
         ctx.insert_btree_map(&mut values, key, value, "collect SLDPRT PMI map fields")?;
@@ -1258,8 +1259,9 @@ fn parse_array<'a>(
         return Ok(None);
     };
     let mut values = ctx.collection_vec(len, "collect SLDPRT PMI array items")?;
+    let next_depth = depth.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("advance SLDPRT PMI depth", 16, u64::MAX))?;
     for _ in 0..len {
-        let Some(value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
+        let Some(value) = parse_value(ctx, bytes, cursor, next_depth)? else {
             return Ok(None);
         };
         values.push(value);
