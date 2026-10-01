@@ -2379,6 +2379,30 @@ mod tests {
     }
 
     #[test]
+    fn scalar_cache_discovery_and_duplicate_hashing_refuse_work() {
+        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
+        let cache = crate::test_support::assert_work_boundaries(
+            &["creo scalar cache discovery", "creo scalar cache image hashing"],
+            |ctx| ScalarCache::from_section_checked(ctx, &images),
+        );
+        assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
+        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| ScalarCache::from_section_checked(ctx, &[0; 16])).expect_err("miss scan refuses");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo scalar cache discovery"));
+    }
+
+    #[test]
+    fn double_xar_discovery_and_slot_parsing_refuse_work() {
+        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+        let tables = crate::test_support::assert_work_boundaries(
+            &["creo double_xar discovery", "creo double_xar slot parsing"],
+            |ctx| double_xar_tables(ctx, bytes),
+        );
+        assert_eq!(tables.len(), 1);
+        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| double_xar_tables(ctx, &[0; 16])).expect_err("miss scan refuses");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo double_xar discovery"));
+    }
+
+    #[test]
     fn inline_explicit_frame_refuses_recursive_depth_before_absent_candidate() {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = [0xe4];

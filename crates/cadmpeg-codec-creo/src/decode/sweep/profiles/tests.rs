@@ -1084,3 +1084,17 @@ fn nurbs_profile_polyline_refuses_temporary_bytes() {
     let error = linear_profile_polyline_with_policy(policy).expect_err("one planar point needs sixteen bytes");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile polyline points"));
 }
+
+#[test]
+fn nurbs_profile_point_append_refuses_before_growth_at_the_common_ceiling() {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let mut points = vec![[0.0; 2]; super::MAX_NURBS_PROFILE_POINTS];
+        let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
+        let error = super::append_nurbs_profile_point(ctx, &mut storage, &mut points, [1.0; 2]).expect_err("all point append paths share the ceiling");
+        let cadmpeg_core::CodecError::ResourceLimit(resource) = error else { panic!("point ceiling refusal"); };
+        assert_eq!(resource.operation, "creo NURBS profile point ceiling");
+        assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+        assert_eq!(points.len(), super::MAX_NURBS_PROFILE_POINTS);
+        assert_eq!(points.last(), Some(&[0.0; 2]));
+    });
+}

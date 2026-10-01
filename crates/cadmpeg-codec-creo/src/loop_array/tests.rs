@@ -231,3 +231,14 @@ fn impossible_loop_extent_is_incomplete_not_overfull() {
     assert_eq!(result.frames[0].declared_count, 100);
     assert!(result.records.is_empty());
 }
+
+#[test]
+fn loop_array_framing_and_token_walks_refuse_work() {
+    let bytes = frame(1, &row(1, &[0xe4]));
+    let scan = crate::test_support::assert_work_boundaries(
+        &["creo loop array discovery", "creo loop frame boundaries", "creo loop prototype scan", "creo loop row token walk"],
+        |ctx| super::scan(ctx, &bytes),
+    );
+    assert_eq!(scan.frames.len(), 1);
+    assert_eq!(scan.records.len(), 1);
+}

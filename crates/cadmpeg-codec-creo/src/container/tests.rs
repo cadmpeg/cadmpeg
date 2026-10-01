@@ -1126,3 +1126,12 @@ fn expanded_section_local_ceiling_is_a_refusal() {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo expanded section ceiling"));
     });
 }
+
+#[test]
+fn container_framing_misses_and_text_copies_refuse_work() {
+    let bytes = build_prt("test", &[("VisibGeom", vec![0; 64])]);
+    crate::test_support::assert_work_boundaries(
+        &["creo container model-name scan", "creo version line scan", "creo version text work", "creo container header scans", "creo container TOC scans", "creo TOC discovery scan", "creo section framing scan"],
+        |ctx| super::scan_bytes(ctx, bytes.as_slice()),
+    );
+}

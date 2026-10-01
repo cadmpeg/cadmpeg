@@ -112,3 +112,13 @@ pub(super) fn unique_feature_datum_plane<'a>(
     ctx.charge_work(u64_from_index(datums.len()), "creo unique owner scan")?;
     Ok(exactly_one(datums.iter().filter(|datum| datum.feature_id == feature_id)))
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn datum_unique_owner_scan_refuses_work_before_query() {
+        let datum = crate::datum::DatumPlaneRecord::new(1, 7, crate::datum::DatumPlane::new(crate::axis::Axis::Z, 0.0).expect("finite plane"), 0.0, [[None; 2]; 2], 0).expect("finite datum");
+        let datums = [datum];
+        crate::test_support::assert_work_boundaries(&["creo unique owner scan"], |ctx| super::unique_feature_datum_plane(ctx, &datums, 7).map(|value| value.map(|value| value.id)));
+    }
+}
