@@ -109,6 +109,9 @@ fn nibble_swap_name_charged(
     ctx: &DecodeContext<'_>,
     raw: &[u8],
 ) -> Result<Option<String>, CodecError> {
+    let work = u64_from_index(raw.len()).checked_mul(3)
+        .ok_or_else(|| ctx.refuse_codec_limit("validate SLDPRT section name", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "validate SLDPRT section name")?;
     if !raw
         .iter()
         .all(|byte| (0x20..0x7f).contains(&byte.rotate_left(4)))
@@ -690,6 +693,9 @@ fn block_from_inflated(
     // family label.
     let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
     let family = if ps_streams.is_empty() {
+        let work = u64_from_index(inflated.len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("classify SLDPRT block payload", u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, "classify SLDPRT block payload")?;
         payload_family(&inflated)
     } else {
         PayloadFamily::Parasolid
@@ -881,6 +887,9 @@ pub(crate) fn summarize(ctx: &DecodeContext<'_>, scan: &ContainerScan, dialects:
     }
 
     for stream in &scan.compound_streams {
+        let family_work = u64_from_index(stream.payload.len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("classify SLDPRT inventory payload", u64::MAX, u64::MAX))?;
+        ctx.charge_work(family_work, "classify SLDPRT inventory payload")?;
         ctx.charge_work(u64_from_index(stream.payload.len()), "hash SLDPRT inventory payload")?;
         ctx.charge_retained(64, "retain SLDPRT inventory digest")?;
         let mut attributes = BTreeMap::new();

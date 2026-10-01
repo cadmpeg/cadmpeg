@@ -624,3 +624,24 @@ fn compound_scan_preserves_malformed_open_error() {
     ).err().unwrap();
     assert!(matches!(error, CodecError::Malformed(_)));
 }
+
+#[test]
+fn invalid_marker_name_refuses_work_before_validation() {
+    let mut raw = vec![b'A'.rotate_left(4); 64];
+    raw[63] = 0;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(super::nibble_swap_name_charged(&ctx, &raw), Err(CodecError::ResourceLimit(limit)) if limit.operation == "validate SLDPRT section name"));
+}
+
+#[test]
+fn inventory_compound_classification_refuses_work_before_signature_scan() {
+    let stream = CompoundStream { path: cadmpeg_ir::stream_name!("Contents/Unknown"), directory_id: 0, start_sector: 0, payload: vec![0; 64], decoded_payload: None, ps_streams: Vec::new() };
+    let scan = container::completed_scan_charged(&cadmpeg_test_support::service_decode_context(), &[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]).unwrap();
+    let dialects = crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().layers().clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(container::summarize(&ctx, &scan, dialects), Err(CodecError::ResourceLimit(limit)) if limit.operation == "classify SLDPRT inventory payload"));
+}
