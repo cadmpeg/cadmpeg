@@ -9,7 +9,6 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind};
-use cadmpeg_core::decode::u64_from_index;
 use crate::resolved_features::endpoints::compact_indexed_curve_endpoint_indices;
 use crate::resolved_features::endpoints::coordinate_roster_arc_center;
 use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
@@ -27,6 +26,7 @@ use crate::resolved_features::endpoints::legacy_undetailed_profile_line;
 use crate::resolved_features::endpoints::marker_is_selected_construction_line;
 use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
 use crate::resolved_features::endpoints::wide_indexed_curve_endpoint_indices;
+use cadmpeg_core::decode::u64_from_index;
 use std::collections::HashMap;
 
 #[test]

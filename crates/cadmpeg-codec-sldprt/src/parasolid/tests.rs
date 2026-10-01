@@ -54,14 +54,18 @@ fn inner_parasolid_frame_refuses_before_expansion_exceeds_per_expand_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_per_expand = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
+    policy.limits.max_decompressed_bytes_per_expand =
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected per-expansion resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
+    assert_eq!(
+        limit.limit,
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1
+    );
     assert_eq!(limit.used, 0);
 
     let arena = DecodeArena::new();
@@ -125,7 +129,8 @@ fn chained_parasolid_frames_refuse_cumulative_expansion_limit() {
     let split = stream.len() / 2;
     let (payload, _) = chained_payload(&[vec![stream[..split].to_vec(), stream[split..].to_vec()]]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_total = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
+    policy.limits.max_decompressed_bytes_total =
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
@@ -133,7 +138,10 @@ fn chained_parasolid_frames_refuse_cumulative_expansion_limit() {
         panic!("expected cumulative expansion refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
+    assert_eq!(
+        limit.limit,
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1
+    );
     assert!(limit.used > 0);
 }
 
@@ -151,7 +159,10 @@ fn chained_parasolid_concatenation_refuses_materialized_limit() {
         panic!("expected concatenation refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
+    assert_eq!(
+        limit.limit,
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1
+    );
 
     let arena = DecodeArena::new();
     let (ctx, _) =
@@ -200,7 +211,10 @@ fn legacy_zlib_candidate_refuses_probe_work_limit() {
         panic!("expected candidate work refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(member.len()) - 1);
+    assert_eq!(
+        limit.limit,
+        cadmpeg_core::decode::u64_from_index(member.len()) - 1
+    );
 
     let arena = DecodeArena::new();
     let (ctx, _) =
@@ -219,7 +233,8 @@ fn legacy_zlib_candidate_refuses_expansion_limit() {
     payload.extend_from_slice(&member);
     assert!(!payload.windows(4).any(|window| window == b"PS\0\0"));
     let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_per_expand = cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
+    policy.limits.max_decompressed_bytes_per_expand =
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
@@ -227,7 +242,10 @@ fn legacy_zlib_candidate_refuses_expansion_limit() {
         panic!("expected candidate expansion refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert_eq!(limit.limit, cadmpeg_core::decode::u64_from_index(stream.len()) - 1);
+    assert_eq!(
+        limit.limit,
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1
+    );
 }
 
 #[test]

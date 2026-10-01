@@ -998,7 +998,11 @@ pub(super) fn resolve_connected_marker_arcs(
             format_args!("{native_ref}"),
             "copy SLDPRT connected arc point identity",
         )?;
-        ctx.admit_hash_map_entry(&mut points, &retained_ref, "index SLDPRT connected arc points")?;
+        ctx.admit_hash_map_entry(
+            &mut points,
+            &retained_ref,
+            "index SLDPRT connected arc points",
+        )?;
         points.insert(retained_ref, position.get());
         ctx.reserve_collection_vec(
             &mut point_records,
@@ -1596,7 +1600,11 @@ pub(super) fn sketch_plane_frames(
         let Some(frame) = frames_by_feature.get(feature).copied() else {
             continue;
         };
-        ctx.admit_hash_map_entry(&mut frames, &source, "index SLDPRT sketch plane source frames")?;
+        ctx.admit_hash_map_entry(
+            &mut frames,
+            &source,
+            "index SLDPRT sketch plane source frames",
+        )?;
         frames.insert(source, frame);
     }
     Ok(frames)

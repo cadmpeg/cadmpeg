@@ -134,7 +134,11 @@ pub(crate) fn bind_history_classes(
                 continue;
             };
             if class.role() != FeatureInputClassRole::Native {
-                ctx.reserve_map(&mut direct_classes_by_name, 1, "bind SLDPRT history classes")?;
+                ctx.reserve_map(
+                    &mut direct_classes_by_name,
+                    1,
+                    "bind SLDPRT history classes",
+                )?;
                 let classes = direct_classes_by_name.entry(name).or_default();
                 ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
                 classes.push(&class.name);
@@ -341,14 +345,12 @@ pub(crate) fn bind_history_classes(
     let direct_name_offsets = collect_class_set(
         ctx,
         lanes.iter().flat_map(|lane| {
-            lane.classes
-                .iter()
-                .map(|class| {
-                    (
-                        lane.id.as_str(),
-                        class.offset + 6 + u64_from_index(class.name.len()),
-                    )
-                })
+            lane.classes.iter().map(|class| {
+                (
+                    lane.id.as_str(),
+                    class.offset + 6 + u64_from_index(class.name.len()),
+                )
+            })
         }),
     )?;
     let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();

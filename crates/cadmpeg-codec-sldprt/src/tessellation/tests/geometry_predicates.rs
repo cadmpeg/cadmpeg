@@ -107,8 +107,8 @@ const EPS_FOLLOWUP_ARC_SAGITTA: f64 = 1e-9;
 
 #[test]
 fn numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap() {
-    let (segments, error) = planar_arc_segments(1e-5, 1e12, EPS_FOLLOWUP_ARC_SAGITTA)
-        .expect("segment count is exact");
+    let (segments, error) =
+        planar_arc_segments(1e-5, 1e12, EPS_FOLLOWUP_ARC_SAGITTA).expect("segment count is exact");
     assert_eq!(segments, MAX_PLANAR_TRIM_ARC_SEGMENTS);
     let expected = 2e12
         * (1e-5
