@@ -12,20 +12,9 @@ use std::io::Cursor;
 #[test]
 fn persistence_invalid_xml_diagnostic_refuses_at_retained_limit() {
     let bytes = b"<Document";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("source bytes are within policy");
-    let error = super::parse_with_context(bytes, "4", &ctx)
-        .err()
-        .expect("invalid XML diagnostic must be admitted");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && failure.operation == "FCStd persistence diagnostic"),
-        "{error:?}"
-    );
+    crate::test_support::assert_retained_refusal_at(bytes, "FCStd persistence diagnostic", |ctx| {
+        super::parse_with_context(bytes, "4", ctx)
+    });
 }
 
 #[test]

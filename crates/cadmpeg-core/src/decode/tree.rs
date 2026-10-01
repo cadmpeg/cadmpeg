@@ -430,7 +430,10 @@ impl DecodeContext<'_> {
     pub fn parse_json<T: serde::de::DeserializeOwned>(
         &self, text: &str, operation: &'static str,
     ) -> Result<T, CodecError> {
-        let (value, _reservation, bound) = self.parse_json_tree(text, operation, false)?;
+        let (_reservation, value, bound) = {
+            let (value, reservation, bound) = self.parse_json_tree(text, operation, false)?;
+            (reservation, value, bound)
+        };
         let retained = bound.bytes.checked_mul(2)
             .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
             .ok_or_else(|| self.tree_overflow(operation))?;

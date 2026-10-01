@@ -37,6 +37,7 @@ pub(crate) fn parse_with_context(
     schema_version: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<Graph, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "validate FreeCAD XML UTF-8")?;
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {

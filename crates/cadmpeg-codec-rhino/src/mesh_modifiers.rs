@@ -411,7 +411,7 @@ fn parse_displacement(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload_range: std::ops::Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_xml(ctx, &xml, xml_version, archive)
 }
 
@@ -419,7 +419,7 @@ fn parse_edge_softening(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<EdgeSofteningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_edge_softening_xml(ctx, &xml, xml_version)
 }
 
@@ -427,7 +427,7 @@ fn parse_thickening(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ThickeningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_thickening_xml(ctx, &xml, xml_version)
 }
 
@@ -435,7 +435,7 @@ fn parse_curve_piping(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<CurvePipingModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_curve_piping_xml(ctx, &xml, xml_version)
 }
 
@@ -443,18 +443,25 @@ fn parse_shut_lining(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ShutLiningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_shut_lining_xml(ctx, &xml, xml_version)
 }
 
-fn parse_xml_userdata(
+fn parse_xml_userdata<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
-) -> Result<(i32, String), FramingError> {
+) -> Result<(cadmpeg_core::decode::ScopedReservation<'ctx>, i32, String), FramingError> {
     let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
     let xml_version = reader.i32()?;
-    let xml = match xml_version {
-        1 => settings::utf16(&mut reader)?,
+    let (xml, reservation) = match xml_version {
+        1 => {
+            let bytes = settings::utf16_payload(&mut reader)?;
+            ctx.copy_scoped_xml_utf16le(bytes, "Rhino mesh modifier XML text").map_err(|error| {
+                if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) { error.into() }
+                else { FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence") }
+            })?
+        },
         XML_USERDATA_VERSION => {
             let length_offset = reader.position();
             let length = reader.i32()?;
@@ -471,9 +478,12 @@ fn parse_xml_userdata(
                 ));
             }
             let raw = reader.take(length)?;
-            std::str::from_utf8(raw)
-                .map(str::to_owned)
-                .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?
+            let work = cadmpeg_core::decode::u64_from_index(raw.len()).checked_mul(3)
+                .ok_or_else(|| ctx.refuse_codec_limit("Rhino mesh modifier XML text", u64::MAX, u64::MAX))?;
+            ctx.charge_work(work, "Rhino mesh modifier XML text")?;
+            let text = std::str::from_utf8(raw)
+                .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?;
+            ctx.format_scoped(format_args!("{text}"), "Rhino mesh modifier XML text")?
         }
         version => {
             return Err(FramingError::structural(
@@ -483,7 +493,7 @@ fn parse_xml_userdata(
         }
     };
     reader.skip_remaining()?;
-    Ok((xml_version, xml))
+    Ok((reservation, xml_version, xml))
 }
 
 fn parse_xml(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1097,6 +1107,29 @@ mod tests {
             payload.extend(unit.to_le_bytes());
         }
         payload
+    }
+
+    #[test]
+    fn mesh_modifier_xml_text_refusals_propagate() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        for payload in [v1_payload(XML), v2_payload(XML)] {
+            for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                    _ => unreachable!(),
+                }
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+                let error = super::parse_displacement(&ctx, &payload, 0..payload.len(), ArchiveVersion::V6)
+                    .expect_err("text admission refuses");
+                let FramingError::Resource(limit) = error else { panic!("resource refusal expected"); };
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.operation, "Rhino mesh modifier XML text");
+                assert!(ctx.charge_work(0, "fused context").is_err());
+            }
+        }
     }
 
     const XML: &str = "<xml><new-displacement-object-data>\

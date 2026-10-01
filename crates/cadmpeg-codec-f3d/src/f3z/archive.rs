@@ -104,6 +104,7 @@ pub(super) fn model_root(
     scan: &ContainerScan<'_>,
 ) -> Result<(String, Option<String>), CodecError> {
     let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(manifest_bytes.len()), "validate F3Z JSON UTF-8")?;
     let text = std::str::from_utf8(manifest_bytes).map_err(|error| {
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
     })?;
@@ -253,6 +254,7 @@ fn model_root_member(
     }
 
     let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(description_bytes.len()), "validate F3Z JSON UTF-8")?;
     let text = std::str::from_utf8(description_bytes).map_err(|error| {
         CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"))
     })?;
