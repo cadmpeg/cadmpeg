@@ -1664,13 +1664,13 @@ fn scan_scope(
                 }
             } else {
                 let name = ctx.copy_retained_text(name, "creo legacy declaration names")?;
-                ctx.reserve_vec(&mut declarations, 1, "creo legacy declarations")?;
-                ctx.insert_btree_map(
-                    &mut declaration_indices,
-                    id,
-                    declarations.len(),
+                ctx.admit_btree_entry(
+                    &declaration_indices,
+                    &id,
                     "creo legacy declaration index nodes",
                 )?;
+                ctx.reserve_vec(&mut declarations, 1, "creo legacy declarations")?;
+                declaration_indices.insert(id, declarations.len());
                 declarations.push(AttributeDeclaration {
                     id,
                     name,
