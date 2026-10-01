@@ -881,7 +881,7 @@ fn reflected_matrix_is_reported_by_complete_document_admission() {
 #[test]
 fn component_reference_data_is_an_open_json_object() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let value = super::parse_component_reference_data(
+    let (value, _reservation) = super::parse_component_reference_data(
         &ctx,
         br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
     )
