@@ -8,7 +8,7 @@ use std::io::SeekFrom;
 use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
-use super::budget::{alloc_filled, DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
+use super::budget::{DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
@@ -89,8 +89,7 @@ impl<'a> DecodeContext<'a> {
                     u64_from_index(reserve),
                 )
             })?;
-            let mut chunk =
-                alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
+            let mut chunk = [0_u8; 8192];
             loop {
                 let remaining = if let Some(cap) = cap {
                     let Some(remaining) = cap.checked_sub(u64_from_index(buffer.len())) else {
@@ -436,7 +435,9 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         self.charge_collection_items(u64_from_index(count), operation)?;
-        alloc_filled(count, value, operation)
+        let mut values = Self::admitted_vec(count, operation)?;
+        values.resize(count, value);
+        Ok(values)
     }
 
     /// Charges admitted entities.
@@ -1007,6 +1008,18 @@ mod tests {
                 self.0.seek(position)
             }
         }
+    }
+
+    #[test]
+    fn root_reader_preserves_bytes_across_fixed_chunk_boundaries() {
+        let mut bytes = vec![0x5a_u8; 8193];
+        bytes[8192] = 0x7f;
+        let mut reader = Cursor::new(bytes.clone());
+        let arena = DecodeArena::new();
+        let (_, root) = DecodeContext::read_root(
+            &mut reader, &arena, &DecodePolicy::default(), false,
+        ).expect("root is admitted");
+        assert_eq!(root.window(), bytes.as_slice());
     }
 
     #[test]
