@@ -465,7 +465,8 @@ pub(crate) fn lex(
 /// Frame `bytes[start..limit]` into an indexed record table.
 ///
 /// `ref_width` is the stream's reference width (8 for `BinaryFile8`). Framing
-/// stops at `limit` or at the `delta_state` history boundary. A `limit` past
+/// stops at `limit` or at the `delta_state` history boundary. The declared
+/// entity population is admitted once; actual records charge only its excess. A `limit` past
 /// the end of `bytes` is a truncated stream, and it is refused with both the
 /// declared end and the available length.
 pub fn frame(
@@ -474,8 +475,9 @@ pub fn frame(
     start: usize,
     limit: usize,
     ref_width: RefWidth,
+    declared_entities: Option<u64>,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(ctx, bytes, start, limit, ref_width, false)
+    frame_impl(ctx, bytes, start, limit, ref_width, declared_entities, false)
 }
 
 /// Frame a history-section slice whose final record ends at the enclosing
@@ -486,8 +488,9 @@ pub fn frame_history(
     start: usize,
     limit: usize,
     ref_width: RefWidth,
+    declared_entities: Option<u64>,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(ctx, bytes, start, limit, ref_width, true)
+    frame_impl(ctx, bytes, start, limit, ref_width, declared_entities, true)
 }
 
 fn frame_impl(
@@ -496,6 +499,7 @@ fn frame_impl(
     start: usize,
     limit: usize,
     ref_width: RefWidth,
+    declared_entities: Option<u64>,
     eof_terminates_final_record: bool,
 ) -> Result<Vec<Record>, StreamFailure> {
     let Some(bytes) = bytes.get(..limit) else {
@@ -516,6 +520,10 @@ fn frame_impl(
             reason: format!("record stream starts at byte {start} after its end at byte {limit}"),
         }
         .into());
+    }
+    let mut admitted_entities = 0;
+    if let Some(count) = declared_entities {
+        ctx.admit_entities(count, &mut admitted_entities, "admit SAT header entities")?;
     }
     let mut records = Vec::new();
     let mut pos = start;
@@ -674,7 +682,13 @@ fn frame_impl(
             cadmpeg_core::decode::u64_from_index(token_bytes),
             "retain SAB tokens",
         )?;
-        ctx.charge_entities(1, "admit SAB native record")?;
+        let population = index.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("SAB record population", u64::MAX, u64::MAX)
+        })?;
+        let population = cadmpeg_core::decode::u64_from_index(population);
+        if population > admitted_entities {
+            ctx.admit_entities(population, &mut admitted_entities, "admit SAB native record")?;
+        }
         ctx.reserve_vec(&mut records, 1, "frame SAB record")?;
         records.push(Record {
             index,
@@ -707,7 +721,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = max_items;
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight)
+        let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
             .expect_err("collection refusal");
         let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected resource refusal: {error:?}")
@@ -766,7 +780,7 @@ mod tests {
             set_limit(&mut policy);
             let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
                 .expect("source fits input limit");
-            let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight)
+            let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
                 .expect_err("resource limit must refuse");
             let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
                 panic!("expected resource refusal, got {error:?}");
@@ -790,9 +804,9 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("test stream fits the service input limit");
         let outcome = if history {
-            frame_history_stream(&ctx, bytes, start, limit, width)
+            frame_history_stream(&ctx, bytes, start, limit, width, None)
         } else {
-            frame_stream(&ctx, bytes, start, limit, width)
+            frame_stream(&ctx, bytes, start, limit, width, None)
         };
         match outcome {
             Ok(records) => Ok(records),

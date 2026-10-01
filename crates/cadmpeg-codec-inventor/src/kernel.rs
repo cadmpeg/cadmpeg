@@ -139,8 +139,8 @@ pub(crate) fn decode_kernel_carrier(
     };
     let width = header.width;
     let records = match solved_limit {
-        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
-        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(ctx, bytes, start, limit, width, None),
+        None => sab::frame_history(ctx, bytes, start, bytes.len(), width, None),
     }
     .map_err(|failure| {
         failure.into_codec_error(ctx, |error| {

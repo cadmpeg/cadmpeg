@@ -36,9 +36,6 @@ fn decode_asm_binary(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    if let Some(count) = header.metadata.entity_count {
-        ctx.charge_entities(count, "admit SAT header entities")?;
-    }
     let width = header.width;
     let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
     let Some(stream) = stream else {
@@ -55,8 +52,8 @@ fn decode_asm_binary(
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
     let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
-        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
-        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(ctx, bytes, start, limit, width, header.metadata.entity_count),
+        None => sab::frame_history(ctx, bytes, start, bytes.len(), width, header.metadata.entity_count),
     };
     let records = framed.map_err(|failure| {
         failure.into_codec_error(ctx, |error| {
@@ -96,9 +93,6 @@ fn decode_acis_binary(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    if let Some(count) = header.metadata.entity_count {
-        ctx.charge_entities(count, "admit SAT header entities")?;
-    }
     let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
@@ -118,6 +112,7 @@ fn decode_acis_binary(
             start,
             limit,
             cadmpeg_asm::kernel_header::RefWidth::Four,
+            header.metadata.entity_count,
         ),
         None => sab::frame_history(
             ctx,
@@ -125,6 +120,7 @@ fn decode_acis_binary(
             start,
             bytes.len(),
             cadmpeg_asm::kernel_header::RefWidth::Four,
+            header.metadata.entity_count,
         ),
     };
     let records = framed.map_err(|failure| {

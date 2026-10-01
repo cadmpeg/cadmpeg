@@ -399,3 +399,17 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "native unknown product links"));
 }
+
+#[test]
+fn sat_encodings_admit_declared_and_actual_entities_once() {
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    // Six native records and five emitted neutral entities.
+    options.policy.limits.max_entities = 11;
+    for bytes in [text_sphere_stream(1.0), binary_sphere_stream(BinaryFixtureKind::Asm),
+        binary_sphere_stream(BinaryFixtureKind::Acis)] {
+        let decoded = SatCodec.decode(&mut Cursor::new(bytes), &options)
+            .expect("declared records share the actual population admission");
+        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert_eq!(decoded.ir().model.surfaces.len(), 1);
+    }
+}
