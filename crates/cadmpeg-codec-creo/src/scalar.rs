@@ -292,7 +292,11 @@ impl ScalarCache {
             let raw = [
                 byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
             ];
-            ctx.charge_work(16, "creo scalar cache image hashing")?;
+            let rehash_items = if seen.len() == seen.capacity() { seen.len() } else { 0 };
+            let hash_work = cadmpeg_core::decode::u64_from_index(rehash_items).checked_mul(8)
+                .and_then(|work| work.checked_add(16))
+                .ok_or_else(|| ctx.refuse_codec_limit("creo scalar cache image hashing", u64::MAX, u64::MAX))?;
+            ctx.charge_work(hash_work, "creo scalar cache image hashing")?;
             if !ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")? {
                 continue;
             }
@@ -2388,6 +2392,15 @@ mod tests {
         assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
         let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| ScalarCache::from_section_checked(ctx, &[0; 16])).expect_err("miss scan refuses");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo scalar cache discovery"));
+    }
+
+    #[test]
+    fn duplicate_scalar_image_hashing_refuses_after_the_first_image() {
+        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
+        let error = with_recursive_limits(&images, 128, 47, |ctx| ScalarCache::from_section_checked(ctx, &images)).expect_err("duplicate hashing still consumes work");
+        let cadmpeg_core::CodecError::ResourceLimit(resource) = error else { panic!("hash work refusal"); };
+        assert_eq!(resource.operation, "creo scalar cache image hashing");
+        assert_eq!((resource.used, resource.additional, resource.limit), (32, 16, 47));
     }
 
     #[test]
