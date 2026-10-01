@@ -141,20 +141,29 @@ pub(crate) fn unbound_dimension_count(
 ) -> Result<usize, CodecError> {
     let mut bound = Vec::new();
     for record in records {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.id.len()), "find SLDPRT bound PMI dimension")?;
         if bound_ids.contains(record.id.as_str()) {
             ctx.reserve_collection_vec(&mut bound, 1, "collect SLDPRT bound PMI dimensions")?;
             bound.push(record);
         }
     }
-    Ok(records
-        .iter()
-        .filter(|record| {
-            !bound_ids.contains(record.id.as_str())
-                && !bound
-                    .iter()
-                    .any(|candidate| equivalent_dimensions(record, candidate))
-        })
-        .count())
+    let mut count = 0usize;
+    for record in records {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.id.len()), "find SLDPRT bound PMI dimension")?;
+        if bound_ids.contains(record.id.as_str()) { continue; }
+        let mut equivalent = false;
+        for candidate in &bound {
+            let work = [record.cad_text.len(), candidate.cad_text.len(), record.subtype.len(), candidate.subtype.len(), record.display_text().map_or(0, str::len), candidate.display_text().map_or(0, str::len)]
+                .into_iter().try_fold(11usize, usize::checked_add)
+                .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT PMI aliases", u64::MAX, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "compare SLDPRT PMI aliases")?;
+            if equivalent_dimensions(record, candidate) { equivalent = true; break; }
+        }
+        if !equivalent {
+            count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("count SLDPRT unbound PMI dimensions", u64::MAX, u64::MAX))?;
+        }
+    }
+    Ok(count)
 }
 
 /// Add uniquely owner-qualified PMI dimensions to a projection copy of history.

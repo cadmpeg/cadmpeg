@@ -152,3 +152,17 @@ mod feature_operations;
 mod sketch_bind;
 mod sketch_relations;
 mod tree_binding;
+
+#[test]
+fn history_identity_refuses_before_retained_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "Keywords", b"<Keywords/>"));
+    let scan = crate::container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::histories(&ctx, &scan, &mut Default::default(), &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain SLDPRT history identity"));
+}

@@ -556,3 +556,36 @@ fn inspection_inventory_refuses_unadmitted_entry_storage() {
     let summary = container::summarize(&admitted, &scan, crate::dialect::classify_layers(&admitted, &scan).unwrap().layers().clone()).unwrap();
     assert_eq!(summary.entries[0].name, "Contents/DisplayLists");
 }
+
+#[test]
+fn marker_free_native_image_refuses_zero_scan_work() {
+    let source = outer_header();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let error = container::scan(&ctx, root).err().unwrap();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "scan SLDPRT native markers"));
+}
+
+#[test]
+fn xml_validation_refuses_before_invalid_utf8_or_utf16_sizing() {
+    for input in [vec![b'x', b'x', 0xff], vec![0xff, 0xfe, b'x', 0]] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = container::xml_text_charged(&ctx, &input, "test XML validation").err().unwrap();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "test XML validation"));
+    }
+}
+
+#[test]
+fn bad_block_crc_refuses_before_checksum_scan() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let frame = super::BlockFrame { type_id: 0, crc: 0, comp_sz: 1, uncomp_sz: 4, pre_sz: 0 };
+    let error = super::block_from_inflated(&ctx, &[], 0, &frame, vec![1; 4]).err().unwrap();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "validate SLDPRT block CRC"));
+}
