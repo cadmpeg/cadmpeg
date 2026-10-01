@@ -219,8 +219,10 @@ fn parse_points(
 ) -> Result<Vec<Point>, CodecError> {
     let mut reader = Reader::new(bytes);
     let count = reader.count(ByteOrder::Little, "point-cloud point count")?;
+    reader.counted(cadmpeg_core::decode::u64_from_index(count), 12)
+        .ok_or_else(|| CodecError::malformed("point-cloud count exceeds remaining payload"))?;
     let transform = point_transform(ctx, property)?;
-    let mut points = ctx.collection_vec(count, "FreeCAD point-cloud points")?;
+    let mut points = ctx.retained_vec(count, "FreeCAD point-cloud points")?;
     for index in 0..count {
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         points.push(Point::new(
@@ -577,7 +579,8 @@ pub(crate) mod tests {
 
     #[test]
     fn point_cloud_collection_limit_refuses_before_allocation() {
-        let points = 1_u32.to_le_bytes();
+        let mut points = 1_u32.to_le_bytes().to_vec();
+        points.extend_from_slice(&[0; 12]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
@@ -591,6 +594,31 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn truncated_point_cloud_is_malformed_before_collection_admission() {
+        let bytes = 1_000_000_u32.to_le_bytes();
+        crate::test_support::with_service_context(&bytes, |ctx| {
+            assert!(matches!(parse_points(ctx, &resource_test_property(), &bytes),
+                Err(CodecError::Malformed(message))
+                    if message == "point-cloud count exceeds remaining payload"));
+            assert_eq!(ctx.policy().limits.max_collection_items, DecodePolicy::service().limits.max_collection_items);
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(parse_points(&ctx, &resource_test_property(), &bytes), Err(CodecError::Malformed(_))));
+    }
+
+    #[test]
+    fn point_cloud_storage_refuses_before_record_construction() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&[0; 12]);
+        crate::test_support::assert_retained_refusal_at(&bytes, "FreeCAD point-cloud points", |ctx| {
+            parse_points(ctx, &resource_test_property(), &bytes)
+        });
+    }
+
+    #[test]
     fn point_cloud_identity_refuses_at_retained_limit() {
         let property = resource_test_property();
         let mut points = Vec::new();
@@ -600,7 +628,7 @@ pub(crate) mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
             crate::native::model_id("point", &property.id, "0").len(),
-        ) - 1;
+        ) + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::topology::Point>()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
             .expect("root points are within the input limit");
         assert!(matches!(parse_points(&ctx, &property, &points),
