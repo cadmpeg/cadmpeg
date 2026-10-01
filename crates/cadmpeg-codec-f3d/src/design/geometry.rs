@@ -32,7 +32,7 @@ macro_rules! geometric {
 
 /// Format-side work cap for arrangement edge retention walks.
 ///
-/// Session `work_budget` callers take `min(this, policy.max_work_units)`.
+/// The local walk slice and the caller's session work allowance are charged separately.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
 
 #[derive(Clone)]
@@ -345,9 +345,6 @@ fn sketch_arrangement_faces(
         ctx.push_vec(&mut edges, edge, "f3d arrangement edge")?;
     }
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
-    if budget.exhausted() {
-        return Ok(None);
-    }
     if edges.len() < 3 {
         return Ok(None);
     }
@@ -1043,9 +1040,11 @@ fn arrangement_node(
     Ok(nodes.len() - 1)
 }
 
-fn arrangement_cycle_work(edge_count: usize, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+fn arrangement_cycle_work(edge_count: usize, node_count: usize, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
     edge_count
-        .checked_mul(edge_count)
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(edge_count))
+        .and_then(|count| node_count.checked_add(1).and_then(|nodes| count.checked_mul(nodes)))
         .ok_or_else(|| ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX))
 }
 
@@ -1063,10 +1062,15 @@ fn arrangement_retain_cycle_edges(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     loop {
-        // Each retention pass may run a BFS per edge (O(E²) worst case).
-        let work = arrangement_cycle_work(edges.len(), ctx)?;
+        // One BFS per edge scans all edges at each visited node: O(E² V).
+        // The bound also admits visit initialization and retention scans.
+        let work = arrangement_cycle_work(edges.len(), node_count, ctx)?;
+        let remaining = budget.remaining();
         if !budget.charge_by(work) {
-            return Ok(());
+            return Err(ctx.resource_refusal().map_or_else(
+                || ctx.refuse_codec_limit("F3D arrangement cycle work", cadmpeg_core::decode::u64_from_index(remaining), cadmpeg_core::decode::u64_from_index(work)),
+                CodecError::ResourceLimit,
+            ));
         }
         let mut keep = Vec::new();
         for (index, edge) in edges.iter().enumerate() {

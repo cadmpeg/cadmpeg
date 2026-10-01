@@ -148,7 +148,7 @@ pub(crate) struct MeshAttribute {
     /// Authored attribute name resolved through `attname.amt.autodesk`.
     pub(crate) authored_name: Option<String>,
     /// Face-group key/GUID records carried by repeated field 6 entries.
-    pub(crate) groups: Vec<(u32, String)>,
+    pub(crate) groups: UniqueFaceGroups,
     /// The channel's encoded elements.
     pub(crate) elements: MeshElements,
     /// Which entities the values address, with the corner positions the
@@ -478,7 +478,70 @@ struct RegisteredChannel<'a> {
     role: u32,
     domain: MeshAttributeDomain,
     resource_guid: Option<String>,
-    groups: Vec<(u32, String)>,
+    groups: UniqueFaceGroups,
+}
+
+/// Face-group keys and case-insensitive GUIDs admitted as distinct pairs.
+#[derive(Default)]
+pub(crate) struct UniqueFaceGroups(Vec<(u32, String)>);
+
+impl UniqueFaceGroups {
+    fn new(ctx: &DecodeContext<'_>, groups: Vec<(u32, String)>) -> Result<Self, CodecError> {
+        let (mut keys, _key_storage) = ctx.temporary_set(groups.len(), "index paramesh group keys")?;
+        let (mut guids, _guid_storage) = ctx.temporary_set(groups.len(), "index paramesh group GUIDs")?;
+        for (key, guid) in &groups {
+            ctx.charge_work(2, "hash paramesh group key")?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(guid.len()).checked_mul(3).and_then(|count| count.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit("hash paramesh group GUID", 0, u64::MAX))?, "hash paramesh group GUID")?;
+            if !crate::bytes::is_guid_hyphenated(guid) {
+                return Err(malformed("paramesh face-group identity is not a GUID"));
+            }
+            let mut canonical = [0; 36];
+            for (target, source) in canonical.iter_mut().zip(guid.bytes()) {
+                *target = source.to_ascii_lowercase();
+            }
+            if !keys.insert(*key) || !guids.insert(canonical) {
+                return Err(malformed("paramesh channel repeats a face-group key or GUID"));
+            }
+        }
+        Ok(Self(groups))
+    }
+}
+
+impl std::ops::Deref for UniqueFaceGroups {
+    type Target = [(u32, String)];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Stream names and IDs admitted as distinct pairs.
+#[derive(Debug)]
+struct UniqueStreamNames {
+    entries: Vec<(String, u64)>,
+}
+
+impl UniqueStreamNames {
+    fn new(ctx: &DecodeContext<'_>, entries: Vec<(String, u64)>) -> Result<Self, CodecError> {
+        let (names, _name_storage) = ctx.collect_scoped_string_set(
+            entries.len(), entries.iter().map(|(name, _)| name.as_str()),
+            "index paramesh stream names",
+        )?;
+        let (mut ids, _id_storage) = ctx.temporary_set(entries.len(), "index paramesh stream IDs")?;
+        for (name, id) in &entries {
+            if name.is_empty() {
+                return Err(malformed("paramesh name table has an empty stream name"));
+            }
+            ctx.charge_work(2, "hash paramesh stream ID")?;
+            if !ids.insert(*id) {
+                return Err(malformed("paramesh name table repeats a stream name or id"));
+            }
+        }
+        if names.len() != entries.len() {
+            return Err(malformed("paramesh name table repeats a stream name or id"));
+        }
+        drop(names);
+        Ok(Self { entries })
+    }
 }
 
 /// One registry property value.
@@ -643,13 +706,6 @@ fn registry_channel<'a>(
             }
             (CHANNEL_GROUP, ProtobufValue::Bytes(nested)) => {
                 let group = channel_group(ctx, nested)?;
-                if groups.iter().any(|(key, group_guid)| {
-                    *key == group.0 || group_guid.eq_ignore_ascii_case(&group.1)
-                }) {
-                    return Err(malformed(
-                        "paramesh channel repeats a face-group key or GUID",
-                    ));
-                }
                 ctx.push_vec(&mut groups, group, "collect paramesh channel groups")?;
             }
             (CHANNEL_ROLE | CHANNEL_RESOURCE | CHANNEL_STREAMS | CHANNEL_GROUP, _) => {
@@ -670,7 +726,7 @@ fn registry_channel<'a>(
         role,
         domain,
         resource_guid,
-        groups,
+        groups: UniqueFaceGroups::new(ctx, groups)?,
     })
 }
 
@@ -812,7 +868,7 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
 fn message_pack_name_table(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<(String, u64)>, CodecError> {
+) -> Result<UniqueStreamNames, CodecError> {
     fn take_integer(bytes: &[u8], at: &mut usize) -> Result<u64, CodecError> {
         let tag = *bytes
             .get(*at)
@@ -895,18 +951,12 @@ fn message_pack_name_table(
             return Err(malformed("paramesh name table has an empty stream name"));
         }
         let id = take_integer(bytes, &mut at)?;
-        if entries
-            .iter()
-            .any(|(existing_name, existing_id)| existing_name == &name || *existing_id == id)
-        {
-            return Err(malformed("paramesh name table repeats a stream name or id"));
-        }
         ctx.push_vec(&mut entries, (name, id), "collect paramesh stream names")?;
     }
     if at != bytes.len() {
         return Err(malformed("paramesh name table has trailing bytes"));
     }
-    Ok(entries)
+    UniqueStreamNames::new(ctx, entries)
 }
 
 /// Descriptor and decompressed bytes of one named stream.
@@ -1063,7 +1113,8 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         .and_then(|count| count.checked_mul(256))
         .and_then(|count| count.checked_add(PROBABILITY_COUNT))
         .and_then(|count| count.checked_add(2 * (1 << LZMA_DICTIONARY_LOG)))
-        .and_then(|count| count.checked_add(cadmpeg_core::decode::u64_from_index(payload.len())))
+        .and_then(|count| cadmpeg_core::decode::u64_from_index(payload.len()).checked_mul(2).and_then(|bytes| count.checked_add(bytes)))
+        .and_then(|count| count.checked_add(5))
         .ok_or_else(|| ctx.refuse_codec_limit("paramesh LZMA work", 0, u64::MAX))?;
     ctx.charge_work(work, "paramesh LZMA work")?;
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
@@ -1761,7 +1812,7 @@ pub(crate) fn decode_mesh_container(
     let registry = mesh_registry(ctx, message)?;
 
     let mut at = protobuf_end;
-    let mut name_table: Option<Vec<(String, u64)>> = None;
+    let mut name_table: Option<UniqueStreamNames> = None;
     let mut streams = Vec::new();
     while at < bytes.len() {
         let body_count = usize::try_from(
@@ -1801,8 +1852,9 @@ pub(crate) fn decode_mesh_container(
             }
         }
     }
-    let mut name_table =
+    let name_table =
         name_table.ok_or_else(|| malformed("paramesh container has no name table"))?;
+    let mut name_table = name_table.entries;
     if name_table.len() != streams.len() {
         return Err(malformed(
             "paramesh name table and stream chunk counts differ",
@@ -2213,7 +2265,7 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| protobuf_fields_charged(ctx, message))
     }
     fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
-        crate::test_support::with_decode_context(|ctx| message_pack_name_table_charged(ctx, bytes))
+        crate::test_support::with_decode_context(|ctx| message_pack_name_table_charged(ctx, bytes).map(|table| table.entries))
     }
     fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)>, CodecError> {
         crate::test_support::with_decode_context(|ctx| stream_descriptor_charged(ctx, bytes))
@@ -2304,6 +2356,31 @@ mod tests {
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.operation == "collect paramesh descriptor entries"));
+    }
+
+    #[test]
+    fn paramesh_name_uniqueness_preserves_work_refusal() {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index paramesh stream names", 0,
+            |ctx| message_pack_name_table_charged(ctx, &[0x82, 0xa1, b'A', 0, 0xa1, b'B', 1]),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn paramesh_group_uniqueness_preserves_work_refusal() {
+        let channel = face_group_channel_entry("g", &[(1, GUID), (2, MESH_GUID)]);
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "hash paramesh group GUID", 0,
+            |ctx| {
+                let fields = protobuf_fields_charged(ctx, &channel)?;
+                let super::ProtobufValue::Bytes(entry) = fields[0].1 else { panic!("channel message") };
+                super::registry_channel(ctx, entry, MeshAttributeDomain::Triangle)
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
 
     #[test]
