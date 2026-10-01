@@ -482,7 +482,7 @@ impl Clone for DesignFeatureTimeline {
 impl DesignFeatureTimeline {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
-        &self.id.text
+        self.id.text()
     }
     /// Returns the timeline source frame.
     pub(crate) fn frame(&self) -> &DesignTimelineFrame {
@@ -490,7 +490,7 @@ impl DesignFeatureTimeline {
     }
     /// Returns the Design segment encoded in the identity.
     pub(crate) fn segment(&self) -> &str {
-        &self.id.text[..self.segment_end]
+        &self.id.text()[..self.segment_end]
     }
     /// Admits a record whose identity matches its source location.
     pub(crate) fn try_new(
@@ -502,7 +502,7 @@ impl DesignFeatureTimeline {
         context_record_index: std::num::NonZeroU64,
     ) -> Result<Self, String> {
         let id = NativeRecordId::try_new(id, "design-feature-timeline", frame.byte_offset())?;
-        let segment_end = crate::ids::design_segment(&id.text)
+        let segment_end = crate::ids::design_segment(id.text())
             .ok_or("timeline.id must contain a Design segment")?
             .len();
         Ok(Self {
@@ -552,7 +552,7 @@ struct DesignFeatureTimelineWireRef<'a> {
 impl Serialize for DesignFeatureTimeline {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         DesignFeatureTimelineWireRef {
-            id: &self.id.text,
+            id: self.id.text(),
             byte_offset: self.frame.byte_offset,
             class_tag: self.class_tag.as_str(),
             record_index: self.record_index.get(),
@@ -641,7 +641,7 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
         Self {
             item_record_indices,
             item_record_index_offsets,
-            id: value.id.text,
+            id: value.id.into_string(),
             byte_offset: value.frame.byte_offset,
             class_tag: value.class_tag.into(),
             record_index: value.record_index.get(),
@@ -1033,7 +1033,7 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             member_offsets,
             id: header.id,
             byte_offset: header.byte_offset,
-            entity_id: header.entity_id.text,
+            entity_id: header.entity_id.into_string(),
             class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
             module,

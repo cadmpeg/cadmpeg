@@ -287,7 +287,7 @@ impl Serialize for ActEntity {
             None => (&[][..], None),
         };
         ActEntityWireRef {
-            id: &self.id.text,
+            id: self.id.text(),
             record_index: self.record_index,
             table_record_index_offset: self.table_record_index_offset(),
             channel_record_index_offset: Some(self.channel_record_index_offset()),
@@ -308,7 +308,7 @@ impl Serialize for ActEntity {
 impl ActEntity {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
-        &self.id.text
+        self.id.text()
     }
     /// Returns the ACT entity record index.
     pub(crate) fn record_index(&self) -> u32 {
@@ -552,7 +552,7 @@ impl From<ActEntity> for ActEntitySerde {
             None => (Vec::new(), None),
         };
         Self {
-            id: entity.id.text,
+            id: entity.id.into_string(),
             record_index: entity.record_index,
             table_record_index_offset,
             channel_record_index_offset,
@@ -614,7 +614,7 @@ struct ActGuidWireRef<'a> {
 impl Serialize for ActGuid {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ActGuidWireRef {
-            id: &self.id.text,
+            id: self.id.text(),
             byte_offset: self.byte_offset,
             guid_offset: self.guid_offset(),
             ordinal: self.ordinal,
@@ -627,7 +627,7 @@ impl Serialize for ActGuid {
 impl ActGuid {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
-        &self.id.text
+        self.id.text()
     }
     /// Returns the native stream encoded in the identity.
     pub(crate) fn stream(&self) -> &str {
@@ -687,7 +687,7 @@ impl From<ActGuid> for ActGuidWire {
     fn from(guid: ActGuid) -> Self {
         let guid_offset = guid.guid_offset();
         Self {
-            id: guid.id.text,
+            id: guid.id.into_string(),
             byte_offset: guid.byte_offset,
             guid_offset,
             ordinal: guid.ordinal,
@@ -741,7 +741,7 @@ struct ActTableReferenceWireRef<'a> {
 impl Serialize for ActTableReference {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ActTableReferenceWireRef {
-            id: &self.id.text,
+            id: self.id.text(),
             ordinal: self.ordinal,
             byte_offset: self.byte_offset,
             target_record: self.target_record,
@@ -754,7 +754,7 @@ impl Serialize for ActTableReference {
 impl ActTableReference {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
-        &self.id.text
+        self.id.text()
     }
     /// Returns the native stream encoded in the identity.
     pub(crate) fn stream(&self) -> &str {
@@ -814,7 +814,7 @@ impl From<ActTableReference> for ActTableReferenceWire {
     fn from(reference: ActTableReference) -> Self {
         let target_record_offset = reference.target_record_offset();
         Self {
-            id: reference.id.text,
+            id: reference.id.into_string(),
             ordinal: reference.ordinal,
             byte_offset: reference.byte_offset,
             target_record: reference.target_record,
@@ -868,7 +868,7 @@ struct ActRegistryChannelWireRef<'a> {
 impl Serialize for ActRegistryChannel {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ActRegistryChannelWireRef {
-            id: &self.id.text,
+            id: self.id.text(),
             ordinal: self.ordinal,
             byte_offset: self.byte_offset,
             name: &self.name,
@@ -883,7 +883,7 @@ impl Serialize for ActRegistryChannel {
 impl ActRegistryChannel {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
-        &self.id.text
+        self.id.text()
     }
     /// Returns the native stream encoded in the identity.
     pub(crate) fn stream(&self) -> &str {
@@ -958,7 +958,7 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
         let name_offset = channel.name_offset();
         let guid_offset = channel.guid_offset();
         Self {
-            id: channel.id.text,
+            id: channel.id.into_string(),
             ordinal: channel.ordinal,
             byte_offset: channel.byte_offset,
             name: channel.name,
@@ -1035,7 +1035,7 @@ struct ActRootComponentWireRef<'a> {
 impl Serialize for ActRootComponent {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ActRootComponentWireRef {
-            id: &self.id.text,
+            id: self.id.text(),
             byte_offset: self.layout.byte_offset(),
             record_index: self.record_index,
             record_index_offset: self.layout.record_index_offset(),
@@ -1060,7 +1060,7 @@ impl Serialize for ActRootComponent {
 impl ActRootComponent {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
-        &self.id.text
+        self.id.text()
     }
     /// Returns the ACT root source layout.
     pub(crate) fn layout(&self) -> &ActRootLayout {
@@ -1199,7 +1199,7 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
 impl From<ActRootComponent> for ActRootComponentWire {
     fn from(root: ActRootComponent) -> Self {
         Self {
-            id: root.id.text,
+            id: root.id.into_string(),
             record_index: root.record_index,
             class_tag: root.class_tag.into(),
             instance_root_record: root.instance_root_record,

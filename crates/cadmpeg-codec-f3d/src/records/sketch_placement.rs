@@ -166,7 +166,7 @@ pub(crate) struct SketchPlacementMatrix(DesignAffineTransform);
 
 impl SketchPlacementMatrix {
     /// The identity placement.
-    pub(crate) const IDENTITY: Self = Self(DesignAffineTransform(IDENTITY_MATRIX));
+    pub(crate) const IDENTITY: Self = Self(DesignAffineTransform::IDENTITY);
     /// The row-major matrix coefficients.
     pub(crate) fn rows(self) -> [[f64; 4]; 4] {
         self.0.rows()
@@ -474,7 +474,7 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
         Self {
             id: value.id,
             scope_record_index: value.scope_record_index,
-            entity_id: value.entity_id.text,
+            entity_id: value.entity_id.into_string(),
             visibility: value.visibility,
             byte_offset,
             class_tag: value.class_tag.into(),
