@@ -17,3 +17,5 @@ mod relation_expression;
 mod relation_program;
 mod wire_projection;
 mod zero_entity_limits;
+
+mod locus_invariants;

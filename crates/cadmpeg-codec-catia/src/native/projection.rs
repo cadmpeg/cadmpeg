@@ -461,7 +461,7 @@ pub(crate) fn consolidated_edge_nodes(
             (
                 uses,
                 run.definition
-                    .map(|definition| native_consolidated_edge_definition(ctx, definition))
+                    .map(|definition| CatiaConsolidatedEdgeDefinition::from_source(ctx, definition))
                     .transpose()?,
             ),
             "catia_native_edge_use_runs",
@@ -534,9 +534,8 @@ pub(crate) fn consolidated_edge_nodes(
             )?,
             byte_offset: u64_from_index(node.pos),
             source_index,
-            width,
+            token: crate::wire::records::WidthCodedToken::new(width, node.header_token).map_err(CodecError::malformed)?,
             flag,
-            header_token: node.header_token,
             allocation,
             curve_ref: node.curve_ref,
             vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
@@ -557,21 +556,6 @@ pub(crate) fn consolidated_edge_nodes(
     Ok(output)
 }
 
-pub(crate) fn native_consolidated_edge_definition(
-    ctx: &DecodeContext<'_>,
-    definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
-) -> Result<CatiaConsolidatedEdgeDefinition, CodecError> {
-    let data = crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-        ctx,
-        definition.class.into(),
-        &definition.frame.payload,
-    )?;
-    Ok(CatiaConsolidatedEdgeDefinition {
-        frame: definition.frame.into(),
-        class: definition.class,
-        data,
-    })
-}
 
 pub(super) fn native_allocation_reference_encoding(
     encoding: crate::wire::bytes::AllocationReferenceEncoding,

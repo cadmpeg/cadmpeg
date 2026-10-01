@@ -127,7 +127,7 @@ pub(super) fn validate_consolidated_edge_runs(
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
-        let token_limit = 1u32 << (u8::from(node.width) * 8);
+        let token_limit = 1u32 << (u8::from(node.token.width()) * 8);
         let uses_valid = node.uses.as_ref().is_none_or(|uses| {
             node.curve_ref
                 .checked_sub(2)
@@ -138,18 +138,18 @@ pub(super) fn validate_consolidated_edge_runs(
                 && node.parameter_selectors == [2, 1]
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
-            let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.frame.width)) * 8);
+            let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.frame().width())) * 8);
             node.uses.is_some()
-                && token_limit.is_some_and(|limit| definition.frame.header_token < limit)
-                && !definition.frame.payload.is_empty()
-                && definition.frame.pos < node.byte_offset
+                && token_limit.is_some_and(|limit| definition.frame().header_token() < limit)
+                && !definition.frame().payload.is_empty()
+                && definition.frame().pos < node.byte_offset
         });
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
             let circle = circles.get(binding.circle.as_str());
             node.uses.is_some()
                 && definition.is_some_and(|definition| {
-                    u8::from(definition.class) == 0x23
+                    u8::from(definition.class()) == 0x23
                         && matches!(
                             definition.data(),
                             Some(ConsolidatedEdgeDefinitionData::Scalar {
@@ -159,18 +159,18 @@ pub(super) fn validate_consolidated_edge_runs(
                         )
                         && circle.is_some_and(|circle| {
                             binding.descriptor.pos < circle.byte_offset
-                                && circle.byte_offset < definition.frame.pos
+                                && circle.byte_offset < definition.frame().pos
                         })
                 })
                 && 1u32
-                    .checked_shl(u32::from(u8::from(binding.descriptor.width)) * 8)
-                    .is_some_and(|limit| binding.descriptor.header_token < limit)
+                    .checked_shl(u32::from(u8::from(binding.descriptor.width())) * 8)
+                    .is_some_and(|limit| binding.descriptor.header_token() < limit)
                 && !binding.descriptor.payload.is_empty()
         });
         let class25_descriptor_valid = node.class25_descriptor.as_ref().is_none_or(|descriptor| {
             node.uses.is_some()
                 && node.definition.as_ref().is_some_and(|definition| {
-                    u8::from(definition.class) == 0x25
+                    u8::from(definition.class()) == 0x25
                         && matches!(
                             definition.data(),
                             Some(
@@ -178,13 +178,13 @@ pub(super) fn validate_consolidated_edge_runs(
                                     | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
                             )
                         )
-                        && descriptor.byte_offset < definition.frame.pos
+                        && descriptor.byte_offset < definition.frame().pos
                 })
                 && matches!(descriptor.control, 0x02 | 0x0a)
                 && matches!(descriptor.values.len(), 2 | 3)
         });
         if node.id != format!("catia:consolidated:edge-node#{index}")
-            || node.header_token >= token_limit
+            || node.token.value() >= token_limit
             || !uses_valid
             || !definition_valid
             || !analytic_circle_valid
