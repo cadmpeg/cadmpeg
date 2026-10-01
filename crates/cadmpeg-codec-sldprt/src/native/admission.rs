@@ -201,27 +201,13 @@ fn count_copy<'a, T: Serialize + 'a>(
     Ok(counter.bytes)
 }
 
-pub(super) fn admit_retained_clones<'a, T: Serialize + 'a>(
-    ctx: &DecodeContext<'_>,
-    records: impl Iterator<Item = &'a T> + Clone,
-    operation: &'static str,
-) -> Result<(), NativeConvertError> {
-    let bytes = count_copy(ctx, records, operation)?;
-    ctx.charge_retained(bytes, operation)?;
-    Ok(())
-}
-
-pub(super) fn collect_retained_clones<'a, T: CloneCharged + Serialize + 'a>(
+pub(super) fn collect_retained_clones<'a, T: CloneCharged + 'a>(
     ctx: &DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<Vec<T>, NativeConvertError> {
     let count = count_records(ctx, records.clone(), operation)?;
-    admit_retained_clones(ctx, records.clone(), operation)?;
-    let mut result = Vec::new();
-    result
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    let mut result = ctx.retained_vec(count, operation)?;
     for record in records {
         result.push(record.clone_charged(ctx, operation)?);
     }
@@ -268,4 +254,23 @@ pub(super) fn admit_validation_candidates<'ctx>(
         .checked_mul(64)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     Ok(ctx.reserve_scoped(bytes, operation)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_retained_clones;
+    use cadmpeg_core::decode::DecodeContext;
+
+    #[test]
+    fn retained_native_clones_charge_actual_fields_once() {
+        let source = "a".repeat(1024);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            1024 + u64::try_from(std::mem::size_of::<String>()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let copies =
+            collect_retained_clones(&ctx, std::iter::once(&source), "clone test field").unwrap();
+        assert_eq!(copies, [source]);
+    }
 }

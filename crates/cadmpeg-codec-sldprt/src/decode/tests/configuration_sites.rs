@@ -32,7 +32,7 @@ fn decode_preserves_unresolved_active_configuration() {
         br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
     ));
     assert_eq!(
-        container::active_configuration_index(&container::scan_bytes(&source)),
+        container::active_configuration_index(&crate::test_support::container::scan(&source)),
         None
     );
 
@@ -50,7 +50,9 @@ fn decode_preserves_unresolved_active_configuration() {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
     }));
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -132,7 +134,9 @@ fn decode_synthesizes_sparse_partition_configuration() {
         &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
     ));
     assert_eq!(
-        container::scan_bytes(&source).blocks[0].section.name(),
+        crate::test_support::container::scan(&source).blocks[0]
+            .section
+            .name(),
         Some("Contents/Config-3-Partition")
     );
     let decoded = SldprtCodec
@@ -170,7 +174,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     );
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks
         .iter()
@@ -214,7 +218,8 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .points
         .iter()
         .all(|point| point.id.as_str().contains("@block@")));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -292,7 +297,11 @@ fn decode_uses_the_active_configuration_source_site() {
         result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]

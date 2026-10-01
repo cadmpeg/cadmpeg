@@ -11,7 +11,6 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::appearance::material_payload;
 use crate::test_support::appearance::sldprt_with_body_and_material;
 use crate::test_support::container::make_block;
@@ -107,7 +106,7 @@ fn encoder_writes_source_less_ir() {
         report.write_path(),
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);
     let decoded = SldprtCodec
@@ -519,7 +518,7 @@ fn encoder_writes_source_less_line_sketches() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
             .section

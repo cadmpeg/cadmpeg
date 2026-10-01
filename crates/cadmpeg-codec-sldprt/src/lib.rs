@@ -34,9 +34,9 @@
 //!
 //! Decode reports can accompany a usable model. Untyped support carriers become
 //! opaque geometry linked to retained bytes, while their resolvable topology
-//! remains in the IR. Failure to build a Parasolid graph yields a metadata-only
-//! IR with blocking diagnostics. Set [`DecodeOptions::container_only`] to request
-//! that result without attempting geometry.
+//! remains in the IR. No usable geometry yields metadata with diagnostics.
+//! Set [`DecodeOptions::container_only`] to omit geometry decoding explicitly.
+//! Semantic Parasolid graph errors propagate as decode errors.
 //!
 //! [`Codec::inspect`] inventories the outer blocks, section directory, cache
 //! cells, payload families, and Parasolid schemas. It does not build model
@@ -47,8 +47,9 @@
 //! The outer container uses an 8-byte header, CRC-validated raw-DEFLATE blocks,
 //! a fixed-cell section index, and a tail directory. Embedded Parasolid
 //! `partition` and `deltas` streams supply the B-rep record graph. The decoder
-//! groups related body streams by site, selects the richest resulting B-rep,
-//! and merges alternate sites as configuration-specific bodies. Parasolid
+//! groups related body streams by site and selects the resolved active site.
+//! Without a resolved active site, the first site is a deterministic merge
+//! accumulator. Alternate sites become configuration-specific bodies. Parasolid
 //! lengths are metres; decoded `CadIr` coordinates are millimetres. Directions,
 //! normals, and ratios remain dimensionless.
 //!
@@ -249,11 +250,23 @@ impl SldprtCodec {
             .namespace("sldprt")
             .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
-        let source_scan = records
+        let source_arena = cadmpeg_core::decode::DecodeArena::new();
+        let source_context = records
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data)
-            .map(container::scan_bytes);
+            .map(|bytes| {
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    bytes,
+                    &source_arena,
+                    &cadmpeg_core::decode::DecodePolicy::desktop(),
+                )
+            })
+            .transpose()?;
+        let source_scan = source_context
+            .as_ref()
+            .map(|(ctx, root)| container::scan(ctx, *root))
+            .transpose()?;
         history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
@@ -387,7 +400,8 @@ impl CodecBackend for SldprtCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
         let classification = dialect::classify_layers(ctx, &scan)?;
-        let mut summary = container::summarize(&scan, classification.layers().clone_charged(ctx)?);
+        let mut summary =
+            container::summarize(ctx, &scan, classification.layers().clone_charged(ctx)?)?;
         classification.append_losses(ctx, &mut summary.losses)?;
         Ok(summary)
     }

@@ -239,7 +239,9 @@ fn characteristic_measure_values_refuse_collection_limit() {
         graph_limit: 64,
         losses: &mut losses,
     };
-    let value = crate::parse::Value::Real(1.0);
+    let value = crate::parse::Value::Real(
+        cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture"),
+    );
     assert!(matches!(
         super::super::characteristic_measure_values(&super::super::MeasureParameters::Items(std::slice::from_ref(&value)), &exchange, &mut measurements, &ctx),
         Err(CodecError::ResourceLimit(refusal))
