@@ -1482,6 +1482,7 @@ pub(crate) fn parse_attribute_userdata(
                         .map_err(crate::chunks::FramingError::from)?;
                     result.push(AttributeUserdataDescriptor::Unknown { range });
                 }
+                Err(error @ FramingError::Resource(_)) => return Err(error),
                 Err(error) => warnings.push_admitted(
                     ctx,
                     format_args!(
