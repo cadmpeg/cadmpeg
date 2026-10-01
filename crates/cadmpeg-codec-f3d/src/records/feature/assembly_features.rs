@@ -536,3 +536,5 @@ pub(crate) struct DesignCopyPasteComponentOperation {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

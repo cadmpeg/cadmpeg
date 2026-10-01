@@ -2,13 +2,16 @@
 use super::identities;
 use crate::ids::PointId;
 use serde::ser::SerializeSeq;
+use super::typed::{IdentityMap, RewriteIdentities};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct Text(String);
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 enum Variant {
     Unit,
     Newtype(PointId),
@@ -16,7 +19,7 @@ enum Variant {
     Struct { reference: PointId, text: String },
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct Entity {
     id: PointId,
     label: String,
@@ -28,6 +31,15 @@ struct Entity {
     extensions: BTreeMap<String, String>,
 }
 
+rewrite_record!(Text, []; (text));
+rewrite_enum!(Variant, []; {
+    Unit,
+    Newtype(identity),
+    Tuple(identity, text),
+    Struct {reference, text},
+});
+rewrite_record!(Entity, []; {id, label, optional, absent, tuple, variants, references, extensions});
+
 fn id(key: &str) -> PointId {
     PointId::mint(format!("test:model:point#{key}")).unwrap()
 }
@@ -38,9 +50,9 @@ fn generic_unknown_links_share_the_typed_identity_rewrite_boundary() {
         id: crate::ids::UnknownId::mint("test:model:unknown#source").unwrap(),
         links: vec![crate::ids::Identity::new("test:model:point#a").unwrap()],
     };
-    let rewritten = serde_json::to_value(identities(&record, |source| {
-        source.replace("test:model:", "test:occurrence:")
-    }))
+    let rewritten = serde_json::to_value(identities(&cadmpeg_test_support::service_decode_context(), "test identity rewrite", record.clone(), |source| {
+        Ok(source.replace("test:model:", "test:occurrence:"))
+    }).unwrap())
     .unwrap();
     assert_eq!(
         rewritten,
@@ -75,10 +87,10 @@ fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
     };
     let original = serde_json::to_value(&entity).unwrap();
     let calls = std::cell::Cell::new(0);
-    let rewritten = serde_json::to_value(identities(&entity, |source| {
+    let rewritten = serde_json::to_value(identities(&cadmpeg_test_support::service_decode_context(), "test identity rewrite", entity.clone(), |source| {
         calls.set(calls.get() + 1);
-        source.replace("test:model:", "test:occurrence:")
-    }))
+        Ok(source.replace("test:model:", "test:occurrence:"))
+    }).unwrap())
     .unwrap();
     assert_eq!(calls.get(), 2);
     assert_eq!(
@@ -101,15 +113,16 @@ fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
 fn colliding_map_keys_and_invalid_targets_fail_without_changing_the_source() {
     let source = BTreeMap::from([(id("a"), 1), (id("b"), 2)]);
     let before = serde_json::to_value(&source).unwrap();
-    let error = serde_json::to_value(identities(&source, |_| "test:occurrence:point#same".into()))
+    let error = identities(&cadmpeg_test_support::service_decode_context(), "test identity rewrite", source.clone(), |_| Ok("test:occurrence:point#same".into()))
         .unwrap_err();
     assert!(error.to_string().contains("test:model:point#b"), "{error}");
     assert!(error.to_string().contains("collides"), "{error}");
-    let error = serde_json::to_value(identities(&source, |_| String::new())).unwrap_err();
+    let error = identities(&cadmpeg_test_support::service_decode_context(), "test identity rewrite", source.clone(), |_| Ok(String::new())).unwrap_err();
     assert!(error.to_string().contains("invalid identity"), "{error}");
     assert_eq!(serde_json::to_value(&source).unwrap(), before);
 }
 
+#[derive(Debug, Clone)]
 struct SwallowsElementErrors([PointId; 2]);
 
 impl Serialize for SwallowsElementErrors {
@@ -122,10 +135,19 @@ impl Serialize for SwallowsElementErrors {
     }
 }
 
+impl RewriteIdentities for SwallowsElementErrors {
+    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+        for identity in &self.0 {
+            identity.clone().rewrite_identities(ctx, map).ok();
+        }
+        Ok(self)
+    }
+}
+
 #[test]
 fn a_serializer_cannot_swallow_a_rewrite_collision() {
     let source = SwallowsElementErrors([id("a"), id("b")]);
-    let error = serde_json::to_value(identities(&source, |_| "test:occurrence:point#same".into()))
+    let error = identities(&cadmpeg_test_support::service_decode_context(), "test identity rewrite", source.clone(), |_| Ok("test:occurrence:point#same".into()))
         .unwrap_err();
     assert!(error.to_string().contains("collides"), "{error}");
     assert_eq!(

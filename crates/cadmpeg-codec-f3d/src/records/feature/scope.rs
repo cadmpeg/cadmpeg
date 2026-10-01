@@ -388,6 +388,24 @@ macro_rules! design_feature_kinds {
             Native(DesignNativeFeatureName),
         }
 
+        impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for DesignScopePayload {
+            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+                self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("rewrite native scope payload")?;
+                ctx.charge_work(1, "rewrite native scope payload")?;
+                match self {
+                    $(Self::$variant(value) => Ok(Self::$variant(value.rewrite_identities(ctx, map)?)),)+
+                    $(Self::$fixed(value) => Ok(Self::$fixed(value.rewrite_identities(ctx, map)?)),)+
+                    $(Self::$required(value) => Ok(Self::$required(value.rewrite_identities(ctx, map)?)),)+
+                    $(Self::$unit => Ok(Self::$unit),)+
+                    Self::Native(name) => Ok(Self::Native(name)),
+                }
+            }
+        }
+
         /// Mutable construction fields with a fixed feature family.
         pub(crate) enum DesignScopePayloadMut<'a> {
             $($variant(&'a mut $payload),)+
@@ -2867,3 +2885,5 @@ impl DesignParameterScope {
 mod tests;
 
 mod serialize;
+
+mod identity_rewrite;

@@ -27,6 +27,7 @@ pub struct IdentityMap<'ctx, F> {
     storage: ScopedReservation<'ctx>,
     longest: usize,
     operation: &'static str,
+    refused: Option<String>,
 }
 
 impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
@@ -39,7 +40,24 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             storage: ctx.reserve_scoped(0, operation)?,
             longest: 0,
             operation,
+            refused: None,
         })
+    }
+
+    fn refuse<T>(&mut self, ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> Result<T, CodecError> {
+        let message = ctx.format_retained(message, self.operation)?;
+        ctx.charge_work(u64_from_index(message.len()), self.operation)?;
+        self.refused = Some(ctx.copy_scoped_text(&message, &mut self.storage, self.operation)?);
+        Err(CodecError::Malformed(message))
+    }
+
+    /// Return any mapping refusal that an enclosing field walk intercepted.
+    pub fn finish(&self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.charge_work(0, self.operation)?;
+        match &self.refused {
+            Some(message) => Err(CodecError::Malformed(ctx.copy_retained_text(message, self.operation)?)),
+            None => Ok(()),
+        }
     }
 
     /// Replace an identity once and refuse invalid or colliding targets.
@@ -57,7 +75,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         self.longest = self.longest.max(target.len());
         ctx.charge_work(u64_from_index(target.len()), operation)?;
         if !crate::ids::is_valid_identity(&target) {
-            return Err(CodecError::malformed(format_args!("identity {source} rewrites to invalid identity {target:?}")));
+            return self.refuse(ctx, format_args!("identity {source} rewrites to invalid identity {target:?}"));
         }
         let copies = u64_from_index(source.len()).checked_add(u64_from_index(target.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(copies, operation)?;
@@ -66,7 +84,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         let occupied = ctx.copy_scoped_text(&target, &mut self.storage, operation)?;
         ctx.charge_work(u64_from_index(self.longest).checked_mul(u64_from_index(self.occupied.len())).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
         if !ctx.insert_scoped_btree_set(&mut self.storage, &mut self.occupied, occupied, operation, operation)? {
-            return Err(CodecError::malformed(format_args!("identity {source} collides at rewritten identity {target}")));
+            return self.refuse(ctx, format_args!("identity {source} collides at rewritten identity {target}"));
         }
         // The absent source was checked before invoking the mapping callback.
         if !ctx.insert_scoped_btree_map_if_vacant(&mut self.storage, &mut self.targets, key, cached, operation, operation)? {

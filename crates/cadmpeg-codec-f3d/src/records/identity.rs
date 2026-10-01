@@ -454,3 +454,5 @@ mod native_record_id_tests {
         );
     }
 }
+
+mod identity_rewrite;

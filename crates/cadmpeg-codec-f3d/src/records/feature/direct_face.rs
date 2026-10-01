@@ -112,3 +112,5 @@ pub(crate) struct DesignDraftOperation {
     /// Byte offset of the opposite-side angle scalar.
     pub(crate) opposite_angle_offset: u64,
 }
+
+mod identity_rewrite;

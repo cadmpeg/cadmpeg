@@ -405,6 +405,8 @@ impl StaticIdentityKey {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
+rewrite_scalar!(IdentityKey);
+
 impl IdentityKey {
     /// Copy owned key text under the decode budget; retain static borrowed text.
     pub fn try_clone_for_decode(
