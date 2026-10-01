@@ -106,34 +106,17 @@ fn dimension_inference_limit_reaches(
             CurveExpressionValue::String("abc".to_owned()),
         )]),
     };
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-            _ => panic!("unsupported dimension inference limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admits dimension inference test");
-        match crate::curve::infer_solve_variable_dimensions(
-            &ctx,
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        crate::curve::infer_solve_variable_dimensions(
+            ctx,
             &block,
             &values,
             &[None],
             RelationEvaluationContext::default(),
-        ) {
-            Err(CodecError::ResourceLimit(resource)) => {
-                if resource.dimension == dimension && resource.operation == operation {
-                    return true;
-                }
-            }
-            Ok(_) => break,
-            Err(error) => panic!("unexpected dimension inference error: {error}"),
-        }
-    }
-    false
+        )
+    });
+    matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == dimension && resource.operation == operation)
 }
 
 macro_rules! dimension_limit_test {

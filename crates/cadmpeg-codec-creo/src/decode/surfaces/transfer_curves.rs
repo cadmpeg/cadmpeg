@@ -625,21 +625,22 @@ mod tests {
             "creo carrier intersection IR curve ID copy",
             "creo carrier intersection source object ID",
         ] {
-            let refusal = (0..512)
-                .find_map(|limit| {
+            let cap = crate::test_support::allocation_limit_at(
+                ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
                     let mut policy = DecodePolicy::service();
-                    policy.limits.max_retained_bytes = limit;
-                    match carrier_transfer_with_limits(policy) {
-                        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                            if refusal.operation == operation =>
-                        {
-                            Some(refusal)
-                        }
-                        Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                        other => panic!("{operation} was not reached before {other:?}"),
-                    }
-                })
-                .expect("named retained boundary reached");
+                    policy.limits.max_retained_bytes = cap;
+                    carrier_transfer_with_limits(policy)
+                },
+            );
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
+                carrier_transfer_with_limits(policy)
+            else {
+                panic!("named resource boundary");
+            };
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert!(refusal.limit < refusal.used + refusal.additional);
         }
@@ -650,21 +651,22 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
 
         assert!(carrier_transfer_with_limits(DecodePolicy::service()).is_ok());
-        let refusal = (0..64)
-            .find_map(|limit| {
+        let cap = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo transferred carrier curve nodes"),
+            |cap| {
                 let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = limit;
-                match carrier_transfer_with_limits(policy) {
-                    Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                        if refusal.operation == "creo transferred carrier curve nodes" =>
-                    {
-                        Some(refusal)
-                    }
-                    Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                    other => panic!("carrier result node was not reached before {other:?}"),
-                }
-            })
-            .expect("carrier result node reached");
+                policy.limits.max_collection_items = cap;
+                carrier_transfer_with_limits(policy)
+            },
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
+            carrier_transfer_with_limits(policy)
+        else {
+            panic!("named resource boundary");
+        };
         assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
         assert_eq!(refusal.limit, refusal.used);
     }
@@ -988,22 +990,22 @@ mod tests {
             "creo NURBS boundary curve ID nodes",
             "creo NURBS boundary endpoint nodes",
         ] {
-            let refusal = (0..512)
-                .find_map(|limit| {
+            let cap = crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some(operation),
+                |cap| {
                     let mut policy = DecodePolicy::service();
-                    policy.limits.max_collection_items = limit;
-                    match nurbs_boundary_transfer_with_limits(policy) {
-                        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                            if refusal.operation == operation =>
-                        {
-                            Some(refusal)
-                        }
-                        Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                        Ok(_) => panic!("{operation} was not reached before transfer completed"),
-                        Err(error) => panic!("{operation} was not reached before {error:?}"),
-                    }
-                })
-                .expect("named boundary node reached");
+                    policy.limits.max_collection_items = cap;
+                    nurbs_boundary_transfer_with_limits(policy)
+                },
+            );
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
+                nurbs_boundary_transfer_with_limits(policy)
+            else {
+                panic!("named resource boundary");
+            };
             assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
             assert_eq!(refusal.limit, refusal.used);
         }
@@ -1026,22 +1028,22 @@ mod tests {
             "creo NURBS boundary source object ID",
             "creo NURBS boundary result curve ID copy",
         ] {
-            let refusal = (0..1024)
-                .find_map(|limit| {
+            let cap = crate::test_support::allocation_limit_at(
+                ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
                     let mut policy = DecodePolicy::service();
-                    policy.limits.max_retained_bytes = limit;
-                    match nurbs_boundary_transfer_with_limits(policy) {
-                        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                            if refusal.operation == operation =>
-                        {
-                            Some(refusal)
-                        }
-                        Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                        Ok(_) => panic!("{operation} was not reached before transfer completed"),
-                        Err(error) => panic!("{operation} was not reached before {error:?}"),
-                    }
-                })
-                .expect("named retained boundary reached");
+                    policy.limits.max_retained_bytes = cap;
+                    nurbs_boundary_transfer_with_limits(policy)
+                },
+            );
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
+                nurbs_boundary_transfer_with_limits(policy)
+            else {
+                panic!("named resource boundary");
+            };
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert!(refusal.limit < refusal.used + refusal.additional);
         }

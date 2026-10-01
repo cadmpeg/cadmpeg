@@ -266,12 +266,12 @@ fn dimension_layout_refuses_before_occurrence_node() {
 
 #[test]
 fn dimension_layout_refuses_before_retained_name() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = feature_dimension_parameter_layout(&ctx, &[(layout_key(), 3)])
-        .expect_err("dimension name exceeds retained allowance");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo dimension parameter name",
+        |ctx| feature_dimension_parameter_layout(ctx, &[(layout_key(), 3)]),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes

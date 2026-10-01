@@ -247,7 +247,6 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 8]);
-    let replay_offset = payload.len();
     payload.extend_from_slice(&[
         9, 0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7, 32, 0xfb, 0xe2,
         0xf7, 36,
@@ -262,7 +261,6 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
         payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(separator);
     }
-    let replay_body_len = u64::try_from(payload.len() - replay_offset).expect("short test payload");
     let run = |items, retained| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -273,11 +271,16 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
         checked_tabulated_cylinder_curve_replays(&ctx, &payload)
     };
 
-    for (retained, operation) in [
-        (63, "creo tabulated control-point body"),
-        (64, "creo tabulated curve replay body"),
-        (64 + replay_body_len, "creo tabulated parameter body"),
+    for operation in [
+        "creo tabulated control-point body",
+        "creo tabulated curve replay body",
+        "creo tabulated parameter body",
     ] {
+        let retained = crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| run(u64::MAX, cap),
+        );
         let error = run(u64::MAX, retained).expect_err("replay copy needs retained bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -297,9 +300,16 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
             && limit.operation == "creo tabulated curve replays")
     );
     assert_eq!(
-        run(u64::MAX, 68 + replay_body_len)
-            .expect("replay admitted")
-            .len(),
+        run(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::RetainedBytes,
+                None,
+                |cap| run(u64::MAX, cap)
+            )
+        )
+        .expect("replay admitted")
+        .len(),
         1
     );
 }

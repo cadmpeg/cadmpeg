@@ -2686,7 +2686,9 @@ fn depdb_recipe_rows(
         .filter(|section| section.section.name() == "DEPDB_DATA")
     {
         let payload = section.region;
-        let recipe_operations = feature::operations::operation_states(ctx, payload)?
+        let mut recipe_storage = ctx.reserve_scoped(0, "Creo DEPDB recipe operation lookup")?;
+        let recipe_operations = recipe_storage
+            .with_storage(|| feature::operations::operation_states(ctx, payload))?
             .into_iter()
             .filter_map(|operation| {
                 operation
@@ -2976,7 +2978,9 @@ pub(crate) fn scan_bytes<'a>(
         })
         .transpose()?
         .unwrap_or_default();
-    let model_geometry_sections = model_geometry_sections(ctx, &sections)?;
+    let mut selection_storage = ctx.reserve_scoped(0, "Creo model section selection storage")?;
+    let model_geometry_sections =
+        selection_storage.with_storage(|| model_geometry_sections(ctx, &sections))?;
     let census = geom_census(ctx, &sections)?;
     let principal_unit = if let Some(unit) = binary_principal_unit(&data) {
         Some(unit)
@@ -2991,7 +2995,8 @@ pub(crate) fn scan_bytes<'a>(
         .map(|framing| crate::legacy_family::parse(ctx, &framing.persistence))
         .transpose()?
         .flatten();
-    let nonvisible_geometry_sections = nonvisible_geometry_sections(ctx, &sections)?;
+    let nonvisible_geometry_sections =
+        selection_storage.with_storage(|| nonvisible_geometry_sections(ctx, &sections))?;
     let loop_array_sections = loop_array_sections(
         ctx,
         &model_geometry_sections,

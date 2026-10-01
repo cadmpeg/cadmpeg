@@ -54,7 +54,15 @@ fn brep_ring_coedge_ids_refuse_collection_limit() {
 #[test]
 fn brep_ring_coedge_identities_refuse_retained_limit() {
     assert_refusal(
-        &ring_result(16, 0).expect_err("ring ID refused"),
+        &ring_result(
+            16,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo B-rep ring coedge identities"),
+                |cap| ring_result(16, cap),
+            ),
+        )
+        .expect_err("ring ID refused"),
         ResourceDimension::RetainedBytes,
         "creo B-rep ring coedge identities",
     );

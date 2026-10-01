@@ -1245,7 +1245,8 @@ mod tests {
             let definition = make_definition(duplicate);
             let mut observed = std::collections::BTreeSet::new();
             let mut exact_cap = None;
-            for limit in 0..2048 {
+            let mut limit = 0_u64;
+            for _ in 0..4096 {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -1257,6 +1258,12 @@ mod tests {
                     Some(&geometry),
                 ) {
                     Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                        let need = resource
+                            .used
+                            .checked_add(resource.additional)
+                            .expect("retained need");
+                        assert!(need > limit);
+                        limit = need;
                         assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
                         observed.insert(resource.operation);
                     }
@@ -1523,7 +1530,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut saw_typed_identity = false;
         let mut exact_cap = None;
-        for limit in 0..2048 {
+        let mut limit = 0_u64;
+        for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) =
@@ -1535,6 +1543,12 @@ mod tests {
                 Some(&geometry),
             ) {
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                    let need = resource
+                        .used
+                        .checked_add(resource.additional)
+                        .expect("retained need");
+                    assert!(need > limit);
+                    limit = need;
                     assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
                     saw_typed_identity |= resource.operation == "creo sketch entity identity";
                 }

@@ -391,7 +391,8 @@ revolution_collection_limit_test!(
 fn revolution_identity_and_copy_refuse_below_retained_limits() {
     for operation in ["creo revolution identity", "creo revolution identity copy"] {
         let mut reached = false;
-        for limit in 0..4096 {
+        let mut limit = 0_u64;
+        for _ in 0..4096 {
             let (scan, mut ir) = closed_off_axis_revolution();
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -405,12 +406,25 @@ fn revolution_identity_and_copy_refuse_below_retained_limits() {
                 &mut Vec::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             );
-            if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+            if matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
                 if resource.dimension == ResourceDimension::RetainedBytes
                     && resource.operation == operation)
             {
                 reached = true;
                 break;
+            }
+            match result {
+                Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                    assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                    let need = resource
+                        .used
+                        .checked_add(resource.additional)
+                        .expect("retained need");
+                    assert!(need > limit);
+                    limit = need;
+                }
+                Ok(_) => break,
+                Err(error) => panic!("unexpected resource route error: {error:?}"),
             }
         }
         assert!(reached, "{operation} was not reached");

@@ -91,6 +91,7 @@ fn refresh_feature_outputs(
     scan: &ContainerScan,
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut update_storage = ctx.reserve_scoped(0, "Creo feature output update storage")?;
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
@@ -106,7 +107,9 @@ fn refresh_feature_outputs(
             ctx,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
-        ctx.reserve_vec(&mut output_updates, 1, "creo feature output update rows")?;
+        update_storage.with_storage(|| {
+            ctx.reserve_vec(&mut output_updates, 1, "creo feature output update rows")
+        })?;
         output_updates.push((index, outputs));
     }
     for (index, outputs) in output_updates {
@@ -119,10 +122,13 @@ fn ordered_row_feature_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &[crate::feature::rows::FeatureRow],
 ) -> Result<Vec<u32>, cadmpeg_core::CodecError> {
+    let mut seen_storage = ctx.reserve_scoped(0, "Creo row feature identity lookup")?;
     let mut seen = BTreeSet::new();
     let mut ids = Vec::new();
     for row in rows {
-        if ctx.insert_btree_set(&mut seen, row.feature_id, "creo feature row identity nodes")? {
+        if seen_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut seen, row.feature_id, "creo feature row identity nodes")
+        })? {
             ctx.reserve_vec(&mut ids, 1, "creo feature row IDs")?;
             ids.push(row.feature_id);
         }
@@ -159,15 +165,19 @@ pub(super) fn emit_model_features(
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "Creo feature emission lookup storage")?;
     let mut regeneration_edges = Vec::new();
-    let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
+    let prototype_feature_dependencies =
+        lookup_storage.with_storage(|| surface_prototype_feature_dependencies(ctx, scan))?;
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        ctx.insert_btree_set(
-            &mut operation_feature_ids,
-            operation.feature_id,
-            "creo operation feature identity nodes",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut operation_feature_ids,
+                operation.feature_id,
+                "creo operation feature identity nodes",
+            )
+        })?;
     }
     for datum in &scan.planes.datums {
         if operation_feature_ids.contains(&datum.feature_id) {
@@ -213,9 +223,10 @@ pub(super) fn emit_model_features(
         };
         source_carriers.admit_feature(ctx, ir, feature)?;
     }
-    let row_feature_ids = ordered_row_feature_ids(ctx, &scan.features.rows)?;
+    let row_feature_ids =
+        lookup_storage.with_storage(|| ordered_row_feature_ids(ctx, &scan.features.rows))?;
     let mut geometry_generator_feature_count = 0;
-    for generator in geometry_generator_features(ctx, scan)? {
+    for generator in lookup_storage.with_storage(|| geometry_generator_features(ctx, scan))? {
         let feature_id = generator.feature_id;
         let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
@@ -422,7 +433,9 @@ pub(super) fn emit_model_features(
             })
             .map(|feature| &feature.id);
         if let Some(parent) = parent {
-            append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)?;
+            lookup_storage.with_storage(|| {
+                append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)
+            })?;
         }
         if let Some(existing) = ir
             .model
@@ -678,7 +691,9 @@ pub(super) fn finish_feature_transfers(
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
-    let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
+    let mut lookup_storage = ctx.reserve_scoped(0, "Creo final feature prototype lookup")?;
+    let prototype_feature_dependencies =
+        lookup_storage.with_storage(|| surface_prototype_feature_dependencies(ctx, scan))?;
     link_feature_sketch_history(ctx, scan, ir)?;
     reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;

@@ -69,10 +69,12 @@ fn choice_hit_refuses_before_vec_growth() {
 fn choice_label_refuses_before_retained_text_copy() {
     let row = row();
     retained(
-        &run(&row.body, 2, 0, |ctx| {
-            super::super::choices(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("choice label needs retained text"),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::RetainedBytes,
+            "creo feature choice label",
+            |ctx| super::super::choices(ctx, std::slice::from_ref(&row)),
+        ),
         "creo feature choice label",
     );
 }
@@ -81,13 +83,12 @@ fn choice_label_refuses_before_retained_text_copy() {
 fn choice_payload_refuses_before_retained_byte_copy() {
     let row = row();
     retained(
-        &run(
+        &crate::test_support::last_refusal_at(
             &row.body,
-            2,
-            cadmpeg_core::decode::u64_from_index("blend_choice".len()),
+            ResourceDimension::RetainedBytes,
+            "creo feature choice payload",
             |ctx| super::super::choices(ctx, std::slice::from_ref(&row)),
-        )
-        .expect_err("choice payload needs retained bytes"),
+        ),
         "creo feature choice payload",
     );
 }
@@ -116,10 +117,12 @@ fn choice_record_refuses_before_vec_growth() {
 fn raw_feature_field_refuses_before_retained_copy() {
     let payload = [0xff, 0x00];
     retained(
-        &run(&payload, 0, 0, |ctx| {
-            super::super::field_value(ctx, &payload)
-        })
-        .expect_err("raw bytes need retained admission"),
+        &crate::test_support::last_refusal_at(
+            &payload,
+            ResourceDimension::RetainedBytes,
+            "creo feature raw field",
+            |ctx| super::super::field_value(ctx, &payload),
+        ),
         "creo feature raw field",
     );
 }
@@ -159,10 +162,12 @@ fn scalar_feature_values_refuse_before_vec_growth() {
 fn scalar_feature_body_refuses_before_retained_copy() {
     let payload = [0xf9, 0x01, 0x01, 0x0f];
     retained(
-        &run(&payload, 1, 0, |ctx| {
-            super::super::field_value(ctx, &payload)
-        })
-        .expect_err("scalar body needs retained bytes"),
+        &crate::test_support::last_refusal_at(
+            &payload,
+            ResourceDimension::RetainedBytes,
+            "creo feature scalar field body",
+            |ctx| super::super::field_value(ctx, &payload),
+        ),
         "creo feature scalar field body",
     );
 }
@@ -195,10 +200,12 @@ fn choice_field_header_refuses_before_vec_growth() {
 fn choice_field_label_refuses_before_retained_text_copy() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     retained(
-        &run(&choice.payload, 3, 0, |ctx| {
-            super::super::choice_fields(ctx, std::slice::from_ref(&choice))
-        })
-        .expect_err("copied choice label needs retained bytes"),
+        &crate::test_support::last_refusal_at(
+            &choice.payload,
+            ResourceDimension::RetainedBytes,
+            "creo choice field label",
+            |ctx| super::super::choice_fields(ctx, std::slice::from_ref(&choice)),
+        ),
         "creo choice field label",
     );
 }
@@ -207,13 +214,12 @@ fn choice_field_label_refuses_before_retained_text_copy() {
 fn choice_field_name_refuses_before_retained_text_copy() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     retained(
-        &run(
+        &crate::test_support::last_refusal_at(
             &choice.payload,
-            3,
-            cadmpeg_core::decode::u64_from_index(choice.label.len()),
+            ResourceDimension::RetainedBytes,
+            "creo choice field name",
             |ctx| super::super::choice_fields(ctx, std::slice::from_ref(&choice)),
-        )
-        .expect_err("field name needs retained bytes"),
+        ),
         "creo choice field name",
     );
 }
@@ -635,15 +641,18 @@ fn loop_history_roster_refuses_before_counted_vec_growth() {
 #[test]
 fn loop_history_fields_refuse_before_each_retained_copy() {
     let body = [42, 1, 2, 3, 4, 0xe3];
+    let slots = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<super::super::ParsedLoopHistoryEntry>(),
+    );
     for admitted in 0..4 {
         retained(
-            &run(&body, 1, admitted, |ctx| {
+            &run(&body, u64::MAX, slots + admitted, |ctx| {
                 super::super::loop_history_roster(ctx, &body, 0, 1)
                     .transpose()?
                     .ok_or_else(|| CodecError::malformed("loop history fields"))
                     .map(|_| ())
             })
-            .expect_err("one field byte needs retained admission"),
+            .expect_err("the next field byte needs retained storage"),
             "creo loop history field bytes",
         );
     }
@@ -653,20 +662,31 @@ fn loop_history_fields_refuse_before_each_retained_copy() {
 fn loop_history_trailing_field_refuses_before_retained_copy() {
     let body = b"\x2a\x01\x02\x03\x04\x07\xe0\x00next\0";
     retained(
-        &run(body, 1, 4, |ctx| {
+        &crate::test_support::last_refusal_at(
+            body,
+            ResourceDimension::RetainedBytes,
+            "creo loop history trailing bytes",
+            |ctx| {
+                super::super::loop_history_roster(ctx, body, 0, 1)
+                    .transpose()?
+                    .ok_or_else(|| CodecError::malformed("loop history trailing field"))
+                    .map(|_| ())
+            },
+        ),
+        "creo loop history trailing bytes",
+    );
+    assert!(run(
+        body,
+        1,
+        5 + cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<super::super::ParsedLoopHistoryEntry>()
+        ),
+        |ctx| {
             super::super::loop_history_roster(ctx, body, 0, 1)
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("loop history trailing field"))
-                .map(|_| ())
-        })
-        .expect_err("trailing field needs retained admission"),
-        "creo loop history trailing bytes",
-    );
-    assert!(run(body, 1, 5, |ctx| {
-        super::super::loop_history_roster(ctx, body, 0, 1)
-            .transpose()?
-            .ok_or_else(|| CodecError::malformed("loop history trailing field"))
-    })
+        }
+    )
     .is_ok());
 }
 

@@ -88,17 +88,16 @@ fn scanned_section_refuses_before_output_vec_growth() {
 
 #[test]
 fn scanned_section_name_refuses_before_retained_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let data = b"\n#Body\nabc";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
-    let error = super::super::scan_sections(&ctx, data, 0)
-        .expect_err("output name needs another four bytes");
+    let error = crate::test_support::last_refusal_at(
+        data,
+        ResourceDimension::RetainedBytes,
+        "creo scanned section names",
+        |ctx| super::super::scan_sections(ctx, data, 0),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo scanned section names"));
@@ -319,20 +318,19 @@ fn one_compressed_section() -> Vec<u8> {
 
 #[test]
 fn expanded_section_name_refuses_before_retained_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let data = one_compressed_section();
     let section =
         super::super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
             .expect("bounded compressed section");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
-        .expect("compressed input is admitted");
-    let error = super::super::expanded_sections(&ctx, &data, std::slice::from_ref(&section))
-        .expect_err("expanded name needs retained bytes after output");
+    let error = crate::test_support::last_refusal_at(
+        &data,
+        ResourceDimension::RetainedBytes,
+        "creo expanded section names",
+        |ctx| super::super::expanded_sections(ctx, &data, std::slice::from_ref(&section)),
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

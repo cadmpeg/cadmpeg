@@ -121,7 +121,7 @@ macro_rules! named_dimension_collection_limit_test {
                 Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == $operation));
-            let table = named_dimension_with_limits(3, 2)
+            let table = named_dimension_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| named_dimension_with_limits(u64::MAX, cap)))
                 .expect("dimension admitted").expect("dimension present");
             assert_eq!(table.rows[0].references.as_ref().expect("references").rows.len(), 2);
         }
@@ -147,16 +147,23 @@ named_dimension_collection_limit_test!(
 #[test]
 fn named_dimension_value_body_refuses_before_copy() {
     assert!(
-        matches!(named_dimension_with_limits(3, 0), Err(CodecError::ResourceLimit(limit))
+        matches!(named_dimension_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo dimension value body"), |cap| named_dimension_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo dimension value body")
     );
     assert_eq!(
-        named_dimension_with_limits(3, 2)
-            .expect("dimension admitted")
-            .expect("dimension present")
-            .rows
-            .len(),
+        named_dimension_with_limits(
+            3,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| named_dimension_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("dimension admitted")
+        .expect("dimension present")
+        .rows
+        .len(),
         1
     );
 }
@@ -164,16 +171,23 @@ fn named_dimension_value_body_refuses_before_copy() {
 #[test]
 fn named_dimension_auxiliary_body_refuses_before_copy() {
     assert!(
-        matches!(named_dimension_with_limits(3, 1), Err(CodecError::ResourceLimit(limit))
+        matches!(named_dimension_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo dimension auxiliary body"), |cap| named_dimension_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo dimension auxiliary body")
     );
     assert_eq!(
-        named_dimension_with_limits(3, 2)
-            .expect("dimension admitted")
-            .expect("dimension present")
-            .rows
-            .len(),
+        named_dimension_with_limits(
+            3,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| named_dimension_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("dimension admitted")
+        .expect("dimension present")
+        .rows
+        .len(),
         1
     );
 }
@@ -425,42 +439,63 @@ fn positional_relation_with_limits(
 #[test]
 fn relation_operands_refuse_before_retained_copy() {
     assert!(
-        matches!(positional_relation_with_limits(1, 11), Err(CodecError::ResourceLimit(limit))
+        matches!(positional_relation_with_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo relation operands"), |cap| positional_relation_with_limits(1, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo relation operands")
     );
-    let table = positional_relation_with_limits(1, 29)
-        .expect("relation admitted")
-        .expect("table present");
+    let table = positional_relation_with_limits(
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| positional_relation_with_limits(u64::MAX, cap),
+        ),
+    )
+    .expect("relation admitted")
+    .expect("table present");
     assert_eq!(table.rows[0].operands.len(), 12);
 }
 
 #[test]
 fn relation_row_body_refuses_before_retained_copy() {
     assert!(
-        matches!(positional_relation_with_limits(1, 28), Err(CodecError::ResourceLimit(limit))
+        matches!(positional_relation_with_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo relation row body"), |cap| positional_relation_with_limits(1, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo relation row body")
     );
-    let table = positional_relation_with_limits(1, 29)
-        .expect("relation admitted")
-        .expect("table present");
+    let table = positional_relation_with_limits(
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| positional_relation_with_limits(u64::MAX, cap),
+        ),
+    )
+    .expect("relation admitted")
+    .expect("table present");
     assert_eq!(table.rows[0].body.len(), 17);
 }
 
 #[test]
 fn relation_row_refuses_before_vec_growth() {
     assert!(
-        matches!(positional_relation_with_limits(0, 29), Err(CodecError::ResourceLimit(limit))
+        matches!(positional_relation_with_limits(0, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| positional_relation_with_limits(u64::MAX, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo relation rows")
     );
     assert_eq!(
-        positional_relation_with_limits(1, 29)
-            .expect("relation admitted")
-            .expect("table present")
-            .rows
-            .len(),
+        positional_relation_with_limits(
+            1,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| positional_relation_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("relation admitted")
+        .expect("table present")
+        .rows
+        .len(),
         1
     );
 }
@@ -620,7 +655,15 @@ fn positional_variable_value_body_refuses_before_retention() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error = positional_variable_rows_with_limits(2, 0).expect_err("value needs one byte");
+    let error = positional_variable_rows_with_limits(
+        2,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo variable value body"),
+            |cap| positional_variable_rows_with_limits(2, cap),
+        ),
+    )
+    .expect_err("value needs one byte");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo variable value body"));
@@ -631,7 +674,15 @@ fn positional_variable_guess_body_refuses_before_retention() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error = positional_variable_rows_with_limits(2, 1).expect_err("guess needs one byte");
+    let error = positional_variable_rows_with_limits(
+        2,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo variable guess body"),
+            |cap| positional_variable_rows_with_limits(2, cap),
+        ),
+    )
+    .expect_err("guess needs one byte");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo variable guess body"));
@@ -1302,7 +1353,7 @@ fn equation_prototype_body_refuses_before_retained_copy() {
 #[test]
 fn equation_arguments_refuse_before_vec_growth() {
     assert!(
-        matches!(equation_with_limits(1, 20), Err(CodecError::ResourceLimit(limit))
+        matches!(equation_with_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| equation_with_limits(u64::MAX, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo equation arguments")
     );
@@ -1311,7 +1362,7 @@ fn equation_arguments_refuse_before_vec_growth() {
 #[test]
 fn equation_argument_body_refuses_before_retained_copy() {
     assert!(
-        matches!(equation_with_limits(3, 12), Err(CodecError::ResourceLimit(limit))
+        matches!(equation_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo equation argument body"), |cap| equation_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo equation argument body")
     );
@@ -1320,7 +1371,7 @@ fn equation_argument_body_refuses_before_retained_copy() {
 #[test]
 fn equation_auxiliary_body_refuses_before_retained_copy() {
     assert!(
-        matches!(equation_with_limits(3, 13), Err(CodecError::ResourceLimit(limit))
+        matches!(equation_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo equation auxiliary body"), |cap| equation_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo equation auxiliary body")
     );
@@ -1329,7 +1380,7 @@ fn equation_auxiliary_body_refuses_before_retained_copy() {
 #[test]
 fn equation_row_body_refuses_before_retained_copy() {
     assert!(
-        matches!(equation_with_limits(3, 19), Err(CodecError::ResourceLimit(limit))
+        matches!(equation_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo equation row body"), |cap| equation_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo equation row body")
     );
@@ -1338,13 +1389,20 @@ fn equation_row_body_refuses_before_retained_copy() {
 #[test]
 fn equation_row_refuses_before_vec_growth() {
     assert!(
-        matches!(equation_with_limits(2, 20), Err(CodecError::ResourceLimit(limit))
+        matches!(equation_with_limits(2, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| equation_with_limits(u64::MAX, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo equation rows")
     );
-    let table = equation_with_limits(3, 20)
-        .expect("equation admitted")
-        .expect("table present");
+    let table = equation_with_limits(
+        3,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| equation_with_limits(u64::MAX, cap),
+        ),
+    )
+    .expect("equation admitted")
+    .expect("table present");
     assert_eq!(table.rows[0].arguments, [Some(17), Some(18)]);
 }
 

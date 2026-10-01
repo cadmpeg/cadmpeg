@@ -73,6 +73,7 @@ fn surface_limit_result<T>(
 fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
     use cadmpeg_core::decode::ResourceDimension;
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::CollectionItems,
         "creo scalar array values",
         |ctx| {
@@ -272,13 +273,11 @@ fn named_prototype_parameter_name_refuses_before_retained_copy() {
         )
         .map(|records| records.len())
     };
-    let limit = (0..32)
-        .find(|limit| {
-            matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "creo named prototype parameter name")
-        })
-        .expect("one retained limit reaches the parameter-name copy");
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo named prototype parameter name"),
+        run,
+    );
     let error = run(limit).expect_err("parameter name needs retained bytes");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -397,7 +396,7 @@ fn scalar_body_slots_refuse_before_declared_count_reserve() {
 
 #[test]
 fn scalar_body_invalid_token_refusal_text_obeys_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let body = [0xff];
     assert!(scalar_slots(
@@ -407,19 +406,20 @@ fn scalar_body_invalid_token_refusal_text_obeys_retained_limit() {
         &mut ScalarBodyRefusal::default(),
     )
     .is_none());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
-        .expect("invalid scalar body fits the input limit");
-    let error = crate::surface::scalar_slots(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(
         &body,
-        1,
-        &scalar::ScalarCache::default(),
-        &mut ScalarBodyRefusal::default(),
-    )
-    .expect_err("refusal text exceeds the retained limit");
+        ResourceDimension::RetainedBytes,
+        "creo scalar body refusal text",
+        |ctx| {
+            crate::surface::scalar_slots(
+                ctx,
+                &body,
+                1,
+                &scalar::ScalarCache::default(),
+                &mut ScalarBodyRefusal::default(),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -429,7 +429,7 @@ fn scalar_body_invalid_token_refusal_text_obeys_retained_limit() {
 
 #[test]
 fn scalar_body_trailing_refusal_text_obeys_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let body = [0xe4, 0xff];
     assert!(scalar_slots(
@@ -439,19 +439,20 @@ fn scalar_body_trailing_refusal_text_obeys_retained_limit() {
         &mut ScalarBodyRefusal::default(),
     )
     .is_none());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
-        .expect("trailing scalar body fits the input limit");
-    let error = crate::surface::scalar_slots(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(
         &body,
-        1,
-        &scalar::ScalarCache::default(),
-        &mut ScalarBodyRefusal::default(),
-    )
-    .expect_err("trailing refusal text exceeds the retained limit");
+        ResourceDimension::RetainedBytes,
+        "creo trailing scalar body refusal text",
+        |ctx| {
+            crate::surface::scalar_slots(
+                ctx,
+                &body,
+                1,
+                &scalar::ScalarCache::default(),
+                &mut ScalarBodyRefusal::default(),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -482,7 +483,14 @@ fn named_spline_slots_refuse_before_declared_count_reserve() {
 
 #[test]
 fn named_spline_token_refuses_before_retained_copy() {
-    let error = named_spline_limit_error(u64::MAX, 0);
+    let error = named_spline_limit_error(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo named spline scalar token"),
+            |cap| Err::<(), _>(named_spline_limit_error(u64::MAX, cap)),
+        ),
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1484,7 +1492,16 @@ fn counted_parameter_initial_tree_entry_refuses_before_insert() {
 
 #[test]
 fn counted_parameter_token_bytes_refuse_before_copy() {
-    let error = counted_slot_error(&[0xe4], 1, u64::MAX, 0);
+    let error = counted_slot_error(
+        &[0xe4],
+        1,
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo counted parameter token bytes"),
+            |cap| Err::<(), _>(counted_slot_error(&[0xe4], 1, u64::MAX, cap)),
+        ),
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

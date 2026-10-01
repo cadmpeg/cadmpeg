@@ -2686,12 +2686,29 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = b"double_xar\0\xf8\x02\x46\x08\x00\x00\x00\x00\x00\x00\xe0";
         assert_eq!(
-            double_xar_with_limits(bytes, 3, 8)
-                .expect("literal admitted")
-                .len(),
+            double_xar_with_limits(
+                bytes,
+                3,
+                crate::test_support::allocation_limit_at(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    None,
+                    |cap| double_xar_with_limits(bytes, u64::MAX, cap)
+                )
+            )
+            .expect("literal admitted")
+            .len(),
             1
         );
-        let error = double_xar_with_limits(bytes, 3, 7).expect_err("literal bytes need admission");
+        let error = double_xar_with_limits(
+            bytes,
+            3,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo double_xar literal bytes"),
+                |cap| double_xar_with_limits(bytes, 3, cap),
+            ),
+        )
+        .expect_err("literal bytes need admission");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes

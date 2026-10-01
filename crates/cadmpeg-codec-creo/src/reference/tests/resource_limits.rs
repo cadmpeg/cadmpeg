@@ -123,10 +123,12 @@ fn named_conic_refuses_before_vec_growth() {
 #[test]
 fn named_conic_body_refuses_before_retained_copy() {
     assert_retained(
-        &run(NAMED_CONIC, 1, 0, |ctx| {
-            super::super::named_conics(ctx, NAMED_CONIC)
-        })
-        .expect_err("conic body needs retained bytes"),
+        &crate::test_support::last_refusal_at(
+            NAMED_CONIC,
+            ResourceDimension::RetainedBytes,
+            "creo named reference conic body",
+            |ctx| super::super::named_conics(ctx, NAMED_CONIC),
+        ),
         "creo named reference conic body",
     );
 }
@@ -164,10 +166,12 @@ fn positional_conic_refuses_before_vec_growth() {
 #[test]
 fn positional_conic_body_refuses_before_retained_copy() {
     assert_retained(
-        &run(POSITIONAL_CONIC, 2, 0, |ctx| {
-            super::super::positional_conics(ctx, POSITIONAL_CONIC)
-        })
-        .expect_err("body needs retained bytes"),
+        &crate::test_support::last_refusal_at(
+            POSITIONAL_CONIC,
+            ResourceDimension::RetainedBytes,
+            "creo positional reference conic body",
+            |ctx| super::super::positional_conics(ctx, POSITIONAL_CONIC),
+        ),
         "creo positional reference conic body",
     );
 }

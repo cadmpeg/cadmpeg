@@ -233,14 +233,19 @@ pub(in super::super) fn circular_pcurve(
     let Some(knot_count) = segment_count.checked_mul(2).and_then(|n| n.checked_add(4)) else {
         return Ok(None);
     };
+    let mut temporary_storage = ctx.reserve_scoped(0, "creo circular pcurve temporary lanes")?;
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        pole_count,
-        "creo circular pcurve controls",
-    )?;
+    temporary_storage.with_storage(|| {
+        ctx.reserve_vec(
+            &mut control_points,
+            pole_count,
+            "creo circular pcurve controls",
+        )
+    })?;
     let mut weights = Vec::new();
-    ctx.reserve_vec(&mut weights, pole_count, "creo circular pcurve weights")?;
+    temporary_storage.with_storage(|| {
+        ctx.reserve_vec(&mut weights, pole_count, "creo circular pcurve weights")
+    })?;
     for segment in 0..segment_count {
         let first = start_angle
             + cadmpeg_core::convert::f64_from_index(segment).ok_or_else(|| {
