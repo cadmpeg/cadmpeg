@@ -974,6 +974,13 @@ pub enum HoleThreadDepth {
 
 mod decode_clone;
 
+impl HolePlacement {
+    /// Copy admitted fields through the caller's decode context.
+    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+    }
+}
+
 #[cfg(test)]
 mod length_mapping_tests {
     use super::{HoleConstruction, HoleKind, HoleShape};
@@ -1203,11 +1210,3 @@ cadmpeg_core::named_optional_field!(deserialize_class, String, "class");
 cadmpeg_core::named_optional_field!(deserialize_major_diameter, PositiveLength, "major_diameter");
 
 selection_field_deserializer!(deserialize_local_standard, "standard");
-
-
-impl HolePlacement {
-    /// Copy admitted fields through the caller's decode context.
-    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
-        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
-    }
-}
