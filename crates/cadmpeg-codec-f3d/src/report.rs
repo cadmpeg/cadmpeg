@@ -78,7 +78,7 @@ pub(crate) fn classify_document(
     };
     Ok(SourceMeta::classified(
         dialects,
-        cadmpeg_core::text::named_entries("the f3d document", attributes)?,
+        cadmpeg_core::text::named_entries_checked(ctx, "the f3d document", attributes)?,
     ))
 }
 
@@ -258,4 +258,27 @@ mod tests {
             if limit.operation == "retain F3D summary note")
         );
     }
+    #[test]
+    fn source_attribute_conversion_refuses_destination_map_growth() {
+        let bytes = synthetic_f3d(false);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (normal, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::container::scan(&normal, root).unwrap();
+        let mut report = build_decode_report(&normal, &scan,
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}, Vec::new()).unwrap();
+        let mut limited_policy = policy;
+        limited_policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&limited_policy, |ctx| {
+            let error = classify_document(ctx, &scan,
+                ReportScope::ArchiveMember(cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone())),
+                BTreeMap::from([("name".to_owned(), "value".to_owned())]), &mut report).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("attribute conversion must refuse destination growth");
+            };
+            assert_eq!(limit.operation, "named entry map nodes");
+            assert_eq!(Some(limit), ctx.resource_refusal());
+        });
+    }
+
 }

@@ -164,7 +164,7 @@ fn material_named_act_channel_refuses_collection_limit() {
     let error = named_channel_error(1, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D named ACT channels")
+        if limit.operation == "named entry map nodes")
     );
 }
 
