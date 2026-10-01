@@ -64,7 +64,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            Vec::new(),
+            vec!["sldprt:test:scalar#unselected-1".into()],
             None,
             None,
         )
@@ -314,7 +314,7 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            Vec::new(),
+            vec!["sldprt:test:scalar#unselected-2".into()],
             None,
             None,
         )

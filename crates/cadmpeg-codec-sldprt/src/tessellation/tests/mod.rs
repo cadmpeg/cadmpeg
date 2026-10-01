@@ -1956,3 +1956,5 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
 mod geometry_predicates;
 
 mod cone_supports;
+
+mod resource_admission;

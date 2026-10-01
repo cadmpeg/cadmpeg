@@ -147,7 +147,7 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
         offset: 0,
         guid: "guid".into(),
         cad_text: "D1@Pattern1".into(),
-        item_count: 1,
+        item_count: std::num::NonZeroU32::MIN,
         subtype: subtype.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test dimension"),
         value_offset: 0,
@@ -478,7 +478,7 @@ fn parses_array16_dim_items() {
     let records = parse_payload(&payload, &mut losses);
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].item_count, 16);
+    assert_eq!(records[0].item_count.get(), 16);
     assert_eq!(records[0].value.get(), 0.025);
 }
 
@@ -834,7 +834,7 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
             .find(|record| record.guid == guid)
             .expect("PMI dimension");
         assert_eq!(dimension.value.get(), value);
-        assert_eq!(dimension.item_count, item_count);
+        assert_eq!(dimension.item_count.get(), item_count);
         assert!(decoded.report().losses.iter().all(|loss| {
             !loss.message.contains("semantic-record-malformed")
                 && !loss.message.contains("failed to parse MessagePack map")
@@ -893,7 +893,7 @@ fn multi_item_pmi_dimension_is_not_bound() {
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one native PMI dimension");
     };
-    assert_eq!(dimension.item_count, 2);
+    assert_eq!(dimension.item_count.get(), 2);
     assert!(!decoded
         .ir()
         .model
@@ -1374,4 +1374,81 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
     let mut patched = payload;
     let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn pmi_alias_comparison_refuses_long_semantic_strings() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut first = dimension("linear", 1.0);
+    first.id = "bound".into();
+    first.cad_text = "x".repeat(1024);
+    let mut second = first.clone();
+    second.id = "unbound".into();
+    second.cad_text.push('y');
+    let records = [first, second];
+    let bound = std::collections::HashSet::from(["bound"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 100;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::unbound_dimension_count(&ctx, &records, &bound).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare SLDPRT PMI aliases")
+    );
+    assert_eq!(
+        super::unbound_dimension_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &records,
+            &bound
+        )
+        .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn pmi_nested_messagepack_refuses_instead_of_malformed_map() {
+    let mut bytes = vec![0x91; 18];
+    bytes.push(0xc0);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let error = super::parse_value(&ctx, &bytes, &mut 0, 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "parse SLDPRT PMI MessagePack depth")
+    );
+}
+
+#[test]
+fn pmi_patch_preserves_native_load_depth_refusal() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut nested = serde_json::Value::Null;
+    for _ in 0..256 {
+        nested = serde_json::Value::Array(vec![nested]);
+    }
+    let mut fields = serde_json::Map::new();
+    fields.insert("extra".into(), nested);
+    let record = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new("sldprt:pmi:dimension#0").unwrap(),
+        fields,
+    )
+    .unwrap();
+    let namespace = ir.native.namespace_mut("sldprt");
+    namespace
+        .arenas_mut()
+        .insert("pmi_dimensions".into(), vec![record]);
+    let expected =
+        cadmpeg_core::CodecError::from(crate::native::SldprtNative::load(namespace).unwrap_err());
+    let actual = patch_payload(&ir, "block", &mut []).unwrap_err();
+    match (expected, actual) {
+        (
+            cadmpeg_core::CodecError::ResourceLimit(expected),
+            cadmpeg_core::CodecError::ResourceLimit(actual),
+        ) => {
+            assert_eq!(actual, expected);
+            assert_eq!(
+                actual.dimension,
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            );
+        }
+        errors => panic!("{errors:?}"),
+    }
 }

@@ -46,7 +46,16 @@ fn patch_partition_inner(
         .iter()
         .find(|record| record.id.as_str() == "sldprt:file:source-image#0")?
         .data?;
-    let scan = crate::container::scan_bytes(source);
+    let arena = DecodeArena::new();
+    let (ctx, root) = match DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop())
+    {
+        Ok(context) => context,
+        Err(error) => return Some(Err(error)),
+    };
+    let scan = match crate::container::scan(&ctx, root) {
+        Ok(scan) => scan,
+        Err(error) => return Some(Err(error)),
+    };
     let selected = crate::container::select_active_parasolid_site(&scan)?;
     let crate::container::Section::Block(block) = selected.section else {
         return None;
@@ -89,16 +98,6 @@ fn patch_partition_inner(
         .iter()
         .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
-    let scanned_bytes = bodies
-        .iter()
-        .flat_map(|(bytes, _)| bytes.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let ctx = match DecodeContext::from_root_bytes(&scanned_bytes, &arena, &DecodePolicy::service())
-    {
-        Ok((ctx, _)) => ctx,
-        Err(error) => return Some(Err(error)),
-    };
     // A baseline the source states and this decoder refuses is a refusal, not
     // an absent patch: it travels the error channel this function already uses
     // below, so the caller's `.transpose()` reports the cause instead of "no

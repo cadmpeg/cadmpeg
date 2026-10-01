@@ -9,6 +9,13 @@ each violation by rule, file, line, and explanation.
 
 - Standard-width file reads use bounded `View` readers. Direct endian
   conversions require an explicit local exception.
+- Calls whose return type contains `EvaluationFailure` keep resource refusals.
+  Success-only patterns, wildcard error arms, error-dropping result methods,
+  ignored `map_err` arguments, and error-dropping iterator adapters fail.
+  Use `finite_or_refusal`, `non_finite`, `?`, or a propagating `ResourceLimit`
+  arm. The rule discovers evaluator names from production return signatures,
+  resolves function paths and imports, and tracks bound results. Common method
+  names require a receiver type or constructor that identifies the evaluator.
 - Loss notes use the owning loss code's `note` method.
 - Formatted malformed errors use structured codec errors.
 - Tolerances from `1e-6` through `1e-12` use named constants or statics.

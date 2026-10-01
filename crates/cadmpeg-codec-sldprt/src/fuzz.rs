@@ -73,7 +73,7 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
     let records = crate::pmi::parse_payload(&ctx, data, &mut losses)?;
     for record in records {
-        if record.item_count != 1 {
+        if record.item_count.get() != 1 {
             continue;
         }
         let Ok(start) = usize::try_from(record.value_offset) else {

@@ -193,3 +193,5 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
         allow_multi_profile_faces: None,
     })
 }
+
+mod depth;

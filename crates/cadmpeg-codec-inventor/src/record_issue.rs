@@ -17,7 +17,7 @@ pub(crate) enum RecordIssueFamily {
 #[serde(try_from = "RecordIssueWire")]
 pub(crate) struct RecordIssue {
     pub(crate) family: RecordIssueFamily,
-    pub(crate) segment_token: String,
+    pub(crate) segment_token: cadmpeg_ir::ids::IdentityKey,
     pub(crate) record_ordinal: u32,
     pub(crate) detail: String,
 }
@@ -58,7 +58,7 @@ impl Serialize for RecordIssue {
                 map.serialize_entry("type_id", type_id)?;
             }
         }
-        map.serialize_entry("segment_token", &self.segment_token)?;
+        map.serialize_entry("segment_token", self.segment_token.as_str())?;
         map.serialize_entry("record_ordinal", &self.record_ordinal)?;
         map.serialize_entry("detail", &self.detail)?;
         map.end()
@@ -95,7 +95,7 @@ impl From<RecordIssue> for RecordIssueWire {
                 | RecordIssueFamily::Sketch { type_id }
                 | RecordIssueFamily::Feature { type_id } => Some(type_id),
             },
-            segment_token: value.segment_token,
+            segment_token: value.segment_token.as_str().to_owned(),
             record_ordinal: value.record_ordinal,
             detail: value.detail,
         }
@@ -123,7 +123,8 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
         };
         let issue = Self {
             family,
-            segment_token: wire.segment_token,
+            segment_token: cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token)
+                .map_err(|error| error.to_string())?,
             record_ordinal: wire.record_ordinal,
             detail: wire.detail,
         };
@@ -138,6 +139,14 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
 mod tests {
     use super::{RecordIssue, RecordIssueFamily, RecordIssueWire};
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn record_issues_reject_invalid_segment_tokens() {
+        for token in ["", "has space", "has#separator"] {
+            let wire = serde_json::json!({"id": format!("inventor:assembly:record-issue#{token}-0"), "segment_token": token, "record_ordinal": 0, "detail": "invalid"});
+            assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
+        }
+    }
 
     #[test]
     fn each_family_preserves_its_legacy_wire_and_rejects_mixed_fields() {
@@ -176,7 +185,7 @@ mod tests {
         ] {
             let issue = RecordIssue {
                 family,
-                segment_token: "segment".into(),
+                segment_token: cadmpeg_ir::ids::IdentityKey::try_new("segment").expect("token"),
                 record_ordinal: 7,
                 detail: "truncated field".into(),
             };
@@ -222,7 +231,7 @@ mod tests {
             family: RecordIssueFamily::Design {
                 type_id: "0123456789abcdef0123456789abcdef".to_owned(),
             },
-            segment_token: "segment".to_owned(),
+            segment_token: cadmpeg_ir::ids::IdentityKey::try_new("segment").expect("token"),
             record_ordinal: 1,
             detail: "invalid indexed record".to_owned(),
         };

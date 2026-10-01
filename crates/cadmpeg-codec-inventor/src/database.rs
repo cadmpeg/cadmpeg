@@ -433,12 +433,14 @@ impl<'a> Cursor<'a> {
         field: &'static str,
     ) -> Result<Vec<[u8; 16]>, CodecError> {
         let count = self.count(field, 1_000_000)?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "admit Inventor registry identifier list",
-        )?;
-        let mut ids =
-            DecodeContext::admitted_vec(count, "admit Inventor registry identifier list")?;
+        self.source
+            .counted(cadmpeg_core::decode::u64_from_index(count), 16)
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "Inventor registry identifier count exceeds remaining payload",
+                )
+            })?;
+        let mut ids = ctx.retained_vec(count, "admit Inventor registry identifier list")?;
         for _ in 0..count {
             ids.push(self.array(field)?);
         }
@@ -470,6 +472,35 @@ mod tests {
     use super::{
         parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionPayload, RseSchema,
     };
+
+    #[test]
+    fn registry_identifiers_prove_extent_and_admit_retained_storage() {
+        let bytes = 1_000_000_u32.to_le_bytes();
+        crate::test_support::test_fixtures::parse(&bytes, |ctx, _| {
+            assert!(matches!(
+                super::Cursor::new(&bytes, "test").id_list(ctx, "ids"),
+                Err(CodecError::Malformed(_))
+            ));
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(
+            super::Cursor::new(&bytes, "test").id_list(&ctx, "ids"),
+            Err(CodecError::Malformed(_))
+        ));
+        let mut complete = 1_u32.to_le_bytes().to_vec();
+        complete.extend_from_slice(&[0; 16]);
+        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        policy.limits.max_retained_bytes = 15;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&complete, &arena, &policy).expect("test context");
+        assert!(
+            matches!(super::Cursor::new(&complete, "test").id_list(&ctx, "ids"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+    }
 
     #[test]
     fn unframed_database_detail_refuses_retained_limit_before_copy() {
