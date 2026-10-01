@@ -321,7 +321,7 @@ pub(in crate::families) fn try_decode_e5(
             ));
         }
         let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
-        let mut topology_annotations = admitted!(annotations.try_clone_for_decode(ctx, "catia_e5_topology_annotations"));
+        let mut topology_annotations = admitted!(annotations.copy_transaction(ctx, "catia_e5_topology_annotations"));
         let mut original_curves = Vec::new();
         let mut unused_surfaces = Vec::new();
         let topology_transferred = if let Some(topology) = topology.as_ref() {
@@ -352,7 +352,7 @@ refusal,
         };
         if topology_transferred {
             ir = topology_ir;
-            annotations = topology_annotations;
+            annotations = admitted!(topology_annotations.into_retained());
         } else {
             if topology.is_some() {
                 topology_ir.model.bodies.clear();
@@ -1139,7 +1139,7 @@ fn canonical_direction(mut direction: Vector3) -> Vector3 {
 fn attach_e5_free_vertices(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let body_id = ctx
@@ -1304,7 +1304,7 @@ struct E5Ownership {
 
 fn transfer_e5_topology(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    (ir, annotations): (&mut CadIr, &mut AnnotationBuilder),
+    (ir, annotations): (&mut CadIr, &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>),
     topology: &crate::families::e5::graph::E5Topology,
     decoded_surfaces: &[crate::families::e5::records::E5Surface],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1925,7 +1925,7 @@ fn plan_e5_boundary<'a>(
 fn prune_e5_unused_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     (intersections, surface_curves): E5CurvePlans<'_>,
@@ -2020,10 +2020,9 @@ struct EmitE5CurvesAndEdgesInputs<
     'input7,
     'input8,
     'input9,
-    'input10,
-> {
+    'input10, AnnotationAccount> {
     ir: &'input0 mut CadIr,
-    annotations: &'input1 mut AnnotationBuilder,
+    annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     topology: &'input2 crate::families::e5::graph::E5Topology,
     vertex_for_ref: &'input3 HashMap<u32, VertexId>,
     edge_ids: &'input4 HashMap<u32, EdgeId>,
@@ -2035,7 +2034,7 @@ struct EmitE5CurvesAndEdgesInputs<
 
 fn emit_e5_curves_and_edges(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    inputs: EmitE5CurvesAndEdgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: EmitE5CurvesAndEdgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, impl cadmpeg_ir::annotations::AnnotationStorage>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let EmitE5CurvesAndEdgesInputs {
         ir,
@@ -2276,7 +2275,7 @@ fn emit_e5_curves_and_edges(
 fn emit_e5_pcurves(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -2328,7 +2327,7 @@ fn emit_e5_pcurves(
 fn emit_e5_bodies(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     bodies: &[E5BodyPlan],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -2515,10 +2514,9 @@ struct EmitE5FacesLoopsCoedgesInputs<
     'input9,
     'input10,
     'input11,
-    'input12,
-> {
+    'input12, AnnotationAccount> {
     ir: &'input0 mut CadIr,
-    annotations: &'input1 mut AnnotationBuilder,
+    annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     topology: &'input2 crate::families::e5::graph::E5Topology,
     surface_for_ref:
         &'input3 HashMap<u32, (SurfaceId, &'input4 crate::families::e5::records::E5Surface)>,
@@ -2531,7 +2529,7 @@ struct EmitE5FacesLoopsCoedgesInputs<
 
 fn emit_e5_faces_loops_coedges(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    inputs: EmitE5FacesLoopsCoedgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: EmitE5FacesLoopsCoedgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, impl cadmpeg_ir::annotations::AnnotationStorage>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let EmitE5FacesLoopsCoedgesInputs {
         ir,

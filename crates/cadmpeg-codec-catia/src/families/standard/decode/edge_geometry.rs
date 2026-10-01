@@ -1064,10 +1064,9 @@ pub(super) struct BuildStandardEdgeCurveInputs<
     'input8,
     'input9,
     'input10,
-    'input11,
-> {
+    'input11, AnnotationAccount> {
     pub(super) ir: &'input0 mut CadIr,
-    pub(super) annotations: &'input1 mut AnnotationBuilder,
+    pub(super) annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     pub(super) bindings: &'input2 [(SurfaceId, bool, usize)],
     pub(super) surface_indices: &'input3 HashMap<SurfaceId, usize>,
     pub(super) brep: &'input4 [u8],
@@ -1081,7 +1080,7 @@ pub(super) struct BuildStandardEdgeCurveInputs<
 
 pub(super) fn build_standard_edge_curve(
     ctx: &DecodeContext<'_>,
-    inputs: BuildStandardEdgeCurveInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: BuildStandardEdgeCurveInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, impl cadmpeg_ir::annotations::AnnotationStorage>,
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let BuildStandardEdgeCurveInputs {
         ir,
@@ -1651,7 +1650,7 @@ pub(super) fn build_standard_edge_curve(
 
 pub(super) fn ensure_native_edge_support_surface(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surface_object_id: u32,
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -2104,7 +2103,7 @@ pub(super) fn native_support_circle_param_range(
 
 pub(super) fn attach_standard_circles(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -2366,7 +2365,7 @@ pub(super) fn close_squared_lengths(left: f64, right: f64) -> bool {
 
 pub(super) fn attach_standard_lines(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     admission: &mut FamilyEntityAdmission<'_, '_>,

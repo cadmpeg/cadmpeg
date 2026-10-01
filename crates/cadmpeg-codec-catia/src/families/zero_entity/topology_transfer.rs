@@ -95,7 +95,7 @@ pub(super) struct ZeroEntityClosedTopology<'a> {
 pub(super) fn transfer_closed_face_topology(
     admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     solved: ZeroEntityClosedTopology<'_>,
     topology_budget: &WorkBudget<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,

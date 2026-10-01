@@ -348,7 +348,7 @@ pub(super) fn b5_supports_follow_curve(
 /// definitions, returning the map from native edge id to emitted [`EdgeId`].
 pub(super) fn emit_edges(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     payload: &cadmpeg_ir::ids::UnknownId,
     plan: &mut TransferPlan,

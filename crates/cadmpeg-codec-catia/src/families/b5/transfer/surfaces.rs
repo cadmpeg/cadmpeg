@@ -745,7 +745,7 @@ fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
 /// [`SurfaceId`]. Consumes the planned surfaces out of the transfer plan.
 pub(super) fn emit_surfaces(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     plan: &mut TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
@@ -1016,7 +1016,7 @@ pub(super) fn emit_surfaces(
 
 fn emit_extrusion_procedure(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surface_ids: &HashMap<u32, SurfaceId>,
     surface_id: &SurfaceId,
     surface_object_id: u32,

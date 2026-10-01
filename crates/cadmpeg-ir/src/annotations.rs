@@ -377,42 +377,199 @@ impl StreamHandle {
     }
 }
 
-/// Incrementally constructs document provenance and exactness annotations.
+/// Storage admission for one annotation builder.
+pub trait AnnotationStorage {
+    /// Whether a failed update discards temporary annotation values.
+    const SCOPED: bool;
+
+    /// Keep successful annotation allocations under this storage owner.
+    fn capture<T, E: From<CodecError>>(
+        &mut self,
+        apply: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, E>;
+}
+
+impl AnnotationStorage for () {
+    const SCOPED: bool = false;
+    fn capture<T, E: From<CodecError>>(&mut self, apply: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+        apply()
+    }
+}
+
+impl AnnotationStorage for ScopedReservation<'_> {
+    const SCOPED: bool = true;
+    fn capture<T, E: From<CodecError>>(&mut self, apply: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+        self.with_storage(apply)
+    }
+}
+
+/// Incrementally constructs provenance and exactness with owned storage.
 #[derive(Debug, Default, Clone)]
-pub struct AnnotationBuilder {
-    annotations: Annotations,
+pub struct AnnotationBuilder<Storage = ()> {
+    state: AnnotationState,
+    storage: Storage,
 }
 
 impl AnnotationBuilder {
-    /// Copy the annotation tables under the caller's decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        self.annotations
-            .try_clone_for_decode(ctx, operation)
-            .map(|annotations| Self { annotations })
-    }
+    /// Create an empty retained annotation builder.
+    pub fn new() -> Self { Self::default() }
 
-    /// Create an empty annotation builder.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Continue building an existing annotation set.
+    /// Continue building retained annotation tables.
     pub fn resume(annotations: Annotations) -> Self {
+        Self { state: AnnotationState::resume(annotations), storage: () }
+    }
+
+    /// Record a source location through the context-free construction path.
+    pub fn note(&mut self, id: impl Display, stream: &StreamHandle, offset: u64) -> ProvenanceNote<'_> {
+        self.state.note(id, stream, offset)
+    }
+
+    /// Record a source location with an already owned identity.
+    pub fn note_owned(&mut self, id: String, stream: &StreamHandle, offset: u64) -> ProvenanceNote<'_> {
+        self.state.note_owned(id, stream, offset)
+    }
+
+    /// Set entity-level exactness through context-free construction.
+    pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
+        self.state.exactness(id, exactness);
+        self
+    }
+
+    /// Set exactness with an already owned identity.
+    pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
+        self.state.exactness_owned(id, exactness);
+        self
+    }
+
+    /// Mark a field as derived through context-free construction.
+    pub fn derived(&mut self, id: impl Display, field: impl Into<String>) -> Result<&mut Self, AnnotationFieldError> {
+        self.state.derived(id, field)?;
+        Ok(self)
+    }
+
+    /// Set field exactness through context-free construction.
+    pub fn field_exactness(&mut self, id: impl Display, field: impl Into<String>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        self.state.field_exactness(id, field, exactness)?;
+        Ok(self)
+    }
+
+    /// Set field exactness with already owned keys.
+    pub fn field_exactness_owned(&mut self, id: String, field: String, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        self.state.field_exactness_owned(id, field, exactness)?;
+        Ok(self)
+    }
+
+    /// Finish a builder whose storage is retained.
+    pub fn build(self) -> Annotations { self.state.build() }
+}
+
+impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
+    fn update<E: From<CodecError>>(&mut self, apply: impl FnOnce(&mut AnnotationState) -> Result<(), E>) -> Result<(), E> {
+        let state = &mut self.state;
+        self.storage.capture(|| {
+            let result = apply(state);
+            if Storage::SCOPED && result.is_err() {
+                state.annotations = Annotations::default();
+            }
+            result
+        })
+    }
+
+    /// Borrow the annotation tables held by this builder.
+    pub fn annotations(&self) -> &Annotations { self.state.annotations() }
+
+    /// Copy the tables into a builder with live transaction storage.
+    pub fn copy_transaction<'ctx>(&self, ctx: &'ctx DecodeContext<'_>, operation: &'static str) -> Result<AnnotationBuilder<ScopedReservation<'ctx>>, CodecError> {
+        let transaction = self.state.annotations.copy_transaction(ctx, operation)?;
+        Ok(AnnotationBuilder { state: AnnotationState::resume(transaction.annotations), storage: transaction.storage })
+    }
+
+    /// Record provenance and exactness within this builder's storage policy.
+    pub fn annotate(&mut self, ctx: &DecodeContext<'_>, id: impl Display, stream: impl Display, offset: u64, tag: &str, exactness: Exactness) -> Result<(), CodecError> {
+        self.update(|state| state.annotate(ctx, id, stream, offset, tag, exactness))
+    }
+
+    /// Record provenance under the caller's decode context.
+    pub fn note_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, stream: &StreamHandle, offset: u64, tag: Option<&str>) -> Result<(), CodecError> {
+        self.update(|state| state.note_for_decode(ctx, id, stream, offset, tag))
+    }
+
+    /// Set entity exactness under the caller's context.
+    pub fn exactness_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, exactness: Exactness) -> Result<&mut Self, CodecError> {
+        self.update(|state| state.exactness_for_decode(ctx, id, exactness).map(|_| ()))?;
+        Ok(self)
+    }
+
+    /// Set exactness with an already admitted identity.
+    pub fn exactness_owned_for_decode(&mut self, ctx: &DecodeContext<'_>, id: String, exactness: Exactness) -> Result<&mut Self, CodecError> {
+        self.update(|state| state.exactness_owned_for_decode(ctx, id, exactness).map(|_| ()))?;
+        Ok(self)
+    }
+
+    /// Mark a field as derived under the caller's context.
+    pub fn derived_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: &str) -> Result<&mut Self, AnnotationFieldError> {
+        self.update(|state| state.derived_for_decode(ctx, id, field).map(|_| ()))?;
+        Ok(self)
+    }
+
+    /// Set field exactness under the caller's context.
+    pub fn field_exactness_for_decode<'f>(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: impl Into<std::borrow::Cow<'f, str>>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        self.update(|state| state.field_exactness_for_decode(ctx, id, field, exactness).map(|_| ()))?;
+        Ok(self)
+    }
+
+    /// Set field exactness with already admitted owned keys.
+    pub fn field_exactness_owned_for_decode(&mut self, ctx: &DecodeContext<'_>, id: String, field: String, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        self.update(|state| state.field_exactness_owned_for_decode(ctx, id, field, exactness).map(|_| ()))?;
+        Ok(self)
+    }
+
+    /// Report the entries a derived field would add.
+    pub fn derived_field_admission(&self, id: &str, field: &str) -> (bool, bool) {
+        self.state.derived_field_admission(id, field)
+    }
+
+    /// Retain exactness selected by identity.
+    pub fn retain_exactness(&mut self, keep: impl FnMut(&str) -> bool) -> &mut Self {
+        self.state.retain_exactness(keep);
+        self
+    }
+
+    /// Remove annotations for one entity.
+    pub fn remove_entity(&mut self, id: impl Display) { self.state.remove_entity(id); }
+
+    /// Remove annotations for an already borrowed identity.
+    pub fn remove_entity_str(&mut self, id: &str) { self.state.remove_entity_str(id); }
+}
+
+impl AnnotationBuilder<ScopedReservation<'_>> {
+    /// Admit retained storage before transferring a transaction's tables.
+    pub fn into_retained(self) -> Result<AnnotationBuilder, CodecError> {
+        self.storage.commit()?;
+        Ok(AnnotationBuilder::resume(self.state.annotations))
+    }
+}
+
+/// Incrementally constructs document provenance and exactness annotations.
+#[derive(Debug, Default, Clone)]
+struct AnnotationState {
+    annotations: Annotations,
+}
+
+impl AnnotationState {
+    /// Continue building an existing annotation set.
+    fn resume(annotations: Annotations) -> Self {
         Self { annotations }
     }
 
     /// Borrow the annotations accumulated so far.
     #[must_use]
-    pub fn annotations(&self) -> &Annotations {
+    fn annotations(&self) -> &Annotations {
         &self.annotations
     }
 
     /// Record provenance and entity exactness under the decode budget.
-    pub fn annotate(
+    fn annotate(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: impl Display,
@@ -437,7 +594,7 @@ impl AnnotationBuilder {
     ///
     /// The returned value supports the ergonomic
     /// `builder.note(&id, &stream, offset).tag("face")` form.
-    pub fn note(
+    fn note(
         &mut self,
         id: impl Display,
         stream: &StreamHandle,
@@ -447,7 +604,7 @@ impl AnnotationBuilder {
     }
 
     /// Record an optional provenance tag under the caller's decode budget.
-    pub fn note_for_decode(
+    fn note_for_decode(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: impl Display,
@@ -486,7 +643,7 @@ impl AnnotationBuilder {
     }
 
     /// Record a source location with an already admitted identity.
-    pub fn note_owned(
+    fn note_owned(
         &mut self,
         id: String,
         stream: &StreamHandle,
@@ -510,12 +667,12 @@ impl AnnotationBuilder {
 
     /// Set entity-level exactness. Byte-exact entries are removed to preserve
     /// the table's sparse absent-means-byte-exact representation.
-    pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
+    fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
         self.exactness_owned(id.to_string(), exactness)
     }
 
     /// Set entity exactness with an already admitted identity.
-    pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
+    fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
         if let Some(note) = self.annotations.exactness.get_mut(&id) {
             note.fields_mut().retain(|_, value| *value != exactness);
             let fields = std::mem::take(note.fields_mut());
@@ -541,7 +698,7 @@ impl AnnotationBuilder {
     }
 
     /// Set entity exactness after admitting any new retained record.
-    pub fn exactness_for_decode(
+    fn exactness_for_decode(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: impl Display,
@@ -569,7 +726,7 @@ impl AnnotationBuilder {
     }
 
     /// Move an admitted identity into an exactness entry after destination admission.
-    pub fn exactness_owned_for_decode(
+    fn exactness_owned_for_decode(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: String,
@@ -595,7 +752,7 @@ impl AnnotationBuilder {
     }
 
     /// Mark one serialized field as deterministically derived.
-    pub fn derived(
+    fn derived(
         &mut self,
         id: impl Display,
         field: impl Into<String>,
@@ -604,7 +761,7 @@ impl AnnotationBuilder {
     }
 
     /// Mark a derived field under the caller's decode budget.
-    pub fn derived_for_decode(
+    fn derived_for_decode(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: impl Display,
@@ -614,7 +771,7 @@ impl AnnotationBuilder {
     }
 
     /// Set field exactness through the default decode policy.
-    pub fn field_exactness(
+    fn field_exactness(
         &mut self,
         id: impl Display,
         field: impl Into<String>,
@@ -627,7 +784,7 @@ impl AnnotationBuilder {
     }
 
     /// Set field exactness after admitting retained keys and records.
-    pub fn field_exactness_for_decode<'f>(
+    fn field_exactness_for_decode<'f>(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: impl Display,
@@ -644,7 +801,7 @@ impl AnnotationBuilder {
     }
 
     /// Set field exactness with owned input strings under the default policy.
-    pub fn field_exactness_owned(
+    fn field_exactness_owned(
         &mut self,
         id: String,
         field: String,
@@ -657,7 +814,7 @@ impl AnnotationBuilder {
     }
 
     /// Admit map records for already owned identity and field strings.
-    pub fn field_exactness_owned_for_decode(
+    fn field_exactness_owned_for_decode(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: String,
@@ -751,7 +908,7 @@ impl AnnotationBuilder {
 
     /// Report which exactness map entries a derived field would add.
     #[must_use]
-    pub fn derived_field_admission(&self, id: &str, field: &str) -> (bool, bool) {
+    fn derived_field_admission(&self, id: &str, field: &str) -> (bool, bool) {
         match self.annotations.exactness.get(id) {
             Some(note) => (false, !note.fields().contains_key(field)),
             None => (true, true),
@@ -759,25 +916,25 @@ impl AnnotationBuilder {
     }
 
     /// Retain exactness annotations selected by identity.
-    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
+    fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
         self.annotations.exactness.retain(|id, _| keep(id));
         self
     }
 
     /// Remove all annotations for an entity that was removed from the model.
-    pub fn remove_entity(&mut self, id: impl Display) {
+    fn remove_entity(&mut self, id: impl Display) {
         let id = id.to_string();
         self.remove_entity_str(&id);
     }
 
     /// Remove all annotations for an entity whose identity is already borrowed.
-    pub fn remove_entity_str(&mut self, id: &str) {
+    fn remove_entity_str(&mut self, id: &str) {
         self.annotations.provenance.remove(id);
         self.annotations.exactness.remove(id);
     }
 
     /// Finish building and return the annotation tables.
-    pub fn build(self) -> Annotations {
+    fn build(self) -> Annotations {
         self.annotations
     }
 }
@@ -1182,7 +1339,7 @@ mod tests {
             .exactness_for_decode(&ctx, "test:point#0", super::Exactness::Inferred)
             .unwrap();
         assert_eq!(
-            builder.annotations.exactness["test:point#0"].entity(),
+            builder.state.annotations.exactness["test:point#0"].entity(),
             super::Exactness::Inferred
         );
         builder
@@ -1191,7 +1348,7 @@ mod tests {
         builder
             .exactness_for_decode(&ctx, "test:point#missing", super::Exactness::ByteExact)
             .unwrap();
-        assert!(builder.annotations.exactness.is_empty());
+        assert!(builder.state.annotations.exactness.is_empty());
     }
 
     #[test]
@@ -1211,7 +1368,7 @@ mod tests {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root");
-            builder.try_clone_for_decode(&ctx, "test_annotation_copy")
+            builder.copy_transaction(&ctx, "test_annotation_copy").and_then(super::AnnotationBuilder::into_retained)
         };
         assert!(
             matches!(run(0, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1446,7 +1603,7 @@ mod tests {
         empty.note("empty", &handle, 4);
         let mut same_name = AnnotationBuilder::new();
         same_name.note("same-name", &handle, 5);
-        assert_eq!(same_name.annotations.stream_count(), 1);
+        assert_eq!(same_name.state.annotations.stream_count(), 1);
         for (builder, id) in [
             (second, "foreign"),
             (cloned, "cloned"),
@@ -1518,7 +1675,7 @@ mod tests {
             Exactness::ByteExact,
         )]);
         assert_eq!(
-            builder.annotations.exactness["f3d:edge#0"],
+            builder.state.annotations.exactness["f3d:edge#0"],
             ExactnessNote::Entity {
                 entity: Inexactness::Inferred,
                 fields: expected_fields,
@@ -1526,7 +1683,7 @@ mod tests {
         );
 
         builder.exactness("f3d:edge#0", Exactness::ByteExact);
-        assert!(builder.annotations.exactness.is_empty());
+        assert!(builder.state.annotations.exactness.is_empty());
     }
 
     #[test]
@@ -1571,7 +1728,7 @@ mod tests {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             assert_eq!(
-                serde_json::to_value(&builder.annotations.exactness["nx:model:surface#1"]).unwrap(),
+                serde_json::to_value(&builder.state.annotations.exactness["nx:model:surface#1"]).unwrap(),
                 if entity_first {
                     wire.clone()
                 } else {
@@ -1593,11 +1750,11 @@ mod tests {
         builder.remove_entity("catia:e5:curve#0");
 
         assert!(!builder
-            .annotations
+            .state.annotations
             .provenance
             .contains_key("catia:e5:curve#0"));
         assert!(!builder
-            .annotations
+            .state.annotations
             .exactness
             .contains_key("catia:e5:curve#0"));
     }
@@ -1608,7 +1765,7 @@ mod tests {
         let mut builder = AnnotationBuilder::new();
         builder.exactness(id, Exactness::Inferred);
         builder.derived(id, "position.x").expect("nonempty path");
-        let before = serde_json::to_value(&builder.annotations).expect("serialize annotations");
+        let before = serde_json::to_value(&builder.state.annotations).expect("serialize annotations");
         for exactness in [
             Exactness::ByteExact,
             Exactness::Derived,
@@ -1622,13 +1779,13 @@ mod tests {
                 "{error}"
             );
             assert_eq!(
-                serde_json::to_value(&builder.annotations).expect("serialize annotations"),
+                serde_json::to_value(&builder.state.annotations).expect("serialize annotations"),
                 before
             );
         }
         assert!(builder.derived(id, "").is_err());
         assert_eq!(
-            serde_json::to_value(&builder.annotations).expect("serialize annotations"),
+            serde_json::to_value(&builder.state.annotations).expect("serialize annotations"),
             before
         );
         for wire in [
@@ -1693,5 +1850,48 @@ mod tests {
                 "{scope}: {error}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod builder_storage_tests {
+    use super::{AnnotationBuilder, Exactness, StreamHandle};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn annotation_builder_transaction_scopes_only_annotation_allocations() {
+        let stream = StreamHandle::new(crate::stream_name!("test"));
+        let mut original = AnnotationBuilder::new();
+        original.note("test:model:point#prior", &stream, 0).tag("prior");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        const MODEL_TEXT: &str = "retained model text";
+        policy.limits.max_retained_bytes = u64::try_from(MODEL_TEXT.len()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut candidate = original.copy_transaction(&ctx, "annotation candidate storage").unwrap();
+        let model = ctx.copy_retained_text(MODEL_TEXT, "model storage").unwrap();
+        candidate.annotate(&ctx, "test:model:point#candidate", "candidate stream", 7, "candidate tag", Exactness::Derived).unwrap();
+        candidate.derived_for_decode(&ctx, "test:model:point#candidate", "position").unwrap();
+        assert!(candidate.annotations().provenance.contains_key("test:model:point#candidate"));
+        assert_eq!(model, MODEL_TEXT);
+        let error = candidate.into_retained().unwrap_err();
+        assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "annotation candidate storage"));
+        assert_eq!(ctx.finish_session().unwrap_err().to_string(), error.to_string());
+        assert_eq!(original.annotations().provenance.len(), 1);
+    }
+
+    #[test]
+    fn annotation_builder_transaction_commits_the_same_tables() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let stream = StreamHandle::new(crate::stream_name!("test"));
+        let mut original = AnnotationBuilder::new();
+        original.note("test:model:point#prior", &stream, 0).tag("prior");
+        let mut candidate = original.copy_transaction(&ctx, "annotation candidate storage").unwrap();
+        candidate.annotate(&ctx, "test:model:point#candidate", "candidate stream", 7, "candidate tag", Exactness::Derived).unwrap();
+        let mut expected = original.clone();
+        expected.annotate(&ctx, "test:model:point#candidate", "candidate stream", 7, "candidate tag", Exactness::Derived).unwrap();
+        assert_eq!(candidate.into_retained().unwrap().build(), expected.build());
+        ctx.finish_session().unwrap();
     }
 }

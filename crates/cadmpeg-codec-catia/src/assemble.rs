@@ -62,7 +62,7 @@ pub(crate) fn cgm_source_key(
 
 pub(crate) fn annotate(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     id: impl std::fmt::Display,
     stream_name: &str,
     offset: u64,
@@ -825,7 +825,7 @@ pub(crate) fn build_metadata_fallback(
 pub(crate) fn preserve_raw_payload(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     unknowns: &mut Vec<UnknownRecord>,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     scan: &ContainerScan,
     id: UnknownId,
 ) -> Result<usize, cadmpeg_core::CodecError> {
@@ -855,7 +855,7 @@ pub(crate) fn link_payload_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     payload: &mut UnknownRecord,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut links = Vec::new();
     for id in ir

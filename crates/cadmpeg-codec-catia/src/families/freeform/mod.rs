@@ -60,7 +60,7 @@ pub(super) struct ConsolidatedRevolutionBinding {
 /// Transfer resolved consolidated axis-and-profile revolution carriers.
 pub(super) fn append_consolidated_revolutions(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<Vec<ConsolidatedRevolutionBinding>, cadmpeg_core::CodecError> {
@@ -658,7 +658,7 @@ pub(super) fn try_decode_freeform_surfaces(
             "catia_freeform_census_face_ids"
         ));
         let mut topology_ir = CadIr::empty();
-        let mut topology_annotations = AnnotationBuilder::new();
+        let mut topology_annotations = admitted!(AnnotationBuilder::new().copy_transaction(ctx, "catia_freeform_topology_annotations"));
         let payload_stream = if scan.brep.is_some() {
             "MainDataStream+SurfacicReps"
         } else {
@@ -698,7 +698,7 @@ pub(super) fn try_decode_freeform_surfaces(
         };
         if topology_transferred {
             ir = topology_ir;
-            annotations = topology_annotations;
+            annotations = admitted!(topology_annotations.into_retained());
         }
         if !topology_transferred {
             let surfaces = match fallback_surfaces.take() {
@@ -1296,7 +1296,7 @@ pub(super) fn try_decode_freeform_surfaces(
 
 fn attach_standalone_wires(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     wires: &[(CurveId, [f64; 2], usize)],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -1800,7 +1800,7 @@ fn consolidated_line_profiles(
 /// Transfer every exact consolidated line carrier.
 fn append_consolidated_line_profiles(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     profiles: Vec<ConsolidatedLineProfile>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1824,7 +1824,7 @@ fn append_consolidated_line_profiles(
 /// surface curves bound to existing standard edges.
 pub(super) fn append_freeform_surface_pools(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
@@ -2318,7 +2318,7 @@ struct FreeformSurfacePool<'a> {
 
 fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     pool: FreeformSurfacePool<'_>,
@@ -4057,7 +4057,7 @@ fn rechart_equivalent_surface_pcurve(
 
 fn append_a8_rolling_ball_pools(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     data: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {

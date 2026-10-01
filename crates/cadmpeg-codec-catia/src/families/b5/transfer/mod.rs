@@ -190,7 +190,7 @@ struct TransferPlan {
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
 pub(in crate::families) fn transfer(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     mut graph: B5Graph,
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -252,7 +252,7 @@ pub(in crate::families) fn transfer(
 /// order fixes the neutral-model arena and annotation order and must not change.
 fn transfer_complete(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1690,7 +1690,7 @@ pub(in crate::families) fn resolved_offset_surface(
 
 fn annotate(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     id: impl std::fmt::Display,
     stream: &str,
     tag: &str,
