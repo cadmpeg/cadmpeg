@@ -815,3 +815,63 @@ fn compound_parasolid_wrapper_expands_once() {
     assert_eq!(parasolid.header.description, "partition body");
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn specified_empty_native_block_remains_a_named_semantic_section() {
+    let mut source = outer_header();
+    let block = make_block(0x42, "Contents/Empty", &[]);
+    assert_eq!(&block[block.len() - 2..], &[0x03, 0x00]);
+    source.extend(block);
+    let scan = crate::test_support::container::scan(&source);
+    assert_eq!(scan.blocks.len(), 1);
+    assert_eq!(scan.blocks[0].comp_sz, 2);
+    assert!(scan.blocks[0].payload.is_empty());
+    let sections: Vec<_> = scan.sections().collect();
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].name(), Some("Contents/Empty"));
+    assert!(sections[0].payload().is_empty());
+}
+
+#[test]
+fn empty_native_block_still_requires_compressed_member_and_valid_crc() {
+    let mut block = make_block(0x42, "Contents/Empty", &[]);
+    block[super::block_hdr::CRC32..super::block_hdr::CRC32 + 4]
+        .copy_from_slice(&1_u32.to_le_bytes());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
+        .unwrap().is_none());
+    block[super::block_hdr::CRC32..super::block_hdr::CRC32 + 4]
+        .copy_from_slice(&0_u32.to_le_bytes());
+    block[super::block_hdr::COMP_SZ..super::block_hdr::COMP_SZ + 4]
+        .copy_from_slice(&0_u32.to_le_bytes());
+    assert!(super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
+        .unwrap().is_none());
+}
+
+#[test]
+fn truncated_native_outer_header_refuses_before_semantic_scan() {
+    let header = outer_header();
+    for len in 0..super::outer_hdr::LEN {
+        let source = &header[..len];
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::service()).unwrap();
+        let Err(CodecError::Truncated { location, operation }) = container::scan(&ctx, root) else {
+            panic!("expected a truncated outer header at length {len}");
+        };
+        assert_eq!(location.space, root.location().space);
+        assert_eq!(location.offset, u64_from_index(root.start()));
+        assert_eq!(operation, "read SLDPRT native outer header");
+        assert!(matches!(SldprtCodec.decode(&mut Cursor::new(source), &cadmpeg_ir::codec::DecodeOptions::default()),
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::Truncated { .. }))));
+    }
+}
+
+#[test]
+fn present_unknown_native_version_preserves_declared_value() {
+    let mut source = outer_header();
+    source[super::outer_hdr::VERSION..super::outer_hdr::LEN]
+        .copy_from_slice(&0x1234_5678_u32.to_be_bytes());
+    let scan = crate::test_support::container::scan(&source);
+    assert_eq!(scan.version, 0x1234_5678);
+    assert!(scan.blocks.is_empty());
+}
