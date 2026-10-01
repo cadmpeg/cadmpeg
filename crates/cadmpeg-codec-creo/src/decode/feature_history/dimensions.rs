@@ -65,7 +65,10 @@ fn push_feature_source_parameter(
     content: &mut cadmpeg_ir::features::FeatureContent,
     id: ParameterId,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(content.len()), "creo feature source content")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(content.len()),
+        "creo feature source content",
+    )?;
     if content
         .iter()
         .any(|entry| matches!(entry, FeatureSourceContent::Parameter(existing) if existing == &id))
@@ -76,7 +79,11 @@ fn push_feature_source_parameter(
     }
     content.reserve_for_decode(ctx, 1, "creo feature source content")?;
     content
-        .push(FeatureSourceContent::Parameter(id), ctx, "creo feature source content")
+        .push(
+            FeatureSourceContent::Parameter(id),
+            ctx,
+            "creo feature source content",
+        )
         .map_err(cadmpeg_core::CodecError::from)
 }
 

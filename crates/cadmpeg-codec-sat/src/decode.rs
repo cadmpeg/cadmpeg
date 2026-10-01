@@ -215,7 +215,9 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
         Ok(dialects) => dialects,
         Err(rejected) => {
             return match rejected {
-                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}")),
+                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
+                    CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
+                }
                 cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             };
         }
@@ -237,12 +239,16 @@ fn build_result(
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched)
-            .with_for_decode(ctx, kernel.try_clone_for_decode(ctx, "copy SAT kernel dialect")?, "collect SAT dialect layers")
-            .map_err(|rejected| {
-                match rejected {
-                    cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}")),
-                    cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
+            .with_for_decode(
+                ctx,
+                kernel.try_clone_for_decode(ctx, "copy SAT kernel dialect")?,
+                "collect SAT dialect layers",
+            )
+            .map_err(|rejected| match rejected {
+                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
+                    CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             })?,
         cadmpeg_core::text::named_entries_for_decode(ctx, "the acis header", attributes)?,
     ));
@@ -295,7 +301,8 @@ fn build_result(
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(ctx, crate::coverage::UNKNOWN_RECORDS, unknowns.len())?;
-    coverage.record(ctx,
+    coverage.record(
+        ctx,
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
     )?;
@@ -309,13 +316,22 @@ fn build_result(
 
     let mut annotations = AnnotationBuilder::new();
     for record in annotation_records {
-        let stream =
-            StreamHandle::new_for_decode(ctx, cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream), "allocate annotation stream handle")?;
-        annotations
-            .note_for_decode(ctx, &record.id, &stream, record.offset, Some(record.tag.as_str()))?;
+        let stream = StreamHandle::new_for_decode(
+            ctx,
+            cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream),
+            "allocate annotation stream handle",
+        )?;
+        annotations.note_for_decode(
+            ctx,
+            &record.id,
+            &stream,
+            record.offset,
+            Some(record.tag.as_str()),
+        )?;
         for field in record.derived_fields {
             annotations
-                .derived_for_decode(ctx, &record.id, field).map_err(cadmpeg_core::CodecError::from)?;
+                .derived_for_decode(ctx, &record.id, field)
+                .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());

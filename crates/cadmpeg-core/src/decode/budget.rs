@@ -203,18 +203,39 @@ impl DecodeBudget {
     }
 
     /// Report allocator refusal after a scoped-byte reservation was recorded.
-    pub(super) fn scoped_allocation_failed(&self, charged: u64, operation: &'static str) -> CodecError {
-        self.scoped_allocation_failed_limit(charged, operation).into()
+    pub(super) fn scoped_allocation_failed(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.scoped_allocation_failed_limit(charged, operation)
+            .into()
     }
 
-    pub(super) fn scoped_allocation_failed_limit(&self, charged: u64, operation: &'static str) -> ResourceLimit {
-        self.refuse_limit(ResourceDimension::MaterializedBytes, ResourceFailure::AllocationFailed,
-            self.materialized_allowance(), self.materialized.get() - charged, charged, operation)
+    pub(super) fn scoped_allocation_failed_limit(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> ResourceLimit {
+        self.refuse_limit(
+            ResourceDimension::MaterializedBytes,
+            ResourceFailure::AllocationFailed,
+            self.materialized_allowance(),
+            self.materialized.get() - charged,
+            charged,
+            operation,
+        )
     }
 
     pub(super) fn scoped_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
-        self.refuse_limit(ResourceDimension::MaterializedBytes, ResourceFailure::BudgetExceeded,
-            self.materialized_allowance(), self.materialized.get(), u64::MAX, operation)
+        self.refuse_limit(
+            ResourceDimension::MaterializedBytes,
+            ResourceFailure::BudgetExceeded,
+            self.materialized_allowance(),
+            self.materialized.get(),
+            u64::MAX,
+            operation,
+        )
     }
 
     pub(super) fn charge_retained(
@@ -232,12 +253,23 @@ impl DecodeBudget {
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
         if let Some(current) = self.scoped_storage.get() {
-            let total = current.checked_add(bytes).ok_or_else(|| self.refuse_limit(
-                ResourceDimension::MaterializedBytes, ResourceFailure::BudgetExceeded,
-                self.materialized_allowance(), current, bytes, operation,
-            ))?;
-            self.charge(ResourceDimension::MaterializedBytes, &self.materialized,
-                self.materialized_allowance(), bytes, operation)?;
+            let total = current.checked_add(bytes).ok_or_else(|| {
+                self.refuse_limit(
+                    ResourceDimension::MaterializedBytes,
+                    ResourceFailure::BudgetExceeded,
+                    self.materialized_allowance(),
+                    current,
+                    bytes,
+                    operation,
+                )
+            })?;
+            self.charge(
+                ResourceDimension::MaterializedBytes,
+                &self.materialized,
+                self.materialized_allowance(),
+                bytes,
+                operation,
+            )?;
             self.scoped_storage.set(Some(total));
             return Ok(());
         }
@@ -252,16 +284,36 @@ impl DecodeBudget {
 
     pub(super) fn retained_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
         let (dimension, limit, used) = if self.scoped_storage.get().is_some() {
-            (ResourceDimension::MaterializedBytes, self.materialized_allowance(), self.materialized.get())
+            (
+                ResourceDimension::MaterializedBytes,
+                self.materialized_allowance(),
+                self.materialized.get(),
+            )
         } else {
-            (ResourceDimension::RetainedBytes, self.retained_allowance(), self.retained.get())
+            (
+                ResourceDimension::RetainedBytes,
+                self.retained_allowance(),
+                self.retained.get(),
+            )
         };
-        self.refuse_limit(dimension, ResourceFailure::BudgetExceeded, limit, used, u64::MAX, operation)
+        self.refuse_limit(
+            dimension,
+            ResourceFailure::BudgetExceeded,
+            limit,
+            used,
+            u64::MAX,
+            operation,
+        )
     }
 
     /// Report allocator refusal after a retained charge was already recorded.
-    pub(super) fn retained_allocation_failed(&self, charged: u64, operation: &'static str) -> CodecError {
-        self.retained_allocation_failed_limit(charged, operation).into()
+    pub(super) fn retained_allocation_failed(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.retained_allocation_failed_limit(charged, operation)
+            .into()
     }
 
     pub(super) fn retained_allocation_failed_limit(
@@ -270,15 +322,30 @@ impl DecodeBudget {
         operation: &'static str,
     ) -> ResourceLimit {
         let (dimension, current, limit) = if self.scoped_storage.get().is_some() {
-            (ResourceDimension::MaterializedBytes, self.materialized.get(), self.materialized_allowance())
+            (
+                ResourceDimension::MaterializedBytes,
+                self.materialized.get(),
+                self.materialized_allowance(),
+            )
         } else {
-            (ResourceDimension::RetainedBytes, self.retained.get(), self.retained_allowance())
+            (
+                ResourceDimension::RetainedBytes,
+                self.retained.get(),
+                self.retained_allowance(),
+            )
         };
         let prior = match current.checked_sub(charged) {
             Some(prior) => prior,
             None => current,
         };
-        self.refuse_limit(dimension, ResourceFailure::AllocationFailed, limit, prior, charged, operation)
+        self.refuse_limit(
+            dimension,
+            ResourceFailure::AllocationFailed,
+            limit,
+            prior,
+            charged,
+            operation,
+        )
     }
 
     pub(super) fn charge_entities(
@@ -324,7 +391,8 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.collection_allocation_failed_limit(charged, operation).into()
+        self.collection_allocation_failed_limit(charged, operation)
+            .into()
     }
 
     pub(super) fn collection_allocation_failed_limit(
@@ -337,13 +405,23 @@ impl DecodeBudget {
             Some(prior) => prior,
             None => current,
         };
-        self.refuse_limit(ResourceDimension::CollectionItems, ResourceFailure::AllocationFailed,
-            self.policy.limits.max_collection_items, prior, charged, operation)
+        self.refuse_limit(
+            ResourceDimension::CollectionItems,
+            ResourceFailure::AllocationFailed,
+            self.policy.limits.max_collection_items,
+            prior,
+            charged,
+            operation,
+        )
     }
 
     pub(super) fn storage_scope(&self, operation: &'static str) -> StorageScope<'_> {
         let prior = self.scoped_storage.replace(Some(0));
-        StorageScope { budget: self, prior, operation }
+        StorageScope {
+            budget: self,
+            prior,
+            operation,
+        }
     }
 
     pub(super) fn enter_nested(
@@ -391,15 +469,31 @@ pub(super) struct StorageScope<'a> {
 
 impl<'a> StorageScope<'a> {
     pub(super) fn finish(self) -> ScopedReservation<'a> {
-        let bytes = match self.budget.scoped_storage.replace(Some(0)) { Some(bytes) => bytes, None => 0 };
-        ScopedReservation { budget: self.budget, bytes, operation: self.operation }
+        let bytes = self
+            .budget
+            .scoped_storage
+            .replace(Some(0))
+            .map_or(0, std::convert::identity);
+        ScopedReservation {
+            budget: self.budget,
+            bytes,
+            operation: self.operation,
+        }
     }
 }
 
 impl Drop for StorageScope<'_> {
     fn drop(&mut self) {
-        let bytes = match self.budget.scoped_storage.replace(self.prior) { Some(bytes) => bytes, None => 0 };
-        drop(ScopedReservation { budget: self.budget, bytes, operation: self.operation });
+        let bytes = self
+            .budget
+            .scoped_storage
+            .replace(self.prior)
+            .map_or(0, std::convert::identity);
+        drop(ScopedReservation {
+            budget: self.budget,
+            bytes,
+            operation: self.operation,
+        });
     }
 }
 
@@ -413,27 +507,39 @@ pub struct ScopedReservation<'a> {
 
 impl ScopedReservation<'_> {
     /// Account copied storage in this live temporary reservation.
-    pub fn with_storage<T, E: From<CodecError>>(&mut self, build: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    pub fn with_storage<T, E: From<CodecError>>(
+        &mut self,
+        build: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, E> {
         self.with_storage_error(build, |limit| E::from(CodecError::ResourceLimit(limit)))
     }
 
     /// Account temporary storage with a resource-only refusal channel.
-    pub fn with_storage_limit<T>(&mut self, build: impl FnOnce() -> Result<T, ResourceLimit>) -> Result<T, ResourceLimit> {
+    pub fn with_storage_limit<T>(
+        &mut self,
+        build: impl FnOnce() -> Result<T, ResourceLimit>,
+    ) -> Result<T, ResourceLimit> {
         self.with_storage_error(build, |limit| limit)
     }
 
-    fn with_storage_error<T, E>(&mut self, build: impl FnOnce() -> Result<T, E>, failure: impl FnOnce(ResourceLimit) -> E) -> Result<T, E> {
+    fn with_storage_error<T, E>(
+        &mut self,
+        build: impl FnOnce() -> Result<T, E>,
+        failure: impl FnOnce(ResourceLimit) -> E,
+    ) -> Result<T, E> {
         let scope = self.budget.storage_scope(self.operation);
         let value = build()?;
         let mut storage = scope.finish();
-        self.bytes = self.bytes.checked_add(storage.bytes).ok_or_else(|| failure(self.budget.refuse_limit(
-            ResourceDimension::MaterializedBytes,
-            ResourceFailure::BudgetExceeded,
-            self.budget.materialized_allowance(),
-            self.bytes,
-            storage.bytes,
-            self.operation,
-        )))?;
+        self.bytes = self.bytes.checked_add(storage.bytes).ok_or_else(|| {
+            failure(self.budget.refuse_limit(
+                ResourceDimension::MaterializedBytes,
+                ResourceFailure::BudgetExceeded,
+                self.budget.materialized_allowance(),
+                self.bytes,
+                storage.bytes,
+                self.operation,
+            ))
+        })?;
         storage.bytes = 0;
         Ok(value)
     }

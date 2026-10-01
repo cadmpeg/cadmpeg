@@ -292,7 +292,9 @@ fn native_load_materialized_limit_refuses_before_expected_lane_clone() {
     let namespace = decoded.ir().native.namespace("sldprt").unwrap();
     let native = crate::native::SldprtNative::load(namespace).unwrap();
     assert!(!native.feature_input_lanes.is_empty());
-    let needed = u64::try_from(native.feature_input_lanes.len() * (std::mem::size_of::<&str>() + 32)).unwrap();
+    let needed =
+        u64::try_from(native.feature_input_lanes.len() * (std::mem::size_of::<&str>() + 32))
+            .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = needed - 1;
@@ -1148,7 +1150,8 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         &native,
     )
     .unwrap()
-    .0.remove(0)
+    .pairs
+    .remove(0)
     .1;
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;

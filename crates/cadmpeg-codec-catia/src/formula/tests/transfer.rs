@@ -1085,7 +1085,8 @@ fn formula_finalization_refuses_each_collection_boundary() {
         "catia_formula_derivable_parameters",
         "catia_formula_consumed_entities",
         "catia_formula_ordered_parameters",
-        "catia_formula_annotations",
+        "collect source exactness entities",
+        "collect source exactness fields",
         "catia_formula_neutral_parameters",
     ] {
         assert!(

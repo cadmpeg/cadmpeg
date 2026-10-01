@@ -229,7 +229,11 @@ pub(super) fn om_record_areas(
             control_words: header.control_words,
             product_version: header.product.value.try_into_owned_for_decode(ctx)?,
             byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, bytes, "retain source digest")?,
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx,
+                bytes,
+                "retain source digest",
+            )?,
             source_offset,
         });
     }
@@ -4324,7 +4328,11 @@ pub(super) fn object_records(
                 record_ordinal: record_ordinal_u32,
                 section_offset,
                 byte_len: cadmpeg_core::decode::u64_from_index(record.bytes.len()),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, record.bytes, "NX retained record digest")?,
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    record.bytes,
+                    "NX retained record digest",
+                )?,
                 stable_identity,
                 dependencies: object_record_relation_ids(
                     ctx,

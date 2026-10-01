@@ -1173,7 +1173,9 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_curves",
             )?;
-            let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve, procedural)?;
+            let _attached = ir
+                .model
+                .add_procedural_curve_for_decode(ctx, &curve, procedural)?;
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
                 id,
@@ -1314,7 +1316,9 @@ pub(super) fn decode(
                 "step_geometry_ir_curves",
             )?;
 
-            let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve, procedural)?;
+            let _attached = ir
+                .model
+                .add_procedural_curve_for_decode(ctx, &curve, procedural)?;
 
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
@@ -1496,7 +1500,9 @@ pub(super) fn decode(
             },
             "step_geometry_ir_curves",
         )?;
-        let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve, procedural)?;
+        let _attached = ir
+            .model
+            .add_procedural_curve_for_decode(ctx, &curve, procedural)?;
         ctx.insert_hash_map(
             &mut carrier_index.curves,
             id,
@@ -1738,11 +1744,15 @@ pub(super) fn decode(
             },
             "step_geometry_ir_surfaces",
         )?;
-        let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface, ProceduralSurface::new(
+        let _attached = ir.model.add_procedural_surface_for_decode(
+            ctx,
+            &surface,
+            ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("swept_surface"), id)),
                 definition,
                 None,
-            ))?;
+            ),
+        )?;
         ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
     }
 
@@ -2152,7 +2162,10 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface, ProceduralSurface::new(
+            let _attached = ir.model.add_procedural_surface_for_decode(
+                ctx,
+                &surface,
+                ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(
                         kind!("curve_bounded_surface"),
                         id,
@@ -2164,7 +2177,8 @@ pub(super) fn decode(
                         implicit_outer,
                     },
                     None,
-                ))?;
+                ),
+            )?;
             ctx.insert_hash_map(
                 &mut carrier_index.surfaces,
                 id,
@@ -2290,14 +2304,18 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface, ProceduralSurface::new(
+            let _attached = ir.model.add_procedural_surface_for_decode(
+                ctx,
+                &surface,
+                ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("surface_replica"), id)),
                     ProceduralSurfaceDefinition::Replica {
                         source: SurfaceId::from(ids::data(kind!("surface"), parent_step)),
                         transform,
                     },
                     None,
-                ))?;
+                ),
+            )?;
             ctx.insert_hash_map(
                 &mut carrier_index.surfaces,
                 id,
@@ -2569,14 +2587,11 @@ pub(super) fn decode(
             continue;
         };
         let geometry = geometry.try_clone_for_decode(ctx, "step_pcurve_carrier_copy")?;
-        let geometry = match geometry.scaled_coordinates_owned(ctx, *scales)? {
-            Ok(geometry) => geometry,
-            Err(_) => {
+        let Ok(geometry) = geometry.scaled_coordinates_owned(ctx, *scales)? else {
             ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
             )), "step_geometry_losses")?;
             continue;
-                    }
         };
         ctx.push_vec(
             &mut ir.model.pcurves,
@@ -2642,11 +2657,15 @@ pub(super) fn decode(
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
-        let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface, ProceduralSurface::new(
+        let _attached = ir.model.add_procedural_surface_for_decode(
+            ctx,
+            &surface,
+            ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
                 None,
-            ))?;
+            ),
+        )?;
     }
 
     for (&id, record) in exchange.records() {
@@ -6174,7 +6193,14 @@ fn polyline(
         ctx.push_vec(&mut knots, knot, "step_polyline_knots")?;
     }
     ctx.push_vec(&mut knots, last, "step_polyline_knots")?;
-    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, knots, control_points, None, false)? {
+    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        ctx,
+        1,
+        knots,
+        control_points,
+        None,
+        false,
+    )? {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             ctx.push_vec(

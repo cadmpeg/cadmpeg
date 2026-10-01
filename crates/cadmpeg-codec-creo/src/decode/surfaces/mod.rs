@@ -207,6 +207,12 @@ mod tests {
             + cadmpeg_core::decode::u64_from_index("creo:archive_header".len() * 2)
             + cadmpeg_core::decode::u64_from_index("part_product".len())
             + cadmpeg_core::decode::u64_from_index("part_product_occurrence".len())
+            + 2 * cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<cadmpeg_ir::StreamName>()
+                    + 2 * std::mem::size_of::<usize>()
+                    + std::mem::size_of::<(String, cadmpeg_ir::AnnotationProvenance)>()
+                    + std::mem::size_of::<(String, cadmpeg_ir::annotations::ExactnessNote)>(),
+            )
     }
 
     #[test]

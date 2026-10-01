@@ -1504,7 +1504,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     .expect("service budget");
     let mut refusal_operations = std::collections::HashSet::new();
     let mut admitted = false;
-    for limit in 0..=256 {
+    let collection_ceiling = 256 + limit_curve.knots().len() + limit_curve.pole_count() + 6;
+    for limit in 0..=cadmpeg_core::decode::u64_from_index(collection_ceiling) {
         match crate::test_support::with_collection_limit(limit, |ctx| {
             standard_limit_curve_bindings(
                 ctx,
@@ -1527,7 +1528,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     }
     assert!(
         admitted,
-        "collection limit 256 must admit limit curve binding"
+        "collection ceiling must admit curve copy and six-value basis scratch"
     );
     for operation in [
         "catia_limit_curve_point_rows",
@@ -1584,7 +1585,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             &ir,
             &bindings,
             &surface_indices,
-            &[support.clone(), support],
+            &[support, support],
             &[limit_curve],
         )
     })

@@ -298,7 +298,11 @@ fn decode_container<'a>(
                             raw_len: cadmpeg_core::decode::u64_from_index(
                                 property.raw.window().len(),
                             ),
-                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, property.raw.window(), "retain Inventor property raw digest")?,
+                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                                ctx,
+                                property.raw.window(),
+                                "retain Inventor property raw digest",
+                            )?,
                         });
                     }
                 }
@@ -1051,10 +1055,22 @@ fn decode_container<'a>(
             source_fidelity.retain_unknown_records(
                 format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
-                    { let mut copied_storage = ctx.reserve_scoped(0, "Inventor temporary carrier identity key")?; copied_storage.with_storage(|| Ok::<_, CodecError>(UnknownId::compose(
-                        &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
-                        carrier.segment_token.try_clone_for_decode(ctx, "Inventor temporary carrier identity key")?.dash(carrier.record_ordinal),
-                    ))) }?,
+                    {
+                        let mut copied_storage =
+                            ctx.reserve_scoped(0, "Inventor temporary carrier identity key")?;
+                        copied_storage.with_storage(|| {
+                            Ok::<_, CodecError>(UnknownId::compose(
+                                &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
+                                carrier
+                                    .segment_token
+                                    .try_clone_for_decode(
+                                        ctx,
+                                        "Inventor temporary carrier identity key",
+                                    )?
+                                    .dash(carrier.record_ordinal),
+                            ))
+                        })
+                    }?,
                     carrier.carrier_offset,
                     data,
                     vec![active_carrier.id().to_owned()],
@@ -1275,7 +1291,8 @@ fn decode_container<'a>(
             kernel_stats.unknown_surface_faces(),
         ),
     ];
-    let coverage = cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(ctx, coverage_entries)?;
+    let coverage =
+        cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(ctx, coverage_entries)?;
     let body = DecodeBody {
         transfer: if ctx.container_only() {
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
@@ -1418,7 +1435,7 @@ fn project_root_product(
         description,
         part_number,
         bom_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
+            ctx,
             "inventor:document:product#root",
             metadata.bom_properties.clone(),
         )?,
@@ -1445,12 +1462,23 @@ fn admit_kernel_annotation(
     annotations: &mut AnnotationBuilder,
     record: &cadmpeg_asm::brep::annotations::AnnotationRecord,
 ) -> Result<(), CodecError> {
-    let name = ctx.format_retained(format_args!("inventor:{}", record.stream), "retain Inventor annotation stream name")?;
+    let name = ctx.format_retained(
+        format_args!("inventor:{}", record.stream),
+        "retain Inventor annotation stream name",
+    )?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
     let stream = StreamHandle::new_for_decode(ctx, name, "collect Inventor kernel provenance")?;
-    annotations.note_for_decode(ctx, &record.id, &stream, record.offset, Some(record.tag.as_str()))?;
+    annotations.note_for_decode(
+        ctx,
+        &record.id,
+        &stream,
+        record.offset,
+        Some(record.tag.as_str()),
+    )?;
     for field in &record.derived_fields {
-        annotations.derived_for_decode(ctx, &record.id, field).map_err(CodecError::from)?;
+        annotations
+            .derived_for_decode(ctx, &record.id, field)
+            .map_err(CodecError::from)?;
     }
     Ok(())
 }
@@ -1763,7 +1791,11 @@ fn project_ufrx_state(
                 schema: *schema,
                 section_versions: section_versions.clone(),
                 tail_len: cadmpeg_core::decode::u64_from_index(source.window().len()),
-                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, source.window(), "retain Inventor UFRx unsupported tail digest")?,
+                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    source.window(),
+                    "retain Inventor UFRx unsupported tail digest",
+                )?,
                 detail: ctx.copy_retained_text(detail, "retain Inventor UFRx state detail")?,
             }
         }
@@ -1830,7 +1862,11 @@ fn project_ufrx_state(
                 tail_len: cadmpeg_core::decode::u64_from_index(
                     document.unparsed_tail.window().len(),
                 ),
-                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, document.unparsed_tail.window(), "retain Inventor UFRx tail digest")?,
+                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    document.unparsed_tail.window(),
+                    "retain Inventor UFRx tail digest",
+                )?,
             }))
         }
     })
@@ -1882,7 +1918,12 @@ fn project_ufrx_model_state(
         prefix_count: state.prefix_count,
         parameters,
         suffix_len: cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
-        suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, state.suffix.window(), "retain Inventor UFRx model-state digest").map(String::from)?,
+        suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+            ctx,
+            state.suffix.window(),
+            "retain Inventor UFRx model-state digest",
+        )
+        .map(String::from)?,
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index("ufrx-model-state-".len() + decimal_digits(ordinal)?),
@@ -1996,7 +2037,12 @@ fn project_ufrx_embedded_reference(
         )?,
         state_values: reference.state_values,
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
-        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, reference.source.window(), "retain Inventor UFRx embedded digest").map(String::from)?,
+        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+            ctx,
+            reference.source.window(),
+            "retain Inventor UFRx embedded digest",
+        )
+        .map(String::from)?,
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(
@@ -2041,7 +2087,12 @@ fn project_ufrx_occurrence(
             .transpose()?,
         header_padding_words: occurrence.header_padding_words,
         record_len: cadmpeg_core::decode::u64_from_index(occurrence.source.window().len()),
-        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, occurrence.source.window(), "retain Inventor UFRx occurrence digest").map(String::from)?,
+        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+            ctx,
+            occurrence.source.window(),
+            "retain Inventor UFRx occurrence digest",
+        )
+        .map(String::from)?,
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index("ufrx-occurrence-".len() + decimal_digits(ordinal)?),

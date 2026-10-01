@@ -61,7 +61,10 @@ impl Node {
 fn tagged(ctx: &DecodeContext<'_>, variant: &str, payload: Value) -> Result<Node, CanonError> {
     let key = copy_text(ctx, variant)?;
     ctx.charge_collection_items(1, WORK)?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()), STORAGE)?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()),
+        STORAGE,
+    )?;
     let mut entries = Map::new();
     entries.insert(key, payload);
     Ok(Node::Value(Value::Object(entries)))
@@ -622,13 +625,13 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         tagged(self.ctx, variant, inner)
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<CanonSeq<'a>, Error> {
+    fn serialize_seq(self, len: Option<usize>) -> Result<CanonSeq<'a>, Error> {
         emit_bytes(self.sink, b"[")?;
         let (depth, nested) = self.enter()?;
         Ok(CanonSeq {
             ctx: self.ctx,
             _nested: nested,
-            out: Vec::new(),
+            out: self.ctx.retained_admitted_vec(len.unwrap_or(0), STORAGE)?,
             depth,
             sink: self.sink,
         })
@@ -844,7 +847,10 @@ impl CanonMap<'_> {
                     })?
                     .into_value();
                 self.ctx.charge_collection_items(1, WORK)?;
-                self.ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()), STORAGE)?;
+                self.ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()),
+                    STORAGE,
+                )?;
                 entry.insert(value);
                 self.max_key_bytes = self.max_key_bytes.max(key_bytes);
                 Ok(())

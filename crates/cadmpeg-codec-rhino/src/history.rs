@@ -2431,7 +2431,9 @@ pub(crate) fn project(
         let parameters =
             admitted_named_properties(ctx, &native_ids[index], parameters, sink.warnings)
                 .map_err(ProjectionError::Codec)?;
-        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from_for_decode(dependencies, ctx).map_err(|error| ProjectionError::Codec(error.into()))?;
+        let dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from_for_decode(dependencies, ctx)
+                .map_err(|error| ProjectionError::Codec(error.into()))?;
         ctx.reserve_vec(
             &mut ir.model.features,
             1,

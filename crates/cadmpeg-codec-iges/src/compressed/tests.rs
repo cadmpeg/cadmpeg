@@ -192,9 +192,15 @@ fn compressed_parameter_starts_refuse_collection_limit_before_allocation() {
 #[test]
 fn compressed_normalized_output_refuses_retained_limit_before_allocation() {
     let source = compressed_points_file();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(source.len() * 3).unwrap();
-    let error = normalize_with_policy(&source, &policy).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges_compressed_normalized_output",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            normalize_with_policy(&source, &policy)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges_compressed_normalized_output"),
         "{error:#?}"

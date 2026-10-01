@@ -686,7 +686,8 @@ pub(crate) fn terminal_feature_body_ids(
             }
             if status.terminal && !selected.contains(body) {
                 ctx.charge_collection_items(1, "nx selected terminal body")?;
-                selected.insert(body.try_clone_for_decode(ctx, "nx selected terminal body identity")?);
+                selected
+                    .insert(body.try_clone_for_decode(ctx, "nx selected terminal body identity")?);
             }
         }
     }

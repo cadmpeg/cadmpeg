@@ -23,19 +23,31 @@ fn work_point_input_copy_refuses_collection_limit() {
 
 #[test]
 fn work_point_input_copy_charges_box_and_carrier_text() {
-    use crate::records::feature::work_geometry::{DesignWorkPointInput, DesignWorkPointInputCarrier};
-    let input = DesignWorkPointInput::try_new(7, 14, Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe { operand_id: "edge".into() }))).unwrap();
+    use crate::records::feature::work_geometry::{
+        DesignWorkPointInput, DesignWorkPointInputCarrier,
+    };
+    let input = DesignWorkPointInput::try_new(
+        7,
+        14,
+        Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
+            operand_id: "edge".into(),
+        })),
+    )
+    .unwrap();
     let bytes = u64::try_from(std::mem::size_of::<DesignWorkPointInputCarrier>()).unwrap() + 4;
     for retained in [bytes - 1, bytes] {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = retained;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let copy = input.try_clone_for_decode(&ctx, "work point owned carrier copy");
         if retained == bytes {
             assert_eq!(copy.unwrap(), input);
         } else {
-            assert!(matches!(copy, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "work point owned carrier copy"));
+            assert!(
+                matches!(copy, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "work point owned carrier copy")
+            );
         }
     }
 }

@@ -498,11 +498,7 @@ fn linked_point_markers<'a>(
             continue;
         };
         if operand_accepts_marker(kind, entity.kind()) && !excluded(entity.id()) {
-            ctx.reserve_vec(
-                &mut compatible,
-                1,
-                "collect SLDPRT scalar operand markers",
-            )?;
+            ctx.reserve_vec(&mut compatible, 1, "collect SLDPRT scalar operand markers")?;
             compatible.push(entity);
             continue;
         }

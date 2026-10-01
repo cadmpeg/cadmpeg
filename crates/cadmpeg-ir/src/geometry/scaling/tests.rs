@@ -534,9 +534,8 @@ fn owned_placement_scaling_refuses_nesting_and_geometry_work() {
         |ctx| surface().scaled_owned(ctx, scale(2.0))),
         Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR geometry unit scaling work"));
     assert_eq!(
-        with_scaling_limits(2, 0, 1, |ctx| surface()
-            .scaled_owned(ctx, scale(2.0)))
-        .expect("admitted"),
+        with_scaling_limits(2, 0, 1, |ctx| surface().scaled_owned(ctx, scale(2.0)))
+            .expect("admitted"),
         surface().scaled(scale(2.0))
     );
 }

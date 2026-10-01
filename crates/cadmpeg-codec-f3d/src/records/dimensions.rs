@@ -96,7 +96,11 @@ pub(crate) struct DesignRecipeReference {
 }
 
 impl DesignRecipeReference {
-    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             selector: self.selector,
             selector_offset: self.selector_offset,
@@ -104,10 +108,26 @@ impl DesignRecipeReference {
             token_offset: self.token_offset,
             design_reference: self.design_reference,
             design_reference_offset: self.design_reference_offset,
-            candidate_faces: ctx.try_collect_retained_with(&self.candidate_faces, operation, |id| id.try_clone_for_decode(ctx, operation))?,
-            candidate_edges: ctx.try_collect_retained_with(&self.candidate_edges, operation, |id| id.try_clone_for_decode(ctx, operation))?,
-            alternate_selector_faces: ctx.try_collect_retained_with(&self.alternate_selector_faces, operation, |id| id.try_clone_for_decode(ctx, operation))?,
-            alternate_selector_edges: ctx.try_collect_retained_with(&self.alternate_selector_edges, operation, |id| id.try_clone_for_decode(ctx, operation))?,
+            candidate_faces: ctx.try_collect_retained_with(
+                &self.candidate_faces,
+                operation,
+                |id| id.try_clone_for_decode(ctx, operation),
+            )?,
+            candidate_edges: ctx.try_collect_retained_with(
+                &self.candidate_edges,
+                operation,
+                |id| id.try_clone_for_decode(ctx, operation),
+            )?,
+            alternate_selector_faces: ctx.try_collect_retained_with(
+                &self.alternate_selector_faces,
+                operation,
+                |id| id.try_clone_for_decode(ctx, operation),
+            )?,
+            alternate_selector_edges: ctx.try_collect_retained_with(
+                &self.alternate_selector_edges,
+                operation,
+                |id| id.try_clone_for_decode(ctx, operation),
+            )?,
         })
     }
 }

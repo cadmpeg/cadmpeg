@@ -45,8 +45,11 @@ fn preview_attachment_result(configure: impl FnOnce(&mut DecodePolicy)) -> Resul
 
 #[test]
 fn preview_attachment_refuses_asset_collection_limit() {
-    let error =
-        preview_attachment_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "NX JPEG preview assets",
+        |limit| preview_attachment_result(|policy| policy.limits.max_collection_items = limit),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "NX JPEG preview assets"));
@@ -54,10 +57,11 @@ fn preview_attachment_refuses_asset_collection_limit() {
 
 #[test]
 fn preview_attachment_refuses_asset_retained_limit() {
-    let error = preview_attachment_result(|policy| {
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(PREVIEW.len());
-    })
-    .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "NX JPEG preview assets",
+        |limit| preview_attachment_result(|policy| policy.limits.max_retained_bytes = limit),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "NX JPEG preview assets"));

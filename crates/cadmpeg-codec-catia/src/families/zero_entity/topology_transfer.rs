@@ -291,7 +291,9 @@ pub(super) fn transfer_closed_face_topology(
                 .curves
                 .iter()
                 .find(|curve| curve.id == occurrence.curve)
-                .map(|curve| (&curve.geometry).try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy"))
+                .map(|curve| curve
+                    .geometry
+                    .try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy"))
                 .transpose())?;
             let source_range = occurrence
                 .model_parameters
@@ -324,7 +326,8 @@ pub(super) fn transfer_closed_face_topology(
                 source_range.map(|range| (range, false))
             } else {
                 match source_range {
-                    Some(range) => match curve_orientation(admission.context(),
+                    Some(range) => match curve_orientation(
+                        admission.context(),
                         &curve_geometry,
                         range,
                         occurrence.raw_endpoints.map(FinitePoint3::get),
@@ -1033,13 +1036,18 @@ pub(super) fn transfer_closed_face_topology(
                     "vertex_uses",
                     "catia_annotation_field"
                 ));
-                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new_for_decode(admission.context(), admitted!(admission.context().try_collect_vec(
+                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new_for_decode(
+                    admission.context(),
+                    admitted!(admission.context().try_collect_vec(
                         coedge_ids.iter().map(|id| id.try_clone_for_decode(
                             admission.context(),
                             "catia_zero_topology_ring_coedge_id"
                         )),
                         "catia_zero_topology_ring_coedges"
-                    )), vertex_uses).map_err(cadmpeg_core::CodecError::from))
+                    )),
+                    vertex_uses
+                )
+                .map_err(cadmpeg_core::CodecError::from))
                 .ok()?;
                 if let Err(error) = admission.charge() {
                     return Some(Err(error));
@@ -1403,12 +1411,15 @@ fn curve_orientation(
     parameter_range: [f64; 2],
     endpoints: [Point3; 2],
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(start) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[0])?)?
+    let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[0])?,
+    )?
     else {
         return Ok(None);
     };
-    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[1])?)?
+    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[1])?,
+    )?
     else {
         return Ok(None);
     };

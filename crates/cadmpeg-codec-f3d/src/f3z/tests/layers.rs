@@ -469,7 +469,7 @@ fn f3z_member_layer_clone_refuses_collection_limit() {
     let error = member_layer_collection_refusal(0, false);
     assert!(
         matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "dialect declaration copies"),
+        if limit.operation == "copy dialect layers"),
         "{error:?}"
     );
 }

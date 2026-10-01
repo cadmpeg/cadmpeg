@@ -174,10 +174,8 @@ fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(
-            matches!(law().try_map_radii_owned(&ctx, Ok::<_, ()>),
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR variable radii scaling work")
-        );
+        assert!(matches!(law().try_map_radii_owned(&ctx, Ok::<_, ()>),
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR variable radii scaling work"));
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

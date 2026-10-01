@@ -37,7 +37,11 @@ impl Sha256Digest {
     }
 
     /// Encode a completed hash after admitting its retained hexadecimal text.
-    pub fn from_bytes_for_decode(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: [u8; 32], operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+    pub fn from_bytes_for_decode(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        bytes: [u8; 32],
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let text = ctx.retained_string(64, operation)?;
         ctx.charge_work(64, operation)?;
         Ok(Self::encode_bytes(bytes, text))
@@ -53,7 +57,11 @@ impl Sha256Digest {
     }
 
     /// Copy the canonical spelling through the decode budget.
-    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
     }
 

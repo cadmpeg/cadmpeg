@@ -1360,7 +1360,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
             && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
             && jet.stations().len() == 2)));
 
-    let mut opposite_records = records.clone();
+    let mut opposite_records = records;
     let StandardSurfaceRecord::Freeform { forward, .. } = &mut opposite_records[0] else {
         unreachable!("synthetic D8 face record");
     };

@@ -40,10 +40,14 @@ enum ScalingError {
     Resource(cadmpeg_core::CodecError),
 }
 impl From<ScaleRefusal> for ScalingError {
-    fn from(error: ScaleRefusal) -> Self { Self::Geometry(error) }
+    fn from(error: ScaleRefusal) -> Self {
+        Self::Geometry(error)
+    }
 }
 impl From<cadmpeg_core::CodecError> for ScalingError {
-    fn from(error: cadmpeg_core::CodecError) -> Self { Self::Resource(error) }
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        Self::Resource(error)
+    }
 }
 impl ScaleRefusal {
     fn from_codec(error: cadmpeg_core::CodecError) -> Self {
@@ -93,13 +97,19 @@ impl SolvedSurfaceGeometry {
     pub fn scaled(&self, scale: PositiveReal) -> Result<Self, ScaleRefusal> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(ScaleRefusal::from_codec)?;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .map_err(ScaleRefusal::from_codec)?;
         Self::scaled_for_decode(self, &ctx, scale).map_err(ScaleRefusal::from_codec)?
     }
 
     /// Copy and scale a borrowed carrier through the caller's context.
-    pub fn scaled_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
-        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?.scaled_owned(ctx, scale)
+    pub fn scaled_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
+        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?
+            .scaled_owned(ctx, scale)
     }
 }
 
@@ -114,13 +124,19 @@ impl SolvedCurveGeometry {
     pub fn scaled(&self, scale: PositiveReal) -> Result<Self, ScaleRefusal> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(ScaleRefusal::from_codec)?;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .map_err(ScaleRefusal::from_codec)?;
         Self::scaled_for_decode(self, &ctx, scale).map_err(ScaleRefusal::from_codec)?
     }
 
     /// Copy and scale a borrowed carrier through the caller's context.
-    pub fn scaled_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
-        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?.scaled_owned(ctx, scale)
+    pub fn scaled_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
+        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?
+            .scaled_owned(ctx, scale)
     }
 }
 
@@ -139,7 +155,11 @@ impl SolvedCurveGeometry {
         }
     }
 
-    fn scale_in_place(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<(), ScalingError> {
+    fn scale_in_place(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<(), ScalingError> {
         ctx.charge_work(1, "IR geometry unit scaling work")?;
         let scaled = match self {
             Self::Line(line) => Self::Line(LineCurve::new(
@@ -210,17 +230,24 @@ impl SolvedCurveGeometry {
             )?)),
 
             Self::Nurbs(value) => {
-                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::ControlPoints)?;
+                value
+                    .scale_points(ctx, scale)?
+                    .map_err(ScaleRefusal::ControlPoints)?;
                 return Ok(());
             }
             Self::Polyline(value) => {
-                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::Samples)?;
+                value
+                    .scale_points(ctx, scale)?
+                    .map_err(ScaleRefusal::Samples)?;
                 return Ok(());
             }
             Self::Transformed(placed) => {
                 let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
                 placed.basis.scale_in_place(ctx, scale)?;
-                placed.transform = placed.transform.scaled_translation(scale).ok_or(ScaleRefusal::Translation)?;
+                placed.transform = placed
+                    .transform
+                    .scaled_translation(scale)
+                    .ok_or(ScaleRefusal::Translation)?;
                 return Ok(());
             }
             Self::Composite { .. } | Self::Unknown { .. } => return Ok(()),
@@ -245,7 +272,11 @@ impl SolvedSurfaceGeometry {
         }
     }
 
-    fn scale_in_place(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<(), ScalingError> {
+    fn scale_in_place(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<(), ScalingError> {
         ctx.charge_work(1, "IR geometry unit scaling work")?;
         let scaled = match self {
             Self::Plane(plane) => Self::Plane(PlaneSurface::new(
@@ -314,17 +345,24 @@ impl SolvedSurfaceGeometry {
             }
 
             Self::Nurbs(value) => {
-                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::ControlPoints)?;
+                value
+                    .scale_points(ctx, scale)?
+                    .map_err(ScaleRefusal::ControlPoints)?;
                 return Ok(());
             }
             Self::Polygonal(value) => {
-                value.scale_points(ctx, scale)?.map_err(ScaleRefusal::Samples)?;
+                value
+                    .scale_points(ctx, scale)?
+                    .map_err(ScaleRefusal::Samples)?;
                 return Ok(());
             }
             Self::Transformed(placed) => {
                 let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
                 placed.basis.scale_in_place(ctx, scale)?;
-                placed.transform = placed.transform.scaled_translation(scale).ok_or(ScaleRefusal::Translation)?;
+                placed.transform = placed
+                    .transform
+                    .scaled_translation(scale)
+                    .ok_or(ScaleRefusal::Translation)?;
                 return Ok(());
             }
             Self::Unknown { .. } => return Ok(()),

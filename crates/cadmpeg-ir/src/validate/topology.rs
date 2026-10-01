@@ -2025,7 +2025,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             check: Check::ReferentialIntegrity,
             severity: Severity::Error,
             message: error.to_string(),
-            entity: match error { crate::document::FeatureParentValidationError::Invalid(error) => Some(error.owner.into_string()), _ => None },
+            entity: match error {
+                crate::document::FeatureParentValidationError::Invalid(error) => {
+                    Some(error.owner.into_string())
+                }
+                _ => None,
+            },
         });
     }
 

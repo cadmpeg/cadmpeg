@@ -170,7 +170,10 @@ pub(super) fn compact_body_selections(
             ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
         })?;
         ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-        let id = ctx.format_retained(format_args!("sldprt:feature-input:body-selection#{lane_key}:{offset}"), OPERATION)?;
+        let id = ctx.format_retained(
+            format_args!("sldprt:feature-input:body-selection#{lane_key}:{offset}"),
+            OPERATION,
+        )?;
         let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
         let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
         let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
@@ -495,7 +498,10 @@ pub(super) fn compact_edge_selections(
                 &feature.id,
             )?;
             ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-            let id = ctx.format_retained(format_args!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"), OPERATION)?;
+            let id = ctx.format_retained(
+                format_args!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
+                OPERATION,
+            )?;
             let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
             let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
             let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
@@ -928,7 +934,10 @@ pub(super) fn compact_surface_selections(
                 &history_features,
             )?;
             ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-            let id = ctx.format_retained(format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"), OPERATION)?;
+            let id = ctx.format_retained(
+                format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
+                OPERATION,
+            )?;
             let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
             let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
             let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
@@ -1215,7 +1224,11 @@ fn order_surface_candidates(
         ctx.charge_work(work, operation)?;
     }
     indexed.dedup_by(|left, right| left.0 == right.0 && left.1 == right.1);
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(candidates, indexed.len(), operation)?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        candidates,
+        indexed.len(),
+        operation,
+    )?;
     for (offset, components, _) in indexed {
         candidates.push((offset, components));
     }
@@ -3081,12 +3094,14 @@ pub(crate) fn generated_surface_identities(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        let id = ctx.format_retained(format_args!(
+        let id = ctx.format_retained(
+            format_args!(
                 "sldprt:feature-input:generated-surface#{lane_key}:{}",
                 fields.offset
-            ), OPERATION)?;
-        let parent =
-            ctx.format_retained(format_args!("{}", lane.id), OPERATION)?;
+            ),
+            OPERATION,
+        )?;
+        let parent = ctx.format_retained(format_args!("{}", lane.id), OPERATION)?;
         identities.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
             id,
             parent,

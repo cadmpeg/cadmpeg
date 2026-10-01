@@ -177,7 +177,9 @@ impl SourceUnitCarriers {
                 ctx.copy_retained_text(entity.id().as_str(), "creo source sketch entity IDs")?,
             )
             .map_err(CodecError::malformed)?;
-            let source_geometry = entity.geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")?;
+            let source_geometry = entity
+                .geometry
+                .try_clone_for_decode(ctx, "creo source sketch geometry copy")?;
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
                 let scaled =
@@ -619,6 +621,7 @@ impl SourceUnitCarriers {
 
 #[cfg(test)]
 mod tests {
+    use super::SourceUnitCarriers;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
@@ -646,8 +649,6 @@ mod tests {
     };
     use cadmpeg_ir::transform::Transform;
 
-    use super::SourceUnitCarriers;
-
     #[test]
     fn source_sketch_geometry_refuses_nurbs_copy_limit() {
         let geometry = SketchGeometry::nurbs(
@@ -669,7 +670,8 @@ mod tests {
         policy.limits.max_collection_items = 8;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
+        let error = geometry
+            .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
             .expect_err("six knots and three poles exceed the limit");
         assert!(
             matches!(error, CodecError::ResourceLimit(resource)
@@ -709,7 +711,8 @@ mod tests {
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
+            let error = geometry
+                .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
                 .expect_err("retained source text exceeds its limit");
             assert!(
                 matches!(error, CodecError::ResourceLimit(resource)
@@ -739,7 +742,8 @@ mod tests {
         item_policy.limits.max_collection_items = 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-        let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
+        let error = geometry
+            .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
             .expect_err("two selectors exceed the item limit");
         assert!(
             matches!(error, CodecError::ResourceLimit(resource)
@@ -756,7 +760,8 @@ mod tests {
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
+            let error = geometry
+                .try_clone_for_decode(&ctx, "creo source sketch geometry copy")
                 .expect_err("external reference copy exceeds its retained limit");
             assert!(
                 matches!(error, CodecError::ResourceLimit(resource)
@@ -1997,7 +2002,7 @@ mod tests {
             .expect_err("procedural surface arena exceeds limit");
         assert!(
             matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "procedural surface arena"),
+            if resource.operation == "store procedural surface constructions"),
             "{error:?}"
         );
         assert!(ir.model.procedural_surfaces.is_empty());
@@ -2033,7 +2038,7 @@ mod tests {
             .expect_err("procedural curve arena exceeds limit");
         assert!(
             matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "procedural curve arena"),
+            if resource.operation == "store procedural curve constructions"),
             "{error:?}"
         );
         assert!(ir.model.procedural_curves.is_empty());

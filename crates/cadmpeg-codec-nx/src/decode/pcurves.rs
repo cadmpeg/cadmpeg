@@ -761,7 +761,8 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             }
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
-                .derived_for_decode(ctx, &edge.id, "param_range").map_err(cadmpeg_core::CodecError::from)?;
+                .derived_for_decode(ctx, &edge.id, "param_range")
+                .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
     Ok(())
@@ -822,7 +823,10 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     } = tolerant_pcurve_fit;
 
     let evaluate = |parameter| -> Result<Option<Point3>, cadmpeg_core::CodecError> {
-        let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?)? else {
+        let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+            ctx, pcurve, parameter,
+        )?)?
+        else {
             return Ok(None);
         };
         Ok(decoded_surface_point_inner_with_budget(
@@ -870,7 +874,11 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                 };
                 let alignment =
                     |candidate: &PcurveGeometry| -> Result<Option<f64>, cadmpeg_core::CodecError> {
-                        let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, candidate, range[0])?)? else {
+                        let Some(uv) =
+                            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                                ctx, candidate, range[0],
+                            )?)?
+                        else {
                             return Ok(None);
                         };
                         let Some(uv_tangent) =
@@ -1889,7 +1897,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
-                .derived_for_decode(ctx, &edge.id, "param_range").map_err(cadmpeg_core::CodecError::from)?;
+                .derived_for_decode(ctx, &edge.id, "param_range")
+                .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
     Ok(())
@@ -1999,7 +2008,8 @@ fn exact_boundary_pcurve_with_index(
     let Some(solved_curve) = curve_carrier.geometry.solved() else {
         return Ok(None);
     };
-    let Some((curve_breaks, _curve_storage)) = exact_boundary_curve_breaks(solved_curve, range, geometry_budget)?
+    let Some((curve_breaks, _curve_storage)) =
+        exact_boundary_curve_breaks(solved_curve, range, geometry_budget)?
     else {
         return Ok(None);
     };
@@ -2375,7 +2385,10 @@ fn exact_boundary_curve_breaks<'a>(
     geometry: &SolvedCurveGeometry,
     range: [f64; 2],
     geometry_budget: &GeometryWorkBudget<'a>,
-) -> Result<Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<
+    Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>,
+    cadmpeg_core::decode::ResourceLimit,
+> {
     let (mut breaks, mut storage) = match geometry {
         SolvedCurveGeometry::Line(_) => geometry_budget
             .charges
@@ -2429,7 +2442,8 @@ pub(super) fn exact_analytic_isocurve_pcurve(
     range: [f64; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)
+        .expect("decode index allocation succeeds");
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -2783,7 +2797,10 @@ fn boundary_curve_affine_breaks_with_index<'a>(
     pcurve: &PcurveGeometry,
     range: [f64; 2],
     geometry_budget: &GeometryWorkBudget<'a>,
-) -> Result<Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<
+    Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>,
+    cadmpeg_core::decode::ResourceLimit,
+> {
     (|| -> Option<Result<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::decode::ResourceLimit>> {
         let carrier = index.surfaces(surface.as_str())?;
         if matches!(
@@ -4492,17 +4509,30 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         ))
         .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
-            .derived_for_decode(ctx, &edge_id, "curve").map_err(cadmpeg_core::CodecError::from)?;
+            .derived_for_decode(ctx, &edge_id, "curve")
+            .map_err(cadmpeg_core::CodecError::from)?;
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
-            annotations
-                .note_for_decode(ctx, &curve_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos), Some("TOLERANT_EDGE_INTERSECTION"))?;
-            annotations
-                .note_for_decode(ctx, &procedural_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos), Some("TOLERANT_EDGE_INTERSECTION"))?;
+            annotations.note_for_decode(
+                ctx,
+                &curve_id,
+                source_stream,
+                cadmpeg_core::decode::u64_from_index(node.pos),
+                Some("TOLERANT_EDGE_INTERSECTION"),
+            )?;
+            annotations.note_for_decode(
+                ctx,
+                &procedural_id,
+                source_stream,
+                cadmpeg_core::decode::u64_from_index(node.pos),
+                Some("TOLERANT_EDGE_INTERSECTION"),
+            )?;
         }
         annotations
-            .derived_for_decode(ctx, &curve_id, "geometry").map_err(cadmpeg_core::CodecError::from)?;
+            .derived_for_decode(ctx, &curve_id, "geometry")
+            .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived_for_decode(ctx, &procedural_id, "definition").map_err(cadmpeg_core::CodecError::from)?;
+            .derived_for_decode(ctx, &procedural_id, "definition")
+            .map_err(cadmpeg_core::CodecError::from)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx tolerant edge curves")?;
         ir.model.curves.push(Curve {
             id: curve_id.try_clone_for_decode(ctx, "nx tolerant carrier identity")?,
@@ -4514,7 +4544,9 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             source_object: None,
         });
 
-        let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve_id, procedural)?;
+        let _attached = ir
+            .model
+            .add_procedural_curve_for_decode(ctx, &curve_id, procedural)?;
     }
     Ok(())
 }
@@ -4541,7 +4573,8 @@ fn pcurve_matches_edge_range(
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
 ) -> bool {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)
+        .expect("decode index allocation succeeds");
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -4861,13 +4894,14 @@ mod tests {
     }
 
     #[test]
-    fn tolerant_edge_attachment_route_refuses_retained_limit() {
+    fn tolerant_edge_attachment_route_refuses_scoped_point_index_limit() {
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
         };
         assert!(matches!(
             tolerant_edge_attachment_limit_error(adjust_policy),
-            cadmpeg_core::CodecError::ResourceLimit(_)
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
         ));
     }
 

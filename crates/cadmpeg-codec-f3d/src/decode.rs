@@ -2237,7 +2237,11 @@ fn try_decode_text_model(
                     header,
                     terminator: stream.terminator,
                 }),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, bytes, "retain source digest")?,
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    bytes,
+                    "retain source digest",
+                )?,
             },
             decoded,
         ));
@@ -3338,7 +3342,9 @@ pub(crate) fn decode_archive_member<'a>(
     decode_scanned_document(
         ctx,
         scan,
-        crate::report::ReportScope::ArchiveMember(dialects.try_clone_for_decode(ctx, "copy dialect layers")?),
+        crate::report::ReportScope::ArchiveMember(
+            dialects.try_clone_for_decode(ctx, "copy dialect layers")?,
+        ),
     )
 }
 
@@ -4499,7 +4505,7 @@ fn annotation_stream(
 ) -> Result<StreamHandle, CodecError> {
     let name = crate::ids::native_scope_charged(ctx, entry_name)?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    Ok(StreamHandle::new_for_decode(ctx, name, "allocate annotation stream handle")?)
+    StreamHandle::new_for_decode(ctx, name, "allocate annotation stream handle")
 }
 
 fn note_native_annotation(
@@ -4526,7 +4532,13 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(ctx, stream_name)?;
         for record in records {
-            annotations.note_for_decode(ctx, &record.id, &stream, record.offset, Some(record.tag.as_str()))?;
+            annotations.note_for_decode(
+                ctx,
+                &record.id,
+                &stream,
+                record.offset,
+                Some(record.tag.as_str()),
+            )?;
             for field in &record.derived_fields {
                 annotations.derived_for_decode(ctx, &record.id, field)?;
             }
@@ -4567,7 +4579,11 @@ fn populate_annotations(
         "index F3D annotation spatial sketches",
     )?;
 
-    let native_stream = StreamHandle::new_for_decode(ctx, cadmpeg_ir::stream_name!("f3d:native"), "allocate annotation stream handle")?;
+    let native_stream = StreamHandle::new_for_decode(
+        ctx,
+        cadmpeg_ir::stream_name!("f3d:native"),
+        "allocate annotation stream handle",
+    )?;
     macro_rules! note {
         ($id:expr, $tag:expr $(,)?) => {{
             note_native_annotation(ctx, &mut annotations, &native_stream, $id, $tag)?;
@@ -4745,17 +4761,35 @@ fn populate_annotations(
         .transpose()?;
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
-            annotations.note_for_decode(ctx, appearance.id.as_str(), &stream, 0, Some(appearance.schema.as_deref().unwrap_or("appearance")))?;
+            annotations.note_for_decode(
+                ctx,
+                appearance.id.as_str(),
+                &stream,
+                0,
+                Some(appearance.schema.as_deref().unwrap_or("appearance")),
+            )?;
         }
     }
     for binding in &ir.model.appearance_bindings {
-        annotations.note_for_decode(ctx, binding.id.as_str(), &native_stream, 0, Some("appearance_binding"))?;
+        annotations.note_for_decode(
+            ctx,
+            binding.id.as_str(),
+            &native_stream,
+            0,
+            Some("appearance_binding"),
+        )?;
     }
     if brep.is_none() {
         if let Some(fallback) = container::select_fallback_brep(scan) {
             let stream = annotation_stream(ctx, &fallback.name)?;
             for unknown in unknowns {
-                annotations.note_for_decode(ctx, unknown.id().as_str(), &stream, unknown.offset(), Some("opaque_brep"))?;
+                annotations.note_for_decode(
+                    ctx,
+                    unknown.id().as_str(),
+                    &stream,
+                    unknown.offset(),
+                    Some("opaque_brep"),
+                )?;
             }
         }
     }

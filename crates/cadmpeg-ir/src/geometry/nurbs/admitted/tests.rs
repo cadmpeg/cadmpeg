@@ -163,17 +163,29 @@ fn raw_constructor_refusal_text_is_admitted_and_keeps_order() {
 fn raw_curve_constructor_retains_converted_poles_and_scopes_pairing() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let output_bytes = 2 * std::mem::size_of::<super::super::WeightedPole3<crate::features::FinitePoint3>>();
-    let temporary_bytes = 2 * std::mem::size_of::<super::super::WeightedPole3<Point3>>();
+    let output_bytes =
+        2 * std::mem::size_of::<super::super::WeightedPole3<crate::features::FinitePoint3>>();
+    let temporary_bytes = 4 * std::mem::size_of::<super::super::WeightedPole3<Point3>>();
     policy.limits.max_retained_bytes = u64::try_from(output_bytes).unwrap();
     policy.limits.max_materialized_bytes = u64::try_from(temporary_bytes).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let curve = NurbsCurve::from_lanes_for_decode(
-        &ctx, 1, vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0); 2], Some(vec![1.0; 2]), false,
-    ).unwrap().unwrap();
+        &ctx,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0); 2],
+        Some(vec![1.0; 2]),
+        false,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(curve.pole_count(), 2);
-    let reservation = ctx.reserve_scoped(u64::try_from(temporary_bytes).unwrap(), "reuse paired storage").unwrap();
+    let reservation = ctx
+        .reserve_scoped(
+            u64::try_from(temporary_bytes).unwrap(),
+            "reuse paired storage",
+        )
+        .unwrap();
     drop(reservation);
 }
 
@@ -187,8 +199,12 @@ fn admitted_curve_constructor_keeps_polynomial_pole_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let points = vec![crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(); 2];
     let address = points.as_ptr();
-    let curve = NurbsCurve::from_lanes_for_decode(&ctx, 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
-        .unwrap().unwrap();
-    let super::super::NurbsPoles3::Polynomial { points } = curve.into_parts().2 else { panic!("polynomial poles"); };
+    let curve =
+        NurbsCurve::from_lanes_for_decode(&ctx, 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
+            .unwrap()
+            .unwrap();
+    let super::super::NurbsPoles3::Polynomial { points } = curve.into_parts().2 else {
+        panic!("polynomial poles");
+    };
     assert_eq!(points.as_ptr(), address);
 }

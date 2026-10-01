@@ -137,11 +137,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = feature_object_name(feature, lane) else {
                     continue;
                 };
-                ctx.reserve_vec(
-                    &mut starts,
-                    1,
-                    "collect SLDPRT parameter feature starts",
-                )?;
+                ctx.reserve_vec(&mut starts, 1, "collect SLDPRT parameter feature starts")?;
                 starts.push((name.offset, history_index, feature_index));
             }
         }
@@ -187,11 +183,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                         .into_iter()
                         .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
                     {
-                        ctx.reserve_vec(
-                            &mut native,
-                            1,
-                            "collect SLDPRT native scalars",
-                        )?;
+                        ctx.reserve_vec(&mut native, 1, "collect SLDPRT native scalars")?;
                         native.push(scalar);
                     }
                     native
@@ -211,7 +203,10 @@ pub(crate) fn enrich_history_parameters<'a>(
                     if value_only {
                         continue;
                     }
-                    let name = ctx.format_retained(format_args!("{name}"), "retain SLDPRT parameter candidate name")?;
+                    let name = ctx.format_retained(
+                        format_args!("{name}"),
+                        "retain SLDPRT parameter candidate name",
+                    )?;
                     let key = (history_index, feature_index, name);
                     match candidates.entry(key) {
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -225,11 +220,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                         std::collections::btree_map::Entry::Vacant(entry) => {
                             ctx.charge_collection_items(1, "index SLDPRT parameter candidates")?;
                             let mut values = Vec::new();
-                            ctx.reserve_vec(
-                                &mut values,
-                                1,
-                                "collect SLDPRT parameter candidates",
-                            )?;
+                            ctx.reserve_vec(&mut values, 1, "collect SLDPRT parameter candidates")?;
                             values.push((scalar.value.get(), unit));
                             entry.insert(values);
                         }

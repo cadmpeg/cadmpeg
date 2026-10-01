@@ -434,7 +434,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 native_kind: nonblank_literal!("sldprt:marker-local-id"),
                 field: None,
                 object_index: Some(u32::from(link.local_id)),
-                native_ref: Some(ctx.format_retained(format_args!("{}", link.entity_ref), OPERATION)?),
+                native_ref: Some(
+                    ctx.format_retained(format_args!("{}", link.entity_ref), OPERATION)?,
+                ),
             });
         }
         for owner in owners {
@@ -706,11 +708,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         loci_by_marker,
                         MarkerEntityFilter::All,
                     )?;
-                    ctx.reserve_vec(
-                        &mut exact_entities,
-                        additions.len(),
-                        ENTITY_OPERATION,
-                    )?;
+                    ctx.reserve_vec(&mut exact_entities, additions.len(), ENTITY_OPERATION)?;
                     ctx.charge_work(
                         u64_from_index(additions.len())
                             .checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
@@ -2436,11 +2434,7 @@ pub(super) fn marker_relation_is_inactive(
             id,
             "resolve SLDPRT native relation activity",
         )? {
-            ctx.reserve_vec(
-                &mut resolved,
-                1,
-                "collect SLDPRT native relation activity",
-            )?;
+            ctx.reserve_vec(&mut resolved, 1, "collect SLDPRT native relation activity")?;
             resolved.push(entity.geometry.definition());
         }
     }

@@ -611,14 +611,19 @@ pub(crate) fn layers(
     primary: &DialectMatch,
     carrier: &ActiveCarrierState<'_>,
 ) -> Result<DialectLayers, CodecError> {
-    let mut layers = DialectLayers::of(primary.try_clone_for_decode(ctx, "copy Inventor primary dialect")?);
+    let mut layers =
+        DialectLayers::of(primary.try_clone_for_decode(ctx, "copy Inventor primary dialect")?);
     if let Some(kernel) = kernel_layer_for_state(ctx, carrier)? {
-        layers.insert_for_decode(ctx, kernel, "collect Inventor kernel dialect layer").map_err(|error| match error {
-            cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected) => CodecError::malformed(format_args!(
-                "duplicate Inventor dialect layer: {rejected:?}"
-            )),
-            cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
-        })?;
+        layers
+            .insert_for_decode(ctx, kernel, "collect Inventor kernel dialect layer")
+            .map_err(|error| match error {
+                cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected) => {
+                    CodecError::malformed(format_args!(
+                        "duplicate Inventor dialect layer: {rejected:?}"
+                    ))
+                }
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
+            })?;
     }
     Ok(layers)
 }

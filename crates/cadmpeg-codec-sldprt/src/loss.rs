@@ -386,10 +386,13 @@ pub(crate) fn spline_lane_refusal(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: impl std::fmt::Display,
 ) -> Result<LossNote, cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(format_args!(
+    let message = ctx.format_retained(
+        format_args!(
             "{record}; the carrier is not emitted and the entities that reference it fall back \
              to an untyped support."
-        ), "record SLDPRT spline lane loss")?;
+        ),
+        "record SLDPRT spline lane loss",
+    )?;
     Ok(SldprtLossCode::GeometrySplineLanesUnpaired.note(message))
 }
 

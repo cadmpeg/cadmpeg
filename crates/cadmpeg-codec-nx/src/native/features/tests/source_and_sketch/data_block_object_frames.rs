@@ -51,13 +51,15 @@ fn data_block_object_frame_route_refuses_collection_limit() {
 
 #[test]
 fn data_block_object_frame_route_refuses_retained_limit() {
-    let error = data_block_object_frame_route_refusal(|policy| {
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<crate::om::compact::LocatedCompactIndex>()
-                + "nx:om-data-block-object-frames-0:block-frame#1-0".len()
-                + "nx:om-data-blocks-0:block#1".len(),
-        );
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX data block object frames",
+        |limit| {
+            Err::<(), _>(data_block_object_frame_route_refusal(|policy| {
+                policy.limits.max_retained_bytes = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes

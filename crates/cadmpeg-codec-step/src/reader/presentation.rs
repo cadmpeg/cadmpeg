@@ -493,7 +493,8 @@ pub(super) fn decode(
                         )
                         .into(),
                         target,
-                        appearance: appearance_id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
+                        appearance: appearance_id
+                            .try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
                         source_entity_id: Some(format!("#{style_id}")),
                         object_type: None,
                         visible: style_is_hidden(

@@ -165,7 +165,8 @@ pub(crate) fn extract_streams_with_offsets(
                     if let Some(header) = stream_header(ctx, view.window())? {
                         Some(ExtractedStream {
                             offset: i,
-                            payload: ctx.copy_retained(view.window(), "retain Parasolid zlib candidate")?,
+                            payload: ctx
+                                .copy_retained(view.window(), "retain Parasolid zlib candidate")?,
                             header,
                         })
                     } else {

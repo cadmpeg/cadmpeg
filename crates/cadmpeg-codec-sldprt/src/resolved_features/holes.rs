@@ -397,10 +397,10 @@ fn copy_hole_profile_source(
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "copy SLDPRT hole profile ownership";
     match profile.source_id {
-        Some(FeatureSource::Reserved) => {
-            ctx.format_retained(format_args!("-1"), OPERATION)
+        Some(FeatureSource::Reserved) => ctx.format_retained(format_args!("-1"), OPERATION),
+        Some(FeatureSource::Id(source)) => {
+            ctx.format_retained(format_args!("{}", source.value()), OPERATION)
         }
-        Some(FeatureSource::Id(source)) => ctx.format_retained(format_args!("{}", source.value()), OPERATION),
         None => {
             ctx.charge_work(u64_from_index(profile.id.len()), OPERATION)?;
             ctx.format_retained(format_args!("{}", profile.id), OPERATION)
@@ -674,7 +674,13 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                     let Some(producer) = features_by_id.get(producer.as_str()).copied() else {
                         continue;
                     };
-                    let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(ctx, producer, &features_by_source, &history.features)? else {
+                    let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(
+                        ctx,
+                        producer,
+                        &features_by_source,
+                        &history.features,
+                    )?
+                    else {
                         continue;
                     };
                     if let Some(existing) = diameter {
@@ -718,10 +724,13 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
             let Some(diameter) = cadmpeg_ir::scalar::Length::new(*diameter) else {
                 continue;
             };
-            let value = ctx.format_retained(format_args!(
+            let value = ctx.format_retained(
+                format_args!(
                     "<MOD-DIAM>{}",
                     crate::history::literals::LengthLiteral(diameter)
-                ), OPERATION)?;
+                ),
+                OPERATION,
+            )?;
             ctx.charge_collection_items(1, OPERATION)?;
             feature
                 .parameters
@@ -770,8 +779,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
             continue;
         };
         ctx.charge_work(u64_from_index(diameter.len()), OPERATION)?;
-        let value =
-            ctx.format_retained(format_args!("{diameter}"), OPERATION)?;
+        let value = ctx.format_retained(format_args!("{diameter}"), OPERATION)?;
         ctx.charge_collection_items(1, OPERATION)?;
         feature
             .parameters
@@ -1433,8 +1441,11 @@ pub(crate) fn project_profiled_hole_constructions(
                     OPERATION,
                 )?;
                 let native = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                let sketch = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
-                .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
+                let sketch =
+                    SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
+                        .map_err(|_| {
+                            CodecError::malformed("invalid admitted SLDPRT sketch identity")
+                        })?;
                 model_sketches.insert(native, sketch);
             }
             _ => {}
@@ -1623,7 +1634,15 @@ pub(crate) fn project_profiled_hole_constructions(
             if direct.is_some() || native.properties.contains_key("DissectableChildren") {
                 direct
             } else {
-                fallback_constructions.get(&native.id.as_str()).map(|source| source.extent.try_clone_for_decode(ctx, "SLDPRT profiled hole extent copy").map(|extent| ProfiledHoleConstruction { extent, ..*source })).transpose()?
+                fallback_constructions
+                    .get(&native.id.as_str())
+                    .map(|source| {
+                        source
+                            .extent
+                            .try_clone_for_decode(ctx, "SLDPRT profiled hole extent copy")
+                            .map(|extent| ProfiledHoleConstruction { extent, ..*source })
+                    })
+                    .transpose()?
             };
         let Some(construction) = construction else {
             continue;
@@ -1733,14 +1752,14 @@ pub(crate) fn project_hole_position_sketches(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        let native_key =
-            ctx.format_retained(format_args!("{native}"), OPERATION)?;
+        let native_key = ctx.format_retained(format_args!("{native}"), OPERATION)?;
         let feature_id = cadmpeg_ir::features::FeatureId::mint(
             ctx.format_retained(format_args!("{}", feature.id), OPERATION)?,
         )
         .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
-        let sketch_id = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
-        .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
+        let sketch_id =
+            SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
+                .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
         model_sketch_features.insert(native_key, (feature_id, sketch_id));
     }
     for feature in features.iter_mut() {
@@ -2285,7 +2304,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 break;
             };
             ctx.reserve_vec(&mut resolved, 1, "collect SLDPRT spatial hole placements")?;
-            resolved.push(placement.try_clone_for_decode(ctx, "SLDPRT spatial hole placement copy")?);
+            resolved
+                .push(placement.try_clone_for_decode(ctx, "SLDPRT spatial hole placement copy")?);
         }
         if resolved.is_empty() && !ambiguous {
             let mut points = Vec::new();
@@ -2295,11 +2315,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     if let SpatialSketchGeometryDefinition::Point { position } =
                         entity.geometry.definition()
                     {
-                        ctx.reserve_vec(
-                            &mut points,
-                            1,
-                            "collect SLDPRT spatial position points",
-                        )?;
+                        ctx.reserve_vec(&mut points, 1, "collect SLDPRT spatial position points")?;
                         points.push(position.get());
                     }
                 }
@@ -2622,11 +2638,7 @@ pub(crate) fn project_generated_hole_axes(
                         continue;
                     }
                     let mut solution = Vec::new();
-                    ctx.reserve_vec(
-                        &mut solution,
-                        axes.len(),
-                        "sort SLDPRT generated hole axes",
-                    )?;
+                    ctx.reserve_vec(&mut solution, axes.len(), "sort SLDPRT generated hole axes")?;
                     solution.extend(axes);
                     charge_hole_sort_work(ctx, solution.len(), "sort SLDPRT generated hole axes")?;
                     solution.sort_unstable_by_key(|(key, _)| *key);
@@ -2783,11 +2795,7 @@ pub(crate) fn project_hole_topology_axes(
             if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
                 feature.evaluation.definition()
             {
-                ctx.reserve_vec(
-                    &mut siblings,
-                    1,
-                    "collect SLDPRT counterbore siblings",
-                )?;
+                ctx.reserve_vec(&mut siblings, 1, "collect SLDPRT counterbore siblings")?;
                 siblings.push((index, placements));
             }
         }
@@ -2853,11 +2861,7 @@ pub(crate) fn project_hole_topology_axes(
         for placement in candidates {
             ctx.charge_work(1, "select SLDPRT residual counterbore axes")?;
             if hole_axis_key(&placement).is_some_and(|key| !claimed.contains(&key)) {
-                ctx.reserve_vec(
-                    &mut residual,
-                    1,
-                    "collect SLDPRT residual counterbore axes",
-                )?;
+                ctx.reserve_vec(&mut residual, 1, "collect SLDPRT residual counterbore axes")?;
                 residual.push(placement);
             }
         }
@@ -3351,7 +3355,8 @@ fn partition_seeded_hole_axes(
         partitions[partition]
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("SLDPRT seeded hole-axis placements", 1, 1))?;
-        partitions[partition].push(placement.try_clone_for_decode(ctx, "SLDPRT seeded hole placement copy")?);
+        partitions[partition]
+            .push(placement.try_clone_for_decode(ctx, "SLDPRT seeded hole placement copy")?);
     }
     if partitions.iter().any(Vec::is_empty) {
         return Ok(());
@@ -3714,10 +3719,10 @@ pub(crate) fn project_hole_axes(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        let native =
-            ctx.format_retained(format_args!("{native}"), INDEX_OPERATION)?;
-        let sketch = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), INDEX_OPERATION)?)
-        .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
+        let native = ctx.format_retained(format_args!("{native}"), INDEX_OPERATION)?;
+        let sketch =
+            SketchId::mint(ctx.format_retained(format_args!("{sketch}"), INDEX_OPERATION)?)
+                .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
         model_sketches.insert(native, sketch);
     }
     let mut hole_positions = HashMap::new();
@@ -3918,11 +3923,7 @@ pub(crate) fn project_hole_axes(
                 if let Some(solution) =
                     constrained_bore_axes(ctx, frame, radius, surfaces, &relations)?
                 {
-                    ctx.reserve_vec(
-                        &mut solutions,
-                        1,
-                        "collect SLDPRT hole position solutions",
-                    )?;
+                    ctx.reserve_vec(&mut solutions, 1, "collect SLDPRT hole position solutions")?;
                     solutions.push(solution);
                 }
             }
@@ -4627,7 +4628,10 @@ pub(crate) fn project_bore_backed_position_sketches(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let Ok(sketch_id) = SketchId::mint(ctx.format_retained(format_args!("sldprt:model:sketch#bore:{lane_key}:{}", position.ordinal), OPERATION)?) else {
+        let Ok(sketch_id) = SketchId::mint(ctx.format_retained(
+            format_args!("sldprt:model:sketch#bore:{lane_key}:{}", position.ordinal),
+            OPERATION,
+        )?) else {
             continue;
         };
         let v_axis = normal.cross(u_axis);
@@ -4635,7 +4639,10 @@ pub(crate) fn project_bore_backed_position_sketches(
         let mut admitted_geometry = true;
         for (ordinal, (point, _)) in axes.enumerate() {
             ctx.charge_work(u64_from_index(sketch_id.as_str().len()), OPERATION)?;
-            let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(format_args!("{}:entity:{ordinal}", sketch_id.as_str()), OPERATION)?) else {
+            let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(
+                format_args!("{}:entity:{ordinal}", sketch_id.as_str()),
+                OPERATION,
+            )?) else {
                 admitted_geometry = false;
                 break;
             };
@@ -5403,7 +5410,11 @@ pub(super) fn sketch_feature_frames(
                     )
                 })?;
                 let mut owner = String::new();
-                ctx.try_reserve_retained_text(&mut owner, feature.id.len(), "copy sketch feature frame owner")?;
+                ctx.try_reserve_retained_text(
+                    &mut owner,
+                    feature.id.len(),
+                    "copy sketch feature frame owner",
+                )?;
                 owner.push_str(&feature.id);
                 candidates.insert(owner, Some(frame));
             }
@@ -5643,8 +5654,7 @@ impl CompactPositionSearch<'_, '_> {
             for index in used.iter().copied() {
                 self.ctx.charge_work(1, OPERATION)?;
                 if self.placement_loci.contains(&index) {
-                    self.ctx
-                        .reserve_vec(&mut solution, 1, OPERATION)?;
+                    self.ctx.reserve_vec(&mut solution, 1, OPERATION)?;
                     solution.push(index);
                 }
             }

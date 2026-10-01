@@ -804,7 +804,8 @@ fn build_plan(
                         .copied(),
                 )
             });
-            if let Err(limit) = orient_b5_supports_to_edge(ctx,
+            if let Err(limit) = orient_b5_supports_to_edge(
+                ctx,
                 supports,
                 [start, end],
                 tolerances,
@@ -829,7 +830,8 @@ fn build_plan(
                         .copied(),
                 )
             });
-            let follows = match b5_supports_follow_edge(ctx,
+            let follows = match b5_supports_follow_edge(
+                ctx,
                 supports,
                 [start, end],
                 tolerances,
@@ -1202,7 +1204,9 @@ fn copy_resolved_extrusion_support(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support: &ResolvedExtrusionSupport,
 ) -> Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError> {
-    let surface = support.surface.try_clone_for_decode(ctx, "catia_b5_extrusion_support_surface_copy")?;
+    let surface = support
+        .surface
+        .try_clone_for_decode(ctx, "catia_b5_extrusion_support_surface_copy")?;
     Ok(ResolvedExtrusionSupport {
         surface_object_id: support.surface_object_id,
         surface,
@@ -1603,10 +1607,14 @@ fn curve_on_parameter_range(
             if source_per_target != 1.0 {
                 return crate::nurbs::note_refusal(
                     ctx,
-                    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, ctx.collect_vec(
+                    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+                        ctx,
+                        1,
+                        ctx.collect_vec(
                             [target[0], target[0], target[1], target[1]],
                             "catia_b5_reparameterized_line_knots",
-                        )?, ctx.collect_vec(
+                        )?,
+                        ctx.collect_vec(
                             source.into_iter().map(|parameter| {
                                 Point3::new(
                                     origin.x + parameter * direction.x,
@@ -1615,7 +1623,10 @@ fn curve_on_parameter_range(
                                 )
                             }),
                             "catia_b5_reparameterized_line_points",
-                        )?, None, false)?,
+                        )?,
+                        None,
+                        false,
+                    )?,
                     refusal,
                     format_args!(
                         "b5 line curve reparameterized onto its occurrence range: {record}"

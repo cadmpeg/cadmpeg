@@ -267,11 +267,7 @@ pub(crate) fn histories(
                             })
                             .map(|attribute| (attribute.name(), attribute.value())),
                     )?;
-                    ctx.reserve_vec(
-                        &mut features,
-                        1,
-                        "collect SLDPRT history features",
-                    )?;
+                    ctx.reserve_vec(&mut features, 1, "collect SLDPRT history features")?;
                     let content = node.children().try_fold(Vec::new(), |mut content, child| {
                         let item = if child.is_text() {
                             let value = child.text().unwrap_or_default().trim();
@@ -306,11 +302,7 @@ pub(crate) fn histories(
                                 .map(FeatureContent::Feature)
                         };
                         if let Some(item) = item {
-                            ctx.reserve_vec(
-                                &mut content,
-                                1,
-                                "collect SLDPRT feature content",
-                            )?;
+                            ctx.reserve_vec(&mut content, 1, "collect SLDPRT feature content")?;
                             content.push(item);
                         }
                         Ok::<_, CodecError>(content)

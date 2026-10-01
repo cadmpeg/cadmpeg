@@ -35,7 +35,11 @@ fn copy_binding_text(
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT sketch binding identity")?;
     let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, value.len(), "retain SLDPRT sketch binding identity")?;
+    ctx.try_reserve_retained_text(
+        &mut copy,
+        value.len(),
+        "retain SLDPRT sketch binding identity",
+    )?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -243,7 +247,11 @@ pub(crate) fn bind_unique_sketch_feature(
         };
         let native_ref = copy_binding_text(ctx, native_ref)?;
         if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index].dependencies.insert_for_decode(ctx, copy_binding_feature_id(ctx, &base_dependency)?, "bind SLDPRT sketch alias dependency")?;
+            features[*index].dependencies.insert_for_decode(
+                ctx,
+                copy_binding_feature_id(ctx, &base_dependency)?,
+                "bind SLDPRT sketch alias dependency",
+            )?;
         }
         ctx.charge_work(
             u64::try_from(bindings.len()).map_err(|_| {
@@ -264,7 +272,11 @@ pub(crate) fn bind_unique_sketch_feature(
             has_profile: binding.has_profile,
         });
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bindings, aliases.len(), "merge SLDPRT sketch aliases")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut bindings,
+        aliases.len(),
+        "merge SLDPRT sketch aliases",
+    )?;
     bindings.extend(aliases);
     for feature in features {
         ctx.charge_work(
@@ -287,7 +299,11 @@ pub(crate) fn bind_unique_sketch_feature(
                         binding.has_profile,
                     )? && !dependencies.contains(&binding.feature_id)
                     {
-                        dependencies.insert_for_decode(ctx, copy_binding_feature_id(ctx, &binding.feature_id)?, "bind SLDPRT sketch dependency")?;
+                        dependencies.insert_for_decode(
+                            ctx,
+                            copy_binding_feature_id(ctx, &binding.feature_id)?,
+                            "bind SLDPRT sketch dependency",
+                        )?;
                     }
                 }
                 Ok::<_, cadmpeg_core::CodecError>(())
@@ -661,11 +677,7 @@ pub(crate) fn derive_feature_outputs(
                             u64::MAX,
                         )
                     })?;
-                ctx.reserve_vec(
-                    &mut outputs,
-                    count,
-                    "collect SLDPRT body modifier outputs",
-                )?;
+                ctx.reserve_vec(&mut outputs, count, "collect SLDPRT body modifier outputs")?;
                 for output in feature.evaluation.outputs() {
                     outputs.push(copy_output_body_id(ctx, output.as_str())?);
                 }
@@ -720,11 +732,7 @@ pub(crate) fn derive_feature_outputs(
         };
         if let Some(bodies) = produced.get(&source_id) {
             let mut outputs = Vec::new();
-            ctx.reserve_vec(
-                &mut outputs,
-                bodies.len(),
-                "collect SLDPRT feature outputs",
-            )?;
+            ctx.reserve_vec(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
             for body in bodies {
                 outputs.push(copy_output_body_id(ctx, body.as_str())?);
             }

@@ -425,7 +425,9 @@ impl fmt::Display for DialectLayerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Duplicate(layer) => write!(formatter, "duplicate dialect layer key: {layer:?}"),
-            Self::ResourceLimit(limit) => write!(formatter, "resource refusal during {}", limit.operation),
+            Self::ResourceLimit(limit) => {
+                write!(formatter, "resource refusal during {}", limit.operation)
+            }
         }
     }
 }
@@ -435,7 +437,9 @@ impl Error for DialectLayerError {}
 impl From<DialectLayerError> for CodecError {
     fn from(error: DialectLayerError) -> Self {
         match error {
-            DialectLayerError::Duplicate(layer) => Self::malformed(format_args!("duplicate dialect layer key: {layer:?}")),
+            DialectLayerError::Duplicate(layer) => {
+                Self::malformed(format_args!("duplicate dialect layer key: {layer:?}"))
+            }
             DialectLayerError::ResourceLimit(limit) => Self::ResourceLimit(limit),
         }
     }
@@ -472,8 +476,12 @@ impl DialectLayers {
     /// returned unchanged so its producer can report the collision.
     pub fn insert(&mut self, layer: DialectMatch) -> Result<(), DialectLayerError> {
         let arena = crate::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &crate::decode::DecodePolicy::default())
-            .map_err(DialectLayerError::ResourceLimit)?;
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(
+            &[],
+            &arena,
+            &crate::decode::DecodePolicy::default(),
+        )
+        .map_err(DialectLayerError::ResourceLimit)?;
         self.insert_for_decode(&ctx, layer, "dialect layer insertion")
     }
 
@@ -484,10 +492,16 @@ impl DialectLayers {
         layer: DialectMatch,
         operation: &'static str,
     ) -> Result<(), DialectLayerError> {
-        ctx.charge_work_limit(crate::decode::u64_from_index(self.extra.len()) + 1, operation)
-            .map_err(DialectLayerError::ResourceLimit)?;
+        ctx.charge_work_limit(
+            crate::decode::u64_from_index(self.extra.len()) + 1,
+            operation,
+        )
+        .map_err(DialectLayerError::ResourceLimit)?;
         if Self::same_key(&self.primary, &layer)
-            || self.extra.iter().any(|existing| Self::same_key(existing, &layer))
+            || self
+                .extra
+                .iter()
+                .any(|existing| Self::same_key(existing, &layer))
         {
             return Err(DialectLayerError::Duplicate(layer));
         }
@@ -633,23 +647,16 @@ impl DialectMatch {
         let dialect = DialectId {
             value: match &self.dialect.value {
                 Cow::Borrowed(value) => Cow::Borrowed(value),
-                Cow::Owned(value) => {
-                    Cow::Owned(ctx.copy_retained_text(value, operation)?)
-                }
+                Cow::Owned(value) => Cow::Owned(ctx.copy_retained_text(value, operation)?),
             },
             namespace_len: self.dialect.namespace_len,
         };
         let mut declared = BTreeMap::new();
         for (key, value) in &self.declared {
             ctx.admit_retained_btree_record::<NonBlankString, String>(0, operation)?;
-            let key = NonBlankString::new(
-                ctx.copy_retained_text(key.as_str(), operation)?,
-            )
-            .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
-            declared.insert(
-                key,
-                ctx.copy_retained_text(value, operation)?,
-            );
+            let key = NonBlankString::new(ctx.copy_retained_text(key.as_str(), operation)?)
+                .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
+            declared.insert(key, ctx.copy_retained_text(value, operation)?);
         }
         let instance = self
             .instance
@@ -826,13 +833,20 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(layers.try_clone_for_decode(&ctx, "copy dialect text").unwrap(), layers);
+        assert_eq!(
+            layers
+                .try_clone_for_decode(&ctx, "copy dialect text")
+                .unwrap(),
+            layers
+        );
 
         let limited_arena = DecodeArena::new();
         let mut limited = DecodePolicy::service();
         limited.limits.max_retained_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &limited_arena, &limited).unwrap();
-        let error = layers.try_clone_for_decode(&ctx, "copy dialect text").unwrap_err();
+        let error = layers
+            .try_clone_for_decode(&ctx, "copy dialect text")
+            .unwrap_err();
         assert!(matches!(
             error,
             crate::CodecError::ResourceLimit(limit)
@@ -877,14 +891,18 @@ mod tests {
     #[test]
     fn dialect_extra_copy_admits_retained_vector_storage() {
         let layers = DialectLayers::of(DialectMatch::admitted(crate::dialect_id!("nx:unknown")))
-            .with(DialectMatch::admitted(crate::dialect_id!("step:unknown"))).unwrap();
+            .with(DialectMatch::admitted(crate::dialect_id!("step:unknown")))
+            .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::decode::u64_from_index(std::mem::size_of::<DialectMatch>()) - 1;
+        policy.limits.max_retained_bytes =
+            crate::decode::u64_from_index(std::mem::size_of::<DialectMatch>()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(layers.try_clone_for_decode(&ctx, "copy extra storage"),
+        assert!(
+            matches!(layers.try_clone_for_decode(&ctx, "copy extra storage"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "copy extra storage"));
+                && limit.operation == "copy extra storage")
+        );
     }
 
     #[test]
@@ -893,7 +911,8 @@ mod tests {
         let mut layers = DialectLayers::of(primary);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::decode::u64_from_index(std::mem::size_of::<DialectMatch>()) - 1;
+        policy.limits.max_retained_bytes =
+            crate::decode::u64_from_index(std::mem::size_of::<DialectMatch>()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(layers.insert_for_decode(&ctx,
             DialectMatch::admitted(crate::dialect_id!("step:unknown")), "insert layer"),
@@ -904,14 +923,23 @@ mod tests {
     #[test]
     fn dialect_declaration_copy_admits_map_node_storage() {
         let layer = DialectMatch::admitted(crate::dialect_id!("nx:unknown")).with_declared(
-            std::collections::BTreeMap::from([(crate::nonblank_literal!("version"), String::new())]));
+            std::collections::BTreeMap::from([(
+                crate::nonblank_literal!("version"),
+                String::new(),
+            )]),
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::decode::u64_from_index(std::mem::size_of::<(crate::text::NonBlankString, String)>()) - 1;
+        policy.limits.max_retained_bytes =
+            crate::decode::u64_from_index(
+                std::mem::size_of::<(crate::text::NonBlankString, String)>(),
+            ) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(layer.try_clone_for_decode(&ctx, "copy declaration"),
+        assert!(
+            matches!(layer.try_clone_for_decode(&ctx, "copy declaration"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.additional == crate::decode::u64_from_index(std::mem::size_of::<(crate::text::NonBlankString, String)>())));
+                && limit.additional == crate::decode::u64_from_index(std::mem::size_of::<(crate::text::NonBlankString, String)>()))
+        );
     }
 
     #[test]
@@ -1149,7 +1177,10 @@ mod tests {
             .with(first.clone())
             .expect("distinct dialect layer keys");
 
-        assert_eq!(layers.insert(replacement.clone()), Err(super::DialectLayerError::Duplicate(replacement)));
+        assert_eq!(
+            layers.insert(replacement.clone()),
+            Err(super::DialectLayerError::Duplicate(replacement))
+        );
         assert_eq!(layers.extra, [first]);
     }
 
@@ -1160,7 +1191,10 @@ mod tests {
             .with(layer("acis"))
             .expect("distinct dialect layer keys");
 
-        assert_eq!(layers.insert(replacement.clone()), Err(super::DialectLayerError::Duplicate(replacement)));
+        assert_eq!(
+            layers.insert(replacement.clone()),
+            Err(super::DialectLayerError::Duplicate(replacement))
+        );
         assert_eq!(layers.primary(), &layer("rhino"));
         assert_eq!(layers.extra, [layer("acis")]);
     }
@@ -1173,7 +1207,10 @@ mod tests {
         let layers = DialectLayers::of(layer("rhino"))
             .with(first)
             .expect("distinct dialect layer keys");
-        assert_eq!(layers.with(replacement.clone()), Err(super::DialectLayerError::Duplicate(replacement)));
+        assert_eq!(
+            layers.with(replacement.clone()),
+            Err(super::DialectLayerError::Duplicate(replacement))
+        );
     }
 
     #[test]

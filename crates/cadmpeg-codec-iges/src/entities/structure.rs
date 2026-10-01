@@ -1448,8 +1448,9 @@ fn linear_nurbs_boundary_points(
         "iges plane NURBS boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, nurbs, parameter)?)?
+        let Some(point) = finite_or_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, nurbs, parameter)?,
+        )?
         else {
             return Ok(None);
         };
@@ -1813,7 +1814,8 @@ fn plane_face_draft(
         let mut ring_coedges = ctx.collection_vec(1, "iges legacy plane ring coedges")?;
         ring_coedges.push(coedge_id);
         let ring =
-            match cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring_coedges, Vec::new()).map_err(cadmpeg_core::CodecError::from)
+            match cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring_coedges, Vec::new())
+                .map_err(cadmpeg_core::CodecError::from)
             {
                 Ok(Ok(ring)) => ring,
                 Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),

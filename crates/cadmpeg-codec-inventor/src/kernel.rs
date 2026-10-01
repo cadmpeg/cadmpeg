@@ -362,7 +362,8 @@ fn parse_carrier<'a>(
     }
 
     Ok(ActiveCarrier {
-        segment_token: segment_token.try_clone_for_decode(ctx, "retain Inventor selected carrier token")?,
+        segment_token: segment_token
+            .try_clone_for_decode(ctx, "retain Inventor selected carrier token")?,
         carrier_len,
         record_ordinal,
         segment_version_major,

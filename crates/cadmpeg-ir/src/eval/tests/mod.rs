@@ -210,7 +210,7 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
                         second_limit: Point3::new(0.0, 2.0, 0.0),
                         center: Point3::new(0.0, 0.0, 0.0),
                         angle: std::f64::consts::FRAC_PI_2,
-                        first_derivative: derivative.clone(),
+                        first_derivative: derivative,
                         second_derivative: RollingBallJetDerivative {
                             first_limit: Vector3::new(0.0, 0.0, 0.0),
                             second_limit: Vector3::new(0.0, 0.0, 0.0),
@@ -278,8 +278,8 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                         second_limit: Point3::new(0.0, 2.0, 0.0),
                         center: Point3::new(0.0, 0.0, 0.0),
                         angle: std::f64::consts::FRAC_PI_2,
-                        first_derivative: zero.clone(),
-                        second_derivative: zero.clone(),
+                        first_derivative: zero,
+                        second_derivative: zero,
                     },
                 },
                 crate::geometry::RollingBallJetStation {
@@ -290,7 +290,7 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                         second_limit: Point3::new(-2.0, 0.0, 0.0),
                         center: Point3::new(0.0, 0.0, 0.0),
                         angle: std::f64::consts::FRAC_PI_2,
-                        first_derivative: zero.clone(),
+                        first_derivative: zero,
                         second_derivative: zero,
                     },
                 },

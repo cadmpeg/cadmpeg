@@ -999,7 +999,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                     u64::MAX,
                 )
             })?;
-            let name = ctx.format_retained(format_args!("{}", feature.name), "retain SLDPRT revolution feature name")?;
+            let name = ctx.format_retained(
+                format_args!("{}", feature.name),
+                "retain SLDPRT revolution feature name",
+            )?;
             name_counts.insert(name, 1);
         }
     }
@@ -1078,7 +1081,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                         u64::MAX,
                     )
                 })?;
-                let id = ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT revolution profile owner")?;
+                let id = ctx.format_retained(
+                    format_args!("{}", feature.id),
+                    "retain SLDPRT revolution profile owner",
+                )?;
                 profile_source_owner.insert(id, history_index);
             }
         }
@@ -1092,11 +1098,7 @@ pub(crate) fn enrich_history_revolution_inputs(
             for feature in &history.features {
                 ctx.charge_work(1, "scan SLDPRT revolution feature objects")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(
-                        &mut objects,
-                        1,
-                        "collect SLDPRT revolution feature objects",
-                    )?;
+                    ctx.reserve_vec(&mut objects, 1, "collect SLDPRT revolution feature objects")?;
                     objects.push((name.offset, feature));
                 }
             }
@@ -1170,7 +1172,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                                 1,
                                 "insert SLDPRT revolution profile property",
                             )?;
-                            let value = ctx.format_retained(format_args!("{first}"), "retain SLDPRT revolution profile property")?;
+                            let value = ctx.format_retained(
+                                format_args!("{first}"),
+                                "retain SLDPRT revolution profile property",
+                            )?;
                             feature
                                 .properties
                                 .insert(cadmpeg_core::nonblank_literal!("Profile"), value);
@@ -1191,18 +1196,24 @@ pub(crate) fn enrich_history_revolution_inputs(
                 && !feature.properties.contains_key("AxisDirection")
             {
                 ctx.charge_collection_items(2, "insert SLDPRT revolution axis properties")?;
-                let origin = ctx.format_retained(format_args!(
+                let origin = ctx.format_retained(
+                    format_args!(
                         "{}mm,{}mm,{}mm",
                         first.0.get().x,
                         first.0.get().y,
                         first.0.get().z
-                    ), "retain SLDPRT revolution axis origin")?;
-                let direction = ctx.format_retained(format_args!(
+                    ),
+                    "retain SLDPRT revolution axis origin",
+                )?;
+                let direction = ctx.format_retained(
+                    format_args!(
                         "{},{},{}",
                         first.1.as_raw().x,
                         first.1.as_raw().y,
                         first.1.as_raw().z
-                    ), "retain SLDPRT revolution axis direction")?;
+                    ),
+                    "retain SLDPRT revolution axis direction",
+                )?;
                 feature
                     .properties
                     .insert(cadmpeg_core::nonblank_literal!("AxisOrigin"), origin);
@@ -1393,7 +1404,10 @@ pub(crate) fn bind_profile_revolution_axes(
                 1,
                 "collect SLDPRT revolution axis assignments",
             )?;
-            assignments.push((feature_index, axis.try_clone_for_decode(ctx, "SLDPRT revolution axis assignment copy")?));
+            assignments.push((
+                feature_index,
+                axis.try_clone_for_decode(ctx, "SLDPRT revolution axis assignment copy")?,
+            ));
         }
     }
 

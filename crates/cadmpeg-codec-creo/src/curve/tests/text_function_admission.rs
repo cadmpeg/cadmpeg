@@ -33,7 +33,7 @@ fn assert_work(error: &CodecError, operation: &str) {
 fn relation_search_refuses_scan_work() {
     assert_work(
         &refuse::<CurveExpressionValue>("search('abc','b')", |policy| {
-            policy.limits.max_work_units = 1;
+            policy.limits.max_work_units = 1 + 4;
         }),
         "creo relation text search work",
     );
@@ -43,7 +43,7 @@ fn relation_search_refuses_scan_work() {
 fn relation_length_refuses_scan_work() {
     assert_work(
         &refuse::<CurveExpressionValue>("string_length('abc')", |policy| {
-            policy.limits.max_work_units = 1;
+            policy.limits.max_work_units = 1 + 3;
         }),
         "creo relation text length work",
     );
@@ -53,7 +53,7 @@ fn relation_length_refuses_scan_work() {
 fn relation_prefix_refuses_comparison_work() {
     assert_work(
         &refuse::<CurveExpressionValue>("string_starts('abc','a')", |policy| {
-            policy.limits.max_work_units = 1;
+            policy.limits.max_work_units = 1 + 4;
         }),
         "creo relation text prefix work",
     );
@@ -63,7 +63,7 @@ fn relation_prefix_refuses_comparison_work() {
 fn relation_suffix_refuses_comparison_work() {
     assert_work(
         &refuse::<CurveExpressionValue>("string_ends('abc','c')", |policy| {
-            policy.limits.max_work_units = 1;
+            policy.limits.max_work_units = 1 + 4;
         }),
         "creo relation text suffix work",
     );
@@ -73,7 +73,7 @@ fn relation_suffix_refuses_comparison_work() {
 fn relation_match_refuses_comparison_work() {
     assert_work(
         &refuse::<CurveExpressionValue>("string_match('abc','abc')", |policy| {
-            policy.limits.max_work_units = 1;
+            policy.limits.max_work_units = 1 + 6;
         }),
         "creo relation text match work",
     );
@@ -83,7 +83,7 @@ fn relation_match_refuses_comparison_work() {
 fn relation_regex_refuses_compile_work() {
     assert_work(
         &refuse::<CurveExpressionValue>("string_pattern('abc','a')", |policy| {
-            policy.limits.max_work_units = 1;
+            policy.limits.max_work_units = 1 + 4;
         }),
         "creo relation regex compile work",
     );
@@ -113,7 +113,8 @@ fn relation_regex_refuses_compiler_scratch() {
 fn relation_regex_refuses_match_work() {
     assert_work(
         &refuse::<CurveExpressionValue>("string_pattern('abc','a')", |policy| {
-            policy.limits.max_work_units = 2;
+            policy.limits.max_work_units =
+                2 + 4 + 2 * cadmpeg_core::decode::u64_from_index(r"\A(?:a)\z".len());
         }),
         "creo relation regex match work",
     );

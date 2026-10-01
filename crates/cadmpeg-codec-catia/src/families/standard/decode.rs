@@ -397,7 +397,9 @@ fn bind_consolidated_revolution_faces_and_seams(
             .find(|surface| &surface.id == surface_id)
         {
             let Some(binding) = *binding else { continue };
-            surface.geometry = revolutions[binding].geometry.try_clone_for_decode(ctx, "catia_revolution_surface_geometry_copy")?;
+            surface.geometry = revolutions[binding]
+                .geometry
+                .try_clone_for_decode(ctx, "catia_revolution_surface_geometry_copy")?;
             crate::resource::derived_annotation(
                 ctx,
                 annotations,
@@ -1774,7 +1776,8 @@ fn copy_standard_procedure(
                             | SolvedSurfaceGeometry::Cone(_)
                             | SolvedSurfaceGeometry::Sphere(_)
                             | SolvedSurfaceGeometry::Torus(_),
-                        ) => geometry.try_clone_for_decode(ctx, "catia_standard_offset_support_copy")?,
+                        ) => geometry
+                            .try_clone_for_decode(ctx, "catia_standard_offset_support_copy")?,
                         _ => {
                             return Err(CodecError::malformed(
                                 "standard offset support has unexpected geometry",
@@ -2260,12 +2263,17 @@ fn try_decode_standard_populations(
         let mut model = output.ir.model;
         retain_standard_population_model(&mut model);
         let mut rewriter = StandardPopulationScope { scope: &scope, ctx };
-        match merged.ir.model.extend_rewritten_for_decode(
-            ctx,
-            model,
-            &mut rewriter,
-            "catia_standard_population_model_merge",
-        ).map_err(CodecError::from) {
+        match merged
+            .ir
+            .model
+            .extend_rewritten_for_decode(
+                ctx,
+                model,
+                &mut rewriter,
+                "catia_standard_population_model_merge",
+            )
+            .map_err(CodecError::from)
+        {
             Ok(()) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(None),
@@ -2287,23 +2295,28 @@ fn try_decode_standard_populations(
     for (key, value) in population_coverage {
         merged.report.coverage.record(ctx, key, value)?;
     }
-    merged.report.coverage.record(ctx,
+    merged.report.coverage.record(
+        ctx,
         crate::coverage::STANDARD_FBB_RUN_COUNT,
         scan.census.fbb_runs,
     )?;
-    merged.report.coverage.record(ctx,
+    merged.report.coverage.record(
+        ctx,
         crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
         scan.census.fbb_face_rows,
     )?;
-    merged.report.coverage.record(ctx,
+    merged.report.coverage.record(
+        ctx,
         crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
         admitted_face_rows,
     )?;
-    merged.report.coverage.record(ctx,
+    merged.report.coverage.record(
+        ctx,
         crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
         scan.census.fbb_face_rows - scan.census.fbb_face_rows.min(admitted_face_rows),
     )?;
-    merged.report.coverage.record(ctx,
+    merged.report.coverage.record(
+        ctx,
         crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
         attached_topology_count,
     )?;
@@ -5153,7 +5166,11 @@ fn standard_limit_curve_bindings(
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
             ));
-            let midpoint = match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, 0.5 * (start_parameter + end_parameter))? {
+            let midpoint = match cadmpeg_ir::eval::decode::curve_point_for_decode(
+                ctx,
+                &geometry,
+                0.5 * (start_parameter + end_parameter),
+            )? {
                 Ok(point) => point,
                 Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                     return Err(limit.into());
@@ -6854,7 +6871,7 @@ fn attach_standard_topology(
                     )?;
                     selected_supports.extend(supports.iter().zip(selected_edge_faces).map(
                         |(support, faces)| {
-                            let mut selected = support.clone();
+                            let mut selected = *support;
                             selected.faces = *faces;
                             selected
                         },
@@ -7467,9 +7484,9 @@ fn emit_standard_topology(
                 )?;
                 ctx.push_vec(&mut coedges, coedge, "catia_standard_ring_members")?;
             }
-            let ring =
-                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, vertex_uses).map_err(cadmpeg_core::CodecError::from)?
-                    .map_err(CodecError::malformed)?;
+            let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, vertex_uses)
+                .map_err(cadmpeg_core::CodecError::from)?
+                .map_err(CodecError::malformed)?;
             let coedge_ids = ring.coedges();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
@@ -9418,7 +9435,11 @@ fn standard_face_boundary_witnesses(
                 continue;
             };
             if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &curve.geometry, 0.5 * (start + end))?,
+                cadmpeg_ir::eval::decode::curve_point_for_decode(
+                    ctx,
+                    &curve.geometry,
+                    0.5 * (start + end),
+                )?,
             )? {
                 ctx.push_vec(&mut witnesses, point.get(), "catia_a5_face_witness_points")?;
             }

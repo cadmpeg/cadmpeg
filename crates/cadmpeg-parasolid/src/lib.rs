@@ -305,7 +305,9 @@ pub fn push_extras(
                 ), "Parasolid dialect collision")?;
                 ctx.push_retained_vec(&mut collisions, message, "Parasolid dialect collisions")?;
             }
-            Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => return Err(limit.into()),
+            Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
+                return Err(limit.into())
+            }
         }
     }
     Ok(collisions)
@@ -497,9 +499,13 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).expect("empty root");
-        let collisions = push_extras(&ctx, &mut layers, [first.clone(), later]).expect("admitted layers");
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("empty root");
+        let collisions =
+            push_extras(&ctx, &mut layers, [first.clone(), later]).expect("admitted layers");
 
         assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [first.matched()]);
         assert_eq!(

@@ -127,10 +127,7 @@ pub(super) fn fill_bspline_basis(
 /// The quotient of three finite lanes over the exact knot difference, NaN where
 /// a lane or the quotient left the finite range, and `None` with the refusal
 /// recorded when the quotient was refused a resource.
-fn nan_quotient(
-    scratch: &decode::Scratch<'_, '_>,
-    lanes: Option<[FiniteReal; 3]>,
-) -> Option<f64> {
+fn nan_quotient(scratch: &decode::Scratch<'_, '_>, lanes: Option<[FiniteReal; 3]>) -> Option<f64> {
     let Some([value, end, start]) = lanes else {
         return Some(f64::NAN);
     };

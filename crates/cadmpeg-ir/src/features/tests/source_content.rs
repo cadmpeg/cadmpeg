@@ -13,14 +13,37 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
         assert!(FeatureContent::try_from(vec![reference.clone(), reference.clone()]).is_err());
         let mut content = FeatureContent::try_from(vec![reference.clone()]).unwrap();
         let original = content.clone();
-        assert!(crate::test_support::with_service_decode_context(|ctx| content.push(reference, ctx, "test feature source content").map_err(cadmpeg_core::CodecError::from)).is_err());
+        assert!(
+            crate::test_support::with_service_decode_context(|ctx| content
+                .push(reference, ctx, "test feature source content")
+                .map_err(cadmpeg_core::CodecError::from))
+            .is_err()
+        );
         assert_eq!(content, original);
     }
     let mut content = FeatureContent::text(["text".to_owned(), "text".to_owned()]);
-    crate::test_support::with_service_decode_context(|ctx| content.push(parameter.clone(), ctx, "test feature source content").map_err(cadmpeg_core::CodecError::from)).unwrap();
-    crate::test_support::with_service_decode_context(|ctx| content.push(child.clone(), ctx, "test feature source content").map_err(cadmpeg_core::CodecError::from)).unwrap();
-    crate::test_support::with_service_decode_context(|ctx| content.push(FeatureSourceContent::Text("text".into()), ctx, "test feature source content").map_err(cadmpeg_core::CodecError::from))
-        .unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        content
+            .push(parameter.clone(), ctx, "test feature source content")
+            .map_err(cadmpeg_core::CodecError::from)
+    })
+    .unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        content
+            .push(child.clone(), ctx, "test feature source content")
+            .map_err(cadmpeg_core::CodecError::from)
+    })
+    .unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        content
+            .push(
+                FeatureSourceContent::Text("text".into()),
+                ctx,
+                "test feature source content",
+            )
+            .map_err(cadmpeg_core::CodecError::from)
+    })
+    .unwrap();
     assert_eq!(
         (&*content),
         &[
@@ -62,7 +85,13 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     feature.dependencies.insert(dependency.clone());
     let parameter =
         FeatureSourceContent::Parameter(ParameterId::mint("test:test:parameter#one").unwrap());
-    crate::test_support::with_service_decode_context(|ctx| feature.source_content.push(parameter.clone(), ctx, "test feature source content").map_err(cadmpeg_core::CodecError::from)).unwrap();
+    crate::test_support::with_service_decode_context(|ctx| {
+        feature
+            .source_content
+            .push(parameter.clone(), ctx, "test feature source content")
+            .map_err(cadmpeg_core::CodecError::from)
+    })
+    .unwrap();
     let original = serde_json::to_value(&feature).unwrap();
     assert_eq!(
         serde_json::from_value::<Feature>(original.clone()).unwrap(),

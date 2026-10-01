@@ -266,7 +266,7 @@ fn display_jt_native_arena_refuses_before_value_clone() {
             let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
             assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "index DisplayJT graph records"));
+            && limit.operation == "load typed native record"));
             crate::test_support::with_decode_context(|service| {
                 assert!(crate::NxCodec::validate_native(service, &ir)
                     .unwrap()

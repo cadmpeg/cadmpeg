@@ -1603,7 +1603,10 @@ fn plan_e5_boundary<'a>(
                             .as_ref()
                             .map(|(curve, range)| {
                                 Ok::<_, cadmpeg_core::CodecError>((
-                                    (curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
+                                    (curve).try_clone_for_decode(
+                                        ctx,
+                                        "catia_e5_boundary_curve_copy",
+                                    )?,
                                     *range,
                                 ))
                             })
@@ -1794,7 +1797,8 @@ fn plan_e5_boundary<'a>(
         let same_parameterization =
             parameter_range_agreement_tolerance(left.curve_range, right.curve_range).is_some();
         let same_carrier = equivalent_e5_curve_carriers(&left.curve, &right.curve);
-        let same_ordered_sweep = e5_circle_carriers_have_same_ordered_sweep(ctx,
+        let same_ordered_sweep = e5_circle_carriers_have_same_ordered_sweep(
+            ctx,
             &left.curve,
             left.curve_range,
             &right.curve,
@@ -1806,7 +1810,11 @@ fn plan_e5_boundary<'a>(
         ctx.insert_btree_map(
             &mut edge_curves,
             edge_ref,
-            ((&left.curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?, left.curve_range),
+            (
+                left.curve
+                    .try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
+                left.curve_range,
+            ),
             "catia_e5_edge_curve_plan",
         )?;
         let [left_side, right_side] = [left, right].map(|side| {
@@ -1876,7 +1884,10 @@ fn plan_e5_boundary<'a>(
             edge_ref,
             cache
                 .map(|(curve, range)| {
-                    Ok::<_, cadmpeg_core::CodecError>(((curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?, range))
+                    Ok::<_, cadmpeg_core::CodecError>((
+                        (curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
+                        range,
+                    ))
                 })
                 .transpose()?
                 .unwrap_or((
@@ -2663,7 +2674,10 @@ fn emit_e5_faces_loops_coedges(
                     "catia_annotation_field",
                 )?;
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, vertex_uses).map_err(cadmpeg_core::CodecError::from)? else {
+            let Ok(ring) =
+                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, vertex_uses)
+                    .map_err(cadmpeg_core::CodecError::from)?
+            else {
                 return Ok(false);
             };
             admission.reserve_entity(&mut ir.model.loops, "catia_e5_model_loops")?;
@@ -2840,7 +2854,9 @@ fn e5_pcurve_on_surface(
             else {
                 return Ok(None);
             };
-            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[1].u, uv[1].v)?)?
+            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[1].u, uv[1].v)?,
+            )?
             else {
                 return Ok(None);
             };
@@ -2894,13 +2910,25 @@ fn e5_pcurve_on_surface(
                 let geometry = PcurveGeometry::Nurbs { nurbs };
                 let start_angle = angular_range[0];
                 let end_angle = angular_range[1];
-                let Some(start) =
-                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, (center[0] + radius * start_angle.cos()) * scale[0], (center[1] + radius * start_angle.sin()) * scale[1])?)?
+                let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                        ctx,
+                        surface,
+                        (center[0] + radius * start_angle.cos()) * scale[0],
+                        (center[1] + radius * start_angle.sin()) * scale[1],
+                    )?,
+                )?
                 else {
                     return Ok(None);
                 };
-                let Some(end) =
-                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, (center[0] + radius * end_angle.cos()) * scale[0], (center[1] + radius * end_angle.sin()) * scale[1])?)?
+                let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
+                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                        ctx,
+                        surface,
+                        (center[0] + radius * end_angle.cos()) * scale[0],
+                        (center[1] + radius * end_angle.sin()) * scale[1],
+                    )?,
+                )?
                 else {
                     return Ok(None);
                 };
@@ -2958,12 +2986,16 @@ fn e5_pcurve_on_surface(
                 return Ok(None);
             };
             let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, first[0], first[1])?,
+                cadmpeg_ir::eval::decode::surface_point_for_decode(
+                    ctx, surface, first[0], first[1],
+                )?,
             )?
             else {
                 return Ok(None);
             };
-            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, last[0], last[1])?)?
+            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, last[0], last[1])?,
+            )?
             else {
                 return Ok(None);
             };
@@ -3028,13 +3060,17 @@ fn e5_pcurve_on_surface(
                     return Ok(None);
                 };
                 let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, start_uv.u, start_uv.v)?,
+                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                        ctx, surface, start_uv.u, start_uv.v,
+                    )?,
                 )?
                 else {
                     return Ok(None);
                 };
                 let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, end_uv.u, end_uv.v)?,
+                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                        ctx, surface, end_uv.u, end_uv.v,
+                    )?,
                 )?
                 else {
                     return Ok(None);
@@ -3192,12 +3228,22 @@ fn e5_boundary_curve(
             return None;
         };
         let direction = line_pcurve.direction().as_raw();
-        let start_uv = match cadmpeg_ir::eval::finite_or_refusal(match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[0]) { Ok(value) => value, Err(error) => return Some(Err(error.into())) }) {
+        let start_uv = match cadmpeg_ir::eval::finite_or_refusal(
+            match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[0]) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error.into())),
+            },
+        ) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit.into())),
         };
-        let end_uv = match cadmpeg_ir::eval::finite_or_refusal(match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[1]) { Ok(value) => value, Err(error) => return Some(Err(error.into())) }) {
+        let end_uv = match cadmpeg_ir::eval::finite_or_refusal(
+            match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[1]) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error.into())),
+            },
+        ) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit.into())),
@@ -3223,7 +3269,8 @@ fn e5_boundary_curve(
             let mut choices = [None, None];
             for (index, axis) in [axis, axis.scale(-1.0)].into_iter().enumerate() {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                let range = match circle_parameter_range_from_surface_branch(ctx,
+                let range = match circle_parameter_range_from_surface_branch(
+                    ctx,
                     crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
                         surface,
                         center,
@@ -3373,7 +3420,8 @@ fn e5_occurrence_intersection_cache<'a>(
     {
         return Ok(Some((left_curve, *left_range)));
     }
-    if e5_circle_carriers_have_same_ordered_sweep(ctx,
+    if e5_circle_carriers_have_same_ordered_sweep(
+        ctx,
         left_curve,
         *left_range,
         right_curve,
@@ -3489,23 +3537,27 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     {
         return Ok(false);
     }
-    let Some(left_start) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, left, left_range[0])?)?
+    let Some(left_start) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, left, left_range[0])?,
+    )?
     else {
         return Ok(false);
     };
-    let Some(left_end) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, left, left_range[1])?)?
+    let Some(left_end) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, left, left_range[1])?,
+    )?
     else {
         return Ok(false);
     };
-    let Some(right_start) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, right, right_range[0])?)?
+    let Some(right_start) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, right, right_range[0])?,
+    )?
     else {
         return Ok(false);
     };
-    let Some(right_end) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, right, right_range[1])?)?
+    let Some(right_end) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, right, right_range[1])?,
+    )?
     else {
         return Ok(false);
     };

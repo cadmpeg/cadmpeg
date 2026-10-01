@@ -149,7 +149,8 @@ pub(super) fn scan(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        let copied_geometry = geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
+        let copied_geometry =
+            geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
         ctx.reserve_vec(&mut out, 1, "collect Parasolid subset curves")?;
         out.push(CurveCarrier {
             attr,
@@ -306,17 +307,48 @@ mod tests {
         let carriers = nurbs_carriers();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 15;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = scan(&ctx, &bytes, &carriers).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes)
-        );
-        policy.limits.max_materialized_bytes = 16;
-        let arena = DecodeArena::new();
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
+
+        let quadratic = NurbsCurve::from_lanes_for_decode(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![0.0, 0.0, 0.0, 0.005, 0.005, 0.005],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 2.5, 0.0),
+                Point3::new(0.0, 5.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("service storage")
+        .expect("quadratic version of the same line");
+        let mut quadratic_carriers = CarrierIndex::default();
+        quadratic_carriers
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                super::super::Carrier::Curve(CurveCarrier {
+                    attr: 10,
+                    offset: 100,
+                    end: 120,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(quadratic)),
+                    parameter_range: None,
+                }),
+            )
+            .unwrap();
+        policy.limits.max_materialized_bytes = 31;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = scan(&ctx, &bytes, &quadratic_carriers).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "IR B-spline basis")
+        );
+        policy.limits.max_materialized_bytes = 32;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        assert_eq!(scan(&ctx, &bytes, &quadratic_carriers).unwrap().len(), 1);
     }
 
     #[test]

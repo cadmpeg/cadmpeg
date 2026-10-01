@@ -125,18 +125,17 @@ pub(crate) fn project_parameters(
                     ordinal: ordinal_u32,
                     properties,
                     name,
-                    expression: ctx.format_retained(format_args!("{expression}"), "retain SLDPRT parameter expression")?,
+                    expression: ctx.format_retained(
+                        format_args!("{expression}"),
+                        "retain SLDPRT parameter expression",
+                    )?,
                     display,
                     value,
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     native_ref: None,
                     pmi: None,
                 };
-                ctx.reserve_vec(
-                    &mut parameters,
-                    1,
-                    "collect SLDPRT projected parameters",
-                )?;
+                ctx.reserve_vec(&mut parameters, 1, "collect SLDPRT projected parameters")?;
                 parameters.push(parameter);
             }
         }
@@ -189,9 +188,10 @@ fn bare_text_parameter_literal(
     if identifiers.iter().any(definite_parameter_reference) {
         return Ok(None);
     }
-    Ok(Some(ParameterValue::String(
-        ctx.format_retained(format_args!("{expression}"), "retain SLDPRT text parameter literal")?,
-    )))
+    Ok(Some(ParameterValue::String(ctx.format_retained(
+        format_args!("{expression}"),
+        "retain SLDPRT text parameter literal",
+    )?)))
 }
 
 fn formatted_text_dimension_literal(
@@ -206,7 +206,10 @@ fn formatted_text_dimension_literal(
     )?;
     formatted_text_dimension_value(name, expression)
         .map(|value| {
-            ctx.format_retained(format_args!("{value}"), "retain SLDPRT formatted parameter literal")
+            ctx.format_retained(
+                format_args!("{value}"),
+                "retain SLDPRT formatted parameter literal",
+            )
             .map(ParameterValue::String)
         })
         .transpose()
@@ -302,7 +305,10 @@ pub(super) fn apply_evaluated_parameters(
                 continue;
             };
             let value = match value {
-                ParameterValue::String(value) => ctx.format_retained(format_args!("{value}"), "retain SLDPRT evaluated parameter text")?,
+                ParameterValue::String(value) => ctx.format_retained(
+                    format_args!("{value}"),
+                    "retain SLDPRT evaluated parameter text",
+                )?,
                 _ => format_parameter_value(value),
             };
             let name = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(
@@ -431,7 +437,9 @@ fn copy_parameter_id(ctx: &DecodeContext<'_>, id: &ParameterId) -> Result<Parame
             ctx.refuse_codec_limit("retain SLDPRT parameter reference", u64::MAX - 1, u64::MAX)
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT parameter reference")?;
-    ParameterId::mint(ctx.format_retained(format_args!("{id}"), "retain SLDPRT parameter reference")?)
+    ParameterId::mint(
+        ctx.format_retained(format_args!("{id}"), "retain SLDPRT parameter reference")?,
+    )
     .map_err(CodecError::malformed)
 }
 
@@ -628,9 +636,7 @@ impl ParameterAliases {
         global_owners: &HashSet<FeatureId>,
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "retain SLDPRT parameter alias";
-        let copy = |value: &str| {
-            ctx.format_retained(format_args!("{value}"), OPERATION)
-        };
+        let copy = |value: &str| ctx.format_retained(format_args!("{value}"), OPERATION);
         let mut aliases = Self {
             global: HashMap::new(),
             exact: HashMap::new(),
@@ -658,7 +664,8 @@ impl ParameterAliases {
                 .as_ref()
                 .and_then(|owner| feature_names.get(owner))
             {
-                let qualified = ctx.format_retained(format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
+                let qualified = ctx
+                    .format_retained(format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
                 insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 if let Some(equation_id) = parameter.properties.get("EquationId") {
                     let qualified = if equation_id.contains('@') {
@@ -1076,7 +1083,8 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
         };
         ctx.charge_work(inner.len() as u64, "unescape SLDPRT parameter identifier")?;
         let value = if inner.contains("\"\"") {
-            let (mut value, reservation) = ctx.scoped_string(inner.len(), "unescape SLDPRT parameter identifier")?;
+            let (mut value, reservation) =
+                ctx.scoped_string(inner.len(), "unescape SLDPRT parameter identifier")?;
             let mut segments = inner.split("\"\"");
             if let Some(first) = segments.next() {
                 value.push_str(first);
@@ -1183,11 +1191,7 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
             if closed {
                 if let Some(identifier) = ExpressionIdentifier::quoted(ctx, expression, at, cursor)?
                 {
-                    ctx.reserve_vec(
-                        &mut identifiers,
-                        1,
-                        "collect SLDPRT parameter identifiers",
-                    )?;
+                    ctx.reserve_vec(&mut identifiers, 1, "collect SLDPRT parameter identifiers")?;
                     identifiers.push(identifier);
                 }
                 at = cursor;
@@ -1204,11 +1208,7 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
                 })
                 .unwrap_or(rest.len());
             if let Some(identifier) = ExpressionIdentifier::plain(expression, at, at + end) {
-                ctx.reserve_vec(
-                    &mut identifiers,
-                    1,
-                    "collect SLDPRT parameter identifiers",
-                )?;
+                ctx.reserve_vec(&mut identifiers, 1, "collect SLDPRT parameter identifiers")?;
                 identifiers.push(identifier);
             }
             at += end;

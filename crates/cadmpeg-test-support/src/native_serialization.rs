@@ -28,7 +28,8 @@ pub fn assert_native_limit<T: Serialize>(record: &T, expected: impl Into<serde_j
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(4 * std::mem::size_of::<NativeRecord>()).expect("record vector capacity") + 1;
+    policy.limits.max_retained_bytes =
+        u64::try_from(4 * std::mem::size_of::<NativeRecord>()).expect("record vector capacity") + 1;
     let (limited, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let error = arena_from(&limited, [Ok::<_, NativeConvertError>(&counted)])

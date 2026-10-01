@@ -503,11 +503,7 @@ impl Facts {
                     && body_region_attrs.contains(&u16_from_ref_or_none(shell.refs[6]).unwrap_or(0))
                     && (shell.refs[1] == u32::from(body_attr) || shell.refs[1] <= 1)
             }) {
-                ctx.reserve_vec(
-                    &mut body_shells,
-                    1,
-                    "collect typed Parasolid body shells",
-                )?;
+                ctx.reserve_vec(&mut body_shells, 1, "collect typed Parasolid body shells")?;
                 body_shells.push(shell.clone());
             }
 
@@ -1135,7 +1131,11 @@ fn push_record<T, F: FnOnce() -> Result<T, CodecError>>(
             )
         })?;
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(records, 1, "admit typed Parasolid record")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        records,
+        1,
+        "admit typed Parasolid record",
+    )?;
     let record = record()?;
     offsets.insert(offset);
     records.push(record);

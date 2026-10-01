@@ -575,7 +575,9 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
         record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
     });
     let mut cache_policy = DecodePolicy::service();
-    cache_policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(procedural.id.as_str().len()) + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&procedural));
+    cache_policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(procedural.id.as_str().len())
+            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&procedural));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
     let solved = cached.model.surfaces[0].geometry.clone();
     cached
@@ -641,7 +643,9 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
             record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
         });
     let mut cache_policy = DecodePolicy::service();
-    cache_policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(procedural.id.as_str().len()) + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&procedural));
+    cache_policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(procedural.id.as_str().len())
+            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&procedural));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
     let solved = cached.model.curves[0].geometry.clone();
     cached

@@ -534,7 +534,9 @@ fn project_all_dimension_constraints(
         let geometry = native_geometry.get(&(scope, record_index));
         Ok(SketchNativeOperand {
             native_kind: match geometry {
-                Some((kind, _, _)) => kind.try_clone_for_decode(ctx, "f3d dimension native kind")?,
+                Some((kind, _, _)) => {
+                    kind.try_clone_for_decode(ctx, "f3d dimension native kind")?
+                }
                 None => cadmpeg_core::nonblank_literal!("record"),
             },
             field: Some(NativeOperandField { name: field, role }),
@@ -562,7 +564,12 @@ fn project_all_dimension_constraints(
                         .try_clone_for_decode(ctx, "f3d native dimension entity id")?;
                     ctx.push_vec(&mut entity_ids, id, "f3d native dimension entity")?;
                 }
-                let operand = native_operand(scope, field.try_clone_for_decode(ctx, "f3d dimension operand field")?, *role, *record_index)?;
+                let operand = native_operand(
+                    scope,
+                    field.try_clone_for_decode(ctx, "f3d dimension operand field")?,
+                    *role,
+                    *record_index,
+                )?;
                 ctx.push_vec(
                     &mut native_operands,
                     operand,

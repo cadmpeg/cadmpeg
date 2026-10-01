@@ -54,7 +54,10 @@ pub(super) fn feature_intervals(
             }
             if let Some(name) = feature_object_name(feature, lane) {
                 ctx.reserve_vec(&mut starts, 1, "collect SLDPRT feature intervals")?;
-                let id = ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT feature interval identity")?;
+                let id = ctx.format_retained(
+                    format_args!("{}", feature.id),
+                    "retain SLDPRT feature interval identity",
+                )?;
                 starts.push((name.offset, id));
             }
         }
@@ -499,7 +502,10 @@ pub(super) fn relation_instances(
         })?;
         ctx.reserve_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
         instances.push(FeatureInputRelationInstance {
-            id: ctx.format_retained(format_args!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"), "retain SLDPRT relation instance identity")?,
+            id: ctx.format_retained(
+                format_args!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"),
+                "retain SLDPRT relation instance identity",
+            )?,
             parent: copy_relation_text(ctx, &lane.id)?,
             ordinal,
             offset,
@@ -547,10 +553,13 @@ pub(super) fn relation_instances(
         claimed_scalar_refs.insert(binding.scalar_ref.as_str());
         ctx.reserve_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
         instances.push(FeatureInputRelationInstance {
-            id: ctx.format_retained(format_args!(
+            id: ctx.format_retained(
+                format_args!(
                     "sldprt:feature-input:relation-instance#{lane_key}:{}",
                     scalar.offset
-                ), "retain SLDPRT relation instance identity")?,
+                ),
+                "retain SLDPRT relation instance identity",
+            )?,
             parent: copy_relation_text(ctx, &lane.id)?,
             ordinal: u32::try_from(instances.len()).map_err(|_| {
                 ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX)
@@ -589,7 +598,10 @@ fn copy_relation_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Cod
             )
         })?;
     ctx.charge_work(copy_work, "retain SLDPRT relation record identity")?;
-    ctx.format_retained(format_args!("{text}"), "retain SLDPRT relation record identity")
+    ctx.format_retained(
+        format_args!("{text}"),
+        "retain SLDPRT relation record identity",
+    )
 }
 
 fn reserve_relation_map<K: Eq + std::hash::Hash, V>(
@@ -2734,11 +2746,7 @@ fn dynamic_point_matches<'a>(
                 |horizontal| axis_distance(first_coordinates, second_coordinates, horizontal),
             );
             if same_relation_dimension(measured, target) {
-                ctx.reserve_vec(
-                    &mut matches,
-                    1,
-                    "collect SLDPRT dynamic point matches",
-                )?;
+                ctx.reserve_vec(&mut matches, 1, "collect SLDPRT dynamic point matches")?;
                 matches.push((first.id(), second.id()));
             }
         }

@@ -20,89 +20,89 @@ fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
 #[test]
 fn low_degree_second_derivative_basis_borrows_zeros() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-    use std::borrow::Cow;
+        use std::borrow::Cow;
 
-    let constant = crate::eval::basis::bspline_basis_second_derivative(
-        &crate::eval::decode::Scratch::new(ctx),
-        &[],
-        0,
-        0,
-        0.0,
-    )
-    .expect("degree-zero second derivative");
-    let linear = crate::eval::basis::bspline_basis_second_derivative(
-        &crate::eval::decode::Scratch::new(ctx),
-        &[],
-        1,
-        0,
-        0.0,
-    )
-    .expect("degree-one second derivative");
-    assert!(matches!(constant, Cow::Borrowed(_)));
-    assert!(matches!(linear, Cow::Borrowed(_)));
-    assert_eq!(constant.as_ref(), &[0.0]);
-    assert_eq!(linear.as_ref(), &[0.0, 0.0]);
-});
+        let constant = crate::eval::basis::bspline_basis_second_derivative(
+            &crate::eval::decode::Scratch::new(ctx),
+            &[],
+            0,
+            0,
+            0.0,
+        )
+        .expect("degree-zero second derivative");
+        let linear = crate::eval::basis::bspline_basis_second_derivative(
+            &crate::eval::decode::Scratch::new(ctx),
+            &[],
+            1,
+            0,
+            0.0,
+        )
+        .expect("degree-one second derivative");
+        assert!(matches!(constant, Cow::Borrowed(_)));
+        assert!(matches!(linear, Cow::Borrowed(_)));
+        assert_eq!(constant.as_ref(), &[0.0]);
+        assert_eq!(linear.as_ref(), &[0.0, 0.0]);
+    });
 }
 
 #[test]
 fn admitted_scaled_derivatives_refuse_each_collection() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-    for (degree, cap, operation) in [
-        (0, 0, "IR scaled B-spline first basis"),
-        (0, 1, "IR scaled B-spline second basis"),
-        (1, 1, "IR scaled B-spline derivative basis"),
-        (1, 3, "IR scaled B-spline second basis"),
-        (2, 2, "IR scaled B-spline derivative basis"),
-        (2, 4, "IR scaled B-spline derivative basis"),
-        (2, 7, "IR scaled B-spline derivative basis"),
-    ] {
-        let mut knots = vec![0.0; degree + 1];
-        knots.extend(vec![1.0; degree + 1]);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let result = with_policy(policy, |ctx| {
-            let scratch = crate::eval::decode::Scratch::new(ctx);
-            let result = crate::eval::basis::bspline_basis_scaled_derivatives(
-                &scratch,
-                &knots,
-                degree,
-                degree,
-                0.5,
-                crate::scalar::PositiveReal::ONE,
+        for (degree, cap, operation) in [
+            (0, 0, "IR scaled B-spline first basis"),
+            (0, 1, "IR scaled B-spline second basis"),
+            (1, 1, "IR scaled B-spline derivative basis"),
+            (1, 3, "IR scaled B-spline second basis"),
+            (2, 2, "IR scaled B-spline derivative basis"),
+            (2, 4, "IR scaled B-spline derivative basis"),
+            (2, 7, "IR scaled B-spline derivative basis"),
+        ] {
+            let mut knots = vec![0.0; degree + 1];
+            knots.extend(vec![1.0; degree + 1]);
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let result = with_policy(policy, |ctx| {
+                let scratch = crate::eval::decode::Scratch::new(ctx);
+                let result = crate::eval::basis::bspline_basis_scaled_derivatives(
+                    &scratch,
+                    &knots,
+                    degree,
+                    degree,
+                    0.5,
+                    crate::scalar::PositiveReal::ONE,
+                );
+                scratch.finish(result).map_err(CodecError::from)
+            });
+            assert!(
+                matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
             );
-            scratch.finish(result).map_err(CodecError::from)
-        });
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
-        );
-        let result = with_policy(DecodePolicy::service(), |ctx| {
-            let scratch = crate::eval::decode::Scratch::new(ctx);
-            let result = crate::eval::basis::bspline_basis_scaled_derivatives(
-                &scratch,
-                &knots,
-                degree,
-                degree,
-                0.5,
-                crate::scalar::PositiveReal::ONE,
+            let result = with_policy(DecodePolicy::service(), |ctx| {
+                let scratch = crate::eval::decode::Scratch::new(ctx);
+                let result = crate::eval::basis::bspline_basis_scaled_derivatives(
+                    &scratch,
+                    &knots,
+                    degree,
+                    degree,
+                    0.5,
+                    crate::scalar::PositiveReal::ONE,
+                );
+                scratch.finish(result).map_err(CodecError::from)
+            })
+            .expect("service");
+            assert_eq!(
+                result,
+                crate::eval::basis::bspline_basis_scaled_derivatives(
+                    &crate::eval::decode::Scratch::new(ctx),
+                    &knots,
+                    degree,
+                    degree,
+                    0.5,
+                    crate::scalar::PositiveReal::ONE
+                )
             );
-            scratch.finish(result).map_err(CodecError::from)
-        })
-        .expect("service");
-        assert_eq!(
-            result,
-            crate::eval::basis::bspline_basis_scaled_derivatives(
-                &crate::eval::decode::Scratch::new(ctx),
-                &knots,
-                degree,
-                degree,
-                0.5,
-                crate::scalar::PositiveReal::ONE
-            )
-        );
-        assert!(result.is_some());
-    }
-});
+            assert!(result.is_some());
+        }
+    });
 }
 
 #[test]

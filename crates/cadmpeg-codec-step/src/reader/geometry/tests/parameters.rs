@@ -162,6 +162,31 @@ fn assert_parameter_inference_refusal(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
+    if matches!(
+        operation,
+        "step_parameter_inference_ranges" | "step_parameter_inference_edge_curve"
+    ) {
+        let error =
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
+                let mut ir = parameter_inference_ir(with_edge);
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = limit;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = limit;
+                    }
+                    other => panic!("unexpected inference dimension: {other:?}"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+                super::super::infer_edge_parameter_ranges(&mut ir, &ctx)
+            });
+        assert!(matches!(error, CodecError::ResourceLimit(refusal)
+            if refusal.dimension == dimension && refusal.operation == operation));
+        return;
+    }
     let mut ir = parameter_inference_ir(with_edge);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

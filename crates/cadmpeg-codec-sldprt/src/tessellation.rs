@@ -1717,11 +1717,7 @@ impl PlanarTrim {
             let Some(point) = inverse_body.apply_point(point.get()) else {
                 return Ok(false);
             };
-            ctx.reserve_vec(
-                &mut projected,
-                1,
-                "collect SLDPRT planar trim projections",
-            )?;
+            ctx.reserve_vec(&mut projected, 1, "collect SLDPRT planar trim projections")?;
             projected.push(self.frame.project(point.get()));
         }
         let mut holes = Vec::new();
@@ -2183,11 +2179,7 @@ fn planar_trim(
         let (outer, holes) = require_some!(circular_outer_and_holes(ctx, &circles, tolerance)?);
         let mut planar_holes = Vec::new();
         for hole in holes {
-            ctx.reserve_vec(
-                &mut planar_holes,
-                1,
-                "collect SLDPRT circular planar holes",
-            )?;
+            ctx.reserve_vec(&mut planar_holes, 1, "collect SLDPRT circular planar holes")?;
             planar_holes.push(PlanarHole::Circle(hole));
         }
         (PlanarOuter::Circle(outer), planar_holes)
@@ -2213,11 +2205,7 @@ fn planar_trim(
         let mut polygon_holes = Vec::new();
         for (index, polygon) in polygons.iter().enumerate() {
             if index != outer_index {
-                ctx.reserve_vec(
-                    &mut polygon_holes,
-                    1,
-                    "collect SLDPRT planar polygon holes",
-                )?;
+                ctx.reserve_vec(&mut polygon_holes, 1, "collect SLDPRT planar polygon holes")?;
                 polygon_holes.push(polygon);
             }
         }

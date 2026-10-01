@@ -187,11 +187,11 @@ pub(crate) fn inspect(
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched)
             .with_for_decode(ctx, kernel, "collect SAT dialect layers")
-            .map_err(|rejected| {
-                match rejected {
-                    cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}")),
-                    cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
+            .map_err(|rejected| match rejected {
+                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
+                    CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             })?,
         cadmpeg_ir::ContainerKind::Stream,
         vec![ContainerEntry {

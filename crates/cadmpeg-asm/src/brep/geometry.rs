@@ -1067,9 +1067,13 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         if end > *last && end - *last <= tolerance {
             end = *last;
         }
-        edge.carrier =
-            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().map(|curve| curve.try_clone_for_decode(ctx, "ASM edge carrier identity")).transpose()?, Some([start, end]))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            edge.curve()
+                .map(|curve| curve.try_clone_for_decode(ctx, "ASM edge carrier identity"))
+                .transpose()?,
+            Some([start, end]),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(())
 }
@@ -1081,12 +1085,7 @@ pub(super) fn classify_body_kinds(
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
         for shell in &region.shells {
-            ctx.insert_hash_map(
-                &mut shell_bodies,
-                shell,
-                &region.body,
-                "ASM shell bodies",
-            )?;
+            ctx.insert_hash_map(&mut shell_bodies, shell, &region.body, "ASM shell bodies")?;
         }
     }
     let mut body_has_faces = HashSet::new();
@@ -1103,12 +1102,7 @@ pub(super) fn classify_body_kinds(
             ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces")?;
         }
         for face in shell.faces() {
-            ctx.insert_hash_map(
-                &mut face_bodies,
-                face,
-                body,
-                "ASM face bodies",
-            )?;
+            ctx.insert_hash_map(&mut face_bodies, face, body, "ASM face bodies")?;
         }
     }
     let mut loop_bodies = HashMap::new();
@@ -1117,12 +1111,7 @@ pub(super) fn classify_body_kinds(
             continue;
         };
         for loop_id in &face.loops {
-            ctx.insert_hash_map(
-                &mut loop_bodies,
-                loop_id,
-                body,
-                "ASM loop bodies",
-            )?;
+            ctx.insert_hash_map(&mut loop_bodies, loop_id, body, "ASM loop bodies")?;
         }
     }
     let mut coedge_bodies = HashMap::new();
@@ -1131,12 +1120,7 @@ pub(super) fn classify_body_kinds(
             continue;
         };
         for coedge in loop_.coedges() {
-            ctx.insert_hash_map(
-                &mut coedge_bodies,
-                coedge,
-                body,
-                "ASM coedge bodies",
-            )?;
+            ctx.insert_hash_map(&mut coedge_bodies, coedge, body, "ASM coedge bodies")?;
         }
     }
     let mut edge_use_counts = HashMap::<_, HashMap<&EdgeId, usize>>::new();

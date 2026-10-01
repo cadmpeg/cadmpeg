@@ -216,7 +216,9 @@ impl Write for ChargingJsonWriter<'_, '_> {
         Ok(bytes.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Schema descriptor for a native record's identity and open field map.
@@ -373,7 +375,10 @@ impl NativeRecord {
     }
 
     /// Clone codec-owned fields after admitting the value tree and its bytes.
-    pub fn fields_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Map<String, Value>, NativeConvertError> {
+    pub fn fields_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Map<String, Value>, NativeConvertError> {
         let Value::Object(fields) = copy_value_for_decode(ctx, &self.fields)? else {
             return Err(NativeConvertError::NonObject);
         };
@@ -388,14 +393,19 @@ impl NativeRecord {
         self.fields.get(name).cloned()
     }
 
-    fn to_typed<T: DeserializeOwned>(&self, ctx: &DecodeContext<'_>) -> Result<T, NativeConvertError> {
+    fn to_typed<T: DeserializeOwned>(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<T, NativeConvertError> {
         let record = copy_value_for_decode(ctx, self)?;
         #[cfg(test)]
         TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         match serde_json::from_value(record) {
             Ok(value) => Ok(value),
             Err(source) => Err(NativeConvertError::ReadRecord {
-                id: self.id.try_clone_for_decode(ctx, "retain native record error identity")?,
+                id: self
+                    .id
+                    .try_clone_for_decode(ctx, "retain native record error identity")?,
                 source,
             }),
         }
@@ -403,21 +413,34 @@ impl NativeRecord {
 }
 
 /// Copies a value through the canonical serializer's charged allocations.
-fn copy_value_for_decode<T: Serialize + ?Sized>(ctx: &DecodeContext<'_>, value: &T) -> Result<Value, NativeConvertError> {
+fn copy_value_for_decode<T: Serialize + ?Sized>(
+    ctx: &DecodeContext<'_>,
+    value: &T,
+) -> Result<Value, NativeConvertError> {
     let copied = value.serialize(canon::CanonValue::for_record_with_sink(ctx, None));
     ctx.charge_work(0, "construct canonical native value")?;
     Ok(copied.map_err(|error| error.into_native(ctx))?.into_value())
 }
 
 /// Adds an arena name to a semantic typed-record refusal.
-fn read_record<T: DeserializeOwned>(ctx: &DecodeContext<'_>, arena: &str, record: &NativeRecord) -> Result<T, NativeConvertError> {
+fn read_record<T: DeserializeOwned>(
+    ctx: &DecodeContext<'_>,
+    arena: &str,
+    record: &NativeRecord,
+) -> Result<T, NativeConvertError> {
     match record.to_typed(ctx) {
         Ok(value) => Ok(value),
         Err(source) if source.resource_limit().is_some() => Err(source),
         Err(source) => {
             let arena = ctx.copy_retained_text(arena, "retain native arena error name")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()), "retain native arena error")?;
-            Err(NativeConvertError::Arena { arena, source: Box::new(source) })
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
+                "retain native arena error",
+            )?;
+            Err(NativeConvertError::Arena {
+                arena,
+                source: Box::new(source),
+            })
         }
     }
 }
@@ -489,10 +512,7 @@ where
         let record = record?;
         ctx.reserve_retained_vec(&mut converted, 1, "store native record")
             .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-        let writer = RefCell::new(ChargingJsonWriter {
-            ctx,
-            refusal: None,
-        });
+        let writer = RefCell::new(ChargingJsonWriter { ctx, refusal: None });
         let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
         let result = NativeRecord::from_typed_for_decode(ctx, &record, Some(&sink));
         let record = match result {
@@ -509,7 +529,8 @@ where
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
                     "retain native write error",
-                ).map_err(|error| E::from(NativeConvertError::Resource(error)))?;
+                )
+                .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
                 return Err(E::from(NativeConvertError::WriteRecord {
                     ordinal,
                     source: Box::new(source),
@@ -651,7 +672,12 @@ impl NativeNamespace {
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
             Ok(converted) => converted,
+            Err(source) if source.resource_limit().is_some() => return Err(source),
             Err(source) => {
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
+                    "retain native arena error",
+                )?;
                 return Err(NativeConvertError::Arena {
                     arena: name,
                     source: Box::new(source),
@@ -664,7 +690,10 @@ impl NativeNamespace {
 
     /// Admit an arena through a codec-owned collection constructor.
     pub fn arena_as_collection<T, C>(&self, name: &str) -> Result<C, NativeConvertError>
-    where T: DeserializeOwned, C: TryFrom<Vec<T>, Error = NativeConvertError> {
+    where
+        T: DeserializeOwned,
+        C: TryFrom<Vec<T>, Error = NativeConvertError>,
+    {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
@@ -672,8 +701,15 @@ impl NativeNamespace {
     }
 
     /// Admits a typed collection using the caller's decode budget.
-    pub fn arena_as_collection_for_decode<T, C>(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<C, NativeConvertError>
-    where T: DeserializeOwned, C: TryFrom<Vec<T>, Error = NativeConvertError> {
+    pub fn arena_as_collection_for_decode<T, C>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<C, NativeConvertError>
+    where
+        T: DeserializeOwned,
+        C: TryFrom<Vec<T>, Error = NativeConvertError>,
+    {
         C::try_from(self.arena_as_for_decode(ctx, name)?)
     }
 
@@ -686,7 +722,11 @@ impl NativeNamespace {
     }
 
     /// Deserialize one arena with admission before each retained typed copy.
-    pub fn arena_as_for_decode<T: DeserializeOwned>(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<Vec<T>, NativeConvertError> {
+    pub fn arena_as_for_decode<T: DeserializeOwned>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Vec<T>, NativeConvertError> {
         let mut typed = Vec::new();
         if let Some((arena, records)) = self.arenas.get_key_value(name) {
             for record in records {
@@ -703,22 +743,37 @@ impl NativeNamespace {
     /// caller that consumes and releases each one — reshaping an arena, or
     /// reducing it for hashing — never holds the typed population alongside
     /// whatever it produces from it.
-    pub fn arena_iter_as<'a, T: DeserializeOwned + 'a>(&'a self, name: &str) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
-        self.arenas.get_key_value(name).into_iter().flat_map(|(name, records)| {
-            records.iter().map(move |record| {
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let policy = cadmpeg_core::decode::DecodePolicy::default();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                read_record(&ctx, name, record)
+    pub fn arena_iter_as<'a, T: DeserializeOwned + 'a>(
+        &'a self,
+        name: &str,
+    ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
+        self.arenas
+            .get_key_value(name)
+            .into_iter()
+            .flat_map(|(name, records)| {
+                records.iter().map(move |record| {
+                    let arena = cadmpeg_core::decode::DecodeArena::new();
+                    let policy = cadmpeg_core::decode::DecodePolicy::default();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    read_record(&ctx, name, record)
+                })
             })
-        })
     }
 
     /// Reads typed records lazily using the caller's decode budget.
-    pub fn arena_iter_as_for_decode<'a, T: DeserializeOwned + 'a>(&'a self, ctx: &'a DecodeContext<'_>, name: &str) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
-        self.arenas.get_key_value(name).into_iter().flat_map(move |(arena, records)| {
-            records.iter().map(move |record| read_record(ctx, arena, record))
-        })
+    pub fn arena_iter_as_for_decode<'a, T: DeserializeOwned + 'a>(
+        &'a self,
+        ctx: &'a DecodeContext<'_>,
+        name: &str,
+    ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
+        self.arenas
+            .get_key_value(name)
+            .into_iter()
+            .flat_map(move |(arena, records)| {
+                records
+                    .iter()
+                    .map(move |record| read_record(ctx, arena, record))
+            })
     }
 }
 

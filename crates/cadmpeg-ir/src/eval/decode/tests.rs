@@ -29,15 +29,19 @@ fn admitted_curve_point_refuses_each_scratch_collection() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(matches!(super::nurbs_curve_point_at_for_decode(&ctx, &curve, 0.5).map_err(CodecError::from),
+    assert!(
+        matches!(super::nurbs_curve_point_at_for_decode(&ctx, &curve, 0.5).map_err(CodecError::from),
         Err(CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "IR B-spline basis"));
+            && resource.operation == "IR B-spline basis")
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        super::nurbs_curve_point_at_for_decode(&ctx, &curve, 0.5).map_err(CodecError::from).expect("exact scratch cap"),
+        super::nurbs_curve_point_at_for_decode(&ctx, &curve, 0.5)
+            .map_err(CodecError::from)
+            .expect("exact scratch cap"),
         crate::eval::nurbs_curve_point_at(&curve, 0.5)
     );
 }
@@ -48,9 +52,11 @@ fn admitted_curve_point_refuses_basis_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(matches!(super::nurbs_curve_point_at_for_decode(&ctx, &curve(), 0.5).map_err(CodecError::from),
+    assert!(
+        matches!(super::nurbs_curve_point_at_for_decode(&ctx, &curve(), 0.5).map_err(CodecError::from),
         Err(CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "IR B-spline basis work"));
+            && resource.operation == "IR B-spline basis work")
+    );
 }
 
 #[test]
@@ -60,13 +66,17 @@ fn admitted_curve_tangent_refuses_point_copy() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(matches!(super::curve_tangent_for_decode(&ctx, &geometry, 0.5).map_err(CodecError::from),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS derivative points"));
+    assert!(
+        matches!(super::curve_tangent_for_decode(&ctx, &geometry, 0.5).map_err(CodecError::from),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS derivative points")
+    );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        super::curve_tangent_for_decode(&ctx, &geometry, 0.5).map_err(CodecError::from).expect("service scratch"),
+        super::curve_tangent_for_decode(&ctx, &geometry, 0.5)
+            .map_err(CodecError::from)
+            .expect("service scratch"),
         crate::eval::curve_tangent(&geometry, 0.5)
     );
 }
@@ -97,15 +107,19 @@ fn admitted_surface_point_refuses_both_axis_bases() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(super::surface_point_for_decode(&ctx, &geometry, 0.5, 0.5).map_err(CodecError::from),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis"));
+        assert!(
+            matches!(super::surface_point_for_decode(&ctx, &geometry, 0.5, 0.5).map_err(CodecError::from),
+            Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        super::surface_point_for_decode(&ctx, &geometry, 0.5, 0.5).map_err(CodecError::from).expect("exact cap"),
+        super::surface_point_for_decode(&ctx, &geometry, 0.5, 0.5)
+            .map_err(CodecError::from)
+            .expect("exact cap"),
         crate::eval::surface_point(&geometry, 0.5, 0.5)
     );
 }
@@ -138,14 +152,18 @@ fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(super::pcurve_uv_for_decode(&ctx, &pcurve, 0.5).map_err(CodecError::from),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == operation));
+        assert!(
+            matches!(super::pcurve_uv_for_decode(&ctx, &pcurve, 0.5).map_err(CodecError::from),
+            Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
+        );
     }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        super::pcurve_uv_for_decode(&ctx, &pcurve, 0.5).map_err(CodecError::from).expect("service scratch"),
+        super::pcurve_uv_for_decode(&ctx, &pcurve, 0.5)
+            .map_err(CodecError::from)
+            .expect("service scratch"),
         crate::eval::pcurve_uv(&pcurve, 0.5)
     );
 }
@@ -157,9 +175,11 @@ fn admitted_curve_point_refuses_recursive_frame() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(matches!(super::curve_point_for_decode(&ctx, &geometry, 0.5).map_err(CodecError::from),
+    assert!(
+        matches!(super::curve_point_for_decode(&ctx, &geometry, 0.5).map_err(CodecError::from),
         Err(CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::RecursionDepth
-            && resource.operation == "geometry evaluation nesting"));
+            && resource.operation == "geometry evaluation nesting")
+    );
 }
 
 #[test]
@@ -169,16 +189,23 @@ fn reusable_nurbs_evaluator_admits_once_and_matches_point_evaluation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(matches!(super::NurbsPointEvaluator::new(&ctx, &curve).map_err(CodecError::from),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis"));
+    assert!(
+        matches!(super::NurbsPointEvaluator::new(&ctx, &curve).map_err(CodecError::from),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
+    );
     let arena = DecodeArena::new();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve).map_err(CodecError::from).expect("exact scratch cap");
+    let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve)
+        .map_err(CodecError::from)
+        .expect("exact scratch cap");
     for index in 0..10_000 {
         let parameter = f64::from(index % 101) / 100.0;
         assert_eq!(
-            evaluator.point(&ctx, parameter).map_err(CodecError::from).expect("reused storage"),
+            evaluator
+                .point(&ctx, parameter)
+                .map_err(CodecError::from)
+                .expect("reused storage"),
             crate::eval::nurbs_curve_point_at(&curve, parameter)
         );
     }
@@ -196,7 +223,9 @@ fn reusable_nurbs_evaluator_refuses_work_and_depth() {
         policy.limits.max_work_units = work;
         policy.limits.max_recursion_depth = depth;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve).map_err(CodecError::from).expect("scratch storage");
+        let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve)
+            .map_err(CodecError::from)
+            .expect("scratch storage");
         assert!(
             matches!(evaluator.point(&ctx, 0.5).map_err(CodecError::from), Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
         );
@@ -235,13 +264,18 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
             policy.limits.max_work_units = 0;
             policy.limits.max_recursion_depth = 0;
             with_policy(policy, |ctx| {
-                let mut evaluator =
-                    super::NurbsPointEvaluator::new(ctx, &curve).map_err(CodecError::from).expect("inline basis");
+                let mut evaluator = super::NurbsPointEvaluator::new(ctx, &curve)
+                    .map_err(CodecError::from)
+                    .expect("inline basis");
                 for index in 0..10_000 {
                     let parameter = f64::from(index % 101) / 100.0;
                     assert_eq!(
-                        evaluator.point(ctx, parameter).map_err(CodecError::from).expect("fixed arithmetic"),
-                        super::nurbs_curve_point_at_for_decode(ctx, &curve, parameter).map_err(CodecError::from)
+                        evaluator
+                            .point(ctx, parameter)
+                            .map_err(CodecError::from)
+                            .expect("fixed arithmetic"),
+                        super::nurbs_curve_point_at_for_decode(ctx, &curve, parameter)
+                            .map_err(CodecError::from)
                             .expect("inline prior path")
                     );
                 }
@@ -274,7 +308,9 @@ fn admitted_curve_tangent_refuses_rational_weight_copy() {
         Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS derivative weights")
     );
     assert_eq!(
-        with_policy(DecodePolicy::service(), |ctx| super::curve_tangent_for_decode(ctx, &geometry, 0.5).map_err(CodecError::from))
+        with_policy(DecodePolicy::service(), |ctx| {
+            super::curve_tangent_for_decode(ctx, &geometry, 0.5).map_err(CodecError::from)
+        })
         .expect("service"),
         crate::eval::curve_tangent(&geometry, 0.5)
     );
@@ -322,7 +358,9 @@ fn admitted_polyline_tangent_refuses_points_and_parameters() {
             );
         }
         assert_eq!(
-            with_policy(DecodePolicy::service(), |ctx| super::curve_tangent_for_decode(ctx, &geometry, 0.5).map_err(CodecError::from))
+            with_policy(DecodePolicy::service(), |ctx| {
+                super::curve_tangent_for_decode(ctx, &geometry, 0.5).map_err(CodecError::from)
+            })
             .expect("service"),
             crate::eval::curve_tangent(&geometry, 0.5)
         );
@@ -363,7 +401,10 @@ fn admitted_polar_pcurve_refuses_weight_copy() {
         Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR polar NURBS weights")
     );
     assert_eq!(
-        with_policy(DecodePolicy::service(), |ctx| super::pcurve_uv_for_decode(ctx, &geometry, 0.5).map_err(CodecError::from))
+        with_policy(DecodePolicy::service(), |ctx| super::pcurve_uv_for_decode(
+            ctx, &geometry, 0.5
+        )
+        .map_err(CodecError::from))
         .expect("service"),
         crate::eval::pcurve_uv(&geometry, 0.5)
     );
@@ -375,7 +416,8 @@ fn uncharged_scratch_reports_an_allocation_refusal_instead_of_no_value() {
     use cadmpeg_core::decode::ResourceFailure;
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
     let scratch = super::Scratch::new(&ctx);
     assert!(scratch
         .filled(usize::MAX, 0_u8, "IR test scratch")
@@ -397,13 +439,15 @@ fn decode_evaluation_scratch_charges_scoped_bytes_and_releases_them() {
     let curve = curve();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let bytes = 3 * std::mem::size_of::<f64>();
+    let bytes = 4 * std::mem::size_of::<f64>();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = u64::try_from(bytes).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let point = super::nurbs_curve_point_at_for_decode(&ctx, &curve, 0.5).unwrap();
     assert_eq!(point, crate::eval::nurbs_curve_point_at(&curve, 0.5));
-    let reservation = ctx.reserve_scoped(u64::try_from(bytes).unwrap(), "reuse basis storage").unwrap();
+    let reservation = ctx
+        .reserve_scoped(u64::try_from(bytes).unwrap(), "reuse basis storage")
+        .unwrap();
     drop(reservation);
 }
 
@@ -412,9 +456,12 @@ fn decode_evaluation_refuses_scoped_basis_storage() {
     let curve = curve();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = u64::try_from(3 * std::mem::size_of::<f64>() - 1).unwrap();
+    policy.limits.max_materialized_bytes =
+        u64::try_from(3 * std::mem::size_of::<f64>() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(super::nurbs_curve_point_at_for_decode(&ctx, &curve, 0.5),
+    assert!(
+        matches!(super::nurbs_curve_point_at_for_decode(&ctx, &curve, 0.5),
         Err(limit) if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "IR B-spline basis"));
+            && limit.operation == "IR B-spline basis")
+    );
 }

@@ -765,10 +765,15 @@ impl<K: CloneForDecode + Ord, V: CloneForDecode> CloneForDecode for BTreeMap<K, 
     ) -> Result<Self, CodecError> {
         let mut copied = BTreeMap::new();
         for (key, value) in self {
-            ctx.admit_retained_btree_record::<K,V>(0, operation)?;
+            ctx.admit_retained_btree_record::<K, V>(0, operation)?;
             let key = key.try_clone_for_decode(ctx, operation)?;
             let value = value.try_clone_for_decode(ctx, operation)?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(copied.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX-1, u64::MAX))?, operation)?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(copied.len())
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+                operation,
+            )?;
             copied.insert(key, value);
         }
         Ok(copied)
@@ -862,8 +867,17 @@ clone_id_for_decode!(super::ParameterId);
 clone_copy_for_decode!(i64);
 
 /// Copy a boxed field after admitting its retained allocation.
-pub(super) fn copy_box<T: CloneForDecode>(value: &T, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Box<T>, CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation)?;
+pub(super) fn copy_box<T: CloneForDecode>(
+    value: &T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Box<T>, CodecError> {
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
+        operation,
+    )?;
     ctx.charge_collection_items(1, operation)?;
-    Ok(Box::new(CloneForDecode::try_clone_for_decode(value, ctx, operation)?))
+    Ok(Box::new(CloneForDecode::try_clone_for_decode(
+        value, ctx, operation,
+    )?))
 }

@@ -42,10 +42,10 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    pcurve::Pcurve, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve,
-    CurveGeometry, IntcurveSupportContext, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    pcurve::Pcurve, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry,
+    IntcurveSupportContext, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -293,7 +293,11 @@ pub(super) fn try_decode_geometry(
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
     let mut completion_streams = Vec::new();
-    let container_stream = StreamHandle::new_for_decode(ctx, cadmpeg_ir::stream_name!("nx:container"), "allocate annotation stream handle")?;
+    let container_stream = StreamHandle::new_for_decode(
+        ctx,
+        cadmpeg_ir::stream_name!("nx:container"),
+        "allocate annotation stream handle",
+    )?;
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
@@ -315,7 +319,13 @@ pub(super) fn try_decode_geometry(
                 ctx.reserve_vec(&mut stream_unknowns, 1, "nx geometry unknown indices")
             }?;
             let unknown = unknown_stream_metadata(ctx, si, stream)?;
-            annotations.note_for_decode(ctx, unknown.id().as_str(), &container_stream, cadmpeg_core::decode::u64_from_index(stream.file_offset), Some(stream.kind().label()))?;
+            annotations.note_for_decode(
+                ctx,
+                unknown.id().as_str(),
+                &container_stream,
+                cadmpeg_core::decode::u64_from_index(stream.file_offset),
+                Some(stream.kind().label()),
+            )?;
             annotations.exactness_for_decode(ctx, unknown.id().as_str(), Exactness::Derived)?;
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
@@ -344,7 +354,11 @@ pub(super) fn try_decode_geometry(
             format_args!("nx:parasolid#{si}:{}", stream.kind().label()),
             "nx geometry stream name",
         )?;
-        let source_stream = StreamHandle::new_for_decode(ctx, cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?, "allocate annotation stream handle")?;
+        let source_stream = StreamHandle::new_for_decode(
+            ctx,
+            cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
+            "allocate annotation stream handle",
+        )?;
         ctx.reserve_vec(&mut completion_streams, 1, "nx completion streams")?;
         completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;
@@ -445,7 +459,13 @@ pub(super) fn try_decode_geometry(
             counts.nurbs_surfaces += 1;
             let id: SurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-surf"), fi)?;
-            annotations.note_for_decode(ctx, id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(surf.pos), Some("B_SPLINE_SURFACE"))?;
+            annotations.note_for_decode(
+                ctx,
+                id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(surf.pos),
+                Some("B_SPLINE_SURFACE"),
+            )?;
             annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx geometry surfaces")?;
             ir.model.surfaces.push(Surface {
@@ -484,7 +504,13 @@ pub(super) fn try_decode_geometry(
             } else {
                 let surface_id: SurfaceId =
                     scope.id_charged(ctx, &cadmpeg_ir::identity_component!("offset-surf"), oi)?;
-                annotations.note_for_decode(ctx, surface_id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(offset.pos), Some("OFFSET_SURF"))?;
+                annotations.note_for_decode(
+                    ctx,
+                    surface_id.as_str(),
+                    &source_stream,
+                    cadmpeg_core::decode::u64_from_index(offset.pos),
+                    Some("OFFSET_SURF"),
+                )?;
                 annotations.derived_for_decode(ctx, surface_id.as_str(), "geometry")?;
                 ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx offset surfaces")?;
                 ir.model.surfaces.push(Surface {
@@ -514,7 +540,13 @@ pub(super) fn try_decode_geometry(
                 });
                 (surface_id, None)
             };
-            annotations.note_for_decode(ctx, procedural_id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(offset.pos), Some("OFFSET_SURF"))?;
+            annotations.note_for_decode(
+                ctx,
+                procedural_id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(offset.pos),
+                Some("OFFSET_SURF"),
+            )?;
             annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -536,8 +568,11 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-
-            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?, procedural)?;
+            let _attached = ir.model.add_procedural_surface_for_decode(
+                ctx,
+                &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
+                procedural,
+            )?;
 
             ctx.charge_collection_items(1, "nx surface node index")?;
             surfaces_by_xmt.insert(offset.xmt, surface_id);
@@ -549,7 +584,13 @@ pub(super) fn try_decode_geometry(
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend-surf"), bi)?;
             let procedural_id: ProceduralSurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend"), bi)?;
-            annotations.note_for_decode(ctx, surface_id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(blend.pos), Some("BLEND_SURF"))?;
+            annotations.note_for_decode(
+                ctx,
+                surface_id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(blend.pos),
+                Some("BLEND_SURF"),
+            )?;
             annotations.derived_for_decode(ctx, surface_id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx blend surfaces")?;
             ir.model.surfaces.push(Surface {
@@ -575,11 +616,20 @@ pub(super) fn try_decode_geometry(
                     instance_path: Vec::new(),
                 }),
             });
-            annotations.note_for_decode(ctx, procedural_id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(blend.pos), Some("BLEND_SURF"))?;
+            annotations.note_for_decode(
+                ctx,
+                procedural_id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(blend.pos),
+                Some("BLEND_SURF"),
+            )?;
             annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
             let procedural_index = ir.model.procedural_surfaces.len();
 
-            let attached = ir.model.add_procedural_surface_for_decode(ctx, &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?, ProceduralSurface::new(
+            let attached = ir.model.add_procedural_surface_for_decode(
+                ctx,
+                &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
+                ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Blend(
                         cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -596,7 +646,8 @@ pub(super) fn try_decode_geometry(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                     None,
-                ))?;
+                ),
+            )?;
             if attached.is_ok() {
                 ctx.reserve_vec(&mut pending_blend_supports, 1, "nx pending blend supports")?;
                 pending_blend_supports.push((
@@ -682,7 +733,13 @@ pub(super) fn try_decode_geometry(
             counts.nurbs_curves += 1;
             let id: CurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-crv"), ci)?;
-            annotations.note_for_decode(ctx, id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(crv.pos), Some("B_SPLINE_CURVE"))?;
+            annotations.note_for_decode(
+                ctx,
+                id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(crv.pos),
+                Some("B_SPLINE_CURVE"),
+            )?;
             annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx NURBS curves")?;
             ir.model.curves.push(Curve {
@@ -699,7 +756,13 @@ pub(super) fn try_decode_geometry(
         for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
             let id: PcurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pcurve"), pi)?;
-            annotations.note_for_decode(ctx, id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(pcurve.pos), Some("B_CURVE_2D"))?;
+            annotations.note_for_decode(
+                ctx,
+                id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(pcurve.pos),
+                Some("B_CURVE_2D"),
+            )?;
             annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx NURBS pcurves")?;
             ir.model.pcurves.push(Pcurve {
@@ -728,8 +791,7 @@ pub(super) fn try_decode_geometry(
             uncharted_intersections.insert(curve.xmt, curve);
         }
         let intersection_support_uv = {
-            let model_index =
-                cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(&ir, ctx)?;
+            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(&ir, ctx)?;
             intersection_constructions
                 .iter()
                 .map(
@@ -896,7 +958,13 @@ pub(super) fn try_decode_geometry(
                     },
                 ));
             }
-            annotations.note_for_decode(ctx, curve_id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(construction.pos), Some("INTERSECTION"))?;
+            annotations.note_for_decode(
+                ctx,
+                curve_id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(construction.pos),
+                Some("INTERSECTION"),
+            )?;
             if charted.is_some() || uncharted.is_some() {
                 annotations.derived_for_decode(ctx, curve_id.as_str(), "geometry")?;
             } else {
@@ -907,10 +975,17 @@ pub(super) fn try_decode_geometry(
                 id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 1, linear_knots(
+                        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+                            ctx,
+                            1,
+                            linear_knots(
                                 &charted.samples.parameters_charged(ctx)?,
                                 &adaptive_geometry_budget,
-                            )?, charted.samples.points_charged(ctx)?, None, false)?
+                            )?,
+                            charted.samples.points_charged(ctx)?,
+                            None,
+                            false,
+                        )?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     ))
                 } else if uncharted.is_some() {
@@ -943,11 +1018,21 @@ pub(super) fn try_decode_geometry(
                     instance_path: Vec::new(),
                 }),
             });
-            annotations.note_for_decode(ctx, procedural_id.as_str(), &source_stream, cadmpeg_core::decode::u64_from_index(construction.pos), Some("INTERSECTION"))?;
+            annotations.note_for_decode(
+                ctx,
+                procedural_id.as_str(),
+                &source_stream,
+                cadmpeg_core::decode::u64_from_index(construction.pos),
+                Some("INTERSECTION"),
+            )?;
             if charted.is_some() || uncharted.is_some() {
                 annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
             } else {
-                annotations.exactness_for_decode(ctx, procedural_id.as_str(), Exactness::Unknown)?;
+                annotations.exactness_for_decode(
+                    ctx,
+                    procedural_id.as_str(),
+                    Exactness::Unknown,
+                )?;
             }
             let definition = if let Some(charted) = charted {
                 let support_uv = if let Some(lanes) = intersection_support_uv.get(&construction.xmt)
@@ -1027,8 +1112,11 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-
-            let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?, procedural)?;
+            let _attached = ir.model.add_procedural_curve_for_decode(
+                ctx,
+                &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
+                procedural,
+            )?;
 
             ctx.charge_collection_items(1, "nx curve node index")?;
             curves_by_xmt.insert(construction.xmt, curve_id);
@@ -1360,7 +1448,13 @@ pub(super) fn try_decode_geometry(
                 "nx unknown entity links",
             )?;
         }
-        annotations.note_for_decode(ctx, unknown.id().as_str(), &container_stream, cadmpeg_core::decode::u64_from_index(stream.file_offset), Some(stream.kind().label()))?;
+        annotations.note_for_decode(
+            ctx,
+            unknown.id().as_str(),
+            &container_stream,
+            cadmpeg_core::decode::u64_from_index(stream.file_offset),
+            Some(stream.kind().label()),
+        )?;
         annotations.exactness_for_decode(ctx, unknown.id().as_str(), Exactness::Derived)?;
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
@@ -2389,7 +2483,11 @@ fn finalize_point_topology(
         derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-region"), 0)?;
     let shell_id: ShellId =
         derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-shell"), 0)?;
-    let stream = StreamHandle::new_for_decode(ctx, cadmpeg_ir::stream_name!("nx:container"), "allocate annotation stream handle")?;
+    let stream = StreamHandle::new_for_decode(
+        ctx,
+        cadmpeg_ir::stream_name!("nx:container"),
+        "allocate annotation stream handle",
+    )?;
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotations.note_for_decode(ctx, id, &stream, 0, Some("derived_point_topology"))?;
         annotations.exactness_for_decode(ctx, id, Exactness::Inferred)?;
@@ -2409,7 +2507,13 @@ fn finalize_point_topology(
     for (index, point) in ir.model.points.iter().enumerate() {
         let vertex_id: VertexId =
             derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-vertex"), index)?;
-        annotations.note_for_decode(ctx, vertex_id.as_str(), &stream, 0, Some("derived_point_topology"))?;
+        annotations.note_for_decode(
+            ctx,
+            vertex_id.as_str(),
+            &stream,
+            0,
+            Some("derived_point_topology"),
+        )?;
         annotations.exactness_for_decode(ctx, vertex_id.as_str(), Exactness::Inferred)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id.try_clone_for_decode(ctx, "nx point vertex identity copy")?,

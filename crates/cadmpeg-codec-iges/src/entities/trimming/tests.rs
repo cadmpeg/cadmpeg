@@ -138,6 +138,33 @@ fn assert_trimming_retained_refusal(bytes: &[u8], operation: &str) {
     panic!("trimming retained refusal was not reached: {operation}");
 }
 
+fn assert_trimming_materialized_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(limit),
+            )) => {
+                assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected trimming materialized refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("trimming materialized refusal was not reached: {operation}");
+}
+
 #[test]
 fn trimmed_topology_identity_copies_refuse_before_retaining_text() {
     let bytes = bounded_plane_file();
@@ -223,7 +250,7 @@ fn trimming_model_index_refuses_identity_storage_before_lookup() {
     let bytes = bounded_plane_file();
     assert_trimming_collection_refusal(&bytes, "model identity universe slots", 0);
     assert_trimming_collection_refusal(&bytes, "model identity index slots", 0);
-    assert_trimming_retained_refusal(&bytes, "model identity universe text");
+    assert_trimming_materialized_refusal(&bytes, "model identity universe slots");
     assert!(IgesCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .is_ok());
@@ -274,7 +301,7 @@ fn implicit_outer_surface_attachment_refuses_procedural_slot() {
                 cadmpeg_core::CodecError::ResourceLimit(limit),
             )) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges procedural surface slots" {
+                if limit.operation == "store procedural surface constructions" {
                     return;
                 }
                 cap = limit.used.checked_add(limit.additional).unwrap();
@@ -1003,22 +1030,29 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         [0.0, 1.0],
     )];
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    assert!(!crate::test_support::with_service_context(&[], |ctx| super::edge_range_matches_curve(ctx,
-        &candidates[0],
-        &index,
-        Point3::new(10.0, 0.0, 0.0),
-        Point3::new(11.0, 0.0, 0.0),
-        EPS_BOUNDARY_ENDPOINT_MATCH,
-    ))
+    assert!(!crate::test_support::with_service_context(
+        &[],
+        |ctx| super::edge_range_matches_curve(
+            ctx,
+            &candidates[0],
+            &index,
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(11.0, 0.0, 0.0),
+            EPS_BOUNDARY_ENDPOINT_MATCH,
+        )
+    )
     .unwrap());
-    assert!(crate::test_support::with_service_context(&[], |ctx| super::edge_range_matches_curve(ctx,
-        &candidates[1],
-        &index,
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(2.0, 0.0, 0.0),
-        EPS_BOUNDARY_ENDPOINT_MATCH,
-    ))
-    .unwrap());
+    assert!(
+        crate::test_support::with_service_context(&[], |ctx| super::edge_range_matches_curve(
+            ctx,
+            &candidates[1],
+            &index,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            EPS_BOUNDARY_ENDPOINT_MATCH,
+        ))
+        .unwrap()
+    );
     let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
         &[&candidates[0], &candidates[1]],
         &index,

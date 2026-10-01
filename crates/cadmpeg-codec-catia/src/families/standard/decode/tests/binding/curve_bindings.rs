@@ -482,19 +482,22 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         *direction,
         cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0)
     );
-    let range = crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
-        crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
-            surface: &surface,
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 7.0,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            start: Point3::new(7.0, 0.0, 0.0),
-            end: Point3::new(0.0, 7.0, 0.0),
-            pcurve_origin: *line_pcurve.origin(),
-            pcurve_direction: (*line_pcurve.direction()).into(),
-        },
-    ))
+    let range = crate::test_support::with_service_context(|ctx| {
+        circle_parameter_range_from_surface_branch(
+            ctx,
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface,
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 7.0,
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                start: Point3::new(7.0, 0.0, 0.0),
+                end: Point3::new(0.0, 7.0, 0.0),
+                pcurve_origin: *line_pcurve.origin(),
+                pcurve_direction: (*line_pcurve.direction()).into(),
+            },
+        )
+    })
     .expect("circle evaluation resources")
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -540,19 +543,22 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(*direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
 
-    let range = crate::test_support::with_service_context(|ctx| circle_parameter_range_from_surface_branch(ctx,
-        crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
-            surface: &surface,
-            center: Point3::new(5.0, 0.0, 0.0),
-            radius: 2.0,
-            axis: Vector3::new(0.0, -1.0, 0.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            start,
-            end,
-            pcurve_origin: *line_pcurve.origin(),
-            pcurve_direction: (*line_pcurve.direction()).into(),
-        },
-    ))
+    let range = crate::test_support::with_service_context(|ctx| {
+        circle_parameter_range_from_surface_branch(
+            ctx,
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface,
+                center: Point3::new(5.0, 0.0, 0.0),
+                radius: 2.0,
+                axis: Vector3::new(0.0, -1.0, 0.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                start,
+                end,
+                pcurve_origin: *line_pcurve.origin(),
+                pcurve_direction: (*line_pcurve.direction()).into(),
+            },
+        )
+    })
     .expect("circle evaluation resources")
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);
@@ -653,16 +659,19 @@ fn native_edge_support_match_refuses_work_limit() {
         source_object: Some(source),
     });
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
-    let refused = crate::test_support::with_work_limit(0, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        ensure_native_edge_support_surface(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            42,
-            &carrier,
-            &mut admission,
-        )
-    });
+    let refused = crate::test_support::with_work_limit(
+        cadmpeg_core::decode::u64_from_index(2 * "cgm-surface:00002a".len()),
+        |ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            ensure_native_edge_support_surface(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                42,
+                &carrier,
+                &mut admission,
+            )
+        },
+    );
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_edge_support_source_scan")

@@ -38,6 +38,8 @@ use cadmpeg_ir::sketches::SketchId;
 mod evaluator_refusal;
 mod historical_allocation;
 
+const EPS_ARRANGEMENT_SESSION: f64 = 1.0e-7;
+
 #[test]
 fn subdivision_count_requires_positive_target_error() {
     assert_eq!(super::subdivision_count(100.0, -1.0), None);
@@ -711,12 +713,16 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
         .expect("root context for session work budget");
     let budget = ctx.work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK));
 
+    let error =
+        sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, &ctx)
+            .err()
+            .expect("candidate identity copy exceeds the caller work budget");
     assert!(
-        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, &ctx)
-            .expect("work refusal remains an absent arrangement")
-            .is_none()
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "f3d arrangement candidate entity id")
     );
-    assert!(budget.exhausted());
+    assert_eq!(budget.remaining(), MAX_ARRANGEMENT_WALK_WORK);
 }
 
 #[test]

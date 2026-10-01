@@ -824,9 +824,10 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
-        + cadmpeg_core::decode::u64_from_index(stream.len() * 2)
-        + 4096;
+        + cadmpeg_core::decode::u64_from_index(stream.len() * 3)
+        - 1;
 
+    // Shared dialect and annotation nodes fit below the budget for a third payload copy.
     let result = NxCodec
         .decode(&mut Cursor::new(file), &options)
         .expect("live stream and final metadata copy fit the retained budget");

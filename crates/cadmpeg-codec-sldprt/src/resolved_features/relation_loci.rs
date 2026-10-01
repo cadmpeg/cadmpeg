@@ -5855,7 +5855,10 @@ pub(super) fn profile_loci_by_marker(
                     ENDPOINT_OPERATION,
                 )?;
                 let key = if qualified_key {
-                    ctx.format_retained(format_args!("{marker}:qualified-point"), ENDPOINT_OPERATION)?
+                    ctx.format_retained(
+                        format_args!("{marker}:qualified-point"),
+                        ENDPOINT_OPERATION,
+                    )?
                 } else {
                     ctx.format_retained(format_args!("{marker}"), ENDPOINT_OPERATION)?
                 };
@@ -5867,7 +5870,8 @@ pub(super) fn profile_loci_by_marker(
                     cadmpeg_core::decode::u64_from_index(key.len()),
                     ENDPOINT_OPERATION,
                 )?;
-                endpoint_marker_keys.insert(ctx.format_retained(format_args!("{key}"), ENDPOINT_OPERATION)?);
+                endpoint_marker_keys
+                    .insert(ctx.format_retained(format_args!("{key}"), ENDPOINT_OPERATION)?);
                 reserve_profile_locus_map_slot(
                     ctx,
                     &mut result,
@@ -6065,7 +6069,10 @@ pub(super) fn profile_loci_by_marker(
                     TRANSFORM_OPERATION,
                 )?;
                 let result_key = if qualified_point {
-                    ctx.format_retained(format_args!("{}:qualified-point", marker.id()), TRANSFORM_OPERATION)?
+                    ctx.format_retained(
+                        format_args!("{}:qualified-point", marker.id()),
+                        TRANSFORM_OPERATION,
+                    )?
                 } else {
                     ctx.format_retained(format_args!("{}", marker.id()), TRANSFORM_OPERATION)?
                 };

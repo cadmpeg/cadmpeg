@@ -25,7 +25,8 @@ fn act_guid_native_retained_limit_refuses_before_guid_clone() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let guid = ActGuid::new("f3d:native:act-guid#20".into(), 20, 3, GUID.into()).unwrap();
-    let needed = serde_json::to_vec(&guid).unwrap().len();
+    let needed =
+        "act_guids".len() + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>() + "id".len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -71,7 +72,9 @@ fn act_table_reference_native_retained_limit_refuses_before_id_clone() {
 
     let reference =
         ActTableReference::new("f3d:native:act-table-reference#20".into(), 3, 20, 7).unwrap();
-    let needed = serde_json::to_vec(&reference).unwrap().len();
+    let needed = "act_table_references".len()
+        + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>()
+        + "id".len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -137,7 +140,9 @@ fn act_registry_channel_native_retained_limit_refuses_before_name_clone() {
         GUID.into(),
     )
     .unwrap();
-    let needed = serde_json::to_vec(&channel).unwrap().len();
+    let needed = "act_registry_channels".len()
+        + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>()
+        + "id".len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;

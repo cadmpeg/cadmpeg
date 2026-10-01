@@ -485,7 +485,11 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     features[profile_index].id.as_str(),
                 )?)
                 .map_err(CodecError::malformed)?;
-                features[index].dependencies.insert_for_decode(ctx, dependency, "collect SLDPRT adjacent profile dependencies")?;
+                features[index].dependencies.insert_for_decode(
+                    ctx,
+                    dependency,
+                    "collect SLDPRT adjacent profile dependencies",
+                )?;
             }
             features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
@@ -789,7 +793,11 @@ pub(crate) fn project_dissected_sketches(
                 .dependencies
                 .retain(|dependency| dependency != &child);
             if !feature.dependencies.contains(&owner) {
-                feature.dependencies.insert_for_decode(ctx, owner, "collect SLDPRT dissected profile dependencies")?;
+                feature.dependencies.insert_for_decode(
+                    ctx,
+                    owner,
+                    "collect SLDPRT dissected profile dependencies",
+                )?;
             }
         }
     }
@@ -800,7 +808,10 @@ fn copy_dissected_feature_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::features::FeatureId,
 ) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
-    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "retain SLDPRT dissected profile identity",
+    )?;
     cadmpeg_ir::features::FeatureId::mint(text).map_err(CodecError::malformed)
 }
 
@@ -808,7 +819,10 @@ fn copy_dissected_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::sketches::SketchId,
 ) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
-    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "retain SLDPRT dissected profile identity",
+    )?;
     cadmpeg_ir::sketches::SketchId::mint(text).map_err(CodecError::malformed)
 }
 
@@ -932,7 +946,10 @@ fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Co
         cadmpeg_core::decode::u64_from_index(text.len()),
         "retain SLDPRT adjacent profile identity",
     )?;
-    ctx.format_retained(format_args!("{text}"), "retain SLDPRT adjacent profile identity")
+    ctx.format_retained(
+        format_args!("{text}"),
+        "retain SLDPRT adjacent profile identity",
+    )
 }
 
 fn reserve_component_map<K: Eq + std::hash::Hash, V>(

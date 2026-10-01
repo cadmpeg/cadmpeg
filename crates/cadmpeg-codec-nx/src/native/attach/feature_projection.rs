@@ -355,7 +355,6 @@ pub(super) fn body_surface_ids<'ctx>(
         }
         let bytes = std::mem::size_of::<SurfaceId>()
             .checked_mul(4)
-            
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX body surface identity",
@@ -365,7 +364,10 @@ pub(super) fn body_surface_ids<'ctx>(
             })?;
         ctx.charge_collection_items(1, "NX body surface identities")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        ids.insert(reservation.with_storage(|| face.surface.try_clone_for_decode(ctx, "NX body surface identity copy"))?);
+        ids.insert(reservation.with_storage(|| {
+            face.surface
+                .try_clone_for_decode(ctx, "NX body surface identity copy")
+        })?);
     }
     Ok(Some(ScopedSurfaceIds {
         ids,
@@ -453,7 +455,18 @@ pub(super) fn blend_feature_definition(
                         1,
                         "NX blend support pairs",
                     )?;
-                    pairs.push(pairs_reservation.with_storage(|| Ok::<_, CodecError>([first.surface.try_clone_for_decode(ctx, "NX blend first support identity copy")?, second.surface.try_clone_for_decode(ctx, "NX blend second support identity copy")?]))?);
+                    pairs.push(pairs_reservation.with_storage(|| {
+                        Ok::<_, CodecError>([
+                            first.surface.try_clone_for_decode(
+                                ctx,
+                                "NX blend first support identity copy",
+                            )?,
+                            second.surface.try_clone_for_decode(
+                                ctx,
+                                "NX blend second support identity copy",
+                            )?,
+                        ])
+                    })?);
                 }
             } else {
                 complete_pairs = false;
@@ -519,7 +532,17 @@ pub(super) fn blend_feature_definition(
                 (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
                     cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces)
                         .ok()
-                        .map(|operands| radius.try_clone_for_decode(ctx, "NX face blend radius copy").map(|radius| FeatureDefinition::Operation(FeatureOperation::FaceBlend { operands, radius }))).transpose()?
+                        .map(|operands| {
+                            radius
+                                .try_clone_for_decode(ctx, "NX face blend radius copy")
+                                .map(|radius| {
+                                    FeatureDefinition::Operation(FeatureOperation::FaceBlend {
+                                        operands,
+                                        radius,
+                                    })
+                                })
+                        })
+                        .transpose()?
                 }
                 _ => None,
             }
@@ -650,7 +673,9 @@ pub(super) fn blend_support_bipartition<'ctx>(
             1,
             "NX blend support output",
         )?;
-        output.push(reservation.with_storage(|| surface.try_clone_for_decode(ctx, "NX blend support identity copy"))?);
+        output.push(reservation.with_storage(|| {
+            surface.try_clone_for_decode(ctx, "NX blend support identity copy")
+        })?);
     }
     for surface in &first {
         for other in &second {
@@ -984,7 +1009,6 @@ pub(super) fn support_face_projection(
         }
         let bytes = std::mem::size_of_val(&face.id)
             .checked_add(std::mem::size_of::<Sense>())
-
             .ok_or_else(|| ctx.refuse_codec_limit("NX support face projection", 0, 1))?;
         ctx.charge_collection_items(1, "NX support face projection")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
@@ -993,7 +1017,11 @@ pub(super) fn support_face_projection(
             1,
             "NX support face projection",
         )?;
-        selected.push((face.id.try_clone_for_decode(ctx, "NX support face identity copy")?, face.sense));
+        selected.push((
+            face.id
+                .try_clone_for_decode(ctx, "NX support face identity copy")?,
+            face.sense,
+        ));
     }
     let mut faces = Vec::new();
     let mut senses = Vec::new();
@@ -1001,7 +1029,6 @@ pub(super) fn support_face_projection(
         ctx.charge_collection_items(2, "NX resolved support faces")?;
         let bytes = std::mem::size_of_val(&face)
             .checked_add(std::mem::size_of::<Sense>())
-
             .ok_or_else(|| ctx.refuse_codec_limit("NX resolved support faces", 0, 1))?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(bytes),
@@ -1101,7 +1128,12 @@ pub(in crate::native) fn feature_source_content(
         )?;
         content.push(FeatureSourceContent::Text(owned));
     }
-    cadmpeg_ir::features::FeatureContent::try_from_for_decode(content, ctx, "NX feature source content validation").map_err(CodecError::from)
+    cadmpeg_ir::features::FeatureContent::try_from_for_decode(
+        content,
+        ctx,
+        "NX feature source content validation",
+    )
+    .map_err(CodecError::from)
 }
 
 pub(super) fn simple_hole_native_properties(
@@ -1442,8 +1474,11 @@ pub(super) fn block_placement(
     ]) else {
         return Ok(None);
     };
-    
-    Ok(Some((body.try_clone_for_decode(ctx, "NX block output body")?, placement)))
+
+    Ok(Some((
+        body.try_clone_for_decode(ctx, "NX block output body")?,
+        placement,
+    )))
 }
 
 /// Return the complete primitive witness for an NX `SPHERE` operation.
@@ -1525,8 +1560,12 @@ pub(super) fn sphere_body_projection(
     let Ok(radius) = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()) else {
         return Ok(None);
     };
-    
-    Ok(Some((body.try_clone_for_decode(ctx, "NX sphere output body")?, center, radius)))
+
+    Ok(Some((
+        body.try_clone_for_decode(ctx, "NX sphere output body")?,
+        center,
+        radius,
+    )))
 }
 
 pub(super) struct NewBodyEvidence<'a> {
@@ -3404,7 +3443,10 @@ pub(super) fn cylindrical_face_witnesses(
             axis,
             radius,
             stations: [*first, *second],
-            loop_ids: [first_loop.try_clone_for_decode(ctx, "NX cylindrical first loop identity")?, second_loop.try_clone_for_decode(ctx, "NX cylindrical second loop identity")?],
+            loop_ids: [
+                first_loop.try_clone_for_decode(ctx, "NX cylindrical first loop identity")?,
+                second_loop.try_clone_for_decode(ctx, "NX cylindrical second loop identity")?,
+            ],
         });
     }
     Ok(Some(witnesses))
@@ -3830,7 +3872,10 @@ pub(super) fn hole_operations_by_body(
                     cadmpeg_core::decode::u64_from_index(bytes),
                     "NX hole operation body groups",
                 )?;
-                operations_by_body.insert(body.try_clone_for_decode(ctx, "NX hole operation body identity")?, Vec::new());
+                operations_by_body.insert(
+                    body.try_clone_for_decode(ctx, "NX hole operation body identity")?,
+                    Vec::new(),
+                );
             }
             let group = operations_by_body
                 .get_mut(body)
@@ -3901,7 +3946,11 @@ pub(super) fn hole_operations_by_body(
         )?;
         group.push(operation.clone());
     }
-    Ok(Some(BTreeMap::from([(body.id.try_clone_for_decode(ctx, "NX hole operation body identity")?, group)])))
+    Ok(Some(BTreeMap::from([(
+        body.id
+            .try_clone_for_decode(ctx, "NX hole operation body identity")?,
+        group,
+    )])))
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple

@@ -996,85 +996,139 @@ pub(super) fn try_decode_freeform_surfaces(
         }
         let annotations = annotations.build();
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-        if let Err(error) = coverage.record(ctx,
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::DECODED_OBJECT_STREAM_RUN_COUNT,
             object_stream_run_count,
-        ) { return Some(Err(error)); }
-        if let Err(error) = coverage.record(ctx,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::SELECTED_OBJECT_STREAM_RUN_COUNT,
             selected_object_stream_run_count,
-        ) { return Some(Err(error)); }
-        if let Err(error) = coverage.record(ctx,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::UNSELECTED_OBJECT_STREAM_RUN_COUNT,
             object_stream_run_count - selected_object_stream_run_count,
-        ) { return Some(Err(error)); }
-        if let Err(error) = coverage.record(ctx,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
             usize::from(object_stream_selection_exhausted),
-        ) { return Some(Err(error)); }
-        if let Err(error) = coverage.record(ctx,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::DECODED_B2_NURBS_CURVE_COUNT,
             b2_nurbs_curve_count,
-        ) { return Some(Err(error)); }
-        if let Err(error) = coverage.record(ctx,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::DECODED_A5_NURBS_CURVE_COUNT,
             a5_nurbs_curve_count,
-        ) { return Some(Err(error)); }
-        if let Err(error) = coverage.record(ctx,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::DECODED_B2_SPATIAL_CIRCLE_COUNT,
             b2_spatial_circle_count,
-        ) { return Some(Err(error)); }
-        if let Err(error) = coverage.record(ctx,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = coverage.record(
+            ctx,
             crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
             usize::from(wire_topology_transferred) * standalone_wires.len(),
-        ) { return Some(Err(error)); }
+        ) {
+            return Some(Err(error));
+        }
         if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
                 control_03,
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
                 control_05,
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
                 uncounted,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if topology_transferred {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
                 ir.model.faces.len(),
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
                 ir.model.loops.len(),
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
                 control_03,
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
                 control_05,
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
                 uncounted,
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
                 unresolved,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if typed_multi_surface_face_count != 0 {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT,
                 typed_multi_surface_face_count,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if let Some(counts) = edge_terminal_controls {
             for (key, count) in [
@@ -1090,18 +1144,26 @@ pub(super) fn try_decode_freeform_surfaces(
             .into_iter()
             .zip(counts)
             {
-                if let Err(error) = coverage.record(ctx, key, count) { return Some(Err(error)); }
+                if let Err(error) = coverage.record(ctx, key, count) {
+                    return Some(Err(error));
+                }
             }
         }
         if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
                 control_00,
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
                 control_04,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
             resolved_loop_metadata_counts
@@ -1124,12 +1186,17 @@ pub(super) fn try_decode_freeform_surfaces(
                     controls_05_05,
                 ),
             ] {
-                if let Err(error) = coverage.record(ctx, key, count) { return Some(Err(error)); }
+                if let Err(error) = coverage.record(ctx, key, count) {
+                    return Some(Err(error));
+                }
             }
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
                 extended,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if let Some((counts, unresolved)) = typed_loop_metadata_counts {
             for (key, count) in [
@@ -1141,48 +1208,74 @@ pub(super) fn try_decode_freeform_surfaces(
             .into_iter()
             .zip(counts[..4].iter().copied())
             {
-                if let Err(error) = coverage.record(ctx, key, count) { return Some(Err(error)); }
+                if let Err(error) = coverage.record(ctx, key, count) {
+                    return Some(Err(error));
+                }
             }
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
                 counts[4],
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
                 unresolved,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if let Some(count) = class_21_suffix_scalar_count {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
                 count,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if typed_class_21_pcurve_count != 0 {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
                 typed_class_21_pcurve_count,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if !typed_parameter_incidences.is_empty() {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
                 typed_parameter_incidences.len(),
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT,
                 typed_parameter_incidence_member_count,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         if !typed_vertex_incidence_rosters.is_empty() {
-            if let Err(error) = coverage.record(ctx,
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
                 typed_vertex_incidence_rosters.len(),
-            ) { return Some(Err(error)); }
-            if let Err(error) = coverage.record(ctx,
+            ) {
+                return Some(Err(error));
+            }
+            if let Err(error) = coverage.record(
+                ctx,
                 crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT,
                 typed_vertex_incidence_roster_member_count,
-            ) { return Some(Err(error)); }
+            ) {
+                return Some(Err(error));
+            }
         }
         Some(Ok(FamilyOutput {
             ir,
@@ -1219,12 +1312,20 @@ fn attach_standalone_wires(
             return Ok(false);
         };
         let Some(start) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(admission.context(), geometry, range[0])?)?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+                admission.context(),
+                geometry,
+                range[0],
+            )?)?
         else {
             return Ok(false);
         };
         let Some(end) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(admission.context(), geometry, range[1])?)?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+                admission.context(),
+                geometry,
+                range[1],
+            )?)?
         else {
             return Ok(false);
         };
@@ -1632,9 +1733,11 @@ fn standard_carrier_endpoint_loci(
         Err(_) => return Ok(None),
     };
     // A non-finite locus is kept as the evaluation reached it.
-    let locus = |uv: cadmpeg_ir::units::FinitePoint2| match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)? {
-        Ok(point) => Ok(Some(point.get())),
-        Err(failure) => failure.non_finite(),
+    let locus = |uv: cadmpeg_ir::units::FinitePoint2| {
+        match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)? {
+            Ok(point) => Ok(Some(point.get())),
+            Err(failure) => failure.non_finite(),
+        }
     };
     let Some(start) = locus(start)? else {
         return Ok(None);
@@ -1840,7 +1943,10 @@ pub(super) fn append_freeform_surface_pools(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &surface_id, ProceduralSurface::new(
+        let _attached = ir.model.add_procedural_surface_for_decode(
+            admission.context(),
+            &surface_id,
+            ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -1857,7 +1963,8 @@ pub(super) fn append_freeform_surface_pools(
                     ),
                 ),
                 Some(RecordBounds::from_corners(offset.u_range, offset.v_range)),
-            ))?;
+            ),
+        )?;
     }
 
     append_consolidated_line_profiles(
@@ -1915,7 +2022,14 @@ pub(super) fn append_freeform_surface_pools(
                 .into_iter()
                 .map(|point| Point3::new(point[0], point[1], point[2])),
         );
-        let geometry = NurbsCurve::from_lanes_for_decode(admission.context(), guide.degree, knots, poles, None, false)??;
+        let geometry = NurbsCurve::from_lanes_for_decode(
+            admission.context(),
+            guide.degree,
+            knots,
+            poles,
+            None,
+            false,
+        )??;
         let id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),
@@ -2040,11 +2154,18 @@ pub(super) fn append_freeform_surface_pools(
             format_args!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         )?;
-        admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
+        admission.reserve_entity(
+            &mut ir.model.procedural_surfaces,
+            "catia_family_emit_procedural_surfaces",
+        )?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
-                cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(crate::families::a5a8::records::A5FreeformCurve::DEGREE, stations, admission.context())?
+                cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
+                    crate::families::a5a8::records::A5FreeformCurve::DEGREE,
+                    stations,
+                    admission.context(),
+                )?
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             None,
@@ -2496,7 +2617,8 @@ fn append_resolved_consolidated_surface_curves(
                     continue;
                 };
                 if standard_endpoint_loci.is_none() {
-                    standard_endpoint_loci = standard_carrier_endpoint_loci(admission.context(),
+                    standard_endpoint_loci = standard_carrier_endpoint_loci(
+                        admission.context(),
                         &geometry,
                         surface_geometry,
                         resolved.block.parameters.range.endpoints(),
@@ -2840,7 +2962,8 @@ fn append_resolved_consolidated_surface_curves(
                             )),
                         ));
                     }
-                    let carrier = unique_paired_surface_lift_match(admission.context(),
+                    let carrier = unique_paired_surface_lift_match(
+                        admission.context(),
                         &resolved_pcurve.geometry,
                         resolved_geometry,
                         &partner_pcurve,
@@ -3175,7 +3298,8 @@ fn append_resolved_consolidated_surface_curves(
                                 .copied()
                                 .flatten()
                                 .map_or(edge_allowance, |value| edge_allowance.max(value.get()));
-                            if pcurve_lift_reaches_endpoints(admission.context(),
+                            if pcurve_lift_reaches_endpoints(
+                                admission.context(),
                                 &geometry,
                                 solved_surface,
                                 resolved.block.parameters.range.endpoints(),
@@ -3712,17 +3836,26 @@ fn unique_paired_surface_lift_match<'a, T>(
     let parameters = [parameter_range[0], midpoint, parameter_range[1]];
     let resolved_lift =
         |parameter| -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, resolved_pcurve, parameter)?)?
+            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, resolved_pcurve, parameter)?,
+            )?
             else {
                 return Ok(None);
             };
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, resolved_surface, uv.u, uv.v)?)
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
+                ctx,
+                resolved_surface,
+                uv.u,
+                uv.v,
+            )?)
         };
     let mut resolved_loci = [None; 3];
     let mut partner_uv = [None; 3];
     for (index, parameter) in parameters.into_iter().enumerate() {
         resolved_loci[index] = resolved_lift(parameter)?;
-        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, partner_pcurve, parameter)?)?;
+        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, partner_pcurve, parameter)?,
+        )?;
         if resolved_loci[index].is_none() || partner_uv[index].is_none() {
             return Ok(None);
         }
@@ -3999,7 +4132,7 @@ fn append_a8_rolling_ball_pools(
 mod tests {
     #[test]
     fn freeform_topology_seed_annotation_refuses_second_admission() {
-        let result = crate::test_support::with_collection_limit(2, |ctx| {
+        let result = crate::test_support::with_collection_limit(4, |ctx| {
             let mut base = cadmpeg_ir::AnnotationBuilder::new();
             let mut candidate = cadmpeg_ir::AnnotationBuilder::new();
             crate::assemble::annotate(
@@ -4023,7 +4156,7 @@ mod tests {
         });
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_annotation_provenance")
+            if limit.operation == "collect source provenance")
         );
     }
 
@@ -4869,7 +5002,8 @@ mod tests {
         let matching = plane(0.001);
         let distant = plane(1.0);
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(ctx,
+            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(
+                ctx,
                 &pcurve,
                 &resolved,
                 &pcurve,
@@ -4879,7 +5013,8 @@ mod tests {
             Ok(Some(7))
         );
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(ctx,
+            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(
+                ctx,
                 &pcurve,
                 &resolved,
                 &pcurve,
@@ -4908,7 +5043,8 @@ mod tests {
             .expect("valid pcurve"),
         );
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(ctx,
+            crate::test_support::with_service_context(|ctx| unique_paired_surface_lift_match(
+                ctx,
                 &pcurve,
                 &plane,
                 &pcurve,

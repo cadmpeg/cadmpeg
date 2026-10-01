@@ -1146,7 +1146,12 @@ fn historical_face_selection_with_native(
     }
     let fallback_native = ctx.copy_retained_text(&native, "f3d historical face fallback id")?;
     Ok(Some(
-        cadmpeg_ir::features::FaceSelection::historical_for_decode(crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?, historical_faces, native, ctx)?
+        cadmpeg_ir::features::FaceSelection::historical_for_decode(
+            crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
+            historical_faces,
+            native,
+            ctx,
+        )?
         .unwrap_or(FaceSelection::Native(fallback_native)),
     ))
 }

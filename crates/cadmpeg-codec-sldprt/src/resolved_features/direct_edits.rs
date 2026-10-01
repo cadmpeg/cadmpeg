@@ -182,11 +182,7 @@ pub(crate) fn enrich_history_move_face_translations(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-face feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(
-                        &mut starts,
-                        1,
-                        "collect SLDPRT move-face feature starts",
-                    )?;
+                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT move-face feature starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -280,11 +276,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 .map(FeatureDirection3::from_unit_without_small_components)
             {
                 if !unique.contains(&direction) {
-                    ctx.reserve_vec(
-                        &mut unique,
-                        1,
-                        "collect SLDPRT unique move-face directions",
-                    )?;
+                    ctx.reserve_vec(&mut unique, 1, "collect SLDPRT unique move-face directions")?;
                     unique.push(direction);
                 }
             }
@@ -322,7 +314,10 @@ pub(crate) fn enrich_history_move_face_translations(
         feature
             .properties
             .insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
-        let direction = ctx.format_retained(format_args!("{},{},{}", first.get().x, first.get().y, first.get().z), "format SLDPRT move-face direction")?;
+        let direction = ctx.format_retained(
+            format_args!("{},{},{}", first.get().x, first.get().y, first.get().z),
+            "format SLDPRT move-face direction",
+        )?;
         feature
             .properties
             .insert(cadmpeg_core::nonblank_literal!("Direction"), direction);
@@ -343,11 +338,7 @@ pub(crate) fn enrich_history_move_body_translations(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-body feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(
-                        &mut starts,
-                        1,
-                        "collect SLDPRT move-body feature starts",
-                    )?;
+                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT move-body feature starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -409,12 +400,15 @@ pub(crate) fn enrich_history_move_body_translations(
         if !properties.contains_key("Translation") {
             ctx.charge_collection_items(1, "insert SLDPRT move-body translation")?;
         }
-        let translation = ctx.format_retained(format_args!(
+        let translation = ctx.format_retained(
+            format_args!(
                 "{}mm,{}mm,{}mm",
                 first.x * 1000.0,
                 first.y * 1000.0,
                 first.z * 1000.0
-            ), "format SLDPRT move-body translation")?;
+            ),
+            "format SLDPRT move-body translation",
+        )?;
         properties.insert(cadmpeg_core::nonblank_literal!("Translation"), translation);
     }
     Ok(())

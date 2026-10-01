@@ -724,13 +724,16 @@ pub enum LoopRingAdmissionError {
 }
 
 impl From<cadmpeg_core::decode::ResourceLimit> for LoopRingAdmissionError {
-    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self { Self::Resource(limit) }
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Resource(limit)
+    }
 }
 
 impl From<LoopRingError> for LoopRingAdmissionError {
-    fn from(error: LoopRingError) -> Self { Self::Invalid(error) }
+    fn from(error: LoopRingError) -> Self {
+        Self::Invalid(error)
+    }
 }
-
 
 /// A checked, ordered coedge ring and its anchored pole occurrences.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -809,7 +812,10 @@ impl LoopRing {
     }
 
     /// Build a nonempty ring of distinct coedges whose anchors belong to that ring.
-    pub fn new(coedges: Vec<CoedgeId>, vertex_uses: Vec<AnchoredVertexUse>) -> Result<Self, LoopRingAdmissionError> {
+    pub fn new(
+        coedges: Vec<CoedgeId>,
+        vertex_uses: Vec<AnchoredVertexUse>,
+    ) -> Result<Self, LoopRingAdmissionError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
@@ -817,20 +823,39 @@ impl LoopRing {
     }
 
     /// Build a ring with a scoped index for membership and anchor validation.
-    pub fn new_for_decode(ctx: &DecodeContext<'_>, coedges: Vec<CoedgeId>, vertex_uses: Vec<AnchoredVertexUse>) -> Result<Result<Self, LoopRingError>, cadmpeg_core::decode::ResourceLimit> {
-        if coedges.is_empty() { return Ok(Err(LoopRingError("loop ring must contain a coedge"))); }
-        let (mut members, _storage) = ctx.temporary_set_limit(coedges.len(), "loop ring members")?;
+    pub fn new_for_decode(
+        ctx: &DecodeContext<'_>,
+        coedges: Vec<CoedgeId>,
+        vertex_uses: Vec<AnchoredVertexUse>,
+    ) -> Result<Result<Self, LoopRingError>, cadmpeg_core::decode::ResourceLimit> {
+        if coedges.is_empty() {
+            return Ok(Err(LoopRingError("loop ring must contain a coedge")));
+        }
+        let (mut members, _storage) =
+            ctx.temporary_set_limit(coedges.len(), "loop ring members")?;
         for coedge in &coedges {
             ctx.charge_work_limit(u64_from_index(coedge.as_str().len()), "loop ring members")?;
             ctx.charge_work_limit(1, "loop ring members")?;
-            if !members.insert(coedge) { return Ok(Err(LoopRingError("loop ring coedges must be distinct"))); }
+            if !members.insert(coedge) {
+                return Ok(Err(LoopRingError("loop ring coedges must be distinct")));
+            }
         }
         for vertex_use in &vertex_uses {
-            ctx.charge_work_limit(u64_from_index(vertex_use.after.as_str().len()), "loop ring anchors")?;
+            ctx.charge_work_limit(
+                u64_from_index(vertex_use.after.as_str().len()),
+                "loop ring anchors",
+            )?;
             ctx.charge_work_limit(1, "loop ring anchors")?;
-            if !members.contains(&vertex_use.after) { return Ok(Err(LoopRingError("loop ring vertex-use after must name a coedge in the ring"))); }
+            if !members.contains(&vertex_use.after) {
+                return Ok(Err(LoopRingError(
+                    "loop ring vertex-use after must name a coedge in the ring",
+                )));
+            }
         }
-        Ok(Ok(Self { coedges, vertex_uses }))
+        Ok(Ok(Self {
+            coedges,
+            vertex_uses,
+        }))
     }
 
     /// Coedges in source traversal order.
@@ -854,9 +879,7 @@ impl Loop {
         vertex_uses: Vec<AnchoredVertexUse>,
     ) -> Result<(), LoopRingAdmissionError> {
         if !matches!(&self.boundary, LoopBoundary::Ring(_)) {
-            return Err(LoopRingError(
-                "cannot replace the ring of a vertex-only loop",
-            ).into());
+            return Err(LoopRingError("cannot replace the ring of a vertex-only loop").into());
         }
         self.boundary = LoopBoundary::Ring(LoopRing::new(coedges, vertex_uses)?);
         Ok(())
@@ -1938,28 +1961,20 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::LoopRing::new_for_decode(
-            &ctx,
-            vec![first.clone(), second.clone()],
-            Vec::new(),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, resource
+        let error =
+            super::LoopRing::new_for_decode(&ctx, vec![first.clone(), second.clone()], Vec::new())
+                .unwrap_err();
+        assert!(matches!(error, resource
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "loop ring members")
-        );
+                && resource.operation == "loop ring members"));
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let ring = super::LoopRing::new_for_decode(
-            &ctx,
-            vec![first.clone(), second.clone()],
-            Vec::new(),
-        )
-        .unwrap()
-        .unwrap();
+        let ring =
+            super::LoopRing::new_for_decode(&ctx, vec![first.clone(), second.clone()], Vec::new())
+                .unwrap()
+                .unwrap();
         assert_eq!(ring.coedges(), &[first, second]);
     }
 
@@ -2036,10 +2051,8 @@ mod tests {
                 }],
             )
         };
-        assert!(
-            matches!(run(0), Err(limit)
-            if limit.operation == "loop ring members")
-        );
+        assert!(matches!(run(0), Err(limit)
+            if limit.operation == "loop ring members"));
         let ring = run(u64::MAX)
             .expect("service profile admits generated ring")
             .expect("valid generated ring");

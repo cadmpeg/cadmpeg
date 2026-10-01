@@ -87,44 +87,65 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
     };
+    let mut reader_storage = ctx.reserve_scoped(0, "FreeCAD native validation records")?;
     macro_rules! arena {
         ($read:expr) => {
-            match $read {
+            match reader_storage.with_storage(|| $read) {
                 Ok(records) => records,
                 Err(cadmpeg_ir::native::NativeConvertError::Resource(error))
-                    if matches!(error, CodecError::ResourceLimit(_)) => return Err(error),
+                    if matches!(error, CodecError::ResourceLimit(_)) =>
+                {
+                    return Err(error)
+                }
                 Err(error) => {
                     return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]);
-                },
+                }
             }
         };
     }
     let objects = arena!(namespace.arena_as_for_decode::<native::ObjectRecord>(ctx, "objects"));
-    let properties = arena!(namespace.arena_as_for_decode::<native::PropertyRecord>(ctx, "properties"));
-    let extensions = arena!(namespace.arena_as_for_decode::<native::ExtensionRecord>(ctx, "extensions"));
+    let properties =
+        arena!(namespace.arena_as_for_decode::<native::PropertyRecord>(ctx, "properties"));
+    let extensions =
+        arena!(namespace.arena_as_for_decode::<native::ExtensionRecord>(ctx, "extensions"));
     let entries = arena!(namespace.arena_as_for_decode::<native::EntryRecord>(ctx, "entries"));
-    let physical = arena!(namespace.arena_as_for_decode::<native::ArchiveSpan>(ctx, "physical_ledger"));
-    let logical = arena!(namespace.arena_as_for_decode::<native::LogicalSpan>(ctx, "logical_ledger"));
+    let physical =
+        arena!(namespace.arena_as_for_decode::<native::ArchiveSpan>(ctx, "physical_ledger"));
+    let logical =
+        arena!(namespace.arena_as_for_decode::<native::LogicalSpan>(ctx, "logical_ledger"));
     let coverage_records =
         arena!(namespace.arena_as_for_decode::<native::ByteCoverageRecord>(ctx, "byte_coverage"));
     let string_tables = arena!(namespace
-        .arena_as_collection_for_decode::<native::StringTableRecord, native::StringTables>(ctx, "string_tables"));
+        .arena_as_collection_for_decode::<native::StringTableRecord, native::StringTables>(
+            ctx,
+            "string_tables"
+        ));
     let string_tables = string_tables.as_slice();
     let element_maps =
-        arena!(namespace.arena_as_for_decode::<native::element_map::ElementMapRecord>(ctx, "element_maps"));
+        arena!(namespace
+            .arena_as_for_decode::<native::element_map::ElementMapRecord>(ctx, "element_maps"));
     let gui_providers =
-        arena!(namespace.arena_as_for_decode::<native::GuiViewProviderRecord>(ctx, "gui_view_providers"));
-    let gui_documents = arena!(namespace.arena_as_for_decode::<native::GuiDocumentRecord>(ctx, "gui_documents"));
-    let gui_properties = arena!(namespace.arena_as_for_decode::<native::GuiPropertyRecord>(ctx, "gui_properties"));
-    let product_nodes = arena!(namespace.arena_as_for_decode::<native::ProductNodeRecord>(ctx, "product_nodes"));
+        arena!(namespace
+            .arena_as_for_decode::<native::GuiViewProviderRecord>(ctx, "gui_view_providers"));
+    let gui_documents =
+        arena!(namespace.arena_as_for_decode::<native::GuiDocumentRecord>(ctx, "gui_documents"));
+    let gui_properties =
+        arena!(namespace.arena_as_for_decode::<native::GuiPropertyRecord>(ctx, "gui_properties"));
+    let product_nodes =
+        arena!(namespace.arena_as_for_decode::<native::ProductNodeRecord>(ctx, "product_nodes"));
     let joints = arena!(namespace.arena_as_for_decode::<native::joint::JointRecord>(ctx, "joints"));
     let drawings = arena!(namespace.arena_as_for_decode::<native::DrawingRecord>(ctx, "drawings"));
-    let annotations = arena!(namespace.arena_as_for_decode::<native::SemanticAnnotationRecord>(ctx, "annotations"));
-    let attachments = arena!(namespace.arena_as_for_decode::<native::AttachmentRecord>(ctx, "attachments"));
-    let shape_payloads = arena!(namespace.arena_as_for_decode::<brep::ShapePayloadRecord>(ctx, "shape_payloads"));
+    let annotations = arena!(
+        namespace.arena_as_for_decode::<native::SemanticAnnotationRecord>(ctx, "annotations")
+    );
+    let attachments =
+        arena!(namespace.arena_as_for_decode::<native::AttachmentRecord>(ctx, "attachments"));
+    let shape_payloads =
+        arena!(namespace.arena_as_for_decode::<brep::ShapePayloadRecord>(ctx, "shape_payloads"));
     let carrier_census =
         arena!(namespace.arena_as_for_decode::<native::CarrierCensusRecord>(ctx, "carrier_census"));
-    let design_census = arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
+    let design_census =
+        arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
     if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
@@ -837,7 +858,10 @@ impl CodecBackend for FcstdCodec {
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
-        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.try_clone_for_decode(ctx, "copy FreeCAD dialect layers")?, attributes));
+        let mut ir = CadIr::decoded(SourceMeta::classified(
+            dialects.try_clone_for_decode(ctx, "copy FreeCAD dialect layers")?,
+            attributes,
+        ));
         if let Some((name, bytes)) = thumbnail {
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
@@ -893,7 +917,6 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
             namespace.set_arena(ctx, "properties", &graph.properties)?;
-            namespace.set_arena(ctx, "entries", &entry_records)?;
             namespace.set_arena(ctx, "shape_payloads", &shape_payloads)?;
             namespace.set_arena(
                 ctx,

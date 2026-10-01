@@ -795,7 +795,13 @@ pub(super) fn emit_faces(
                     "catia_b5_loop_annotation",
                 )?;
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(admission.context(), coedge_ids, vertex_uses).map_err(cadmpeg_core::CodecError::from)? else {
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(
+                admission.context(),
+                coedge_ids,
+                vertex_uses,
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+            else {
                 return Ok(false);
             };
             let loop_record_id =

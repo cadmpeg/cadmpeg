@@ -3359,65 +3359,131 @@ pub enum RollingBallJetError {
     Admission(String),
 }
 
-fn default_jet<T>(build: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<T, &'static str>, cadmpeg_core::CodecError>) -> Result<T, RollingBallJetError> {
+fn default_jet<T>(
+    build: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<T, &'static str>, cadmpeg_core::CodecError>,
+) -> Result<T, RollingBallJetError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let result = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).and_then(|(ctx, _)| build(&ctx));
+    let result = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .and_then(|(ctx, _)| build(&ctx));
     match result {
         Ok(value) => value.map_err(RollingBallJetError::Invalid),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => Err(RollingBallJetError::Resource(limit)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+            Err(RollingBallJetError::Resource(limit))
+        }
         Err(error) => Err(RollingBallJetError::Admission(error.to_string())),
     }
 }
 
 impl RollingBallJetStations {
     /// Admit clamped increasing knots and finite equal-radius station data.
-    pub fn try_new(degree: u32, stations: Vec<RollingBallJetStation>) -> Result<Self, RollingBallJetError> {
+    pub fn try_new(
+        degree: u32,
+        stations: Vec<RollingBallJetStation>,
+    ) -> Result<Self, RollingBallJetError> {
         default_jet(|ctx| Self::try_new_for_decode(degree, stations, ctx))
     }
 
     /// Admit raw station controls with charged retained row storage.
-    pub fn try_new_for_decode(degree: u32, stations: Vec<RollingBallJetStation>, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        if let Err(error) = Self::admit_controls(ctx, degree, &stations, |row| row.knot)? { return Ok(Err(error)); }
+    pub fn try_new_for_decode(
+        degree: u32,
+        stations: Vec<RollingBallJetStation>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        if let Err(error) = Self::admit_controls(ctx, degree, &stations, |row| row.knot)? {
+            return Ok(Err(error));
+        }
         let mut admitted = ctx.retained_vec(stations.len(), "rolling-ball jet stations")?;
         for row in stations {
             ctx.charge_work(1, "rolling-ball jet station controls")?;
-            let knot = match FiniteReal::new(row.knot) { Some(knot) => knot, None => return Ok(Err(ROLLING_BALL_KNOTS)) };
-            let site = match row.site.admit() { Ok(site) => site, Err(error) => return Ok(Err(error)) };
-            if let Err(error) = admit_rolling_ball_radii(&site) { return Ok(Err(error)); }
-            admitted.push(RollingBallJetStation { knot, multiplicity: row.multiplicity, site });
+            let Some(knot) = FiniteReal::new(row.knot) else {
+                return Ok(Err(ROLLING_BALL_KNOTS));
+            };
+            let site = match row.site.admit() {
+                Ok(site) => site,
+                Err(error) => return Ok(Err(error)),
+            };
+            if let Err(error) = admit_rolling_ball_radii(&site) {
+                return Ok(Err(error));
+            }
+            admitted.push(RollingBallJetStation {
+                knot,
+                multiplicity: row.multiplicity,
+                site,
+            });
         }
-        Ok(Ok(Self { degree, stations: admitted }))
+        Ok(Ok(Self {
+            degree,
+            stations: admitted,
+        }))
     }
 
     /// Admit finite station controls under the default decode policy.
-    pub fn from_parts(degree: u32, stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>) -> Result<Self, RollingBallJetError> {
+    pub fn from_parts(
+        degree: u32,
+        stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+    ) -> Result<Self, RollingBallJetError> {
         default_jet(|ctx| Self::from_parts_for_decode(degree, stations, ctx))
     }
 
     /// Validate finite station rows without copying their owned storage.
-    pub fn from_parts_for_decode(degree: u32, stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        if let Err(error) = Self::admit_controls(ctx, degree, &stations, |row| row.knot.get())? { return Ok(Err(error)); }
+    pub fn from_parts_for_decode(
+        degree: u32,
+        stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        if let Err(error) = Self::admit_controls(ctx, degree, &stations, |row| row.knot.get())? {
+            return Ok(Err(error));
+        }
         for station in &stations {
             ctx.charge_work(1, "rolling-ball jet station controls")?;
-            if let Err(error) = admit_rolling_ball_radii(&station.site) { return Ok(Err(error)); }
+            if let Err(error) = admit_rolling_ball_radii(&station.site) {
+                return Ok(Err(error));
+            }
         }
         Ok(Ok(Self { degree, stations }))
     }
 
-    fn admit_controls<R,V,P>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, degree: u32, stations: &[RollingBallJetStation<R,V,P>], knot: impl Fn(&RollingBallJetStation<R,V,P>) -> f64) -> Result<Result<(), &'static str>, cadmpeg_core::CodecError> {
-        let Some(maximum) = degree.checked_add(1).filter(|_| degree != 0) else { return Ok(Err("rolling-ball jet degree must be positive with a representable end multiplicity")); };
-        if stations.len() < 2 { return Ok(Err("rolling-ball jet stations must contain at least two rows")); }
-        if stations[0].multiplicity != maximum || stations[stations.len()-1].multiplicity != maximum { return Ok(Err("rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends")); }
+    fn admit_controls<R, V, P>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        degree: u32,
+        stations: &[RollingBallJetStation<R, V, P>],
+        knot: impl Fn(&RollingBallJetStation<R, V, P>) -> f64,
+    ) -> Result<Result<(), &'static str>, cadmpeg_core::CodecError> {
+        let Some(maximum) = degree.checked_add(1).filter(|_| degree != 0) else {
+            return Ok(Err(
+                "rolling-ball jet degree must be positive with a representable end multiplicity",
+            ));
+        };
+        if stations.len() < 2 {
+            return Ok(Err(
+                "rolling-ball jet stations must contain at least two rows",
+            ));
+        }
+        if stations[0].multiplicity != maximum
+            || stations[stations.len() - 1].multiplicity != maximum
+        {
+            return Ok(Err(
+                "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
+            ));
+        }
         for station in stations {
             ctx.charge_work(1, "rolling-ball jet multiplicities")?;
-            if station.multiplicity == 0 || station.multiplicity > maximum { return Ok(Err("rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends")); }
+            if station.multiplicity == 0 || station.multiplicity > maximum {
+                return Ok(Err(
+                    "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
+                ));
+            }
         }
         let mut previous = None;
         for station in stations {
             ctx.charge_work(1, "rolling-ball jet knots")?;
             let value = knot(station);
-            if !value.is_finite() || previous.is_some_and(|last| value <= last) { return Ok(Err(ROLLING_BALL_KNOTS)); }
+            if !value.is_finite() || previous.is_some_and(|last| value <= last) {
+                return Ok(Err(ROLLING_BALL_KNOTS));
+            }
             previous = Some(value);
         }
         Ok(Ok(()))

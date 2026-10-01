@@ -1061,7 +1061,9 @@ mod tests {
             byte_offset: 12,
             kind: super::AsmEntityChangeKind::Update { old: 8, new: 7 },
         };
-        let needed = serde_json::to_vec(&change).unwrap().len();
+        let needed = "asm_entity_changes".len()
+            + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>()
+            + "id".len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;

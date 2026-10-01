@@ -54,8 +54,15 @@ fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
 fn reserved_parameter_dependencies_preserve_order_and_reject_repeats() {
     let first = ParameterId::mint("test:test:parameter#first").unwrap();
     let second = ParameterId::mint("test:test:parameter#second").unwrap();
-    let ordered = crate::test_support::with_service_decode_context(|ctx| DistinctMembers::try_from_for_decode(vec![second.clone(), first.clone()], ctx).map_err(cadmpeg_core::CodecError::from))
-        .expect("source-ordered members are distinct");
+    let ordered = crate::test_support::with_service_decode_context(|ctx| {
+        DistinctMembers::try_from_for_decode(vec![second.clone(), first.clone()], ctx)
+            .map_err(cadmpeg_core::CodecError::from)
+    })
+    .expect("source-ordered members are distinct");
     assert_eq!(ordered.as_slice(), &[second.clone(), first.clone()]);
-    assert!(crate::test_support::with_service_decode_context(|ctx| DistinctMembers::try_from_for_decode(vec![first.clone(), second, first], ctx).map_err(cadmpeg_core::CodecError::from)).is_err());
+    assert!(crate::test_support::with_service_decode_context(|ctx| {
+        DistinctMembers::try_from_for_decode(vec![first.clone(), second, first], ctx)
+            .map_err(cadmpeg_core::CodecError::from)
+    })
+    .is_err());
 }

@@ -666,7 +666,8 @@ fn curve_expression_properties(
         let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
         insert_curve_expression_property(ctx, &mut properties, "cyclic_dependencies", value)?;
     }
-    cadmpeg_core::text::named_entries_for_decode(ctx, parameter_id.as_str(), properties).map_err(Into::into)
+    cadmpeg_core::text::named_entries_for_decode(ctx, parameter_id.as_str(), properties)
+        .map_err(Into::into)
 }
 
 fn native_curve_expression_definition(
@@ -941,7 +942,11 @@ pub(super) fn transfer_curve_expression_features(
                     )?,
                     display: None,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(dependencies, ctx).map_err(cadmpeg_core::CodecError::from)?,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                        dependencies,
+                        ctx,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?,
                     properties: BTreeMap::new(),
                     pmi: None,
                     native_ref: Some(curve_expression_record_id(ctx, record)?),
@@ -1091,7 +1096,12 @@ pub(super) fn transfer_curve_expression_features(
                 source_properties: BTreeMap::new(),
                 source_tag: Some(source_tag),
                 source_text: Some(curve_expression_source_text(ctx, &record.lines)?),
-                source_content: cadmpeg_ir::features::FeatureContent::try_from_for_decode(source_content, ctx, "validate Creo feature source content").map_err(cadmpeg_core::CodecError::from)?,
+                source_content: cadmpeg_ir::features::FeatureContent::try_from_for_decode(
+                    source_content,
+                    ctx,
+                    "validate Creo feature source content",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?,
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
                 native_ref: Some(curve_expression_record_id(ctx, record)?),

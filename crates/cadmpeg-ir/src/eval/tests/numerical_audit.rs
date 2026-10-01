@@ -42,76 +42,76 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
 #[test]
 fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-    use super::super::{
-        nurbs_curve_derivative, nurbs_curve_point_at, nurbs_surface_isocurve,
-        nurbs_surface_second_partials, CurveDerivative, SurfaceParameterAxis,
-    };
-    use crate::math::Vector3;
-    use crate::scalar::FiniteReal;
-    for weight in [1.0, -1.0, 1.0e200, 1.0e308, 1.0e-200, f64::from_bits(1)] {
-        let poles = [Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)];
-        let knots = [0.0, 0.0, 1.0, 1.0];
-        let weights = [weight; 2];
-        let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-            1,
-            knots.to_vec(),
-            poles.to_vec(),
-            Some(weights.to_vec()),
-            false,
-        )
-        .unwrap();
-        assert_eq!(
-            nurbs_curve_point_at(&curve, 0.5)
-                .ok()
-                .map(crate::features::FinitePoint3::get),
-            Some(Point3::new(3.0, 0.0, 0.0))
-        );
-        let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
-        assert_eq!(
-            nurbs_curve_derivative(
-                &super::super::decode::Scratch::new(ctx),
+        use super::super::{
+            nurbs_curve_derivative, nurbs_curve_point_at, nurbs_surface_isocurve,
+            nurbs_surface_second_partials, CurveDerivative, SurfaceParameterAxis,
+        };
+        use crate::math::Vector3;
+        use crate::scalar::FiniteReal;
+        for weight in [1.0, -1.0, 1.0e200, 1.0e308, 1.0e-200, f64::from_bits(1)] {
+            let poles = [Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)];
+            let knots = [0.0, 0.0, 1.0, 1.0];
+            let weights = [weight; 2];
+            let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
-                &knots,
-                &admitted,
-                Some(&weights),
-                FiniteReal::new(0.5).unwrap(),
-                CurveDerivative::First
+                knots.to_vec(),
+                poles.to_vec(),
+                Some(weights.to_vec()),
+                false,
             )
-            .ok()
-            .map(crate::features::FiniteVector3::get),
-            Some(Vector3::new(2.0, 0.0, 0.0))
-        );
-        assert_eq!(
-            nurbs_curve_derivative(
-                &super::super::decode::Scratch::new(ctx),
-                1,
-                &knots,
-                &admitted,
-                Some(&weights),
-                FiniteReal::new(0.5).unwrap(),
-                CurveDerivative::Second
-            )
-            .ok()
-            .map(crate::features::FiniteVector3::get),
-            Some(Vector3::new(0.0, 0.0, 0.0))
-        );
-        let surface = bilinear_surface(vec![vec![weight; 2]; 2], [2.0, 4.0]);
-        let partials = nurbs_surface_second_partials(&surface, 0.5, 0.5).unwrap();
-        assert_eq!(partials.point, Point3::new(3.0, 0.5, 0.0));
-        assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
-        assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
-        assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 0.0));
-        assert_eq!(partials.duv, Vector3::new(0.0, 0.0, 0.0));
-        assert_eq!(partials.dvv, Vector3::new(0.0, 0.0, 0.0));
-        let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
-            .expect("resource allocation did not fail")
             .unwrap();
-        assert_eq!(
-            curve.control_points(),
-            [Point3::new(3.0, 0.0, 0.0), Point3::new(3.0, 1.0, 0.0)]
-        );
-    }
-});
+            assert_eq!(
+                nurbs_curve_point_at(&curve, 0.5)
+                    .ok()
+                    .map(crate::features::FinitePoint3::get),
+                Some(Point3::new(3.0, 0.0, 0.0))
+            );
+            let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
+            assert_eq!(
+                nurbs_curve_derivative(
+                    &super::super::decode::Scratch::new(ctx),
+                    1,
+                    &knots,
+                    &admitted,
+                    Some(&weights),
+                    FiniteReal::new(0.5).unwrap(),
+                    CurveDerivative::First
+                )
+                .ok()
+                .map(crate::features::FiniteVector3::get),
+                Some(Vector3::new(2.0, 0.0, 0.0))
+            );
+            assert_eq!(
+                nurbs_curve_derivative(
+                    &super::super::decode::Scratch::new(ctx),
+                    1,
+                    &knots,
+                    &admitted,
+                    Some(&weights),
+                    FiniteReal::new(0.5).unwrap(),
+                    CurveDerivative::Second
+                )
+                .ok()
+                .map(crate::features::FiniteVector3::get),
+                Some(Vector3::new(0.0, 0.0, 0.0))
+            );
+            let surface = bilinear_surface(vec![vec![weight; 2]; 2], [2.0, 4.0]);
+            let partials = nurbs_surface_second_partials(&surface, 0.5, 0.5).unwrap();
+            assert_eq!(partials.point, Point3::new(3.0, 0.5, 0.0));
+            assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
+            assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+            assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 0.0));
+            assert_eq!(partials.duv, Vector3::new(0.0, 0.0, 0.0));
+            assert_eq!(partials.dvv, Vector3::new(0.0, 0.0, 0.0));
+            let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
+                .expect("resource allocation did not fail")
+                .unwrap();
+            assert_eq!(
+                curve.control_points(),
+                [Point3::new(3.0, 0.0, 0.0), Point3::new(3.0, 1.0, 0.0)]
+            );
+        }
+    });
 }
 
 #[test]
@@ -279,21 +279,34 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
 #[test]
 fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-    use super::super::pcurve_uv_differential;
-    use crate::geometry::pcurve::PcurveGeometry;
-    use crate::geometry::pcurve::{PolarHarmonicPcurve, SphericalGreatCirclePcurve};
-    use crate::math::Point2;
-    for radius in [1e-200, 1.0, 1e200] {
-        let curve = PcurveGeometry::PolarHarmonic(
-            PolarHarmonicPcurve::try_new(
-                Point2::new(0.0, 0.0),
-                Point2::new(radius, 0.0),
-                Point2::new(0.0, radius),
-                0.0,
-                0.0,
-                0.0,
+        use super::super::pcurve_uv_differential;
+        use crate::geometry::pcurve::PcurveGeometry;
+        use crate::geometry::pcurve::{PolarHarmonicPcurve, SphericalGreatCirclePcurve};
+        use crate::math::Point2;
+        for radius in [1e-200, 1.0, 1e200] {
+            let curve = PcurveGeometry::PolarHarmonic(
+                PolarHarmonicPcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(radius, 0.0),
+                    Point2::new(0.0, radius),
+                    0.0,
+                    0.0,
+                    0.0,
+                )
+                .unwrap(),
+            );
+            let result = pcurve_uv_differential(
+                &super::super::decode::Scratch::new(ctx),
+                &curve,
+                crate::scalar::FiniteReal::HALF,
             )
-            .unwrap(),
+            .unwrap();
+            assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
+            assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
+            assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
+        }
+        let curve = PcurveGeometry::SphericalGreatCircle(
+            SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
         );
         let result = pcurve_uv_differential(
             &super::super::decode::Scratch::new(ctx),
@@ -301,25 +314,14 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             crate::scalar::FiniteReal::HALF,
         )
         .unwrap();
-        assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
-        assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
-        assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
-    }
-    let curve = PcurveGeometry::SphericalGreatCircle(
-        SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
-    );
-    let result = pcurve_uv_differential(
-        &super::super::decode::Scratch::new(ctx),
-        &curve,
-        crate::scalar::FiniteReal::HALF,
-    )
-    .unwrap();
-    let (sin, cos) = 0.5_f64.sin_cos();
-    let expected_first = -sin / (1e200 * cos * cos);
-    let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
-    assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
-    assert!((result.acceleration.unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON);
-});
+        let (sin, cos) = 0.5_f64.sin_cos();
+        let expected_first = -sin / (1e200 * cos * cos);
+        let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
+        assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
+        assert!(
+            (result.acceleration.unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON
+        );
+    });
 }
 
 #[test]
@@ -438,7 +440,7 @@ fn audit_rolling_ball_jet(
         second_limit: Point3::new(0.0, radius, 0.0),
         center: Point3::new(0.0, 0.0, 0.0),
         angle: std::f64::consts::FRAC_PI_2,
-        first_derivative: derivative.clone(),
+        first_derivative: derivative,
         second_derivative: RollingBallJetDerivative {
             first_limit: Vector3::new(second_derivative, 0.0, 0.0),
             ..derivative
@@ -451,7 +453,7 @@ fn audit_rolling_ball_jet(
                 RollingBallJetStation {
                     knot: 0.0,
                     multiplicity: 6,
-                    site: site.clone(),
+                    site,
                 },
                 RollingBallJetStation {
                     knot: end_knot,
@@ -507,7 +509,7 @@ fn rolling_ball_jet_over_wide_knot_interval_keeps_finite_interior_point() {
         second_limit: Point3::new(0.0, 1.0, 0.0),
         center: Point3::new(0.0, 0.0, 0.0),
         angle: std::f64::consts::FRAC_PI_2,
-        first_derivative: derivative.clone(),
+        first_derivative: derivative,
         second_derivative: derivative,
     };
     let jet = ProceduralSurfaceDefinition::RollingBallJet(
@@ -517,7 +519,7 @@ fn rolling_ball_jet_over_wide_knot_interval_keeps_finite_interior_point() {
                 RollingBallJetStation {
                     knot: -f64::MAX,
                     multiplicity: 6,
-                    site: site.clone(),
+                    site,
                 },
                 RollingBallJetStation {
                     knot: f64::MAX,

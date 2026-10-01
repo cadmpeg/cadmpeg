@@ -642,7 +642,9 @@ pub(super) fn decode(
                 let annotation = &ir.model.pmi[annotations.get(id)?.get()];
                 matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
                     .then_some(&annotation.id)
-            }).map(|id| id.try_clone_for_decode(ctx, "step_pmi_datum_system_identity_copy")).transpose()?;
+            })
+            .map(|id| id.try_clone_for_decode(ctx, "step_pmi_datum_system_identity_copy"))
+            .transpose()?;
         annotations.push(
             ctx,
             ir,

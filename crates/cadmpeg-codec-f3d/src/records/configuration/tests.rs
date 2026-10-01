@@ -144,13 +144,21 @@ fn configuration_variant_sort_work_limit_refuses_before_serialization() {
         ..Default::default()
     };
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 3;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "sort F3D configuration variants",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            native
+                .store(&limited, &mut cadmpeg_ir::NativeNamespace::default())
+                .map_err(Into::into)
+        },
+    );
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&limited, &mut namespace).unwrap_err();
     assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
+        error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "sort F3D configuration variants"

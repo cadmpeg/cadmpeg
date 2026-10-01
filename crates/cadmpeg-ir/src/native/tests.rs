@@ -42,7 +42,8 @@ fn native_charging_writer_refuses_retained_limit_before_record_buffer_growth() {
     };
     writer.write_all(json).unwrap();
     assert!(writer.refusal.is_none());
-    policy.limits.max_retained_bytes += cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>());
+    policy.limits.max_retained_bytes +=
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>());
 
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let calls = Cell::new(0);
@@ -105,7 +106,8 @@ fn native_writer_refuses_before_serializing_later_field() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>()) + 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>()) + 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let visits = Cell::new(0);
     let record = Record {
@@ -572,16 +574,18 @@ fn complete_document_refuses_duplicate_native_keys_at_every_depth() {
 
 #[test]
 fn deeply_nested_native_values_survive_every_stored_record_reader() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(super::MAX_NATIVE_NESTING_DEPTH + 2);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-
     #[derive(Debug, PartialEq, Serialize, serde::Deserialize)]
     struct Record {
         id: String,
         nested: serde_json::Value,
     }
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth =
+        cadmpeg_core::decode::u64_from_index(super::MAX_NATIVE_NESTING_DEPTH + 2);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     let mut nested = serde_json::json!({"value": "retained", "absent": null});
     for _ in 0..140 {
@@ -626,11 +630,6 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
 /// `fields`, `field`, `to_typed` and `Drop` — then descends a bounded value.
 #[test]
 fn a_field_nested_past_the_native_bound_never_enters_a_record() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(super::MAX_NATIVE_NESTING_DEPTH + 2);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-
     use crate::native::{NativeConvertError, MAX_NATIVE_NESTING_DEPTH};
 
     #[derive(Debug, PartialEq, serde::Deserialize)]
@@ -638,6 +637,13 @@ fn a_field_nested_past_the_native_bound_never_enters_a_record() {
         id: String,
         nested: serde_json::Value,
     }
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth =
+        cadmpeg_core::decode::u64_from_index(super::MAX_NATIVE_NESTING_DEPTH + 2);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     let id = "test:native:record#bound";
     let chain = |containers: usize| {
@@ -1120,12 +1126,17 @@ fn native_json_writer_has_no_storage_charge() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut writer = super::ChargingJsonWriter { ctx: &ctx, refusal: None };
+    let mut writer = super::ChargingJsonWriter {
+        ctx: &ctx,
+        refusal: None,
+    };
     writer.write_all(bytes).unwrap();
     assert!(writer.refusal.is_none());
     assert!(writer.write_all(b" ").is_err());
-    assert!(matches!(writer.refusal, Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 1));
+    assert!(
+        matches!(writer.refusal, Some(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 1)
+    );
 }
 
 #[test]
@@ -1138,10 +1149,44 @@ fn native_sort_uses_only_index_permutation_storage() {
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(records.len() * std::mem::size_of::<usize>());
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(records.len() * std::mem::size_of::<usize>());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let sorted = crate::native::arena_from(&ctx, records.iter().map(Ok::<_, crate::native::NativeConvertError>)).unwrap();
+    let sorted = crate::native::arena_from(
+        &ctx,
+        records
+            .iter()
+            .map(Ok::<_, crate::native::NativeConvertError>),
+    )
+    .unwrap();
     assert_eq!(sorted[0].id(), "test:native:record#first");
     assert_eq!(sorted[1].field("ordinal"), Some(serde_json::json!(1)));
     assert_eq!(sorted[2].field("ordinal"), Some(serde_json::json!(2)));
+}
+
+#[test]
+fn arena_write_error_refuses_before_allocating_its_box() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let name = "invalid";
+    let first_storage = name.len()
+        + 4 * std::mem::size_of::<super::NativeRecord>()
+        + 3
+        + std::mem::size_of::<super::NativeConvertError>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(first_storage).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::NativeNamespace::default()
+        .set_arena(&ctx, name, &["bad"])
+        .unwrap_err();
+    assert!(
+        matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain native arena error"
+            && limit.additional == u64::try_from(std::mem::size_of::<super::NativeConvertError>()).unwrap())
+    );
+    let error = super::NativeNamespace::default()
+        .set_arena(&super::test_ctx(), name, &["bad"])
+        .unwrap_err();
+    assert!(matches!(error, super::NativeConvertError::Arena { .. }));
 }

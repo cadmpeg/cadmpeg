@@ -151,7 +151,7 @@ fn relation_extract_refuses_scanning_work() {
     let error = relation_parse_limit_error(
         "extract('abc',2,1)",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_work_units = 1,
+        |policy| policy.limits.max_work_units = 1 + 3,
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
@@ -293,9 +293,19 @@ fn relation_affine_difference_refuses_new_coefficient_node() {
 
 #[test]
 fn relation_affine_comparison_refuses_coefficient_work() {
-    let error = relation_parse_limit_error("driver==driver", &affine_probe_values(), |policy| {
-        policy.limits.max_work_units = 0;
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo affine coefficient comparison work",
+        |cap| {
+            Err::<(), _>(relation_parse_limit_error(
+                "driver==driver",
+                &affine_probe_values(),
+                |policy| {
+                    policy.limits.max_work_units = cap;
+                },
+            ))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo affine coefficient comparison work"));

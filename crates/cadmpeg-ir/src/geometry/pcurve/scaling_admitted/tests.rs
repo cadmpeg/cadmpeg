@@ -126,11 +126,12 @@ fn owned_pcurve_scaling_preserves_analytic_conversion_and_refusal_order() {
     for geometry in geometry {
         for scales in [[2.0, 3.0], [2.0, 2.0], [f64::MAX, f64::MAX], [0.0, 0.0]] {
             let mut expected = geometry.clone();
-            let expected = expected.try_scale_coordinates(scales).map(|()| expected).map_err(|error| error.to_string());
+            let expected = expected
+                .try_scale_coordinates(scales)
+                .map(|()| expected)
+                .map_err(|error| error.to_string());
             let actual = with_limits(u64::MAX, u64::MAX, |ctx| {
-                geometry
-                    .clone()
-                    .scaled_coordinates_owned(ctx, scales)
+                geometry.clone().scaled_coordinates_owned(ctx, scales)
             })
             .expect("admitted");
             assert_eq!(actual.map_err(str::to_owned), expected);
@@ -151,11 +152,12 @@ fn owned_pcurve_scaling_preserves_analytic_conversion_and_refusal_order() {
     ] {
         for scales in [[2.0, 2.0], [2.0, 3.0], [0.0, 0.0]] {
             let mut expected = geometry.clone();
-            let expected = expected.try_scale_coordinates(scales).map(|()| expected).map_err(|error| error.to_string());
+            let expected = expected
+                .try_scale_coordinates(scales)
+                .map(|()| expected)
+                .map_err(|error| error.to_string());
             let actual = with_limits(u64::MAX, u64::MAX, |ctx| {
-                geometry
-                    .clone()
-                    .scaled_coordinates_owned(ctx, scales)
+                geometry.clone().scaled_coordinates_owned(ctx, scales)
             })
             .expect("admitted");
             assert_eq!(actual.map_err(str::to_owned), expected);

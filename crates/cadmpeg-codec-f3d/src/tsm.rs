@@ -1889,11 +1889,18 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .map_err(|_| malformed(ctx, name, "T-spline edge index exceeds u32"))?;
         let crease = creased_edges.contains(&edge_index);
         let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
-        let edge = SubdEdge::from_parts(vertices, [sharpness; 2], if crease {
+        let edge = SubdEdge::from_parts(
+            vertices,
+            [sharpness; 2],
+            if crease {
                 SubdEdgeTag::Crease
             } else {
                 SubdEdgeTag::Smooth
-            }, Some(edge_knot_intervals_ir[index]), [0.0, 0.0], ctx)?
+            },
+            Some(edge_knot_intervals_ir[index]),
+            [0.0, 0.0],
+            ctx,
+        )?
         .map_err(|error| malformed(ctx, name, error))?;
         ctx.push_vec(&mut edges, edge, "project T-spline edges")?;
     }

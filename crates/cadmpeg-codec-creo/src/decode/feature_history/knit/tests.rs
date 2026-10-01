@@ -372,13 +372,17 @@ fn feature_result_distinctness_refuses_work_limit() {
         id: 202,
         ..rows[0].clone()
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::feature_result_topology(&ctx, &tables, &rows, &[], 17)
-        .expect_err("two distinctness comparisons exceed zero work units");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo feature result member distinctness",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::feature_result_topology(&ctx, &tables, &rows, &[], 17)
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits

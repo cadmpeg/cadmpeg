@@ -78,9 +78,14 @@ pub(super) fn standard_pcurve_geometry(
         Some(witness),
     ) = (&support.geometry, witness)
     {
-        if let Some(end) =
-            witnessed_surface_circle_end(ctx, surface, center.get(), radius.get(), uv, witness.get())?
-        {
+        if let Some(end) = witnessed_surface_circle_end(
+            ctx,
+            surface,
+            center.get(),
+            radius.get(),
+            uv,
+            witness.get(),
+        )? {
             uv[1] = end;
         }
     }
@@ -136,7 +141,13 @@ pub(super) fn standard_pcurve_geometry(
 
     let direction = Point2::new(uv[1].u - uv[0].u, uv[1].v - uv[0].v);
     let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
-    let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, midpoint_uv.u, midpoint_uv.v)?)?
+    let Some(midpoint) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
+            ctx,
+            surface,
+            midpoint_uv.u,
+            midpoint_uv.v,
+        )?)?
     else {
         return Ok(None);
     };
@@ -224,7 +235,14 @@ pub(super) fn witnessed_surface_circle_end(
         } else {
             candidate.v = selected;
         }
-        let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, 0.5 * (uv[0].u + candidate.u), 0.5 * (uv[0].v + candidate.v))?)?
+        let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::surface_point_for_decode(
+                ctx,
+                surface,
+                0.5 * (uv[0].u + candidate.u),
+                0.5 * (uv[0].v + candidate.v),
+            )?,
+        )?
         else {
             continue;
         };
@@ -860,15 +878,16 @@ pub(super) fn standard_native_support_witness(
         else {
             return Ok(None);
         };
-        let Some(uv) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?)?
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?,
+        )?
         else {
             return Ok(None);
         };
-        Ok(
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?)?
-            .map(cadmpeg_ir::features::FinitePoint3::get),
-        )
+        Ok(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?,
+        )?
+        .map(cadmpeg_ir::features::FinitePoint3::get))
     };
     let Some(first) = lift(&native.carriers[0], &native.pcurves[0])? else {
         return Ok(None);
@@ -1695,7 +1714,8 @@ pub(super) fn ensure_native_edge_support_surface(
     admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
     let (geometry, procedural_id) = match carrier {
         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
-            let copy = geometry.try_clone_for_decode(admission.context(), "catia_native_edge_support_geometry")?;
+            let copy = geometry
+                .try_clone_for_decode(admission.context(), "catia_native_edge_support_geometry")?;
             (copy, None)
         }
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
@@ -1966,7 +1986,8 @@ pub(super) fn standard_circle_param_range(
         else {
             continue;
         };
-        let Some(range) = circle_parameter_range_from_surface_branch(ctx,
+        let Some(range) = circle_parameter_range_from_surface_branch(
+            ctx,
             crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
                 surface: &surface.geometry,
                 center,

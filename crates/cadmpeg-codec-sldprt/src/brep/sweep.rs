@@ -190,7 +190,10 @@ pub(super) fn profile_nurbs<'a>(
         );
         weights.push(if index % 2 == 0 { 1.0 } else { half_sqrt2 });
     }
-    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(ctx, 2, vec![
+    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        ctx,
+        2,
+        vec![
             0.0,
             0.0,
             0.0,
@@ -203,7 +206,11 @@ pub(super) fn profile_nurbs<'a>(
             2.0 * std::f64::consts::PI,
             2.0 * std::f64::consts::PI,
             2.0 * std::f64::consts::PI,
-        ], control_points, Some(weights), false)? {
+        ],
+        control_points,
+        Some(weights),
+        false,
+    )? {
         Ok(curve) => Ok(Some(Cow::Owned(curve))),
         Err(error) => {
             refusal.note(
@@ -467,11 +474,17 @@ pub(super) fn spun_nurbs(
     let knots = profile_knots(ctx, profile)?;
     let control_rows = curve_rows(ctx, &control, 9, "construct spun surface pole rows")?;
     let weight_rows = curve_rows(ctx, &weights, 9, "construct spun surface weight rows")?;
-    match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+    match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+        ctx,
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),
             knots,
             profile.periodic(),
-        ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, true), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, Some(weight_rows)), false)? {
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, true),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, Some(weight_rows)),
+        false,
+    )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note(

@@ -272,7 +272,7 @@ fn dimension_inference_refuses_duplicate_comparison_work() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = crate::curve::infer_solve_variable_dimensions(
         &ctx,

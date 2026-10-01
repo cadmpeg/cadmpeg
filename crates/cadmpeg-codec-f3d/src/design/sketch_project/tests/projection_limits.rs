@@ -621,7 +621,8 @@ fn spatial_constraint_sketch_membership_refuses_work_limit() {
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units =
+        2 * cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         project_spatial_sketch_constraints(&ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], &[entity]),

@@ -253,7 +253,8 @@ impl SourceObjectAssociation {
             })?;
         let name = self.name.as_deref().map(text).transpose()?;
         let layer = self.layer.as_deref().map(text).transpose()?;
-        let instance_path = ctx.try_collect_retained_with(&self.instance_path, operation, |id| text(id))?;
+        let instance_path =
+            ctx.try_collect_retained_with(&self.instance_path, operation, |id| text(id))?;
         Ok(Self {
             format: self.format,
             object_id,

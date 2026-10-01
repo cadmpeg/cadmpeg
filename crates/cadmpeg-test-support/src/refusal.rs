@@ -33,3 +33,43 @@ pub fn states_the_key(key: &str, message: &str) {
         "the refusal of a null {key} states {message}"
     );
 }
+
+/// Admit preceding allocations, then refuse the named operation one unit below its need.
+///
+/// # Panics
+///
+/// Panics if the route has no named boundary, changes dimension, or fails for another reason.
+pub fn resource_limit_at<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+    run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::CodecError;
+    let mut cap = 0;
+    for _ in 0..8192 {
+        match run(cap) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, dimension);
+                let need = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("resource need fits");
+                assert!(need > cap, "{operation}: {limit:?}");
+                if limit.operation == operation {
+                    let error = run(need - 1)
+                        .err()
+                        .expect("one unit below the resource boundary");
+                    assert!(matches!(error, CodecError::ResourceLimit(ref refusal)
+                        if refusal.dimension == dimension
+                            && refusal.operation == operation
+                            && refusal.used + refusal.additional == need));
+                    return error;
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected refusal before {operation}: {error:?}"),
+            Ok(_) => panic!("missing resource boundary: {operation}"),
+        }
+    }
+    panic!("resource route exceeds the boundary count: {operation}");
+}

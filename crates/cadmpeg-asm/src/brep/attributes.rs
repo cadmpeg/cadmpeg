@@ -32,7 +32,12 @@ pub fn collect_attributes(
         };
         if ctx.insert_hash_set(emitted, index, "ASM emitted attributes")? {
             ctx.reserve_vec(out, 1, "ASM source attributes")?;
-            out.push(source_attribute(ctx, record, target.try_clone_for_decode(ctx, "ASM source attribute target")?, format)?);
+            out.push(source_attribute(
+                ctx,
+                record,
+                target.try_clone_for_decode(ctx, "ASM source attribute target")?,
+                format,
+            )?);
         }
         current = attribute_next(record);
     }

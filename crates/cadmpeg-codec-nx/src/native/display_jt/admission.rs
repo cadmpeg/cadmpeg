@@ -129,16 +129,21 @@ impl DisplayJtGraph {
             DisplayJtGraphWire {
                 documents: namespace.arena_as_for_decode(ctx, "display_jt_documents")?,
                 segments: namespace.arena_as_for_decode(ctx, "display_jt_segments")?,
-                shape_lod_elements: namespace.arena_as_for_decode(ctx, "display_jt_shape_lod_elements")?,
-                compressed_elements: namespace.arena_as_for_decode(ctx, "display_jt_compressed_elements")?,
-                compressed_element_sequences: namespace.arena_as_for_decode(ctx, "display_jt_compressed_element_sequences")?,
+                shape_lod_elements: namespace
+                    .arena_as_for_decode(ctx, "display_jt_shape_lod_elements")?,
+                compressed_elements: namespace
+                    .arena_as_for_decode(ctx, "display_jt_compressed_elements")?,
+                compressed_element_sequences: namespace
+                    .arena_as_for_decode(ctx, "display_jt_compressed_element_sequences")?,
             },
         )
     }
 
     #[cfg(test)]
     fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        crate::test_support::with_decode_context(|ctx| Self::from_namespace_with_context(ctx, namespace))
+        crate::test_support::with_decode_context(|ctx| {
+            Self::from_namespace_with_context(ctx, namespace)
+        })
     }
 
     fn from_wire(

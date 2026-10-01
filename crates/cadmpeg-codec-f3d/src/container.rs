@@ -447,7 +447,11 @@ pub(crate) fn scan<'a>(
                 acis_header::parse(ctx, buf)?.map(KernelFraming::Acis)
             };
             let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
-            let sha = cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, buf, "retain source digest")?;
+            let sha = cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx,
+                buf,
+                "retain source digest",
+            )?;
 
             ctx.insert_btree_map(
                 &mut attributes,
