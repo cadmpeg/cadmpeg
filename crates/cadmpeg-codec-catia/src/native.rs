@@ -7465,11 +7465,11 @@ pub(crate) struct CatiaZeroEntityEndpointLocusCandidate {
     /// Stable derived-locus identity.
     pub(crate) id: String,
     /// Incident endpoints in endpoint-pair and endpoint order.
-    pub(crate) incident_endpoint_pair_endpoints: Vec<CatiaZeroEntityEndpointPairEndpoint>,
+    pub(crate) incident_endpoint_pair_endpoints: cadmpeg_ir::features::NonEmptyMembers<CatiaZeroEntityEndpointPairEndpoint>,
     /// Model-space point from the first incident endpoint.
     pub(crate) representative_point: FinitePoint3,
     /// Maximum pairwise distance between incident endpoint coordinates.
-    pub(crate) maximum_deviation: f64,
+    pub(crate) maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
 /// One counted zero-entity `05xx` vertex-incidence record.
@@ -9399,9 +9399,9 @@ fn zero_entity_endpoint_locus_candidates(
                 format_args!("catia:zero-entity:endpoint-locus-candidate#{index}"),
                 "catia_native_zero_endpoint_locus_id",
             )?,
-            incident_endpoint_pair_endpoints: endpoints,
+            incident_endpoint_pair_endpoints: endpoints.try_into().map_err(CodecError::malformed)?,
             representative_point: candidate.representative_point,
-            maximum_deviation: candidate.maximum_deviation,
+            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(candidate.maximum_deviation).ok_or_else(|| CodecError::malformed("endpoint locus deviation must be finite and nonnegative"))?,
         });
     }
     Ok(output)

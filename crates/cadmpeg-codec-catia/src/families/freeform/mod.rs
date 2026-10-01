@@ -4144,7 +4144,7 @@ mod tests {
             pos: 16,
             support_id: 1,
             extrapolation_sites: 0,
-            sites: vec![site(0.0, 0.0), site(1.0, 1.0)],
+            sites: vec![site(0.0, 0.0), site(1.0, 1.0)].try_into().expect("ordered fixture sites"),
             range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
                 .expect("increasing range"),
             tail: Vec::new(),

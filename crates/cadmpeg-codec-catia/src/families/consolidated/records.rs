@@ -892,22 +892,16 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
         };
         #[cfg(test)]
         let definition = ConsolidatedEdgeDefinition {
-            frame: ConsolidatedRawFrame {
-                pos: definition.frame.pos,
-                width: definition.frame.width,
-                flag: definition.frame.flag,
-                header_token: definition.frame.header_token,
-                payload: ctx.copy_retained_slice(
+            frame: ConsolidatedRawFrame::new(definition.frame.pos, definition.frame.width(), definition.frame.flag, definition.frame.header_token(), ctx.copy_retained_slice(
                     &definition.frame.payload,
                     "catia_analytic_circle_test_definition_payload",
-                )?,
-            },
+                )?).map_err(CodecError::malformed)?,
             class: definition.class,
         };
         let descriptor = ConsolidatedRawFrame::from_record(
             parameter,
             ctx.copy_retained_slice(&data[payload], "catia_analytic_circle_descriptor_payload")?,
-        );
+        )?;
         ctx.push_vec(
             &mut runs,
             ConsolidatedAnalyticCircleEdgeRun {
@@ -1093,7 +1087,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         &data[payload],
                         "catia_edge_use_preceding_definition_payload",
                     )?,
-                ),
+                )?,
                 class,
             }),
             None => None,
@@ -1169,7 +1163,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                     &data[payload],
                     "catia_edge_use_succeeding_definition_payload",
                 )?,
-            ),
+            )?,
             class,
         });
         let uses = [uses[0].clone_charged(ctx)?, uses[1].clone_charged(ctx)?];
@@ -2413,7 +2407,7 @@ mod tests {
                         second_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
                     },
                 )
-                .collect(),
+                .collect::<Vec<_>>().try_into().expect("ordered fixture sites"),
             range: crate::test_support::test_b5::increasing([0.0, span]),
             tail: Vec::new(),
         };
@@ -2471,7 +2465,7 @@ mod tests {
                         second_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
                     },
                 )
-                .collect(),
+                .collect::<Vec<_>>().try_into().expect("ordered fixture sites"),
             range: crate::test_support::test_b5::increasing([0.0, 1.0]),
             tail: Vec::new(),
         };

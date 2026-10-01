@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::native::edge_definition::CatiaConsolidatedEdgeDefinition;
-use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth};
+use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, WidthCodedToken};
 
 use super::{
     CatiaAllocationReferenceEncoding, CatiaConsolidatedAnalyticCircleBinding,
@@ -21,12 +21,10 @@ pub(crate) struct CatiaConsolidatedEdgeNode {
     pub(super) byte_offset: u64,
     /// Zero-based bounded record-source ordinal.
     pub(super) source_index: usize,
-    /// Header-token width in bytes.
-    pub(super) width: ConsolidatedFrameWidth,
+    /// Header token with its checked encoded width.
+    pub(super) token: WidthCodedToken,
     /// Independent framing flag.
     pub(super) flag: ConsolidatedFrameFlag,
-    /// Width-coded header token.
-    pub(super) header_token: u32,
     /// Owning compact class-`0x62` packet and frame ordinal.
     pub(super) allocation: Option<(String, u32)>,
     /// Allocation-local curve-support reference.
@@ -142,9 +140,9 @@ impl CatiaConsolidatedEdgeNodeWire {
             id: value.id,
             byte_offset: value.byte_offset,
             source_index: value.source_index,
-            width: value.width,
+            width: value.token.width(),
             flag: value.flag,
-            header_token: value.header_token,
+            header_token: value.token.value(),
             allocation_owner,
             allocation_ordinal,
             curve_ref: value.curve_ref,
@@ -182,9 +180,8 @@ impl TryFrom<CatiaConsolidatedEdgeNodeWire> for CatiaConsolidatedEdgeNode {
             id: wire.id,
             byte_offset: wire.byte_offset,
             source_index: wire.source_index,
-            width: wire.width,
+            token: WidthCodedToken::new(wire.width, wire.header_token)?,
             flag: wire.flag,
-            header_token: wire.header_token,
             allocation,
             curve_ref: wire.curve_ref,
             vertex_refs: wire.vertex_refs,
@@ -456,6 +453,16 @@ mod tests {
     use crate::native::CatiaNative;
     use crate::test_support::test_a5_bound::a5_native_edge_run_stream;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn native_edge_node_rejects_a_token_wider_than_its_declared_width() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        let mut wire = serde_json::to_value(&native).expect("native wire")["consolidated_edge_nodes"][0].clone();
+        wire["width"] = serde_json::json!(1);
+        wire["header_token"] = serde_json::json!(256);
+        let wire = serde_json::from_value::<super::CatiaConsolidatedEdgeNodeWire>(wire).expect("wire shape");
+        assert!(super::CatiaConsolidatedEdgeNode::try_from(wire).expect_err("token exceeds width").contains("does not fit"));
+    }
 
     #[test]
     fn identity_lookup_keys_borrow_allocation_names() {

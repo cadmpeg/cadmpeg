@@ -48,6 +48,31 @@ pub(crate) struct ConsolidatedPcurveSite {
     pub(crate) second_derivatives: FiniteVector<2>,
 }
 
+/// At least two UV jet sites in strict knot order. Only immutable access is exposed.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct OrderedPcurveSites(Vec<ConsolidatedPcurveSite>);
+
+impl TryFrom<Vec<ConsolidatedPcurveSite>> for OrderedPcurveSites {
+    type Error = &'static str;
+    fn try_from(sites: Vec<ConsolidatedPcurveSite>) -> Result<Self, Self::Error> {
+        if sites.len() < 2 || sites.windows(2).any(|pair| pair[0].knot.get() >= pair[1].knot.get()) {
+            return Err("pcurve sites require at least two strictly increasing knots");
+        }
+        Ok(Self(sites))
+    }
+}
+
+impl std::ops::Deref for OrderedPcurveSites {
+    type Target = [ConsolidatedPcurveSite];
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+impl<'a> IntoIterator for &'a OrderedPcurveSites {
+    type Item = &'a ConsolidatedPcurveSite;
+    type IntoIter = std::slice::Iter<'a, ConsolidatedPcurveSite>;
+    fn into_iter(self) -> Self::IntoIter { self.0.iter() }
+}
+
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
 pub(crate) struct ConsolidatedPcurve {
@@ -58,7 +83,7 @@ pub(crate) struct ConsolidatedPcurve {
     /// Number of leading extrapolation sites encoded by the array marker.
     pub(crate) extrapolation_sites: u32,
     /// Knot-aligned UV jet samples.
-    pub(crate) sites: Vec<ConsolidatedPcurveSite>,
+    pub(crate) sites: OrderedPcurveSites,
     /// Native parameter range.
     pub(crate) range: IncreasingParameterInterval,
     /// Bytes following the native range inside the framed record.
@@ -159,6 +184,8 @@ fn parse_consolidated_pcurve(
             second_derivatives: [ddu, ddv].into(),
         });
     }
+    ctx.charge_work(u64_from_index(sites.len()), "catia_pcurve_site_order")?;
+    let sites = OrderedPcurveSites::try_from(sites).map_err(CodecError::malformed)?;
     Ok(Some(ConsolidatedPcurve {
         pos,
         support_id,
@@ -340,43 +367,87 @@ impl TryFrom<u8> for ConsolidatedFrameFlag {
     }
 }
 
+/// A token that fits its declared one-, two-, or three-byte width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WidthCodedToken {
+    width: ConsolidatedFrameWidth,
+    value: u32,
+}
+
+impl WidthCodedToken {
+    pub(crate) fn new(width: ConsolidatedFrameWidth, value: u32) -> Result<Self, &'static str> {
+        let maximum = match width {
+            ConsolidatedFrameWidth::One => 0xff,
+            ConsolidatedFrameWidth::Two => 0xffff,
+            ConsolidatedFrameWidth::Three => 0xff_ffff,
+        };
+        if value > maximum { return Err("header token does not fit its declared width"); }
+        Ok(Self { width, value })
+    }
+    pub(crate) fn width(self) -> ConsolidatedFrameWidth { self.width }
+    pub(crate) fn value(self) -> u32 { self.value }
+}
+
 /// Length-closed A/B-family frame shared by edge-definition and descriptor records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConsolidatedRawFrame<Offset = usize> {
     /// Record byte offset.
-    #[serde(rename = "byte_offset")]
     pub(crate) pos: Offset,
-    /// Header-token width in bytes.
-    pub(crate) width: ConsolidatedFrameWidth,
+    token: WidthCodedToken,
     /// Independent framing flag.
     pub(crate) flag: ConsolidatedFrameFlag,
-    /// Width-coded header token.
-    pub(crate) header_token: u32,
     /// Complete class-specific payload.
     pub(crate) payload: Vec<u8>,
 }
 
+#[derive(Deserialize)]
+struct RawFrameWire<Offset> {
+    byte_offset: Offset,
+    width: ConsolidatedFrameWidth,
+    flag: ConsolidatedFrameFlag,
+    header_token: u32,
+    payload: Vec<u8>,
+}
+
+impl<Offset> ConsolidatedRawFrame<Offset> {
+    pub(crate) fn new(pos: Offset, width: ConsolidatedFrameWidth, flag: ConsolidatedFrameFlag, header_token: u32, payload: Vec<u8>) -> Result<Self, &'static str> {
+        Ok(Self { pos, token: WidthCodedToken::new(width, header_token)?, flag, payload })
+    }
+    pub(crate) fn width(&self) -> ConsolidatedFrameWidth { self.token.width() }
+    pub(crate) fn header_token(&self) -> u32 { self.token.value() }
+}
+
+impl<Offset: Serialize> Serialize for ConsolidatedRawFrame<Offset> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("ConsolidatedRawFrame", 5)?;
+        wire.serialize_field("byte_offset", &self.pos)?;
+        wire.serialize_field("width", &self.width())?;
+        wire.serialize_field("flag", &self.flag)?;
+        wire.serialize_field("header_token", &self.header_token())?;
+        wire.serialize_field("payload", &self.payload)?;
+        wire.end()
+    }
+}
+
+impl<'de, Offset: Deserialize<'de>> Deserialize<'de> for ConsolidatedRawFrame<Offset> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = RawFrameWire::<Offset>::deserialize(deserializer)?;
+        Self::new(wire.byte_offset, wire.width, wire.flag, wire.header_token, wire.payload)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 impl ConsolidatedRawFrame {
-    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Self {
-        Self {
-            pos: record.byte_offset(),
-            width: record.width,
-            flag: record.flag,
-            header_token: record.header_token,
-            payload,
-        }
+    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Result<Self, CodecError> {
+        Self::new(record.byte_offset(), record.width, record.flag, record.header_token, payload)
+            .map_err(CodecError::malformed)
     }
 }
 
 impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
     fn from(frame: ConsolidatedRawFrame) -> Self {
-        Self {
-            pos: u64_from_index(frame.pos),
-            width: frame.width,
-            flag: frame.flag,
-            header_token: frame.header_token,
-            payload: frame.payload,
-        }
+        Self { pos: u64_from_index(frame.pos), token: frame.token, flag: frame.flag, payload: frame.payload }
     }
 }
 
@@ -943,6 +1014,37 @@ mod tests {
         ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
         ConsolidatedRecord,
     };
+
+    #[test]
+    fn raw_frame_token_fit_is_checked_in_construction_and_serde() {
+        use super::ConsolidatedRawFrame;
+        for (width, maximum) in [(ConsolidatedFrameWidth::One, 0xff), (ConsolidatedFrameWidth::Two, 0xffff), (ConsolidatedFrameWidth::Three, 0xff_ffff)] {
+            let frame = ConsolidatedRawFrame::new(12_u64, width, ConsolidatedFrameFlag::Flag03, maximum, vec![1]).expect("fitting token");
+            let bytes = serde_json::to_vec(&frame).expect("frame JSON");
+            assert_eq!(serde_json::from_slice::<ConsolidatedRawFrame<u64>>(&bytes).expect("checked frame JSON"), frame);
+            assert!(ConsolidatedRawFrame::new(12_u64, width, ConsolidatedFrameFlag::Flag03, maximum + 1, vec![1]).is_err());
+            let mut wire = serde_json::to_value(&frame).expect("frame wire");
+            wire["header_token"] = serde_json::json!(maximum + 1);
+            assert!(serde_json::from_value::<ConsolidatedRawFrame<u64>>(wire).is_err());
+        }
+        let frame = ConsolidatedRawFrame::new(12_u64, ConsolidatedFrameWidth::One, ConsolidatedFrameFlag::Flag03, 5, vec![1]).expect("frame");
+        assert_eq!(serde_json::to_string(&frame).expect("frame bytes"), r#"{"byte_offset":12,"width":1,"flag":3,"header_token":5,"payload":[1]}"#);
+    }
+
+    #[test]
+    fn ordered_pcurve_sites_reject_empty_singleton_and_nonincreasing_knots() {
+        let site = |knot| super::ConsolidatedPcurveSite {
+            knot: cadmpeg_ir::scalar::FiniteReal::new(knot).expect("finite knot"),
+            point: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
+            first_derivatives: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
+            second_derivatives: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2].into(),
+        };
+        for sites in [vec![], vec![site(0.0)], vec![site(0.0), site(0.0)], vec![site(1.0), site(0.0)]] {
+            assert!(super::OrderedPcurveSites::try_from(sites).is_err());
+        }
+        let sites = super::OrderedPcurveSites::try_from(vec![site(0.0), site(1.0)]).expect("ordered knots");
+        assert_eq!(sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>(), [0.0, 1.0]);
+    }
 
     #[test]
     fn vertex_scan_refuses_marker_free_work() {
