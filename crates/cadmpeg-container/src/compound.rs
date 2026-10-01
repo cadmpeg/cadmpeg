@@ -629,6 +629,9 @@ impl CompoundState {
                 if header_free_seen {
                     return malformed("non-free CFB header DIFAT entry follows a free entry");
                 }
+                if fat_sectors.len() == fat_count {
+                    return malformed("CFB FAT ids exceed the declared count");
+                }
                 fat_sectors.push(id);
             }
         }
@@ -653,7 +656,10 @@ impl CompoundState {
                     if free_seen {
                         return malformed("non-free CFB DIFAT entry follows a free entry");
                     }
-                    fat_sectors.push(id);
+                    if fat_sectors.len() == fat_count {
+                    return malformed("CFB FAT ids exceed the declared count");
+                }
+                fat_sectors.push(id);
                 }
             }
             next_difat = le_u32(data, difat_entries * 4)
@@ -1192,6 +1198,9 @@ impl CompoundPrefixProbe {
                         "non-free CFB header DIFAT entry follows a free entry".into(),
                     );
                 }
+                if fat_sectors.len() == fat_count {
+                    return Self::Malformed("CFB FAT ids exceed the declared count".into());
+                }
                 fat_sectors.push(id);
             }
         }
@@ -1221,7 +1230,10 @@ impl CompoundPrefixProbe {
                             "non-free CFB DIFAT entry follows a free entry".into(),
                         );
                     }
-                    fat_sectors.push(id);
+                    if fat_sectors.len() == fat_count {
+                    return Self::Malformed("CFB FAT ids exceed the declared count".into());
+                }
+                fat_sectors.push(id);
                 }
             }
             let Some(next) = le_u32(raw, difat_entries * 4) else {
@@ -2113,6 +2125,22 @@ mod tests {
                 .window(),
             b"small"
         );
+    }
+
+    #[test]
+    fn fat_id_population_is_refused_before_exceeding_its_declaration() {
+        let mut file = fixture();
+        for index in 0..109 {
+            put_u32(&mut file, 76 + index * 4, 11);
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let error = with_context(&file, &policy, |ctx| CompoundState::parse(ctx, &file))
+            .expect_err("second FAT id exceeds the one admitted slot");
+        assert!(matches!(error, CodecError::Malformed(detail)
+            if detail == "CFB FAT ids exceed the declared count"));
+        assert!(matches!(CompoundPrefixProbe::inspect(&file), CompoundPrefixProbe::Malformed(detail)
+            if detail == "CFB FAT ids exceed the declared count"));
     }
 
     #[test]
