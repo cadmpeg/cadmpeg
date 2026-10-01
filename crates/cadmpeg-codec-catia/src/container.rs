@@ -267,35 +267,36 @@ fn preview_images_in_segments(
     data: &[u8],
     segments: &[FinjplSegment],
 ) -> Result<Vec<PreviewImage>, CodecError> {
-    ctx.collect_vec(
-        segments
-            .iter()
-            .filter(|segment| segment.type_word == 0x0101_0003)
-            .filter_map(|segment| {
-                let bytes = &data[segment.range.clone()];
-                let mut candidates = bytes
-                    .windows(3)
-                    .enumerate()
-                    .filter(|(_, value)| *value == [0xff, 0xd8, 0xff])
-                    .filter_map(|(start, _)| {
-                        jpeg_extent(bytes, start).map(|(end, width, height, components)| {
-                            (start, end, width, height, components)
-                        })
-                    });
-                let (relative_start, relative_end, width, height, components) =
-                    candidates.next()?;
-                if candidates.next().is_some() {
-                    return None;
+    let mut previews = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.type_word == 0x0101_0003) {
+        let bytes = &data[segment.range.clone()];
+        ctx.charge_work(u64_from_index(bytes.len()), "catia_jpeg_candidate_scan")?;
+        let mut selected = None;
+        let mut ambiguous = false;
+        for (start, signature) in bytes.windows(3).enumerate() {
+            if signature != [0xff, 0xd8, 0xff] {
+                continue;
+            }
+            if let Some((end, width, height, components)) = jpeg_extent(ctx, bytes, start)? {
+                if selected.is_some() {
+                    ambiguous = true;
+                    break;
                 }
-                Some(PreviewImage {
-                    range: segment.range.start + relative_start..segment.range.start + relative_end,
+                selected = Some(PreviewImage {
+                    range: segment.range.start + start..segment.range.start + end,
                     width,
                     height,
                     components,
-                })
-            }),
-        "catia_preview_images",
-    )
+                });
+            }
+        }
+        if !ambiguous {
+            if let Some(preview) = selected {
+                ctx.push_vec(&mut previews, preview, "catia_preview_images")?;
+            }
+        }
+    }
+    Ok(previews)
 }
 
 /// Decode the unique `LastSaveVersion` tuple from summary-information segments.
@@ -457,7 +458,14 @@ fn tagged_ascii<'a>(data: &'a [u8], open: &[u8], close: &[u8]) -> Option<&'a str
         .flatten()
 }
 
-fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
+fn jpeg_extent(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+) -> Result<Option<(usize, u16, u16, u8)>, CodecError> {
+    let Some(suffix) = data.get(start..) else { return Ok(None) };
+    ctx.charge_work(u64_from_index(suffix.len()), "catia_jpeg_marker_walk")?;
+    Ok((|| {
     if data.get(start..start + 2) != Some(&[0xff, 0xd8]) {
         return None;
     }
@@ -518,6 +526,7 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
         at = end;
     }
     None
+    })())
 }
 
 /// Locate the coherent E5 record stream in the outer-body preamble or a FINJPL segment.
