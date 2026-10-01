@@ -159,6 +159,7 @@ fn check_member(refs: &[String], id: &str) -> Result<(), &'static str> {
 fn admit_member(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>, refs: &[String], id: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(refs.len()), "measure SLDPRT relation scalar comparisons")?;
     let length = cadmpeg_core::decode::u64_from_index(id.len());
     let work = refs.iter().try_fold(length, |work, member| {
         work.checked_add(length)?.checked_add(cadmpeg_core::decode::u64_from_index(member.len()))?.checked_add(1)
@@ -168,12 +169,38 @@ fn admit_member(
 }
 
 #[derive(Deserialize)]
-struct Wire {
+pub(crate) struct RelationScalarsWire {
     scalar_refs: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_parameter_scalar_ref")]
     parameter_scalar_ref: Option<String>,
     #[serde(default, deserialize_with = "deserialize_display_scalar_ref")]
     display_scalar_ref: Option<String>,
+}
+
+impl RelationScalarsWire {
+    pub(crate) fn into_checked(self) -> Result<RelationScalars, String> {
+        RelationScalars::from_refs(self.scalar_refs, self.parameter_scalar_ref, self.display_scalar_ref)
+    }
+
+    pub(crate) fn admit(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<RelationScalars, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "admit SLDPRT relation scalar membership";
+        let count = cadmpeg_core::decode::u64_from_index(self.scalar_refs.len());
+        ctx.charge_work(count, OPERATION)?;
+        let work = (|| {
+            let total = self.scalar_refs.iter().try_fold(0u64, |sum, id| sum.checked_add(cadmpeg_core::decode::u64_from_index(id.len())))?;
+            let mut work = count.checked_mul(total)?;
+            if count != 0 {
+                work = work.checked_add(count.checked_mul(count.checked_sub(1)?)?.checked_div(2)?)?;
+            }
+            for selected in [&self.parameter_scalar_ref, &self.display_scalar_ref].into_iter().flatten() {
+                let length = cadmpeg_core::decode::u64_from_index(selected.len());
+                work = work.checked_add(total)?.checked_add(count.checked_mul(length.checked_add(1)?)?)?;
+            }
+            work.checked_add(1)
+        })().ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
+        self.into_checked().map_err(|error| cadmpeg_core::CodecError::malformed(format_args!("relation instance: {error}")))
+    }
 }
 
 impl Serialize for RelationScalars {
@@ -192,12 +219,8 @@ impl Serialize for RelationScalars {
 
 impl<'de> Deserialize<'de> for RelationScalars {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = Wire::deserialize(deserializer)?;
-        Self::from_refs(
-            wire.scalar_refs,
-            wire.parameter_scalar_ref,
-            wire.display_scalar_ref,
-        )
+        let wire = RelationScalarsWire::deserialize(deserializer)?;
+        wire.into_checked()
         .map_err(serde::de::Error::custom)
     }
 }
