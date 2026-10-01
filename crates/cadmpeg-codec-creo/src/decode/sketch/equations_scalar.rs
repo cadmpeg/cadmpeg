@@ -35,14 +35,10 @@ pub(super) fn section_equation_coordinate_equalities(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(u32, u32, SectionAxis)>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
-        section_equation_coordinate_equality_rows(ctx, definition, ambiguous_point_ids)?
+    ctx.collect_vec(section_equation_coordinate_equality_rows(ctx, definition, ambiguous_point_ids)?
             .into_iter()
             .filter(|constraint| constraint.active)
-            .map(|constraint| (constraint.first, constraint.second, constraint.axis)),
-        "creo section coordinate equalities",
-    )
+            .map(|constraint| (constraint.first, constraint.second, constraint.axis)), "creo section coordinate equalities")
 }
 
 #[derive(Clone, Copy)]
@@ -208,9 +204,7 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
     } else {
         None
     };
-    crate::decode::collect_items(
-        ctx,
-        equations.rows.iter().filter_map(|equation| {
+    ctx.collect_vec(equations.rows.iter().filter_map(|equation| {
             if equation.function_id == 10 {
                 let (first, second, axis) = section_equation_function_ten_axis_alignment(
                     equation,
@@ -280,9 +274,7 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
                 offset: equation.offset,
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
-        }),
-        "creo section equation coordinate equality rows",
-    )
+        }), "creo section equation coordinate equality rows")
 }
 
 pub(in crate::decode) type SectionScalarVariable = (VariableType, u32);
@@ -493,9 +485,7 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    crate::decode::collect_items(
-        ctx,
-        equations.rows.iter().filter_map(|equation| {
+    ctx.collect_vec(equations.rows.iter().filter_map(|equation| {
             let [Some(first), Some(second), Some(result)] = equation.arguments.as_slice() else {
                 return None;
             };
@@ -542,9 +532,7 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
                 offset: equation.offset,
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
-        }),
-        "creo section equation function forty two midpoint coordinate rows",
-    )
+        }), "creo section equation function forty two midpoint coordinate rows")
 }
 
 pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_rows(
@@ -581,9 +569,7 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    crate::decode::collect_items(
-        ctx,
-        equations.rows.iter().filter_map(|equation| {
+    ctx.collect_vec(equations.rows.iter().filter_map(|equation| {
             let [Some(first_u), Some(first_v), Some(second_u), Some(second_v)] =
                 equation.arguments.as_slice()
             else {
@@ -640,9 +626,7 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
                 offset: equation.offset,
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
-        }),
-        "creo section equation function thirty one point coordinate rows",
-    )
+        }), "creo section equation function thirty one point coordinate rows")
 }
 
 pub(super) fn merge_scalar_value_candidate(
@@ -685,9 +669,7 @@ pub(super) fn section_relation_radius_scalar_values(
     else {
         return Ok(Vec::new());
     };
-    crate::decode::collect_items(
-        ctx,
-        definition
+    ctx.collect_vec(definition
             .relations
             .iter()
             .filter(|table| feature_relation_table_complete(table))
@@ -724,9 +706,7 @@ pub(super) fn section_relation_radius_scalar_values(
                 };
                 PositiveLength::new(value)
                     .map(|value| ((VariableType::Radius, radius), value.get()))
-            }),
-        "creo section relation radius values",
-    )
+            }), "creo section relation radius values")
 }
 
 pub(super) fn section_equation_scalar_seed_values(
@@ -1382,13 +1362,9 @@ pub(super) fn section_equation_radial_constraints(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionRadialConstraint>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
-        section_equation_radial_constraint_rows(ctx, definition, coordinates, ambiguous_point_ids)?
+    ctx.collect_vec(section_equation_radial_constraint_rows(ctx, definition, coordinates, ambiguous_point_ids)?
             .into_iter()
-            .filter(|constraint| constraint.active),
-        "creo section radial constraints",
-    )
+            .filter(|constraint| constraint.active), "creo section radial constraints")
 }
 
 pub(super) fn section_equation_radial_constraints_with_scalar_values(
@@ -1398,9 +1374,7 @@ pub(super) fn section_equation_radial_constraints_with_scalar_values(
     ambiguous_point_ids: &BTreeSet<u32>,
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
 ) -> Result<Vec<SectionRadialConstraint>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
-        section_equation_radial_constraint_rows_with_scalar_values(
+    ctx.collect_vec(section_equation_radial_constraint_rows_with_scalar_values(
             ctx,
             definition,
             coordinates,
@@ -1408,9 +1382,7 @@ pub(super) fn section_equation_radial_constraints_with_scalar_values(
             Some(scalar_values),
         )?
         .into_iter()
-        .filter(|constraint| constraint.active),
-        "creo section radial constraints",
-    )
+        .filter(|constraint| constraint.active), "creo section radial constraints")
 }
 
 pub(in crate::decode) fn section_equation_radial_constraint_rows(
@@ -1458,8 +1430,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(ctx,
-    equations
+    ctx.collect_vec(equations
         .rows
         .iter()
         .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6)
@@ -1567,8 +1538,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
                 offset: equation.offset,
                 active,
             })
-        })
-        , "creo section equation radial constraint rows with scalar values")
+        }), "creo section equation radial constraint rows with scalar values")
 }
 
 pub(in crate::decode) fn resolved_section_scalar_values(
@@ -1707,9 +1677,7 @@ pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(
-        ctx,
-        equations
+    ctx.collect_vec(equations
             .rows
             .iter()
             .filter(|equation| {
@@ -1752,9 +1720,7 @@ pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
                     equation_id: equation.equation_id,
                     offset: equation.offset,
                 })
-            }),
-        "creo section equation function five scalar equality rows",
-    )
+            }), "creo section equation function five scalar equality rows")
 }
 
 #[derive(Clone, Copy)]
@@ -1772,14 +1738,10 @@ fn section_equation_function_sixteen_angle_difference_values(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
-        section_equation_function_sixteen_angle_difference_rows(ctx, definition)?
+    ctx.collect_vec(section_equation_function_sixteen_angle_difference_rows(ctx, definition)?
             .into_iter()
             .filter(|constraint| constraint.active)
-            .map(|constraint| (constraint.difference, constraint.value)),
-        "creo section angle difference values",
-    )
+            .map(|constraint| (constraint.difference, constraint.value)), "creo section angle difference values")
 }
 
 pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows(
@@ -1814,9 +1776,7 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    crate::decode::collect_items(
-        ctx,
-        equations.rows.iter().filter_map(|equation| {
+    ctx.collect_vec(equations.rows.iter().filter_map(|equation| {
             if equation.function_id != 16 || equation.arguments.len() != 4 {
                 return None;
             }
@@ -1902,9 +1862,7 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
                 offset: equation.offset,
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
-        }),
-        "creo section equation function sixteen angle difference rows",
-    )
+        }), "creo section equation function sixteen angle difference rows")
 }
 
 #[derive(Clone, Copy)]
@@ -1925,9 +1883,7 @@ fn section_equation_function_forty_three_axis_distance_values(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
-        section_equation_function_forty_three_axis_distance_rows(
+    ctx.collect_vec(section_equation_function_forty_three_axis_distance_rows(
             ctx,
             definition,
             coordinates,
@@ -1935,9 +1891,7 @@ fn section_equation_function_forty_three_axis_distance_values(
         )?
         .into_iter()
         .filter(|constraint| constraint.active)
-        .map(|constraint| (constraint.scalar, constraint.value)),
-        "creo section axis distance values",
-    )
+        .map(|constraint| (constraint.scalar, constraint.value)), "creo section axis distance values")
 }
 
 pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_rows(
@@ -1974,8 +1928,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    crate::decode::collect_items(ctx,
-    equations
+    ctx.collect_vec(equations
         .rows
         .iter()
         .filter_map(|equation| {
@@ -2110,8 +2063,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
                 offset: equation.offset,
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
-        })
-        , "creo section equation function forty three axis distance rows")
+        }), "creo section equation function forty three axis distance rows")
 }
 
 #[cfg(test)]

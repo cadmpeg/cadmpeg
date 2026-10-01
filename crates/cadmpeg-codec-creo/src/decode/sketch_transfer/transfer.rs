@@ -873,9 +873,7 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        let equation_constraints = crate::decode::collect_items(
-            ctx,
-            section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
+        let equation_constraints = ctx.collect_vec(section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
                     ctx, definition, &sketch_id,
@@ -915,9 +913,7 @@ pub(in super::super) fn transfer_sketches(
                 )?)
                 .chain(section_equation_equal_distance_constraints(
                     ctx, definition, &sketch_id,
-                )?),
-            "creo sketch equation constraints",
-        )?;
+                )?), "creo sketch equation constraints")?;
         let equation_offsets = collect_numeric_set(
             ctx,
             equation_constraints.iter().map(|(_, offset)| *offset),

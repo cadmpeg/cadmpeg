@@ -124,6 +124,10 @@ impl ReferenceCircle {
             }
         };
         let center_point = match center { CircleCenter::Stored(point) | CircleCenter::EndpointMidpoint(point) => point };
+        let plane_tolerance = match center {
+            CircleCenter::Stored(_) => EPS_PLANE_RESIDUAL,
+            CircleCenter::EndpointMidpoint(_) => EPS_DIAMETER_PLANAR,
+        };
         let origin: [f64; 3] = center_point.get().into();
         let normal: [f64; 3] = (*axis.as_raw()).into();
         for endpoint in [first, second] {
@@ -133,7 +137,7 @@ impl ReferenceCircle {
             let plane = dot(delta, normal);
             if !distance.is_finite() || !plane.is_finite()
                 || (distance - radius.get()).abs() > EPS_RADIUS_AGREEMENT * scale
-                || plane.abs() > EPS_DIAMETER_PLANAR * scale { return None; }
+                || plane.abs() > plane_tolerance * scale { return None; }
         }
         Some(Self { entity_id, center, radius, axis, start: endpoints[0], end: endpoints[1], offset })
     }

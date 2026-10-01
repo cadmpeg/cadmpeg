@@ -9,6 +9,8 @@ use serde::Serialize;
 pub(crate) struct NumericArray<T> {
     dimensions: Vec<u32>,
     runs: Vec<NumericRun<T>>,
+    #[serde(skip)]
+    element_count: usize,
 }
 
 impl<T> NumericArray<T> {
@@ -29,7 +31,7 @@ impl<T> NumericArray<T> {
             count.checked_add(index_from_u32(run.count))
         });
         let Some(actual) = actual else { return Ok(None); };
-        Ok((expected == actual).then_some(Self { dimensions, runs }))
+        Ok((expected == actual).then_some(Self { dimensions, runs, element_count: actual }))
     }
 
     /// Array extents from outermost to innermost dimension.
@@ -42,10 +44,9 @@ impl<T> NumericArray<T> {
     }
     /// Number of logical scalar elements.
     ///
-    /// [`NumericArray::try_new`] proved this sum an index, so it does not
-    /// overflow.
+    /// The constructor checks and retains this count during run admission.
     pub(super) fn element_count(&self) -> usize {
-        self.runs.iter().map(|run| index_from_u32(run.count)).sum()
+        self.element_count
     }
 }
 

@@ -149,13 +149,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let Some(area) = extrusion_profile_signed_area(ctx, profile)? else {
             continue;
         };
-        let vertex_curves = crate::decode::collect_items(
-            ctx,
-            profile
+        let vertex_curves = ctx.collect_vec(profile
                 .iter()
-                .map(|entity| revolved_section_circle(transform, entity.start(), &axis)),
-            "creo revolution vertex curves",
-        )?;
+                .map(|entity| revolved_section_circle(transform, entity.start(), &axis)), "creo revolution vertex curves")?;
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let mut surfaces = Vec::new();
         let mut complete = true;
