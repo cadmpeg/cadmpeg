@@ -69,6 +69,22 @@ fn display_jt_inflate_propagates_retained_copy_limit() {
 }
 
 #[test]
+fn display_jt_owned_inflate_omits_payload_copy_work() {
+    let member = compressed_member();
+    let work = cadmpeg_core::decode::u64_from_index(member.len() + 8192 + b"DisplayJT payload".len());
+    crate::test_support::with_decode_context_over(&[], |policy| {
+        policy.limits.max_work_units = work;
+    }, |ctx| {
+        let buffer = super::inflate_display_jt(ctx, View::over_retained(&member)).unwrap().unwrap();
+        assert_eq!(buffer, b"DisplayJT payload");
+        assert!(ctx.resource_refusal().is_none());
+        let error = ctx.charge_work(1, "verify expansion work").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.used == work && limit.additional == 1));
+    });
+}
+
+#[test]
 fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
     let mut container = super::document_admission_tests::one_document();
     let data = container.data.to_mut();

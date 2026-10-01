@@ -25,7 +25,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 
-use cadmpeg_container::compression::inflate_zlib_exact;
+use cadmpeg_container::compression::inflate_zlib_member_owned;
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -112,13 +112,16 @@ fn inflate_display_jt(
     ctx: &DecodeContext<'_>,
     member: View<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    let view = match inflate_zlib_exact(ctx, member) {
-        Ok(view) => view,
+    let (buffer, consumed) = match inflate_zlib_member_owned(ctx, member, cadmpeg_core::decode::ExpandSpec::Unknown) {
+        Ok(output) => output,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    ctx.copy_retained(view.window(), "retain inflated DisplayJT payload")
-        .map(Some)
+    if consumed != member.window().len() {
+        return Ok(None);
+    }
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(buffer.capacity()), "retain inflated DisplayJT payload")?;
+    Ok(Some(buffer))
 }
 
 /// Outer index of the embedded JT display-model stream.
