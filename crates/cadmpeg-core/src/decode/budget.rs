@@ -252,6 +252,15 @@ impl DecodeBudget {
         )
     }
 
+    pub(super) fn retained_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
+        let (dimension, limit, used) = if self.scoped_storage.get().is_some() {
+            (ResourceDimension::MaterializedBytes, self.materialized_allowance(), self.materialized.get())
+        } else {
+            (ResourceDimension::RetainedBytes, self.retained_allowance(), self.retained.get())
+        };
+        self.refuse_limit(dimension, ResourceFailure::BudgetExceeded, limit, used, u64::MAX, operation)
+    }
+
     /// Report allocator refusal after a retained charge was already recorded.
     pub(super) fn retained_allocation_failed(
         &self,
@@ -410,6 +419,28 @@ pub struct ScopedReservation<'a> {
 }
 
 impl ScopedReservation<'_> {
+    /// Accounts for copied storage in this live temporary reservation.
+    pub fn with_storage<T, E: From<CodecError>>(
+        &mut self,
+        build: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, E> {
+        let scope = self.budget.storage_scope(self.operation);
+        let value = build()?;
+        let mut storage = scope.finish();
+        self.bytes = self.bytes.checked_add(storage.bytes).ok_or_else(|| {
+            CodecError::ResourceLimit(self.budget.refuse_limit(
+                ResourceDimension::MaterializedBytes,
+                ResourceFailure::BudgetExceeded,
+                self.budget.materialized_allowance(),
+                self.bytes,
+                storage.bytes,
+                self.operation,
+            ))
+        })?;
+        storage.bytes = 0;
+        Ok(value)
+    }
+
     /// Increases live temporary storage and returns the resource refusal.
     pub fn grow_limit(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
         self.budget.charge(

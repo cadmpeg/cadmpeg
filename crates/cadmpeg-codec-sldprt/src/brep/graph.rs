@@ -428,89 +428,6 @@ fn collect_graph_map<K: Eq + Hash, V>(
     Ok(collected)
 }
 
-fn copy_surface_carrier_geometry(
-    ctx: &DecodeContext<'_>,
-    geometry: &SurfaceGeometry,
-) -> Result<SurfaceGeometry, cadmpeg_core::CodecError> {
-    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = geometry {
-        let count = nurbs
-            .u_knots()
-            .as_slice()
-            .len()
-            .checked_add(nurbs.v_knots().as_slice().len())
-            .and_then(|count| count.checked_add(nurbs.u_count()))
-            .and_then(|count| {
-                nurbs
-                    .u_count()
-                    .checked_mul(nurbs.v_count())
-                    .and_then(|poles| count.checked_add(poles))
-            })
-            .and_then(|count| count.checked_mul(32))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("copy Parasolid NURBS surface", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "copy Parasolid NURBS surface",
-        )?;
-        ctx.charge_collection_items(
-            nurbs.u_knots().as_slice().len() as u64,
-            "copy Parasolid surface u knots",
-        )?;
-        ctx.charge_collection_items(
-            nurbs.v_knots().as_slice().len() as u64,
-            "copy Parasolid surface v knots",
-        )?;
-        ctx.charge_collection_items(nurbs.u_count() as u64, "copy Parasolid surface pole rows")?;
-        for _ in 0..nurbs.u_count() {
-            ctx.charge_collection_items(nurbs.v_count() as u64, "copy Parasolid surface poles")?;
-        }
-        let copied = nurbs.try_clone().map_err(|_| {
-            ctx.refuse_codec_limit("copy Parasolid NURBS surface", u64::MAX - 1, u64::MAX)
-        })?;
-        Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            copied,
-        )))
-    } else {
-        geometry.try_clone_charged(ctx, "copy Parasolid surface geometry")
-    }
-}
-
-fn copy_curve_carrier_geometry(
-    ctx: &DecodeContext<'_>,
-    geometry: &CurveGeometry,
-) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
-    if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry {
-        let work = nurbs
-            .knots()
-            .as_slice()
-            .len()
-            .checked_add(nurbs.pole_count())
-            .and_then(|count| count.checked_mul(32))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("copy Parasolid NURBS curve", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "copy Parasolid NURBS curve",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(nurbs.knots().as_slice().len()),
-            "copy Parasolid curve knots",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(nurbs.pole_count()),
-            "copy Parasolid curve poles",
-        )?;
-        let copied = nurbs.try_clone().map_err(|_| {
-            ctx.refuse_codec_limit("copy Parasolid NURBS curve", u64::MAX - 1, u64::MAX)
-        })?;
-        Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(copied)))
-    } else {
-        geometry.try_clone_charged(ctx, "copy Parasolid curve geometry")
-    }
-}
-
 fn shell_face_components(
     ctx: &DecodeContext<'_>,
     out: &Brep,
@@ -1046,7 +963,7 @@ fn emit_offset_surface(
         None,
     );
     let procedural = ProceduralSurface::new(
-        construction.clone(),
+        construction.try_clone_for_decode(sink.ctx, "copy Parasolid offset construction identity")?,
         ProceduralSurfaceDefinition::Offset(payload),
         None,
     );
@@ -1136,7 +1053,7 @@ fn ensure_surface_support(
             if !sink.out.surfaces.iter().any(|surface| surface.id == id)
                 && !emitted_face_surface_by_carrier.contains_key(&attr)
             {
-                let geometry = copy_surface_carrier_geometry(sink.ctx, &carrier.geometry)?;
+                let geometry = carrier.geometry.try_clone_for_decode(sink.ctx, "copy Parasolid surface geometry")?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
                     match annotate_surface_frame(sink.ctx, annotations, id.as_str(), solved) {
                         Ok(()) => {}
@@ -1196,7 +1113,7 @@ fn ensure_surface_support(
                     sink,
                     annotations,
                     source_stream,
-                    surface.clone(),
+                    surface.try_clone_for_decode(sink.ctx, "copy Parasolid support surface identity")?,
                     construction,
                     support,
                     offset,
@@ -1229,7 +1146,7 @@ fn ensure_surface_support(
                     "collect Parasolid opaque supports",
                 )?;
                 sink.out.surfaces.push(Surface {
-                    id: surface.clone(),
+                    id: surface.try_clone_for_decode(sink.ctx, "copy Parasolid opaque surface identity")?,
                     source_object: None,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: None,
@@ -2839,7 +2756,7 @@ fn decode_graph(
                     c.offset as u64,
                     "compact_surface",
                 )?;
-                let geometry = copy_surface_carrier_geometry(ctx, &c.geometry)?;
+                let geometry = c.geometry.try_clone_for_decode(ctx, "copy Parasolid surface geometry")?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
                     annotate_surface_frame(
                         ctx,
@@ -4305,19 +4222,7 @@ fn derive_cylindrical_pcurves(
                         ),
                     });
                 }
-                ctx.charge_collection_items(
-                    u64::try_from(nurbs.knots().len()).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "copy cylindrical polar knots",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?,
-                    "copy cylindrical polar knots",
-                )?;
-                let knots = nurbs.knots().try_clone().map_err(|_| {
-                    ctx.refuse_codec_limit("copy cylindrical polar knots", u64::MAX - 1, u64::MAX)
-                })?;
+                let knots = nurbs.knots().try_clone_for_decode(ctx, "copy cylindrical polar knots")?;
                 let weights = if let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } =
                     nurbs.pole_rows()
                 {
@@ -8018,7 +7923,7 @@ fn emit_curve(
     out.curves.push(Curve {
         id: id_curve(carrier.attr),
         source_object: None,
-        geometry: copy_curve_carrier_geometry(ctx, &carrier.geometry)?,
+        geometry: carrier.geometry.try_clone_for_decode(ctx, "copy Parasolid curve geometry")?,
     });
     Ok(())
 }

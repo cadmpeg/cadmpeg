@@ -472,13 +472,8 @@ impl DialectLayers {
     /// returned unchanged so its producer can report the collision.
     pub fn insert(&mut self, layer: DialectMatch) -> Result<(), DialectLayerError> {
         let arena = crate::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &crate::decode::DecodePolicy::default())
-            .map_err(|error| match error {
-                CodecError::ResourceLimit(limit) => DialectLayerError::ResourceLimit(limit),
-                _ => DialectLayerError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
-                    crate::decode::ResourceDimension::InputBytes, 0, 0, "dialect insertion context",
-                )),
-            })?;
+        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &crate::decode::DecodePolicy::default())
+            .map_err(DialectLayerError::ResourceLimit)?;
         self.insert_for_decode(&ctx, layer, "dialect layer insertion")
     }
 

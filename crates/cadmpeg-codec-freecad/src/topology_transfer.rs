@@ -1807,7 +1807,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let source_object = base
                 .source_object
                 .as_ref()
-                .map(|source| crate::brep::clone_source_association(self.ctx, source))
+                .map(|source| (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association"))
                 .transpose()?;
             self.ctx
                 .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
@@ -1874,7 +1874,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let source_object = base
                 .source_object
                 .as_ref()
-                .map(|source| crate::brep::clone_source_association(self.ctx, source))
+                .map(|source| (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association"))
                 .transpose()?;
             let has_procedural_construction =
                 ir.model.procedural_surfaces.iter().any(|surface| {

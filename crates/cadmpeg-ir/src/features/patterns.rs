@@ -750,4 +750,3 @@ mod decode_clone;
 #[cfg(test)]
 mod tests;
 
-mod charged_copy;

@@ -149,40 +149,7 @@ pub(super) fn scan(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        let copied_geometry = if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) =
-            geometry
-        {
-            let lane_count = curve
-                .knots()
-                .len()
-                .checked_add(curve.pole_count())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "copy Parasolid subset curve lanes",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            let lane_count = u64::try_from(lane_count).map_err(|_| {
-                ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
-            })?;
-            let work = lane_count.checked_mul(32).ok_or_else(|| {
-                ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
-            })?;
-            ctx.charge_work(work, "copy Parasolid subset curve lanes")?;
-            ctx.charge_collection_items(lane_count, "copy Parasolid subset curve lanes")?;
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.try_clone().map_err(
-                |_| {
-                    ctx.refuse_codec_limit(
-                        "copy Parasolid subset curve lanes",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                },
-            )?))
-        } else {
-            geometry.clone()
-        };
+        let copied_geometry = geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
         ctx.reserve_vec(&mut out, 1, "collect Parasolid subset curves")?;
         out.push(CurveCarrier {
             attr,

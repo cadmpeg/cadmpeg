@@ -77,6 +77,10 @@ impl Serialize for DesignRelaxedGuidText {
 }
 
 impl DesignRelaxedGuidText {
+    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
+    }
+
     /// The original GUID text.
     pub(crate) fn as_str(&self) -> &str {
         self.0.as_str()

@@ -355,7 +355,7 @@ pub(super) fn body_surface_ids<'ctx>(
         }
         let bytes = std::mem::size_of::<SurfaceId>()
             .checked_mul(4)
-            .and_then(|bytes| bytes.checked_add(face.surface.as_str().len()))
+            
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX body surface identity",
@@ -365,7 +365,7 @@ pub(super) fn body_surface_ids<'ctx>(
             })?;
         ctx.charge_collection_items(1, "NX body surface identities")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        ids.insert(face.surface.clone());
+        ids.insert(reservation.with_storage(|| face.surface.try_clone_for_decode(ctx, "NX body surface identity copy"))?);
     }
     Ok(Some(ScopedSurfaceIds {
         ids,
@@ -445,10 +445,7 @@ pub(super) fn blend_feature_definition(
                 if first.surface == second.surface {
                     complete_pairs = false;
                 } else {
-                    let bytes = std::mem::size_of::<[SurfaceId; 2]>()
-                        .checked_add(first.surface.as_str().len())
-                        .and_then(|bytes| bytes.checked_add(second.surface.as_str().len()))
-                        .ok_or_else(|| ctx.refuse_codec_limit("NX blend support pair", 0, 1))?;
+                    let bytes = std::mem::size_of::<[SurfaceId; 2]>();
                     ctx.charge_collection_items(1, "NX blend support pairs")?;
                     pairs_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
                     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
@@ -456,7 +453,7 @@ pub(super) fn blend_feature_definition(
                         1,
                         "NX blend support pairs",
                     )?;
-                    pairs.push([first.surface.clone(), second.surface.clone()]);
+                    pairs.push(pairs_reservation.with_storage(|| Ok::<_, CodecError>([first.surface.try_clone_for_decode(ctx, "NX blend first support identity copy")?, second.surface.try_clone_for_decode(ctx, "NX blend second support identity copy")?]))?);
                 }
             } else {
                 complete_pairs = false;
@@ -650,9 +647,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
     let mut second = Vec::new();
     for (&surface, &second_side) in &sides {
         let output = if second_side { &mut second } else { &mut first };
-        let bytes = std::mem::size_of::<SurfaceId>()
-            .checked_add(surface.as_str().len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX blend support output", 0, 1))?;
+        let bytes = std::mem::size_of::<SurfaceId>();
         ctx.charge_collection_items(1, "NX blend support output")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
         cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
@@ -660,7 +655,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
             1,
             "NX blend support output",
         )?;
-        output.push(surface.clone());
+        output.push(reservation.with_storage(|| surface.try_clone_for_decode(ctx, "NX blend support identity copy"))?);
     }
     for surface in &first {
         for other in &second {

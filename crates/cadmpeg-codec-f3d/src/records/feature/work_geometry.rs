@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work axes, work points, work planes and the vertex recipes they resolve through.
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::mesh::DesignRelaxedGuidText;
@@ -94,6 +95,21 @@ pub(crate) struct DesignWorkPointInput {
 }
 
 impl DesignWorkPointInput {
+    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        let carrier = self.carrier.as_deref().map(|carrier| {
+            ctx.charge_retained(u64_from_index(std::mem::size_of::<DesignWorkPointInputCarrier>()), operation)?;
+            ctx.charge_collection_items(1, operation)?;
+            Ok::<_, CodecError>(Box::new(carrier.try_clone_for_decode(ctx, operation)?))
+        }).transpose()?;
+        Ok(Self {
+            #[cfg(test)]
+            clone_probe: WorkGeometryCloneProbe,
+            record_index: self.record_index,
+            reference_offset: self.reference_offset,
+            carrier,
+        })
+    }
+
     pub(crate) fn try_new(
         record_index: u32,
         reference_offset: u64,
@@ -225,6 +241,16 @@ impl DesignWorkPointInputCarrierWire {
 }
 
 impl DesignWorkPointInputCarrier {
+    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
+        Ok(match self {
+            Self::EdgeRecipe { operand_id } => Self::EdgeRecipe { operand_id: ctx.copy_retained_text(operand_id, operation)? },
+            Self::VertexRecipe { recipe } => Self::VertexRecipe { recipe: recipe.try_clone_for_decode(ctx, operation)? },
+            Self::WorkPlane { selection } => Self::WorkPlane { selection: selection.try_clone_for_decode(ctx, operation)? },
+            Self::SketchPoint { selection } => Self::SketchPoint { selection: selection.try_clone_for_decode(ctx, operation)? },
+        })
+    }
+
     fn into_wire(self, record_index: u32) -> DesignWorkPointInputCarrierWire {
         match self {
             Self::EdgeRecipe { operand_id } => {
@@ -296,6 +322,25 @@ pub(crate) struct DesignVertexRecipe {
 }
 
 impl DesignVertexRecipe {
+    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        Ok(Self {
+            #[cfg(test)]
+            clone_probe: WorkGeometryCloneProbe,
+            frame: self.frame,
+            class_tag: self.class_tag.try_clone_for_decode(ctx, operation)?,
+            paired_byte_offset: self.paired_byte_offset,
+            paired_class_tag: self.paired_class_tag.try_clone_for_decode(ctx, operation)?,
+            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_id: ctx.copy_retained_text(&self.recipe_id, operation)?,
+            recipe_prefix_bytes: ctx.copy_retained_slice(&self.recipe_prefix_bytes, operation)?,
+            recipe_references: ctx.try_collect_retained_with(&self.recipe_references, operation, |value| value.try_clone_for_decode(ctx, operation))?,
+            recipe_program_offset: self.recipe_program_offset,
+            recipe_program: ctx.copy_retained_slice(&self.recipe_program, operation)?,
+            resolution: self.resolution,
+            next_byte_offset: self.next_byte_offset,
+        })
+    }
+
     pub(crate) fn try_new(draft: DesignVertexRecipeDraft) -> Result<Self, String> {
         if !(draft.byte_offset < draft.paired_byte_offset
             && draft.paired_byte_offset < draft.recipe_record_byte_offset
@@ -698,6 +743,19 @@ pub(crate) struct DesignWorkPointPlaneSelection {
 }
 
 impl DesignWorkPointPlaneSelection {
+    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        Ok(Self {
+            class_tag: self.class_tag.try_clone_for_decode(ctx, operation)?,
+            asset_id: self.asset_id.try_clone_for_decode(ctx, operation)?,
+            asset_id_offset: self.asset_id_offset,
+            context_id: self.context_id.try_clone_for_decode(ctx, operation)?,
+            context_id_offset: self.context_id_offset,
+            identity_record_offset: self.identity_record_offset,
+            primary_identity: self.primary_identity,
+            work_plane_scope_record_index: self.work_plane_scope_record_index,
+        })
+    }
+
     pub(crate) fn try_new(
         record_index: u32,
         draft: DesignWorkPointPlaneSelectionDraft,
@@ -819,6 +877,20 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
 }
 
 impl DesignWorkPointSketchPointSelection {
+    fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        Ok(Self {
+            class_tag: self.class_tag.try_clone_for_decode(ctx, operation)?,
+            asset_id: self.asset_id.try_clone_for_decode(ctx, operation)?,
+            asset_id_offset: self.asset_id_offset,
+            context_id: self.context_id.try_clone_for_decode(ctx, operation)?,
+            context_id_offset: self.context_id_offset,
+            identity_record_offset: self.identity_record_offset,
+            sketch_record_index: self.sketch_record_index,
+            point_persistent_id: self.point_persistent_id,
+            point_native_id: ctx.copy_retained_text(&self.point_native_id, operation)?,
+        })
+    }
+
     pub(crate) fn try_new(
         record_index: u32,
         draft: DesignWorkPointSketchPointSelectionDraft,

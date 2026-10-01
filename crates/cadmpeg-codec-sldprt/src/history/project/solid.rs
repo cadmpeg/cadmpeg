@@ -304,7 +304,7 @@ pub(super) fn project_hole(
     history_features: &[Feature],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((shape, profile)) =
-        hole_shape_and_profile(feature, features_by_source, history_features)
+        hole_shape_and_profile(ctx, feature, features_by_source, history_features)?
     else {
         return Ok(None);
     };
@@ -365,13 +365,14 @@ pub(super) fn project_hole(
     })))
 }
 fn hole_shape_and_profile(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Option<(
+) -> Result<Option<(
     cadmpeg_ir::features::holes::HoleShape,
     Option<HoleProfileConstruction>,
-)> {
+)>, CodecError> {
     let profile = hole_profile_construction(feature, features_by_source, history_features);
     let diameter = feature
         .parameters
@@ -464,33 +465,33 @@ fn hole_shape_and_profile(
     } else if let Some(drill_point_angle) = drill_point_angle {
         hole_form(HoleKind::SimpleDrilled { drill_point_angle })
     } else {
-        profile.as_ref().map_or_else(
-            || hole_form(HoleKind::Simple),
-            |profile| profile.construction.clone(),
-        )
+        match &profile {
+            Some(profile) => profile.construction.try_clone_for_decode(ctx, "copy SLDPRT hole profile construction")?,
+            None => hole_form(HoleKind::Simple),
+        }
     };
-    let shape = cadmpeg_ir::features::holes::HoleShape::new(
+    let Ok(shape) = cadmpeg_ir::features::holes::HoleShape::new(
         construction,
         profile.as_ref().and_then(|profile| profile.exit_kind),
         diameter,
-    )
-    .ok()?;
-    Some((shape, profile))
+    ) else { return Ok(None) };
+    Ok(Some((shape, profile)))
 }
 
 pub(crate) fn threaded_hole_major_diameter(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Option<f64> {
+) -> Result<Option<f64>, CodecError> {
     if classify(feature) != Some(FeatureClass::Hole) {
-        return None;
+        return Ok(None);
     }
-    let (shape, _) = hole_shape_and_profile(feature, features_by_source, history_features)?;
+    let Some((shape, _)) = hole_shape_and_profile(ctx, feature, features_by_source, history_features)? else { return Ok(None) };
     let HoleConstruction::NativeThread { major_diameter, .. } = shape.construction() else {
-        return None;
+        return Ok(None);
     };
-    Some(major_diameter.get())
+    Ok(Some(major_diameter.get()))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -542,7 +543,8 @@ fn hole_profile_construction(
             if complete.is_some() {
                 return None;
             }
-            complete = Some(construction.clone());
+            complete = Some(construction);
+            continue;
         }
         if sole.is_some() {
             multiple = true;

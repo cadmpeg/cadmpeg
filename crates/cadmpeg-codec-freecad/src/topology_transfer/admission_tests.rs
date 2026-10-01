@@ -280,7 +280,7 @@ fn placed_geometry_source_association_refuses_at_retained_limit() {
         instance_path: Vec::new(),
     };
     assert_retained_refusal_at(&[], "FreeCAD geometry source association", |ctx| {
-        crate::brep::clone_source_association(ctx, &source)
+        (&source).try_clone_for_decode(ctx, "FreeCAD geometry source association")
     });
 }
 

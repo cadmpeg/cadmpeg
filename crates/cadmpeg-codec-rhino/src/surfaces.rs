@@ -876,7 +876,7 @@ fn admit_sum_product(
     Ok(count)
 }
 
-fn copy_rows<T: Clone>(
+fn copy_rows<T: Copy>(
     ctx: &DecodeContext<'_>,
     values: &[T],
     row_len: usize,

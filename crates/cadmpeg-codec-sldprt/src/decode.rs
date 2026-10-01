@@ -4880,7 +4880,7 @@ fn snapshot_active_configuration(
             FEATURE_SNAPSHOT,
         )?)
         .map_err(CodecError::malformed)?;
-        let state = feature.configuration_state_charged(ctx, FEATURE_SNAPSHOT)?;
+        let state = feature.configuration_state(ctx, FEATURE_SNAPSHOT)?;
         feature_states.insert(id, state);
     }
     let configuration = &mut ir.model.configurations[configuration_index];
@@ -5092,7 +5092,7 @@ fn sync_active_configuration_resolutions(
             )
         {
             *face = resolved_face
-                .try_clone_charged(ctx, "copy SLDPRT resolved cosmetic thread face")?;
+                .try_clone_for_decode(ctx, "copy SLDPRT resolved cosmetic thread face")?;
         }
     }
     for feature in features {
@@ -5126,7 +5126,7 @@ fn sync_active_configuration_resolutions(
         };
         if distance == resolved_distance {
             *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                face: resolved_face.try_clone_charged(ctx, "copy SLDPRT resolved datum face")?,
+                face: resolved_face.try_clone_for_decode(ctx, "copy SLDPRT resolved datum face")?,
             });
         }
     }

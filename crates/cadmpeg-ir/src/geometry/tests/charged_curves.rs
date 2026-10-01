@@ -88,7 +88,7 @@ fn copy_curves(policy: &DecodePolicy) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
     for curve in &source {
-        assert_eq!(curve.try_clone_charged(&ctx, "copy test curve")?, *curve);
+        assert_eq!(curve.try_clone_for_decode(&ctx, "copy test curve")?, *curve);
     }
     Ok(())
 }

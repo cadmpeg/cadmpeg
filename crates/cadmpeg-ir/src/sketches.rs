@@ -612,6 +612,7 @@ impl SketchGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
         use SketchGeometryDefinition as Definition;
         let definition = match self.definition() {
             Definition::Nurbs { curve } => Definition::Nurbs {
@@ -647,7 +648,8 @@ impl SketchGeometry {
                     .transpose()?;
                 let object = object.try_clone_for_decode(ctx, operation)?;
                 let mut copied_subelements = Vec::new();
-                ctx.reserve_vec(&mut copied_subelements, subelements.len(), operation)?;
+                ctx.reserve_retained_vec(&mut copied_subelements, subelements.len(), operation)?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(subelements.len()), operation)?;
                 for subelement in subelements {
                     copied_subelements.push(ctx.copy_retained_text(subelement, operation)?);
                 }

@@ -12,7 +12,7 @@ mod admitted;
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -23,22 +23,7 @@ fn copy_decode_grid<T: Copy>(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<Vec<T>>, CodecError> {
-    super::charge_decode_copy::<Vec<T>>(rows.len(), ctx, operation)?;
-    let mut copied = Vec::new();
-    copied.try_reserve_exact(rows.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                u64_from_index(rows.len()),
-                operation,
-            ),
-        )
-    })?;
-    for row in rows {
-        copied.push(super::copy_decode_slice(row, ctx, operation)?);
-    }
-    Ok(copied)
+    ctx.try_collect_retained_with(rows, operation, |row| super::copy_decode_slice(row, ctx, operation))
 }
 
 /// Knot values that are finite and non-decreasing.
@@ -83,33 +68,13 @@ impl KnotVector {
         &self.0
     }
 
-    /// Copy an admitted knot vector with a fallible allocation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an allocation error when the copy cannot reserve its storage.
-    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
-        let mut knots = Vec::new();
-        knots.try_reserve_exact(self.0.len())?;
-        knots.extend_from_slice(&self.0);
-        Ok(Self(knots))
-    }
-
     /// Copy admitted knots through the decode collection and retained-byte budgets.
     pub fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        super::charge_decode_copy::<f64>(self.len(), ctx, operation)?;
-        self.try_clone().map_err(|_| {
-            CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                u64_from_index(self.len()),
-                operation,
-            ))
-        })
+        Ok(Self(ctx.copy_retained_slice(&self.0, operation)?))
     }
 
     /// Reverse the order and negate every value, the knots of the reversed
@@ -1122,50 +1087,6 @@ fn require_surface_shape<P, U: KnotValue, V: KnotValue>(
 }
 
 impl NurbsSurface {
-    /// Copy the admitted surface with fallible knot and pole row allocations.
-    ///
-    /// # Errors
-    ///
-    /// Returns an allocation error when a knot lane or pole row cannot reserve storage.
-    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
-        let u_knots = self.u_knots.try_clone()?;
-        let v_knots = self.v_knots.try_clone()?;
-        let poles = match &self.poles {
-            NurbsPoleGrid::Polynomial { rows } => {
-                let mut copied = Vec::new();
-                copied.try_reserve_exact(rows.len())?;
-                for row in rows {
-                    let mut copied_row = Vec::new();
-                    copied_row.try_reserve_exact(row.len())?;
-                    copied_row.extend_from_slice(row);
-                    copied.push(copied_row);
-                }
-                NurbsPoleGrid::Polynomial { rows: copied }
-            }
-            NurbsPoleGrid::Rational { rows } => {
-                let mut copied = Vec::new();
-                copied.try_reserve_exact(rows.len())?;
-                for row in rows {
-                    let mut copied_row = Vec::new();
-                    copied_row.try_reserve_exact(row.len())?;
-                    copied_row.extend_from_slice(row);
-                    copied.push(copied_row);
-                }
-                NurbsPoleGrid::Rational { rows: copied }
-            }
-        };
-        Ok(Self {
-            u_degree: self.u_degree,
-            v_degree: self.v_degree,
-            u_knots,
-            v_knots,
-            poles,
-            normal_reversed: self.normal_reversed,
-            u_periodic: self.u_periodic,
-            v_periodic: self.v_periodic,
-        })
-    }
-
     /// Copy the admitted lanes through the decode collection budget.
     pub fn try_clone_for_decode(
         &self,
@@ -1545,35 +1466,6 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
-    /// Copy the admitted curve with fallible storage allocation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an allocation error when a knot or pole lane cannot reserve storage.
-    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
-        let knots = self.knots.try_clone()?;
-        let poles = match &self.poles {
-            NurbsPoles3::Polynomial { points } => {
-                let mut copied = Vec::new();
-                copied.try_reserve_exact(points.len())?;
-                copied.extend_from_slice(points);
-                NurbsPoles3::Polynomial { points: copied }
-            }
-            NurbsPoles3::Rational { points } => {
-                let mut copied = Vec::new();
-                copied.try_reserve_exact(points.len())?;
-                copied.extend_from_slice(points);
-                NurbsPoles3::Rational { points: copied }
-            }
-        };
-        Ok(Self {
-            degree: self.degree,
-            knots,
-            poles,
-            periodic: self.periodic,
-        })
-    }
-
     /// Build a curve from finite knots and pole rows that the caller already
     /// admitted through its decode context. This checks cardinality without
     /// copying the pole collection.

@@ -1695,17 +1695,7 @@ pub(super) fn ensure_native_edge_support_surface(
     admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
     let (geometry, procedural_id) = match carrier {
         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
-            let copy = match geometry {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                        surface.try_clone_for_decode(
-                            admission.context(),
-                            "catia_native_edge_support_geometry",
-                        )?,
-                    ))
-                }
-                _ => geometry.clone(),
-            };
+            let copy = geometry.try_clone_for_decode(admission.context(), "catia_native_edge_support_geometry")?;
             (copy, None)
         }
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {

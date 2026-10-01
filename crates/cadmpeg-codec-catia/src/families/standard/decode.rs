@@ -397,7 +397,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             .find(|surface| &surface.id == surface_id)
         {
             let Some(binding) = *binding else { continue };
-            surface.geometry = revolutions[binding].geometry.clone();
+            surface.geometry = revolutions[binding].geometry.try_clone_for_decode(ctx, "catia_revolution_surface_geometry_copy")?;
             crate::resource::derived_annotation(
                 ctx,
                 annotations,
@@ -1733,7 +1733,7 @@ fn associate_standard_freeform_e5_surfaces(
         else {
             continue;
         };
-        let copied = copy_e5_surface_geometry(ctx, geometry)?;
+        let copied = (geometry).try_clone_for_decode(ctx, "catia_e5_surface_geometry_copy")?;
         ctx.insert_hash_map(
             &mut associated,
             *tag,
@@ -1742,20 +1742,6 @@ fn associate_standard_freeform_e5_surfaces(
         )?;
     }
     Ok(associated)
-}
-
-fn copy_e5_surface_geometry(
-    ctx: &DecodeContext<'_>,
-    geometry: &SurfaceGeometry,
-) -> Result<SurfaceGeometry, CodecError> {
-    match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                surface.try_clone_for_decode(ctx, "catia_e5_surface_geometry_copy")?,
-            )))
-        }
-        _ => Ok(geometry.clone()),
-    }
 }
 
 fn copy_standard_procedure(
@@ -1800,7 +1786,7 @@ fn copy_standard_procedure(
                             | SolvedSurfaceGeometry::Cone(_)
                             | SolvedSurfaceGeometry::Sphere(_)
                             | SolvedSurfaceGeometry::Torus(_),
-                        ) => geometry.clone(),
+                        ) => geometry.try_clone_for_decode(ctx, "catia_standard_offset_support_copy")?,
                         _ => {
                             return Err(CodecError::malformed(
                                 "standard offset support has unexpected geometry",
@@ -2672,7 +2658,7 @@ fn try_decode_standard_population(
                     &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
                     i, SurfaceId::mint, "catia_standard_surface_id"));
                 let geometry = admitted!(freeform_geometries.get(tag)
-                    .map(|geometry| copy_e5_surface_geometry(ctx, geometry)).transpose())
+                    .map(|geometry| (geometry).try_clone_for_decode(ctx, "catia_e5_surface_geometry_copy")).transpose())
                     .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: None,
                     }));

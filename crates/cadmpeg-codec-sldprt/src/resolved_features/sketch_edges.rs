@@ -267,13 +267,7 @@ pub(super) fn project_edge(
     {
         let count = nurbs.pole_count();
         let operation = "project SLDPRT sketch NURBS edge";
-        let knot_count = u64::try_from(nurbs.knots().as_slice().len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_collection_items(knot_count, operation)?;
-        let knots = nurbs
-            .knots()
-            .try_clone()
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
         let mut projected = Vec::new();
         ctx.reserve_vec(&mut projected, count, operation)?;
         match nurbs.pole_rows() {

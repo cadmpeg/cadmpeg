@@ -512,7 +512,7 @@ pub(crate) fn bind_configuration_suppressed_features(
                         definition: feature
                             .evaluation
                             .definition()
-                            .clone_for_decode(ctx, "f3d configuration suppressed definition")?,
+                            .try_clone_for_decode(ctx, "f3d configuration suppressed definition")?,
                     },
                 ))
             })();

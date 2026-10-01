@@ -1581,7 +1581,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                                 "append SLDPRT dynamic solver line",
                             )?;
                             entities.push(
-                                SketchEntity::new(id, sketch_id, line.geometry.clone())
+                                SketchEntity::new(id, sketch_id, line.geometry.try_clone_for_decode(ctx, "copy SLDPRT relation line geometry")?)
                                     .with_construction(true)
                                     .with_geometry_ref(Some(geometry_ref))
                                     .with_endpoint_refs(endpoint_refs),
@@ -1627,7 +1627,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let endpoint_refs = vec![first_ref, second_ref];
                 ctx.reserve_vec(entities, 1, "append SLDPRT solver line")?;
                 entities.push(
-                    SketchEntity::new(id, sketch_id, line.geometry.clone())
+                    SketchEntity::new(id, sketch_id, line.geometry.try_clone_for_decode(ctx, "copy SLDPRT relation line geometry")?)
                         .with_construction(line.construction)
                         .with_native_ref(native_ref)
                         .with_geometry_ref(Some(geometry_ref))
@@ -1762,7 +1762,7 @@ fn copy_dynamic_line_entity(
         ctx.reserve_vec(&mut endpoint_refs, 1, "copy SLDPRT dynamic line endpoints")?;
         endpoint_refs.push(reference);
     }
-    Ok(SketchEntity::new(id, sketch, entity.geometry.clone())
+    Ok(SketchEntity::new(id, sketch, entity.geometry.try_clone_for_decode(ctx, "copy SLDPRT dynamic line geometry")?)
         .with_construction(entity.construction)
         .with_native_ref(native_ref)
         .with_geometry_ref(geometry_ref)

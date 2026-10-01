@@ -236,7 +236,7 @@ pub(in crate::families) fn try_decode_e5(
             }
             ir.model.curves.push(Curve {
                 id,
-                geometry: circle.geometry.clone(),
+                geometry: admitted!(circle.geometry.try_clone_for_decode(ctx, "catia_e5_model_curve_geometry")),
                 source_object: None,
             });
         }
@@ -264,12 +264,7 @@ pub(in crate::families) fn try_decode_e5(
             }
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: match &surface.geometry {
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =>
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                            admitted!(nurbs.try_clone_for_decode(ctx, "catia_e5_model_surface_geometry")))),
-                    _ => surface.geometry.clone(),
-                },
+                geometry: admitted!(surface.geometry.try_clone_for_decode(ctx, "catia_e5_model_surface_geometry")),
                 source_object: None,
             });
         }
@@ -1608,7 +1603,7 @@ fn plan_e5_boundary<'a>(
                             .as_ref()
                             .map(|(curve, range)| {
                                 Ok::<_, cadmpeg_core::CodecError>((
-                                    copy_e5_curve(ctx, curve)?,
+                                    (curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
                                     *range,
                                 ))
                             })
@@ -1811,7 +1806,7 @@ fn plan_e5_boundary<'a>(
         ctx.insert_btree_map(
             &mut edge_curves,
             edge_ref,
-            (copy_e5_curve(ctx, &left.curve)?, left.curve_range),
+            ((&left.curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?, left.curve_range),
             "catia_e5_edge_curve_plan",
         )?;
         let [left_side, right_side] = [left, right].map(|side| {
@@ -1881,7 +1876,7 @@ fn plan_e5_boundary<'a>(
             edge_ref,
             cache
                 .map(|(curve, range)| {
-                    Ok::<_, cadmpeg_core::CodecError>((copy_e5_curve(ctx, curve)?, range))
+                    Ok::<_, cadmpeg_core::CodecError>(((curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?, range))
                 })
                 .transpose()?
                 .unwrap_or((
@@ -2080,7 +2075,7 @@ fn emit_e5_curves_and_edges(
         admission.reserve_entity(&mut ir.model.curves, "catia_e5_model_curves")?;
         ir.model.curves.push(Curve {
             id,
-            geometry: copy_e5_curve(ctx, geometry)?,
+            geometry: (geometry).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
             source_object: None,
         });
     }
@@ -3404,20 +3399,6 @@ fn e5_occurrence_intersection_cache<'a>(
             _ => None,
         },
     )
-}
-
-fn copy_e5_curve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    curve: &CurveGeometry,
-) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
-    Ok(match curve {
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                nurbs.try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
-            ))
-        }
-        _ => curve.clone(),
-    })
 }
 
 fn is_exact_e5_analytic_curve(curve: &CurveGeometry) -> bool {

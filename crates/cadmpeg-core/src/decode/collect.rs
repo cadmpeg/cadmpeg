@@ -73,14 +73,8 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(ResourceLimit {
-            dimension: ResourceDimension::RetainedBytes,
-            reason: super::ResourceFailure::BudgetExceeded,
-            limit: self.policy().limits.max_retained_bytes,
-            used: 0,
-            additional: u64::MAX,
-            operation,
-        })?;
+        let bytes = count.checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
         self.charge_collection_items_limit(u64_from_index(count), operation)?;
         values.try_reserve(count).map_err(|_| self.collection_allocation_failed_limit(count, operation))
@@ -944,7 +938,7 @@ impl DecodeContext<'_> {
     }
 
     /// Copies items whose slots were charged by aggregate admission.
-    pub fn copy_admitted_slice<T: Clone>(
+    pub fn copy_admitted_slice<T: Copy>(
         values: &[T],
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
@@ -955,7 +949,7 @@ impl DecodeContext<'_> {
     }
 
     /// Copies rows whose slots were charged by aggregate admission.
-    pub fn copy_admitted_rows<T: Clone>(
+    pub fn copy_admitted_rows<T: Copy>(
         values: &[T],
         row_len: usize,
         operation: &'static str,
@@ -985,15 +979,15 @@ impl DecodeContext<'_> {
     }
 
     /// Copies a slice after charging its collection slots.
-    pub fn copy_slice<T: Clone>(
+    pub fn copy_slice<T: Copy>(
         &self,
         values: &[T],
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         self.charge_work(u64_from_index(values.len()), operation)?;
-        let mut copy = self.collection_vec(values.len(), operation)?;
-        copy.extend_from_slice(values);
-        Ok(copy)
+        self.charge_collection_items(u64_from_index(values.len()), operation)?;
+        Self::copy_admitted_slice(values, operation)
+            .map_err(|_| self.collection_allocation_failed(values.len(), operation))
     }
 
     /// Collects optional values, stopping at the first absent value.
@@ -1040,36 +1034,29 @@ impl DecodeContext<'_> {
     }
 
     /// Copies retained items and charges both their slots and storage.
-    pub fn copy_retained_slice<T: Clone>(
+    pub fn copy_retained_slice<T: Copy>(
         &self,
         values: &[T],
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         let bytes = values
             .len()
-            .checked_mul(std::mem::size_of::<T>().max(1))
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            .checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| CodecError::ResourceLimit(self.retained_size_overflow_limit(operation)))?;
         self.charge_retained(u64_from_index(bytes), operation)?;
         self.copy_slice(values, operation)
     }
 
     /// Copies retained rows and charges row and item slots.
-    pub fn copy_retained_rows<T: Clone>(
+    pub fn copy_retained_rows<T: Copy>(
         &self,
         rows: &[Vec<T>],
         row_operation: &'static str,
         item_operation: &'static str,
     ) -> Result<Vec<Vec<T>>, CodecError> {
-        let bytes = rows
-            .len()
-            .checked_mul(std::mem::size_of::<Vec<T>>())
-            .ok_or_else(|| self.refuse_codec_limit(row_operation, u64::MAX, u64::MAX))?;
-        self.charge_retained(u64_from_index(bytes), row_operation)?;
-        let mut copy = self.collection_vec(rows.len(), row_operation)?;
-        for row in rows {
-            copy.push(self.copy_retained_slice(row, item_operation)?);
-        }
-        Ok(copy)
+        self.try_collect_retained_with(rows, row_operation, |row| {
+            self.copy_retained_slice(row, item_operation)
+        })
     }
 
     /// Copies a retained set after charging storage and entries.
@@ -1078,12 +1065,8 @@ impl DecodeContext<'_> {
         values: &HashSet<T>,
         operation: &'static str,
     ) -> Result<HashSet<T>, CodecError> {
-        let bytes = values
-            .len()
-            .checked_mul(std::mem::size_of::<T>().max(1))
-            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<T>>()))
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        self.charge_retained(u64_from_index(bytes), operation)?;
+        self.charge_retained(self.temporary_hash_bytes::<T>(values.len(), operation)?, operation)?;
+        self.charge_work(u64_from_index(values.len()), operation)?;
         let mut copy = HashSet::new();
         self.reserve_set(&mut copy, values.len(), operation)?;
         copy.extend(values.iter().copied());
@@ -1565,6 +1548,35 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn flat_copies_do_not_charge_storage_for_empty_or_zero_sized_values() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(ctx.copy_retained_slice(&[(); 3], "zero sized copy").unwrap(), vec![(); 3]);
+        assert!(ctx.copy_retained_set(&HashSet::<u64>::new(), "empty set copy").unwrap().is_empty());
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
+    fn retained_vector_size_overflow_fuses_in_the_storage_dimension() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut values = Vec::<u64>::new();
+        let error = ctx.reserve_retained_vec(&mut values, usize::MAX, "oversized retained vector").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(values.is_empty());
+        assert!(ctx.finish_session().is_err());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = ctx.with_scoped_storage("oversized scoped vector", || {
+            ctx.reserve_retained_vec(&mut values, usize::MAX, "oversized scoped vector")
+        }).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(ctx.finish_session().is_err());
+    }
+
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
     use super::super::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
