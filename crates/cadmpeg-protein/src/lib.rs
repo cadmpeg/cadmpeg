@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -75,29 +75,30 @@ fn read_entry_bounded(
     ctx: &DecodeContext<'_>,
     entry: &mut impl Read,
     declared_size: u64,
-    name: &str,
 ) -> Result<Vec<u8>, CodecError> {
     if declared_size > MAX_SCHEMA_BYTES {
-        return Err(CodecError::malformed(format_args!(
-            "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
-        )));
+        return Err(ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, declared_size));
     }
-    let mut bytes = Vec::new();
+    let mut writer = ctx.begin_expand(ExpandSpec::Exact(declared_size))?;
     let mut limited = entry.take(MAX_SCHEMA_BYTES + 1);
     let mut chunk = [0_u8; 16 * 1024];
     loop {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "Protein schema read")?;
         let read = limited.read(&mut chunk)?;
         if read == 0 {
             break;
         }
-        ctx.extend_retained_bytes(&mut bytes, &chunk[..read], "Protein schema allocation")?;
+        let count = cadmpeg_core::decode::u64_from_index(read);
+        let total = writer.written().checked_add(count).ok_or_else(|| ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, u64::MAX))?;
+        if total > MAX_SCHEMA_BYTES {
+            return Err(ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, total));
+        }
+        ctx.charge_retained(count, "Protein schema allocation")?;
+        ctx.charge_collection_items(count, "Protein schema allocation")?;
+        ctx.charge_work(count, "Protein schema copy")?;
+        writer.write(&chunk[..read])?;
     }
-    if cadmpeg_core::decode::u64_from_index(bytes.len()) > MAX_SCHEMA_BYTES {
-        return Err(CodecError::malformed(format_args!(
-            "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
-        )));
-    }
-    Ok(bytes)
+    writer.finalize_owned()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -155,10 +156,7 @@ impl SchemaCatalog {
                 continue;
             }
             if entry.uncompressed_size > MAX_SCHEMA_BYTES {
-                return Err(CodecError::malformed(format_args!(
-                    "Protein schema {} exceeds the {MAX_SCHEMA_BYTES}-byte limit",
-                    entry.name
-                )));
+                return Err(ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, entry.uncompressed_size));
             }
             let xml = archive.open(ctx, &entry.name)?;
             parse_schema_document(ctx, &entry.name, xml.window(), &mut schemas)?;
@@ -413,7 +411,7 @@ fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Sc
         }
         let size = entry.size();
         let name = entry.name().to_owned();
-        let bytes = read_entry_bounded(ctx, &mut entry, size, &name)?;
+        let bytes = read_entry_bounded(ctx, &mut entry, size)?;
         parse_schema_document(ctx, &name, &bytes, &mut schemas)?;
     }
     Ok(schemas)
@@ -926,17 +924,31 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
             let mut reader = Cursor::new(b"xml");
             assert!(
-                matches!(super::read_entry_bounded(&ctx, &mut reader, 3, "schema"),
+                matches!(super::read_entry_bounded(&ctx, &mut reader, 3),
                 Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == "Protein schema allocation")
             );
         }
         let (ctx, _) =
             DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3, "schema")
+            super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3)
                 .expect("service admission"),
             b"xml"
         );
+    }
+
+    #[test]
+    fn schema_size_and_edit_expansion_limits_are_resource_refusals() {
+        with_service_context(&[], |ctx| {
+            let error = super::read_entry_bounded(ctx, &mut Cursor::new(b""), super::MAX_SCHEMA_BYTES + 1).expect_err("local byte ceiling");
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein schema bytes"))));
+        });
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_per_expand = 2;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
+        let error = super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3).expect_err("caller expansion limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::DecompressedBytes));
     }
 
     #[test]
