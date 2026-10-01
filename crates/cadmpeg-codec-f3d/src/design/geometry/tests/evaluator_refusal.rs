@@ -4,7 +4,7 @@ use super::*;
 use cadmpeg_core::CodecError;
 
 #[test]
-fn sketch_nurbs_point_refuses_pole_copy_limit() {
+fn sketch_nurbs_point_refuses_polynomial_input_copy_limit() {
     let curve = PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -20,11 +20,11 @@ fn sketch_nurbs_point_refuses_pole_copy_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == "f3d nurbs evaluator poles"));
+        if limit.operation == "f3d nurbs evaluator input"));
 }
 
 #[test]
-fn sketch_nurbs_point_refuses_weight_copy_limit() {
+fn sketch_nurbs_point_refuses_rational_input_copy_limit() {
     let curve = PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -40,7 +40,7 @@ fn sketch_nurbs_point_refuses_weight_copy_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == "f3d nurbs evaluator weights"));
+        if limit.operation == "f3d nurbs evaluator input"));
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn certified_nurbs_tubes_refuse_point_copy_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube points"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube input"
     ));
 }
 
@@ -79,7 +79,7 @@ fn certified_nurbs_tubes_refuse_weight_copy_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube weights"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube input"
     ));
 }
 
@@ -105,7 +105,7 @@ fn sketch_nurbs_endpoints_refuse_pole_copy_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::sketch_entity_endpoints(&entity, &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator input"
     ));
 }
 
@@ -131,7 +131,7 @@ fn closed_sketch_nurbs_endpoints_propagate_collection_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         closed_sketch_profiles(&ctx, &sketch_id, &[entity], 0.01),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator input"
     ));
 }
 
@@ -165,6 +165,59 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::dimensions::exact_coincident_loci(&[&nurbs, &point], &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator input"
     ));
+}
+
+#[test]
+fn sketch_nurbs_point_preserves_caller_scratch_refusal() {
+    let curve = PcurveNurbs::from_lanes(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let error = super::super::sketch_geometry_point(&geometry, 0.5, ctx).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && ctx.resource_refusal() == Some(limit)));
+    });
+}
+
+#[test]
+fn certified_nurbs_tubes_preserve_caller_scratch_refusal() {
+    let curve = PcurveNurbs::from_lanes(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let error = super::super::certified_nurbs_tubes(&curve, 0.5, ctx)
+            .err()
+            .expect("caller scratch refusal");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && ctx.resource_refusal() == Some(limit)));
+    });
 }

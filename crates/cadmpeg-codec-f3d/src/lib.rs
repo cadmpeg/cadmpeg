@@ -92,7 +92,6 @@ mod container;
 mod decode;
 mod design;
 mod dialect;
-mod error;
 mod f3z;
 mod history;
 mod history_records;

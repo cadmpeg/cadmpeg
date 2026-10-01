@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict_charged, lp_utf16_bounded_charged};
-use crate::records::entity_header::SegmentType;
+use crate::records::entity_header::SegmentTypeData;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
 pub(crate) const MODERN_SERIALIZER_MAGIC: u32 = 1234;
@@ -22,7 +22,7 @@ pub(crate) struct RecordIndexEntry {
 /// One completely framed `MetaStream` segment.
 #[derive(Clone)]
 pub(crate) struct MetaStream {
-    pub(crate) types: Vec<SegmentType>,
+    pub(crate) types: Vec<SegmentTypeData>,
     /// Live sibling records, in strictly increasing `BulkStream` order.
     pub(crate) records: Vec<RecordIndexEntry>,
     /// Nested class-record headers, in strictly increasing `BulkStream` order.
@@ -515,8 +515,7 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
             });
         }
         at = ids_end;
-        types.push(SegmentType {
-            id: String::new(),
+        types.push(SegmentTypeData {
             byte_offset: u64_from_index(entry_at),
             type_guid,
             type_guid_offset: u64_from_index(type_guid_offset),

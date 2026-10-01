@@ -904,11 +904,10 @@ pub(crate) fn design_breps<'s>(
 
 /// Names of the text-encoded ASM BREP entries, in archive order.
 ///
-/// These entries stay out of [`ContainerScan::breps`] because that set holds the
-/// streams whose binary ASM header decoded, and the text encoding has no such
-/// header. A caller that reports on geometry must still count them: a document
-/// whose only carrier is text has a carrier that is present and not read, which
-/// is a different finding from a document that declares no carrier.
+/// [`ContainerScan::breps`] holds binary BREP candidate facts. Text streams are
+/// admitted separately into [`ContainerScan::text_breps`]. Carrier presence is
+/// independent of geometry transfer: a text-only document has a carrier even
+/// when its transfer fails.
 pub(crate) fn text_brep_names<'s>(
     scan: &'s ContainerScan<'_>,
 ) -> impl Iterator<Item = &'s str> + 's {
