@@ -1468,22 +1468,10 @@ impl DecodeContext<'_> {
         }
         impl Write for ChargedText<'_, '_> {
             fn write_str(&mut self, fragment: &str) -> fmt::Result {
-                if let Err(error) = self
-                    .ctx
-                    .charge_retained(u64_from_index(fragment.len()), self.operation)
-                {
+                if let Err(error) = self.ctx.append_retained(&mut self.text, fragment, self.operation) {
                     self.refusal = Some(error);
                     return Err(fmt::Error);
                 }
-                if self.text.try_reserve(fragment.len()).is_err() {
-                    self.refusal = Some(self.ctx.allocation_failed(
-                        ResourceDimension::RetainedBytes,
-                        fragment.len(),
-                        self.operation,
-                    ));
-                    return Err(fmt::Error);
-                }
-                self.text.push_str(fragment);
                 Ok(())
             }
         }

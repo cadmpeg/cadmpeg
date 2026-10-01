@@ -690,20 +690,22 @@ fn equivalent_scope_variant_payload(
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant comparison work", 0, 1))?;
     ctx.charge_work(work, "f3d scope variant comparison")?;
-    let materialized = u64_from_index(serialized)
-        .checked_mul(16)
-        .and_then(|bytes| bytes.checked_add(2048))
+    let scratch_bytes = serialized.checked_mul(2)
+        .and_then(|bytes| bytes.checked_add(16))
         .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1))?;
-    let _reservation = ctx.reserve_scoped(materialized, "f3d scope variant JSON")?;
-    let Some(mut left) = scope_variant_json(ctx, left, left_count.bytes)? else {
-        return Ok(false);
-    };
-    let Some(mut right) = scope_variant_json(ctx, right, right_count.bytes)? else {
-        return Ok(false);
-    };
-    strip_scope_variant_provenance(ctx, &mut left, true)?;
-    strip_scope_variant_provenance(ctx, &mut right, true)?;
-    Ok(left == right)
+    let _scratch = ctx.reserve_scoped(u64_from_index(scratch_bytes), "f3d scope variant JSON")?;
+    let (equivalent, _storage) = ctx.with_scoped_storage("f3d scope variant JSON", || {
+        let Some(mut left) = scope_variant_json(ctx, left, left_count.bytes)? else {
+            return Ok(false);
+        };
+        let Some(mut right) = scope_variant_json(ctx, right, right_count.bytes)? else {
+            return Ok(false);
+        };
+        strip_scope_variant_provenance(ctx, &mut left, true)?;
+        strip_scope_variant_provenance(ctx, &mut right, true)?;
+        Ok::<_, CodecError>(left == right)
+    })?;
+    Ok(equivalent)
 }
 
 struct ScopeJsonWriter {
@@ -738,7 +740,7 @@ fn scope_variant_json(
 ) -> Result<Option<serde_json::Value>, CodecError> {
     use serde::de::DeserializeSeed;
 
-    let bytes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let bytes = ctx.collection_vec(
         serialized_length,
         "f3d scope variant JSON",
     )?;

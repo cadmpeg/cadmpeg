@@ -338,37 +338,35 @@ fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
 
 fn color_table_at(bytes: &[u8], start: usize) -> Result<Option<ColorTable<'_>>, CodecError> {
     let mut at = start + COLOR_TABLE_NAME_HEADER.len();
-    let mut names = cadmpeg_core::decode::DecodeContext::admitted_vec(217, "NX color table names")?;
-    for _ in 0..217 {
+    let mut names = [""; 217];
+    for slot in &mut names {
         let Some((name, width)) = color_name_frame(bytes, at) else {
             return Ok(None);
         };
-        names.push(name);
+        *slot = name;
         at += width;
     }
     at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
     let Some(background) = color_components(bytes, &mut at) else {
         return Ok(None);
     };
-    let mut definitions = cadmpeg_core::decode::DecodeContext::admitted_vec(
-        PALETTE_SIZE,
-        "NX color table definitions",
-    )?;
+    let mut definitions = std::array::from_fn(|_| ColorTableDefinition {
+        name: "",
+        components: background,
+        offset: start,
+    });
     for color_index in PaletteIndex::all() {
         let offset = at;
         at += 1 + color_index.definition_token().1 + 3;
         let Some(components) = color_components(bytes, &mut at) else {
             return Ok(None);
         };
-        definitions.push(ColorTableDefinition {
+        definitions[usize::from(color_index.value()) - 1] = ColorTableDefinition {
             name: names[usize::from(color_index.value())],
             components,
             offset,
-        });
+        };
     }
-    let Ok(definitions) = definitions.try_into() else {
-        return Ok(None);
-    };
     Ok(Some(ColorTable {
         offset: start,
         background,
@@ -2265,20 +2263,19 @@ pub(crate) fn point_feature_scalar_lane(
     let Some(target) = target_block.get(..45) else {
         return Ok(None);
     };
-    let mut lane =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(48, "NX point feature scalar lane")?;
-    lane.extend_from_slice(&preceding_block[preceding_start..]);
-    lane.extend_from_slice(target);
-    let Some(values) = lane
-        .chunks_exact(8)
-        .map(ShiftedBinary64::read)
-        .collect::<Option<Vec<_>>>()
-    else {
+    let mut lane = [0; 48];
+    lane[..3].copy_from_slice(&preceding_block[preceding_start..]);
+    lane[3..].copy_from_slice(target);
+    let Some(first) = ShiftedBinary64::read(&lane[..8]) else {
         return Ok(None);
     };
-    let Ok(values) = values.try_into() else {
-        return Ok(None);
-    };
+    let mut values = [first; 6];
+    for (value, bytes) in values.iter_mut().zip(lane.chunks_exact(8)) {
+        let Some(scalar) = ShiftedBinary64::read(bytes) else {
+            return Ok(None);
+        };
+        *value = scalar;
+    }
     Ok(Some(PointFeatureScalarLane {
         values,
         offset: preceding_start,
