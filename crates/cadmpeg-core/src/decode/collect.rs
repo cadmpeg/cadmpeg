@@ -1213,6 +1213,15 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
+    /// Admits the backing nodes for one ordered entry whose slot is already charged.
+    pub fn admit_btree_node_storage<K, V>(
+        &self,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_retained(self.tree_growth_bytes::<K, V>(len, operation)?, operation)
+    }
+
     /// Charges a new B-tree map key before insertion.
     pub fn admit_btree_entry<K: Ord, V>(
         &self,
@@ -1221,7 +1230,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         if !values.contains_key(key) {
-            self.charge_retained(self.tree_growth_bytes::<K, V>(values.len(), operation)?, operation)?;
+            self.admit_btree_node_storage::<K, V>(values.len(), operation)?;
             self.charge_collection_items(1, operation)?;
         }
         Ok(())
