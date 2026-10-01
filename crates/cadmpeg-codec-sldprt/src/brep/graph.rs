@@ -1398,9 +1398,6 @@ pub(crate) fn decode_bodies(
         let body = header_body(payload, header)?;
         entity_streams.push((body, is_deltas_stream(header)));
     }
-    for (body, _) in &entity_streams {
-        admit_brep_scan_candidates(ctx, body)?;
-    }
     let mut typed_streams = Vec::new();
     ctx.reserve_vec(
         &mut typed_streams,
@@ -1463,7 +1460,6 @@ fn decode_body(
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    admit_brep_scan_candidates(ctx, body)?;
     let mut carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs(ctx)?;
     let typed_facts = typed::scan(body, ctx)?;
@@ -1474,66 +1470,6 @@ fn decode_body(
         topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)?;
     let entity_facts = entity::scan_metadata(ctx, body, false)?;
     decode_graph(ctx, &mut carriers, &t, entity_facts, &typed_facts, stream)
-}
-
-fn admit_brep_scan_candidates(
-    ctx: &DecodeContext<'_>,
-    body: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
-    let count = body
-        .windows(3)
-        .filter(|marker| {
-            marker[0] == 0
-                && (matches!(
-                    marker[1],
-                    0x0c | 0x0d
-                        | 0x0e
-                        | 0x0f
-                        | 0x10
-                        | 0x11
-                        | 0x12
-                        | 0x13
-                        | 0x1d
-                        | 0x1e
-                        | 0x1f
-                        | 0x20
-                        | 0x26
-                        | 0x28
-                        | 0x29
-                        | 0x2d
-                        | 0x32
-                        | 0x33
-                        | 0x34
-                        | 0x35
-                        | 0x36
-                        | 0x38
-                        | 0x3c
-                        | 0x43
-                        | 0x44
-                        | 0x4f
-                        | 0x50
-                        | 0x51
-                        | 0x52
-                        | 0x53
-                        | 0x7c
-                        | 0x7e
-                        | 0x7f
-                        | 0x80
-                        | 0x85
-                        | 0x86
-                        | 0x88
-                        | 0xcc
-                ) || marker[1..] == [0x01, 0x5a])
-        })
-        .count();
-    let count = u64::try_from(count).map_err(|_| {
-        cadmpeg_core::CodecError::NotImplemented(
-            "Parasolid scan candidate count exceeds u64".into(),
-        )
-    })?;
-    ctx.charge_collection_items(count, "admit Parasolid scan candidates")?;
-
-    Ok(())
 }
 
 fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
@@ -7857,6 +7793,57 @@ fn emit_curve(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn incomplete_brep_marker_does_not_consume_collection_slots() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let body = [0x00, 0x1e, 0x00];
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let carriers = super::scan_carriers(&ctx, &body).unwrap();
+        assert!(carriers.curve_attrs(&ctx).unwrap().is_empty());
+        let tables = super::topology::scan(&ctx, &body).unwrap();
+        assert!(tables.points().is_empty());
+        assert!(tables.loops().is_empty());
+        ctx.finish_session().unwrap();
+        // Graph construction owns one annotation-stream handle even without records.
+        policy.limits.max_collection_items = 1;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let decoded =
+            super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("incomplete-marker"))
+                .unwrap();
+        assert!(decoded.points.is_empty());
+        assert!(decoded.loops.is_empty());
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn empty_brep_scan_preserves_work_refusal_without_candidate_census() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let body = [0xff; 4096];
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let stream = cadmpeg_ir::stream_name!("no-candidates");
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            super::decode_body(&ctx, &body, &stream)
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("work refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert_eq!(limit.operation, "scan SLDPRT analytic carriers");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(allocations, 0);
+    }
+
     fn one_face_shell() -> super::Brep {
         use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
         use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
@@ -8854,7 +8841,7 @@ mod tests {
     }
 
     #[test]
-    fn native_brep_scan_candidates_refuse_collection_limit_before_parsing() {
+    fn native_brep_carrier_collection_refuses_before_insertion() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
         let body = crate::test_support::parasolid::triangle_body();
@@ -8867,12 +8854,12 @@ mod tests {
             &body,
             &cadmpeg_ir::stream_name!("candidate-admission"),
         ) else {
-            panic!("expected candidate admission refusal");
+            panic!("expected carrier collection admission refusal");
         };
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Parasolid scan candidates"));
+                    && limit.operation == "index SLDPRT surface carriers"));
 
         let arena = DecodeArena::new();
         let (ctx, _) =
