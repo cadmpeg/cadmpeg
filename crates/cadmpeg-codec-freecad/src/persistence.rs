@@ -129,7 +129,7 @@ fn parse_document(
     let dependency_nodes = objects_node
         .children()
         .filter(|node| node.has_tag_name("ObjectDeps"));
-    let mut dependency_records = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let (mut dependency_records, _dependency_records_storage) = ctx.scoped_vector_storage(
         dependency_node_count,
         "FCStd object dependency records",
     )?;
@@ -152,7 +152,7 @@ fn parse_document(
             cadmpeg_core::decode::u64_from_index(dependency_item_count),
             "FCStd object dependencies",
         )?;
-        let mut dependencies = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        let mut dependencies = ctx.vector_storage(
             dependency_item_count,
             "FCStd object dependencies",
         )?;
@@ -242,7 +242,7 @@ fn parse_document(
         "FCStd object records",
     )?;
     let mut objects: Vec<ObjectRecord> =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(declared_count, "FCStd object records")?;
+        ctx.vector_storage(declared_count, "FCStd object records")?;
     for (order, node) in objects_node
         .children()
         .filter(|node| node.has_tag_name(record_tag))
@@ -369,7 +369,7 @@ fn parse_document(
     let document_properties = root
         .children()
         .filter(|node| node.has_tag_name("Properties"));
-    let mut document_property_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let (mut document_property_nodes, _document_property_nodes_storage) = ctx.scoped_vector_storage(
         document_property_containers,
         "FCStd document property containers",
     )?;
@@ -405,7 +405,7 @@ fn parse_document(
             "FCStd object data children",
         )?;
         let children = data.children().filter(roxmltree::Node::is_element);
-        let mut child_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        let (mut child_nodes, _child_nodes_storage) = ctx.scoped_vector_storage(
             children_count,
             "FCStd object data children",
         )?;
@@ -462,7 +462,7 @@ fn parse_document(
             let nodes = extensions_node
                 .children()
                 .filter(|node| node.has_tag_name("Extension"));
-            let mut extension_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            let (mut extension_nodes, _extension_nodes_storage) = ctx.scoped_vector_storage(
                 extension_count,
                 "FCStd extension nodes",
             )?;
@@ -522,7 +522,7 @@ fn parse_document(
                     cadmpeg_core::decode::u64_from_index(1),
                     "FCStd extension records",
                 )?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     &mut extensions,
                     1,
                     "FCStd extension records",
@@ -613,8 +613,7 @@ fn parse_properties(
     let nodes = container
         .children()
         .filter(|node| node.has_tag_name("Property"));
-    let mut property_nodes =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(node_count, "FCStd property nodes")?;
+    let (mut property_nodes, _property_nodes_storage) = ctx.scoped_vector_storage(node_count, "FCStd property nodes")?;
     property_nodes.extend(nodes);
     let transient_node_count = container
         .children()
@@ -627,7 +626,7 @@ fn parse_properties(
     let transient_nodes = container
         .children()
         .filter(|node| node.has_tag_name("_Property"));
-    let mut transient_property_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let (mut transient_property_nodes, _transient_property_nodes_storage) = ctx.scoped_vector_storage(
         transient_node_count,
         "FCStd transient property nodes",
     )?;
@@ -687,7 +686,7 @@ fn parse_properties(
             cadmpeg_core::decode::u64_from_index(1),
             "FCStd transient property records",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             output,
             1,
             "FCStd transient property records",
@@ -723,7 +722,7 @@ fn parse_properties(
             cadmpeg_core::decode::u64_from_index(value_count),
             "FCStd property value records",
         )?;
-        let mut values = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        let mut values = ctx.vector_storage(
             value_count,
             "FCStd property value records",
         )?;
@@ -783,7 +782,7 @@ fn parse_properties(
                         cadmpeg_core::decode::u64_from_index(1),
                         "FCStd side entry references",
                     )?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut side_entries,
                         1,
                         "FCStd side entry references",
@@ -796,7 +795,7 @@ fn parse_properties(
             cadmpeg_core::decode::u64_from_index(1),
             "FCStd persisted property records",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             output,
             1,
             "FCStd persisted property records",
@@ -880,13 +879,13 @@ fn parse_link_targets(
                 "FCStd link target records",
             )?;
             let mut targets =
-                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link target records")?;
+                ctx.vector_storage(1, "FCStd link target records")?;
             targets.push(local_link(root, "value", Vec::new(), ctx)?);
             Ok(targets)
         }
         LinkGrammar::LinkList => {
-            let children = counted_children(root, "Link", type_name, ctx)?;
-            let mut targets = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            let (children, _children_storage) = counted_children(root, "Link", type_name, ctx)?;
+            let mut targets = ctx.vector_storage(
                 children.len(),
                 "FCStd link target or subelement records",
             )?;
@@ -897,8 +896,8 @@ fn parse_link_targets(
             Ok(targets)
         }
         LinkGrammar::LinkSub => {
-            let children = counted_children(root, "Sub", type_name, ctx)?;
-            let mut subelements = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            let (children, _children_storage) = counted_children(root, "Sub", type_name, ctx)?;
+            let mut subelements = ctx.vector_storage(
                 children.len(),
                 "FCStd link target or subelement records",
             )?;
@@ -911,13 +910,13 @@ fn parse_link_targets(
                 "FCStd link target records",
             )?;
             let mut targets =
-                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link target records")?;
+                ctx.vector_storage(1, "FCStd link target records")?;
             targets.push(local_link(root, "value", subelements, ctx)?);
             Ok(targets)
         }
         LinkGrammar::LinkSubList => {
-            let children = counted_children(root, "Link", type_name, ctx)?;
-            let mut targets = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            let (children, _children_storage) = counted_children(root, "Link", type_name, ctx)?;
+            let mut targets = ctx.vector_storage(
                 children.len(),
                 "FCStd link target or subelement records",
             )?;
@@ -929,7 +928,7 @@ fn parse_link_targets(
                     "FCStd link subelements",
                 )?;
                 let mut subelements =
-                    cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link subelements")?;
+                    ctx.vector_storage(1, "FCStd link subelements")?;
                 subelements.push(sub);
                 targets.push(local_link(node, "obj", subelements, ctx)?);
             }
@@ -941,13 +940,13 @@ fn parse_link_targets(
                 "FCStd link target records",
             )?;
             let mut targets =
-                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link target records")?;
+                ctx.vector_storage(1, "FCStd link target records")?;
             targets.push(xlink(root, ctx)?);
             Ok(targets)
         }
         LinkGrammar::XLinkSubList => {
-            let children = counted_children(root, "XLink", type_name, ctx)?;
-            let mut targets = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            let (children, _children_storage) = counted_children(root, "XLink", type_name, ctx)?;
+            let mut targets = ctx.vector_storage(
                 children.len(),
                 "FCStd link target or subelement records",
             )?;
@@ -1042,12 +1041,12 @@ fn single_value_element<'a, 'input>(
     Ok(value)
 }
 
-fn counted_children<'a, 'input>(
+fn counted_children<'a, 'input, 'ctx>(
     parent: roxmltree::Node<'a, 'input>,
     tag: &'static str,
     type_name: &str,
-    ctx: &DecodeContext<'_>,
-) -> Result<impl ExactSizeIterator<Item = roxmltree::Node<'a, 'input>>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(impl ExactSizeIterator<Item = roxmltree::Node<'a, 'input>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let count = parent
         .attribute("count")
         .ok_or_else(|| {
@@ -1077,9 +1076,13 @@ fn counted_children<'a, 'input>(
         "FCStd link target or subelement records",
     )?;
     let children = parent.children().filter(roxmltree::Node::is_element);
-    let mut child_nodes =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(count, "FCStd link nodes")?;
-    child_nodes.extend(children);
+    let (mut child_nodes, storage) = ctx.scoped_vector_storage(count, "FCStd link nodes")?;
+    for child in children {
+        if child_nodes.len() == count {
+            return Err(crate::resource::malformed_charged(ctx, format_args!("{type_name} child count exceeds {count}"), "FCStd persistence diagnostic"));
+        }
+        child_nodes.push(child);
+    }
     if child_nodes.len() != count || child_nodes.iter().any(|child| !child.has_tag_name(tag)) {
         return Err(crate::resource::malformed_charged(
             ctx,
@@ -1090,7 +1093,7 @@ fn counted_children<'a, 'input>(
             "FCStd persistence diagnostic",
         ));
     }
-    Ok(child_nodes.into_iter())
+    Ok((child_nodes.into_iter(), storage))
 }
 
 fn local_link(
@@ -1133,8 +1136,7 @@ fn xlink(
         "FCStd XLink children",
     )?;
     let children = node.children().filter(roxmltree::Node::is_element);
-    let mut child_nodes =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(child_count, "FCStd XLink children")?;
+    let (mut child_nodes, _child_nodes_storage) = ctx.scoped_vector_storage(child_count, "FCStd XLink children")?;
     child_nodes.extend(children);
     let subelements = match (node.attribute("sub"), node.attribute("count")) {
         (Some(_), None) if child_nodes.is_empty() => {
@@ -1143,7 +1145,7 @@ fn xlink(
                 "FCStd link subelements",
             )?;
             let mut subelements =
-                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link subelements")?;
+                ctx.vector_storage(1, "FCStd link subelements")?;
             subelements.push(restored_subelement(node, "sub", ctx)?);
             subelements
         }
@@ -1162,8 +1164,8 @@ fn xlink(
                     "App::PropertyXLink uses count only for one or more Sub values".into(),
                 ));
             }
-            let children = counted_children(node, "Sub", "App::PropertyXLink", ctx)?;
-            let mut subelements = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            let (children, _children_storage) = counted_children(node, "Sub", "App::PropertyXLink", ctx)?;
+            let mut subelements = ctx.vector_storage(
                 children.len(),
                 "FCStd link target or subelement records",
             )?;

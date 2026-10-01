@@ -240,3 +240,15 @@ storage_case!(push_front_storage, 32, 64, |ctx: &DecodeContext<'_>, count| {
 storage_case!(join_display_retained_storage, 1, 5, |ctx: &DecodeContext<'_>, count| {
     ctx.join_display_retained(std::iter::repeat_n("x", count), "", "display join storage")
 });
+
+storage_case!(vector_storage_bytes, 8, 40, |ctx: &DecodeContext<'_>, count| {
+    ctx.vector_storage::<u64>(count, "vector backing storage")
+});
+storage_case!(reserve_capacity_bytes, 32, 64, |ctx: &DecodeContext<'_>, count| {
+    let mut values = Vec::new();
+    for _ in 0..count {
+        ctx.reserve_capacity(&mut values, 1, "capacity storage")?;
+        values.push(0u64);
+    }
+    Ok(values)
+});

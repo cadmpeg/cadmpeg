@@ -817,23 +817,10 @@ fn list_checksum_children(
         CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
         other => FramingError::structural(first_child_offset, other.to_string()),
     })?;
-    let range_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<std::ops::Range<usize>>());
-    let total_bytes = cadmpeg_core::decode::u64_from_index(child_count)
-        .checked_mul(range_bytes)
-        .ok_or(FramingError::Overflow {
-            offset: first_child_offset,
-        })?;
-    reservation.grow(total_bytes).map_err(|error| match error {
-        CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
-        other => FramingError::structural(first_child_offset, other.to_string()),
-    })?;
     let mut children = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut children,
-        child_count,
-        "Rhino view checksum ranges",
-    )?;
+    reservation.with_storage(|| ctx.reserve_capacity(
+        &mut children, child_count, "Rhino view checksum ranges",
+    ))?;
     offset = first_child_offset;
     for _ in 0..child_count {
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;

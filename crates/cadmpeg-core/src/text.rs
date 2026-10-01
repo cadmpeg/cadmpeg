@@ -604,7 +604,11 @@ mod tests {
 
     #[test]
     fn named_entry_map_storage_refuses_before_insertion() {
-        let bytes = std::mem::size_of::<(NonBlankString, i32)>();
+        let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<NonBlankString>().max(std::mem::align_of::<usize>());
+        // A one-item ceiling admits one split node and a new root.
+        let bytes = 2 * node_bytes;
         let error = checked_reporting(
             vec![("k".into(), 1)],
             1,

@@ -2890,7 +2890,7 @@ pub(crate) fn layout_parameter_cards(
     }
 
     let mut cards = Vec::new();
-    let mut card = ctx.retained_admitted_vec(64, "iges parameter layout card bytes")?;
+    let mut card = ctx.vector_storage(64, "iges parameter layout card bytes")?;
     for field in fields.iter().map(|range| &bytes[range.clone()]) {
         let leading = field
             .iter()
@@ -2911,13 +2911,13 @@ pub(crate) fn layout_parameter_cards(
             card.extend(std::iter::repeat_with(|| b' ').take(64 - card.len()));
             ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
-            card = ctx.retained_admitted_vec(64, "iges parameter layout card bytes")?;
+            card = ctx.vector_storage(64, "iges parameter layout card bytes")?;
         }
         for byte in field.iter().copied() {
             if card.len() == 64 {
                 ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
                 cards.push(std::mem::take(&mut card));
-                card = ctx.retained_admitted_vec(64, "iges parameter layout card bytes")?;
+                card = ctx.vector_storage(64, "iges parameter layout card bytes")?;
             }
             card.push(byte);
         }
@@ -2927,7 +2927,7 @@ pub(crate) fn layout_parameter_cards(
         if card.len() == 64 {
             ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
-            card = ctx.retained_admitted_vec(64, "iges parameter layout card bytes")?;
+            card = ctx.vector_storage(64, "iges parameter layout card bytes")?;
         }
         card.push(byte);
     }
@@ -3700,7 +3700,7 @@ fn owned_bytes(
             ))
         })
         .ok_or_else(|| refuse_local_limit("iges owned parameter bytes", u64::MAX, 1))?;
-    let mut bytes = ctx.retained_admitted_vec(byte_count, "iges owned parameter bytes")?;
+    let mut bytes = ctx.vector_storage(byte_count, "iges owned parameter bytes")?;
 
     let mut card_boundaries = ctx.collection_vec(card_count, "iges parameter card boundaries")?;
     for sequence in cards {
@@ -3751,7 +3751,7 @@ fn quarantine(
                 .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
             let mut range = first..range_end;
             let mut bytes =
-                ctx.retained_admitted_vec(byte_count, "iges quarantined parameter bytes")?;
+                ctx.vector_storage(byte_count, "iges quarantined parameter bytes")?;
 
             bytes.extend_from_slice(&line.payload);
             for (sequence, line) in retained {

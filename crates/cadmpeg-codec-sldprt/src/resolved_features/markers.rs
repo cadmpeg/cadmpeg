@@ -212,7 +212,7 @@ pub(crate) fn spatial_sketches(
             if !valid_lines {
                 continue;
             }
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut projected,
                 projected_lines.len(),
                 "merge SLDPRT spatial lines",
@@ -356,7 +356,7 @@ pub(crate) fn spatial_sketches(
             profiles: Vec::new(),
             native_ref: Some(native_lane_ref),
         });
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut entities,
             projected.len(),
             "merge SLDPRT spatial line entities",

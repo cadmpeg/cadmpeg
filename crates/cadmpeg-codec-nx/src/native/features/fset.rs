@@ -318,7 +318,7 @@ fn fset_construction_payload_from_group(
         "NX FSET source block references",
     )?;
     let mut data_blocks = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut data_blocks,
         source_blocks.len(),
         "allocate NX FSET source block references",

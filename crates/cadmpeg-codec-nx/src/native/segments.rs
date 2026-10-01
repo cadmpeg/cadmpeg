@@ -89,13 +89,8 @@ pub(super) fn segment_index_rows(
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, "nx segment index rows")?;
     ctx.charge_entities(count_u64, "nx segment index rows")?;
-    let slot_bytes = count
-        .checked_mul(std::mem::size_of::<SegmentIndexRow>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx segment index rows", 0, count_u64))?;
-    ctx.charge_retained(slot_bytes, "nx segment index rows")?;
     let mut rows = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut rows,
         count,
         "nx segment index rows",
@@ -939,8 +934,9 @@ pub(super) fn segment_stream_links(
             .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper offset", 0, u64::MAX))?;
         ctx.charge_collection_items(1, "nx segment stream links")?;
         ctx.charge_entities(1, "nx segment stream links")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentStreamLink>()),
+        ctx.reserve_capacity(
+            &mut links,
+            1,
             "nx segment stream links",
         )?;
         let mut id = ctx.retained_string(id_len, "nx segment stream link identity")?;
@@ -951,11 +947,6 @@ pub(super) fn segment_stream_links(
                 cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut links,
-            1,
-            "nx segment stream links",
-        )?;
         links.push(SegmentStreamLink {
             id,
             row: candidate.wrapper.row_ordinal,
@@ -1050,8 +1041,9 @@ pub(super) fn segment_body_bindings(
             .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
         ctx.charge_collection_items(1, "nx segment body bindings")?;
         ctx.charge_entities(1, "nx segment body bindings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentBodyBinding>()),
+        ctx.reserve_capacity(
+            &mut bindings,
+            1,
             "nx segment body bindings",
         )?;
         ctx.charge_retained(
@@ -1088,11 +1080,6 @@ pub(super) fn segment_body_bindings(
                 cadmpeg_core::decode::u64_from_index(link_len),
             )
         })?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut bindings,
-            1,
-            "nx segment body bindings",
-        )?;
         bindings.push(SegmentBodyBinding {
             id,
             stream_link,
@@ -1257,7 +1244,7 @@ mod tests {
         let container =
             crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
                 .expect("valid segment-index container");
-        let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
+        let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
 
         crate::test_support::with_decode_context_over(
@@ -1287,7 +1274,7 @@ mod tests {
         let container =
             crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
                 .expect("valid segment-index container");
-        let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
+        let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
         let source_entry = "/Root/UG_PART/UG_PART";
 
@@ -1414,7 +1401,7 @@ mod tests {
                 let root = cadmpeg_core::decode::View::over_retained(&file);
 
                 let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
-                let slot = std::mem::size_of::<super::SegmentStreamLink>();
+                let slot = 4 * std::mem::size_of::<super::SegmentStreamLink>();
                 let id = "nx:segment-stream-links:link#0";
 
                 crate::test_support::with_decode_context_over(
@@ -1520,7 +1507,7 @@ mod tests {
                 let root = cadmpeg_core::decode::View::over_retained(&file);
 
                 let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-                let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+                let binding_slot = 4 * std::mem::size_of::<super::SegmentBodyBinding>();
                 let first_id = "nx:segment-body-bindings:binding#0";
 
                 crate::test_support::with_decode_context_over(
@@ -1561,7 +1548,7 @@ mod tests {
                 let root = cadmpeg_core::decode::View::over_retained(&file);
 
                 let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-                let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+                let binding_slot = 4 * std::mem::size_of::<super::SegmentBodyBinding>();
                 let binding_id = "nx:segment-body-bindings:binding#0";
                 let stream_link = "nx:segment-stream-links:link#0";
 

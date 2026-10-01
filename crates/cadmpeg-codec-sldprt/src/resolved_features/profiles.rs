@@ -2580,7 +2580,7 @@ pub(crate) fn project_marker_backed_sketches(
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 sketch_entities,
                 projected.len(),
                 "append SLDPRT projected marker entities",
@@ -2894,7 +2894,7 @@ pub(crate) fn project_sketch_block_profiles(
                     continue;
                 };
                 if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         sketch_entities,
                         assembled.entities.len(),
                         "append SLDPRT sketch block entities",

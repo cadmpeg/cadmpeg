@@ -984,14 +984,9 @@ impl Graph {
                 ctx.insert_btree_set(&mut required, target, "NX topology required targets")?;
             }
             ctx.charge_collection_items(2, "NX topology admitted node indices")?;
-            reservation.grow(u64_from_index(candidate.bytes.len()))?;
-            let mut bytes = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                &mut bytes,
-                candidate.bytes.len(),
-                "NX topology admitted node bytes",
-            )?;
-            bytes.extend_from_slice(&candidate.bytes);
+            let bytes = reservation.with_storage(|| ctx.copy_slice(
+                &candidate.bytes, "NX topology admitted node bytes",
+            ))?;
             self.by_pos.insert(candidate.pos, key);
             self.nodes.insert(
                 key,
@@ -1089,7 +1084,7 @@ impl Graph {
         let mut graph = Self::default();
         let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
         for candidate in selected.into_iter().chain(admitted_ownership) {
-            let Some(node) = candidate.materialize(&mut node_reservation, stream)? else {
+            let Some(node) = candidate.materialize(ctx, &mut node_reservation, stream)? else {
                 continue;
             };
             let key = (node.kind, node.xmt);
@@ -1844,20 +1839,14 @@ impl NodeCandidate {
 
     fn materialize(
         self,
+        ctx: &DecodeContext<'_>,
         reservation: &mut ScopedReservation<'_>,
         stream: &[u8],
     ) -> Result<Option<Node>, CodecError> {
         let Some(bytes) = stream.get(self.pos..self.end) else {
             return Ok(None);
         };
-        reservation.grow(u64_from_index(bytes.len()))?;
-        let mut owned = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut owned,
-            bytes.len(),
-            "NX topology node bytes",
-        )?;
-        owned.extend_from_slice(bytes);
+        let owned = reservation.with_storage(|| ctx.copy_slice(bytes, "NX topology node bytes"))?;
         Ok(Some(Node {
             kind: self.kind,
             xmt: self.xmt,

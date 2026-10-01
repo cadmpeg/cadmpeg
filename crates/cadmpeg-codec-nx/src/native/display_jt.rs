@@ -3057,22 +3057,12 @@ pub(super) fn display_jt_indices(
             if row_count == 0 {
                 return Ok(None);
             }
-            let row_size = u64::try_from(std::mem::size_of::<DisplayJtIndexRow>())
-                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX))?;
             ctx.charge_collection_items(u64::from(declared_count), "admit DisplayJT index rows")?;
-            ctx.charge_retained(
-                u64::from(declared_count)
-                    .checked_mul(row_size)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX)
-                    })?,
-                "retain DisplayJT index rows",
-            )?;
             let mut rows = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut rows,
                 row_count,
-                "allocate DisplayJT index rows",
+                "retain DisplayJT index rows",
             )?;
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
@@ -4560,48 +4550,12 @@ pub(super) fn display_jt_compressed_element_sequences(
             let count = u64::try_from(parsed.len()).map_err(|_| {
                 ctx.refuse_codec_limit("count DisplayJT compressed elements", 0, u64::MAX)
             })?;
-            let id_slots = count
-                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    String,
-                >()))
-                .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT element ids", 0, count))?;
-            let element_slots = count
-                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    DisplayJtCompressedElement,
-                >()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("size DisplayJT compressed elements", 0, count)
-                })?;
             ctx.charge_collection_items(count, "store DisplayJT element ids")?;
-            ctx.charge_retained(id_slots, "retain DisplayJT element ids")?;
             ctx.charge_collection_items(count, "store DisplayJT compressed elements")?;
-            ctx.charge_retained(element_slots, "retain DisplayJT compressed elements")?;
         }
         let mut element_ids = Vec::new();
-        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut element_ids,
-            parsed.len(),
-            "allocate DisplayJT element ids",
-        )
-        .is_err()
-        {
-            return Err(budget
-                .0
-                .refuse_codec_limit("allocate DisplayJT element ids", 0, 1));
-        }
-        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut elements,
-            parsed.len(),
-            "allocate DisplayJT compressed elements",
-        )
-        .is_err()
-        {
-            return Err(budget.0.refuse_codec_limit(
-                "allocate DisplayJT compressed elements",
-                0,
-                1,
-            ));
-        }
+        budget.0.reserve_capacity(&mut element_ids, parsed.len(), "retain DisplayJT element ids")?;
+        budget.0.reserve_capacity(&mut elements, parsed.len(), "retain DisplayJT compressed elements")?;
         for (ordinal, element) in parsed.into_iter().enumerate() {
             {
                 let ctx = budget.0;
@@ -4655,12 +4609,6 @@ pub(super) fn display_jt_compressed_element_sequences(
         {
             let ctx = budget.0;
             ctx.charge_collection_items(1, "store DisplayJT compressed sequence")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    DisplayJtCompressedElementSequence,
-                >()),
-                "retain DisplayJT compressed sequence",
-            )?;
             let string_bytes = segment
                 .id
                 .len()
@@ -4671,10 +4619,10 @@ pub(super) fn display_jt_compressed_element_sequences(
             ctx.charge_retained(string_bytes, "retain DisplayJT compressed sequence fields")?;
         }
         let ctx = budget.0;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        budget.0.reserve_capacity(
             &mut sequences,
             1,
-            "allocate DisplayJT compressed sequence",
+            "retain DisplayJT compressed sequence",
         )?;
         let retained_tail = ctx.copy_retained(tail, "retain DisplayJT compressed sequence tail")?;
         let tail_work = cadmpeg_core::decode::u64_from_index(tail.len());

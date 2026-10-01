@@ -367,7 +367,7 @@ fn decode_frames(
         ctx.charge_collection_items(1, "Protein record outcome")?;
         match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
             Ok(Some(record)) => {
-                ctx.reserve_retained_admitted_vec(
+                ctx.reserve_capacity(
                     &mut outcome.records,
                     1,
                     "Protein record outcome",
@@ -377,7 +377,7 @@ fn decode_frames(
             Ok(None) => {
                 const DETAIL: &str = "Protein instance record header is malformed";
                 let detail = ctx.copy_retained_text(DETAIL, "Protein rejected record detail")?;
-                ctx.reserve_retained_admitted_vec(
+                ctx.reserve_capacity(
                     &mut outcome.rejected,
                     1,
                     "Protein record outcome",
@@ -388,7 +388,7 @@ fn decode_frames(
             Err(error) => {
                 let detail =
                     ctx.format_retained(format_args!("{error}"), "Protein rejected record detail")?;
-                ctx.reserve_retained_admitted_vec(
+                ctx.reserve_capacity(
                     &mut outcome.rejected,
                     1,
                     "Protein record outcome",

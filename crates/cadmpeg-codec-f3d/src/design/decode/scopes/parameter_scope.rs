@@ -556,18 +556,20 @@ pub(crate) fn admit_history_bound_scope_variants(
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<(), CodecError> {
-    let mut admitted = ctx.alloc_filled(scopes.len(), true, "f3d scope admission")?;
+    let (mut admitted, _admitted_storage) = ctx.temporary_vec(scopes.len(), "f3d scope admission")?;
+    for _ in 0..scopes.len() { admitted.push(true); }
+    let mut group_storage = ctx.reserve_scoped(0, "f3d scope admission groups")?;
     let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
-        ctx.push_hash_group(
+        group_storage.with_storage(|| ctx.push_hash_group(
             &mut groups,
             key,
             index,
             "f3d scope admission groups",
             "f3d scope admission group indices",
-        )?;
+        ))?;
     }
 
     for indices in groups.values() {
@@ -629,6 +631,7 @@ pub(crate) fn admit_history_bound_scope_variants(
     }
 
     drop(groups);
+    drop(group_storage);
     let retained_count = admitted.iter().filter(|selected| **selected).count();
 
     let mut retained = Vec::new();

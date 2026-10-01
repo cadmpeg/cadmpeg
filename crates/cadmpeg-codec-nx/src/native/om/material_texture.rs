@@ -186,7 +186,7 @@ pub(in crate::native) fn material_texture_assets(
         .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
         .count();
     let mut entries = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut entries,
         count,
         "allocate NX material texture entries",

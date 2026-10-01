@@ -483,7 +483,7 @@ impl<'a> RseInventory<'a> {
             "admit RSe database descriptors",
         )?;
         let mut database_descriptors =
-            DecodeContext::admitted_vec(databases.len(), "admit RSe database descriptors")?;
+            ctx.vector_storage(databases.len(), "admit RSe database descriptors")?;
         for (band, stream_id) in databases {
             let state = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot

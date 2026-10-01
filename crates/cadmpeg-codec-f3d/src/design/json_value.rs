@@ -140,7 +140,7 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
             refusal: &mut *self.refusal,
             member: true,
         })? {
-            self.admit(self.ctx.reserve_retained_admitted_vec(
+            self.admit(self.ctx.reserve_capacity(
                 &mut values,
                 1,
                 "f3d configuration JSON array allocation",

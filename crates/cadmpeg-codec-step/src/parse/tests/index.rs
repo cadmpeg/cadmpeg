@@ -87,7 +87,7 @@ fn entity_union_queries_remain_ordered_across_repeated_queries() {
 fn anchor_budget_charges_only_resource_expansion() {
     crate::test_support::with_service_context(b"", |_, ctx| {
         let anchors = BTreeMap::new();
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
         resolver.remaining_nodes = 0;
 
         let ordinary = Value::List((0..1024).map(Value::Integer).collect());
@@ -106,7 +106,7 @@ fn anchor_budget_still_bounds_resource_materialization() {
             "a".to_string(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
         resolver.remaining_nodes = 2;
 
         assert!(resolver

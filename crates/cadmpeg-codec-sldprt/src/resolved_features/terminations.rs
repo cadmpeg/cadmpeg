@@ -1797,7 +1797,7 @@ pub(crate) fn project_compact_combine_paths(
                     continue;
                 }
             }
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut dependencies,
                 1,
                 OPERATION,

@@ -1864,7 +1864,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
         };
         ctx.charge_collection_items(2, "nx coupled support UV boundary lanes")?;
         for lane in &mut lanes {
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 lane,
                 1,
                 "nx coupled support UV boundary lanes",

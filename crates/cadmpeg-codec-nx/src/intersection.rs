@@ -1235,25 +1235,14 @@ fn chart_points(
     }
 
     let operation = "NX raw ext11 chart fields";
-    let fields = std::mem::size_of::<Point3>() + std::mem::size_of::<f64>();
-    let bytes = count_u64
-        .checked_mul(cadmpeg_core::decode::u64_from_index(fields))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
     ctx.charge_collection_items(
         count_u64
             .checked_mul(2)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
         operation,
     )?;
-    let _reservation = ctx.reserve_scoped(bytes, operation)?;
-    let mut points = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, count, operation)?;
-    let mut native_parameters = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut native_parameters,
-        count,
-        operation,
-    )?;
+    let (mut points, _point_storage) = ctx.scoped_vector_storage(count, operation)?;
+    let (mut native_parameters, _parameter_storage) = ctx.scoped_vector_storage(count, operation)?;
     let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
     let mut lane_reservations = [
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
@@ -1557,18 +1546,7 @@ fn uv_at(
     let count_u64 = u64::from(count);
     let operation = "NX support-UV scalar lane";
     ctx.charge_collection_items(count_u64, operation)?;
-    let _reservation = ctx.reserve_scoped(
-        count_u64
-            .checked_mul(8)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
-        operation,
-    )?;
-    let mut scalars = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut scalars,
-        count_usize,
-        operation,
-    )?;
+    let (mut scalars, _reservation) = ctx.scoped_vector_storage(count_usize, operation)?;
     for _ in 0..count_usize {
         let Some(value) = view.f64_be() else {
             return Ok(None);

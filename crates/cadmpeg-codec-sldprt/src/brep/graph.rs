@@ -1330,16 +1330,17 @@ fn selected_typed_face_offsets(
 }
 
 fn append_entity_facts(
+    ctx: &DecodeContext<'_>,
     target: &mut entity::Facts,
     mut source: entity::Facts,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut target.face_colors,
         source.face_colors.len(),
         "merge Parasolid face colors",
     )?;
     target.face_colors.append(&mut source.face_colors);
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut target.face_color_versions,
         source.face_color_versions.len(),
         "merge Parasolid face color versions",
@@ -1347,13 +1348,13 @@ fn append_entity_facts(
     target
         .face_color_versions
         .append(&mut source.face_color_versions);
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut target.face_atoms,
         source.face_atoms.len(),
         "merge Parasolid face atoms",
     )?;
     target.face_atoms.append(&mut source.face_atoms);
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_vec(
         &mut target.body_modifiers,
         source.body_modifiers.len(),
         "merge Parasolid body modifiers",
@@ -1444,7 +1445,7 @@ pub(crate) fn decode_bodies(
         if !initialized || !is_deltas {
             if initialized {
                 tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
-                append_entity_facts(&mut facts, scanned_facts)?;
+                append_entity_facts(ctx, &mut facts, scanned_facts)?;
             } else {
                 tables = scanned_tables;
                 facts = scanned_facts;
@@ -1452,7 +1453,7 @@ pub(crate) fn decode_bodies(
             }
         } else {
             tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
-            append_entity_facts(&mut facts, scanned_facts)?;
+            append_entity_facts(ctx, &mut facts, scanned_facts)?;
         }
     }
     decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
@@ -4143,7 +4144,7 @@ fn derive_cylindrical_pcurves(
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut out.losses,
         refusals.len(),
         "move cylindrical pcurve losses",

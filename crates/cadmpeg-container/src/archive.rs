@@ -144,7 +144,7 @@ impl<'a> ArchiveSnapshot<'a> {
             cadmpeg_core::decode::u64_from_index(archive.len()),
             "ZIP decoded name set",
         )?;
-        let mut entries = DecodeContext::admitted_vec(archive.len(), "ZIP entry records")?;
+        let mut entries = ctx.vector_storage(archive.len(), "ZIP entry records")?;
         for index in 0..archive.len() {
             let file = archive.by_index(index).map_err(|error| {
                 CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))

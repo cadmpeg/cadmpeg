@@ -3976,15 +3976,7 @@ pub(super) fn feature_boolean_operations(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX Boolean operations")
                 .and_then(|()| {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureBooleanOperation,
-                        >()),
-                        "NX Boolean operations",
-                    )
-                })
-                .and_then(|()| {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut operations,
                         1,
                         "allocate NX Boolean operations",
@@ -4118,15 +4110,7 @@ pub(super) fn feature_operation_records(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX feature operation records")
                 .and_then(|()| {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureOperationRecord,
-                        >()),
-                        "NX feature operation records",
-                    )
-                })
-                .and_then(|()| {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut records,
                         1,
                         "allocate NX feature operation records",
@@ -4336,15 +4320,7 @@ pub(super) fn feature_operation_body_writes(
                 if let Err(error) = ctx
                     .charge_collection_items(1, "NX operation body writes")
                     .and_then(|()| {
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                                FeatureOperationBodyWrite,
-                            >()),
-                            "NX operation body writes",
-                        )
-                    })
-                    .and_then(|()| {
-                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                        ctx.reserve_capacity(
                             &mut writes,
                             1,
                             "allocate NX operation body writes",

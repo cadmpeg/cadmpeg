@@ -1107,7 +1107,7 @@ fn parse_layer_extensions(
         "Rhino layer extension entries",
     )?;
     let mut values = Vec::new();
-    ctx.reserve_retained_admitted_vec(&mut values, count, "Rhino layer extension capacity")?;
+    ctx.reserve_capacity(&mut values, count, "Rhino layer extension capacity")?;
     for _ in 0..count {
         let entry = chunk_at(
             data,

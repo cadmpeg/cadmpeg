@@ -278,7 +278,7 @@ fn delete_construction_payload_from_field(
         "NX DELETE source block references",
     )?;
     let mut data_blocks = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut data_blocks,
         slots.len(),
         "allocate NX DELETE source block references",

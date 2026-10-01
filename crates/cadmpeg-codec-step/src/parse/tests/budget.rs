@@ -587,7 +587,7 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, &ctx)
+        AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
             .resolve_root(&value)
             .expect("service admits list"),
         value
@@ -596,7 +596,7 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
     limited.limits.max_collection_items = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx)
+    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("one list node plus eight slots exceed eight items");
     assert!(
@@ -616,7 +616,7 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, &ctx)
+        AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
             .resolve_root(&value)
             .expect("service admits memo"),
         anchors["a"]
@@ -625,7 +625,7 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
     limited.limits.max_collection_items = 9;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx)
+    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("memo entry exceeds nine prior admitted items");
     assert!(
@@ -642,7 +642,7 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, &ctx)
+        AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
             .resolve_root(&value)
             .expect("service admits typed value"),
         value
@@ -652,7 +652,7 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Value>());
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx)
+    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
     assert!(
@@ -669,7 +669,7 @@ fn anchor_reference_stack_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx)
+    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("reference stack needs one item");
     assert!(matches!(
@@ -690,8 +690,9 @@ fn cyclic_anchor_error_text_refuses_retained_limit() {
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
             .expect("root fits retained policy");
+        let mut resolver = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits");
         matches!(
-            AnchorResolver::new(&anchors, &ctx).resolve_root(&value),
+            resolver.resolve_root(&value),
             Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "step_cyclic_anchor_error_text"
@@ -709,16 +710,16 @@ fn anchor_reference_stack_refuses_retained_limit() {
     let value = Value::Resource("a".into());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx)
+    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
         .resolve_root(&value)
-        .expect_err("reference stack needs retained pointer storage");
+        .expect_err("reference stack needs scoped pointer storage");
     assert!(matches!(
         error,
         ResolveError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
+            if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "step_anchor_reference_stack_storage"
     ));
 }

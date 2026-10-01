@@ -706,20 +706,17 @@ impl<'a> Container<'a> {
             candidate = Some((count_offset, count, ids_start, id_bytes));
             break;
         }
-        let Some((count_offset, count, ids_start, id_bytes)) = candidate else {
+        let Some((count_offset, count, ids_start, _id_bytes)) = candidate else {
             return Ok(None);
         };
         let count_u64 = u64::try_from(count)
             .map_err(|_| CodecError::NotImplemented("FastLoad ID count exceeds u64".into()))?;
-        let id_bytes_u64 = u64::try_from(id_bytes)
-            .map_err(|_| CodecError::NotImplemented("FastLoad ID bytes exceed u64".into()))?;
         ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
-        ctx.charge_retained(id_bytes_u64, "retain NX FastLoad object IDs")?;
         let mut object_ids = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut object_ids,
             count,
-            "allocate NX FastLoad object IDs",
+            "retain NX FastLoad object IDs",
         )?;
         for ordinal in 0..count {
             let offset = ids_start + ordinal * 4;
@@ -1369,24 +1366,8 @@ pub(crate) fn scan_bytes<'a>(
         Region::Footer,
         footer_directory_end,
     )?;
-    let footer_items = u64::try_from(footer_entries.len())
-        .map_err(|_| CodecError::NotImplemented("FOOTER item count exceeds u64".into()))?;
-    let footer_bytes = footer_entries
-        .len()
-        .checked_mul(std::mem::size_of::<DirEntry>())
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX directory regions", 0, footer_items))?;
-    {
-        let _footer_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(footer_bytes),
-            "join NX directory regions",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut entries,
-            footer_entries.len(),
-            "join NX directory regions",
-        )?;
-        entries.extend(footer_entries);
-    }
+    ctx.reserve_capacity(&mut entries, footer_entries.len(), "join NX directory regions")?;
+    entries.extend(footer_entries);
     if header_end > fo {
         return Err(CodecError::Malformed(
             "HEADER directory overlaps the FOOTER region".to_string(),
@@ -1500,7 +1481,6 @@ pub(crate) fn scan_legacy<'a>(
         let retained = "/Root/"
             .len()
             .checked_add(entry.path().len())
-            .and_then(|length| length.checked_add(std::mem::size_of::<DirEntry>()))
             .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(retained),
@@ -1514,7 +1494,7 @@ pub(crate) fn scan_legacy<'a>(
                 }),
             CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut entries,
             1,
             "retain legacy NX directory entry",
@@ -1584,19 +1564,11 @@ fn directory_region(
         ));
     }
     ctx.charge_collection_items(u64::from(count), "admit NX directory entries")?;
-    let entry_bytes = capacity
-        .checked_mul(std::mem::size_of::<DirEntry>())
-        .ok_or_else(|| {
-            CodecError::NotImplemented("NX directory entries exceed address space".into())
-        })?;
-    let entry_bytes_u64 = u64::try_from(entry_bytes)
-        .map_err(|_| CodecError::NotImplemented("NX directory entries exceed u64".into()))?;
-    ctx.charge_retained(entry_bytes_u64, "retain NX directory entries")?;
     let mut entries = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut entries,
         capacity,
-        "allocate NX directory entries",
+        "retain NX directory entries",
     )?;
     let mut at = entries_offset;
     for ordinal in 0..count {

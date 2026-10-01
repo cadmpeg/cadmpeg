@@ -355,7 +355,8 @@ fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes = 23;
+            policy.limits.max_retained_bytes =
+    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::ContainerEntry>()) + 23;
         },
         |ctx| {
             let error = crate::inspect::summarize(ctx, &scan)

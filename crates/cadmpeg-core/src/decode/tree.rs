@@ -165,7 +165,7 @@ fn at_depth<T>(
         .checked_add(4)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
     let (_reservation, mut guards) = {
-        let (guards, reservation) = ctx.scoped_admitted_vec(capacity, operation)?;
+        let (guards, reservation) = ctx.scoped_vector_storage(capacity, operation)?;
         (reservation, guards)
     };
     for _ in 0..count {

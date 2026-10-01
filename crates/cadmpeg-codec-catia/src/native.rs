@@ -9090,26 +9090,26 @@ fn consolidated_revolutions(
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<Vec<CatiaConsolidatedRevolution>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia native revolution workspace")?;
     let mut resolved_profiles = HashMap::new();
-    for resolved in
-        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)?
-    {
-        ctx.insert_hash_map(
+    let (resolved, _resolved_storage) = ctx.with_scoped_storage("catia native revolution profiles", || crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records))?;
+    for resolved in resolved {
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut resolved_profiles,
             u64_from_index(resolved.revolution.pos),
             u64_from_index(resolved.profile.pos),
             "catia_native_revolution_profile_index",
-        )?;
+        ))?;
     }
     let mut circle_ids = HashMap::new();
     for circle in circles {
-        let id = ctx.copy_retained_text(&circle.id, "catia_native_revolution_circle_id")?;
-        ctx.insert_hash_map(
+        let id = temporary.with_storage(|| ctx.copy_retained_text(&circle.id, "catia_native_revolution_circle_id"))?;
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut circle_ids,
             circle.byte_offset,
             id,
             "catia_native_revolution_circle_index",
-        )?;
+        ))?;
     }
     let mut revolutions = Vec::new();
     for (index, revolution) in

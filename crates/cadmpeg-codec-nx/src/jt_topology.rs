@@ -238,7 +238,7 @@ impl Decoder<'_> {
         let faces = ctx.alloc_filled(valence, None, "nx JT vertex face slots")?;
         ctx.charge_collection_items(1, "nx JT topology vertices")?;
         let index = self.vertices.len();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut self.vertices,
             1,
             "nx JT topology vertices",

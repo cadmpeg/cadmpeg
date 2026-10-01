@@ -550,7 +550,7 @@ fn parse_pattern_feature(
         "admit Inventor pattern feature property slots",
     )?;
     let mut property_slots =
-        DecodeContext::admitted_vec(slot_count, "admit Inventor pattern feature property slots")?;
+        ctx.vector_storage(slot_count, "admit Inventor pattern feature property slots")?;
     for _ in 0..6 {
         property_slots.push(cursor.reference("pattern-feature property slot")?);
     }
@@ -569,7 +569,7 @@ fn parse_pattern_feature(
             }
             if version > 20 {
                 ctx.charge_collection_items(6, "admit Inventor pattern feature extension values")?;
-                DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     &mut extension_values,
                     6,
                     "admit Inventor pattern feature extension values",

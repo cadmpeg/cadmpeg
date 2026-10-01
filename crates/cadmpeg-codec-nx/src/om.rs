@@ -1322,7 +1322,7 @@ impl<'a> Section<'a> {
             return Ok(None);
         };
         let mut ends =
-            cadmpeg_core::decode::DecodeContext::admitted_vec(2, "NX operation state boundaries")?;
+            ctx.vector_storage(2, "NX operation state boundaries")?;
         if let Some(table) = &group {
             let Some(overlap_end) =
                 terminal.checked_add(table.groups().first().opener().bytes().len())
@@ -3345,7 +3345,7 @@ fn operation_state_group_table_before_counter_map(
             continue;
         };
         ctx.charge_collection_items(1, "nx operation-state group candidates")?;
-        ctx.reserve_retained_admitted_vec(
+        ctx.reserve_capacity(
             &mut candidates,
             1,
             "nx operation-state group candidates",
@@ -3424,7 +3424,7 @@ fn operation_state_group_table_before_counter_map(
         "nx operation-state group path",
     )?;
     let mut path = Vec::new();
-    ctx.reserve_retained_admitted_vec(&mut path, terminal.length, "nx operation-state group path")?;
+    ctx.reserve_capacity(&mut path, terminal.length, "nx operation-state group path")?;
     let mut candidate = Some(terminal.last_candidate);
     while let Some(candidate_index) = candidate {
         path.push(candidate_index);
@@ -3439,7 +3439,7 @@ fn operation_state_group_table_before_counter_map(
         "nx operation-state groups",
     )?;
     let mut groups = Vec::new();
-    ctx.reserve_retained_admitted_vec(&mut groups, path.len(), "nx operation-state groups")?;
+    ctx.reserve_capacity(&mut groups, path.len(), "nx operation-state groups")?;
     for candidate in path {
         let Some(group) =
             operation_state_group_at(ctx, bytes, candidates[candidate].0, map_start, base_offset)?

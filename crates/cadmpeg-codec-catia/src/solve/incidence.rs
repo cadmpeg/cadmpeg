@@ -4076,12 +4076,13 @@ pub(super) fn deferred_boundary_assignment(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred incident edges", u64::MAX, u64::MAX)
         })?;
+    let mut temporary = ctx.reserve_scoped(0, "catia deferred boundary workspace")?;
     let mut incident = Vec::new();
-    ctx.reserve_vec(
+    temporary.with_storage(|| ctx.reserve_vec(
         &mut incident,
         incident_count,
         "catia deferred incident edges",
-    )?;
+    ))?;
     incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
@@ -4096,18 +4097,18 @@ pub(super) fn deferred_boundary_assignment(
         "catia deferred incident edges sort",
     )?;
     incident.dedup();
-    let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
+    let Some(incidence) = temporary.with_storage(|| incidence_cycles(ctx, &incident, edge_points))? else {
         return Ok(None);
     };
     if incidence.len() != domain.cycles.len() {
         return Ok(None);
     }
     let mut missing = HashSet::new();
-    ctx.reserve_set(
+    temporary.with_storage(|| ctx.reserve_set(
         &mut missing,
         domain.missing_edges.len(),
-        "catia deferred missing edges",
-    )?;
+            "catia deferred missing edges",
+        ))?;
     missing.extend(domain.missing_edges.iter().copied());
     let compatibility_count = domain
         .cycles
@@ -4117,58 +4118,60 @@ pub(super) fn deferred_boundary_assignment(
             ctx.refuse_codec_limit("catia deferred compatibility cells", u64::MAX, u64::MAX)
         })?;
     let mut compatible = Vec::new();
-    ctx.reserve_vec(
+    temporary.with_storage(|| ctx.reserve_vec(
         &mut compatible,
         domain.cycles.len(),
-        "catia deferred compatibility rows",
-    )?;
+            "catia deferred compatibility rows",
+        ))?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred compatibility cells",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        temporary.with_storage(|| ctx.reserve_capacity(
             &mut row,
             incidence.len(),
             "catia deferred compatibility cells",
-        )?;
+        ))?;
         for candidate in &incidence {
-            row.push(deferred_boundary_cycle_assignment(
+            row.push(temporary.with_storage(|| deferred_boundary_cycle_assignment(
                 ctx, mesh, candidate, &missing,
-            )?);
+            ))?);
         }
         compatible.push(row);
     }
     let mut boolean_compatible = Vec::new();
-    ctx.reserve_vec(
+    temporary.with_storage(|| ctx.reserve_vec(
         &mut boolean_compatible,
         domain.cycles.len(),
-        "catia deferred matching rows",
-    )?;
+            "catia deferred matching rows",
+        ))?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred matching cells",
     )?;
     for cycles in &compatible {
         let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        temporary.with_storage(|| ctx.reserve_capacity(
             &mut row,
             cycles.len(),
             "catia deferred matching cells",
-        )?;
+        ))?;
         row.extend(cycles.iter().map(Option::is_some));
         boolean_compatible.push(row);
     }
-    let mut matched_mesh = ctx.alloc_filled(incidence.len(), None, "catia_deferred_match")?;
+    let (mut matched_mesh, _matched_mesh_storage) = ctx.temporary_vec(incidence.len(), "catia_deferred_match")?;
+    for _ in 0..incidence.len() { matched_mesh.push(None); }
     for mesh in 0..domain.cycles.len() {
-        let mut visited = ctx.alloc_filled(incidence.len(), false, "catia_deferred_visit")?;
+        let (mut visited, _visited_storage) = ctx.temporary_vec(incidence.len(), "catia_deferred_visit")?;
+    for _ in 0..incidence.len() { visited.push(false); }
         if !augment_cycle_matching(mesh, &boolean_compatible, &mut visited, &mut matched_mesh) {
             return Ok(None);
         }
     }
-    let mut boundaries =
-        ctx.alloc_filled(domain.cycles.len(), None, "catia_deferred_boundaries")?;
+    let (mut boundaries, _boundaries_storage) = ctx.temporary_vec(domain.cycles.len(), "catia_deferred_boundaries")?;
+    for _ in 0..domain.cycles.len() { boundaries.push(None); }
     for (incidence, mesh) in matched_mesh.into_iter().enumerate() {
         let Some(mesh) = mesh else {
             return Ok(None);
@@ -4209,12 +4212,13 @@ fn deferred_boundary_closes(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred close incident edges", u64::MAX, u64::MAX)
         })?;
+    let mut temporary = ctx.reserve_scoped(0, "catia deferred close boundary workspace")?;
     let mut incident = Vec::new();
-    ctx.reserve_vec(
+    temporary.with_storage(|| ctx.reserve_vec(
         &mut incident,
         incident_count,
         "catia deferred close incident edges",
-    )?;
+    ))?;
     incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
@@ -4229,18 +4233,18 @@ fn deferred_boundary_closes(
         "catia deferred close incident edges sort",
     )?;
     incident.dedup();
-    let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
+    let Some(incidence) = temporary.with_storage(|| incidence_cycles(ctx, &incident, edge_points))? else {
         return Ok(false);
     };
     if incidence.len() != domain.cycles.len() {
         return Ok(false);
     }
     let mut missing = HashSet::new();
-    ctx.reserve_set(
+    temporary.with_storage(|| ctx.reserve_set(
         &mut missing,
         domain.missing_edges.len(),
-        "catia deferred close missing edges",
-    )?;
+            "catia deferred close missing edges",
+        ))?;
     missing.extend(domain.missing_edges.iter().copied());
     let cells = domain
         .cycles
@@ -4254,22 +4258,22 @@ fn deferred_boundary_closes(
             )
         })?;
     let mut compatible = Vec::new();
-    ctx.reserve_vec(
+    temporary.with_storage(|| ctx.reserve_vec(
         &mut compatible,
         domain.cycles.len(),
-        "catia deferred close compatibility rows",
-    )?;
+            "catia deferred close compatibility rows",
+        ))?;
     ctx.charge_collection_items(
         u64_from_index(cells),
         "catia deferred close compatibility cells",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        temporary.with_storage(|| ctx.reserve_capacity(
             &mut row,
             incidence.len(),
             "catia deferred close compatibility cells",
-        )?;
+        ))?;
         for candidate in &incidence {
             row.push(deferred_boundary_cycle_matches(
                 ctx, mesh, candidate, &missing,
@@ -4277,9 +4281,11 @@ fn deferred_boundary_closes(
         }
         compatible.push(row);
     }
-    let mut matched_mesh = ctx.alloc_filled(incidence.len(), None, "catia_deferred_close_match")?;
+    let (mut matched_mesh, _matched_mesh_storage) = ctx.temporary_vec(incidence.len(), "catia_deferred_close_match")?;
+    for _ in 0..incidence.len() { matched_mesh.push(None); }
     for mesh in 0..domain.cycles.len() {
-        let mut visited = ctx.alloc_filled(incidence.len(), false, "catia_deferred_close_visit")?;
+        let (mut visited, _visited_storage) = ctx.temporary_vec(incidence.len(), "catia_deferred_close_visit")?;
+    for _ in 0..incidence.len() { visited.push(false); }
         if !augment_cycle_matching(mesh, &compatible, &mut visited, &mut matched_mesh) {
             return Ok(false);
         }

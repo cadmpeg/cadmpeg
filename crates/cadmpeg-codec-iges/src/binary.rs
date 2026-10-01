@@ -274,7 +274,7 @@ impl<'a> BitReader<'a> {
                 return Err(malformed("a Binary string payload is truncated"));
             }
 
-            ctx.reserve_retained_admitted_vec(&mut output, count, "iges binary string payload")?;
+            ctx.reserve_capacity(&mut output, count, "iges binary string payload")?;
             for _ in 0..count {
                 let byte = self.read_bits(8)?;
                 let byte =
@@ -1348,7 +1348,7 @@ fn append_output_card(
     card: &[u8; CARD_WIDTH],
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_retained_admitted_vec(output, 81, "iges binary normalized card")?;
+    ctx.reserve_capacity(output, 81, "iges binary normalized card")?;
     output.extend_from_slice(card);
     output.push(b'\n');
     Ok(())

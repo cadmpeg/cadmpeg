@@ -2522,7 +2522,7 @@ fn finalize_point_topology(
         "nx point topology free vertices",
     )?;
     let mut free_vertices = ctx.collection_vec(point_count, "nx point topology vertices")?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut ir.model.vertices,
         point_count,
         "nx point topology vertices",

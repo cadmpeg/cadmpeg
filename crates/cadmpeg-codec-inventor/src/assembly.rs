@@ -388,7 +388,7 @@ fn parse_occurrence<'a>(
         cadmpeg_core::decode::u64_from_index(related_count),
         "admit Inventor occurrence related references",
     )?;
-    let mut related_references = DecodeContext::admitted_vec(
+    let mut related_references = ctx.vector_storage(
         related_count,
         "admit Inventor occurrence related references",
     )?;
