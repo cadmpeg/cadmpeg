@@ -614,9 +614,12 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                     endpoint_pair: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
                     endpoint_index: crate::families::zero_entity::topology::EdgeEnd::Start,
                 },
-            ].try_into().expect("nonempty incidence"),
+            ]
+            .try_into()
+            .expect("nonempty incidence"),
             representative_point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(0.0).expect("zero deviation"),
+            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(0.0)
+                .expect("zero deviation"),
         });
     let mut invalid_endpoint_locus_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_endpoint_locus

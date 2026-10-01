@@ -133,7 +133,13 @@ impl TryFrom<Class5b5cWire> for CatiaConsolidatedClass5b5cRecord {
     fn try_from(wire: Class5b5cWire) -> Result<Self, Self::Error> {
         let record = Self {
             id: wire.id,
-            frame: ConsolidatedRawFrame::new(wire.byte_offset, wire.width, wire.flag, wire.header_token, wire.payload)?,
+            frame: ConsolidatedRawFrame::new(
+                wire.byte_offset,
+                wire.width,
+                wire.flag,
+                wire.header_token,
+                wire.payload,
+            )?,
             source_index: wire.source_index,
             source_offset: wire.source_offset,
             class: wire.class,
@@ -196,7 +202,14 @@ mod tests {
     fn frame_wire_preserves_byte_payload_and_checks_derived_length() {
         let record = CatiaConsolidatedClass5b5cRecord {
             id: "catia:consolidated:class5b5c-record#0".to_owned(),
-            frame: ConsolidatedRawFrame::new(42, ConsolidatedFrameWidth::Two, ConsolidatedFrameFlag::Flag03, 5, vec![0, 0, 0]).expect("checked fixture frame"),
+            frame: ConsolidatedRawFrame::new(
+                42,
+                ConsolidatedFrameWidth::Two,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                vec![0, 0, 0],
+            )
+            .expect("checked fixture frame"),
             source_index: 0,
             source_offset: 42,
             class: CatiaClass5b5c::Class5b,

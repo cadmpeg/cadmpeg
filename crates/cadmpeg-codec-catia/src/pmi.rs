@@ -48,9 +48,14 @@ pub(crate) fn transfer_dimensions(
         for annotation in &ir.model.pmi {
             let work = cadmpeg_core::decode::u64_from_index(annotation.id.as_str().len())
                 .checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
-                .ok_or_else(|| ctx.refuse_codec_limit("catia_pmi_duplicate_search", u64::MAX, u64::MAX))?;
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_pmi_duplicate_search", u64::MAX, u64::MAX)
+                })?;
             ctx.charge_work(work, "catia_pmi_duplicate_search")?;
-            if annotation.id == id { duplicate = true; break; }
+            if annotation.id == id {
+                duplicate = true;
+                break;
+            }
         }
         if duplicate {
             continue;
@@ -302,11 +307,32 @@ mod tests {
 
     #[test]
     fn pmi_duplicate_search_refuses_work() {
-        let native = CatiaNative { entity_records: vec![range_only_entity("DiameterThread")], ..CatiaNative::default() };
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
         let mut ir = CadIr::empty();
-        crate::test_support::with_service_context(|ctx| transfer_dimensions(ctx, &mut ir, &native, &crate::decode::ModelingGraphScope::Unscoped, &HashSet::new())).expect("first dimension");
+        crate::test_support::with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("first dimension");
         crate::test_support::with_work_limit(0, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(ctx, &mut ir, &native, &crate::decode::ModelingGraphScope::Unscoped, &HashSet::new()).expect_err("duplicate scan consumes work") else { panic!("resource refusal required") };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+            .expect_err("duplicate scan consumes work") else {
+                panic!("resource refusal required")
+            };
             assert_eq!(limit.operation, "catia_pmi_duplicate_search");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });

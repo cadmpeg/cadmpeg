@@ -146,12 +146,20 @@ fn zero_entity_oriented_occurrences(
 }
 
 /// Refuse a local search ceiling without replacing a session refusal.
-fn charge_endpoint_work(ctx: &DecodeContext<'_>, budget: &WorkBudget<'_>) -> Result<(), CodecError> {
-    if budget.charge() { return Ok(()); }
-    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
+fn charge_endpoint_work(
+    ctx: &DecodeContext<'_>,
+    budget: &WorkBudget<'_>,
+) -> Result<(), CodecError> {
+    if budget.charge() {
+        return Ok(());
+    }
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let limit = cadmpeg_core::decode::u64_from_index(budget.consumed());
-    let requested = limit.checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_zero_endpoint_work", u64::MAX - 1, u64::MAX))?;
+    let requested = limit.checked_add(1).ok_or_else(|| {
+        ctx.refuse_codec_limit("catia_zero_endpoint_work", u64::MAX - 1, u64::MAX)
+    })?;
     Err(ctx.refuse_codec_limit("catia_zero_endpoint_work", limit, requested))
 }
 
@@ -705,20 +713,29 @@ mod tests {
     #[test]
     fn native_endpoint_inventory_propagates_zero_work_refusal() {
         let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-        let occurrences = [occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
-            occurrence(11, 2, endpoints, Point3::new(0.5, 0.0, 0.0))];
+        let occurrences = [
+            occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(11, 2, endpoints, Point3::new(0.5, 0.0, 0.0)),
+        ];
         crate::test_support::with_work_limit(0, |ctx| {
-            let error = endpoint_pair_candidates(ctx, &occurrences).expect_err("inventory work refused");
-            let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            let error =
+                endpoint_pair_candidates(ctx, &occurrences).expect_err("inventory work refused");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
         let pairs = [super::ZeroEntityEndpointPairCandidate {
-            face_record_ordinals: [10, 11], support_record_ordinals: [1, 2],
-            model_endpoints: [finite(endpoints[0]); 2], model_midpoint: finite(endpoints[0]),
+            face_record_ordinals: [10, 11],
+            support_record_ordinals: [1, 2],
+            model_endpoints: [finite(endpoints[0]); 2],
+            model_midpoint: finite(endpoints[0]),
         }];
         crate::test_support::with_work_limit(0, |ctx| {
             let error = endpoint_locus_candidates(ctx, &pairs).expect_err("locus work refused");
-            let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
     }

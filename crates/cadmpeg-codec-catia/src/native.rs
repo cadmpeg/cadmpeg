@@ -28,7 +28,6 @@ pub(crate) mod class5b5c;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
 
 pub(crate) mod edge_definition;
-use edge_definition::CatiaConsolidatedEdgeDefinition;
 
 mod edge_node;
 use edge_node::{
@@ -7465,7 +7464,8 @@ pub(crate) struct CatiaZeroEntityEndpointLocusCandidate {
     /// Stable derived-locus identity.
     pub(crate) id: String,
     /// Incident endpoints in endpoint-pair and endpoint order.
-    pub(crate) incident_endpoint_pair_endpoints: cadmpeg_ir::features::NonEmptyMembers<CatiaZeroEntityEndpointPairEndpoint>,
+    pub(crate) incident_endpoint_pair_endpoints:
+        cadmpeg_ir::features::NonEmptyMembers<CatiaZeroEntityEndpointPairEndpoint>,
     /// Model-space point from the first incident endpoint.
     pub(crate) representative_point: FinitePoint3,
     /// Maximum pairwise distance between incident endpoint coordinates.
@@ -9399,9 +9399,16 @@ fn zero_entity_endpoint_locus_candidates(
                 format_args!("catia:zero-entity:endpoint-locus-candidate#{index}"),
                 "catia_native_zero_endpoint_locus_id",
             )?,
-            incident_endpoint_pair_endpoints: endpoints.try_into().map_err(CodecError::malformed)?,
+            incident_endpoint_pair_endpoints: endpoints
+                .try_into()
+                .map_err(CodecError::malformed)?,
             representative_point: candidate.representative_point,
-            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(candidate.maximum_deviation).ok_or_else(|| CodecError::malformed("endpoint locus deviation must be finite and nonnegative"))?,
+            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(
+                candidate.maximum_deviation,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed("endpoint locus deviation must be finite and nonnegative")
+            })?,
         });
     }
     Ok(output)
@@ -9656,7 +9663,12 @@ impl CatiaNative {
         let mut parsed_object_graphs =
             object_graph::parse_all_with_paired_roots(ctx, bytes, &paired_object_graph_roots)?;
         let mut parsed_value_blocks = value_block::parse(ctx, bytes)?;
-        filter_nested_inventory(ctx, &mut parsed_object_graphs, &mut parsed_value_blocks, &mut parsed_catalogs)?;
+        filter_nested_inventory(
+            ctx,
+            &mut parsed_object_graphs,
+            &mut parsed_value_blocks,
+            &mut parsed_catalogs,
+        )?;
         let mut catalogs = Vec::new();
         for catalog in parsed_catalogs {
             let catalog = CatiaCatalog::from_source(ctx, catalog)?;
@@ -10062,33 +10074,39 @@ impl CatiaNative {
 mod test_only;
 /// Admit all extent comparisons before removing inventories nested inside another frame.
 fn filter_nested_inventory(
-    ctx: &DecodeContext<'_>, graphs: &mut Vec<object_graph::ObjectGraph>,
-    blocks: &mut Vec<value_block::ValueBlock>, catalogs: &mut Vec<catalog::Catalog>,
+    ctx: &DecodeContext<'_>,
+    graphs: &mut Vec<object_graph::ObjectGraph>,
+    blocks: &mut Vec<value_block::ValueBlock>,
+    catalogs: &mut Vec<catalog::Catalog>,
 ) -> Result<(), CodecError> {
     let g = u64_from_index(graphs.len());
     let b = u64_from_index(blocks.len());
     let c = u64_from_index(catalogs.len());
-    let work = g.checked_mul(b).and_then(|pairs| pairs.checked_mul(2))
-        .and_then(|pairs| c.checked_mul(g.checked_add(b)? )?.checked_add(pairs))
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_native_inventory_overlap", u64::MAX, u64::MAX))?;
+    let work = g
+        .checked_mul(b)
+        .and_then(|pairs| pairs.checked_mul(2))
+        .and_then(|pairs| c.checked_mul(g.checked_add(b)?)?.checked_add(pairs))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_native_inventory_overlap", u64::MAX, u64::MAX)
+        })?;
     ctx.charge_work(work, "catia_native_inventory_overlap")?;
-        blocks.retain(|block| {
-            !graphs.iter().any(|graph| {
-                extent_contains(graph.pos, graph.total_len, block.pos, block.total_len())
-            })
-        });
-        graphs.retain(|graph| {
-            !blocks.iter().any(|block| {
-                extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len)
-            })
-        });
-        catalogs.retain(|catalog| {
-            !graphs.iter().any(|graph| {
-                extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
-            }) && !blocks.iter().any(|block| {
-                extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
-            })
-        });
+    blocks.retain(|block| {
+        !graphs
+            .iter()
+            .any(|graph| extent_contains(graph.pos, graph.total_len, block.pos, block.total_len()))
+    });
+    graphs.retain(|graph| {
+        !blocks
+            .iter()
+            .any(|block| extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len))
+    });
+    catalogs.retain(|catalog| {
+        !graphs.iter().any(|graph| {
+            extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
+        }) && !blocks.iter().any(|block| {
+            extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
+        })
+    });
     Ok(())
 }
 

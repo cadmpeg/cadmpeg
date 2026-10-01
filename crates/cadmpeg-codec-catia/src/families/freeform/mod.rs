@@ -1634,8 +1634,8 @@ fn standard_carrier_endpoint_loci(
     // A non-finite locus is kept as the evaluation reached it.
     let locus = |uv: cadmpeg_ir::units::FinitePoint2| -> Result<_, cadmpeg_core::CodecError> {
         match cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u, uv.v)? {
-        Ok(point) => Ok(Some(point.get())),
-        Err(failure) => Ok(failure.non_finite()?),
+            Ok(point) => Ok(Some(point.get())),
+            Err(failure) => Ok(failure.non_finite()?),
         }
     };
     let Some(start) = locus(start)? else {
@@ -4144,7 +4144,9 @@ mod tests {
             pos: 16,
             support_id: 1,
             extrapolation_sites: 0,
-            sites: vec![site(0.0, 0.0), site(1.0, 1.0)].try_into().expect("ordered fixture sites"),
+            sites: vec![site(0.0, 0.0), site(1.0, 1.0)]
+                .try_into()
+                .expect("ordered fixture sites"),
             range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
                 .expect("increasing range"),
             tail: Vec::new(),

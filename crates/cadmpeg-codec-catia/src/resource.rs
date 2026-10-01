@@ -145,7 +145,9 @@ pub(crate) fn record_coverage(
     }
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let name = ctx.copy_scoped_text(key.as_str(), &mut storage, operation)?;
-    if creates_key { storage.commit()?; }
+    if creates_key {
+        storage.commit()?;
+    }
     coverage
         .record_owned(key, name, count)
         .map_err(CodecError::malformed)
@@ -208,8 +210,12 @@ pub(crate) fn derived_annotation(
     }
     let mut field_storage = ctx.reserve_scoped(0, operation)?;
     let field = ctx.copy_scoped_text(field, &mut field_storage, operation)?;
-    if outer { id_storage.commit()?; }
-    if inner { field_storage.commit()?; }
+    if outer {
+        id_storage.commit()?;
+    }
+    if inner {
+        field_storage.commit()?;
+    }
     annotations
         .field_exactness_owned(id, field, cadmpeg_ir::Exactness::Derived)
         .map_err(CodecError::malformed)?;
@@ -224,16 +230,37 @@ mod derived_annotation_tests {
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         let key = cadmpeg_ir::report::decode::CoverageKey::new("decoded_entities");
         crate::test_support::with_service_context(|ctx| {
-            super::derived_annotation(ctx, &mut annotations, "catia:test:vertex#0", "point", "catia_annotation_field").expect("initial annotation");
-            super::record_coverage(ctx, &mut coverage, key, 1, "catia_coverage_key").expect("initial coverage");
+            super::derived_annotation(
+                ctx,
+                &mut annotations,
+                "catia:test:vertex#0",
+                "point",
+                "catia_annotation_field",
+            )
+            .expect("initial annotation");
+            super::record_coverage(ctx, &mut coverage, key, 1, "catia_coverage_key")
+                .expect("initial coverage");
         });
         crate::test_support::with_retained_limit(0, |ctx| {
             for _ in 0..64 {
-                super::derived_annotation(ctx, &mut annotations, "catia:test:vertex#0", "point", "catia_annotation_field").expect("count-only annotation update");
-                super::record_coverage(ctx, &mut coverage, key, 1, "catia_coverage_key").expect("count-only coverage update");
+                super::derived_annotation(
+                    ctx,
+                    &mut annotations,
+                    "catia:test:vertex#0",
+                    "point",
+                    "catia_annotation_field",
+                )
+                .expect("count-only annotation update");
+                super::record_coverage(ctx, &mut coverage, key, 1, "catia_coverage_key")
+                    .expect("count-only coverage update");
             }
         });
-        assert_eq!(annotations.build().exactness()["catia:test:vertex#0"].fields().get("point"), Some(&cadmpeg_ir::Exactness::Derived));
+        assert_eq!(
+            annotations.build().exactness()["catia:test:vertex#0"]
+                .fields()
+                .get("point"),
+            Some(&cadmpeg_ir::Exactness::Derived)
+        );
     }
 
     #[test]
