@@ -104,7 +104,9 @@ fn at_depth<T>(
     let count = usize::try_from(depth).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
     let (mut guards, _reservation) = ctx.scoped_admitted_vec(count, operation)?;
     for _ in 0..count { guards.push(ctx.enter_nested(operation)?); }
-    parse()
+    let result = parse();
+    drop(guards);
+    result
 }
 
 impl DecodeContext<'_> {
@@ -390,6 +392,20 @@ mod tests {
         ctx.parse_xml("<r a='>'><!-- <a> --><![CDATA[<b>]]><?pi <c> ?></r>", "XML tree").unwrap();
         assert!(matches!(ctx.parse_xml("<r><s/></r>", "XML tree"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth));
     }
+    #[test]
+    fn invalid_json_prefix_preserves_collection_refusal() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let error = ctx.parse_json_value("[0,0,0,", "JSON nodes").unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("invalid prefix must preserve its admission refusal");
+        };
+        assert_eq!(limit.operation, "JSON nodes");
+        assert_eq!(Some(limit), ctx.resource_refusal());
+    }
+
     #[derive(Debug, serde::Deserialize, PartialEq)]
     struct JsonRecord { name: String, values: Vec<u64> }
 
