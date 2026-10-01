@@ -98,20 +98,58 @@ pub(crate) struct DecodedVertexArray<T> {
     pub(crate) byte_len: usize,
 }
 
+/// Scratch lane whose storage admission survives borrowed consumption.
+struct ScratchLane<'ctx, T> {
+    values: Vec<T>,
+    reservation: ScopedReservation<'ctx>,
+}
+
+impl<T> ScratchLane<'_, T> {
+    fn into_retained(self) -> Result<Vec<T>, CodecError> {
+        self.reservation.commit()?;
+        Ok(self.values)
+    }
+}
+
+impl<T> std::ops::Deref for ScratchLane<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl<'lane, T> IntoIterator for &'lane ScratchLane<'_, T> {
+    type Item = &'lane T;
+    type IntoIter = std::slice::Iter<'lane, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
 /// Reconstruct JT primal integers from predictor residuals.
 pub(crate) fn unpack_predictor_residuals(
     ctx: &DecodeContext<'_>,
     residuals: &[i32],
     predictor: Predictor,
 ) -> Result<Vec<i32>, CodecError> {
+    unpack_predictor_scratch(ctx, residuals, predictor)?.into_retained()
+}
+
+fn unpack_predictor_scratch<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    residuals: &[i32],
+    predictor: Predictor,
+) -> Result<ScratchLane<'ctx, i32>, CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(residuals.len()),
         "unpack JT predictor residuals",
     )?;
-    let mut values = ctx.retained_vec(residuals.len(), "nx JT decoded vector")?;
+    let (mut values, reservation) = ctx.temporary_vec(residuals.len(), "nx JT decoded vector")?;
     if predictor == Predictor::Null {
         values.extend_from_slice(residuals);
-        return Ok(values);
+        return Ok(ScratchLane { values, reservation });
     }
     for (index, &residual) in residuals.iter().enumerate() {
         if index < 4 {
@@ -120,27 +158,27 @@ pub(crate) fn unpack_predictor_residuals(
         }
         values.push(residual.wrapping_add(values[index - 1]));
     }
-    Ok(values)
+    Ok(ScratchLane { values, reservation })
 }
 
-fn lossless_coordinate_component(
-    ctx: &DecodeContext<'_>,
+fn lossless_coordinate_component<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     exponents: &[i32],
     mantissae: &[i32],
-) -> Result<Option<Vec<FiniteBinary32>>, CodecError> {
+) -> Result<Option<ScratchLane<'ctx, FiniteBinary32>>, CodecError> {
     let decoded: Option<Result<_, CodecError>> = (|| {
         if exponents.len() != mantissae.len() {
             return None;
         }
-        let mut values =
-            propagate_resource!(ctx.retained_vec(exponents.len(), "nx JT decoded vector"));
+        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(exponents.len()), "form JT lossless component"));
+        let (mut values, reservation) = propagate_resource!(ctx.temporary_vec(exponents.len(), "nx JT decoded vector"));
         for (&exponent, &mantissa) in exponents.iter().zip(mantissae) {
             let exponent = exponent.cast_unsigned() & 0x1ff;
             let mantissa = mantissa.cast_unsigned() & 0x7f_ffff;
             let value = f32::from_bits((exponent << 23) | mantissa);
             values.push(FiniteBinary32::new(value)?);
         }
-        Some(Ok(values))
+        Some(Ok(ScratchLane { values, reservation }))
     })();
     decoded.transpose()
 }
@@ -419,8 +457,7 @@ fn decode_vertex_texture_coordinates_inner(
                 ranges.push(QuantizedRange::new(minimum, maximum)?);
                 cursor = cursor.checked_add(9)?;
             }
-            let mut component_reservations = std::array::from_fn::<_, 4, _>(|_| None);
-            for (component_index, range) in ranges.into_iter().enumerate() {
+            for range in ranges {
                 let (residuals, byte_len) =
                     propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
                 cursor = cursor.checked_add(byte_len)?;
@@ -429,19 +466,18 @@ fn decode_vertex_texture_coordinates_inner(
                 }
                 let (mut component, reservation) =
                     propagate_resource!(ctx.temporary_vec(count, "nx JT decoded vector"));
-                component_reservations[component_index] = Some(reservation);
-                for code in propagate_resource!(unpack_predictor_residuals(
+                for code in propagate_resource!(unpack_predictor_scratch(
                     ctx,
                     &residuals,
                     Predictor::Lag1
-                )) {
+                )).iter().copied() {
                     component.push(dequantize_uniform(
                         u32::try_from(code).ok()?,
                         range,
                         expected_bits,
                     )?);
                 }
-                components.push(component);
+                components.push(ScratchLane { values: component, reservation });
             }
         }
         let hash = read_u32(bytes, cursor)?;
@@ -507,12 +543,12 @@ fn decode_vertex_colors_inner(
                 if exponents.len() != count || mantissae.len() != count {
                     return None;
                 }
-                let exponents = propagate_resource!(unpack_predictor_residuals(
+                let exponents = propagate_resource!(unpack_predictor_scratch(
                     ctx,
                     &exponents,
                     Predictor::Lag1
                 ));
-                let mantissae = propagate_resource!(unpack_predictor_residuals(
+                let mantissae = propagate_resource!(unpack_predictor_scratch(
                     ctx,
                     &mantissae,
                     Predictor::Lag1
@@ -571,9 +607,7 @@ fn decode_vertex_colors_inner(
             }
             let (mut components, _components_reservation) =
                 propagate_resource!(ctx.temporary_vec(4, "nx JT decoded vector"));
-            let mut component_reservations = std::array::from_fn::<_, 4, _>(|_| None);
-            for (component, component_reservation) in component_reservations.iter_mut().enumerate()
-            {
+            for component in 0..4 {
                 let (residuals, byte_len) =
                     propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
                 cursor = cursor.checked_add(byte_len)?;
@@ -582,19 +616,18 @@ fn decode_vertex_colors_inner(
                 }
                 let (mut values, reservation) =
                     propagate_resource!(ctx.temporary_vec(count, "nx JT decoded vector"));
-                *component_reservation = Some(reservation);
-                for code in propagate_resource!(unpack_predictor_residuals(
+                for code in propagate_resource!(unpack_predictor_scratch(
                     ctx,
                     &residuals,
                     Predictor::Lag1
-                )) {
+                )).iter().copied() {
                     values.push(dequantize_uniform(
                         u32::try_from(code).ok()?,
                         *ranges.get(component)?,
                         *component_bits.get(component)?,
                     )?);
                 }
-                components.push(values);
+                components.push(ScratchLane { values, reservation });
             }
             let mut colors = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
             for index in 0..count {
@@ -671,7 +704,7 @@ fn decode_vertex_flags_inner(
             return None;
         }
         let mut flags = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
-        for value in values {
+        for value in values.iter().copied() {
             flags.push(u32::try_from(value).ok().filter(|value| *value <= 1)?);
         }
         Some(Ok((flags, 4usize.checked_add(byte_len)?)))
@@ -723,7 +756,6 @@ fn decode_vertex_coordinates_inner(
         let mut cursor = 0usize;
         let (mut components, _components_reservation) =
             propagate_resource!(ctx.temporary_vec(3, "nx JT decoded vector"));
-        let mut component_reservations = std::array::from_fn::<_, 3, _>(|_| None);
         for component in 0..3 {
             if quantization_bits[component] == 0 {
                 let (exponent_residuals, exponent_len) =
@@ -739,12 +771,12 @@ fn decode_vertex_coordinates_inner(
                 }
                 components.push(propagate_resource!(lossless_coordinate_component(
                     ctx,
-                    &propagate_resource!(unpack_predictor_residuals(
+                    &propagate_resource!(unpack_predictor_scratch(
                         ctx,
                         &exponent_residuals,
                         Predictor::Lag1
                     )),
-                    &propagate_resource!(unpack_predictor_residuals(
+                    &propagate_resource!(unpack_predictor_scratch(
                         ctx,
                         &mantissa_residuals,
                         Predictor::Lag1
@@ -759,19 +791,18 @@ fn decode_vertex_coordinates_inner(
                 }
                 let (mut values, reservation) =
                     propagate_resource!(ctx.temporary_vec(vertex_count, "nx JT decoded vector"));
-                component_reservations[component] = Some(reservation);
-                for code in propagate_resource!(unpack_predictor_residuals(
+                for code in propagate_resource!(unpack_predictor_scratch(
                     ctx,
                     &residuals,
                     Predictor::Lag1
-                )) {
+                )).iter().copied() {
                     values.push(dequantize_uniform(
                         u32::try_from(code).ok()?,
                         ranges[component],
                         quantization_bits[component],
                     )?);
                 }
-                components.push(values);
+                components.push(ScratchLane { values, reservation });
             }
         }
         let coordinate_hash = read_u32(bytes, cursor)?;
@@ -868,6 +899,7 @@ fn frame_int32_cdp2_inner(
             usize::try_from(value_count).ok()?,
             &entries,
         ))?;
+        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(symbols.len()), "count JT escape symbols"));
         let escape_count = symbols.iter().filter(|value| value.is_none()).count();
         let (out_of_band_count, _, out_of_band_len) =
             propagate_resource!(frame_int32_cdp2_inner(ctx, bytes.get(cursor..)?, depth + 1))?;
@@ -998,19 +1030,21 @@ fn decode_arithmetic<'a>(
         // Arithmetic symbols can consume zero code bits, so the stream length puts
         // no floor under `value_count`; an absolute cap bounds the allocation and
         // the per-value decode work instead.
-        if value_count > MAX_ARITHMETIC_VALUES
-            || entries
-                .len()
-                .checked_mul(value_count)
-                .is_none_or(|work| work > MAX_ARITHMETIC_WORK)
-        {
+        if value_count > MAX_ARITHMETIC_VALUES {
             return None;
         }
-        let work = entries.len().checked_mul(value_count)?;
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "decode JT arithmetic symbols",
-        ));
+        let work = match entries.len().checked_mul(value_count) {
+            Some(work) => work,
+            None => return Some(Err(ctx.refuse_codec_limit("decode JT arithmetic symbols", u64::MAX - 1, u64::MAX))),
+        };
+        let budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK));
+        if !budget.charge_by(work) {
+            let error = match ctx.resource_refusal() {
+                Some(limit) => CodecError::ResourceLimit(limit),
+                None => ctx.refuse_codec_limit("decode JT arithmetic symbols", cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK), cadmpeg_core::decode::u64_from_index(work)),
+            };
+            return Some(Err(error));
+        }
         let total: u32 = entries
             .iter()
             .try_fold(0u32, |sum, entry| sum.checked_add(entry.occurrence_count))?;
@@ -1072,12 +1106,12 @@ fn decode_arithmetic<'a>(
     decoded.transpose()
 }
 
-fn decode_bitlength(
-    ctx: &DecodeContext<'_>,
+fn decode_bitlength<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     code_words: &[u8],
     code_bit_len: usize,
     value_count: usize,
-) -> Result<Option<Vec<i32>>, CodecError> {
+) -> Result<Option<ScratchLane<'ctx, i32>>, CodecError> {
     let decoded: Option<Result<_, CodecError>> = (|| {
         let mut bits = CodeBits {
             words: code_words,
@@ -1093,7 +1127,7 @@ fn decode_bitlength(
             cadmpeg_core::decode::u64_from_index(value_count),
             "decode JT bitlength symbols",
         ));
-        let mut values = propagate_resource!(ctx.retained_vec(value_count, "nx JT decoded vector"));
+        let (mut values, reservation) = propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
         if bits.read(1)? == 0 {
             let minimum_bits = u8::try_from(bits.read(6)?).ok()?;
             let maximum_bits = u8::try_from(bits.read(6)?).ok()?;
@@ -1149,7 +1183,7 @@ fn decode_bitlength(
                 }
             }
         }
-        (bits.bit == code_bit_len).then_some(Ok(values))
+        (bits.bit == code_bit_len).then_some(Ok(ScratchLane { values, reservation }))
     })();
     decoded.transpose()
 }
@@ -1160,14 +1194,17 @@ pub(crate) fn decode_int32_cdp2(
     bytes: &[u8],
     depth: u8,
 ) -> Result<Option<(Vec<i32>, usize)>, CodecError> {
-    finish_decode(ctx, decode_int32_cdp2_inner(ctx, bytes, depth)?)
+    let decoded = decode_int32_cdp2_inner(ctx, bytes, depth)?
+        .map(|(values, length)| -> Result<_, CodecError> { Ok((values.into_retained()?, length)) })
+        .transpose()?;
+    finish_decode(ctx, decoded)
 }
 
-fn decode_int32_cdp2_inner(
-    ctx: &DecodeContext<'_>,
+fn decode_int32_cdp2_inner<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     depth: u8,
-) -> Result<Option<(Vec<i32>, usize)>, CodecError> {
+) -> Result<Option<(ScratchLane<'ctx, i32>, usize)>, CodecError> {
     let decoded: Option<Result<_, CodecError>> = (|| {
         if depth > 3 {
             return None;
@@ -1178,7 +1215,7 @@ fn decode_int32_cdp2_inner(
             return None;
         }
         if value_count == 0 {
-            return Some(Ok((Vec::new(), 4)));
+            return Some(Ok((ScratchLane { values: Vec::new(), reservation: propagate_resource!(ctx.reserve_scoped(0, "nx JT decoded vector")) }, 4)));
         }
         let &codec = bytes.get(4)?;
         if codec == 4 {
@@ -1209,6 +1246,7 @@ fn decode_int32_cdp2_inner(
             } else {
                 (1_u32 << shift) - 1
             };
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(value_count), "validate JT low symbols"));
             if lsb.iter().any(|value| {
                 u32::try_from(*value)
                     .ok()
@@ -1216,12 +1254,12 @@ fn decode_int32_cdp2_inner(
             }) {
                 return None;
             }
-            let mut values =
-                propagate_resource!(ctx.retained_vec(value_count, "nx JT decoded vector"));
-            for (high, low) in msb.into_iter().zip(lsb) {
+            let (mut values, reservation) = propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(value_count), "combine JT chopped symbols"));
+            for (high, low) in msb.iter().copied().zip(lsb.iter().copied()) {
                 values.push((low | high.wrapping_shl(u32::from(shift))).wrapping_add(bias));
             }
-            return Some(Ok((values, 11 + msb_len + lsb_len)));
+            return Some(Ok((ScratchLane { values, reservation }, 11 + msb_len + lsb_len)));
         }
         if !matches!(codec, 1 | 3) {
             return None;
@@ -1246,6 +1284,7 @@ fn decode_int32_cdp2_inner(
             value_count,
             &entries
         ))?;
+        propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(symbols.len()), "count JT escape symbols"));
         let escape_count = symbols.iter().filter(|value| value.is_none()).count();
         let (out_of_band, oob_len) = propagate_resource!(decode_int32_cdp2_inner(
             ctx,
@@ -1256,12 +1295,12 @@ fn decode_int32_cdp2_inner(
             return None;
         }
         cursor += oob_len;
-        let mut out_of_band = out_of_band.into_iter();
-        let mut values = propagate_resource!(ctx.retained_vec(value_count, "nx JT decoded vector"));
+        let mut out_of_band = out_of_band.iter().copied();
+        let (mut values, reservation) = propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
         for value in symbols.values {
             values.push(value.or_else(|| out_of_band.next())?);
         }
-        Some(Ok((values, cursor)))
+        Some(Ok((ScratchLane { values, reservation }, cursor)))
     })();
     decoded.transpose()
 }
