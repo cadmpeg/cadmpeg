@@ -816,10 +816,8 @@ pub(in super::super) fn transfer_sketches(
                 segment.offset,
             )?;
         }
-        for (relation_index, (mut constraint, offset)) in
+        for (mut constraint, offset, relation_index) in
             section_dimension_constraints(ctx, definition, &sketch_id)?
-                .into_iter()
-                .enumerate()
         {
             let Some(relation) = definition
                 .relations
@@ -874,8 +872,7 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        let equation_constraints = crate::decode::collect_items(
-            ctx,
+        let equation_constraints = ctx.collect_vec(
             section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
@@ -961,7 +958,9 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                cadmpeg_core::decode::u64_from_index(offset),
+                cadmpeg_core::decode::u64_from_index(
+                    definition.body_position(offset)?.source()?.get(),
+                ),
                 "section_equation_constraint",
                 Exactness::ByteExact,
             )?;
@@ -985,7 +984,9 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                cadmpeg_core::decode::u64_from_index(offset),
+                cadmpeg_core::decode::u64_from_index(
+                    definition.body_position(offset)?.source()?.get(),
+                ),
                 "section_native_equation_constraint",
                 Exactness::ByteExact,
             )?;

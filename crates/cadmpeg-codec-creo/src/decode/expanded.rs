@@ -364,7 +364,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn primitive_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.primitives
             .double_xar_tables
             .push(crate::container::ModelDoubleXarTable {
@@ -446,7 +446,7 @@ mod tests {
         use crate::feature::entity::{
             EntryPayload, FeatureEntityTable, FeatureEntityTableEntry, PlainClass,
         };
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let entry = |entity_id, class_id| FeatureEntityTableEntry {
             entity_id,
             payload: EntryPayload::Plain {

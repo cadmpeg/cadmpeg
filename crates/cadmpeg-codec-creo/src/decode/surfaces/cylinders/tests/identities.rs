@@ -3,7 +3,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn hole_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 7,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
@@ -75,7 +75,7 @@ fn hole_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn circular_sweep_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
@@ -315,7 +315,7 @@ fn constrained_slot_cylinder_identity_refuses_retained_limit() {
 }
 
 fn cross_section_plane_scan(local_system: bool) -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let diagonal = std::f64::consts::FRAC_1_SQRT_2;
     if local_system {
         scan.planes
@@ -443,7 +443,7 @@ fn cross_section_plane_identities_preserve_service_geometry() {
 }
 
 fn positional_cone_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
         kind: crate::surface::SurfaceKind::Cone,

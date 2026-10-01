@@ -37,7 +37,7 @@ fn feature_schema_classes_refuse_before_btree_node() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .depdb_recipe_rows
         .push(row(crate::feature::schema::SchemaClass::Round));
@@ -52,7 +52,7 @@ fn feature_schema_classes_refuse_before_btree_node() {
 
 #[test]
 fn feature_schema_classes_keep_distinct_sorted_values() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .rows
         .push(row(crate::feature::schema::SchemaClass::Round));

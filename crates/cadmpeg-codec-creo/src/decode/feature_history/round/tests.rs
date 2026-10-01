@@ -42,7 +42,7 @@ fn chamfer_distance_with_service_ctx(
 }
 
 fn round_sample_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
         kind: crate::surface::SurfaceKind::Cylinder,
@@ -427,7 +427,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
 
 #[test]
 fn chamfer_uses_transferred_model_plane_carrier() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
@@ -644,7 +644,7 @@ fn slot_fillet_midplanes_refuse_collection_limit() {
 
 #[test]
 fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
@@ -747,7 +747,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
 
 #[test]
 fn round_support_radius_reconciles_placed_and_transferred_planes() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .affected_ids
         .push(crate::feature::rows::FeatureAffectedIds {
@@ -903,7 +903,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
 
 #[test]
 fn round_support_radius_requires_distinct_parallel_cap_planes() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .affected_ids
         .push(crate::feature::rows::FeatureAffectedIds {
@@ -1048,7 +1048,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
 
 #[test]
 fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
@@ -1122,7 +1122,7 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
 
 #[test]
 fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for id in [3, 4] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -1230,7 +1230,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
 
 #[test]
 fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
         crate::container::Section::scan("VisibGeom#1".to_string(), 0, 20, None, &[0u8; 20])
@@ -1327,7 +1327,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
 fn torus_radius_samples_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
         crate::container::Section::scan("VisibGeom#1".to_string(), 0, 20, None, &[0u8; 20])
@@ -1418,7 +1418,7 @@ fn torus_radius_samples_refuse_collection_limit() {
 
 #[test]
 fn legacy_round_dimension_supplies_constant_radius() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
@@ -1445,7 +1445,7 @@ fn legacy_round_dimension_supplies_constant_radius() {
 
 #[test]
 fn legacy_variable_round_dimension_withholds_radius() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {

@@ -556,7 +556,7 @@ mod tests {
     fn carrier_transfer_with_limits(
         policy: DecodePolicy,
     ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
-        let mut scan = container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows = [1_u32, 2]
             .into_iter()
             .map(|id| surface::SurfaceRow {
@@ -692,7 +692,7 @@ mod tests {
 
     #[test]
     fn plane_intersection_survives_inconsistent_endpoint_witness() {
-        let mut scan = container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows = [1_u32, 2, 3]
             .into_iter()
             .map(|id| surface::SurfaceRow {
@@ -741,7 +741,7 @@ mod tests {
         ];
         scan.topology.vertices = vec![
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new(
+                crate::topology::TopologicalVertex::new_for_test(
                     ctx,
                     1,
                     vec![HalfEdgeId {
@@ -753,7 +753,7 @@ mod tests {
             .expect("vertex admission")
             .expect("valid vertex fixture"),
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new(
+                crate::topology::TopologicalVertex::new_for_test(
                     ctx,
                     2,
                     vec![HalfEdgeId {
@@ -859,7 +859,7 @@ mod tests {
     fn nurbs_boundary_fixture(
         duplicate_extrusion: bool,
     ) -> (container::ContainerScan<'static>, CadIr) {
-        let mut scan = container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows = vec![
             surface::SurfaceRow {
                 id: 1,

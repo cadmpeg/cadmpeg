@@ -3,7 +3,9 @@
 //! files stored in the PSB container.
 //!
 //! [`CreoCodec`] is the normal public decode API. A hidden `fuzz` module
-//! exposes `()`-returning parser wrappers. It implements [`cadmpeg_ir::codec::Codec`]:
+//! exposes parser probes. Context-taking probes propagate errors and discard
+//! successful parser values; primitive probes return `()`. [`CreoCodec`]
+//! implements [`cadmpeg_ir::codec::Codec`]:
 //! it detects the `#UGC:2` PSB signature, inspects named sections, and decodes
 //! the geometry, topology, sketches, and design records supported for that
 //! layout.

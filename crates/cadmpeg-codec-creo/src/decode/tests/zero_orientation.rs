@@ -518,7 +518,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
 
 #[test]
 fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 31,
         kind: crate::surface::SurfaceKind::Cylinder,
@@ -573,7 +573,7 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
 
 #[test]
 fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (31, crate::surface::SurfaceKind::Cylinder),
         (32, crate::surface::SurfaceKind::Cone),
@@ -891,7 +891,7 @@ fn named_revolve_transfers_profile_axis() {
         90,
     )
     .expect("valid section frame");
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.definitions.push(definition);
     scan.features.section_transforms.push(transform);
     scan.features
@@ -938,7 +938,7 @@ fn named_revolve_transfers_profile_axis() {
 
 #[test]
 fn named_extrude_with_evaluated_body_is_new_body() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
@@ -972,7 +972,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 
 #[test]
 fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
@@ -1006,7 +1006,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
 
 #[test]
 fn conflicting_section_sweep_names_remain_unresolved() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -1072,7 +1072,7 @@ fn conflicting_section_sweep_names_remain_unresolved() {
 
 #[test]
 fn conflicting_display_states_do_not_select_reference_family() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -1355,14 +1355,18 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     let du = [1.0, 0.0, 1.0];
     let dv = [0.0, 1.0, 2.0];
     let zero = [0.0; 3];
-    let grid = crate::interpolation_grid::InterpolationGrid::try_new(
-        points.to_vec(),
-        vec![0.0, 1.0],
-        vec![0.0, 1.0],
-        vec![du, du, du, du],
-        vec![dv, dv, dv, dv],
-        [zero, zero, zero, zero],
-    )
+    let grid = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::interpolation_grid::InterpolationGrid::try_new(
+            ctx,
+            points.to_vec(),
+            vec![0.0, 1.0],
+            vec![0.0, 1.0],
+            vec![du, du, du, du],
+            vec![dv, dv, dv, dv],
+            [zero, zero, zero, zero],
+        )
+    })
+    .expect("grid work admission")
     .expect("complete interpolation grid");
     let nurbs = crate::decode::with_test_decode_ctx(|ctx| {
         interpolation_spline_surface(

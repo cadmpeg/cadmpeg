@@ -8,10 +8,10 @@ use cadmpeg_core::CodecError;
 use super::super::{merge_body_components, used_brep_vertices, BrepBodyIndexes, NeutralShellSpec};
 
 fn index_result(limit: u64) -> Result<BrepBodyIndexes, CodecError> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     let component = crate::decode::with_test_decode_ctx(|ctx| {
-        crate::topology::FaceComponent::new(ctx, vec![5], vec![10])
+        crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![10])
     })
     .expect("component admission")
     .expect("valid component fixture");

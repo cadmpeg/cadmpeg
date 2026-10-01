@@ -482,3 +482,10 @@ pub(crate) fn last_refusal_at<T>(
     }
     panic!("route did not finish within boundary bound");
 }
+
+/// An admitted empty container for owner tests that supply their own rows.
+pub(crate) fn empty_container_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(build_prt("test", &[]));
+    scan.framing.data = Vec::new().into();
+    scan
+}

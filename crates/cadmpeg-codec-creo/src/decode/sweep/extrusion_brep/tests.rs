@@ -91,7 +91,7 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
     use cadmpeg_ir::sketches::{
         SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchProfiles,
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 7,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
@@ -727,7 +727,7 @@ fn generated_side_coverage_at_limits(
     materialized_limit: u64,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(generated_side_table());
     scan.surfaces
         .rows
@@ -768,7 +768,7 @@ fn generated_side_expected_entity_nodes_refuse_limit() {
 fn generated_side_coverage_rejects_duplicate_surface_rows() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let definition = definition();
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.entity_tables.push(generated_side_table());
         scan.surfaces
             .rows
@@ -816,7 +816,7 @@ fn generated_side_coverage_rejects_duplicate_surface_rows() {
 fn generated_side_coverage_accepts_explicit_rowless_results() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let definition = definition();
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let mut table = generated_side_table();
         let cap = |entity_id, class_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, None, None, None),
