@@ -29,10 +29,6 @@
 //! Callers must convert non-millimetre geometry before export. Analytic curves
 //! and surfaces map to their corresponding STEP carriers. Rational and
 //! non-rational NURBS use the `*_WITH_KNOTS` entities.
-//!
-//! Output-sink failures return [`std::io::Error`]. Because the writer streams
-//! the header and DATA section after acceptance, an I/O failure can leave
-//! partial output.
 
 mod archive;
 mod codec;
