@@ -2576,17 +2576,6 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     }
 
     fn conditional(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
-        let _depth = if depth > 0 {
-            match self.ctx.enter_nested("catia_formula_expression_depth") {
-                Ok(guard) => Some(guard),
-                Err(error) => {
-                    self.refusal = Some(error);
-                    return None;
-                }
-            }
-        } else {
-            None
-        };
         let predicate = self.disjunction(depth)?;
         self.skip_whitespace();
         if self.peek() != Some(b'?') {
@@ -2598,13 +2587,13 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         let static_check = self.static_check;
         self.evaluate = evaluate && predicate.value();
         self.static_check = static_check && (!predicate.is_known() || predicate.value());
-        let when_true = self.conditional(Self::nested_depth(depth)?)?;
+        let when_true = self.descend(depth, Self::conditional)?;
         self.skip_whitespace();
         (self.peek()? == b';').then_some(())?;
         self.at += 1;
         self.evaluate = evaluate && !predicate.value();
         self.static_check = static_check && (!predicate.is_known() || !predicate.value());
-        let when_false = self.conditional(Self::nested_depth(depth)?)?;
+        let when_false = self.descend(depth, Self::conditional)?;
         self.evaluate = evaluate;
         self.static_check = static_check;
         Self::same_value_type(&when_true, &when_false)?;
@@ -3043,19 +3032,19 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     fn unary(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         self.skip_whitespace();
         if self.consume_keyword("not") {
-            let value = self.unary(Self::nested_depth(depth)?)?.boolean()?;
+            let value = self.descend(depth, Self::unary)?.boolean()?;
             return Some(EvaluatedFormulaValue::Boolean(value.not()));
         }
         match self.peek()? {
             b'+' => {
                 self.at += 1;
-                self.unary(Self::nested_depth(depth)?)
+                self.descend(depth, Self::unary)
                     .and_then(EvaluatedFormulaValue::scalar)
                     .map(EvaluatedFormulaValue::Scalar)
             }
             b'-' => {
                 self.at += 1;
-                let value = self.unary(Self::nested_depth(depth)?)?.scalar()?;
+                let value = self.descend(depth, Self::unary)?.scalar()?;
                 Some(EvaluatedFormulaValue::Scalar(
                     EvaluatedFormulaScalar::from_parts(
                         -value.value(),
@@ -3077,7 +3066,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
         self.at += 2;
         let base = base.scalar()?;
-        let exponent = self.unary(Self::nested_depth(depth)?)?.scalar()?;
+        let exponent = self.descend(depth, Self::unary)?.scalar()?;
         if exponent.dimension() != FormulaDimension::SCALAR {
             return None;
         }
@@ -3145,7 +3134,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
         if self.peek()? == b'(' {
             self.at += 1;
-            let value = self.conditional(Self::nested_depth(depth)?)?;
+            let value = self.descend(depth, Self::conditional)?;
             self.skip_whitespace();
             (self.peek()? == b')').then_some(())?;
             self.at += 1;
@@ -3204,7 +3193,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             }
             (self.at > method_start).then_some(())?;
             let method = &self.source[method_start..self.at];
-            let arguments = self.function_arguments(Self::nested_depth(depth)?)?;
+            let arguments = self.descend(depth, Self::function_arguments)?;
             value = match (method, value, arguments.as_slice()) {
                 ("Length", EvaluatedFormulaValue::String(value), []) => {
                     let length = u32::try_from(value.value().chars().count()).ok()?;
@@ -3386,7 +3375,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             self.at += 1;
         }
         let function = &self.source[function_start..self.at];
-        let arguments = self.function_arguments(Self::nested_depth(depth)?)?;
+        let arguments = self.descend(depth, Self::function_arguments)?;
 
         if function == "ReplaceSubText" {
             let [EvaluatedFormulaValue::String(source), EvaluatedFormulaValue::String(from), EvaluatedFormulaValue::String(to)] =
@@ -4028,8 +4017,22 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         &self.source[self.at..]
     }
 
-    fn nested_depth(depth: usize) -> Option<usize> {
-        (depth < MAX_FORMULA_EXPRESSION_DEPTH).then_some(depth + 1)
+    fn descend<T>(
+        &mut self,
+        depth: usize,
+        parse: impl FnOnce(&mut Self, usize) -> Option<T>,
+    ) -> Option<T> {
+        if depth >= MAX_FORMULA_EXPRESSION_DEPTH {
+            self.refusal = Some(self.ctx.refuse_codec_limit(
+                "catia_formula_expression_local_depth",
+                u64_from_index(MAX_FORMULA_EXPRESSION_DEPTH),
+                u64_from_index(MAX_FORMULA_EXPRESSION_DEPTH) + 1,
+            ));
+            return None;
+        }
+        let ctx = self.ctx;
+        let _depth = self.admit(ctx.enter_nested("catia_formula_expression_depth"))?;
+        parse(self, depth + 1)
     }
 }
 

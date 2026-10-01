@@ -6,6 +6,7 @@
 use super::{outer_container_in_scope, LegacyModelingScope};
 use crate::native::CatiaOuterContainerBinding;
 
+mod expression_admission;
 mod evaluate;
 mod legacy_admission;
 mod transfer;
