@@ -35,7 +35,10 @@ pub fn frame(
         Err(StreamFailure::Resource(error)) => Err(StreamError {
             format: StreamFormat::Binary,
             offset: start,
-            reason: format!("fixture exhausted a resource: {}", cadmpeg_core::CodecError::ResourceLimit(error)),
+            reason: format!(
+                "fixture exhausted a resource: {}",
+                cadmpeg_core::CodecError::ResourceLimit(error)
+            ),
         }),
     }
 }
@@ -69,7 +72,10 @@ pub fn frame_history(
         Err(StreamFailure::Resource(error)) => Err(StreamError {
             format: StreamFormat::Binary,
             offset: start,
-            reason: format!("fixture exhausted a resource: {}", cadmpeg_core::CodecError::ResourceLimit(error)),
+            reason: format!(
+                "fixture exhausted a resource: {}",
+                cadmpeg_core::CodecError::ResourceLimit(error)
+            ),
         }),
     }
 }

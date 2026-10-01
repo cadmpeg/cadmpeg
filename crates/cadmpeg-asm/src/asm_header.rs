@@ -166,7 +166,13 @@ pub fn solved_record_limit(
     })() else {
         return Ok(None);
     };
-    crate::sab::scan_history_boundary(ctx, bytes, start, width, Some(&["Begin", "of", "ASM", "History", "Data"]))
+    crate::sab::scan_history_boundary(
+        ctx,
+        bytes,
+        start,
+        width,
+        Some(&["Begin", "of", "ASM", "History", "Data"]),
+    )
 }
 
 /// Exact solved-record boundary, using an already-parsed ASM header.
@@ -181,7 +187,13 @@ pub fn solved_record_limit_with_header(
     let Some(start) = record_stream_start_with_header(bytes, header) else {
         return Ok(None);
     };
-    crate::sab::scan_history_boundary(ctx, bytes, start, header.width, Some(&["Begin", "of", "ASM", "History", "Data"]))
+    crate::sab::scan_history_boundary(
+        ctx,
+        bytes,
+        start,
+        header.width,
+        Some(&["Begin", "of", "ASM", "History", "Data"]),
+    )
 }
 
 #[cfg(test)]

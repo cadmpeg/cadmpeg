@@ -51,41 +51,41 @@ fn decode_asm_binary(
     let payload = if ctx.container_only() {
         None
     } else {
-    let start = stream.offset();
-    // A history-bearing stream ends its solved partition at the delta-state
-    // boundary; a history-less stream ends at EOF without a terminator tag.
-    let framed = match asm_header::solved_record_limit_with_header(ctx, bytes, header)? {
-        Some(limit) => sab::frame(
+        let start = stream.offset();
+        // A history-bearing stream ends its solved partition at the delta-state
+        // boundary; a history-less stream ends at EOF without a terminator tag.
+        let framed = match asm_header::solved_record_limit_with_header(ctx, bytes, header)? {
+            Some(limit) => sab::frame(
+                ctx,
+                bytes,
+                start,
+                limit,
+                width,
+                header.metadata.entity_count,
+            ),
+            None => sab::frame_history(
+                ctx,
+                bytes,
+                start,
+                bytes.len(),
+                width,
+                header.metadata.entity_count,
+            ),
+        };
+        let records = framed.map_err(|failure| {
+            failure.into_codec_error(ctx, |error| {
+                CodecError::malformed(format_args!("SAB framing failed: {error}"))
+            })
+        })?;
+        let brep = decode_with_header(
             ctx,
+            &records,
             bytes,
-            start,
-            limit,
-            width,
-            header.metadata.entity_count,
-        ),
-        None => sab::frame_history(
-            ctx,
-            bytes,
-            start,
-            bytes.len(),
-            width,
-            header.metadata.entity_count,
-        ),
-    };
-    let records = framed.map_err(|failure| {
-        failure.into_codec_error(ctx, |error| {
-            CodecError::malformed(format_args!("SAB framing failed: {error}"))
-        })
-    })?;
-    let brep = decode_with_header(
-        ctx,
-        &records,
-        bytes,
-        Some(&header.metadata),
-        "stream",
-        cadmpeg_asm::asm_format!("sat"),
-        DecodePurpose::Model,
-    )?;
+            Some(&header.metadata),
+            "stream",
+            cadmpeg_asm::asm_format!("sat"),
+            DecodePurpose::Model,
+        )?;
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
@@ -126,39 +126,39 @@ fn decode_acis_binary(
     let payload = if ctx.container_only() {
         None
     } else {
-    let start = stream.offset();
-    let framed = match acis_header::solved_record_limit_with_header(ctx, bytes, header)? {
-        Some(limit) => sab::frame(
+        let start = stream.offset();
+        let framed = match acis_header::solved_record_limit_with_header(ctx, bytes, header)? {
+            Some(limit) => sab::frame(
+                ctx,
+                bytes,
+                start,
+                limit,
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+                header.metadata.entity_count,
+            ),
+            None => sab::frame_history(
+                ctx,
+                bytes,
+                start,
+                bytes.len(),
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+                header.metadata.entity_count,
+            ),
+        };
+        let records = framed.map_err(|failure| {
+            failure.into_codec_error(ctx, |error| {
+                CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
+            })
+        })?;
+        let brep = decode_with_header(
             ctx,
+            &records,
             bytes,
-            start,
-            limit,
-            cadmpeg_asm::kernel_header::RefWidth::Four,
-            header.metadata.entity_count,
-        ),
-        None => sab::frame_history(
-            ctx,
-            bytes,
-            start,
-            bytes.len(),
-            cadmpeg_asm::kernel_header::RefWidth::Four,
-            header.metadata.entity_count,
-        ),
-    };
-    let records = framed.map_err(|failure| {
-        failure.into_codec_error(ctx, |error| {
-            CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
-        })
-    })?;
-    let brep = decode_with_header(
-        ctx,
-        &records,
-        bytes,
-        Some(&header.metadata),
-        "stream",
-        cadmpeg_asm::asm_format!("sat"),
-        DecodePurpose::Model,
-    )?;
+            Some(&header.metadata),
+            "stream",
+            cadmpeg_asm::asm_format!("sat"),
+            DecodePurpose::Model,
+        )?;
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
@@ -224,14 +224,14 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let (matched, kernel) = layers(&evidence);
     let payload = match records {
         Some(records) => Some(decode_with_header(
-        ctx,
-        &records,
-        bytes,
-        Some(&header),
-        "stream",
-        cadmpeg_asm::asm_format!("sat"),
-        DecodePurpose::Model,
-    )?),
+            ctx,
+            &records,
+            bytes,
+            Some(&header),
+            "stream",
+            cadmpeg_asm::asm_format!("sat"),
+            DecodePurpose::Model,
+        )?),
         None => None,
     };
     build_result(
@@ -310,16 +310,15 @@ fn build_result(
         }
     }
 
-    let brep = match payload {
-        Some(brep) => brep,
-        None => return Ok(Decoded {
+    let Some(brep) = payload else {
+        return Ok(Decoded {
             ir,
             body: DecodeBody {
                 losses,
                 ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {})
             },
             source_fidelity: cadmpeg_ir::SourceFidelity::default(),
-        }),
+        });
     };
 
     let (

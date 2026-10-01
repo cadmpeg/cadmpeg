@@ -745,7 +745,11 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &smbh).expect("history scan").is_none());
+    assert!(
+        cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &smbh)
+            .expect("history scan")
+            .is_none()
+    );
 
     let decoded = F3dCodec
         .decode(
