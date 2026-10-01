@@ -22,7 +22,7 @@ impl ChartSamples {
             "copy NX solved chart samples",
         )?;
         values.extend(self.samples.iter().copied());
-        let samples = crate::om::nonempty::NonEmpty::from_vec(values)
+        let samples = crate::om::nonempty::NonEmpty::from_admitted_vec(values)
             .ok_or_else(|| ctx.refuse_codec_limit("NX solved chart sample copy", 0, 0))?;
         Ok(Self { samples })
     }
@@ -57,7 +57,7 @@ impl ChartSamples {
             ));
             previous = Some(point);
         }
-        Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
+        Ok(crate::om::nonempty::NonEmpty::from_admitted_vec(samples).map(|samples| Self { samples }))
     }
     #[cfg(test)]
     fn new(points: Vec<FinitePoint3>, parameters: Vec<FiniteReal>) -> Result<Self, &'static str> {
@@ -156,7 +156,7 @@ impl ChartSamples {
         for (old, new) in self.samples.iter().zip(other.samples.iter()) {
             replacement.push((old.0, new.1));
         }
-        let Some(samples) = crate::om::nonempty::NonEmpty::from_vec(replacement) else {
+        let Some(samples) = crate::om::nonempty::NonEmpty::from_admitted_vec(replacement) else {
             return Ok(false);
         };
         self.samples = samples;
@@ -292,7 +292,7 @@ impl SourceChartData {
             }
             samples.push((point, parameter));
         }
-        let samples = crate::om::nonempty::NonEmpty::from_vec(samples)
+        let samples = crate::om::nonempty::NonEmpty::from_admitted_vec(samples)
             .ok_or("points: at least two points required")?;
         Ok(Self {
             count,

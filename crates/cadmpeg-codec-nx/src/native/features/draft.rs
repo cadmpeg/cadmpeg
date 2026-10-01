@@ -338,7 +338,7 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
         let lane = FramedScalarRun::new(
             Q155LaneFrame,
             wire.payload_offset,
-            NonEmpty::from_vec(values).ok_or("values must contain a Q1.55 atom")?,
+            NonEmpty::from_admitted_vec(values).ok_or("values must contain a Q1.55 atom")?,
         )?;
         if !lane
             .iter()
@@ -459,7 +459,7 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
         let lane = FramedScalarRun::new(
             branch,
             wire.payload_offset,
-            NonEmpty::from_vec(values).ok_or("values must contain a binary32 atom")?,
+            NonEmpty::from_admitted_vec(values).ok_or("values must contain a binary32 atom")?,
         )?;
         if !lane
             .iter()
