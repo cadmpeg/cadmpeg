@@ -109,13 +109,13 @@ pub(crate) fn classify_layers(
         .iter()
         .filter(|stream| stream.schema_token().is_some())
         .count();
-    let mut streams = ctx.retained_vec(schema_count, "nx schema streams")?;
+    let mut streams = ctx.collection_vec(schema_count, "nx schema streams")?;
     for stream in &scan.streams {
         if let Some(schema) = stream.schema_token() {
             streams.push((stream, schema));
         }
     }
-    let mut carriers = ctx.retained_vec(schema_count, "nx schema carriers")?;
+    let mut carriers = ctx.collection_vec(schema_count, "nx schema carriers")?;
     for (stream, schema) in streams {
         let mut digits = 1usize;
         let mut value = stream.file_offset;
@@ -155,7 +155,7 @@ pub(crate) fn classify_layers(
     let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
     let mut losses = Vec::new();
     for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
-        ctx.push_retained_vec(
+        ctx.push_vec(
             &mut losses,
             NxLossCode::DialectLayerCollision.note(message),
             "collect NX dialect collision losses",
@@ -167,7 +167,7 @@ pub(crate) fn classify_layers(
     )?;
     for layer in layers.iter() {
         if let Some(message) = cadmpeg_parasolid::unverified_message(ctx, layer)? {
-            ctx.push_retained_vec(
+            ctx.push_vec(
                 &mut losses,
                 NxLossCode::KernelDialectUnverified.note(message),
                 "collect NX kernel dialect losses",

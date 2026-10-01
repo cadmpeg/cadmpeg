@@ -76,7 +76,7 @@ impl JournalGroup<usize> {
                 return Ok(None);
             };
             cursor = next;
-            ctx.reserve_retained_vec(&mut rows, 1, "NX state-journal rows")?;
+            ctx.reserve_vec(&mut rows, 1, "NX state-journal rows")?;
             rows.push(row);
         }
         Ok(NonEmpty::from_vec(rows).map(|rows| Self {

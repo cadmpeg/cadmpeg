@@ -722,7 +722,7 @@ fn revolution_nurbs(
         "Rhino revolution angular knots",
     )?;
     let profile_knots = ctx
-        .copy_retained_slice(profile.knots(), "Rhino revolution profile knots")
+        .copy_slice(profile.knots(), "Rhino revolution profile knots")
         .map_err(crate::curves::GeometryError::from)?;
     let mut result = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
         ctx,
@@ -1362,7 +1362,7 @@ fn read_knots(
     reader: &mut BoundedReader<'_>,
     count: usize,
 ) -> Result<Vec<FiniteReal>, GeometryError> {
-    let mut knots = ctx.retained_vec(count, "Rhino NURBS knots")?;
+    let mut knots = ctx.collection_vec(count, "Rhino NURBS knots")?;
     for _ in 0..count {
         let knot_offset = reader.position();
         let value = reader.f64()?;
@@ -1401,9 +1401,9 @@ fn read_poles(
     dimension: i32,
     scale: MillimeterScale,
 ) -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError> {
-    let mut points = ctx.retained_vec(count, "Rhino NURBS poles")?;
+    let mut points = ctx.collection_vec(count, "Rhino NURBS poles")?;
     let mut weights = if rational {
-        Some(ctx.retained_vec(count, "Rhino NURBS weights")?)
+        Some(ctx.collection_vec(count, "Rhino NURBS weights")?)
     } else {
         None
     };
@@ -1455,7 +1455,7 @@ pub(crate) fn reconstruct_knots(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let mut result = ctx.retained_vec(capacity, "Rhino NURBS reconstructed knots")?;
+    let mut result = ctx.collection_vec(capacity, "Rhino NURBS reconstructed knots")?;
     result.push(start.get());
     result.extend_from_slice(knots);
     result.push(end.get());
@@ -1475,7 +1475,7 @@ fn reconstruct_checked_knots(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let mut result = ctx.retained_vec(capacity, "Rhino NURBS reconstructed knots")?;
+    let mut result = ctx.collection_vec(capacity, "Rhino NURBS reconstructed knots")?;
     result.push(start);
     result.extend_from_slice(knots);
     result.push(end);

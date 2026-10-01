@@ -368,7 +368,7 @@ fn decode_vertex_normals_inner(
                     ctx, &exponents, &mantissae
                 ))?);
             }
-            let mut normals = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut normals = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for ((x, y), z) in components[0].iter().zip(&components[1]).zip(&components[2]) {
                 normals.push([*x, *y, *z]);
             }
@@ -386,7 +386,7 @@ fn decode_vertex_normals_inner(
                 codes.push(values);
             }
             let bits = NormalBits::new(expected_bits)?;
-            let mut normals = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut normals = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for (((sextant, octant), theta), psi) in
                 codes[0].iter().zip(&codes[1]).zip(&codes[2]).zip(&codes[3])
             {
@@ -498,10 +498,10 @@ fn decode_vertex_texture_coordinates_inner(
         }
         let hash = read_u32(bytes, cursor)?;
         cursor = cursor.checked_add(4)?;
-        let mut values = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+        let mut values = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
         for index in 0..count {
             let mut value =
-                propagate_resource!(ctx.retained_vec(component_count, "nx JT decoded vector"));
+                propagate_resource!(ctx.collection_vec(component_count, "nx JT decoded vector"));
             for component in 0..component_count {
                 value.push(components.get(component)?.get(index).copied()?);
             }
@@ -567,7 +567,7 @@ fn decode_vertex_colors_inner(
                     ctx, &exponents, &mantissae
                 ))?);
             }
-            let mut colors = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut colors = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for index in 0..count {
                 colors.push([
                     *components.first()?.get(index)?,
@@ -642,7 +642,7 @@ fn decode_vertex_colors_inner(
                     reservation,
                 });
             }
-            let mut colors = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut colors = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for index in 0..count {
                 let first = *components.first()?.get(index)?;
                 let second = *components.get(1)?.get(index)?;
@@ -716,7 +716,7 @@ fn decode_vertex_flags_inner(
         if values.len() != count {
             return None;
         }
-        let mut flags = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+        let mut flags = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
         for value in values.iter().copied() {
             flags.push(u32::try_from(value).ok().filter(|value| *value <= 1)?);
         }
@@ -824,7 +824,7 @@ fn decode_vertex_coordinates_inner(
         let coordinate_hash = read_u32(bytes, cursor)?;
         cursor = cursor.checked_add(4)?;
         let mut points =
-            propagate_resource!(ctx.retained_vec(vertex_count, "nx JT decoded vector"));
+            propagate_resource!(ctx.collection_vec(vertex_count, "nx JT decoded vector"));
         for index in 0..vertex_count {
             points.push([
                 *components.first()?.get(index)?,

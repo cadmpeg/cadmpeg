@@ -284,14 +284,14 @@ pub fn named_entries_reporting<V>(
                     let key = NonBlankString(
                         ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
                     );
-                    ctx.reserve_retained_vec(&mut refused, 1, "named entry refusals")?;
+                    ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                     refused.push(NamedEntryError::Restated { record, key });
                 }
             },
             None => {
                 let record =
                     ctx.format_retained(format_args!("{record}"), "named entry refused record")?;
-                ctx.reserve_retained_vec(&mut refused, 1, "named entry refusals")?;
+                ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                 refused.push(NamedEntryError::Blank { record });
             }
         }

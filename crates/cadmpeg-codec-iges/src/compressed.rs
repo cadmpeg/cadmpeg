@@ -918,7 +918,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         append_source_card(&mut output, line, b'G')?;
     }
     let mut parameter_starts =
-        ctx.retained_vec(entities.len(), "iges_compressed_parameter_starts")?;
+        ctx.collection_vec(entities.len(), "iges_compressed_parameter_starts")?;
     let mut parameter_sequence = 1_u32;
     for entity in &entities {
         let parameter_start = if entity.parameter_lines.is_empty() {

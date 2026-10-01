@@ -172,11 +172,11 @@ fn decode_surfaces(
             };
             let poles = if stride == 4 {
                 let mut rows = propagate_resource!(
-                    ctx.retained_vec(descriptor.u_count, "NX NURBS rational grid rows")
+                    ctx.collection_vec(descriptor.u_count, "NX NURBS rational grid rows")
                 );
                 for row in 0..descriptor.u_count {
                     let mut points = propagate_resource!(
-                        ctx.retained_vec(descriptor.v_count, "NX NURBS rational poles")
+                        ctx.collection_vec(descriptor.v_count, "NX NURBS rational poles")
                     );
                     for column in 0..descriptor.v_count {
                         let (point, weight) =
@@ -188,11 +188,11 @@ fn decode_surfaces(
                 NurbsPoleGrid::Rational { rows }
             } else {
                 let mut rows = propagate_resource!(
-                    ctx.retained_vec(descriptor.u_count, "NX NURBS polynomial grid rows")
+                    ctx.collection_vec(descriptor.u_count, "NX NURBS polynomial grid rows")
                 );
                 for row in 0..descriptor.u_count {
                     let mut points = propagate_resource!(
-                        ctx.retained_vec(descriptor.v_count, "NX NURBS polynomial poles")
+                        ctx.collection_vec(descriptor.v_count, "NX NURBS polynomial poles")
                     );
                     for column in 0..descriptor.v_count {
                         points.push(
@@ -235,7 +235,7 @@ fn decode_surfaces(
                 Ok(surface) => surface,
                 Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
-                    propagate_resource!(ctx.push_retained_vec(
+                    propagate_resource!(ctx.push_vec(
                         refusals,
                         CarrierRefusal {
                             pos: node.pos,
@@ -253,7 +253,7 @@ fn decode_surfaces(
             }))
         })();
         if let Some(record) = candidate.transpose()? {
-            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+            ctx.push_vec(&mut records, record, "NX NURBS geometry records")?;
         }
     }
     Ok(records)
@@ -350,7 +350,7 @@ fn decode_pcurves(
             };
             let poles = if stride == 3 {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS rational poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS rational poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     let (point, weight) = pole_at(index)?;
@@ -359,7 +359,7 @@ fn decode_pcurves(
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points }
             } else {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     points.push(pole_at(index)?.0);
@@ -387,7 +387,7 @@ fn decode_pcurves(
                 Ok(nurbs) => nurbs,
                 Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
-                    propagate_resource!(ctx.push_retained_vec(
+                    propagate_resource!(ctx.push_vec(
                         refusals,
                         CarrierRefusal {
                             pos: node.pos,
@@ -405,7 +405,7 @@ fn decode_pcurves(
             }))
         })();
         if let Some(record) = candidate.transpose()? {
-            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+            ctx.push_vec(&mut records, record, "NX NURBS geometry records")?;
         }
     }
     Ok(records)
@@ -507,7 +507,7 @@ fn decode_curves(
             };
             let poles = if stride == 4 {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS rational poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS rational poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     let (point, weight) = pole_at(index)?;
@@ -516,7 +516,7 @@ fn decode_curves(
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points }
             } else {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     points.push(pole_at(index)?.0);
@@ -544,7 +544,7 @@ fn decode_curves(
                 Ok(curve) => curve,
                 Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
-                    propagate_resource!(ctx.push_retained_vec(
+                    propagate_resource!(ctx.push_vec(
                         refusals,
                         CarrierRefusal {
                             pos: node.pos,
@@ -562,7 +562,7 @@ fn decode_curves(
             }))
         })();
         if let Some(record) = candidate.transpose()? {
-            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+            ctx.push_vec(&mut records, record, "NX NURBS geometry records")?;
         }
     }
     Ok(records)
@@ -1475,7 +1475,7 @@ fn expand_knots(
         cadmpeg_core::decode::u64_from_index(count),
         "expand NX NURBS knots",
     )?;
-    let mut out = ctx.retained_vec(count, "NX NURBS expanded knots")?;
+    let mut out = ctx.collection_vec(count, "NX NURBS expanded knots")?;
     for (&value, &count) in distinct.iter().zip(multiplicities) {
         for _ in 0..usize::from(count) {
             out.push(value);

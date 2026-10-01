@@ -4294,12 +4294,12 @@ pub(crate) fn copy_revision_discontinuities(
     source: &[Vec<f64>; 6],
 ) -> Result<[Vec<f64>; 6], cadmpeg_core::CodecError> {
     Ok([
-        ctx.copy_retained_slice(&source[0], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[1], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[2], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[3], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[4], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[5], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[0], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[1], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[2], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[3], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[4], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[5], "ASM revision discontinuities")?,
     ])
 }
 

@@ -1952,7 +1952,7 @@ fn chain(
                     "retain CFB sector chain",
                 )?;
             } else {
-                ctx.push_retained_vec(&mut output.rest, current, "retain CFB sector chain")?;
+                ctx.push_vec(&mut output.rest, current, "retain CFB sector chain")?;
             }
         } else if current != start {
             output.rest.push(current);

@@ -363,7 +363,7 @@ impl CurveScan {
                     .as_ref()
                     .map(|lane| {
                         crate::intersection::SupportUvLane::from_checked(
-                            ctx.copy_retained_slice(
+                            ctx.copy_slice(
                                 lane.as_slice(),
                                 "NX solved support-UV lane copy",
                             )?,
@@ -378,7 +378,7 @@ impl CurveScan {
                     .as_ref()
                     .map(|lane| {
                         crate::intersection::SupportUvLane::from_checked(
-                            ctx.copy_retained_slice(
+                            ctx.copy_slice(
                                 lane.as_slice(),
                                 "NX solved support-UV lane copy",
                             )?,
@@ -495,7 +495,7 @@ fn append_intersection_data_curves(
     constructions: &mut Vec<CompositeCurve>,
 ) -> Result<(), CodecError> {
     let twins = topology::intersection_data_curves(ctx, stream)?;
-    ctx.reserve_retained_vec(constructions, twins.len(), "NX intersection constructions")?;
+    ctx.reserve_vec(constructions, twins.len(), "NX intersection constructions")?;
     constructions.extend(twins);
     Ok(())
 }
@@ -652,19 +652,19 @@ fn scan_with_auxiliaries(
     for construction in constructions.iter().copied() {
         match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     &mut result.constructions,
                     construction,
                     "NX intersection constructions",
                 )?;
-                ctx.push_retained_vec(&mut result.curves, curve, "NX intersection solved curves")?;
+                ctx.push_vec(&mut result.curves, curve, "NX intersection solved curves")?;
             }
             Err(EnrichError::Rejected(rejection))
                 if referenced_curves.contains(&construction.xmt)
                     && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     &mut result.constructions,
                     construction,
                     "NX intersection constructions",
@@ -683,7 +683,7 @@ fn scan_with_auxiliaries(
                                 ))
                             }),
                     ) {
-                        ctx.push_retained_vec(
+                        ctx.push_vec(
                             &mut result.uncharted,
                             UnchartedIntersection {
                                 xmt: construction.xmt,
@@ -783,7 +783,7 @@ fn enrich(
             .as_ref()
             .map(|lane| {
                 crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                     lane.as_slice().len(),
                 )
                 .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
@@ -793,7 +793,7 @@ fn enrich(
             .as_ref()
             .map(|lane| {
                 crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                     lane.as_slice().len(),
                 )
                 .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
@@ -1117,7 +1117,7 @@ pub(crate) fn chart_source_records(
     while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
         if stream.get(tag..tag + 2) == Some(&[0, 40]) {
             if let Some((record, end)) = chart_source_record_at(ctx, stream, tag, point_layout)? {
-                ctx.reserve_retained_vec(&mut out, 1, "NX chart source records")?;
+                ctx.reserve_vec(&mut out, 1, "NX chart source records")?;
                 out.push(record);
                 // A complete chart owns its counted point lane. Do not rescan
                 // bytes inside that lane as nested chart candidates.

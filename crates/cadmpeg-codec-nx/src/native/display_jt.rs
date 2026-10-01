@@ -2312,7 +2312,7 @@ fn parse_jt_element_sequence<'a>(
         let Some(body) = element.get(21..) else {
             return Ok(None);
         };
-        ctx.reserve_retained_vec(&mut elements, 1, "store DisplayJT element")?;
+        ctx.reserve_vec(&mut elements, 1, "store DisplayJT element")?;
         elements.push(ParsedJtElement {
             offset: cursor,
             object_type_id,
@@ -3148,7 +3148,7 @@ pub(super) fn display_jt_indices(
             .ok())
         })()?;
         if let Some(index) = parsed {
-            ctx.reserve_retained_vec(&mut indices, 1, "admit DisplayJT index")?;
+            ctx.reserve_vec(&mut indices, 1, "admit DisplayJT index")?;
             indices.push(index);
         }
     }
@@ -3247,7 +3247,7 @@ pub(super) fn display_jt_documents(
             .rsplit_once('#')
             .map_or(row.id.as_str(), |(_, key)| key);
         ctx.charge_work(u64::from(toc_count), "scan DisplayJT table of contents")?;
-        let mut toc_entries = ctx.retained_vec(toc_count_usize, "admit DisplayJT toc entries")?;
+        let mut toc_entries = ctx.collection_vec(toc_count_usize, "admit DisplayJT toc entries")?;
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
@@ -3308,7 +3308,7 @@ pub(super) fn display_jt_documents(
             cadmpeg_core::decode::u64_from_index(row.id.len()),
             "retain DisplayJT document index reference",
         )?;
-        ctx.reserve_retained_vec(&mut documents, 1, "admit DisplayJT document")?;
+        ctx.reserve_vec(&mut documents, 1, "admit DisplayJT document")?;
         documents.push(DisplayJtDocument {
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
@@ -3720,7 +3720,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 TopologyPacketRole::SplitFaceSymbols,
                 TopologyPacketRole::SplitFacePositions,
             ]);
-        let mut packets = ctx.retained_vec(role_count, "nx JT topology packets")?;
+        let mut packets = ctx.collection_vec(role_count, "nx JT topology packets")?;
         for role in roles {
             let Some(remaining) = representation.get(cursor..) else {
                 return Ok(DisplayJtTopologyArrays::default());
@@ -6008,7 +6008,7 @@ fn resolve_display_jt_node_paths(
         }
         ctx.reserve_vec(&mut path.node_path, 1, "nx JT node path nodes")?;
         path.node_path.push(object_id);
-        ctx.reserve_retained_vec(&mut results, 1, "nx JT resolved paths")?;
+        ctx.reserve_vec(&mut results, 1, "nx JT resolved paths")?;
         results.push(path);
     }
     Ok(Some(results))
@@ -6417,13 +6417,13 @@ fn display_jt_tessellation_rows(
             let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
                 let triangle_vertex_count = required!(rendered.len().checked_mul(3));
                 let mut vertices = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut vertices,
                     triangle_vertex_count,
                     "nx JT tessellation vertices",
                 ))?;
                 let mut triangles = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut triangles,
                     rendered.len(),
                     "nx JT tessellation triangles",
@@ -6432,7 +6432,7 @@ fn display_jt_tessellation_rows(
                 // normal lane.
                 let mut normal_vectors = normal_array.is_some().then(Vec::new);
                 if let Some(normal_vectors) = normal_vectors.as_mut() {
-                    (ctx.reserve_retained_vec(
+                    (ctx.reserve_vec(
                         normal_vectors,
                         triangle_vertex_count,
                         "nx JT tessellation normals",
@@ -6441,7 +6441,7 @@ fn display_jt_tessellation_rows(
                 let mut color_data = Vec::new();
                 if color_array.is_some() {
                     let color_byte_count = required!(triangle_vertex_count.checked_mul(16));
-                    (ctx.reserve_retained_vec(
+                    (ctx.reserve_vec(
                         &mut color_data,
                         color_byte_count,
                         "nx JT tessellation colors",
@@ -6463,7 +6463,7 @@ fn display_jt_tessellation_rows(
                     texture_component_counts.push(count);
                 }
                 let mut texture_data = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut texture_data,
                     texture_component_counts.len(),
                     "nx JT tessellation texture buffers",
@@ -6473,7 +6473,7 @@ fn display_jt_tessellation_rows(
                         .checked_mul(*component_count)
                         .and_then(|count| count.checked_mul(4)));
                     let mut data = Vec::new();
-                    (ctx.reserve_retained_vec(
+                    (ctx.reserve_vec(
                         &mut data,
                         byte_count,
                         "nx JT tessellation texture bytes",
@@ -6483,7 +6483,7 @@ fn display_jt_tessellation_rows(
                 let mut vertex_flag_data = Vec::new();
                 if vertex_flag_array.is_some() {
                     let flag_byte_count = required!(triangle_vertex_count.checked_mul(4));
-                    (ctx.reserve_retained_vec(
+                    (ctx.reserve_vec(
                         &mut vertex_flag_data,
                         flag_byte_count,
                         "nx JT tessellation flag bytes",
@@ -6528,7 +6528,7 @@ fn display_jt_tessellation_rows(
                 let channel_count = required!(usize::from(color_array.is_some())
                     .checked_add(texture_arrays.len())
                     .and_then(|count| count.checked_add(usize::from(vertex_flag_array.is_some()))));
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut channels,
                     channel_count,
                     "nx JT tessellation channels",
@@ -6576,7 +6576,7 @@ fn display_jt_tessellation_rows(
                 (vertices, triangles, normal_vectors, channels)
             } else {
                 let mut vertices = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut vertices,
                     coordinates.points_m.len(),
                     "nx JT tessellation vertices",
@@ -6587,7 +6587,7 @@ fn display_jt_tessellation_rows(
                     ))));
                 }
                 let mut triangles = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut triangles,
                     rendered.len(),
                     "nx JT tessellation triangles",

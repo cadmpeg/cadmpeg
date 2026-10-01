@@ -1080,7 +1080,7 @@ fn parse_from_records_with_class21(
             continue;
         };
         let payload =
-            ctx.copy_retained_slice(&record.payload, "catia_b5_opaque_surface_payload")?;
+            ctx.copy_slice(&record.payload, "catia_b5_opaque_surface_payload")?;
         ctx.insert_btree_map(
             &mut surfaces,
             surface_id,
@@ -1141,7 +1141,7 @@ fn parse_from_records_with_class21(
             continue;
         };
         let distinct_knots =
-            ctx.copy_retained_slice(&pcurve.distinct_knots, "catia_b5_object_pcurve_knots")?;
+            ctx.copy_slice(&pcurve.distinct_knots, "catia_b5_object_pcurve_knots")?;
         ctx.insert_btree_map(
             &mut object_stream_pcurves,
             object_id,
@@ -1240,7 +1240,7 @@ fn parse_from_records_with_class21(
                     B5Surface::Unknown {
                         family: record.family,
                         class: record.class,
-                        payload: ctx.copy_retained_slice(
+                        payload: ctx.copy_slice(
                             &record.payload,
                             "catia_b5_offset_carrier_payload",
                         )?,
@@ -1683,7 +1683,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
         B5Surface::UnresolvedNurbs { header, payload } => B5Surface::UnresolvedNurbs {
             header: header.copy_charged(ctx)?,
             payload: ctx
-                .copy_retained_slice(payload, "catia_b5_copied_unresolved_surface_payload")?,
+                .copy_slice(payload, "catia_b5_copied_unresolved_surface_payload")?,
         },
         B5Surface::Unknown {
             family,
@@ -1692,7 +1692,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
         } => B5Surface::Unknown {
             family: *family,
             class: *class,
-            payload: ctx.copy_retained_slice(payload, "catia_b5_copied_unknown_surface_payload")?,
+            payload: ctx.copy_slice(payload, "catia_b5_copied_unknown_surface_payload")?,
         },
         B5Surface::Nurbs(nurbs) => {
             B5Surface::Nurbs(nurbs.try_clone_for_decode(ctx, "catia_b5_copied_nurbs_surface")?)
@@ -1705,7 +1705,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
                 return Ok(surface.clone());
             };
             let stations =
-                ctx.copy_retained_slice(jet.stations(), "catia_b5_copied_rolling_ball_stations")?;
+                ctx.copy_slice(jet.stations(), "catia_b5_copied_rolling_ball_stations")?;
             let jet = cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
                 jet.degree(),
                 stations,
@@ -2012,7 +2012,7 @@ pub(in crate::families) fn edge_vertex_references(
             family: 0xb5,
             class: 0x5e,
             object_id: frame.object_id,
-            payload: ctx.copy_retained_slice(
+            payload: ctx.copy_slice(
                 &bytes[frame.start + 8..frame.end],
                 "catia_b5_edge_vertex_record_payload",
             )?,
@@ -2076,7 +2076,7 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
             family: frame.family,
             class: frame.class,
             object_id: frame.object_id,
-            payload: ctx.copy_retained_slice(
+            payload: ctx.copy_slice(
                 &bytes[frame.start + header..frame.end],
                 "catia_b5_edge_support_record_payload",
             )?,
@@ -3881,7 +3881,7 @@ fn surface_node(
     if record.family != 0xa8 || record.class != 0x34 {
         return Ok(None);
     }
-    let payload = ctx.copy_retained_slice(&record.payload, "catia_b5_surface_node_payload")?;
+    let payload = ctx.copy_slice(&record.payload, "catia_b5_surface_node_payload")?;
     Ok(Some(match header {
         Some(header) => B5Surface::UnresolvedNurbs {
             header: header.copy_charged(ctx)?,
@@ -5525,7 +5525,7 @@ fn parse_opaque_pcurve(
         object_id: record.object_id,
         surface,
         class: record.class,
-        payload: ctx.copy_retained_slice(&record.payload, "catia_b5_opaque_pcurve_payload")?,
+        payload: ctx.copy_slice(&record.payload, "catia_b5_opaque_pcurve_payload")?,
         sphere_great_circle: None,
     }))
 }
@@ -5690,7 +5690,7 @@ fn circle_pcurves_from_frames(
             family: 0xb5,
             class: 0x19,
             object_id: frame.object_id,
-            payload: ctx.copy_retained_slice(
+            payload: ctx.copy_slice(
                 &bytes[frame.start + 8..frame.end],
                 "catia_b5_circle_frame_payload",
             )?,
@@ -5960,7 +5960,7 @@ fn framed_records_and_dependency_candidates(
             continue;
         }
         let seen_payload =
-            ctx.copy_retained_slice(&record.payload, "catia_b5_seen_record_payload")?;
+            ctx.copy_slice(&record.payload, "catia_b5_seen_record_payload")?;
         ctx.insert_hash_map(
             &mut seen,
             frame.object_id,
@@ -6038,7 +6038,7 @@ fn indexed_topology_records_and_dependency_candidates(
             continue;
         }
         let seen_payload =
-            ctx.copy_retained_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
+            ctx.copy_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
         ctx.insert_hash_map(
             &mut seen,
             frame.object_id,
@@ -6095,7 +6095,7 @@ fn record_from_frame(
         family: frame.family,
         class: frame.class,
         object_id: frame.object_id,
-        payload: ctx.copy_retained_slice(payload, "catia_b5_record_payload")?,
+        payload: ctx.copy_slice(payload, "catia_b5_record_payload")?,
     }))
 }
 
@@ -6360,7 +6360,7 @@ pub(in crate::families) fn object_stream_populations(
             });
         if !claimed {
             let population =
-                ctx.copy_retained_slice(&stream[range], "catia_b5_unclaimed_population_bytes")?;
+                ctx.copy_slice(&stream[range], "catia_b5_unclaimed_population_bytes")?;
             ctx.push_vec(&mut populations, population, "catia_b5_object_populations")?;
         }
     }
@@ -6543,7 +6543,7 @@ pub(in crate::families) fn select_object_stream_population(
     };
     let mut census_records = Vec::new();
     for record in &selected_records {
-        let payload = ctx.copy_retained_slice(&record.payload, "catia_b5_census_record_payload")?;
+        let payload = ctx.copy_slice(&record.payload, "catia_b5_census_record_payload")?;
         ctx.push_vec(
             &mut census_records,
             B5Record {
@@ -6573,7 +6573,7 @@ pub(in crate::families) fn select_object_stream_population(
         )?;
         census_records.extend(records);
     }
-    let mut source = ctx.copy_retained_slice(
+    let mut source = ctx.copy_slice(
         &selected_stream[selected.range.clone()],
         "catia_b5_selected_source_bytes",
     )?;
@@ -6719,7 +6719,7 @@ fn owned_object_stream_population(
             continue;
         }
         let bytes =
-            ctx.copy_retained_slice(&stream[range.clone()], "catia_b5_population_isolated_bytes")?;
+            ctx.copy_slice(&stream[range.clone()], "catia_b5_population_isolated_bytes")?;
         ctx.admit_hash_map_entry(
             &mut isolated,
             &object_id,
@@ -6752,7 +6752,7 @@ fn owned_object_stream_population(
         "catia_b5_population_isolated_sort",
     )?;
 
-    let mut population = ctx.copy_retained_slice(run, "catia_b5_topology_run_bytes")?;
+    let mut population = ctx.copy_slice(run, "catia_b5_topology_run_bytes")?;
     for (_, _, _, frame) in isolated {
         ctx.extend_retained_bytes(&mut population, &frame, "catia_b5_attached_isolated_bytes")?;
     }

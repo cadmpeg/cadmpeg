@@ -820,7 +820,7 @@ pub(super) fn try_decode_geometry(
                                         .as_ref()
                                         .map(|lane| {
                                             crate::intersection::SupportUvLane::from_checked(
-                                                ctx.copy_retained_slice(
+                                                ctx.copy_slice(
                                                     lane.as_slice(),
                                                     "NX solved support-UV lane copy",
                                                 )?,
@@ -910,7 +910,7 @@ pub(super) fn try_decode_geometry(
                         .as_ref()
                         .map(|lane| {
                             crate::intersection::SupportUvLane::from_checked(
-                                ctx.copy_retained_slice(
+                                ctx.copy_slice(
                                     lane.as_slice(),
                                     "NX solved support-UV lane copy",
                                 )?,
@@ -925,7 +925,7 @@ pub(super) fn try_decode_geometry(
                         .as_ref()
                         .map(|lane| {
                             crate::intersection::SupportUvLane::from_checked(
-                                ctx.copy_retained_slice(
+                                ctx.copy_slice(
                                     lane.as_slice(),
                                     "NX solved support-UV lane copy",
                                 )?,
@@ -1034,7 +1034,7 @@ pub(super) fn try_decode_geometry(
                             .as_ref()
                             .map(|lane| {
                                 crate::intersection::SupportUvLane::from_checked(
-                                    ctx.copy_retained_slice(
+                                    ctx.copy_slice(
                                         lane.as_slice(),
                                         "NX solved support-UV lane copy",
                                     )?,

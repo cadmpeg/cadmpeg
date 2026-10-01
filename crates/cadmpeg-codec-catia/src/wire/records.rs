@@ -199,7 +199,7 @@ fn parse_consolidated_pcurve(
         extrapolation_sites,
         sites,
         range,
-        tail: ctx.copy_retained_slice(&data[tail_at..end], "catia_consolidated_pcurve_tail")?,
+        tail: ctx.copy_slice(&data[tail_at..end], "catia_consolidated_pcurve_tail")?,
     }))
 }
 

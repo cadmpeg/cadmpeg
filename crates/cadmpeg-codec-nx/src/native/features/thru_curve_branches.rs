@@ -248,7 +248,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut groups,
                     1,
                     "NX thru-curve construction branch groups",

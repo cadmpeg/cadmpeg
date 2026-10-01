@@ -145,7 +145,7 @@ fn frame_records(
             if let Some(scope) = scope.as_deref_mut() {
                 ctx.reserve_scoped_vec(scope, &mut records, 1, "Protein logical record frame")?;
             } else {
-                ctx.reserve_retained_vec(&mut records, 1, "Protein logical record frame")?;
+                ctx.reserve_vec(&mut records, 1, "Protein logical record frame")?;
             }
             let mut frame = RecordFrame {
                 logical_offset,
@@ -163,7 +163,7 @@ fn frame_records(
                     "Protein copied record range",
                 )?;
             } else {
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut frame.bytes,
                     RECORD_MARKER.len(),
                     "Protein copied record range",
@@ -187,7 +187,7 @@ fn frame_records(
                 "Protein copied record range",
             )?;
         } else {
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut frame.bytes,
                 payload.len(),
                 "Protein copied record range",

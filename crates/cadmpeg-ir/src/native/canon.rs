@@ -256,7 +256,7 @@ impl CanonError {
             return self;
         };
         let admitted = (|| {
-            ctx.reserve_retained_vec(&mut steps, 1, STORAGE)?;
+            ctx.reserve_vec(&mut steps, 1, STORAGE)?;
             step()
         })();
         match admitted {
@@ -746,7 +746,7 @@ impl ser::SerializeSeq for CanonSeq<'_> {
             .serialize(CanonValue::within(self.ctx, self.depth, self.sink))
             .map_err(|error| error.within(self.ctx, || Ok(Step::Index(index))))?
             .into_value();
-        self.ctx.reserve_retained_vec(&mut self.out, 1, STORAGE)?;
+        self.ctx.reserve_vec(&mut self.out, 1, STORAGE)?;
         self.out.push(element);
         Ok(())
     }

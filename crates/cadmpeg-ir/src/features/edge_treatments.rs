@@ -289,7 +289,7 @@ impl VariableRadii {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
     ) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
-        Self(ctx.copy_retained_slice(&self.0, "IR variable radius copy")?)
+        Self(ctx.copy_slice(&self.0, "IR variable radius copy")?)
             .try_map_radii_owned(ctx, map)
     }
     /// Map owned radii in place through the caller's work budget.

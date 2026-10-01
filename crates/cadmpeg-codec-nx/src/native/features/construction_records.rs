@@ -72,7 +72,7 @@ pub(super) fn resolved_feature_payload_references(
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
                     let section_key = ctx
                         .copy_retained_text(section_key, "NX resolved feature reference section")?;
-                    ctx.reserve_retained_vec(
+                    ctx.reserve_vec(
                         &mut references,
                         1,
                         "NX resolved feature payload references",
@@ -135,7 +135,7 @@ pub(in crate::native) fn feature_projected_curve_references(
             reference.operation_ordinal,
             Some(reference.ordinal),
         )?;
-        ctx.reserve_retained_vec(&mut output, 1, "NX projected curve references")?;
+        ctx.reserve_vec(&mut output, 1, "NX projected curve references")?;
         output.push(FeatureProjectedCurveReference {
             id,
             operation_label,
@@ -284,14 +284,14 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         for reference in field {
             let identity =
                 ctx.copy_retained_text(&reference.id, "NX projected curve construction reference")?;
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut construction_references,
                 1,
                 "NX projected curve construction references",
             )?;
             construction_references.push(identity);
         }
-        ctx.reserve_retained_vec(&mut payloads, 1, "NX projected curve payloads")?;
+        ctx.reserve_vec(&mut payloads, 1, "NX projected curve payloads")?;
         payloads.push(FeatureConstructionPayload {
             id,
             operation_label,
@@ -340,7 +340,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
                 ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
             let value = crate::printable_string::PrintableString::new(text)
                 .map_err(|error| CodecError::Malformed(error.into()))?;
-            ctx.reserve_retained_vec(&mut strings, 1, "NX projected curve strings")?;
+            ctx.reserve_vec(&mut strings, 1, "NX projected curve strings")?;
             strings.push(FeatureProjectedCurveConstructionString {
                 id,
                 operation_label,
@@ -403,7 +403,7 @@ pub(in crate::native) fn feature_point_construction_headers(
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("NX point construction header source offset", 0, 1)
                     })?;
-                ctx.reserve_retained_vec(&mut headers, 1, "NX point construction headers")?;
+                ctx.reserve_vec(&mut headers, 1, "NX point construction headers")?;
                 headers.push(FeaturePointConstructionHeader {
                     id,
                     operation_label,
@@ -543,7 +543,7 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             "NX point scalar lane second block",
         )?;
         let data_blocks = [first_block, second_block];
-        ctx.reserve_retained_vec(&mut lanes, 1, "NX point scalar lanes")?;
+        ctx.reserve_vec(&mut lanes, 1, "NX point scalar lanes")?;
         lanes.push(FeaturePointConstructionScalarLane {
             id,
             operation_label,
@@ -588,7 +588,7 @@ pub(in crate::native) fn feature_surface_construction_references(
             reference.operation_ordinal,
             Some(reference.ordinal),
         )?;
-        ctx.reserve_retained_vec(&mut output, 1, "NX surface construction references")?;
+        ctx.reserve_vec(&mut output, 1, "NX surface construction references")?;
         output.push(FeatureSurfaceConstructionReference {
             id,
             operation_label,
@@ -638,7 +638,7 @@ pub(in crate::native) fn feature_thru_curve_construction_envelopes(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut envelopes,
                     1,
                     "NX thru-curve construction envelopes",
@@ -723,7 +723,7 @@ pub(in crate::native) fn feature_swp104_leading_branches(
             match resolved {
                 Ok(Some(branch)) => {
                     let admitted = (|| -> Result<(), CodecError> {
-                        ctx.reserve_retained_vec(&mut branches, 1, "NX SWP104 leading branches")?;
+                        ctx.reserve_vec(&mut branches, 1, "NX SWP104 leading branches")?;
                         branches.push(branch);
                         Ok(())
                     })();
@@ -808,7 +808,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             continue;
         };
         let mut data_blocks = Vec::new();
-        ctx.reserve_retained_vec(
+        ctx.reserve_vec(
             &mut data_blocks,
             14,
             "NX surface construction source blocks",
@@ -857,7 +857,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             construction_references[slot] = ctx
                 .copy_retained_text(&reference.id, "NX surface construction reference identity")?;
         }
-        ctx.reserve_retained_vec(&mut output, 1, "NX surface construction payloads")?;
+        ctx.reserve_vec(&mut output, 1, "NX surface construction payloads")?;
         output.push(FeatureSurfaceConstructionPayload {
             id,
             operation_label: ctx
@@ -941,7 +941,7 @@ pub(in crate::native) fn feature_surface_construction_strings(
                 ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
             let value = crate::payload_text::PayloadText::new(text)
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
-            ctx.reserve_retained_vec(&mut strings, 1, "NX surface payload strings")?;
+            ctx.reserve_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
                 operation_label: ctx.copy_retained_text(
@@ -1012,7 +1012,7 @@ pub(in crate::native) fn feature_extrude_profile_references(
                     let ordinal = u32::try_from(ordinal).map_err(|_| {
                         ctx.refuse_codec_limit("NX extrude profile reference ordinal", 0, 1)
                     })?;
-                    ctx.reserve_retained_vec(&mut references, 1, "NX extrude profile references")?;
+                    ctx.reserve_vec(&mut references, 1, "NX extrude profile references")?;
                     references.push(FeatureExtrudeProfileReference {
                         id,
                         operation_label,
@@ -1074,7 +1074,7 @@ pub(in crate::native) fn feature_extrude_payload_headers(
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("NX extrude header source offset", 0, 1)
                     })?;
-                ctx.reserve_retained_vec(&mut headers, 1, "NX extrude payload headers")?;
+                ctx.reserve_vec(&mut headers, 1, "NX extrude payload headers")?;
                 headers.push(FeatureExtrudePayloadHeader {
                     id,
                     operation_label,
@@ -1136,7 +1136,7 @@ pub(in crate::native) fn feature_operation_terminal_discriminators(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_retained_vec(&mut lanes, 1, "NX operation terminal discriminators")?;
+                ctx.reserve_vec(&mut lanes, 1, "NX operation terminal discriminators")?;
                 lanes.push(FeatureOperationTerminalDiscriminator {
                     id,
                     operation_label,
@@ -1194,7 +1194,7 @@ pub(in crate::native) fn feature_operation_body_scalar_triples(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.reserve_retained_vec(&mut triples, 1, "NX operation body scalar triples")?;
+                    ctx.reserve_vec(&mut triples, 1, "NX operation body scalar triples")?;
                     triples.push(FeatureOperationBodyScalarTriple {
                         id,
                         operation_label,
@@ -1263,7 +1263,7 @@ pub(in crate::native) fn feature_operation_body_members(
                                     1,
                                 )
                             })?;
-                        ctx.reserve_retained_vec(&mut members, 1, "NX operation body members")?;
+                        ctx.reserve_vec(&mut members, 1, "NX operation body members")?;
                         members.push(FeatureOperationBodyMember {
                             id,
                             operation_label,
@@ -1374,7 +1374,7 @@ pub(in crate::native) fn feature_operation_body_operands(
                 binding.body_object_index == member.member.atom.value()
                     || binding.body_alias_object_index == member.member.atom.value()
             }) {
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut segment_body_bindings,
                     1,
                     "NX operation operand bindings",
@@ -1387,7 +1387,7 @@ pub(in crate::native) fn feature_operation_body_operands(
         if !same_namespace_reference && segment_body_bindings.is_empty() {
             continue;
         }
-        ctx.reserve_retained_vec(&mut operands, 1, "NX feature operation body operands")?;
+        ctx.reserve_vec(&mut operands, 1, "NX feature operation body operands")?;
         operands.push(FeatureOperationBodyOperand {
             id: replace_operation_text(
                 ctx,
@@ -1511,7 +1511,7 @@ pub(in crate::native) fn feature_operation_body_11_continuations(
                         .ok_or_else(|| {
                             ctx.refuse_codec_limit("NX trim body terminal offset", 0, 1)
                         })?;
-                    ctx.reserve_retained_vec(&mut continuations, 1, "NX trim body continuations")?;
+                    ctx.reserve_vec(&mut continuations, 1, "NX trim body continuations")?;
                     continuations.push(FeatureOperationBody11Continuation {
                         id,
                         operation_label,
@@ -1580,7 +1580,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.reserve_retained_vec(
+                                ctx.reserve_vec(
                                     &mut references,
                                     1,
                                     "NX body compact references",
@@ -1610,7 +1610,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.reserve_retained_vec(
+                                ctx.reserve_vec(
                                     &mut references,
                                     1,
                                     "NX body object references",
@@ -1633,7 +1633,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.reserve_retained_vec(&mut lanes, 1, "NX operation body reference lanes")?;
+                    ctx.reserve_vec(&mut lanes, 1, "NX operation body reference lanes")?;
                     lanes.push(FeatureOperationBodyReferenceLane {
                         id,
                         operation_label,
@@ -1723,7 +1723,7 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             };
             let data_block =
                 ctx.copy_retained_text(block, "NX extrude construction profile block")?;
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut profile_references,
                 1,
                 "NX extrude construction profile references",
@@ -1744,7 +1744,7 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
         )?;
         let operation_label =
             ctx.copy_retained_text(operation_label, "NX extrude construction profile operation")?;
-        ctx.reserve_retained_vec(&mut profiles, 1, "NX extrude construction profiles")?;
+        ctx.reserve_vec(&mut profiles, 1, "NX extrude construction profiles")?;
         profiles.push(FeatureExtrudeConstructionProfile {
             id,
             operation_label,
@@ -1804,7 +1804,7 @@ pub(in crate::native) fn feature_extrude_payload_32_branches(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_retained_vec(&mut branches, 1, "NX extrude payload 32 branches")?;
+                ctx.reserve_vec(&mut branches, 1, "NX extrude payload 32 branches")?;
                 branches.push(FeatureExtrudePayload32Branch {
                     id,
                     operation_label,
@@ -1848,7 +1848,7 @@ pub(in crate::native) fn feature_extrude_32_constructions(
                 return Ok(None);
             };
             let id = ctx.copy_retained_text(binding, operation)?;
-            ctx.reserve_retained_vec(&mut copied, 1, operation)?;
+            ctx.reserve_vec(&mut copied, 1, operation)?;
             copied.push(id);
         }
         crate::om::branch_items::BranchItems::new(copied)
@@ -1971,7 +1971,7 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             "NX extrude 32 construction operation",
         )?;
         let branch_id = ctx.copy_retained_text(&branch.id, "NX extrude 32 construction branch")?;
-        ctx.reserve_retained_vec(&mut constructions, 1, "NX extrude 32 constructions")?;
+        ctx.reserve_vec(&mut constructions, 1, "NX extrude 32 constructions")?;
         constructions.push(FeatureExtrude32Construction {
             id,
             operation_label,
@@ -2029,7 +2029,7 @@ pub(in crate::native) fn feature_block_construction_references(
                     )?;
                     let data_block =
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                    ctx.reserve_retained_vec(
+                    ctx.reserve_vec(
                         &mut references,
                         1,
                         "NX block construction references",
@@ -2156,7 +2156,7 @@ pub(in crate::native) fn feature_block_constructions(
         )?;
         let operation_label =
             ctx.copy_retained_text(operation_label, "NX block construction operation")?;
-        ctx.reserve_retained_vec(&mut constructions, 1, "NX block constructions")?;
+        ctx.reserve_vec(&mut constructions, 1, "NX block constructions")?;
         constructions.push(FeatureBlockConstruction {
             id,
             operation_label,
@@ -2203,7 +2203,7 @@ pub(in crate::native) fn feature_block_construction_payloads(
         )?;
         let construction_id =
             ctx.copy_retained_text(&construction.id, "NX block construction payload owner")?;
-        ctx.reserve_retained_vec(&mut payloads, 1, "NX block construction payloads")?;
+        ctx.reserve_vec(&mut payloads, 1, "NX block construction payloads")?;
         payloads.push(FeatureConstructionPayload {
             id,
             operation_label,
@@ -2249,7 +2249,7 @@ pub(in crate::native) fn feature_block_payload_scalars(
                 ctx.copy_retained_text(&payload.id, "NX block payload scalar owner")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX block payload scalar ordinal", 0, 1))?;
-            ctx.reserve_retained_vec(&mut scalars, 1, "NX block payload scalars")?;
+            ctx.reserve_vec(&mut scalars, 1, "NX block payload scalars")?;
             scalars.push(FeaturePayloadScalar {
                 id,
                 operation_label,
@@ -2302,7 +2302,7 @@ pub(in crate::native) fn feature_block_payload_names(
                 ctx.copy_retained_text(&payload.id, "NX block payload name owner")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX block payload name ordinal", 0, 1))?;
-            ctx.reserve_retained_vec(&mut names, 1, "NX block payload names")?;
+            ctx.reserve_vec(&mut names, 1, "NX block payload names")?;
             names.push(FeaturePayloadName {
                 id,
                 operation_label,
@@ -2387,14 +2387,14 @@ pub(in crate::native) fn feature_block_payload_named_records(
             for scalar in scalar_fields {
                 let scalar_id = ctx
                     .copy_retained_text(&scalar.id, "NX block payload named record scalar field")?;
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut scalar_ids,
                     1,
                     "NX block payload named record scalar fields",
                 )?;
                 scalar_ids.push(scalar_id);
             }
-            ctx.reserve_retained_vec(&mut records, 1, "NX block payload named records")?;
+            ctx.reserve_vec(&mut records, 1, "NX block payload named records")?;
             records.push(FeatureBlockPayloadNamedRecord {
                 id,
                 operation_label,
@@ -2459,7 +2459,7 @@ pub(in crate::native) fn feature_block_payload_points(
         let first_id = ctx.copy_retained_text(&first.id, "NX block payload point first scalar")?;
         let second_id =
             ctx.copy_retained_text(&second.id, "NX block payload point second scalar")?;
-        ctx.reserve_retained_vec(&mut points, 1, "NX block payload points")?;
+        ctx.reserve_vec(&mut points, 1, "NX block payload points")?;
         points.push(FeatureBlockPayloadPoint {
             id,
             operation_label,
@@ -2513,7 +2513,7 @@ pub(in crate::native) fn feature_block_payload_point_groups(
             candidate.operation_label == point.operation_label && candidate.name == point.name
         }) {
             let id = ctx.copy_retained_text(&witness.id, "NX block payload point group witness")?;
-            ctx.reserve_retained_vec(&mut witnesses, 1, "NX block payload point group witnesses")?;
+            ctx.reserve_vec(&mut witnesses, 1, "NX block payload point group witnesses")?;
             witnesses.push(id);
         }
         let id = ctx.format_retained(
@@ -2525,7 +2525,7 @@ pub(in crate::native) fn feature_block_payload_point_groups(
             "NX block payload point group operation",
         )?;
         let name = ctx.copy_retained_text(&point.name, "NX block payload point group name")?;
-        ctx.reserve_retained_vec(&mut groups, 1, "NX block payload point groups")?;
+        ctx.reserve_vec(&mut groups, 1, "NX block payload point groups")?;
         groups.push(FeatureBlockPayloadPointGroup {
             id,
             operation_label,
@@ -2673,7 +2673,7 @@ pub(in crate::native) fn feature_block_dimensions(
         let mut anchor_bindings = Vec::new();
         for binding in operation_bindings {
             let id = ctx.copy_retained_text(&binding.id, "NX block dimension anchor binding")?;
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut anchor_bindings,
                 1,
                 "NX block dimension anchor bindings",
@@ -2690,7 +2690,7 @@ pub(in crate::native) fn feature_block_dimensions(
             })
         };
         let values = [dimension(0)?, dimension(1)?, dimension(2)?];
-        ctx.reserve_retained_vec(&mut dimensions, 1, "NX block dimensions")?;
+        ctx.reserve_vec(&mut dimensions, 1, "NX block dimensions")?;
         dimensions.push(FeatureBlockDimensions {
             id,
             operation_label,
@@ -2723,7 +2723,7 @@ pub(in crate::native) fn data_block_object_frames(
                 .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX data block object frame offset", 0, 1))?;
             ctx.charge_entities(1, "NX data block object frame")?;
-            ctx.reserve_retained_vec(&mut out, 1, "NX data block object frames")?;
+            ctx.reserve_vec(&mut out, 1, "NX data block object frames")?;
             out.push(DataBlockObjectFrame {
                 id,
                 data_block,

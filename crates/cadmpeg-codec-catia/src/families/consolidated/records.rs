@@ -897,7 +897,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
                 definition.frame.width(),
                 definition.frame.flag,
                 definition.frame.header_token(),
-                ctx.copy_retained_slice(
+                ctx.copy_slice(
                     &definition.frame.payload,
                     "catia_analytic_circle_test_definition_payload",
                 )?,
@@ -907,7 +907,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
         };
         let descriptor = ConsolidatedRawFrame::from_record(
             parameter,
-            ctx.copy_retained_slice(&data[payload], "catia_analytic_circle_descriptor_payload")?,
+            ctx.copy_slice(&data[payload], "catia_analytic_circle_descriptor_payload")?,
         )?;
         ctx.push_vec(
             &mut runs,
@@ -997,7 +997,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
                     pos: descriptor.pos,
                     record_id: descriptor.record_id,
                     control: descriptor.control,
-                    values: ctx.copy_retained_slice(
+                    values: ctx.copy_slice(
                         &descriptor.values,
                         "catia_class25_edge_descriptor_values",
                     )?,
@@ -1090,7 +1090,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             Some((record, payload, class)) => Some(ConsolidatedEdgeDefinition {
                 frame: ConsolidatedRawFrame::from_record(
                     record,
-                    ctx.copy_retained_slice(
+                    ctx.copy_slice(
                         &data[payload],
                         "catia_edge_use_preceding_definition_payload",
                     )?,
@@ -1166,7 +1166,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         let definition = Some(ConsolidatedEdgeDefinition {
             frame: ConsolidatedRawFrame::from_record(
                 definition_record,
-                ctx.copy_retained_slice(
+                ctx.copy_slice(
                     &data[payload],
                     "catia_edge_use_succeeding_definition_payload",
                 )?,

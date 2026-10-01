@@ -40,7 +40,7 @@ impl<T> NonEmpty<T> {
         ctx.charge_collection_items(1, "NX nonempty entries")?;
         let mut rest = Vec::new();
         for value in values {
-            ctx.reserve_retained_vec(&mut rest, 1, "NX nonempty entries")?;
+            ctx.reserve_vec(&mut rest, 1, "NX nonempty entries")?;
             rest.push(value);
         }
         Ok(Some(Self { first, rest }))
@@ -78,7 +78,7 @@ impl<T> NonEmpty<T> {
         let first = map(self.first);
         let mut rest = Vec::new();
         for value in self.rest {
-            ctx.reserve_retained_vec(&mut rest, 1, "nx nonempty mapped entries")?;
+            ctx.reserve_vec(&mut rest, 1, "nx nonempty mapped entries")?;
             rest.push(map(value));
         }
         Ok(NonEmpty { first, rest })
@@ -97,7 +97,7 @@ impl<T> NonEmpty<T> {
             let Some(value) = map(value) else {
                 return Ok(None);
             };
-            ctx.reserve_retained_vec(&mut rest, 1, "NX nonempty mapped entries")?;
+            ctx.reserve_vec(&mut rest, 1, "NX nonempty mapped entries")?;
             rest.push(value);
         }
         Ok(Some(NonEmpty { first, rest }))

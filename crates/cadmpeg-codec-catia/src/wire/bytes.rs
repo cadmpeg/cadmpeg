@@ -22,7 +22,7 @@ pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
     let arena = DecodeArena::default();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
     let mut values = ctx
-        .retained_vec(bytes.len() / 8, "catia_finite_f64_lane")
+        .collection_vec(bytes.len() / 8, "catia_finite_f64_lane")
         .ok()?;
     while !view.is_empty() {
         values.push(FiniteReal::new(view.f64_le()?)?);
@@ -40,7 +40,7 @@ pub(crate) fn finite_f64_lane_charged(
     if !bytes.len().is_multiple_of(8) {
         return Ok(None);
     }
-    let mut values = ctx.retained_vec(bytes.len() / 8, operation)?;
+    let mut values = ctx.collection_vec(bytes.len() / 8, operation)?;
     let mut view = View::over_retained(bytes);
     while !view.is_empty() {
         let Some(value) = view.f64_le().and_then(FiniteReal::new) else {

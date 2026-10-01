@@ -5863,7 +5863,7 @@ pub(crate) fn reconstruct_incidence_candidates(
                     return Ok(ControlFlow::Continue(()));
                 }
                 solution_pairs =
-                    Some(ctx.copy_retained_slice(pairs, "catia_incidence_solution_pairs")?);
+                    Some(ctx.copy_slice(pairs, "catia_incidence_solution_pairs")?);
                 Ok(ControlFlow::Continue(()))
             },
         },
@@ -5877,7 +5877,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     reconstruct_incidence(
         ctx,
         copy_incidence_edge_rows(ctx, edge_rows)?,
-        ctx.copy_retained_slice(vertex_points, "catia_incidence_vertex_points")?,
+        ctx.copy_slice(vertex_points, "catia_incidence_vertex_points")?,
         edge_faces,
         &solution_pairs,
         face_count,
@@ -6086,7 +6086,7 @@ where
         Ok(reconstruct_incidence(
             ctx,
             copy_incidence_edge_rows(ctx, edge_rows)?,
-            ctx.copy_retained_slice(vertex_points, "catia_incidence_validation_points")?,
+            ctx.copy_slice(vertex_points, "catia_incidence_validation_points")?,
             edge_faces,
             points,
             face_count,

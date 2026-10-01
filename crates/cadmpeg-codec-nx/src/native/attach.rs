@@ -69,7 +69,7 @@ fn push_native_unknown(
     record: UnknownRecord,
 ) -> Result<(), CodecError> {
     ctx.charge_entities(1, "NX native unknown record")?;
-    ctx.reserve_retained_vec(unknowns, 1, "NX native unknown records")?;
+    ctx.reserve_vec(unknowns, 1, "NX native unknown records")?;
     unknowns.push(record);
     Ok(())
 }
@@ -311,7 +311,7 @@ pub(super) fn attach(
         },
     )?;
     for (tessellation, source_offset) in display_jt_tessellations {
-        ctx.reserve_retained_vec(
+        ctx.reserve_vec(
             &mut ir.model.tessellations,
             1,
             "NX attached display tessellations",
@@ -574,7 +574,7 @@ fn attach_configurations<'a>(
         })?;
         let bodies = if active_attribute_use.is_some() {
             let mut selected = Vec::new();
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut selected,
                 ir.model.bodies.len(),
                 "NX active configuration bodies",
@@ -1252,7 +1252,7 @@ fn resolve_rm_face_colors(
             1.0,
         )
         .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
-        ctx.reserve_retained_vec(&mut colors, 1, "NX resolved RM face colors")?;
+        ctx.reserve_vec(&mut colors, 1, "NX resolved RM face colors")?;
         colors.push((binding.face_id, color));
     }
     Ok(colors)
@@ -1503,7 +1503,7 @@ fn attach_jpeg_preview_assets(
         annotations
             .derived_for_decode(ctx, id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::from)?;
-        ctx.reserve_retained_vec(&mut ir.model.assets, 1, "NX JPEG preview assets")?;
+        ctx.reserve_vec(&mut ir.model.assets, 1, "NX JPEG preview assets")?;
         ir.model.assets.push(
             Asset::try_new(
                 id,
@@ -1603,7 +1603,7 @@ fn attach_material_texture_assets(
             cadmpeg_core::decode::u64_from_index(text_bytes),
             "NX material asset text",
         )?;
-        ctx.reserve_retained_vec(&mut assets, 1, "NX material asset records")?;
+        ctx.reserve_vec(&mut assets, 1, "NX material asset records")?;
         assets.push(
             Asset::try_new(
                 extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
@@ -1651,7 +1651,7 @@ fn attach_material_texture_assets(
             .map_err(cadmpeg_core::CodecError::from)?;
     }
 
-    ctx.reserve_retained_vec(
+    ctx.reserve_vec(
         &mut ir.model.assets,
         assets.len(),
         "NX attached material assets",
@@ -2047,7 +2047,7 @@ fn attach_initial_segment_bodies(
         cadmpeg_core::decode::u64_from_index(uniqueness_work),
         "NX retained-history output uniqueness",
     )?;
-    ctx.reserve_retained_vec(
+    ctx.reserve_vec(
         &mut ir.model.features,
         1,
         "NX retained-history input features",
@@ -3426,7 +3426,7 @@ fn attach_feature_operations(
                         cadmpeg_core::decode::u64_from_index(label.id.len()),
                     )
                 })?;
-            ctx.reserve_retained_vec(losses, 1, "NX TEXT annotation losses")?;
+            ctx.reserve_vec(losses, 1, "NX TEXT annotation losses")?;
             let mut message = String::new();
             cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
                 &mut message,
@@ -3861,7 +3861,7 @@ fn attach_feature_operations(
                 .get(label.id.as_str())
                 .or_else(|| hole_packages.outputs.get(label.id.as_str()))
             {
-                outputs = ctx.retained_vec(bodies.len(), "NX feature output bodies")?;
+                outputs = ctx.collection_vec(bodies.len(), "NX feature output bodies")?;
                 for body in bodies {
                     outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
                 }
@@ -3869,7 +3869,7 @@ fn attach_feature_operations(
         }
         if outputs.is_empty() {
             if let Some(body) = boolean_target_output(boolean_definition.as_ref()) {
-                outputs = ctx.retained_vec(1, "NX feature output bodies")?;
+                outputs = ctx.collection_vec(1, "NX feature output bodies")?;
                 outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
             }
         }
@@ -5130,7 +5130,7 @@ fn attach_feature_operations(
         };
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
-                ctx.reserve_retained_vec(&mut outputs, 1, "NX block output bodies")?;
+                ctx.reserve_vec(&mut outputs, 1, "NX block output bodies")?;
                 outputs.push(body.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
             }
         }
@@ -5187,7 +5187,7 @@ fn attach_feature_operations(
             });
         if sphere_op == BooleanOp::NewBody && outputs.is_empty() {
             if let Some((body, _, _)) = &sphere_projection {
-                ctx.reserve_retained_vec(&mut outputs, 1, "NX sphere output bodies")?;
+                ctx.reserve_vec(&mut outputs, 1, "NX sphere output bodies")?;
                 outputs.push(body.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
             }
         }
@@ -5500,7 +5500,7 @@ fn attach_feature_operations(
                         .map_or([].as_slice(), Vec::as_slice),
                 ] {
                     for placement in source {
-                        ctx.reserve_retained_vec(&mut placements, 1, "NX feature hole placements")?;
+                        ctx.reserve_vec(&mut placements, 1, "NX feature hole placements")?;
                         placements
                             .push(placement.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
                     }
@@ -5760,7 +5760,7 @@ fn attach_feature_operations(
                     .id
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
-                let mut bodies = ctx.retained_vec(1, "NX feature result bodies")?;
+                let mut bodies = ctx.collection_vec(1, "NX feature result bodies")?;
                 bodies.push(local_id);
                 append_feature_result_topology(
                     ctx,
@@ -6814,7 +6814,7 @@ fn emit_sketch(
     sketch_id: &SketchId,
     entities: Vec<(u64, SketchEntity)>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(
+    ctx.reserve_vec(
         &mut ir.model.sketch_entities,
         entities.len(),
         "NX sketch output entities",
@@ -8125,7 +8125,7 @@ fn mapped_attribute_values<T>(
     input: &[T],
     map: impl Fn(&T) -> AttributeValue,
 ) -> Result<Vec<AttributeValue>, CodecError> {
-    let mut values = ctx.retained_vec(input.len(), "NX Parasolid numeric attribute values")?;
+    let mut values = ctx.collection_vec(input.len(), "NX Parasolid numeric attribute values")?;
     values.extend(input.iter().map(map));
     Ok(values)
 }

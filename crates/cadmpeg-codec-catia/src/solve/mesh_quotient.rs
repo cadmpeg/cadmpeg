@@ -254,7 +254,7 @@ fn copy_mesh_endpoint_resolution(
     Ok(match resolution {
         MeshSolve::Solved((topology, points)) => MeshSolve::Solved((
             topology.clone_charged(ctx)?,
-            ctx.copy_retained_slice(points, "catia_endpoint_memo_points")?,
+            ctx.copy_slice(points, "catia_endpoint_memo_points")?,
         )),
         MeshSolve::Failed(failure) => MeshSolve::Failed(*failure),
     })
@@ -758,7 +758,7 @@ impl MeshCoordinateRootDomains {
             edges: Arc::clone(&self.edges),
             root_edges: Arc::clone(&self.root_edges),
             edge_candidates: Arc::clone(&self.edge_candidates),
-            coverage_matching: ctx.copy_retained_slice(
+            coverage_matching: ctx.copy_slice(
                 &self.coverage_matching,
                 "catia_coordinate_root_clone_matching",
             )?,
@@ -1194,7 +1194,7 @@ impl MeshCoordinateRootDomains {
             "catia_coordinate_refine_candidate_pairs",
         )?;
         edge_candidates[edge] =
-            ctx.copy_retained_slice(&[pair], "catia_coordinate_refine_selected_pair")?;
+            ctx.copy_slice(&[pair], "catia_coordinate_refine_selected_pair")?;
         let Some(RefinedCoordinateDomains {
             domains,
             coverage_matching,
@@ -1501,7 +1501,7 @@ impl<'storage> MeshQuotient<'storage> {
             "catia_quotient_clone_member_rows",
         )?;
         for row in &self.members {
-            members.push(ctx.copy_retained_slice(row, "catia_quotient_clone_member_nodes")?);
+            members.push(ctx.copy_slice(row, "catia_quotient_clone_member_nodes")?);
         }
         Ok(Self {
             union,
@@ -6875,7 +6875,7 @@ impl MeshEndpointRelationSelection {
                 edge_pairs,
             } => {
                 let mut assignments =
-                    ctx.copy_retained_slice(assignments, "catia_relation_normalized_assignments")?;
+                    ctx.copy_slice(assignments, "catia_relation_normalized_assignments")?;
                 ctx.sort_unstable_by(
                     &mut assignments,
                     Ord::cmp,
@@ -6884,7 +6884,7 @@ impl MeshEndpointRelationSelection {
                 )?;
                 assignments.dedup();
                 let mut edge_pairs =
-                    ctx.copy_retained_slice(edge_pairs, "catia_relation_normalized_pairs")?;
+                    ctx.copy_slice(edge_pairs, "catia_relation_normalized_pairs")?;
                 for (_, pair) in &mut edge_pairs {
                     ctx.sort_unstable_by(
                         pair,
@@ -8186,7 +8186,7 @@ fn resolve_endpoint_configuration_relation_streaming(
             let canonical_pairs = if let Some(gauge) = candidate_gauge {
                 canonicalize_complete_endpoint_pairs(ctx, &edge_pairs, gauge)?
             } else {
-                Some(ctx.copy_retained_slice(&edge_pairs, "catia_relation_canonical_pairs")?)
+                Some(ctx.copy_slice(&edge_pairs, "catia_relation_canonical_pairs")?)
             };
             let Some(canonical_pairs) = canonical_pairs else {
                 return Ok(false);
@@ -8213,7 +8213,7 @@ fn resolve_endpoint_configuration_relation_streaming(
                 };
                 let mut boundaries = Vec::new();
                 for boundary in &source.boundaries {
-                    let copy = ctx.copy_retained_slice(
+                    let copy = ctx.copy_slice(
                         boundary,
                         "catia_relation_assignment_boundary_values",
                     )?;
@@ -10303,7 +10303,7 @@ where
                 // The parent budget only decreases, so retrying the same key
                 // cannot turn an exhausted materialization into a solution.
                 if endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES {
-                    let endpoint_key = ctx.copy_retained_slice(pairs, "catia_endpoint_memo_key")?;
+                    let endpoint_key = ctx.copy_slice(pairs, "catia_endpoint_memo_key")?;
                     let retained = copy_mesh_endpoint_resolution(ctx, &resolution)?;
                     ctx.insert_hash_map(
                         &mut endpoint_resolution_memo,
@@ -10492,7 +10492,7 @@ where
                     return Ok(true);
                 }
                 solution = Some((
-                    ctx.copy_retained_slice(assignment, "catia_face_domain_solution_assignment")?,
+                    ctx.copy_slice(assignment, "catia_face_domain_solution_assignment")?,
                     topology,
                     point_assignment,
                 ));

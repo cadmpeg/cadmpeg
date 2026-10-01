@@ -893,7 +893,7 @@ fn historical_record_archive(
             })?;
             let _temporary = ctx.reserve_scoped(token_bytes, "copy F3D archived record tokens")?;
             let mut tokens =
-                ctx.retained_vec(record.tokens.len(), "copy F3D archived record tokens")?;
+                ctx.collection_vec(record.tokens.len(), "copy F3D archived record tokens")?;
             for token in record.tokens.iter() {
                 tokens.push(clone_historical_token(ctx, token)?);
             }

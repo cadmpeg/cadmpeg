@@ -341,7 +341,7 @@ pub(super) fn saved_toggle_records(
     let Some(parsed) = parse_saved_toggle_stream(ctx, bytes, source_offset)? else {
         return Ok((Vec::new(), Vec::new()));
     };
-    let mut streams = ctx.retained_vec(1, "store NX saved toggle stream")?;
+    let mut streams = ctx.collection_vec(1, "store NX saved toggle stream")?;
     streams.push(parsed.stream);
     Ok((streams, parsed.entries))
 }
@@ -421,7 +421,7 @@ fn parse_saved_toggle_stream(
     let count = usize::try_from(entry_count).map_err(|_| {
         ctx.refuse_codec_limit("index NX saved toggle entries", 0, u64::from(entry_count))
     })?;
-    let mut entries = ctx.retained_vec(count, "store NX saved toggle entries")?;
+    let mut entries = ctx.collection_vec(count, "store NX saved toggle entries")?;
     let mut view = View::over_retained(bytes);
     let Some(_version) = view.u8() else {
         return Ok(None);

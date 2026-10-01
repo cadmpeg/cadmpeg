@@ -794,10 +794,10 @@ pub(super) fn copy_pcurve_nurbs(
     let knots = curve.knots().try_clone_for_decode(ctx, knot_operation)?;
     let poles = match curve.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
-            points: ctx.copy_retained_slice(points, pole_operation)?,
+            points: ctx.copy_slice(points, pole_operation)?,
         },
         PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
-            points: ctx.copy_retained_slice(points, pole_operation)?,
+            points: ctx.copy_slice(points, pole_operation)?,
         },
     };
     cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(

@@ -910,7 +910,7 @@ fn parse_curve_support(
         return Ok(None);
     };
     let tail =
-        ctx.copy_retained_slice(&record.payload[position..], "catia_e5_curve_support_tail")?;
+        ctx.copy_slice(&record.payload[position..], "catia_e5_curve_support_tail")?;
     Ok(Some(E5CurveSupport {
         kind,
         mode,
@@ -2078,7 +2078,7 @@ fn parse_edge(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<E5E
     let Some(parameter_end) = wire::tokens::object_ref(record.payload, &mut position, false) else {
         return Ok(None);
     };
-    let tail = ctx.copy_retained_slice(&record.payload[position..], "catia_e5_edge_tail")?;
+    let tail = ctx.copy_slice(&record.payload[position..], "catia_e5_edge_tail")?;
     Ok(Some(E5Edge {
         support,
         start_vertex,

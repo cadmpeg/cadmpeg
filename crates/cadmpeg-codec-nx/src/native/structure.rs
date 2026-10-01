@@ -331,7 +331,7 @@ pub(super) fn fast_load_component_object_groups(
         let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut groups, 1, "NX fast-load object groups")?;
+        ctx.reserve_vec(&mut groups, 1, "NX fast-load object groups")?;
         let uuid_text =
             ctx.copy_retained_text(uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
         groups.push(FastLoadComponentObjectGroup {
@@ -503,7 +503,7 @@ pub(super) fn fast_load_component_roster(
         return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
-    let mut prototypes = ctx.retained_vec::<FastLoadComponentPrototype>(
+    let mut prototypes = ctx.collection_vec::<FastLoadComponentPrototype>(
         candidate.prototype_count,
         "NX fast-load prototypes",
     )?;
@@ -529,7 +529,7 @@ pub(super) fn fast_load_component_roster(
         });
     }
     let mut uuids =
-        ctx.retained_vec::<FastLoadComponentUuid>(candidate.uuid_count, "NX fast-load UUIDs")?;
+        ctx.collection_vec::<FastLoadComponentUuid>(candidate.uuid_count, "NX fast-load UUIDs")?;
     let mut at = candidate.uuids_offset;
     for ordinal in 0..candidate.uuid_count {
         let (offset, text) = parse_tagged_string(payload, &mut at, 3).ok_or_else(|| {
@@ -565,7 +565,7 @@ pub(super) fn fast_load_component_roster(
     let markers = lane_bytes(candidate.occurrence_markers_offset)?;
     let prototype_indices = lane_bytes(candidate.occurrences_offset)?;
     let uuid_indices = lane_bytes(candidate.uuid_indices_offset)?;
-    let mut records = ctx.retained_vec::<FastLoadComponentOccurrence>(
+    let mut records = ctx.collection_vec::<FastLoadComponentOccurrence>(
         candidate.occurrence_count,
         "NX fast-load occurrences",
     )?;

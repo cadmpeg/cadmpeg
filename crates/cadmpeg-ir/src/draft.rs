@@ -350,7 +350,7 @@ impl<A> ModelDraft<A> {
             };
         }
         crate::document::arena_registry!(check_identity);
-        ctx.reserve_retained_vec(T::arena_mut(&mut self.model), 1, "draft entity arena")?;
+        ctx.reserve_vec(T::arena_mut(&mut self.model), 1, "draft entity arena")?;
         T::arena_mut(&mut self.model).push(entity);
         Ok(())
     }
@@ -777,7 +777,7 @@ impl<'a> CommitSession<'a> {
         macro_rules! reserve_arenas {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(if !draft.model.$field.is_empty() {
-                    ctx.reserve_retained_vec(&mut self.base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
+                    ctx.reserve_vec(&mut self.base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
                 })*
             };
         }
@@ -802,7 +802,7 @@ impl<'a> CommitSession<'a> {
             let storage = DecodeStorage(ctx);
             for (hash, group) in &staged {
                 storage.entry(identities, hash, "committed identity slots")?;
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     identities.entry(*hash).or_default(),
                     group.len(),
                     "committed identity slots",

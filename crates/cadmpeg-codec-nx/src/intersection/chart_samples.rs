@@ -16,7 +16,7 @@ pub(crate) struct ChartSamples {
 
 impl ChartSamples {
     pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let mut values = ctx.retained_vec(self.samples.len(), "NX solved chart sample copy")?;
+        let mut values = ctx.collection_vec(self.samples.len(), "NX solved chart sample copy")?;
         ctx.charge_work(
             u64_from_index(self.samples.len()),
             "copy NX solved chart samples",
@@ -38,7 +38,7 @@ impl ChartSamples {
             u64_from_index(points.len()),
             "form NX derived chart sample pairs",
         )?;
-        let mut samples = ctx.retained_vec(points.len(), "NX derived chart sample pairs")?;
+        let mut samples = ctx.collection_vec(points.len(), "NX derived chart sample pairs")?;
         let mut parameter = preamble.base_parameter();
         let mut previous = None::<FinitePoint3>;
         for point in points {
@@ -94,7 +94,7 @@ impl ChartSamples {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Point3>, CodecError> {
-        let mut points = ctx.retained_vec(self.samples.len(), "NX chart points")?;
+        let mut points = ctx.collection_vec(self.samples.len(), "NX chart points")?;
         ctx.charge_work(
             u64_from_index(self.samples.len()),
             "project NX chart points",
@@ -116,7 +116,7 @@ impl ChartSamples {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<f64>, CodecError> {
-        let mut parameters = ctx.retained_vec(self.samples.len(), "NX chart parameters")?;
+        let mut parameters = ctx.collection_vec(self.samples.len(), "NX chart parameters")?;
         ctx.charge_work(
             u64_from_index(self.samples.len()),
             "project NX chart parameters",
@@ -147,7 +147,7 @@ impl ChartSamples {
             "replace NX chart sample pairs",
         )?;
         let mut replacement =
-            ctx.retained_vec(self.samples.len(), "NX chart parameter replacement")?;
+            ctx.collection_vec(self.samples.len(), "NX chart parameter replacement")?;
         for (old, new) in self.samples.iter().zip(other.samples.iter()) {
             replacement.push((old.0, new.1));
         }

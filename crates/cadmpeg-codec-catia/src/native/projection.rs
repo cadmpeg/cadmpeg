@@ -727,7 +727,7 @@ pub(crate) fn preview_views(
                 format_args!("catia:outer:preview#{}", views.len()),
                 "catia_native_preview_id",
             )?;
-            let data = ctx.copy_retained_slice(
+            let data = ctx.copy_slice(
                 &segment.data[preview.range.clone()],
                 "catia_native_preview_bytes",
             )?;
@@ -1117,10 +1117,10 @@ pub(crate) fn native_object_graph(
             byte_offset: u64_from_index(record.pos),
             byte_len: u64_from_index(record.total_len),
             lead: record.lead,
-            head: ctx.copy_retained_slice(record.head(), "catia_native_record_head")?,
+            head: ctx.copy_slice(record.head(), "catia_native_record_head")?,
             inline_body: record
                 .inline_body()
-                .map(|bytes| ctx.copy_retained_slice(bytes, "catia_native_record_inline_body"))
+                .map(|bytes| ctx.copy_slice(bytes, "catia_native_record_inline_body"))
                 .transpose()?,
             owner: roles.owner.map(CatiaObjectOwner::from),
             class: roles.class_ref.map(|class_ref| CatiaObjectClass {

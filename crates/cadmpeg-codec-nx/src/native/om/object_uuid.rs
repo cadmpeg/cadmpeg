@@ -154,7 +154,7 @@ pub(in crate::native) fn object_uuid_values(
                 {
                     continue;
                 }
-                ctx.reserve_retained_vec(&mut record_ids, 1, "NX OM UUID records")?;
+                ctx.reserve_vec(&mut record_ids, 1, "NX OM UUID records")?;
                 record_ids.push(uuid_record_id(ctx, section_ordinal, record_ordinal)?);
             }
             let Some(records) = NonEmpty::from_vec(record_ids) else {
@@ -165,7 +165,7 @@ pub(in crate::native) fn object_uuid_values(
             else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut values, 1, "NX OM UUID values")?;
+            ctx.reserve_vec(&mut values, 1, "NX OM UUID values")?;
             let id = uuid_value_id(ctx, section_ordinal, value.offset)?;
             let uuid = crate::canonical_uuid::CanonicalUuid::new(
                 ctx.copy_retained_text(value.value.as_str(), "retain NX OM UUID text")?,

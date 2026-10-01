@@ -1413,7 +1413,7 @@ impl Model {
                         "procedural surface refusal",
                     )?)));
                 }
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut self.procedural_surfaces,
                     1,
                     "store procedural surface constructions",
@@ -1431,7 +1431,7 @@ impl Model {
                 let construction = procedural
                     .id
                     .try_clone_for_decode(ctx, "procedural surface owner identity")?;
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut self.procedural_surfaces,
                     1,
                     "store procedural surface constructions",
@@ -1531,7 +1531,7 @@ impl Model {
                         "procedural curve refusal",
                     )?)));
                 }
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut self.procedural_curves,
                     1,
                     "store procedural curve constructions",
@@ -1549,7 +1549,7 @@ impl Model {
                 let construction = procedural
                     .id
                     .try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?;
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut self.procedural_curves,
                     1,
                     "store procedural curve constructions",

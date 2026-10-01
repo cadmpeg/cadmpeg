@@ -2071,12 +2071,12 @@ fn parse_trim_record_with_length_encoding(
         }
 
         let (strip_lengths, fan_lengths) = lengths.split_at_checked(layout.strip_count)?;
-        let strip_lengths = match ctx.copy_retained_slice(strip_lengths, "catia_trim_strip_lengths")
+        let strip_lengths = match ctx.copy_slice(strip_lengths, "catia_trim_strip_lengths")
         {
             Ok(lengths) => lengths,
             Err(error) => return Some(Err(error)),
         };
-        let fan_lengths = match ctx.copy_retained_slice(fan_lengths, "catia_trim_fan_lengths") {
+        let fan_lengths = match ctx.copy_slice(fan_lengths, "catia_trim_fan_lengths") {
             Ok(lengths) => lengths,
             Err(error) => return Some(Err(error)),
         };

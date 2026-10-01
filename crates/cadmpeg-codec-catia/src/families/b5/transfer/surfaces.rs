@@ -226,7 +226,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
             "B5 rolling-ball carrier requires a jet definition",
         ));
     };
-    let stations = ctx.copy_retained_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
+    let stations = ctx.copy_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
         cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
             jet.degree(),

@@ -685,7 +685,7 @@ impl SketchGeometry {
                     .transpose()?;
                 let object = object.try_clone_for_decode(ctx, operation)?;
                 let mut copied_subelements = Vec::new();
-                ctx.reserve_retained_vec(&mut copied_subelements, subelements.len(), operation)?;
+                ctx.reserve_vec(&mut copied_subelements, subelements.len(), operation)?;
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(subelements.len()),
                     operation,

@@ -104,7 +104,7 @@ fn locate_messages<'a>(
             return Ok(None);
         };
         offset = message.end_offset();
-        ctx.reserve_retained_vec(&mut located, 1, "nx state messages")?;
+        ctx.reserve_vec(&mut located, 1, "nx state messages")?;
         located.push(message);
     }
     Ok(Some(located))
@@ -297,7 +297,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 if lane_end != next {
                     return Ok(None);
                 }
-                ctx.reserve_retained_vec(&mut entries, 1, "nx state block entries")?;
+                ctx.reserve_vec(&mut entries, 1, "nx state block entries")?;
                 entries.push(StateTableEntry::Slots(lane.into_slots()));
                 at = next;
             } else {
@@ -314,7 +314,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 if row_end != next {
                     return Ok(None);
                 }
-                ctx.reserve_retained_vec(&mut entries, 1, "nx state block entries")?;
+                ctx.reserve_vec(&mut entries, 1, "nx state block entries")?;
                 entries.push(StateTableEntry::Status(row.body()));
                 at = next;
             }
@@ -326,7 +326,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             if next <= at || next > path_end {
                 return Ok(None);
             }
-            ctx.reserve_retained_vec(&mut messages, 1, "nx state block messages")?;
+            ctx.reserve_vec(&mut messages, 1, "nx state block messages")?;
             messages.push(message.body());
             at = next;
             break;
@@ -340,7 +340,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         if next <= at || next > path_end {
             return Ok(None);
         }
-        ctx.reserve_retained_vec(&mut messages, 1, "nx state block messages")?;
+        ctx.reserve_vec(&mut messages, 1, "nx state block messages")?;
         messages.push(message.body());
         at = next;
     }

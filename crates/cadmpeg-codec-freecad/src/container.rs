@@ -324,7 +324,7 @@ pub(crate) fn summary_notes(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<Vec<String>, CodecError> {
-    let mut notes = ctx.retained_vec(
+    let mut notes = ctx.collection_vec(
         6 + usize::from(scan.document.program_version.is_some()),
         "FCStd summary notes",
     )?;

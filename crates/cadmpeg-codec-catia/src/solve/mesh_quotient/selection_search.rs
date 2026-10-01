@@ -422,7 +422,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     equations.extend(common);
                     let cached_equations = self
                         .ctx
-                        .copy_retained_slice(&equations, "catia_forced_cached_equation_copy")?;
+                        .copy_slice(&equations, "catia_forced_cached_equation_copy")?;
                     let mut cache = self.face_equation_cache.borrow_mut();
                     if cache.len() >= MAX_FACE_EQUATION_CACHE_ENTRIES {
                         cache.clear();
@@ -1887,7 +1887,7 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     let topology = StandardTopology {
         faces,
         edge_rows: copy_mesh_edge_rows(ctx, edge_rows)?,
-        vertex_points: ctx.copy_retained_slice(vertex_points, "catia_singleton_topology_points")?,
+        vertex_points: ctx.copy_slice(vertex_points, "catia_singleton_topology_points")?,
         logical_vertex_count: vertex_points.len(),
     };
     let Some(_) = topology.edge_vertices(ctx)? else {

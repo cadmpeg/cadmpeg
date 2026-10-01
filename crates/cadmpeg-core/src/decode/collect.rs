@@ -63,32 +63,7 @@ enum VecGrowth {
 }
 
 impl DecodeContext<'_> {
-    /// Admit additional items and reserve retained backing storage.
-    pub fn reserve_retained_vec<T>(
-        &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.reserve_retained_vec_limit(values, count, operation)
-            .map_err(Into::into)
-    }
 
-    /// Admit items with a resource-only refusal channel.
-    pub fn reserve_retained_vec_limit<T>(
-        &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), ResourceLimit> {
-        self.reserve_retained_vec_storage(
-            values,
-            count,
-            VecGrowth::Amortized,
-            Some(count),
-            operation,
-        )
-    }
 
     /// Reserve backing storage without admitting values not yet inserted.
     pub fn reserve_retained_capacity_limit<T>(
@@ -153,34 +128,7 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
-    /// Appends a value after admitting its slot and retained element storage.
-    pub fn push_retained_vec<T>(
-        &self,
-        values: &mut Vec<T>,
-        value: T,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.reserve_retained_vec(values, 1, operation)?;
-        values.push(value);
-        Ok(())
-    }
 
-    /// Creates a vector with charged slots and retained element storage.
-    pub fn retained_vec<T>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        let mut values = Vec::new();
-        self.reserve_retained_vec_storage(
-            &mut values,
-            count,
-            VecGrowth::Exact,
-            Some(count),
-            operation,
-        )?;
-        Ok(values)
-    }
 
     /// Retains vector storage whose slots were admitted in aggregate.
     pub fn reserve_retained_admitted_vec<T>(
@@ -248,7 +196,7 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        reservation.with_storage_limit(|| self.reserve_retained_vec_limit(values, count, operation))
+        reservation.with_storage_limit(|| self.reserve_vec_limit(values, count, operation))
     }
 
     /// Appends one item with scoped storage and a charged collection slot.
@@ -354,7 +302,7 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         self.charge_entities(u64_from_index(count), operation)?;
         self.charge_retained(text_bytes, operation)?;
-        self.reserve_retained_vec(records, count, operation)
+        self.reserve_vec(records, count, operation)
     }
 
     /// Collects retained slots before adding each value.
@@ -657,19 +605,6 @@ impl DecodeContext<'_> {
         Ok(out)
     }
 
-    /// Inserts a unique set value after retaining its storage and slot.
-    pub fn insert_retained_hash_set<T: Eq + Hash>(
-        &self,
-        values: &mut HashSet<T>,
-        value: T,
-        operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        if values.contains(&value) {
-            return Ok(false);
-        }
-        self.reserve_set(values, 1, operation)?;
-        Ok(values.insert(value))
-    }
 
     /// Inserts a unique tree value after admitting its scoped value storage.
     pub fn insert_scoped_btree_value<T: Ord>(
@@ -1068,14 +1003,6 @@ impl DecodeContext<'_> {
         Ok(collected)
     }
 
-    /// Copies retained items and charges both their slots and storage.
-    pub fn copy_retained_slice<T: Copy>(
-        &self,
-        values: &[T],
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        self.copy_slice(values, operation)
-    }
 
     /// Copies retained rows and charges row and item slots.
     pub fn copy_retained_rows<T: Copy>(
@@ -1085,7 +1012,7 @@ impl DecodeContext<'_> {
         item_operation: &'static str,
     ) -> Result<Vec<Vec<T>>, CodecError> {
         self.try_collect_retained_with(rows, row_operation, |row| {
-            self.copy_retained_slice(row, item_operation)
+            self.copy_slice(row, item_operation)
         })
     }
 
@@ -1742,11 +1669,11 @@ mod tests {
         ctx.reserve_retained_capacity_limit(&mut values, 1, "reserve retained capacity")
             .expect("admitted test operation");
         assert_eq!(values.capacity(), 4);
-        ctx.push_retained_vec(&mut values, 7u64, "admit retained item")
+        ctx.push_vec(&mut values, 7u64, "admit retained item")
             .expect("admitted test operation");
         assert_eq!(values, [7]);
         let error = ctx
-            .push_retained_vec(&mut values, 8u64, "refuse second item")
+            .push_vec(&mut values, 8u64, "refuse second item")
             .expect_err("test operation refuses");
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1 && limit.additional == 1)
@@ -1762,7 +1689,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
         assert_eq!(
-            ctx.copy_retained_slice(&[(); 3], "zero sized copy")
+            ctx.copy_slice(&[(); 3], "zero sized copy")
                 .expect("admitted test operation"),
             vec![(); 3]
         );
@@ -1781,7 +1708,7 @@ mod tests {
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
         let mut values = Vec::<u64>::new();
         let error = ctx
-            .reserve_retained_vec(&mut values, usize::MAX, "oversized retained vector")
+            .reserve_vec(&mut values, usize::MAX, "oversized retained vector")
             .expect_err("test operation refuses");
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
@@ -1792,7 +1719,7 @@ mod tests {
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
         let error = ctx
             .with_scoped_storage("oversized scoped vector", || {
-                ctx.reserve_retained_vec(&mut values, usize::MAX, "oversized scoped vector")
+                ctx.reserve_vec(&mut values, usize::MAX, "oversized scoped vector")
             })
             .expect_err("test operation refuses");
         assert!(
@@ -2311,7 +2238,7 @@ mod tests {
         copy_retained_slice_charges_before_allocation,
         2,
         |ctx: &DecodeContext<'_>| ctx
-            .copy_retained_slice(&[1_u8, 2], "test retained slice")
+            .copy_slice(&[1_u8, 2], "test retained slice")
             .map(|_| ())
     );
     retained_case!(
@@ -2522,7 +2449,7 @@ mod tests {
         2,
         |ctx: &DecodeContext<'_>| {
             let mut values = Vec::<u8>::new();
-            let result = ctx.reserve_retained_vec(&mut values, 2, "test retained growth");
+            let result = ctx.reserve_vec(&mut values, 2, "test retained growth");
             if result.is_err() {
                 assert_eq!(values.capacity(), 0);
             }
@@ -2534,7 +2461,7 @@ mod tests {
         retained_vec_succeeds_under_service_profile,
         ResourceDimension::RetainedBytes,
         2,
-        |ctx: &DecodeContext<'_>| ctx.retained_vec::<u8>(2, "test retained vec").map(|_| ())
+        |ctx: &DecodeContext<'_>| ctx.collection_vec::<u8>(2, "test retained vec").map(|_| ())
     );
     operation_case!(
         reserve_retained_admitted_vec_refuses_before_growth,
@@ -2732,7 +2659,7 @@ mod tests {
         let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
         let mut values = Vec::<u16>::new();
         let error = ctx
-            .push_retained_vec(&mut values, 7, "test retained push")
+            .push_vec(&mut values, 7, "test retained push")
             .expect_err("test operation refuses");
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
@@ -2746,7 +2673,7 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
         let mut values = Vec::<u16>::new();
-        ctx.push_retained_vec(&mut values, 7, "test retained push")
+        ctx.push_vec(&mut values, 7, "test retained push")
             .expect("test operation succeeds");
         assert_eq!(values, [7]);
     }
@@ -3046,7 +2973,7 @@ mod tests {
             .expect("test decode context");
         let mut bytes = Vec::<u8>::new();
         let error = ctx
-            .reserve_retained_vec(&mut bytes, 3, "nx JT tessellation colors")
+            .reserve_vec(&mut bytes, 3, "nx JT tessellation colors")
             .expect_err("three color bytes exceed two collection items");
         assert!(matches!(
             error,
@@ -3065,7 +2992,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
         let mut values = Vec::<u8>::new();
-        ctx.reserve_retained_vec(&mut values, 1, "test retained slots")
+        ctx.reserve_vec(&mut values, 1, "test retained slots")
             .expect("vector slot is not an entity");
         assert!(values.is_empty());
     }
@@ -3495,7 +3422,7 @@ mod tests {
         let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
         let mut values = HashSet::new();
         assert!(
-            matches!(ctx.insert_retained_hash_set(&mut values, 7u16, "test retained set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+            matches!(ctx.insert_hash_set(&mut values, 7u16, "test retained set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
         assert!(values.is_empty());
         assert_eq!(values.capacity(), 0);
@@ -3508,10 +3435,10 @@ mod tests {
             .expect("test context");
         let mut values = HashSet::new();
         assert!(ctx
-            .insert_retained_hash_set(&mut values, 7u16, "test retained set")
+            .insert_hash_set(&mut values, 7u16, "test retained set")
             .expect("service admission"));
         assert!(!ctx
-            .insert_retained_hash_set(&mut values, 7u16, "test retained set")
+            .insert_hash_set(&mut values, 7u16, "test retained set")
             .expect("duplicate"));
         assert_eq!(values, HashSet::from([7]));
     }

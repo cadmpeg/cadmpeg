@@ -104,7 +104,7 @@ pub(in crate::native) fn data_block_counted_index_lanes(
                 };
                 let row_ordinal = u32::try_from(ordinal)
                     .map_err(|_| ctx.refuse_codec_limit("NX counted lane ordinal", 0, 1))?;
-                ctx.reserve_retained_vec(&mut output, 1, "NX native counted index lanes")?;
+                ctx.reserve_vec(&mut output, 1, "NX native counted index lanes")?;
                 output.push(DataBlockCountedIndexLane {
                     id: counted_lane_id(ctx, section_ordinal, block_ordinal, ordinal)?,
                     data_block: retained_om_index_id(
@@ -165,7 +165,7 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
                 .map_err(|_| ctx.refuse_codec_limit("NX ABR lane section ordinal", 0, 1))?;
             let row_ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX ABR lane ordinal", 0, 1))?;
-            ctx.reserve_retained_vec(&mut output, 1, "NX native ABR reference lanes")?;
+            ctx.reserve_vec(&mut output, 1, "NX native ABR reference lanes")?;
             output.push(DataBlockAbrReferenceLane {
                 id: retained_om_index_id(
                     ctx,

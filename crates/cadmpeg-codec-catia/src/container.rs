@@ -957,7 +957,7 @@ pub(crate) fn logical_record_streams(
     if streams.is_empty() {
         if let Some(range) = outer_preamble_range(&scan.data) {
             let stream =
-                ctx.copy_retained_slice(&scan.data[range], "catia_outer_preamble_stream")?;
+                ctx.copy_slice(&scan.data[range], "catia_outer_preamble_stream")?;
             ctx.push_vec(&mut streams, stream, "catia_logical_record_streams")?;
         }
     }

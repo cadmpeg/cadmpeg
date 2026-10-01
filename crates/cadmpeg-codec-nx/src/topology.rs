@@ -697,7 +697,7 @@ pub(crate) fn intersection_data_curves(
             continue;
         }
         ctx.insert_btree_set(&mut seen, curve.xmt, "NX intersection identities")?;
-        ctx.reserve_retained_vec(&mut out, 1, "NX intersection data curves")?;
+        ctx.reserve_vec(&mut out, 1, "NX intersection data curves")?;
         out.push(curve);
     }
     Ok(out)
@@ -1606,7 +1606,7 @@ impl Graph {
                 .fin
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
             let ring = self.fin_ring(ctx, current, first_fin)?;
-            ctx.reserve_retained_vec(&mut rings, 1, "NX face loop rings")?;
+            ctx.reserve_vec(&mut rings, 1, "NX face loop rings")?;
             rings.push((current, ring));
             loop_xmt = fields.next_loop;
         }
@@ -1642,7 +1642,7 @@ impl Graph {
                 std::mem::size_of::<u32>(),
             ))?;
             ctx.insert_btree_set(&mut seen, current, "NX FIN ring identities")?;
-            ctx.reserve_retained_vec(&mut ring, 1, "NX FIN ring entries")?;
+            ctx.reserve_vec(&mut ring, 1, "NX FIN ring entries")?;
             ring.push(current);
             let invalid_fin = FaceLoopFailure::InvalidFinRing {
                 loop_xmt,
@@ -1769,7 +1769,7 @@ impl Graph {
         let Some(count) = self.shell_face_count(shell) else {
             return Ok(None);
         };
-        let mut faces = ctx.retained_vec(count, "NX shell face identities")?;
+        let mut faces = ctx.collection_vec(count, "NX shell face identities")?;
         let Some(fields) = shell.shell_fields() else {
             return Ok(None);
         };

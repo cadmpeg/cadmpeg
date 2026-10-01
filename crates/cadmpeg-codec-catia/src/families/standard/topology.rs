@@ -152,7 +152,7 @@ impl StandardTopology {
         for face in &self.faces {
             let mut boundaries = Vec::new();
             for boundary in &face.boundaries {
-                let coedges = ctx.copy_retained_slice(
+                let coedges = ctx.copy_slice(
                     boundary.coedges.as_slice(),
                     "catia_standard_topology_copy_coedges",
                 )?;
@@ -180,7 +180,7 @@ impl StandardTopology {
         Ok(Self {
             faces,
             edge_rows,
-            vertex_points: ctx.copy_retained_slice(
+            vertex_points: ctx.copy_slice(
                 &self.vertex_points,
                 "catia_standard_topology_copy_vertex_points",
             )?,
@@ -496,7 +496,7 @@ impl EdgeRow {
         Ok(Self {
             kind: self.kind,
             handles: ctx
-                .copy_retained_slice(&self.handles, "catia_standard_edge_row_copy_handles")?,
+                .copy_slice(&self.handles, "catia_standard_edge_row_copy_handles")?,
             boundary_layout: self.boundary_layout,
         })
     }
@@ -1578,7 +1578,7 @@ pub(crate) fn reconstruct_mesh_selection(
     for row in edge_rows {
         owned_rows.push(EdgeRow {
             kind: row.kind,
-            handles: ctx.copy_retained_slice(&row.handles, "catia_mesh_selection_handle_copy")?,
+            handles: ctx.copy_slice(&row.handles, "catia_mesh_selection_handle_copy")?,
             boundary_layout: row.boundary_layout,
         });
     }
@@ -1586,7 +1586,7 @@ pub(crate) fn reconstruct_mesh_selection(
         faces,
         edge_rows: owned_rows,
         logical_vertex_count: roots.len(),
-        vertex_points: ctx.copy_retained_slice(vertex_points, "catia_mesh_selection_point_copy")?,
+        vertex_points: ctx.copy_slice(vertex_points, "catia_mesh_selection_point_copy")?,
     }))
 }
 

@@ -214,7 +214,7 @@ pub(in crate::native) fn feature_surface_construction_branches(
                         None,
                     )?;
                     ctx.charge_entities(1, "NX surface construction branch")?;
-                    ctx.reserve_retained_vec(&mut branches, 1, "NX surface construction branches")?;
+                    ctx.reserve_vec(&mut branches, 1, "NX surface construction branches")?;
                     branches.push(FeatureSurfaceConstructionBranch {
                         id,
                         operation_label,
