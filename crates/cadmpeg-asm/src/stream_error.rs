@@ -54,17 +54,33 @@ impl StreamFailure {
     /// Keep a caller's existing framing classification for syntax errors.
     pub fn into_codec_error(
         self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         parse: impl FnOnce(StreamError) -> cadmpeg_core::CodecError,
     ) -> cadmpeg_core::CodecError {
         match self {
             Self::Parse(error) => parse(error),
             Self::Malformed(error) => cadmpeg_core::CodecError::malformed(error),
-            Self::NotImplemented(error) => {
-                cadmpeg_core::CodecError::NotImplemented(error.to_string())
-            }
+            Self::NotImplemented(error) => match unsupported_message(ctx, &error) {
+                Ok(message) => cadmpeg_core::CodecError::NotImplemented(message),
+                Err(refusal) => refusal,
+            },
             Self::Resource(error) => error,
         }
     }
+}
+
+fn unsupported_message(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    error: &StreamError,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let prefix = match error.format {
+        StreamFormat::Text => "SAT parse",
+        StreamFormat::Binary => "SAB framing",
+    };
+    ctx.format_retained(
+        format_args!("{prefix} failed at byte {}: {}", error.offset, error.reason),
+        "ASM stream error text",
+    )
 }
 
 impl From<StreamError> for StreamFailure {
@@ -91,3 +107,32 @@ impl std::fmt::Display for StreamFailure {
 }
 
 impl std::error::Error for StreamFailure {}
+
+#[cfg(test)]
+mod tests {
+    use super::{StreamError, StreamFailure, StreamFormat};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn unsupported_stream_error_text_refuses_retained_limit() {
+        let error = StreamError {
+            format: StreamFormat::Text,
+            offset: 12,
+            reason: "x".repeat(32),
+        };
+        let expected = error.to_string();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error =
+            StreamFailure::NotImplemented(error).into_codec_error(&ctx, CodecError::malformed);
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM stream error text");
+    }
+}

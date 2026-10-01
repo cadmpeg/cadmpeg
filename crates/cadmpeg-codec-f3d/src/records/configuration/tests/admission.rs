@@ -56,12 +56,15 @@ fn configuration_admission_checks_wire_and_variant_order() {
 fn configuration_parameter_overrides_require_scalar_values() {
     use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
     let admit = |payload: serde_json::Value| {
-        DesignConfiguration::try_new(
-            "table.dsgcfg".into(),
-            DesignConfigurationKind::Table,
-            vec!["variant".into()],
-            payload.as_object().unwrap().clone(),
-        )
+        crate::test_support::with_decode_context(|ctx| {
+            DesignConfiguration::try_new_charged(
+                ctx,
+                "table.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["variant".into()],
+                payload.as_object().unwrap().clone(),
+            )
+        })
     };
     assert!(admit(
         serde_json::json!({"configurations": {"variant": {"parameters": {
@@ -99,7 +102,15 @@ fn configuration_kind_requires_its_exact_entry_extension() {
         ),
     ] {
         let admit = |name: &str| {
-            DesignConfiguration::try_new(name.into(), kind, Vec::new(), serde_json::Map::new())
+            crate::test_support::with_decode_context(|ctx| {
+                DesignConfiguration::try_new_charged(
+                    ctx,
+                    name.into(),
+                    kind,
+                    Vec::new(),
+                    serde_json::Map::new(),
+                )
+            })
         };
         let record = admit(valid).unwrap();
         let wire = serde_json::to_value(&record).unwrap();
@@ -160,4 +171,128 @@ fn configuration_id_binds_the_escaped_entry_name() {
         record,
         &["id", "f3d:configuration:entry#Design/Config #1.dsgcfg"],
     );
+}
+
+#[test]
+fn configuration_parameter_map_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({
+        "configurations": {
+            "variant": {"parameters": {"length": 1, "width": 2}}
+        }
+    });
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        vec!["variant".into()],
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit configuration parameter"
+    ));
+}
+
+#[test]
+fn configuration_suppressed_list_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {"suppressed": ["part"]}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        vec!["variant".into()],
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit suppressed configuration member"
+    ));
+}
+
+#[test]
+fn configuration_variant_map_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit configuration variant"
+    ));
+}
+
+#[test]
+fn configuration_implicit_order_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "order configuration variants"
+    ));
+}
+
+#[test]
+fn configuration_explicit_order_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        vec!["variant".into()],
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "order configuration variants"
+    ));
 }

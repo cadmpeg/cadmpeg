@@ -196,54 +196,70 @@ pub(in crate::decode) fn intersect_incident_section_carriers(
     carriers: &[SketchGeometry],
 ) -> Option<[f64; 2]> {
     (carriers.len() >= 2).then_some(())?;
-    let mut candidates = Vec::new();
+    let mut first_coordinate: Option<[f64; 2]> = None;
+    let mut scale = 1.0_f64;
+    let mut maximum_distance = 0.0_f64;
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
-            candidates.push((
-                0,
-                intersect_section_carriers(&carriers[first], &carriers[second])?,
-            ));
+            let coordinate = intersect_section_carriers(&carriers[first], &carriers[second])?;
+            scale = scale.max(coordinate[0].abs()).max(coordinate[1].abs());
+            if let Some(first_coordinate) = first_coordinate {
+                maximum_distance = maximum_distance.max(
+                    (coordinate[0] - first_coordinate[0])
+                        .hypot(coordinate[1] - first_coordinate[1]),
+                );
+            } else {
+                first_coordinate = Some(coordinate);
+            }
         }
     }
-    let (coordinates, ambiguous) = reconciled_section_coordinates(candidates);
-    ambiguous.is_empty().then_some(())?;
-    coordinates.get(&0).copied()
+    (maximum_distance <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale)
+        .then_some(first_coordinate)
+        .flatten()
 }
 
 pub(in crate::decode) fn resolved_trim_vertex_coordinates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     radii: &BTreeMap<u32, f64>,
-) -> BTreeMap<u32, [f64; 2]> {
+) -> Result<BTreeMap<u32, [f64; 2]>, cadmpeg_core::CodecError> {
     let Some(segments) = &definition.segments else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
-    let missing_line = saved_section_missing_line_geometry(definition);
-    let variable_points = definition
-        .variables
-        .as_ref()
-        .map(|variables| variables.reconciled_points().0)
-        .unwrap_or_default();
+    let missing_line = saved_section_missing_line_geometry(ctx, definition)?;
+    let variable_points = match definition.variables.as_ref() {
+        Some(variables) => variables.reconciled_points(ctx)?.points,
+        None => BTreeMap::new(),
+    };
     let mut seen_vertex_ids = BTreeSet::new();
-    let duplicate_vertex_ids = definition
+    let mut duplicate_vertex_ids = BTreeSet::new();
+    let mut coordinate_candidates = Vec::new();
+    for vertex in definition
         .trim_vertices
         .iter()
         .filter(|table| table.has_complete_bucket_frame())
         .flat_map(|table| &table.rows)
-        .filter_map(|vertex| {
-            (!seen_vertex_ids.insert(vertex.vertex_id)).then_some(vertex.vertex_id)
-        })
-        .collect::<BTreeSet<_>>();
-    let mut coordinate_candidates = definition
-        .trim_vertices
-        .iter()
-        .filter(|table| table.has_complete_bucket_frame())
-        .flat_map(|table| &table.rows)
-        .filter_map(|vertex| {
-            let point = vertex.section_coordinates?.get();
-            Some((vertex.vertex_id, [point.u, point.v]))
-        })
-        .collect::<Vec<_>>();
+    {
+        if !seen_vertex_ids.contains(&vertex.vertex_id) {
+            ctx.charge_collection_items(1, "creo sketch seen trim vertex nodes")?;
+            seen_vertex_ids.insert(vertex.vertex_id);
+        } else if !duplicate_vertex_ids.contains(&vertex.vertex_id) {
+            ctx.charge_collection_items(1, "creo sketch duplicate trim vertex nodes")?;
+            duplicate_vertex_ids.insert(vertex.vertex_id);
+        }
+        if let Some(point) = vertex
+            .section_coordinates
+            .map(cadmpeg_ir::units::FinitePoint2::get)
+        {
+            ctx.reserve_vec(
+                &mut coordinate_candidates,
+                1,
+                "creo sketch trim coordinate candidates",
+            )?;
+            coordinate_candidates.push((vertex.vertex_id, [point.u, point.v]));
+        }
+    }
     for trim in definition
         .trim_entities
         .iter()
@@ -275,6 +291,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             {
                 continue;
             }
+            ctx.reserve_vec(
+                &mut coordinate_candidates,
+                1,
+                "creo sketch trim coordinate candidates",
+            )?;
             coordinate_candidates.push((vertex, candidate));
         }
     }
@@ -288,7 +309,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             continue;
         };
         for vertex in entity.vertices {
-            incident.entry(vertex).or_default().push(external_id);
+            if !incident.contains_key(&vertex) {
+                ctx.charge_collection_items(1, "creo sketch incident vertex nodes")?;
+            }
+            let entities = incident.entry(vertex).or_default();
+            ctx.reserve_vec(entities, 1, "creo sketch incident vertex entities")?;
+            entities.push(external_id);
         }
     }
     let explicit_incident = definition
@@ -300,63 +326,94 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             for vertex in &table.rows {
                 let mut resolved = Vec::new();
                 for entity_id in &vertex.entities {
-                    let matches = definition
+                    let mut matches = definition
                         .trim_entities
                         .iter()
                         .flat_map(|table| &table.rows)
-                        .filter(|entity| entity.external_id == *entity_id)
-                        .collect::<Vec<_>>();
-                    let external_id = match matches.as_slice() {
-                        [entity] => trim_segment_id(definition, entity),
-                        [] => segments
+                        .filter(|entity| entity.external_id == *entity_id);
+                    let external_id = match (matches.next(), matches.next()) {
+                        (Some(entity), None) => trim_segment_id(definition, entity),
+                        (None, None) => segments
                             .unique_segment(*entity_id)
                             .map(|segment| segment.external_id),
                         _ => None,
                     };
                     if let Some(external_id) = external_id {
+                        ctx.reserve_vec(
+                            &mut resolved,
+                            1,
+                            "creo sketch explicit incident entities",
+                        )?;
                         resolved.push(external_id);
                     }
                 }
                 resolved.sort_unstable();
                 if resolved.len() == vertex.entities.len() {
-                    result.entry(vertex.vertex_id).or_default().extend(resolved);
+                    if !result.contains_key(&vertex.vertex_id) {
+                        ctx.charge_collection_items(1, "creo sketch explicit incident nodes")?;
+                    }
+                    let entities = result.entry(vertex.vertex_id).or_default();
+                    ctx.reserve_vec(
+                        entities,
+                        resolved.len(),
+                        "creo sketch explicit incident entities",
+                    )?;
+                    entities.extend(resolved);
                 }
             }
-            result
-        });
+            Ok::<_, cadmpeg_core::CodecError>(result)
+        })
+        .transpose()?;
     if let Some(explicit) = &explicit_incident {
         for (vertex, entities) in explicit {
             if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
                 continue;
             }
-            let mut derived = incident.get(vertex).cloned().unwrap_or_default();
+            let mut derived = crate::decode::collect_items(
+                ctx,
+                incident.get(vertex).into_iter().flatten().copied(),
+                "creo sketch incident comparison copy",
+            )?;
             derived.sort_unstable();
             derived.dedup();
             if derived != *entities {
                 continue;
             }
-            incident.insert(*vertex, entities.clone());
+            let copied = crate::decode::collect_items(
+                ctx,
+                entities.iter().copied(),
+                "creo sketch explicit incident copy",
+            )?;
+            incident.insert(*vertex, copied);
         }
     }
-    let intersection_carriers = incident
-        .values()
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|external_id| {
-            let segment = segments.unique_segment(external_id)?;
-            let carrier = section_segment_intersection_carrier_with_missing_line(
-                definition,
-                radii,
-                points,
-                segment,
-                missing_line.as_ref(),
-                &variable_points,
-            )?;
-            Some((external_id, carrier))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut unique_carrier_ids = BTreeSet::new();
+    for external_id in incident.values().flatten() {
+        if !unique_carrier_ids.contains(external_id) {
+            ctx.charge_collection_items(1, "creo sketch intersection carrier ID nodes")?;
+            unique_carrier_ids.insert(*external_id);
+        }
+    }
+    let mut intersection_carriers = BTreeMap::new();
+    for external_id in unique_carrier_ids {
+        let Some(segment) = segments.unique_segment(external_id) else {
+            continue;
+        };
+        let Some(carrier) = section_segment_intersection_carrier_with_missing_line(
+            ctx,
+            definition,
+            radii,
+            points,
+            segment,
+            missing_line.as_ref(),
+            &variable_points,
+        )?
+        else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "creo sketch intersection carrier nodes")?;
+        intersection_carriers.insert(external_id, carrier);
+    }
     for (vertex, mut entities) in incident {
         entities.sort_unstable();
         if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -370,33 +427,66 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         }
         // A unique shared endpoint coordinate is a trim witness even when a
         // complete carrier cannot be evaluated from the remaining points.
-        let common_points = entities
-            .iter()
-            .filter_map(|external_id| segments.unique_segment(*external_id))
-            .map(|segment| segment.point_ids().into_iter().collect::<BTreeSet<_>>())
-            .reduce(|common, points| common.intersection(&points).copied().collect());
-        if let Some(common_points) = common_points {
-            let common_points = common_points.into_iter().collect::<Vec<_>>();
-            if let [point_id] = common_points.as_slice() {
-                if let Some(coordinate) = points.get(point_id) {
-                    coordinate_candidates.push((vertex, *coordinate));
+        let mut common_point = None;
+        let mut multiple_common_points = false;
+        if let Some(first) = entities.iter().find_map(|id| segments.unique_segment(*id)) {
+            for point_id in first.point_ids() {
+                if entities
+                    .iter()
+                    .filter_map(|id| segments.unique_segment(*id))
+                    .all(|segment| segment.point_ids().contains(&point_id))
+                    && common_point != Some(point_id)
+                {
+                    if common_point.is_some() {
+                        multiple_common_points = true;
+                        break;
+                    }
+                    common_point = Some(point_id);
                 }
             }
         }
-        let carriers = entities
-            .iter()
-            .map(|external_id| intersection_carriers.get(external_id).cloned())
-            .collect::<Option<Vec<_>>>();
-        let Some(carriers) = carriers else {
+        if let Some(point_id) = common_point.filter(|_| !multiple_common_points) {
+            if let Some(coordinate) = points.get(&point_id) {
+                ctx.reserve_vec(
+                    &mut coordinate_candidates,
+                    1,
+                    "creo sketch trim coordinate candidates",
+                )?;
+                coordinate_candidates.push((vertex, *coordinate));
+            }
+        }
+        let mut carriers = Vec::new();
+        let mut complete = true;
+        for external_id in &entities {
+            let Some(carrier) = intersection_carriers.get(external_id).cloned() else {
+                complete = false;
+                break;
+            };
+            ctx.reserve_vec(&mut carriers, 1, "creo sketch incident carriers")?;
+            carriers.push(carrier);
+        }
+        if !complete {
             continue;
-        };
+        }
         if let Some(coordinate) = intersect_incident_section_carriers(&carriers) {
+            ctx.reserve_vec(
+                &mut coordinate_candidates,
+                1,
+                "creo sketch trim coordinate candidates",
+            )?;
             coordinate_candidates.push((vertex, coordinate));
         }
     }
-    let (mut coordinates, mut ambiguous_vertices) =
-        reconciled_section_coordinates(coordinate_candidates);
-    ambiguous_vertices.extend(duplicate_vertex_ids);
+    let crate::feature::definitions::ReconciledPoints {
+        points: mut coordinates,
+        ambiguous: mut ambiguous_vertices,
+    } = reconciled_section_coordinates(ctx, coordinate_candidates)?;
+    for vertex in duplicate_vertex_ids {
+        if !ambiguous_vertices.contains(&vertex) {
+            ctx.charge_collection_items(1, "creo sketch ambiguous coordinate nodes")?;
+            ambiguous_vertices.insert(vertex);
+        }
+    }
     coordinates.retain(|vertex, _| !ambiguous_vertices.contains(vertex));
     loop {
         let mut additions = Vec::new();
@@ -449,16 +539,26 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             } else {
                 continue;
             };
+            ctx.reserve_vec(&mut additions, 1, "creo sketch propagated trim coordinates")?;
             additions.push((trim.vertices[missing_index], stored[1 - matched]));
         }
-        let (additions, conflicts) = reconciled_section_coordinates(additions);
-        ambiguous_vertices.extend(conflicts);
+        let crate::feature::definitions::ReconciledPoints {
+            points: additions,
+            ambiguous: conflicts,
+        } = reconciled_section_coordinates(ctx, additions)?;
+        for vertex in conflicts {
+            if !ambiguous_vertices.contains(&vertex) {
+                ctx.charge_collection_items(1, "creo sketch ambiguous coordinate nodes")?;
+                ambiguous_vertices.insert(vertex);
+            }
+        }
         let mut changed = false;
         for (vertex, coordinate) in additions {
             if ambiguous_vertices.contains(&vertex) {
                 continue;
             }
             if let std::collections::btree_map::Entry::Vacant(entry) = coordinates.entry(vertex) {
+                ctx.charge_collection_items(1, "creo sketch propagated coordinate nodes")?;
                 entry.insert(coordinate);
                 changed = true;
             }
@@ -467,15 +567,21 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             break;
         }
     }
-    coordinates
+    Ok(coordinates)
 }
 
 fn reconciled_section_coordinates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: impl IntoIterator<Item = (u32, [f64; 2])>,
-) -> (BTreeMap<u32, [f64; 2]>, BTreeSet<u32>) {
+) -> Result<crate::feature::definitions::ReconciledPoints<[f64; 2]>, cadmpeg_core::CodecError> {
     let mut grouped = BTreeMap::<u32, Vec<[f64; 2]>>::new();
     for (vertex, coordinate) in candidates {
-        grouped.entry(vertex).or_default().push(coordinate);
+        if !grouped.contains_key(&vertex) {
+            ctx.charge_collection_items(1, "creo sketch reconciliation group nodes")?;
+        }
+        let group = grouped.entry(vertex).or_default();
+        ctx.reserve_vec(group, 1, "creo sketch reconciliation group values")?;
+        group.push(coordinate);
     }
     let mut coordinates = BTreeMap::new();
     let mut ambiguous = BTreeSet::new();
@@ -490,30 +596,44 @@ fn reconciled_section_coordinates(
             (candidate[0] - first[0]).hypot(candidate[1] - first[1])
                 <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
         }) {
+            ctx.charge_collection_items(1, "creo sketch reconciled coordinate nodes")?;
             coordinates.insert(vertex, first);
         } else {
+            ctx.charge_collection_items(1, "creo sketch ambiguous coordinate nodes")?;
             ambiguous.insert(vertex);
         }
     }
-    (coordinates, ambiguous)
+    Ok(crate::feature::definitions::ReconciledPoints {
+        points: coordinates,
+        ambiguous,
+    })
 }
 
 pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     radii: &BTreeMap<u32, f64>,
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
-) -> Option<SketchGeometry> {
-    let trim = definition
-        .trim_entities
-        .as_ref()?
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    let Some(trim_entities) = definition.trim_entities.as_ref() else {
+        return Ok(None);
+    };
+    let Some(trim) = trim_entities
         .rows
         .iter()
-        .find(|row| trim_segment_id(definition, row) == Some(segment.external_id))?;
-    let start = trim_vertices.get(&trim.vertices[0])?;
-    let end = trim_vertices.get(&trim.vertices[1])?;
+        .find(|row| trim_segment_id(definition, row) == Some(segment.external_id))
+    else {
+        return Ok(None);
+    };
+    let Some(start) = trim_vertices.get(&trim.vertices[0]) else {
+        return Ok(None);
+    };
+    let Some(end) = trim_vertices.get(&trim.vertices[1]) else {
+        return Ok(None);
+    };
     if let Some(SketchGeometryDefinition::Line {
         start: carrier_start,
         end: carrier_end,
@@ -553,7 +673,7 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
                     > EPS_SKETCH_INTERSECTION_GEOMETRY * direction_norm
             })
         {
-            return None;
+            return Ok(None);
         }
     } else if let Some(carrier) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))
@@ -569,20 +689,26 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             || (first_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
             || (second_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
         {
-            return None;
+            return Ok(None);
         }
         let start_angle = second[1].atan2(second[0]);
         let mut end_angle = first[1].atan2(first[0]);
         while end_angle <= start_angle {
             end_angle += std::f64::consts::TAU;
         }
-        return SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
+        let Some(start_angle) = Angle::new(start_angle) else {
+            return Ok(None);
+        };
+        let Some(end_angle) = Angle::new(end_angle) else {
+            return Ok(None);
+        };
+        return Ok(SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
             center: carrier.center,
             radius: carrier.radius,
-            start_angle: Angle::new(start_angle)?,
-            end_angle: Angle::new(end_angle)?,
+            start_angle,
+            end_angle,
         })
-        .ok();
+        .ok());
     } else {
         let scale = start
             .iter()
@@ -590,9 +716,10 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             .map(|value| value.abs())
             .fold(1.0, f64::max);
         let orientation_matches = match section_line_entity_fixed_coordinate_with_unique_rows(
+            ctx,
             definition,
             segment.external_id,
-        ) {
+        )? {
             Some(SectionAxis::U) => {
                 (start[0] - end[0]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
             }
@@ -601,13 +728,15 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             }
             _ => false,
         };
-        orientation_matches.then_some(())?;
+        if !orientation_matches {
+            return Ok(None);
+        }
     }
-    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+    Ok(SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
         end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
     })
-    .ok()
+    .ok())
 }
 
 pub(in crate::decode) fn section_point_in_model(
@@ -643,6 +772,27 @@ mod tests {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn sketch_coordinate_reconciliation_refuses_before_group_node() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test input admitted");
+        assert!(
+            matches!(super::reconciled_section_coordinates(&ctx, [(7, [2.0, 3.0])]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "creo sketch reconciliation group nodes")
+        );
+        let (coordinates, ambiguous) = crate::decode::with_test_decode_ctx(|ctx| {
+            super::reconciled_section_coordinates(ctx, [(7, [2.0, 3.0])])
+                .map(|result| (result.points, result.ambiguous))
+        })
+        .expect("test reconciliation");
+        assert_eq!(coordinates.get(&7), Some(&[2.0, 3.0]));
+        assert!(ambiguous.is_empty());
+    }
 
     #[test]
     fn trim_vertex_requires_exact_trim_entity_incidence() {
@@ -713,10 +863,24 @@ mod tests {
             offset: 0,
         };
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (limited_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("test input admitted");
+        assert!(
+            matches!(resolved_trim_vertex_coordinates(&limited_ctx, &definition,
+            &BTreeMap::new(), &BTreeMap::new()),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "creo sketch seen trim vertex nodes")
+        );
+
         assert_eq!(
             crate::decode::with_test_decode_ctx(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
-                Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                resolved_trim_vertex_coordinates(
+                    ctx,
                     &definition,
                     &BTreeMap::from([
                         (1, [-1.0, 0.0]),
@@ -725,7 +889,7 @@ mod tests {
                         (4, [0.0, 1.0]),
                     ]),
                     &radii,
-                ))
+                )
             })
             .expect("test section geometry"),
             BTreeMap::new()
@@ -757,11 +921,12 @@ mod tests {
             crate::decode::with_test_decode_ctx(|ctx| {
                 let radii =
                     crate::decode::sketch::radii::resolved_section_radii(ctx, &shared_point)?;
-                Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                resolved_trim_vertex_coordinates(
+                    ctx,
                     &shared_point,
                     &BTreeMap::from([(2, [0.0, 0.0])]),
                     &radii,
-                ))
+                )
             })
             .expect("test section geometry"),
             BTreeMap::from([(2, [0.0, 0.0])])
@@ -828,15 +993,14 @@ mod tests {
         assert_eq!(
             crate::decode::with_test_decode_ctx(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
-                Ok::<_, cadmpeg_core::CodecError>(
-                    trimmed_section_segment_geometry_with_missing_line(
-                        &definition,
-                        &BTreeMap::new(),
-                        &radii,
-                        &trim_vertices,
-                        &segment,
-                        None,
-                    ),
+                trimmed_section_segment_geometry_with_missing_line(
+                    ctx,
+                    &definition,
+                    &BTreeMap::new(),
+                    &radii,
+                    &trim_vertices,
+                    &segment,
+                    None,
                 )
             })
             .expect("test section geometry"),
@@ -861,22 +1025,21 @@ mod tests {
         assert_eq!(
             crate::decode::with_test_decode_ctx(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &duplicate)?;
-                Ok::<_, cadmpeg_core::CodecError>(
-                    trimmed_section_segment_geometry_with_missing_line(
-                        &duplicate,
-                        &BTreeMap::new(),
-                        &radii,
-                        &trim_vertices,
-                        &duplicate
-                            .segments
-                            .as_ref()
-                            .expect("segments")
-                            .rows
-                            .ordinary()
-                            .cloned()
-                            .collect::<Vec<_>>()[0],
-                        None,
-                    ),
+                trimmed_section_segment_geometry_with_missing_line(
+                    ctx,
+                    &duplicate,
+                    &BTreeMap::new(),
+                    &radii,
+                    &trim_vertices,
+                    &duplicate
+                        .segments
+                        .as_ref()
+                        .expect("segments")
+                        .rows
+                        .ordinary()
+                        .cloned()
+                        .collect::<Vec<_>>()[0],
+                    None,
                 )
             })
             .expect("test section geometry"),

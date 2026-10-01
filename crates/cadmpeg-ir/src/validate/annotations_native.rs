@@ -11,7 +11,7 @@ use crate::report::{
 };
 
 macro_rules! define_model_entity_json {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn model_entity_json(
             ir: &CadIr,
             wanted: &HashSet<&str>,

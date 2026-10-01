@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::feature_project::project_parameter_design;
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::ids::neutral_sketch_id;
 use crate::records::entity_header::DesignFeatureTimeline;
@@ -66,7 +67,19 @@ fn dispatcher_projects_datum_feature_scopes() {
     }
 
     let scopes = vec![joint_origin, work_plane, work_point];
-    let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &scopes;
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -109,7 +122,19 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         });
     }
 
-    let (features, _) = project_parameter_design(&[], &[], &[scale], &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[scale];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies,
         center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
@@ -147,13 +172,63 @@ fn dispatcher_projects_referenced_work_plane_frame() {
     );
     referenced.with_work_plane_reference(11);
 
-    let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[referenced];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if frame.origin() == Point3::new(0.0, 0.0, 0.0)
             && frame.normal() == Vector3::new(0.0, 0.0, 1.0)
             && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
     ));
+}
+
+#[test]
+fn scale_center_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#scale",
+        crate::records::feature::scope::DesignFeatureKind::Scale,
+        1,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut()
+    {
+        *slot = Some(DesignScaleOperation {
+            body_group_record_index: 5,
+            center_record_index: 6,
+            center_position: None,
+            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5).unwrap(),
+            uniform_factor_offset: 20,
+        });
+    }
+    let mut found = false;
+    for limit in 0..2048 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(super::project_single_scope_with_context(&ctx, &scope),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d Scale center id"
+                    && failure.dimension == ResourceDimension::RetainedBytes)
+        {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "Scale center charge was not reached");
 }
 
 #[test]
@@ -209,7 +284,19 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         );
     }
 
-    let (features, _) = project_parameter_design(&[], &[], &[plane], &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[plane];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { points, .. }) =
         features[0].evaluation.definition()
     else {
@@ -306,7 +393,19 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let mut scopes = planes.to_vec();
     scopes.push(point);
 
-    let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &scopes;
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let point = features
         .iter()
         .find(|feature| {
@@ -433,29 +532,16 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     )
     .unwrap();
     let scopes = vec![predecessor, point];
-    let (features, _) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
-            scopes: &scopes,
-            timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        },
-    )
+    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_parameter_design_with_edge_identities(
+            decode_ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes: &scopes,
+                timelines: std::slice::from_ref(&timeline),
+                ..Default::default()
+            },
+        )
+    })
     .expect("authored WorkPoint timeline");
     let predecessor = features
         .iter()
@@ -485,10 +571,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     };
     let feature_key = point.id.key();
     let prefix = crate::ids::history_input_prefix(&feature_key, 4);
-    assert_eq!(
-        state,
-        &crate::design::edge_resolve::feature_input_topology_id(&point.id, 4)
-    );
+    assert_eq!(state, &crate::ids::feature_input_topology_id(&point.id, 4));
     assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
     assert_eq!(native.as_str(), &recipe_id);
     assert_eq!(point.dependencies.as_slice(), [predecessor.id.clone()]);
@@ -527,7 +610,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     .enumerate()
                     .map(|(index, value)| crate::records::identity::Located {
                         value,
-                        offset: index as u64 * 11,
+                        offset: u64_from_index(index) * 11,
                     })
                     .collect(),
                 lost_edge_references: Vec::new(),
@@ -698,28 +781,41 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         copy_paste_bodies.payload_mut()
     {
         *slot = Some(
-            DesignCopyPasteBodiesOperation::try_new(
-                vec![crate::records::feature::body_ops::DesignCopiedBody {
-                    operand: crate::records::identity::Located {
-                        value: 502,
-                        offset: 26,
+            crate::test_support::with_decode_context(|ctx| {
+                DesignCopyPasteBodiesOperation::try_new_charged(
+                    ctx,
+                    vec![crate::records::feature::body_ops::DesignCopiedBody {
+                        operand: crate::records::identity::Located {
+                            value: 502,
+                            offset: 26,
+                        },
+                        source: crate::records::identity::Located {
+                            value: 11,
+                            offset: 25,
+                        },
+                        copied: crate::records::identity::Located {
+                            value: 12,
+                            offset: 40,
+                        },
+                    }],
+                    crate::records::feature::body_ops::CopyPasteRecordLocation {
+                        record_index: 501,
+                        class_tag: crate::records::references::DesignClassTag::try_from(
+                            "264".to_owned(),
+                        )
+                        .unwrap(),
+                        byte_offset: 0,
                     },
-                    source: crate::records::identity::Located {
-                        value: 11,
-                        offset: 25,
+                    crate::records::feature::body_ops::CopyPasteRecordLocation {
+                        record_index: 503,
+                        class_tag: crate::records::references::DesignClassTag::try_from(
+                            "264".to_owned(),
+                        )
+                        .unwrap(),
+                        byte_offset: 0,
                     },
-                    copied: crate::records::identity::Located {
-                        value: 12,
-                        offset: 40,
-                    },
-                }],
-                501,
-                crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
-                0,
-                503,
-                crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
-                0,
-            )
+                )
+            })
             .unwrap(),
         );
     }
@@ -828,16 +924,21 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
             .unwrap(),
     };
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        &scopes,
-        &groups,
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&placement),
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &scopes;
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                construction_groups: &groups,
+                placements: std::slice::from_ref(&placement),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let definition = |kind: &str| {
         features
             .iter()
@@ -915,26 +1016,79 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     let edge =
         HistoricalEdgeId::mint("f3d:history-input:edge#7:feature:41:17").expect("identity grammar");
     assert_eq!(
-        crate::design::feature_project::loft_path_from_edge_selection(
-            "group",
-            EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
-                .unwrap(),
-        ),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::loft_path_from_edge_selection(
+                decode_ctx,
+                "group",
+                EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
+                    .unwrap(),
+            )
+        })
+        .unwrap(),
         PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into()).unwrap()
     );
     assert_eq!(
-        crate::design::feature_project::loft_path_from_edge_selection(
-            "group",
-            EdgeSelection::historical_partial(
-                state,
-                vec![edge],
-                vec!["operand".into()],
-                "selection".into()
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::loft_path_from_edge_selection(
+                decode_ctx,
+                "group",
+                EdgeSelection::historical_partial(
+                    state,
+                    vec![edge],
+                    vec!["operand".into()],
+                    "selection".into(),
+                )
+                .unwrap(),
             )
-            .unwrap(),
-        ),
+        })
+        .unwrap(),
         PathRef::Native("group".into())
     );
+}
+
+#[test]
+fn loft_native_path_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::loft_path_from_edge_selection(
+            &ctx, "group", EdgeSelection::Unresolved,
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d loft native path"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn empty_surface_patch_path_refuses_native_copy_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::resolved_surface_patch_path(
+            &[], &[], &[], &[], &scope,
+            crate::design::feature_project::SurfacePatchRecipe::Direct, &ctx,
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d surface patch native path"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
 }
 
 #[test]
@@ -1019,12 +1173,15 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::feature_project::bind_form_cages(
-            scan,
-            std::slice::from_ref(&scope),
-            &mut features,
-            &cages,
-        )
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            crate::design::feature_project::form_cages::bind_form_cages(
+                ctx,
+                scan,
+                std::slice::from_ref(&scope),
+                &mut features,
+                &cages,
+            )
+        })
     })
     .expect("legacy Form cage binding");
     assert_eq!(
@@ -1034,6 +1191,196 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
                 cages: vec![cages[0].id.clone()],
             }
         )
+    );
+}
+
+fn thread_face_group_fixture() -> (DesignParameterScope, DesignConstructionOperandGroup) {
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let group = serde_json::from_value(serde_json::json!({
+        "id": "f3d:test:construction-group#150",
+        "scope_record_index": 100,
+        "scope_reference_ordinal": 0,
+        "record_index": 150,
+        "byte_offset": 0,
+        "class_tag": "346",
+        "role": 0x0000_0010_0000_0000_u64,
+        "members": [200],
+        "member_offsets": [0],
+        "frame": {
+            "member_count_offset": 0,
+            "opaque_index": 1,
+            "opaque_index_offset": 18,
+            "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 22,
+            "variant": false
+        },
+        "role_offset": 0,
+        "paired_class_tag": "262",
+        "paired_byte_offset": 325,
+        "next_record_index": 151,
+        "next_byte_offset": 0
+    }))
+    .expect("Thread face group");
+    (scope, group)
+}
+
+#[test]
+fn thread_face_group_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group) = thread_face_group_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d Thread face group"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn thread_face_native_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group) = thread_face_group_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d Thread face native id"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn merged_direct_edge_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::EdgeId;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let edge = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
+    let selections = [EdgeSelection::Edges(vec![edge])];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d merged direct edge"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn merged_direct_edge_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::EdgeId;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let edge = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
+    let selections = [EdgeSelection::Edges(vec![edge])];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d merged direct edge id"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn merged_historical_edge_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let state =
+        FeatureInputTopologyId::mint("f3d:history-input:state#100").expect("identity grammar");
+    let edge = HistoricalEdgeId::mint("f3d:history-input:edge#100:1").expect("identity grammar");
+    let selection = EdgeSelection::historical(state, vec![edge], scope.id.clone())
+        .expect("historical edge selection");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &[selection]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d merged historical edge"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn merged_direct_edges_keep_source_order_and_native_fallback() {
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::EdgeId;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let first = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
+    let second = EdgeId::mint("f3d:brep:entity#2").expect("identity grammar");
+    let selections = [
+        EdgeSelection::Edges(vec![first.clone()]),
+        EdgeSelection::Edges(vec![second.clone()]),
+    ];
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::merge_edge_selections(decode_ctx, &scope, &selections)
+        })
+        .expect("unlimited merge"),
+        EdgeSelection::Resolved {
+            edges: vec![first.clone(), second],
+            native: scope.id.clone(),
+        }
+    );
+    let duplicate = [
+        EdgeSelection::Edges(vec![first.clone()]),
+        EdgeSelection::Edges(vec![first]),
+    ];
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::merge_edge_selections(decode_ctx, &scope, &duplicate)
+        })
+        .expect("unlimited duplicate scan"),
+        EdgeSelection::Native(scope.id)
     );
 }
 
@@ -1110,12 +1457,15 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::feature_project::bind_form_cages(
-            scan,
-            std::slice::from_ref(&scope),
-            &mut features,
-            &cages,
-        )
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            crate::design::feature_project::form_cages::bind_form_cages(
+                ctx,
+                scan,
+                std::slice::from_ref(&scope),
+                &mut features,
+                &cages,
+            )
+        })
     })
     .expect("long Form cage binding");
     assert_eq!(

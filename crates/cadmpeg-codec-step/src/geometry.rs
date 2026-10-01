@@ -702,11 +702,9 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     }
     // IR control points are u-major: index i*v_count + j is pole (i, j). STEP's
     // control_points_list is LIST(u) OF LIST(v), so the outer list runs over u.
-    let u_count = n.u_count();
-    let v_count = n.v_count();
-    let mut rows: Vec<String> = Vec::with_capacity(u_count);
+    let mut rows: Vec<String> = Vec::new();
     for grid_row in n.control_grid() {
-        let mut row: Vec<Ref> = Vec::with_capacity(v_count);
+        let mut row: Vec<Ref> = Vec::new();
         for p in grid_row {
             row.push(point(e, p.get()));
         }
@@ -737,7 +735,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
         ),
         Some(w) => {
             // Rational surface weights are LIST(u) OF LIST(v), matching the grid.
-            let mut wrows: Vec<String> = Vec::with_capacity(u_count);
+            let mut wrows: Vec<String> = Vec::new();
             for row in w {
                 wrows.push(real_list(e, &row));
             }

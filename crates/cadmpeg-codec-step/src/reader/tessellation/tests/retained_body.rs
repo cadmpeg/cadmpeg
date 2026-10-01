@@ -15,16 +15,20 @@ fn decode_with_body(policy: DecodePolicy) -> Result<CadIr, CodecError> {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;{BODY_LINKED_TRIANGLE}ENDSEC;END-ISO-10303-21;"
     );
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("test exchange parses");
     let mut ir = CadIr::empty();
-let geometry = super::super::super::geometry::decode(&exchange, &mut ir).expect("resource allocation did not fail").value;
-    let index = super::super::super::index::CarrierIndex::from_ir(&ir);
     let topology_arena = DecodeArena::new();
     let (topology_ctx, _) = DecodeContext::from_root_bytes(
         source.as_bytes(),
         &topology_arena,
         &DecodePolicy::service(),
     )?;
+    let geometry = super::super::super::geometry::decode(&exchange, &mut ir, &topology_ctx)
+        .expect("resource allocation did not fail")
+        .value;
+    let index = super::super::super::index::CarrierIndex::from_ir(&ir, &topology_ctx)?;
     let mut topology =
         super::super::super::topology::decode(&exchange, &mut ir, &index, &topology_ctx)
             .expect("test topology decodes")
@@ -47,8 +51,11 @@ fn tessellation_mesh_body_copy_is_charged_before_clone() {
     let mut limited = service;
     let prior_bytes =
         8 + 72 + 24 + 12 + std::mem::size_of::<cadmpeg_ir::tessellation::Tessellation>();
+    let body_len = "step:data:body#10".len();
+    let earlier_body_copies = 3 * body_len;
     limited.limits.max_retained_bytes =
-        u64::try_from(prior_bytes + "step:data:body#10".len() - 1).expect("test bytes fit u64");
+        u64::try_from(prior_bytes + earlier_body_copies + body_len - 1)
+            .expect("test bytes fit u64");
     let error = decode_with_body(limited).expect_err("body copy exceeds retained byte limit");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_mesh_body")

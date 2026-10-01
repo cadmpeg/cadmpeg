@@ -4,6 +4,7 @@
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::iter_wire::IterWire;
 use crate::om::nonempty::NonEmpty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +18,26 @@ struct ListSlot {
 pub(super) struct UuidGroupMembers(NonEmpty<ListSlot>);
 
 impl UuidGroupMembers {
+    pub(super) fn new_charged(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        occurrences: Vec<String>,
+        object_uuid_values: Vec<String>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if occurrences.len() != object_uuid_values.len() {
+            return Ok(None);
+        }
+        NonEmpty::new_charged(
+            ctx,
+            occurrences.into_iter().zip(object_uuid_values).map(
+                |(occurrence, object_uuid_value)| ListSlot {
+                    occurrence,
+                    object_uuid_value,
+                },
+            ),
+        )
+        .map(|members| members.map(Self))
+    }
+
     pub(super) fn new(
         occurrences: Vec<String>,
         object_uuid_values: Vec<String>,
@@ -34,10 +55,12 @@ impl UuidGroupMembers {
         .ok_or("occurrences/object_uuid_values: lists must be nonempty")
     }
 
+    #[cfg(test)]
     pub(super) fn occurrences(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|slot| slot.occurrence.as_str())
     }
 
+    #[cfg(test)]
     pub(super) fn object_uuid_values(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|slot| slot.object_uuid_value.as_str())
     }
@@ -46,10 +69,13 @@ impl UuidGroupMembers {
 impl Serialize for UuidGroupMembers {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct("UuidGroupMembers", 2)?;
-        state.serialize_field("occurrences", &self.occurrences().collect::<Vec<_>>())?;
+        state.serialize_field(
+            "occurrences",
+            &IterWire(self.0.iter().map(|slot| slot.occurrence.as_str())),
+        )?;
         state.serialize_field(
             "object_uuid_values",
-            &self.object_uuid_values().collect::<Vec<_>>(),
+            &IterWire(self.0.iter().map(|slot| slot.object_uuid_value.as_str())),
         )?;
         state.end()
     }
@@ -70,6 +96,41 @@ impl<'de> Deserialize<'de> for UuidGroupMembers {
 #[cfg(test)]
 mod tests {
     use super::UuidGroupMembers;
+
+    fn group_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                UuidGroupMembers::new_charged(
+                    ctx,
+                    vec!["a".into(), "b".into()],
+                    vec!["x".into(), "y".into()],
+                )
+                .unwrap_err()
+            },
+        )
+    }
+
+    #[test]
+    fn uuid_group_members_refuse_collection_limit() {
+        let error = group_refusal(|policy| policy.limits.max_collection_items = 1);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn uuid_group_members_refuse_retained_limit() {
+        let error = group_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
+    }
 
     #[test]
     fn group_lists_preserve_each_order_and_require_equal_nonempty_cardinality() {

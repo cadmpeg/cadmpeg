@@ -4,6 +4,8 @@
 use crate::om::header_references::{HeaderReferences, OperationHeader};
 use crate::om::reference_index::FeatureReferenceToken;
 use crate::om::UnlabeledOperationRecord;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(try_from = "UnlabeledRecordWire")]
@@ -11,9 +13,9 @@ pub(in crate::native) struct FeatureUnlabeledOperationRecord {
     pub(in crate::native) id: String,
     ordinal: u32,
     header: OperationHeader<u64>,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     payload_byte_len: u64,
-    payload_sha256: crate::native::hex::Sha256Hex,
+    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 #[derive(serde::Serialize)]
@@ -23,9 +25,9 @@ struct UnlabeledRecordRef<'a> {
     object_indices: [Option<u32>; 4],
     object_index_source_offsets: [u64; 4],
     byte_len: u64,
-    sha256: &'a crate::native::hex::Sha256Hex,
+    sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     payload_byte_len: u64,
-    payload_sha256: &'a crate::native::hex::Sha256Hex,
+    payload_sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     payload_source_offset: u64,
     source_offset: u64,
 }
@@ -50,25 +52,38 @@ impl serde::Serialize for FeatureUnlabeledOperationRecord {
 
 impl FeatureUnlabeledOperationRecord {
     pub(super) fn from_source(
+        ctx: &DecodeContext<'_>,
         id: String,
         ordinal: u32,
         entry_offset: u64,
         record: UnlabeledOperationRecord<'_>,
-    ) -> Option<Self> {
-        let header = OperationHeader::<u64>::new(
-            entry_offset.checked_add(record.header().offset() as u64)?,
-            record.header().objects(),
-        )?;
-        let payload_byte_len = record.payload().len() as u64;
-        header.end_offset().checked_add(payload_byte_len)?;
-        Some(Self {
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(header_offset) =
+            entry_offset.checked_add(u64_from_index(record.header().offset()))
+        else {
+            return Ok(None);
+        };
+        let Some(header) = OperationHeader::<u64>::new(header_offset, record.header().objects())
+        else {
+            return Ok(None);
+        };
+        let payload_byte_len = u64_from_index(record.payload().len());
+        if header.end_offset().checked_add(payload_byte_len).is_none() {
+            return Ok(None);
+        }
+        let digest_work = u64_from_index(record.bytes().len())
+            .checked_add(payload_byte_len)
+            .ok_or_else(|| ctx.refuse_codec_limit("hash NX unlabeled operation record", 0, 1))?;
+        ctx.charge_work(digest_work, "hash NX unlabeled operation record")?;
+        ctx.charge_retained(128, "retain NX unlabeled operation digests")?;
+        Ok(Some(Self {
             id,
             ordinal,
             header,
-            sha256: crate::native::hex::Sha256Hex::digest(record.bytes()),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes()),
             payload_byte_len,
-            payload_sha256: crate::native::hex::Sha256Hex::digest(record.payload()),
-        })
+            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.payload()),
+        }))
     }
 
     pub(in crate::native) fn source_offset(&self) -> u64 {
@@ -83,9 +98,9 @@ struct UnlabeledRecordWire {
     object_indices: [Option<u32>; 4],
     object_index_source_offsets: [u64; 4],
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     payload_byte_len: u64,
-    payload_sha256: crate::native::hex::Sha256Hex,
+    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     payload_source_offset: u64,
     source_offset: u64,
 }

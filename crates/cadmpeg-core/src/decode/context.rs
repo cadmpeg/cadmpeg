@@ -14,7 +14,7 @@ use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
 };
 use super::space::{ByteRange, SpaceId};
-use super::view::View;
+use super::view::{u64_from_index, View};
 
 #[derive(Clone, Copy)]
 enum LimitScope {
@@ -66,7 +66,7 @@ impl<'a> DecodeContext<'a> {
         container_only: bool,
     ) -> Result<(Self, View<'a>), CodecError> {
         let max = policy.limits.max_input_bytes;
-        let cap = max.saturating_add(1);
+        let cap = max.checked_add(1);
         let size = match reader.seek(SeekFrom::End(0)) {
             Ok(size) => {
                 reader.rewind().map_err(CodecError::Io)?;
@@ -75,17 +75,34 @@ impl<'a> DecodeContext<'a> {
             Err(_) => None,
         };
         let buffer = if let Some(size) = size {
-            let reserve = size.min(cap);
+            let reserve = match cap {
+                Some(cap) => size.min(cap),
+                None => size,
+            };
             let reserve = usize::try_from(reserve)
                 .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve))?;
             let mut buffer = Vec::new();
-            buffer
-                .try_reserve(reserve)
-                .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve as u64))?;
+            buffer.try_reserve(reserve).map_err(|_| {
+                root_error(
+                    ResourceFailure::AllocationFailed,
+                    max,
+                    u64_from_index(reserve),
+                )
+            })?;
             let mut chunk =
                 alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
-            while (buffer.len() as u64) < cap {
-                let remaining = cap.saturating_sub(buffer.len() as u64);
+            loop {
+                let remaining = if let Some(cap) = cap {
+                    let Some(remaining) = cap.checked_sub(u64_from_index(buffer.len())) else {
+                        break;
+                    };
+                    if remaining == 0 {
+                        break;
+                    }
+                    remaining
+                } else {
+                    u64_from_index(chunk.len())
+                };
                 // The chunk length is already the bound: `remaining` above the
                 // chunk means this read takes the whole chunk, so the chunk
                 // length is the answer rather than a default standing in for
@@ -98,9 +115,9 @@ impl<'a> DecodeContext<'a> {
                 if read == 0 {
                     break;
                 }
-                buffer
-                    .try_reserve(read)
-                    .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, read as u64))?;
+                buffer.try_reserve(read).map_err(|_| {
+                    root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read))
+                })?;
                 buffer.extend_from_slice(&chunk[..read]);
             }
             buffer
@@ -108,10 +125,17 @@ impl<'a> DecodeContext<'a> {
             let mut buffer = Vec::new();
             let mut chunk = [0u8; 8192];
             loop {
-                let remaining = cap.saturating_sub(buffer.len() as u64);
-                if remaining == 0 {
-                    break;
-                }
+                let remaining = if let Some(cap) = cap {
+                    let Some(remaining) = cap.checked_sub(u64_from_index(buffer.len())) else {
+                        break;
+                    };
+                    if remaining == 0 {
+                        break;
+                    }
+                    remaining
+                } else {
+                    u64_from_index(chunk.len())
+                };
                 // The chunk length is already the bound: `remaining` above the
                 // chunk means this read takes the whole chunk, so the chunk
                 // length is the answer rather than a default standing in for
@@ -124,18 +148,18 @@ impl<'a> DecodeContext<'a> {
                 if read == 0 {
                     break;
                 }
-                buffer
-                    .try_reserve(read)
-                    .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, read as u64))?;
+                buffer.try_reserve(read).map_err(|_| {
+                    root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read))
+                })?;
                 buffer.extend_from_slice(&chunk[..read]);
             }
             buffer
         };
-        if buffer.len() as u64 > max {
+        if u64_from_index(buffer.len()) > max {
             return Err(root_error(
                 ResourceFailure::BudgetExceeded,
                 max,
-                buffer.len() as u64,
+                u64_from_index(buffer.len()),
             ));
         }
         let bytes = arena.alloc(buffer.into_boxed_slice());
@@ -158,7 +182,7 @@ impl<'a> DecodeContext<'a> {
         policy: &DecodePolicy,
         container_only: bool,
     ) -> Result<(Self, View<'a>), CodecError> {
-        let length = bytes.len() as u64;
+        let length = u64_from_index(bytes.len());
         if length > policy.limits.max_input_bytes {
             return Err(root_error(
                 ResourceFailure::BudgetExceeded,
@@ -190,14 +214,18 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn per_expand_allowance(&self) -> u64 {
-        let proportional = DECOMPRESSED_PER_EXPAND_BASE.saturating_add(
-            DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE.saturating_mul(self.budget.input_bytes()),
-        );
-        self.budget
+        let policy_limit = self
+            .budget
             .policy()
             .limits
-            .max_decompressed_bytes_per_expand
-            .min(proportional)
+            .max_decompressed_bytes_per_expand;
+        let Some(proportional) = DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE
+            .checked_mul(self.budget.input_bytes())
+            .and_then(|bytes| DECOMPRESSED_PER_EXPAND_BASE.checked_add(bytes))
+        else {
+            return policy_limit;
+        };
+        policy_limit.min(proportional)
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
@@ -207,8 +235,8 @@ impl<'a> DecodeContext<'a> {
             self.budget.refuse(
                 ResourceDimension::Codec("decode address spaces"),
                 ResourceFailure::BudgetExceeded,
-                usize::MAX as u64,
-                used as u64,
+                u64_from_index(usize::MAX),
+                u64_from_index(used),
                 1,
                 "decode address spaces",
             )
@@ -254,13 +282,22 @@ impl<'a> DecodeContext<'a> {
         bytes: usize,
         operation: &'static str,
     ) -> Result<(String, ScopedReservation<'_>), CodecError> {
-        let reservation = self.reserve_scoped(bytes as u64, operation)?;
+        let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
         let mut text = String::new();
         text.try_reserve_exact(bytes).map_err(|_| {
             self.budget
-                .scoped_allocation_failed(bytes as u64, operation)
+                .scoped_allocation_failed(u64_from_index(bytes), operation)
         })?;
         Ok((text, reservation))
+    }
+
+    /// Reserves temporary bytes and returns the typed resource refusal.
+    pub fn reserve_scoped_limit(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
+        self.budget.reserve_scoped_limit(bytes, operation)
     }
 
     /// Charges bytes retained for the remainder of this session.
@@ -277,20 +314,115 @@ impl<'a> DecodeContext<'a> {
         self.budget.preflight_retained(bytes, operation)
     }
 
+    /// Copies admitted text into retained storage with a typed resource refusal.
+    pub fn copy_retained_text_limit(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, ResourceLimit> {
+        let bytes = super::u64_from_index(text.len());
+        self.budget.charge_retained_limit(bytes, operation)?;
+        let mut copy = String::new();
+        copy.try_reserve_exact(text.len()).map_err(|_| {
+            self.budget
+                .retained_allocation_failed_limit(bytes, operation)
+        })?;
+        copy.push_str(text);
+        Ok(copy)
+    }
+
+    /// Copies admitted text into session-retained storage.
+    pub fn copy_retained_text(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        self.copy_retained_text_limit(text, operation)
+            .map_err(Into::into)
+    }
+
     /// Copies bytes into session-retained storage after charging and reserving safely.
     pub fn copy_retained(
         &self,
         bytes: &[u8],
         operation: &'static str,
     ) -> Result<Vec<u8>, CodecError> {
-        self.charge_retained(bytes.len() as u64, operation)?;
+        self.charge_retained(u64_from_index(bytes.len()), operation)?;
         let mut copy = Vec::new();
         copy.try_reserve_exact(bytes.len()).map_err(|_| {
             self.budget
-                .retained_allocation_failed(bytes.len() as u64, operation)
+                .retained_allocation_failed(u64_from_index(bytes.len()), operation)
         })?;
         copy.extend_from_slice(bytes);
         Ok(copy)
+    }
+
+    /// Reserves growth of a session-retained string after charging its bytes.
+    pub fn try_reserve_retained_text(
+        &self,
+        text: &mut String,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let bytes = u64_from_index(additional);
+        self.charge_retained(bytes, operation)?;
+        text.try_reserve(additional)
+            .map_err(|_| self.budget.retained_allocation_failed(bytes, operation))
+    }
+
+    /// Copies source bytes as UTF-8 with replacement characters after charging
+    /// the exact length of the retained text.
+    pub fn copy_retained_lossy_utf8(
+        &self,
+        value: &[u8],
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let mut remaining = value;
+        let mut length = 0usize;
+        loop {
+            match std::str::from_utf8(remaining) {
+                Ok(valid) => {
+                    length = length
+                        .checked_add(valid.len())
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                    break;
+                }
+                Err(error) => {
+                    length = length
+                        .checked_add(error.valid_up_to())
+                        .and_then(|length| length.checked_add('\u{FFFD}'.len_utf8()))
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                    let Some(invalid_len) = error.error_len() else {
+                        break;
+                    };
+                    remaining = &remaining[error.valid_up_to() + invalid_len..];
+                }
+            }
+        }
+        let mut text = String::new();
+        self.try_reserve_retained_text(&mut text, length, operation)?;
+        let mut remaining = value;
+        loop {
+            match std::str::from_utf8(remaining) {
+                Ok(valid) => {
+                    text.push_str(valid);
+                    break;
+                }
+                Err(error) => {
+                    let valid_len = error.valid_up_to();
+                    text.push_str(
+                        std::str::from_utf8(&remaining[..valid_len])
+                            .map_err(|_| CodecError::malformed("valid UTF-8 prefix changed"))?,
+                    );
+                    text.push('\u{FFFD}');
+                    let Some(invalid_len) = error.error_len() else {
+                        break;
+                    };
+                    remaining = &remaining[valid_len + invalid_len..];
+                }
+            }
+        }
+        Ok(text)
     }
 
     /// Allocates `count` copies of `value` after charging collection items and
@@ -303,7 +435,7 @@ impl<'a> DecodeContext<'a> {
         value: T,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
-        self.charge_collection_items(count as u64, operation)?;
+        self.charge_collection_items(u64_from_index(count), operation)?;
         alloc_filled(count, value, operation)
     }
 
@@ -322,7 +454,11 @@ impl<'a> DecodeContext<'a> {
         admitted: &mut u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let additional = current.saturating_sub(*admitted);
+        if current < *admitted {
+            *admitted = current;
+            return Ok(());
+        }
+        let additional = current - *admitted;
         self.charge_entities(additional, operation)?;
         *admitted = current;
         Ok(())
@@ -344,11 +480,10 @@ impl<'a> DecodeContext<'a> {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.charge_collection_items(additional as u64, operation)?;
+        self.charge_collection_items(u64_from_index(additional), operation)?;
         values.try_reserve(additional).map_err(|_| {
             self.budget.collection_allocation_failed(
-                additional as u64,
-                additional as u64,
+                u64_from_index(additional),
                 operation,
             )
         })
@@ -363,7 +498,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), CodecError> {
         values.try_reserve(additional).map_err(|_| {
             self.budget
-                .collection_allocation_failed(0, additional as u64, operation)
+                .collection_allocation_failed_requested(0, u64_from_index(additional), operation)
         })
     }
 
@@ -374,10 +509,10 @@ impl<'a> DecodeContext<'a> {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.charge_retained(additional as u64, operation)?;
+        self.charge_retained(u64_from_index(additional), operation)?;
         value.try_reserve(additional).map_err(|_| {
             self.budget
-                .retained_allocation_failed(additional as u64, operation)
+                .retained_allocation_failed(u64_from_index(additional), operation)
         })
     }
 
@@ -399,6 +534,37 @@ impl<'a> DecodeContext<'a> {
                 .unwrap_or_else(|| CodecError::malformed("cannot format retained text")));
         }
         Ok(output.text)
+    }
+
+    /// Charges collection items before a fallible collection allocation.
+    pub fn try_collection<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+        allocate: impl FnOnce() -> Result<T, std::collections::TryReserveError>,
+    ) -> Result<T, CodecError> {
+        let count = u64_from_index(count);
+        self.charge_collection_items(count, operation)?;
+        allocate().map_err(|_| self.budget.collection_allocation_failed(count, operation))
+    }
+
+    /// Reports allocator refusal after a collection-item charge was recorded.
+    pub(super) fn collection_allocation_failed(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> CodecError {
+        self.budget
+            .collection_allocation_failed(u64_from_index(count), operation)
+    }
+
+    /// Charges collection items and returns the typed refusal for resource-only callers.
+    pub fn charge_collection_items_limit(
+        &self,
+        count: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.budget.charge_collection_items_limit(count, operation)
     }
 
     /// Enters one recursive nesting level until the returned guard is dropped.
@@ -482,6 +648,11 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
+    /// Returns the resource refusal that has fused this decode session.
+    pub fn resource_refusal(&self) -> Option<ResourceLimit> {
+        self.budget.fused()
+    }
+
     /// Permanently refuses a codec-local resource request.
     ///
     /// Codecs use this when a bounded recovery algorithm reaches a fixed
@@ -494,12 +665,16 @@ impl<'a> DecodeContext<'a> {
         limit: u64,
         requested: u64,
     ) -> CodecError {
+        let (used, additional) = match requested.checked_sub(limit) {
+            Some(excess) => (limit, excess),
+            None => (requested, 0),
+        };
         self.budget.refuse(
             ResourceDimension::Codec(operation),
             ResourceFailure::BudgetExceeded,
             limit,
-            requested.min(limit),
-            requested.saturating_sub(limit),
+            used,
+            additional,
             operation,
         )
     }
@@ -527,10 +702,10 @@ impl<'a> DecodeContext<'a> {
                     "begin_expand",
                 ));
             }
-            if size
-                > self
-                    .decompression_allowance()
-                    .saturating_sub(self.budget.decompressed_used())
+            if self
+                .decompression_allowance()
+                .checked_sub(self.budget.decompressed_used())
+                .is_none_or(|remaining| size > remaining)
             {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
@@ -555,7 +730,7 @@ impl<'a> DecodeContext<'a> {
                 self.fuse(
                     ResourceFailure::AllocationFailed,
                     LimitScope::PerExpand,
-                    reserve as u64,
+                    u64_from_index(reserve),
                     "begin_expand",
                 )
             })?;
@@ -583,13 +758,13 @@ impl<'a> DecodeContext<'a> {
                     ResourceDimension::RetainedBytes,
                     ResourceFailure::BudgetExceeded,
                     self.budget.policy().limits.max_retained_bytes,
-                    total as u64,
-                    view.window().len() as u64,
+                    u64_from_index(total),
+                    u64_from_index(view.window().len()),
                     "concat_views",
                 )
             })
         })?;
-        let reservation = self.reserve_scoped(total as u64, "concat_views")?;
+        let reservation = self.reserve_scoped(u64_from_index(total), "concat_views")?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {
             self.budget.refuse(
@@ -597,7 +772,7 @@ impl<'a> DecodeContext<'a> {
                 ResourceFailure::AllocationFailed,
                 self.budget.policy().limits.max_materialized_bytes,
                 0,
-                total as u64,
+                u64_from_index(total),
                 "concat_views",
             )
         })?;
@@ -629,8 +804,7 @@ impl<'a> DecodeContext<'a> {
                 CodecError::NotImplemented("retained concatenation exceeds usize".into())
             })
         })?;
-        let total_bytes = u64::try_from(total)
-            .map_err(|_| CodecError::NotImplemented("retained concatenation exceeds u64".into()))?;
+        let total_bytes = crate::decode::u64_from_index(total);
         let reservation = self.reserve_scoped(total_bytes, operation)?;
         self.charge_retained(total_bytes, operation)?;
         let mut buffer = Vec::new();
@@ -694,12 +868,23 @@ impl<'a> DecodeContext<'a> {
 
 /// Builds the root-input resource error before a context exists.
 fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
+    if used <= limit {
+        return CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::InputBytes,
+            reason,
+            limit,
+            used,
+            additional: 0,
+            operation: "read_root",
+        });
+    }
+    let additional = used - limit;
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::InputBytes,
         reason,
         limit,
         used,
-        additional: used.saturating_sub(limit),
+        additional,
         operation: "read_root",
     })
 }
@@ -724,8 +909,15 @@ pub struct ExpandWriter<'ctx, 'a> {
 impl<'a> ExpandWriter<'_, 'a> {
     /// Appends decompressed output, charging before it is retained.
     pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
-        let len = data.len() as u64;
-        let new_written = self.written().saturating_add(len);
+        let len = u64_from_index(data.len());
+        let new_written = self.written().checked_add(len).ok_or_else(|| {
+            self.ctx.fuse(
+                ResourceFailure::BudgetExceeded,
+                LimitScope::PerExpand,
+                len,
+                "expand_write",
+            )
+        })?;
         match self.spec {
             ExpandSpec::Exact(size) if new_written > size => {
                 return Err(CodecError::malformed(format_args!(
@@ -785,13 +977,14 @@ impl<'a> ExpandWriter<'_, 'a> {
 
     /// Returns how many bytes have been written so far.
     pub fn written(&self) -> u64 {
-        self.buffer.len() as u64
+        u64_from_index(self.buffer.len())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+    use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+    use crate::decode::{ResourceDimension, ResourceFailure};
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
     struct RewindFails(Cursor<Vec<u8>>);
@@ -842,11 +1035,175 @@ mod tests {
         let crate::CodecError::ResourceLimit(limit) = error else {
             panic!("exhausted IDs return a resource refusal");
         };
-        assert_eq!(limit.limit, usize::MAX as u64);
-        assert_eq!(limit.used, usize::MAX as u64);
+        assert_eq!(limit.limit, u64_from_index(usize::MAX));
+        assert_eq!(limit.used, u64_from_index(usize::MAX));
         assert_eq!(limit.additional, 1);
         assert!(ctx.register_slice(root, range).is_err());
         assert!(ctx.finish_session().is_err());
+    }
+
+    #[test]
+    fn collection_reservation_reports_allocator_refusal_after_charge() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+            .expect("test input fits the policy");
+        let mut values = Vec::<u8>::new();
+        let error = ctx
+            .reserve_vec(&mut values, usize::MAX, "test collection reservation")
+            .expect_err("a vector cannot reserve more than isize::MAX bytes");
+        assert!(matches!(
+            error,
+            crate::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.reason == ResourceFailure::AllocationFailed
+                    && limit.used == 0
+                    && limit.additional == u64_from_index(usize::MAX)
+                    && limit.operation == "test collection reservation"
+        ));
+        assert!(ctx.finish_session().is_err());
+    }
+
+    #[test]
+    fn try_collection_refuses_before_allocation_and_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+            .expect("test input fits the policy");
+        let mut allocated = false;
+        let error = ctx
+            .try_collection(3, "test collection allocation", || {
+                allocated = true;
+                Ok(())
+            })
+            .expect_err("three items exceed a limit of two");
+        assert!(!allocated);
+        assert!(matches!(
+            error,
+            crate::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.reason == ResourceFailure::BudgetExceeded
+                    && limit.operation == "test collection allocation"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &DecodePolicy::service())
+            .expect("test input fits the policy");
+        let mut values = Vec::<u8>::new();
+        ctx.try_collection(3, "test collection allocation", || values.try_reserve(3))
+            .expect("the service profile admits three items");
+        assert!(values.capacity() >= 3);
+    }
+
+    #[test]
+    fn try_collection_reports_allocator_refusal_after_charge() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+            .expect("test input fits the policy");
+        let mut values = Vec::<u8>::new();
+        let error = ctx
+            .try_collection(usize::MAX, "test collection allocation", || {
+                values.try_reserve(usize::MAX)
+            })
+            .expect_err("a vector cannot reserve more than isize::MAX bytes");
+        assert!(matches!(
+            error,
+            crate::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.reason == ResourceFailure::AllocationFailed
+                    && limit.operation == "test collection allocation"
+        ));
+    }
+
+    #[test]
+    fn scoped_text_copy_refuses_before_allocation_and_releases_on_drop() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+            .expect("test input fits the policy");
+        {
+            let mut reservation = ctx
+                .reserve_scoped(0, "test scoped text")
+                .expect("empty reservation is admitted");
+            let copy = ctx
+                .copy_scoped_text("abc", &mut reservation, "test scoped text")
+                .expect("three temporary bytes are admitted");
+            assert_eq!(copy, "abc");
+        }
+        {
+            let mut reservation = ctx
+                .reserve_scoped(0, "test scoped text")
+                .expect("empty reservation is admitted");
+            assert_eq!(
+                ctx.copy_scoped_text("def", &mut reservation, "test scoped text")
+                    .expect("the prior reservation was released"),
+                "def"
+            );
+        }
+        let mut reservation = ctx
+            .reserve_scoped(0, "test scoped text")
+            .expect("empty reservation is admitted");
+        let error = ctx
+            .copy_scoped_text("abcd", &mut reservation, "test scoped text")
+            .expect_err("four bytes exceed the temporary limit");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "test scoped text"));
+    }
+
+    #[test]
+    fn scoped_format_refuses_before_allocation_and_releases_on_drop() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        {
+            let (text, _reservation) = ctx
+                .format_scoped(format_args!("x{}", 12), "test scoped format")
+                .expect("three rendered bytes fit");
+            assert_eq!(text, "x12");
+        }
+        assert_eq!(
+            ctx.format_scoped(format_args!("y{}", 34), "test scoped format")
+                .expect("prior reservation was released")
+                .0,
+            "y34"
+        );
+        let error = ctx
+            .format_scoped(format_args!("z{}", 345), "test scoped format")
+            .expect_err("four bytes exceed the materialized allowance");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "test scoped format"));
+    }
+
+    #[test]
+    fn retained_format_refuses_before_string_growth() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        assert_eq!(
+            ctx.format_retained(
+                format_args!("{number}", number = 1234),
+                "test retained format"
+            )
+            .expect("four rendered bytes fit"),
+            "1234"
+        );
+        let error = ctx
+            .format_retained(format_args!("{}", 5), "test retained format")
+            .expect_err("one more byte exceeds the retained limit");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "test retained format"));
     }
 }
 

@@ -22,6 +22,7 @@ use crate::om::fixed::Q155;
 use crate::om::nonempty::NonEmpty;
 use crate::om::scalar_run::FramedScalarRun;
 use crate::printable_string::PrintableString;
+use cadmpeg_core::CodecError;
 use serde::Deserialize;
 
 use crate::om::scalar::ShiftedBinary32;
@@ -29,8 +30,13 @@ use serde::Serialize;
 
 use super::offset_data_block_bytes;
 
-use super::resolved_feature_payload_references;
-use super::unique_offset_data_store;
+use super::construction_records::format_offset_data_block_id;
+use super::construction_records::resolved_feature_payload_references;
+use super::construction_records::unique_offset_data_store;
+
+use super::format_feature_child_id;
+use super::format_feature_history_id;
+use super::replace_operation_text;
 use super::visit_feature_history_operation_records;
 
 use crate::om::draft_leading::DraftLeadingLane;
@@ -332,7 +338,7 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
         let lane = FramedScalarRun::new(
             Q155LaneFrame,
             wire.payload_offset,
-            NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?,
+            NonEmpty::from_vec(values).ok_or("values must contain a Q1.55 atom")?,
         )?;
         if !lane
             .iter()
@@ -453,7 +459,7 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
         let lane = FramedScalarRun::new(
             branch,
             wire.payload_offset,
-            NonEmpty::new(values).ok_or("values must contain a binary32 atom")?,
+            NonEmpty::from_vec(values).ok_or("values must contain a binary32 atom")?,
         )?;
         if !lane
             .iter()
@@ -636,7 +642,7 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 
     fn try_from(wire: FeatureDraftConstructionTerminalLaneWire) -> Result<Self, Self::Error> {
         let [first, second] = [0, 1].map(|slot| {
-            ExtendedCompactIndex::from_wire(wire.indices[slot], &wire.raw_indices[slot])
+            ExtendedCompactIndex::from_wire(wire.indices[slot], wire.raw_indices[slot])
                 .map_err(|error| format!("indices[{slot}]: {error}"))
         });
         let lane = crate::om::draft_terminal::DraftTerminalLane::<u64>::new(
@@ -660,326 +666,535 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 
 /// Decode exact ordered draft construction references without assigning semantic roles.
 pub(in crate::native) fn feature_draft_construction_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureDraftConstructionReference> {
-    resolved_feature_payload_references(container, |record, base| {
+) -> Result<Vec<FeatureDraftConstructionReference>, cadmpeg_core::CodecError> {
+    let references = resolved_feature_payload_references(ctx, container, |record, base| {
         crate::om::draft_references::draft_feature_payload_references(record)
             .and_then(|field| field.relocate(base))
             .map(|field| field.references().into_iter().collect())
-    })
-    .into_iter()
-    .map(|reference| {
-        let operation_label = format!(
-            "nx:feature-history:operation-label#{}-{:010}",
-            reference.section_key, reference.operation_ordinal
-        );
-        FeatureDraftConstructionReference {
-            id: format!(
-                "nx:feature-history:draft-construction-reference#{}-{:010}-{:010}",
-                reference.section_key, reference.operation_ordinal, reference.ordinal
-            ),
+    })?;
+    let mut output = Vec::new();
+    for reference in references {
+        let operation_label = format_feature_history_id(
+            ctx,
+            "operation-label",
+            &reference.section_key,
+            reference.operation_ordinal,
+            None,
+        )?;
+        let id = format_feature_history_id(
+            ctx,
+            "draft-construction-reference",
+            &reference.section_key,
+            reference.operation_ordinal,
+            Some(reference.ordinal),
+        )?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX draft construction references")?;
+        output.push(FeatureDraftConstructionReference {
+            id,
             operation_label,
-            ordinal: reference.ordinal as u32,
+            ordinal: u32::try_from(reference.ordinal).map_err(|_| {
+                ctx.refuse_codec_limit("NX draft construction reference ordinal", 0, 1)
+            })?,
             token: reference.token,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
-        }
-    })
-    .collect()
+        });
+    }
+    Ok(output)
 }
 
 /// Decode exact counted compact-index lanes preceding draft construction graphs.
 pub(in crate::native) fn feature_draft_construction_index_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureDraftConstructionIndexLane> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureDraftConstructionIndexLane>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::draft_leading::scan(record.payload_view()) else {
+            if failure.is_some() {
                 return;
-            };
-            let section_ordinal = crate::om::draft_references::draft_feature_payload_references(
-                record.payload_view(),
-            )
-            .and_then(|graph| {
-                let complete_indices = graph
-                    .references()
-                    .into_iter()
-                    .map(|(token, _)| token.value())
-                    .chain(lane.indices().map(|token| token.atom.value()))
-                    .collect::<Vec<_>>();
-                unique_offset_data_store(&indexed, &complete_indices)
-            });
-            let Some(frame) = lane.into_absolute(entry_offset) else {
-                return;
-            };
-            let indices = match section_ordinal {
-                None => FeatureDraftConstructionIndices::Unresolved(frame),
-                Some(section_ordinal) => {
-                    FeatureDraftConstructionIndices::Resolved(frame.resolve(|index| {
-                        format!("nx:om-data-blocks-{section_ordinal}:block#{index}")
-                    }))
+            }
+            let lane = match crate::om::draft_leading::scan(ctx, record.payload_view()) {
+                Ok(lane) => lane,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
                 }
             };
-            lanes.push(FeatureDraftConstructionIndexLane {
-                id: format!(
-                    "nx:feature-history:draft-construction-index-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                indices,
-            });
+            let Some(lane) = lane else {
+                return;
+            };
+            let projected =
+                (|| -> Result<Option<FeatureDraftConstructionIndexLane>, CodecError> {
+                    let section_ordinal = if let Some(graph) =
+                        crate::om::draft_references::draft_feature_payload_references(
+                            record.payload_view(),
+                        ) {
+                        let count =
+                            4usize.checked_add(lane.indices().count()).ok_or_else(|| {
+                                ctx.refuse_codec_limit("NX draft complete reference indices", 0, 1)
+                            })?;
+
+                        let (mut complete_indices, _indices_reservation) =
+                            ctx.temporary_vec(count, "NX draft complete reference indices")?;
+                        complete_indices.extend(
+                            graph
+                                .references()
+                                .into_iter()
+                                .map(|(token, _)| token.value()),
+                        );
+                        complete_indices.extend(lane.indices().map(|token| token.atom.value()));
+                        let work = indexed.len().checked_mul(count).ok_or_else(|| {
+                            ctx.refuse_codec_limit("resolve NX draft reference store", 0, 1)
+                        })?;
+                        ctx.charge_work(
+                            cadmpeg_core::decode::u64_from_index(work),
+                            "resolve NX draft reference store",
+                        )?;
+                        unique_offset_data_store(&indexed, &complete_indices)
+                    } else {
+                        None
+                    };
+                    let Some(frame) = lane.into_absolute(entry_offset) else {
+                        return Ok(None);
+                    };
+                    let indices = match section_ordinal {
+                        None => FeatureDraftConstructionIndices::Unresolved(frame),
+                        Some(section_ordinal) => FeatureDraftConstructionIndices::Resolved(
+                            frame.resolve(ctx, |index| {
+                                format_offset_data_block_id(ctx, section_ordinal, index)
+                            })?,
+                        ),
+                    };
+                    let id = format_feature_history_id(
+                        ctx,
+                        "draft-construction-index-lane",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    let operation_label = format_feature_history_id(
+                        ctx,
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    ctx.reserve_retained_vec(&mut lanes, 1, "NX draft construction index lanes")?;
+                    Ok(Some(FeatureDraftConstructionIndexLane {
+                        id,
+                        operation_label,
+                        indices,
+                    }))
+                })();
+            match projected {
+                Ok(Some(lane)) => lanes.push(lane),
+                Ok(None) => {}
+                Err(error) => failure = Some(error),
+            }
         },
-    );
-    lanes
+    )?;
+    if let Some(error) = failure {
+        Err(error)
+    } else {
+        Ok(lanes)
+    }
 }
 
 /// Reconstruct ordered logical payloads from resolved draft index lanes.
 pub(in crate::native) fn feature_draft_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
-) -> Vec<FeatureConstructionPayload> {
-    let blocks = offset_data_block_bytes(container);
-    lanes
-        .iter()
-        .filter_map(|lane| {
-            let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
-                return None;
-            };
-            let data_blocks = tokens
-                .indices()
-                .map(|row| row.target.clone())
-                .collect::<Vec<_>>();
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            Some(FeatureConstructionPayload {
-                id: lane.id.replacen(
-                    "draft-construction-index-lane#",
-                    "draft-construction-payload#",
-                    1,
-                ),
-                operation_label: lane.operation_label.clone(),
-                owner: FeatureConstructionOwner::Draft {
-                    index_lane: lane.id.clone(),
-                },
-                content,
-            })
-        })
-        .collect()
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for lane in lanes {
+        let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
+            continue;
+        };
+        let count = tokens.indices().count();
+        let mut data_blocks = ctx.retained_vec(count, "NX draft construction source blocks")?;
+        for row in tokens.indices() {
+            data_blocks
+                .push(ctx.copy_retained_text(row.target, "NX draft construction source block")?);
+        }
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+            continue;
+        };
+        let id = replace_operation_text(
+            ctx,
+            &lane.id,
+            "draft-construction-index-lane#",
+            "draft-construction-payload#",
+            "NX draft construction payload identity",
+        )?;
+        let operation_label = ctx.copy_retained_text(
+            &lane.operation_label,
+            "NX draft construction operation label",
+        )?;
+        let index_lane = ctx.copy_retained_text(&lane.id, "NX draft construction index lane")?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX draft construction payloads")?;
+        output.push(FeatureConstructionPayload {
+            id,
+            operation_label,
+            owner: FeatureConstructionOwner::Draft { index_lane },
+            content,
+        });
+    }
+    Ok(output)
 }
 
 /// Reconstruct ordered logical payloads from complete draft construction graphs.
 pub(in crate::native) fn feature_draft_construction_graph_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
     references: &[FeatureDraftConstructionReference],
-) -> Vec<FeatureDraftConstructionGraphPayload> {
-    let blocks = offset_data_block_bytes(container);
-    lanes
-        .iter()
-        .filter_map(|lane| {
-            let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
-                return None;
+) -> Result<Vec<FeatureDraftConstructionGraphPayload>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for lane in lanes {
+        let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
+            continue;
+        };
+        let Some(store) = tokens
+            .indices()
+            .next()
+            .and_then(|row| row.target.rsplit_once(":block#").map(|(store, _)| store))
+        else {
+            continue;
+        };
+        let scan_work = references
+            .len()
+            .checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("scan NX draft construction graph", 0, 1))?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(scan_work),
+            "scan NX draft construction graph",
+        )?;
+        let count = references
+            .iter()
+            .filter(|reference| reference.operation_label == lane.operation_label)
+            .count();
+
+        let (mut graph, _graph_reservation) =
+            ctx.temporary_vec(count, "NX draft construction graph")?;
+        graph.extend(
+            references
+                .iter()
+                .filter(|reference| reference.operation_label == lane.operation_label),
+        );
+        let sort_work = count
+            .checked_mul(count)
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX draft construction graph", 0, 1))?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(sort_work),
+            "sort NX draft construction graph",
+        )?;
+        graph.sort_by_key(|reference| reference.ordinal);
+        if graph
+            .iter()
+            .enumerate()
+            .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
+        {
+            continue;
+        }
+        let Ok(graph): Result<[&FeatureDraftConstructionReference; 4], _> = graph.try_into() else {
+            continue;
+        };
+        let mut data_blocks = ctx.retained_vec(4, "NX draft graph source blocks")?;
+        for reference in graph {
+            let Some(block) = reference.data_block.as_deref() else {
+                break;
             };
-            let store = tokens.indices().next()?.target.rsplit_once(":block#")?.0;
-            let mut graph = references
-                .iter()
-                .filter(|reference| reference.operation_label == lane.operation_label)
-                .collect::<Vec<_>>();
-            graph.sort_by_key(|reference| reference.ordinal);
-            if graph
-                .iter()
-                .enumerate()
-                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
-            {
-                return None;
-            }
-            let graph: [&FeatureDraftConstructionReference; 4] = graph.try_into().ok()?;
-            let data_blocks = graph
-                .each_ref()
-                .map(|reference| reference.data_block.clone())
-                .into_iter()
-                .collect::<Option<Vec<_>>>()?;
-            if data_blocks.iter().any(|block| {
-                block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != store)
-            }) {
-                return None;
-            }
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            let (_, key) = lane.id.rsplit_once('#')?;
-            Some(FeatureDraftConstructionGraphPayload {
-                id: format!("nx:feature-history:draft-construction-graph-payload#{key}"),
-                operation_label: lane.operation_label.clone(),
-                index_lane: lane.id.clone(),
-                construction_references: graph.each_ref().map(|reference| reference.id.clone()),
-                content,
-            })
-        })
-        .collect()
+            data_blocks.push(ctx.copy_retained_text(block, "NX draft graph source block")?);
+        }
+        if data_blocks.len() != 4 {
+            continue;
+        }
+        if data_blocks.iter().any(|block| {
+            block
+                .rsplit_once(":block#")
+                .is_none_or(|(prefix, _)| prefix != store)
+        }) {
+            continue;
+        }
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+            continue;
+        };
+        let Some((_, key)) = lane.id.rsplit_once('#') else {
+            continue;
+        };
+        let prefix = "nx:feature-history:draft-construction-graph-payload#";
+        let id_len = prefix
+            .len()
+            .checked_add(key.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX draft graph payload identity", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "NX draft graph payload identity")?;
+        id.push_str(prefix);
+        id.push_str(key);
+        let mut construction_references: [String; 4] = std::array::from_fn(|_| String::new());
+        for (slot, reference) in graph.into_iter().enumerate() {
+            construction_references[slot] =
+                ctx.copy_retained_text(&reference.id, "NX draft graph reference identity")?;
+        }
+        ctx.reserve_retained_vec(&mut output, 1, "NX draft construction graph payloads")?;
+        output.push(FeatureDraftConstructionGraphPayload {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&lane.operation_label, "NX draft graph operation label")?,
+            index_lane: ctx.copy_retained_text(&lane.id, "NX draft graph index lane")?,
+            construction_references,
+            content,
+        });
+    }
+    Ok(output)
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed draft graph payloads.
 pub(in crate::native) fn feature_draft_construction_fixed_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
-) -> Vec<FeatureDraftConstructionFixedLane> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+) -> Result<Vec<FeatureDraftConstructionFixedLane>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut lanes = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, lane) in crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = lane.offset();
+            let Some(lane) =
+                lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset))?
             else {
-                return Vec::new();
+                continue;
             };
-            crate::om::draft_construction_fixed_lanes(joined.bytes())
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset();
-                    let lane = lane.try_map_locations(|offset, ()| joined.source_offset(offset))?;
-                    Some(FeatureDraftConstructionFixedLane {
-                        id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        graph_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        lane,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
+            };
+            let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
+            let operation_label =
+                ctx.copy_retained_text(&payload.operation_label, "NX draft fixed lane operation")?;
+            let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft fixed lane graph")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft fixed lane ordinal", 0, 1))?;
+            ctx.reserve_retained_vec(&mut lanes, 1, "NX draft construction fixed lanes")?;
+            lanes.push(FeatureDraftConstructionFixedLane {
+                id,
+                operation_label,
+                graph_payload,
+                ordinal,
+                lane,
+                source_offset,
+            });
+        }
+    }
+    Ok(lanes)
 }
 
 /// Decode complete shifted-binary32 lanes from reconstructed draft graph payloads.
 pub(in crate::native) fn feature_draft_construction_binary32_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
-) -> Vec<FeatureDraftConstructionBinary32Lane> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+) -> Result<Vec<FeatureDraftConstructionBinary32Lane>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut lanes = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, lane) in crate::om::draft_construction_binary32_lanes(ctx, joined.bytes())?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = lane.offset();
+            let Some(lane) =
+                lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset))?
             else {
-                return Vec::new();
+                continue;
             };
-            crate::om::draft_construction_binary32_lanes(joined.bytes())
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset();
-                    let lane = lane.try_map_locations(|offset, ()| joined.source_offset(offset))?;
-                    Some(FeatureDraftConstructionBinary32Lane {
-                        id: format!("{}-binary32-lane-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        graph_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        lane,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
+            };
+            let id = format_feature_child_id(ctx, &payload.id, "-binary32-lane-", ordinal)?;
+            let operation_label = ctx
+                .copy_retained_text(&payload.operation_label, "NX draft binary32 lane operation")?;
+            let graph_payload =
+                ctx.copy_retained_text(&payload.id, "NX draft binary32 lane graph")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft binary32 lane ordinal", 0, 1))?;
+            ctx.reserve_retained_vec(&mut lanes, 1, "NX draft construction binary32 lanes")?;
+            lanes.push(FeatureDraftConstructionBinary32Lane {
+                id,
+                operation_label,
+                graph_payload,
+                ordinal,
+                lane,
+                source_offset,
+            });
+        }
+    }
+    Ok(lanes)
 }
 
 /// Decode canonical printable strings from reconstructed draft graph payloads.
 pub(in crate::native) fn feature_draft_construction_graph_strings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
-) -> Vec<FeatureDraftConstructionGraphString> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
-                return Vec::new();
+) -> Result<Vec<FeatureDraftConstructionGraphString>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut strings = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
             };
-            crate::om::string_values(joined.bytes(), 0)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, value)| {
-                    let payload_offset = value.offset as u64;
-                    Some(FeatureDraftConstructionGraphString {
-                        id: format!("{}-string-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        graph_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        value: value.value.into_owned(),
-                        payload_offset,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+            let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
+            let operation_label =
+                ctx.copy_retained_text(&payload.operation_label, "NX draft string operation")?;
+            let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft string graph")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
+            let value = PrintableString::new(
+                ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
+            )
+            .map_err(|reason| CodecError::Malformed(reason.into()))?;
+            ctx.reserve_retained_vec(&mut strings, 1, "NX draft construction graph strings")?;
+            strings.push(FeatureDraftConstructionGraphString {
+                id,
+                operation_label,
+                graph_payload,
+                ordinal,
+                value,
+                payload_offset,
+                source_offset,
+            });
+        }
+    }
+    Ok(strings)
 }
 
 /// Decode complete identity frames from reconstructed draft construction payloads.
 pub(in crate::native) fn feature_draft_construction_identity_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Vec<FeatureDraftConstructionIdentityFrame> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
-                return Vec::new();
+) -> Result<Vec<FeatureDraftConstructionIdentityFrame>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, frame) in crate::om::draft_construction_identity_frames(ctx, joined.bytes())?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = frame.offset();
+            let identity_payload_offset = frame.identity_offset();
+            let (Some(source_offset), Some(identity_source_offset)) = (
+                joined.source_offset(payload_offset),
+                joined.source_offset(identity_payload_offset),
+            ) else {
+                continue;
             };
-            crate::om::draft_construction_identity_frames(joined.bytes())
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, frame)| {
-                    let payload_offset = frame.offset();
-                    let identity_payload_offset = frame.identity_offset();
-                    Some(FeatureDraftConstructionIdentityFrame {
-                        id: format!("{}-identity-frame-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        draft_construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        frame,
-                        source_offset: joined.source_offset(payload_offset)?,
-                        identity_source_offset: joined.source_offset(identity_payload_offset)?,
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+            let id = format_feature_child_id(ctx, &payload.id, "-identity-frame-", ordinal)?;
+            let operation_label =
+                ctx.copy_retained_text(&payload.operation_label, "NX draft identity operation")?;
+            let draft_construction_payload =
+                ctx.copy_retained_text(&payload.id, "NX draft identity payload")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft identity ordinal", 0, 1))?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX draft construction identity frames")?;
+            output.push(FeatureDraftConstructionIdentityFrame {
+                id,
+                operation_label,
+                draft_construction_payload,
+                ordinal,
+                frame,
+                source_offset,
+                identity_source_offset,
+            });
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete end-anchored terminal lanes from draft construction payloads.
 pub(in crate::native) fn feature_draft_construction_terminal_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureDraftConstructionTerminalLane> {
+) -> Result<Vec<FeatureDraftConstructionTerminalLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(lane) = crate::om::draft_terminal::scan(record.payload_view())
                 .and_then(|lane| lane.into_absolute(entry_offset))
             else {
                 return;
             };
-            lanes.push(FeatureDraftConstructionTerminalLane {
-                id: format!(
-                    "nx:feature-history:draft-construction-terminal-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                lane,
-            });
+            let projected = (|| -> Result<_, CodecError> {
+                let id = format_feature_history_id(
+                    ctx,
+                    "draft-construction-terminal-lane",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                let operation_label = format_feature_history_id(
+                    ctx,
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                ctx.reserve_retained_vec(&mut lanes, 1, "NX draft construction terminal lanes")?;
+                Ok(FeatureDraftConstructionTerminalLane {
+                    id,
+                    operation_label,
+                    lane,
+                })
+            })();
+            match projected {
+                Ok(lane) => lanes.push(lane),
+                Err(error) => failure = Some(error),
+            }
         },
-    );
-    lanes
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(lanes)
 }
 
 use super::deserialize_reference_lane_count;

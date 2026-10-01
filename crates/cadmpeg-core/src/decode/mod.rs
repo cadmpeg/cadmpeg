@@ -6,6 +6,7 @@
 
 mod arena;
 mod budget;
+pub mod collect;
 mod context;
 mod error;
 mod policy;

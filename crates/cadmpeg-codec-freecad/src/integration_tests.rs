@@ -4,7 +4,7 @@
 
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
-    archive, assert_valid_document, rewrite_schema_version, streaming_archive,
+    archive, archive_entries, assert_valid_document, rewrite_schema_version, streaming_archive,
     streaming_archive_with_options, CORE_OPERATIONS,
 };
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
@@ -58,9 +58,232 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
         .expect("synthesized FCStd archive should decode")
 }
 
+fn assert_decode_refusal_at(
+    bytes: &[u8],
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+) {
+    let mut options = DecodeOptions::default();
+    let set_limit = |options: &mut DecodeOptions, value| match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            options.policy.limits.max_collection_items = value;
+        }
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            options.policy.limits.max_retained_bytes = value;
+        }
+        _ => panic!("unsupported test dimension"),
+    };
+    set_limit(&mut options, 0);
+    for _ in 0..8192 {
+        let error = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect_err("resource cap must refuse decode");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected resource refusal: {error:?}")
+        };
+        assert_eq!(limit.dimension, dimension);
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("resource threshold fits");
+        if limit.operation == operation {
+            set_limit(&mut options, threshold - 1);
+            let exact = FcstdCodec
+                .decode(&mut Cursor::new(bytes), &options)
+                .expect_err("one below site must refuse");
+            assert!(
+                matches!(exact,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref found))
+                    if found.dimension == dimension && found.operation == operation
+                        && found.used + found.additional == threshold),
+                "{exact:?}"
+            );
+            return;
+        }
+        set_limit(&mut options, threshold);
+    }
+    panic!("{operation} was not reached within 8192 admissions");
+}
+
+#[test]
+fn thumbnail_copy_refuses_at_matching_retained_limit() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let bytes = archive_entries(&[
+        ("Document.xml", document),
+        ("thumbnails/Thumbnail.png", b"PNG"),
+    ]);
+    assert_decode_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain FCStd thumbnail",
+    );
+}
+
+#[test]
+fn dialect_loss_output_refuses_at_matching_collection_limit() {
+    let document = br#"<Document SchemaVersion="9" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document)]);
+    assert_decode_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd dialect loss output",
+    );
+}
+
+#[test]
+fn missing_side_entry_diagnostic_refuses_at_matching_retained_limit() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Absent.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document)]);
+    assert_decode_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd missing side entry diagnostic",
+    );
+}
+
+#[test]
+fn topology_loss_output_refuses_at_matching_collection_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 2
+1 0 0 0 0
+1 6.283185307179586 0 0 1
+Curves 1
+1 1 0 0 0 0 1
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+2 0 0 0 0 0 1 1 0 0 0 1 0 1
+Triangulations 0
+TShapes 8
+Ve 0.001 1 0 0 0 0 1001000 *
+Ve 0.001 1 0 1 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 3 1 2 C0 1 0 0 1 0 1001000 +8 0 -7 0 *
+Wi 1001000 +6 0 -6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 0 *
+So 1001000 +3 0 *
+Co 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("invalid pcurve can be retained as a loss");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("curve2ds")));
+    assert_decode_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd topology loss output",
+    );
+}
+
+#[test]
+fn feature_semantic_loss_refuses_at_retained_limit() {
+    semantic_loss_message_refuses(
+        crate::loss::FreecadLossCode::FeatureNativeKindRetained,
+        &[
+            "FCStd design operation ",
+            "Part::Feature",
+            " is retained natively but has no neutral semantics",
+        ],
+        "FCStd feature semantic loss",
+    );
+}
+
+#[test]
+fn sketch_geometry_semantic_loss_refuses_at_retained_limit() {
+    semantic_loss_message_refuses(
+        crate::loss::FreecadLossCode::SketchNativeGeometry,
+        &[
+            "FCStd sketch geometry ",
+            "Spline",
+            " is retained natively but is not neutralized",
+        ],
+        "FCStd sketch geometry semantic loss",
+    );
+}
+
+#[test]
+fn sketch_constraint_semantic_loss_refuses_at_retained_limit() {
+    semantic_loss_message_refuses(
+        crate::loss::FreecadLossCode::SketchNativeConstraint,
+        &[
+            "FCStd sketch constraint ",
+            "Custom",
+            " is retained natively but is not neutralized",
+        ],
+        "FCStd sketch constraint semantic loss",
+    );
+}
+
+fn semantic_loss_message_refuses(
+    code: crate::loss::FreecadLossCode,
+    parts: &[&str],
+    operation: &'static str,
+) {
+    let length: usize = parts.iter().map(|part| part.len()).sum();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(length) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(
+        matches!(super::push_semantic_loss(&ctx, &mut Vec::new(), code, parts, None, operation),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation)
+    );
+}
+
+#[test]
+fn semantic_loss_vector_refuses_at_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::push_semantic_loss(
+        &ctx, &mut Vec::new(), crate::loss::FreecadLossCode::SketchNativeGeometry,
+        &["FCStd sketch geometry ", "Spline", " is retained natively but is not neutralized"],
+        None, "FCStd sketch geometry semantic loss",
+    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd semantic loss output"));
+}
+
+#[test]
+fn semantic_loss_source_tag_refuses_at_retained_limit() {
+    let parts = [
+        "FCStd sketch geometry ",
+        "Spline",
+        " is retained natively but is not neutralized",
+    ];
+    let message_len: usize = parts.iter().map(|part| part.len()).sum();
+    let tag = "fcstd:native:object#Sketch";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(message_len + tag.len()) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::push_semantic_loss(&ctx, &mut Vec::new(),
+        crate::loss::FreecadLossCode::SketchNativeGeometry, &parts,
+        Some(tag), "FCStd sketch geometry semantic loss"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd sketch geometry semantic loss"));
+}
+
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     assert_valid_document(result.ir());
-    let findings = crate::validate_native(result.ir());
+    let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -326,7 +549,7 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
             "{name}: {:#?}",
             first.report().losses
         );
-        let native_findings = crate::validate_native(first.ir());
+        let native_findings = crate::test_support::validate_native(first.ir());
         assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
         assert_valid_document(first.ir());
     }

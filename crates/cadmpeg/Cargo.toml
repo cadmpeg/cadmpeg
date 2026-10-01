@@ -72,6 +72,8 @@ tempfile.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+proc-macro2.workspace = true
+syn.workspace = true
 assert_cmd.workspace = true
 # The package has no library target, so its unit tests and its integration
 # tests share byte fixtures through this crate.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-coverage counters for transferred features and numeric carriers.
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     edge_treatments::RadiusSpec, holes::HoleKind, BooleanOp, EdgeSelection, ExtrudeExtent,
@@ -25,13 +26,14 @@ use super::ir::{
 /// `transferred_*` entry per counted kind. Reads the built model; emits no
 /// entities and no annotations.
 pub(super) fn collect_feature_coverage(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     geometry_generator_feature_count: usize,
     feature_result_topology_count: usize,
     feature_result_edge_count: usize,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let native_feature_count = ir
         .model
         .features
@@ -505,7 +507,7 @@ pub(super) fn collect_feature_coverage(
     let incomplete_other_construction_feature_count = incomplete_section_shape_feature_count
         + incomplete_pattern_feature_count
         + native_axis_helix_feature_count;
-    coverage.extend([
+    for (key, count) in [
         (
             crate::coverage::TRANSFERRED_FEATURE_COUNT,
             ir.model.features.len(),
@@ -550,304 +552,381 @@ pub(super) fn collect_feature_coverage(
             crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT,
             incomplete_other_construction_feature_count,
         ),
-    ]);
-    coverage.record(
+    ] {
+        coverage.record_admitted(ctx, key, count)?;
+    }
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_PLANE_FEATURE_COUNT,
         unresolved_datum_plane_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_COORDINATE_SYSTEM_FEATURE_COUNT,
         unresolved_datum_coordinate_system_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_BOUNDARY_SURFACE_FEATURE_COUNT,
         unresolved_boundary_surface_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_EXTRUDE_FEATURE_COUNT,
         extrude_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_FEATURE_COUNT,
         incomplete_extrude_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_PROFILE_FEATURE_COUNT,
         unresolved_extrude_profile_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_EXTRUDE_PROFILE_FEATURE_COUNT,
         native_extrude_profile_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_START_FEATURE_COUNT,
         incomplete_extrude_start_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_TERMINATION_FEATURE_COUNT,
         incomplete_extrude_termination_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_BOOLEAN_OPERATION_FEATURE_COUNT,
         unresolved_extrude_boolean_operation_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_REVOLVE_FEATURE_COUNT,
         revolve_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_FEATURE_COUNT,
         incomplete_revolve_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_PROFILE_FEATURE_COUNT,
         unresolved_revolve_profile_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_REVOLVE_PROFILE_FEATURE_COUNT,
         native_revolve_profile_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_AXIS_FEATURE_COUNT,
         unresolved_revolve_axis_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_EXTENT_FEATURE_COUNT,
         incomplete_revolve_extent_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_BOOLEAN_OPERATION_FEATURE_COUNT,
         unresolved_revolve_boolean_operation_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_HOLE_FEATURE_COUNT,
         hole_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_FEATURE_COUNT,
         incomplete_hole_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_LOCATION_FEATURE_COUNT,
         unresolved_hole_location_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_PROFILE_FEATURE_COUNT,
         unresolved_hole_profile_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_HOLE_PROFILE_FEATURE_COUNT,
         native_hole_profile_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_FACE_SELECTION_FEATURE_COUNT,
         unresolved_hole_face_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_HOLE_FACE_SELECTION_FEATURE_COUNT,
         native_hole_face_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_DIRECTION_FEATURE_COUNT,
         unresolved_hole_direction_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_KIND_FEATURE_COUNT,
         unresolved_hole_kind_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_DIAMETER_FEATURE_COUNT,
         unresolved_hole_diameter_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_TERMINATION_FEATURE_COUNT,
         incomplete_hole_termination_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_FILLET_FEATURE_COUNT,
         fillet_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_FILLET_FEATURE_COUNT,
         incomplete_fillet_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_EDGE_SELECTION_FEATURE_COUNT,
         unresolved_fillet_edge_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_FILLET_EDGE_SELECTION_FEATURE_COUNT,
         native_fillet_edge_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_FEATURE_COUNT,
         unresolved_fillet_radius_feature_count,
-    );
-    coverage.record(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT, unresolved_fillet_radius_without_generated_surface_feature_count);
-    coverage.record(
+    )?;
+    coverage.record_admitted(ctx,crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT, unresolved_fillet_radius_without_generated_surface_feature_count)?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT,
         unresolved_fillet_radius_with_generated_surface_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_VARIABLE_RADIUS_FILLET_FEATURE_COUNT,
         variable_radius_fillet_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_CHAMFER_FEATURE_COUNT,
         chamfer_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_CHAMFER_FEATURE_COUNT,
         incomplete_chamfer_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_EDGE_SELECTION_FEATURE_COUNT,
         unresolved_chamfer_edge_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_CHAMFER_EDGE_SELECTION_FEATURE_COUNT,
         native_chamfer_edge_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_SPEC_FEATURE_COUNT,
         unresolved_chamfer_spec_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_DRAFT_FEATURE_COUNT,
         draft_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_DRAFT_FEATURE_COUNT,
         incomplete_draft_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_EXPLICITLY_UNRESOLVED_DRAFT_FEATURE_COUNT,
         explicitly_unresolved_draft_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_FACE_SELECTION_FEATURE_COUNT,
         unresolved_draft_face_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_DRAFT_FACE_SELECTION_FEATURE_COUNT,
         native_draft_face_selection_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT,
         unresolved_draft_neutral_plane_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT,
         native_draft_neutral_plane_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_DIRECTION_FEATURE_COUNT,
         unresolved_draft_direction_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_ANGLE_FEATURE_COUNT,
         unresolved_draft_angle_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_OUTWARD_FEATURE_COUNT,
         unresolved_draft_outward_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_FILLED_SURFACE_FEATURE_COUNT,
         filled_surface_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_FILLED_SURFACE_FEATURE_COUNT,
         incomplete_filled_surface_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_BOUNDARY_FEATURE_COUNT,
         unresolved_filled_surface_boundary_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_SUPPORT_FEATURE_COUNT,
         unresolved_filled_surface_support_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_CONTINUITY_FEATURE_COUNT,
         unresolved_filled_surface_continuity_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_MERGE_FEATURE_COUNT,
         unresolved_filled_surface_merge_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_KNIT_SURFACE_FEATURE_COUNT,
         knit_surface_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_KNIT_SURFACE_FEATURE_COUNT,
         incomplete_knit_surface_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_FACES_FEATURE_COUNT,
         unresolved_knit_surface_faces_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_KNIT_SURFACE_FACES_FEATURE_COUNT,
         native_knit_surface_faces_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_MERGE_FEATURE_COUNT,
         unresolved_knit_surface_merge_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_SOLID_FEATURE_COUNT,
         unresolved_knit_surface_solid_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_THICKEN_FEATURE_COUNT,
         thicken_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_THICKEN_FEATURE_COUNT,
         incomplete_thicken_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_THICKEN_FACES_FEATURE_COUNT,
         unresolved_thicken_faces_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_THICKEN_THICKNESS_FEATURE_COUNT,
         unresolved_thicken_thickness_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_THICKEN_SIDE_FEATURE_COUNT,
         unresolved_thicken_side_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_SECTION_SHAPE_FEATURE_COUNT,
         section_shape_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_SECTION_SHAPE_FEATURE_COUNT,
         incomplete_section_shape_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_PATTERN_FEATURE_COUNT,
         pattern_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_INCOMPLETE_PATTERN_FEATURE_COUNT,
         incomplete_pattern_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_SEED_FEATURE_COUNT,
         unresolved_pattern_seed_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_TRANSFORM_FEATURE_COUNT,
         unresolved_pattern_transform_feature_count,
-    );
-    coverage.record(
+    )?;
+    coverage.record_admitted(
+        ctx,
         crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT,
         native_axis_helix_feature_count,
-    );
+    )?;
+    Ok(())
 }
 
 #[derive(Default)]
@@ -895,8 +974,9 @@ pub(super) struct LegacyNumericCoverage {
 }
 
 pub(super) fn legacy_numeric_coverage<K, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[crate::legacy::ValueRecord<K>],
-) -> LegacyNumericCoverage
+) -> Result<LegacyNumericCoverage, CodecError>
 where
     K: crate::legacy::LegacyCode<Payload = crate::legacy::NumericPayload<T>>,
 {
@@ -908,7 +988,42 @@ where
         }
         counts.elements = counts
             .elements
-            .saturating_add(record.payload.element_count());
+            .checked_add(record.payload.element_count())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo legacy numeric element count", u64::MAX, u64::MAX)
+            })?;
     }
-    counts
+    Ok(counts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_feature_coverage;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::report::decode::Coverage;
+
+    #[test]
+    fn feature_coverage_refuses_before_first_report_node() {
+        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let ir = CadIr::empty();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = collect_feature_coverage(&ctx, &scan, &ir, 0, 0, 0, &mut Coverage::default())
+            .expect_err("first coverage node exceeds cap");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "decode coverage nodes"));
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut coverage = Coverage::default();
+        collect_feature_coverage(&ctx, &scan, &ir, 0, 0, 0, &mut coverage)
+            .expect("service coverage");
+        assert_eq!(coverage.get("transferred_feature_count"), Some(&0));
+    }
 }

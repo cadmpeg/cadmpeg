@@ -66,7 +66,7 @@ pub(super) fn add_extrusion_pcurve(
             .and_then(|degree| {
                 Some([
                     *nurbs.knots().get(degree)?,
-                    *nurbs.knots().get(nurbs.control_points().len())?,
+                    *nurbs.knots().get(nurbs.pole_rows().count())?,
                 ])
             })
             .filter(|range| range[0] < range[1])
@@ -74,16 +74,17 @@ pub(super) fn add_extrusion_pcurve(
         _ => [0.0, 1.0],
     };
     annotate(
+        ctx,
         annotations,
         &id,
         "FeatDefs",
-        source_offset as u64,
+        cadmpeg_core::decode::u64_from_index(source_offset),
         "extrusion_trim_pcurve",
         Exactness::Derived,
-    );
+    )?;
     ctx.charge_entities(1, "admit Creo model pcurves")?;
     let pcurve = Pcurve {
-        id: id.clone(),
+        id: id.try_clone_for_decode(ctx, "creo extrusion pcurve identity copy")?,
         geometry,
         metadata: PcurveMetadata::general(
             None,
@@ -97,23 +98,27 @@ pub(super) fn add_extrusion_pcurve(
     };
     match admission {
         PcurveAdmission::Pending(source_carriers, source_surface) => {
-            source_carriers.admit_pcurve_with_source_surface(ir, pcurve, source_surface)?;
+            source_carriers.admit_pcurve_with_source_surface(ctx, ir, pcurve, source_surface)?;
         }
         PcurveAdmission::Existing(source_carriers, surface_id) => {
-            source_carriers.admit_pcurve(ir, pcurve, surface_id)?;
+            source_carriers.admit_pcurve(ctx, ir, pcurve, surface_id)?;
         }
     }
     Ok(id)
 }
 
 fn revolution_boundary_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     point: [f64; 3],
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<PcurveGeometry> {
-    let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z])
+    else {
+        return Ok(None);
+    };
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let point_from = |origin: Point3| {
         [
@@ -127,7 +132,7 @@ fn revolution_boundary_pcurve(
         let tangent = cross(carrier_axis, reference);
         dot(relative, tangent).atan2(dot(relative, reference))
     };
-    match surface {
+    Ok(match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
@@ -145,21 +150,27 @@ fn revolution_boundary_pcurve(
             let uv = [dot(relative, u_axis), dot(relative, v_axis)];
             let radial = [uv[0] - center[0], uv[1] - center[1]];
             let radius = radial[0].hypot(radial[1]);
-            (radius > EPS_RADIUS_NONZERO).then_some(())?;
+            if !matches!(
+                (radius).partial_cmp(&(EPS_RADIUS_NONZERO)),
+                Some(std::cmp::Ordering::Greater)
+            ) {
+                return Ok(None);
+            }
             let start = radial[1].atan2(radial[0]);
             let direction = if dot(normal, axis_direction).is_sign_negative() {
                 -std::f64::consts::TAU
             } else {
                 std::f64::consts::TAU
             };
-            Some(circular_pcurve(
+            return circular_pcurve(
+                ctx,
                 center,
                 radius,
                 start,
                 start + direction,
                 record,
                 refusal,
-            )?)
+            );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
@@ -174,7 +185,7 @@ fn revolution_boundary_pcurve(
             } else {
                 std::f64::consts::TAU
             };
-            Some(line_pcurve([u, v], [u + direction, v])?)
+            line_pcurve([u, v], [u + direction, v])
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
@@ -189,7 +200,7 @@ fn revolution_boundary_pcurve(
             } else {
                 std::f64::consts::TAU
             };
-            Some(line_pcurve([u, v], [u + direction, v])?)
+            line_pcurve([u, v], [u + direction, v])
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
@@ -203,7 +214,7 @@ fn revolution_boundary_pcurve(
                 relative[index] - axial * carrier_axis[index]
             });
             let v = axial.atan2(dot(radial, radial).sqrt());
-            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
+            line_pcurve([u, v], [u + std::f64::consts::TAU, v])
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
@@ -234,10 +245,15 @@ fn revolution_boundary_pcurve(
                 (base_u, radial_distance)
             };
             let scale = minor_radius.abs().max(radial_distance).max(1.0);
-            (positive_residual.min(negative_residual) <= EPS_RESIDUAL_AGREEMENT * scale * scale)
-                .then_some(())?;
+            if !matches!(
+                (positive_residual.min(negative_residual))
+                    .partial_cmp(&(EPS_RESIDUAL_AGREEMENT * scale * scale)),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            ) {
+                return Ok(None);
+            }
             let v = axial.atan2(signed_ring - major_radius);
-            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
+            line_pcurve([u, v], [u + std::f64::consts::TAU, v])
         }
         SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(_)
@@ -246,32 +262,37 @@ fn revolution_boundary_pcurve(
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => None,
-    }
+    })
 }
 
 pub(in super::super) fn revolved_brep_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
     reversed: bool,
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<SurfaceGeometry> {
+) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
-        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            revolved_nurbs_surface(
-                &placed_section_nurbs(transform, &directrix)?,
-                axis,
-                record,
-                refusal,
-            )?,
-        )));
+        let Some(directrix) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
+            return Ok(None);
+        };
+        let Some(placed_directrix) = placed_section_nurbs(ctx, transform, &directrix)? else {
+            return Ok(None);
+        };
+        let Some(surface) = revolved_nurbs_surface(ctx, &placed_directrix, axis, record, refusal)?
+        else {
+            return Ok(None);
+        };
+        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            surface,
+        ))));
     }
-    revolved_section_surface(transform, geometry, axis)
+    Ok(revolved_section_surface(transform, geometry, axis))
 }
 
 /// An endpoint boundary of a revolved profile segment.
@@ -300,29 +321,41 @@ impl RevolutionBoundary {
 }
 
 pub(in super::super) fn revolution_profile_boundary_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     segment: &super::profiles::ProfileEntity,
     surface: &SurfaceGeometry,
     axis: &RevolutionAxis,
-    section_point: [f64; 2],
-    boundary: RevolutionBoundary,
+    boundary_point: ([f64; 2], RevolutionBoundary),
     diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let (section_point, boundary) = boundary_point;
+
     if matches!(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     ) {
-        let nurbs =
-            oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
-        let [lower, upper] =
-            cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
+        let Some(sketch) = segment.geometry().to_sketch(ctx)? else {
+            return Ok(None);
+        };
+        let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed())? else {
+            return Ok(None);
+        };
+        let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
+            return Ok(None);
+        };
+        let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
         let parameter = match boundary {
             RevolutionBoundary::Start => lower,
             RevolutionBoundary::End => upper,
         };
-        return line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU]);
+        return Ok(line_pcurve(
+            [parameter, 0.0],
+            [parameter, std::f64::consts::TAU],
+        ));
     }
     revolution_boundary_pcurve(
+        ctx,
         surface,
         section_point_in_model(transform, section_point),
         axis,
@@ -332,27 +365,49 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
 }
 
 pub(in super::super) fn revolution_face_sense(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     segment: &super::profiles::ProfileEntity,
     surface: &SurfaceGeometry,
     axis: &RevolutionAxis,
     profile_area: f64,
-    record: &dyn std::fmt::Display,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<Sense> {
+    diagnostics: (
+        &dyn std::fmt::Display,
+        &mut crate::lane_refusal::LaneRefusals,
+    ),
+) -> Result<Option<Sense>, cadmpeg_core::CodecError> {
+    let (record, refusal) = diagnostics;
+
+    macro_rules! require_some {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
     let is_nurbs = matches!(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     );
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
-        let nurbs =
-            oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
-        let [lower, upper] =
-            cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
+        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
+        let nurbs = require_some!(oriented_sketch_nurbs_curve(
+            ctx,
+            &geometry,
+            segment.reversed()
+        )?);
+        let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
+            nurbs_intrinsic_parameter_range(&nurbs)
+        ));
         let (parameter, u_epsilon) = nurbs_sense_sample(lower, upper);
         let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-        let point = cadmpeg_ir::eval::curve_point(&carrier, parameter).ok()?;
-        let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter).ok()?;
+        let point = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, parameter)?
+        )?);
+        let tangent = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::admitted::curve_tangent(ctx, &carrier, parameter)?
+        )?);
         ([point.x, point.y], [tangent.x, tangent.y], 0.5, u_epsilon)
     } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
         let angle = start + 0.5 * delta;
@@ -384,27 +439,60 @@ pub(in super::super) fn revolution_face_sense(
     } else {
         [-tangent[1], tangent[0]]
     };
-    let outward = normalize(std::array::from_fn(|index| {
+    let outward = require_some!(normalize(std::array::from_fn(|index| {
         outward[0] * transform.u_axis()[index] + outward[1] * transform.v_axis()[index]
-    }))?;
+    })));
     let model_point = section_point_in_model(transform, point);
     let pcurve = if is_nurbs {
-        let nurbs =
-            oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
-        let [lower, upper] =
-            cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
+        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
+        let nurbs = require_some!(oriented_sketch_nurbs_curve(
+            ctx,
+            &geometry,
+            segment.reversed()
+        )?);
+        let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
+            nurbs_intrinsic_parameter_range(&nurbs)
+        ));
         let (parameter, _) = nurbs_sense_sample(lower, upper);
-        line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])?
+        require_some!(line_pcurve(
+            [parameter, 0.0],
+            [parameter, std::f64::consts::TAU]
+        ))
     } else {
-        revolution_boundary_pcurve(surface, model_point, axis, record, refusal)?
+        require_some!(revolution_boundary_pcurve(
+            ctx,
+            surface,
+            model_point,
+            axis,
+            record,
+            refusal
+        )?)
     };
-    let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, pcurve_parameter).ok()?;
-    let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - u_epsilon, uv.v).ok()?;
-    let after_u = cadmpeg_ir::eval::surface_point(surface, uv.u + u_epsilon, uv.v).ok()?;
-    let before_v =
-        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - EPS_SURFACE_DIFFERENCE_STEP).ok()?;
-    let after_v =
-        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + EPS_SURFACE_DIFFERENCE_STEP).ok()?;
+    let uv = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::admitted::pcurve_uv(ctx, &pcurve, pcurve_parameter)?
+    )?);
+    let before_u = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u - u_epsilon, uv.v)?
+    )?);
+    let after_u = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u + u_epsilon, uv.v)?
+    )?);
+    let before_v = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::admitted::surface_point(
+            ctx,
+            surface,
+            uv.u,
+            uv.v - EPS_SURFACE_DIFFERENCE_STEP
+        )?
+    )?);
+    let after_v = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::admitted::surface_point(
+            ctx,
+            surface,
+            uv.u,
+            uv.v + EPS_SURFACE_DIFFERENCE_STEP
+        )?
+    )?);
     let du = [
         after_u.x - before_u.x,
         after_u.y - before_u.y,
@@ -415,14 +503,19 @@ pub(in super::super) fn revolution_face_sense(
         after_v.y - before_v.y,
         after_v.z - before_v.z,
     ];
-    let carrier_normal = normalize(cross(du, dv))?;
+    let carrier_normal = require_some!(normalize(cross(du, dv)));
     let alignment = dot(carrier_normal, outward);
-    (alignment.abs() > EPS_SENSE_ALIGN).then_some(())?;
-    Some(if alignment.is_sign_positive() {
+    if !matches!(
+        (alignment.abs()).partial_cmp(&(EPS_SENSE_ALIGN)),
+        Some(std::cmp::Ordering::Greater)
+    ) {
+        return Ok(None);
+    }
+    Ok(Some(if alignment.is_sign_positive() {
         Sense::Forward
     } else {
         Sense::Reversed
-    })
+    }))
 }
 
 #[cfg(test)]

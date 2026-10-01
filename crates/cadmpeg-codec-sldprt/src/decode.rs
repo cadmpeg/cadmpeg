@@ -213,7 +213,7 @@ fn decode_result(
         .iter()
         .position(|record| record.id().as_str() == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
-    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns, ctx)?;
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
@@ -3626,11 +3626,16 @@ fn build_geometry_ir(
                 1,
                 "admit SLDPRT display tessellation",
             )?;
-            ir.model
-                .tessellations
-                .push(mesh.into_tessellation(id).map_err(|error| {
+            ir.model.tessellations.push(
+                mesh.into_tessellation(
+                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                        CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                    })?,
+                )
+                .map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                })?);
+                })?,
+            );
         }
         let display_id = UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),

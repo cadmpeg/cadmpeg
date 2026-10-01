@@ -445,10 +445,13 @@ pub(crate) fn inventory(
                         u64::MAX,
                     )
                 })?;
-                ctx.charge_retained(detail_len.0 as u64, "retain Inventor PmDc issue detail")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(detail_len.0),
+                    "retain Inventor PmDc issue detail",
+                )?;
                 ctx.charge_retained(32, "retain Inventor PmDc issue type id")?;
                 ctx.charge_retained(
-                    segment.pair.token.as_str().len() as u64,
+                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor PmDc issue segment token",
                 )?;
                 inventory.issues.push(RecordIssue {
@@ -545,26 +548,31 @@ pub(crate) fn project_parameters(
         };
         ctx.charge_collection_items(1, "project Inventor parameter")?;
         ctx.admit_entities(
-            projected.len() as u64 + 1,
+            cadmpeg_core::decode::u64_from_index(projected.len()) + 1,
             admitted_entities,
             "project Inventor parameter",
         )?;
         ctx.charge_retained(
-            parameter.name.len() as u64,
+            cadmpeg_core::decode::u64_from_index(parameter.name.len()),
             "retain Inventor parameter name",
         )?;
         let id = parameter_id(ctx, parameter)?;
         ctx.charge_retained(
-            ("inventor:pmdc:parameter#".len()
-                + parameter.identity.segment_token.as_str().len()
-                + 1
-                + decimal_len(parameter.identity.record_ordinal)) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                "inventor:pmdc:parameter#".len()
+                    + parameter.identity.segment_token.as_str().len()
+                    + 1
+                    + decimal_len(parameter.identity.record_ordinal),
+            ),
             "retain Inventor parameter native reference",
         )?;
-        ctx.charge_collection_items(
-            dependencies.len() as u64,
+        let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
+        dependency_members.reserve_for_decode(
+            ctx,
+            dependencies.len(),
             "collect Inventor parameter dependencies",
         )?;
+        dependency_members.extend(dependencies);
         projected.push(DesignParameter {
             id,
             owner: None,
@@ -573,15 +581,18 @@ pub(crate) fn project_parameters(
             expression,
             display: None,
             value: Some(value),
-            dependencies: dependencies.into_iter().collect(),
+            dependencies: dependency_members,
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter.id()),
         });
     }
     let (projected, graph_rejections) = close_parameter_graph(ctx, projected)?;
-    *admitted_entities = projected.len() as u64;
-    Ok((projected, unresolved.saturating_add(graph_rejections)))
+    *admitted_entities = cadmpeg_core::decode::u64_from_index(projected.len());
+    let unresolved = unresolved.checked_add(graph_rejections).ok_or_else(|| {
+        ctx.refuse_codec_limit("Inventor unresolved design parameters", u64::MAX, u64::MAX)
+    })?;
+    Ok((projected, unresolved))
 }
 
 fn close_parameter_graph(
@@ -595,12 +606,15 @@ fn close_parameter_graph(
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "Inventor parameter dependency count",
-                    usize::MAX as u64,
+                    cadmpeg_core::decode::u64_from_index(usize::MAX),
                     u64::MAX,
                 )
             })
     })?;
-    ctx.charge_collection_items(count as u64, "index Inventor parameter closure")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "index Inventor parameter closure",
+    )?;
     let indices = parameters
         .iter()
         .enumerate()
@@ -612,8 +626,14 @@ fn close_parameter_graph(
         Vec::<usize>::new(),
         "admit Inventor parameter adjacency",
     )?;
-    ctx.charge_collection_items(edge_count as u64, "admit Inventor parameter edges")?;
-    ctx.charge_collection_items(count as u64, "admit Inventor parameter traversal")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(edge_count),
+        "admit Inventor parameter edges",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor parameter traversal",
+    )?;
     let mut ready = VecDeque::new();
     for (index, parameter) in parameters.iter().enumerate() {
         for dependency in &parameter.dependencies {
@@ -641,7 +661,10 @@ fn close_parameter_graph(
         }
     }
     let accepted = closed.iter().filter(|&&value| value).count();
-    ctx.charge_collection_items(accepted as u64, "collect closed Inventor parameters")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(accepted),
+        "collect closed Inventor parameters",
+    )?;
     Ok((
         parameters
             .into_iter()
@@ -659,11 +682,13 @@ fn parameter_id(
     let token_len = parameter.identity.segment_token.as_str().len();
     let key_len = token_len + 1 + decimal_len(parameter.identity.record_ordinal);
     ctx.charge_retained(
-        ("inventor:design:parameter#".len() + key_len) as u64,
+        cadmpeg_core::decode::u64_from_index("inventor:design:parameter#".len() + key_len),
         "retain Inventor parameter id",
     )?;
     let _key_bytes = ctx.reserve_scoped(
-        (token_len + key_len + decimal_len(parameter.identity.record_ordinal)) as u64,
+        cadmpeg_core::decode::u64_from_index(
+            token_len + key_len + decimal_len(parameter.identity.record_ordinal),
+        ),
         "compose Inventor parameter id key",
     )?;
     Ok(ParameterId::compose(
@@ -758,21 +783,32 @@ fn render_expression<'a>(
                 ctx.refuse_codec_limit("Inventor expression byte count", u64::MAX - 1, u64::MAX)
             })
     })?;
-    let reserved = ctx.reserve_scoped(total as u64, "render Inventor expression bytes")?;
-    ctx.charge_retained(root_length as u64, "retain Inventor expression text")?;
-    ctx.charge_work(total as u64, "render Inventor expression bytes")?;
-    ctx.charge_collection_items(plan.order.len() as u64, "memoize Inventor expression text")?;
+    let reserved = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(total),
+        "render Inventor expression bytes",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(root_length),
+        "retain Inventor expression text",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(total),
+        "render Inventor expression bytes",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(plan.order.len()),
+        "memoize Inventor expression text",
+    )?;
     let mut rendered: HashMap<u32, String> = HashMap::new();
     for &ordinal in &plan.order {
         let length = plan.lengths[&ordinal].length;
         let mut text = String::new();
-        text.try_reserve_exact(length).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "Inventor expression string allocation",
-                length as u64,
-                length as u64 + 1,
-            )
-        })?;
+
+        DecodeContext::reserve_admitted_string(
+            &mut text,
+            length,
+            "Inventor expression string allocation",
+        )?;
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {
@@ -1174,7 +1210,10 @@ fn parse_base_unit(
     let magnitude = cursor.f64("base-unit magnitude")?;
     let factor = cursor.f64("base-unit factor")?;
     cursor.finish("base unit")?;
-    ctx.charge_retained(symbol.len() as u64, "retain Inventor PmDc base unit symbol")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(symbol.len()),
+        "retain Inventor PmDc base unit symbol",
+    )?;
     Ok(PmDcUnitPayload {
         save_version_major: version,
         header_value,
@@ -1248,8 +1287,13 @@ impl Cursor<'_> {
                 "Inventor PmDc {field} marker is {marker:?}"
             )));
         }
-        let count = self.u32("reference-array count")? as usize;
-        ctx.charge_collection_items(count as u64, "admit Inventor PmDc unit references")?;
+        let count = usize::try_from(self.u32("reference-array count")?).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "admit Inventor PmDc unit references",
+        )?;
         let metadata = if count == 0 {
             None
         } else {
@@ -1258,7 +1302,8 @@ impl Cursor<'_> {
                 self.u16("reference-array metadata 1")?,
             ])
         };
-        let mut references = Vec::with_capacity(count);
+        let mut references =
+            DecodeContext::admitted_vec(count, "admit Inventor PmDc unit references")?;
         for _ in 0..count {
             references.push(self.reference("reference-array entry")?);
         }
@@ -1547,7 +1592,7 @@ mod tests {
     fn pmdc_issue_detail_refuses_retained_limit_before_copy() {
         let detail_len = pmdc_issue_detail_len();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (detail_len - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail_len - 1);
         assert!(matches!(
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
@@ -1561,13 +1606,13 @@ mod tests {
     fn pmdc_issue_type_id_refuses_retained_limit_before_copy() {
         let detail_len = pmdc_issue_detail_len();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = detail_len as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail_len);
         assert!(matches!(
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain Inventor PmDc issue type id"
-                    && limit.used == detail_len as u64
+                    && limit.used == cadmpeg_core::decode::u64_from_index(detail_len)
         ));
     }
 
@@ -1575,13 +1620,13 @@ mod tests {
     fn pmdc_issue_segment_token_refuses_retained_limit_before_copy() {
         let detail_len = pmdc_issue_detail_len();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (detail_len + 32) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail_len + 32);
         assert!(matches!(
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain Inventor PmDc issue segment token"
-                    && limit.used == (detail_len + 32) as u64
+                    && limit.used == cadmpeg_core::decode::u64_from_index(detail_len + 32)
         ));
     }
 
@@ -2146,9 +2191,9 @@ mod tests {
         );
 
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            (parameter.expression.len() + parameter.name.len() + parameter.id.as_str().len() - 1)
-                as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            parameter.expression.len() + parameter.name.len() + parameter.id.as_str().len() - 1,
+        );
         assert!(matches!(
             project_single_parameter(policy),
             Err(CodecError::ResourceLimit(limit))
@@ -2156,12 +2201,13 @@ mod tests {
                     && limit.operation == "retain Inventor parameter id"
         ));
 
-        policy.limits.max_retained_bytes += 1 + parameter
-            .native_ref
-            .as_deref()
-            .expect("native reference")
-            .len() as u64
-            - 1;
+        policy.limits.max_retained_bytes += 1 + cadmpeg_core::decode::u64_from_index(
+            parameter
+                .native_ref
+                .as_deref()
+                .expect("native reference")
+                .len(),
+        ) - 1;
         assert!(matches!(
             project_single_parameter(policy),
             Err(CodecError::ResourceLimit(limit))
@@ -2564,14 +2610,15 @@ mod tests {
         assert_eq!(admitted.0, "x");
         assert_eq!(admitted.1.len(), 1);
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            (admitted.0.len() + admitted.1[0].as_str().len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            admitted.0.len() + admitted.1[0].as_str().len() - 1,
+        );
         assert!(matches!(
             render_graph(&policy, vec![reference_leaf()], 1),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain Inventor parameter id"
-                    && limit.used == admitted.0.len() as u64
+                    && limit.used == cadmpeg_core::decode::u64_from_index(admitted.0.len())
         ));
     }
 

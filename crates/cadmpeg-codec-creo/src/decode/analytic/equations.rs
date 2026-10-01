@@ -8,7 +8,7 @@ use cadmpeg_ir::math::planar::line_circle_intersections;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
-use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient};
+use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient, QuadraticRoots};
 use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
@@ -22,7 +22,7 @@ const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 const F64_EXPONENT_MASK: u64 = 0x7ff0_0000_0000_0000;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(in crate::decode) struct PlaneEquation {
     pub(in crate::decode) origin: [f64; 3],
     pub(in crate::decode) normal: [f64; 3],
@@ -337,15 +337,16 @@ pub(in crate::decode) fn plane_intersection_line(
 }
 
 pub(super) fn intersect_two_planes_with_quadric(
+    ctx: &DecodeContext<'_>,
     first: PlaneEquation,
     second: PlaneEquation,
     carrier: CarrierEquation,
-) -> Vec<[f64; 3]> {
+) -> Result<Vec<[f64; 3]>, CodecError> {
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(quadric) = carrier_quadric(carrier) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let matrix_origin = matrix_vector(quadric.matrix, line_origin);
     let matrix_direction = matrix_vector(quadric.matrix, direction);
@@ -363,7 +364,8 @@ pub(super) fn intersect_two_planes_with_quadric(
             + abs_dot(quadric.linear, line_origin)
             + quadric.constant.abs(),
     );
-    real_roots(quadratic, linear, constant)
+    let mut points = Vec::new();
+    for point in real_roots(quadratic, linear, constant)
         .into_iter()
         .map(|parameter| {
             std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
@@ -374,7 +376,11 @@ pub(super) fn intersect_two_planes_with_quadric(
                 && point_on_carrier(*point, CarrierEquation::Plane(second))
                 && point_on_carrier(*point, carrier)
         })
-        .collect()
+    {
+        ctx.reserve_vec(&mut points, 1, "creo plane-quadric line intersections")?;
+        points.push(point);
+    }
+    Ok(points)
 }
 
 fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
@@ -421,20 +427,30 @@ fn polynomial_value_bound(coefficients: &[BoundedCoefficient], parameter: f64) -
 }
 
 fn polynomial_interval_value_bound(
+    ctx: &DecodeContext<'_>,
     coefficients: &[BoundedCoefficient],
     parameter: f64,
     parameter_error: f64,
-) -> f64 {
+) -> Result<f64, CodecError> {
     let (_, mut bound) = polynomial_value_and_bound(coefficients, parameter);
-    let mut derivative = coefficients.to_vec();
+    let mut derivative = Vec::new();
+    ctx.reserve_vec(
+        &mut derivative,
+        coefficients.len(),
+        "creo polynomial interval coefficients",
+    )?;
+    derivative.extend_from_slice(coefficients);
     let mut parameter_error_power = 1.0;
     let mut factorial = 1.0;
     for order in 1..coefficients.len() {
-        derivative = derivative
-            .iter()
-            .enumerate()
-            .skip(1)
-            .map(|(power, coefficient)| {
+        let mut next_derivative = Vec::new();
+        ctx.reserve_vec(
+            &mut next_derivative,
+            derivative.len() - 1,
+            "creo polynomial interval derivatives",
+        )?;
+        next_derivative.extend(derivative.iter().enumerate().skip(1).map(
+            |(power, coefficient)| {
                 let Ok(power) = u32::try_from(power) else {
                     return BoundedCoefficient {
                         value: f64::INFINITY,
@@ -449,10 +465,11 @@ fn polynomial_interval_value_bound(
                         coefficient.bound * factor + operation_rounding_bound(value),
                     ),
                 }
-            })
-            .collect();
+            },
+        ));
+        derivative = next_derivative;
         let Ok(order) = u32::try_from(order) else {
-            return f64::INFINITY;
+            return Ok(f64::INFINITY);
         };
         parameter_error_power *= parameter_error;
         factorial *= f64::from(order);
@@ -463,7 +480,7 @@ fn polynomial_interval_value_bound(
         );
         bound = inflate_positive_bound(bound + term);
     }
-    bound
+    Ok(bound)
 }
 
 fn polynomial_sign(coefficients: &[BoundedCoefficient], parameter: f64) -> Option<bool> {
@@ -561,13 +578,17 @@ struct PolynomialRoot {
 /// the polynomial is of lower degree. A residue kept as a leading coefficient
 /// states roots of order `1 / residue` that no exact polynomial has; a real
 /// leading coefficient dropped loses the roots it carries.
-fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialRoot> {
+fn real_polynomial_roots(
+    ctx: &DecodeContext<'_>,
+    coefficients: &[BoundedCoefficient],
+) -> Result<Vec<PolynomialRoot>, CodecError> {
+    let _depth = ctx.enter_nested("creo polynomial root recursion")?;
     let largest = coefficients
         .iter()
         .map(|coefficient| coefficient.value.abs())
         .fold(0.0, f64::max);
     if largest == 0.0 || !largest.is_finite() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     // Division by the power of two at the largest coefficient is exact. The
     // largest quotient remains below two for a normal coefficient and below
@@ -579,13 +600,16 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
     } else {
         normal_scale
     };
-    let mut scaled = coefficients
-        .iter()
-        .map(|coefficient| BoundedCoefficient {
-            value: coefficient.value / scale,
-            bound: coefficient.bound / scale,
-        })
-        .collect::<Vec<_>>();
+    let mut scaled = Vec::new();
+    ctx.reserve_vec(
+        &mut scaled,
+        coefficients.len(),
+        "creo polynomial scaled coefficients",
+    )?;
+    scaled.extend(coefficients.iter().map(|coefficient| BoundedCoefficient {
+        value: coefficient.value / scale,
+        bound: coefficient.bound / scale,
+    }));
     while scaled.len() > 1
         && scaled
             .last()
@@ -595,12 +619,15 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
     }
     let degree = scaled.len() - 1;
     if degree == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let coefficients = scaled
-        .iter()
-        .map(|coefficient| coefficient.value)
-        .collect::<Vec<_>>();
+    let mut coefficients = Vec::new();
+    ctx.reserve_vec(
+        &mut coefficients,
+        scaled.len(),
+        "creo polynomial coefficient values",
+    )?;
+    coefficients.extend(scaled.iter().map(|coefficient| coefficient.value));
     if degree == 1 {
         // The pop loop stopped because the leading coefficient is outside its
         // own bound, so the difference below is positive. The exact root is
@@ -611,23 +638,34 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         let error = (scaled[0].bound + value.abs() * scaled[1].bound)
             / (coefficients[1].abs() - scaled[1].bound)
             + cancellation_bound(value);
-        return vec![PolynomialRoot {
+        let mut roots = Vec::new();
+        ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
+        roots.push(PolynomialRoot {
             value,
             error,
             certified: true,
             stationary: false,
             multiple: false,
-        }];
+        });
+        return Ok(roots);
     }
-    let derivative = scaled
-        .iter()
-        .enumerate()
-        .skip(1)
-        .map(|(power, coefficient)| BoundedCoefficient {
-            value: coefficient.value * power as f64,
-            bound: coefficient.bound * power as f64,
-        })
-        .collect::<Vec<_>>();
+    let mut derivative = Vec::new();
+    ctx.reserve_vec(
+        &mut derivative,
+        degree,
+        "creo polynomial derivative coefficients",
+    )?;
+    for (power, coefficient) in scaled.iter().enumerate().skip(1) {
+        let Some(power) = cadmpeg_core::convert::f64_from_index(power) else {
+            return Err(CodecError::malformed(
+                "Creo polynomial power cannot be represented exactly",
+            ));
+        };
+        derivative.push(BoundedCoefficient {
+            value: coefficient.value * power,
+            bound: coefficient.bound * power,
+        });
+    }
     let leading = coefficients[degree].abs() - scaled[degree].bound;
     let bound = 1.0
         + scaled[..degree]
@@ -638,18 +676,19 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
     // Each derivative root partitions the polynomial into monotone intervals.
     // Its reported location interval, rather than its approximate value, is
     // removed from those intervals before their endpoint signs are compared.
-    let derivative_roots = real_polynomial_roots(&derivative)
-        .into_iter()
-        .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
-        .map(|root| PolynomialRoot {
-            stationary: true,
-            ..root
-        })
-        .collect::<Vec<_>>();
-    let derivative_values = derivative
-        .iter()
-        .map(|coefficient| coefficient.value)
-        .collect::<Vec<_>>();
+    let mut derivative_roots = real_polynomial_roots(ctx, &derivative)?;
+    derivative_roots
+        .retain(|root| root.value.is_finite() && root.value > -bound && root.value < bound);
+    for root in &mut derivative_roots {
+        root.stationary = true;
+    }
+    let mut derivative_values = Vec::new();
+    ctx.reserve_vec(
+        &mut derivative_values,
+        derivative.len(),
+        "creo polynomial derivative values",
+    )?;
+    derivative_values.extend(derivative.iter().map(|coefficient| coefficient.value));
     let mut roots = Vec::new();
     let mut gap_lower = -bound;
     let mut gap_lower_sign = polynomial_sign(&scaled, gap_lower);
@@ -658,6 +697,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         let station_lower = station.value - station.error;
         let station_upper = station.value + station.error;
         if gap_lower < station_lower {
+            ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps")?;
             gaps.push((
                 gap_lower,
                 gap_lower_sign,
@@ -667,7 +707,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         }
         let (station_value, _) = polynomial_value_and_bound(&scaled, station.value);
         let station_value_bound =
-            polynomial_interval_value_bound(&scaled, station.value, station.error);
+            polynomial_interval_value_bound(ctx, &scaled, station.value, station.error)?;
         let station_lower_sign = polynomial_sign(&scaled, station_lower);
         let station_upper_sign = polynomial_sign(&scaled, station_upper);
         let certified_crossing = station_lower_sign
@@ -687,6 +727,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         let certified_multiple = polynomial_is_exactly_zero(&scaled, station.value)
             && polynomial_is_exactly_zero(&derivative, station.value);
         if certified_crossing || certified_touch || certified_multiple {
+            ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
             roots.push(PolynomialRoot {
                 certified: true,
                 multiple: certified_multiple,
@@ -696,6 +737,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
             && station_value_bound.is_finite()
             && station_value.abs() <= station_value_bound
         {
+            ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
             roots.push(PolynomialRoot {
                 error: (station.value + bound)
                     .abs()
@@ -708,6 +750,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         gap_lower = gap_lower.max(station_upper);
         gap_lower_sign = polynomial_sign(&scaled, gap_lower);
     }
+    ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps")?;
     gaps.push((
         gap_lower,
         gap_lower_sign,
@@ -723,6 +766,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         }
         let complete_lower = lower;
         let complete_upper = upper;
+        ctx.charge_work(80, "creo polynomial root bisection")?;
         for _ in 0..80 {
             let midpoint = 0.5 * (lower + upper);
             let midpoint_sign = polynomial_sign(&scaled, midpoint)
@@ -747,6 +791,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         } else {
             (value - complete_lower).max(complete_upper - value)
         };
+        ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
         roots.push(PolynomialRoot {
             value,
             error: (0.5 * (upper - lower).abs())
@@ -757,8 +802,13 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
             multiple: false,
         });
     }
-    roots.sort_by(|left, right| left.value.total_cmp(&right.value));
-    roots
+    crate::sort::stable_sort_by(
+        ctx,
+        roots.as_mut_slice(),
+        |left, right| left.value.total_cmp(&right.value),
+        "creo real polynomial roots roots ordering",
+    )?;
+    Ok(roots)
 }
 
 fn polynomial_product(
@@ -809,6 +859,19 @@ const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
     ([3, 2, 1, 0], 1.0),
 ];
 
+/// A fixed coefficient slice for one Sylvester matrix entry.
+#[derive(Clone, Copy)]
+struct SylvesterEntry {
+    coefficients: [f64; 3],
+    len: usize,
+}
+
+impl SylvesterEntry {
+    fn as_slice(&self) -> &[f64] {
+        &self.coefficients[..self.len]
+    }
+}
+
 /// The Sylvester matrix of the two conics read as quadratics in v, with each
 /// entry taken from its coefficient by `entry`.
 ///
@@ -822,33 +885,36 @@ fn sylvester_matrix(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
     entry: impl Fn(Coefficient) -> f64,
-) -> [[Option<Vec<f64>>; 4]; 4] {
+) -> [[Option<SylvesterEntry>; 4]; 4] {
     let zero = None;
-    let first_y2 = vec![entry(first.vv)];
-    let first_y = vec![entry(first.v), entry(first.uv)];
-    let first_constant = vec![entry(first.constant), entry(first.u), entry(first.uu)];
-    let second_y2 = vec![entry(second.vv)];
-    let second_y = vec![entry(second.v), entry(second.uv)];
-    let second_constant = vec![entry(second.constant), entry(second.u), entry(second.uu)];
+    let first_y2 = SylvesterEntry {
+        coefficients: [entry(first.vv), 0.0, 0.0],
+        len: 1,
+    };
+    let first_y = SylvesterEntry {
+        coefficients: [entry(first.v), entry(first.uv), 0.0],
+        len: 2,
+    };
+    let first_constant = SylvesterEntry {
+        coefficients: [entry(first.constant), entry(first.u), entry(first.uu)],
+        len: 3,
+    };
+    let second_y2 = SylvesterEntry {
+        coefficients: [entry(second.vv), 0.0, 0.0],
+        len: 1,
+    };
+    let second_y = SylvesterEntry {
+        coefficients: [entry(second.v), entry(second.uv), 0.0],
+        len: 2,
+    };
+    let second_constant = SylvesterEntry {
+        coefficients: [entry(second.constant), entry(second.u), entry(second.uu)],
+        len: 3,
+    };
     [
-        [
-            Some(first_y2.clone()),
-            Some(first_y.clone()),
-            Some(first_constant.clone()),
-            zero.clone(),
-        ],
-        [
-            zero.clone(),
-            Some(first_y2),
-            Some(first_y),
-            Some(first_constant),
-        ],
-        [
-            Some(second_y2.clone()),
-            Some(second_y.clone()),
-            Some(second_constant.clone()),
-            zero.clone(),
-        ],
+        [Some(first_y2), Some(first_y), Some(first_constant), zero],
+        [zero, Some(first_y2), Some(first_y), Some(first_constant)],
+        [Some(second_y2), Some(second_y), Some(second_constant), zero],
         [zero, Some(second_y2), Some(second_y), Some(second_constant)],
     ]
 }
@@ -866,7 +932,7 @@ fn sylvester_matrix(
 /// `conic_resultant_is_a_quartic` pins.
 fn sylvester_polynomial(
     ctx: &DecodeContext<'_>,
-    matrix: &[[Option<Vec<f64>>; 4]; 4],
+    matrix: &[[Option<SylvesterEntry>; 4]; 4],
     sign: impl Fn(f64) -> f64,
 ) -> Result<Vec<f64>, CodecError> {
     let mut determinant = Vec::new();
@@ -875,12 +941,18 @@ fn sylvester_polynomial(
             continue;
         }
         let mut term = ctx.alloc_filled(1, 1.0, "creo polynomial identity")?;
-        for factor in (0..4).filter_map(|row| matrix[row][permutation[row]].as_deref()) {
+        for factor in (0..4).filter_map(|row| {
+            matrix[row][permutation[row]]
+                .as_ref()
+                .map(SylvesterEntry::as_slice)
+        }) {
             term = polynomial_product(ctx, &term, factor)?;
         }
         if determinant.len() < term.len() {
-            ctx.charge_collection_items(
-                (term.len() - determinant.len()) as u64,
+            let additional = term.len() - determinant.len();
+            ctx.reserve_vec(
+                &mut determinant,
+                additional,
                 "creo polynomial determinant terms",
             )?;
             determinant.resize(term.len(), 0.0);
@@ -907,18 +979,19 @@ fn conic_resultant(
         &sylvester_matrix(first, second, Coefficient::terms),
         f64::abs,
     )?;
-    ctx.charge_collection_items(
-        values.len().min(terms.len()) as u64,
+    let mut result = Vec::new();
+    ctx.reserve_vec(
+        &mut result,
+        values.len().min(terms.len()),
         "creo conic resultant coefficients",
     )?;
-    Ok(values
-        .into_iter()
-        .zip(terms)
-        .map(|(value, terms)| BoundedCoefficient {
+    for (value, terms) in values.into_iter().zip(terms) {
+        result.push(BoundedCoefficient {
             value,
             bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(terms),
-        })
-        .collect())
+        });
+    }
+    Ok(result)
 }
 
 fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
@@ -1209,7 +1282,7 @@ fn refine_plane_conic_tangency(
 /// decision there is the one that constructor made. The two sums formed here
 /// scale that same bar by the powers of `u` they multiply it with, which bounds
 /// each sum against the exact coefficients rather than against the stated ones.
-fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> Vec<f64> {
+fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> QuadraticRoots {
     real_roots(
         conic.vv,
         Coefficient::summed(
@@ -1230,7 +1303,7 @@ pub(super) fn common_plane_conic_parameters(
 ) -> Result<Vec<[f64; 2]>, CodecError> {
     let resultant = conic_resultant(ctx, first, second)?;
     let mut parameters = Vec::<[f64; 2]>::new();
-    for root in real_polynomial_roots(&resultant) {
+    for root in real_polynomial_roots(ctx, &resultant)? {
         let u = root.value;
         let first_v_roots = conic_v_roots(first, u);
         let second_v_roots = conic_v_roots(second, u);
@@ -1261,7 +1334,7 @@ pub(super) fn common_plane_conic_parameters(
                         <= EPS_PARAM_UNIQUE * scale
                 })
             {
-                ctx.charge_collection_items(1, "creo conic intersection parameters")?;
+                ctx.reserve_vec(&mut parameters, 1, "creo conic intersection parameters")?;
                 parameters.push(candidate);
             }
         }
@@ -1301,29 +1374,37 @@ pub(in crate::decode) fn intersect_plane_with_two_quadrics(
     let first_conic = restrict_quadric_to_plane(first_quadric, plane.origin, u_axis, v_axis);
     let second_conic = restrict_quadric_to_plane(second_quadric, plane.origin, u_axis, v_axis);
     let parameters = common_plane_conic_parameters(ctx, first_conic, second_conic)?;
-    ctx.charge_collection_items(parameters.len() as u64, "creo plane-quadric intersections")?;
-    Ok(parameters
-        .into_iter()
-        .map(|[u, v]| {
-            std::array::from_fn(|index| plane.origin[index] + u * u_axis[index] + v * v_axis[index])
-        })
-        .filter(|point| point_on_carrier(*point, first) && point_on_carrier(*point, second))
-        .collect())
+    let mut intersections = Vec::new();
+    ctx.reserve_vec(
+        &mut intersections,
+        parameters.len(),
+        "creo plane-quadric intersections",
+    )?;
+    for [u, v] in parameters {
+        let point = std::array::from_fn(|index| {
+            plane.origin[index] + u * u_axis[index] + v * v_axis[index]
+        });
+        if point_on_carrier(point, first) && point_on_carrier(point, second) {
+            intersections.push(point);
+        }
+    }
+    Ok(intersections)
 }
 
 pub(in crate::decode) fn intersect_two_planes_with_torus(
+    ctx: &DecodeContext<'_>,
     first: PlaneEquation,
     second: PlaneEquation,
     torus: TorusEquation,
-) -> Vec<[f64; 3]> {
+) -> Result<Vec<[f64; 3]>, CodecError> {
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(axis) = normalize(torus.axis) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if torus.major_radius <= 0.0 || torus.minor_radius <= 0.0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - torus.center[index]);
     let squared_distance = [dot(relative, relative), 2.0 * dot(relative, direction), 1.0];
@@ -1369,49 +1450,52 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
         value: polynomial[power],
         bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(polynomial_terms[power]),
     });
-    real_polynomial_roots(&polynomial)
-        .into_iter()
-        .map(|root| {
-            std::array::from_fn(|index| {
-                // The coordinate is the two-term sum `origin + parameter *
-                // direction`. Its distance from the coordinate at the exact
-                // root is the root's own error scaled by the direction cosine,
-                // plus the rounding of the product and the sum over the two
-                // terms' magnitudes. A coordinate inside that distance states
-                // the zero the exact root gives it; one outside states its own
-                // value. The torus is a surface of revolution about its axis
-                // and its intersection with a line carries no coordinate
-                // exactly, so nothing here rounds a coordinate to a tidier
-                // value that the arithmetic does not already hold.
-                let offset = root.value * direction[index];
-                let coordinate = line_origin[index] + offset;
-                let coordinate_bound = direction[index].abs() * root.error
-                    + cancellation_bound(line_origin[index].abs() + offset.abs());
-                if (root.certified || root.stationary) && coordinate.abs() <= coordinate_bound {
-                    return 0.0;
-                }
-                coordinate
-            })
-        })
-        .filter(|point| point_on_carrier(*point, CarrierEquation::Torus(torus)))
-        .collect()
+    let mut points = Vec::new();
+    for root in real_polynomial_roots(ctx, &polynomial)? {
+        let point = std::array::from_fn(|index| {
+            // The coordinate is the two-term sum `origin + parameter *
+            // direction`. Its distance from the coordinate at the exact
+            // root is the root's own error scaled by the direction cosine,
+            // plus the rounding of the product and the sum over the two
+            // terms' magnitudes. A coordinate inside that distance states
+            // the zero the exact root gives it; one outside states its own
+            // value. The torus is a surface of revolution about its axis
+            // and its intersection with a line carries no coordinate
+            // exactly, so nothing here rounds a coordinate to a tidier
+            // value that the arithmetic does not already hold.
+            let offset = root.value * direction[index];
+            let coordinate = line_origin[index] + offset;
+            let coordinate_bound = direction[index].abs() * root.error
+                + cancellation_bound(line_origin[index].abs() + offset.abs());
+            if (root.certified || root.stationary) && coordinate.abs() <= coordinate_bound {
+                return 0.0;
+            }
+            coordinate
+        });
+        if point_on_carrier(point, CarrierEquation::Torus(torus)) {
+            ctx.reserve_vec(&mut points, 1, "creo torus line intersections")?;
+            points.push(point);
+        }
+    }
+    Ok(points)
 }
 
 pub(in crate::decode) fn intersect_plane_with_circle(
+    ctx: &DecodeContext<'_>,
     plane: PlaneEquation,
     center: [f64; 3],
     circle_axis: [f64; 3],
     radius: PositiveLength,
-) -> Vec<[f64; 3]> {
+) -> Result<Vec<[f64; 3]>, CodecError> {
     let (Some(plane_normal), Some(circle_normal)) =
         (normalize(plane.normal), normalize(circle_axis))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let direction = cross(plane_normal, circle_normal);
     let sine = direction[0].hypot(direction[1]).hypot(direction[2]);
     if sine <= EPS_PLANE_CIRCLE_PARALLEL {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let radius = radius.get();
     let direction = direction.map(|value| value / sine);
@@ -1432,7 +1516,7 @@ pub(in crate::decode) fn intersect_plane_with_circle(
         radius,
     )
     .map(|hits| hits.map(|(parameter, _)| parameter.get())) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let nearest: [f64; 3] =
         std::array::from_fn(|index| center[index] + distance * radial_direction[index]);
@@ -1441,10 +1525,11 @@ pub(in crate::decode) fn intersect_plane_with_circle(
         let signed_chord = parameter * radius;
         let point = std::array::from_fn(|index| nearest[index] + signed_chord * direction[index]);
         if point.iter().all(|value| value.is_finite()) && !points.contains(&point) {
+            ctx.reserve_vec(&mut points, 1, "creo plane-circle intersections")?;
             points.push(point);
         }
     }
-    points
+    Ok(points)
 }
 
 pub(in crate::decode) fn circle_parameters(
@@ -1657,7 +1742,8 @@ pub(in crate::decode) fn plane_cone_conic(
 #[cfg(test)]
 mod tests {
     use super::{
-        BoundedCoefficient, ConeEquation, PlaneConicEquation, PlaneEquation, TorusEquation,
+        BoundedCoefficient, CarrierEquation, ConeEquation, PlaneConicEquation, PlaneEquation,
+        SphereEquation, TorusEquation,
     };
     use crate::decode::quadratic::Coefficient;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -1667,6 +1753,156 @@ mod tests {
     const ORIGIN: [f64; 3] = [1.0, 2.0, 3.0];
     const AXIS: [f64; 3] = [0.0, 0.0, 1.0];
     const REF_DIRECTION: [f64; 3] = [1.0, 0.0, 0.0];
+
+    fn polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<super::PolynomialRoot> {
+        crate::decode::with_test_decode_ctx(|ctx| super::real_polynomial_roots(ctx, coefficients))
+            .expect("polynomial roots admitted")
+    }
+
+    macro_rules! polynomial_root_limit_test {
+        ($name:ident, $operation:literal) => {
+            #[test]
+            fn $name() {
+                let coefficients = [
+                    BoundedCoefficient { value: -1.0, bound: 0.0 },
+                    BoundedCoefficient { value: 0.0, bound: 0.0 },
+                    BoundedCoefficient { value: 1.0, bound: 0.0 },
+                ];
+                let run = |limit| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_collection_items = limit;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("empty root admitted");
+                    super::real_polynomial_roots(&ctx, &coefficients)
+                };
+                let limit = collection_limit_reaching($operation, run);
+                assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == $operation));
+                assert_eq!(run(u64::MAX).expect("service roots admitted").len(), 2);
+            }
+        };
+    }
+
+    polynomial_root_limit_test!(
+        polynomial_scaled_coefficients_refuse_before_growth,
+        "creo polynomial scaled coefficients"
+    );
+    polynomial_root_limit_test!(
+        polynomial_coefficient_values_refuse_before_growth,
+        "creo polynomial coefficient values"
+    );
+    polynomial_root_limit_test!(
+        polynomial_derivative_coefficients_refuse_before_growth,
+        "creo polynomial derivative coefficients"
+    );
+    polynomial_root_limit_test!(
+        polynomial_derivative_values_refuse_before_growth,
+        "creo polynomial derivative values"
+    );
+    polynomial_root_limit_test!(
+        polynomial_interval_coefficients_refuse_before_growth,
+        "creo polynomial interval coefficients"
+    );
+    polynomial_root_limit_test!(
+        polynomial_interval_derivatives_refuse_before_growth,
+        "creo polynomial interval derivatives"
+    );
+    polynomial_root_limit_test!(
+        polynomial_monotone_gaps_refuse_before_growth,
+        "creo polynomial monotone gaps"
+    );
+    polynomial_root_limit_test!(
+        polynomial_roots_refuse_before_growth,
+        "creo polynomial roots"
+    );
+
+    #[test]
+    fn polynomial_root_recursion_refuses_at_nesting_limit() {
+        let coefficients = [
+            BoundedCoefficient {
+                value: -1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        assert!(matches!(super::real_polynomial_roots(&ctx, &coefficients),
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == "creo polynomial root recursion"));
+    }
+
+    #[test]
+    fn polynomial_root_bisection_refuses_at_work_limit() {
+        let coefficients = [
+            BoundedCoefficient {
+                value: -1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 79;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        assert!(matches!(super::real_polynomial_roots(&ctx, &coefficients),
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == "creo polynomial root bisection"));
+    }
+
+    #[test]
+    fn torus_line_intersections_refuse_before_vec_growth() {
+        let axial_plane = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let equatorial_plane = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let torus = TorusEquation {
+            center: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 3.0,
+            minor_radius: 1.0,
+        };
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+            super::intersect_two_planes_with_torus(&ctx, axial_plane, equatorial_plane, torus)
+        };
+        let limit = collection_limit_reaching("creo torus line intersections", run);
+        assert!(
+            matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo torus line intersections")
+        );
+        assert_eq!(run(u64::MAX).expect("four intersections admitted").len(), 4);
+    }
 
     fn cone(radius: f64, ratio: f64, half_angle: f64) -> Option<ConeEquation> {
         ConeEquation::new(ORIGIN, AXIS, REF_DIRECTION, radius, ratio, half_angle)
@@ -1684,6 +1920,157 @@ mod tests {
             v,
             constant,
         }
+    }
+
+    fn intersecting_circle_conics() -> (PlaneConicEquation, PlaneConicEquation) {
+        let circle = |u, constant| PlaneConicEquation {
+            uu: Coefficient::single(1.0),
+            uv: Coefficient::single(0.0),
+            vv: Coefficient::single(1.0),
+            u: Coefficient::single(u),
+            v: Coefficient::single(0.0),
+            constant: Coefficient::single(constant),
+        };
+        (circle(0.0, -1.0), circle(-2.0, 0.0))
+    }
+
+    fn collection_limit_reaching<T>(
+        operation: &'static str,
+        run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+    ) -> u64 {
+        (0..512)
+            .find(|limit| {
+                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation)
+            })
+            .expect("the input reaches the named collection boundary")
+    }
+
+    #[test]
+    fn conic_resultant_coefficients_refuse_before_vec_growth() {
+        let first = dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]);
+        let second = dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]);
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::conic_resultant(&ctx, first, second)
+        };
+        let limit = collection_limit_reaching("creo conic resultant coefficients", run);
+        let error = run(limit)
+            .map(|coefficients| coefficients.len())
+            .expect_err("five coefficients need a reserved Vec");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo conic resultant coefficients")
+        );
+        assert_eq!(
+            run(u64::MAX)
+                .expect("service budget admits the resultant")
+                .len(),
+            5
+        );
+    }
+
+    #[test]
+    fn conic_intersection_parameters_refuse_before_vec_growth() {
+        let (first, second) = intersecting_circle_conics();
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::common_plane_conic_parameters(&ctx, first, second)
+        };
+        let limit = collection_limit_reaching("creo conic intersection parameters", run);
+        let error = run(limit).expect_err("one intersection needs a reserved Vec item");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo conic intersection parameters")
+        );
+        assert_eq!(
+            run(u64::MAX)
+                .expect("service budget admits both intersections")
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn plane_quadric_line_intersections_refuse_before_vec_growth() {
+        let first = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let second = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [0.0, 1.0, 0.0],
+        };
+        let sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0; 3],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+        });
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::intersect_two_planes_with_quadric(&ctx, first, second, sphere)
+        };
+        let error = run(0).expect_err("one plane-quadric line hit needs an admitted item");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo plane-quadric line intersections")
+        );
+        assert_eq!(
+            run(u64::MAX).expect("service budget admits both intersections"),
+            [[0.0, 0.0, -1.0], [0.0, 0.0, 1.0]]
+        );
+    }
+
+    #[test]
+    fn plane_quadric_intersections_refuse_before_vec_growth() {
+        let plane = PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let sphere = |x| {
+            CarrierEquation::Sphere(SphereEquation {
+                center: [x, 0.0, 0.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 1.0,
+            })
+        };
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::intersect_plane_with_two_quadrics(&ctx, plane, sphere(0.0), sphere(1.0))
+        };
+        let limit = collection_limit_reaching("creo plane-quadric intersections", run);
+        let error = run(limit).expect_err("intersection output needs reserved Vec capacity");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo plane-quadric intersections")
+        );
+        assert_eq!(
+            run(u64::MAX)
+                .expect("service budget admits both points")
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -1704,8 +2091,42 @@ mod tests {
     }
 
     #[test]
+    fn polynomial_determinant_refuses_before_growth() {
+        let matrix = std::array::from_fn(|row| {
+            std::array::from_fn(|column| {
+                (row == column).then_some(super::SylvesterEntry {
+                    coefficients: [1.0, 0.0, 0.0],
+                    len: 1,
+                })
+            })
+        });
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &service).expect("test decode context");
+        assert_eq!(
+            super::sylvester_polynomial(&ctx, &matrix, |value| value)
+                .expect("service profile admits the determinant"),
+            [1.0]
+        );
+
+        let mut limited = service;
+        limited.limits.max_collection_items = 5;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &limited).expect("test decode context");
+        let error = super::sylvester_polynomial(&ctx, &matrix, |value| value)
+            .expect_err("the determinant follows the identity and four products");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo polynomial determinant terms"
+        ));
+    }
+
+    #[test]
     fn polynomial_roots_keep_exact_coefficients_during_normalization() {
-        let roots = super::real_polynomial_roots(&[
+        let roots = polynomial_roots(&[
             BoundedCoefficient {
                 value: 6.0,
                 bound: 0.0,
@@ -1727,7 +2148,7 @@ mod tests {
 
     #[test]
     fn polynomial_roots_admit_only_even_roots_stated_by_the_arithmetic() {
-        let no_roots = super::real_polynomial_roots(&[
+        let no_roots = polynomial_roots(&[
             BoundedCoefficient {
                 value: 5.0e-12,
                 bound: 0.0,
@@ -1743,7 +2164,7 @@ mod tests {
         ]);
         assert!(no_roots.is_empty());
 
-        let roots = super::real_polynomial_roots(&[
+        let roots = polynomial_roots(&[
             BoundedCoefficient {
                 value: 1.0,
                 bound: 0.0,
@@ -1764,7 +2185,7 @@ mod tests {
 
     #[test]
     fn polynomial_roots_bound_an_uncertain_derivative_station() {
-        let roots = super::real_polynomial_roots(&[
+        let roots = polynomial_roots(&[
             BoundedCoefficient {
                 value: 0.0,
                 bound: 1.0,
@@ -1791,7 +2212,7 @@ mod tests {
     #[test]
     fn polynomial_roots_keep_distinct_roots_closer_than_a_fixed_relative_band() {
         const SECOND_ROOT: f64 = 5.0e-8;
-        let roots = super::real_polynomial_roots(&[
+        let roots = polynomial_roots(&[
             BoundedCoefficient {
                 value: 0.0,
                 bound: 0.0,
@@ -1814,7 +2235,7 @@ mod tests {
 
     #[test]
     fn polynomial_root_intervals_cover_exactly_the_clustered_quartic_roots() {
-        let roots = super::real_polynomial_roots(&[
+        let roots = polynomial_roots(&[
             BoundedCoefficient {
                 value: 156.982_737_423_565_65,
                 bound: 0.0,
@@ -1902,8 +2323,10 @@ mod tests {
             minor_radius: 1.0,
         };
 
-        let mut points =
-            super::intersect_two_planes_with_torus(offset_plane, equatorial_plane, torus);
+        let mut points = crate::decode::with_test_decode_ctx(|ctx| {
+            super::intersect_two_planes_with_torus(ctx, offset_plane, equatorial_plane, torus)
+        })
+        .expect("torus intersections admitted");
         points.sort_by(|left, right| left[1].total_cmp(&right[1]));
 
         assert_eq!(points.len(), 4);
@@ -1953,18 +2376,48 @@ mod tests {
 
     const SMALL_SECTION_CIRCLE_RADIUS: f64 = 1.0e-7;
     #[test]
+    fn plane_circle_intersections_refuse_before_vec_growth() {
+        let plane = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let radius = PositiveLength::new(1.0).expect("positive circle radius");
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::intersect_plane_with_circle(&ctx, plane, [0.0; 3], [0.0, 0.0, 1.0], radius)
+        };
+        assert!(
+            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo plane-circle intersections")
+        );
+        let points = run(u64::MAX).expect("service budget admits circle points");
+        assert_eq!(points.len(), 2);
+        assert!(points.contains(&[0.0, -1.0, 0.0]));
+        assert!(points.contains(&[0.0, 1.0, 0.0]));
+    }
+
+    #[test]
     fn numerical_seventh_plane_circle_preserves_intersection_multiplicity() {
         for radius in [SMALL_SECTION_CIRCLE_RADIUS, 1.0, 1.0e200] {
             let cut = |x| {
-                super::intersect_plane_with_circle(
-                    PlaneEquation {
-                        origin: [x, 0.0, 0.0],
-                        normal: [1.0, 0.0, 0.0],
-                    },
-                    [0.0; 3],
-                    [0.0, 0.0, 1.0],
-                    PositiveLength::new(radius).expect("positive circle radius"),
-                )
+                crate::decode::with_test_decode_ctx(|ctx| {
+                    super::intersect_plane_with_circle(
+                        ctx,
+                        PlaneEquation {
+                            origin: [x, 0.0, 0.0],
+                            normal: [1.0, 0.0, 0.0],
+                        },
+                        [0.0; 3],
+                        [0.0, 0.0, 1.0],
+                        PositiveLength::new(radius).expect("positive circle radius"),
+                    )
+                })
+                .expect("service profile admits circle intersections")
             };
             let points = cut(0.0);
             assert_eq!(points.len(), 2);
@@ -1981,15 +2434,19 @@ mod tests {
         // The offsets are exact multiples of the last bit of the radius, and the
         // plane normal reaches the radial offset without rounding it.
         let cut = |offset: f64| {
-            super::intersect_plane_with_circle(
-                PlaneEquation {
-                    origin: [offset, 0.0, 0.0],
-                    normal: [1.0, 0.0, 0.0],
-                },
-                [0.0; 3],
-                [0.0, 0.0, 1.0],
-                PositiveLength::new(TANGENT_CIRCLE_RADIUS).expect("positive circle radius"),
-            )
+            crate::decode::with_test_decode_ctx(|ctx| {
+                super::intersect_plane_with_circle(
+                    ctx,
+                    PlaneEquation {
+                        origin: [offset, 0.0, 0.0],
+                        normal: [1.0, 0.0, 0.0],
+                    },
+                    [0.0; 3],
+                    [0.0, 0.0, 1.0],
+                    PositiveLength::new(TANGENT_CIRCLE_RADIUS).expect("positive circle radius"),
+                )
+            })
+            .expect("service profile admits circle intersections")
         };
         let last_bit = f64::EPSILON * TANGENT_CIRCLE_RADIUS;
         assert_eq!(cut(TANGENT_CIRCLE_RADIUS), vec![[4.0, 0.0, 0.0]]);

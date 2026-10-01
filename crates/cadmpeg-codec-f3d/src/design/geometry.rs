@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-arrangement and profile-containment computational geometry.
 
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_i64, truncate_f64_to_usize};
+use cadmpeg_core::decode::index_from_u32;
+
 use crate::design::profile_select::historical_face_points;
 use crate::records::{
     sketch_relations::SketchRelationOperand,
     topology::extrude_selection::DesignExtrudeSelectionMember,
 };
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{HashMap, HashSet};
@@ -44,13 +47,37 @@ struct SketchArrangementFace {
     polyline: Vec<Point2>,
 }
 
+fn copy_arrangement_boundary(
+    ctx: &DecodeContext<'_>,
+    boundary: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+) -> Result<cadmpeg_ir::features::SketchProfileBoundaryUse, CodecError> {
+    Ok(cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity: (boundary.entity)
+            .try_clone_for_decode(ctx, "f3d arrangement boundary entity id")?,
+        parameter_range: boundary.parameter_range,
+        reversed: boundary.reversed,
+    })
+}
+
+fn copy_arrangement_boundary_run(
+    ctx: &DecodeContext<'_>,
+    boundaries: &[cadmpeg_ir::features::SketchProfileBoundaryUse],
+) -> Result<Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>, CodecError> {
+    let mut copy = Vec::new();
+    for boundary in boundaries {
+        let boundary = copy_arrangement_boundary(ctx, boundary)?;
+        ctx.push_vec(&mut copy, boundary, "f3d arrangement selected boundary")?;
+    }
+    Ok(copy)
+}
+
 pub(super) fn arrangement_region_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point2],
     tolerance: f64,
     budget: &WorkBudget<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
@@ -64,7 +91,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
                     on_boundary = true;
                     break;
                 }
@@ -83,9 +110,9 @@ pub(super) fn arrangement_region_containing_points(
         }
     }
     if boundary_count == 1 {
-        return Ok(boundary.and_then(|face| {
-            SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()
-        }));
+        let face = geometric!(boundary);
+        let boundary = copy_arrangement_boundary_run(ctx, &face.boundary)?;
+        return Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok());
     }
     let mut interior = None;
     let mut interior_count = 0;
@@ -94,7 +121,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
                     on_boundary = true;
                     break;
                 }
@@ -115,8 +142,9 @@ pub(super) fn arrangement_region_containing_points(
     if interior_count != 1 {
         return Ok(None);
     }
-    Ok(interior
-        .and_then(|face| SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()))
+    let face = geometric!(interior);
+    let boundary = copy_arrangement_boundary_run(ctx, &face.boundary)?;
+    Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok())
 }
 
 fn sketch_arrangement_faces(
@@ -124,7 +152,7 @@ fn sketch_arrangement_faces(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
     budget: &WorkBudget<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
@@ -132,8 +160,9 @@ fn sketch_arrangement_faces(
     let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
     let mut circles = Vec::new();
-    let candidate_uses = if sketch.profiles.is_empty() {
-        entities
+    let mut candidate_uses = Vec::new();
+    if sketch.profiles.is_empty() {
+        for entity in entities
             .iter()
             .filter(|entity| entity.sketch == sketch.id && !entity.construction)
             .filter(|entity| {
@@ -142,61 +171,75 @@ fn sketch_arrangement_faces(
                     SketchGeometryDefinition::Circle { .. }
                 ) || sketch_geometry_parameter_range(&entity.geometry).is_some()
             })
-            .map(|entity| SketchEntityUse {
-                entity: entity.id().clone(),
-                reversed: false,
-            })
-            .collect::<Vec<_>>()
+        {
+            let entity =
+                (entity.id()).try_clone_for_decode(ctx, "f3d arrangement candidate entity id")?;
+            ctx.push_vec(
+                &mut candidate_uses,
+                SketchEntityUse {
+                    entity,
+                    reversed: false,
+                },
+                "f3d arrangement candidate use",
+            )?;
+        }
     } else {
-        sketch
-            .profiles
-            .iter()
-            .flat_map(|profile| profile.iter().cloned())
-            .collect::<Vec<_>>()
-    };
+        for use_ in sketch.profiles.iter().flat_map(|profile| profile.iter()) {
+            let entity =
+                (use_.entity).try_clone_for_decode(ctx, "f3d arrangement candidate entity id")?;
+            ctx.push_vec(
+                &mut candidate_uses,
+                SketchEntityUse {
+                    entity,
+                    reversed: use_.reversed,
+                },
+                "f3d arrangement candidate use",
+            )?;
+        }
+    }
     for use_ in candidate_uses {
         let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
-            circles.push((use_, center.get(), radius));
+            ctx.push_vec(
+                &mut circles,
+                (use_, center.get(), radius),
+                "f3d arrangement circle",
+            )?;
             continue;
         }
         let range = geometric!(sketch_geometry_parameter_range(&entity.geometry));
         for point in [
-            geometric!(sketch_geometry_point(&entity.geometry, range[0])),
-            geometric!(sketch_geometry_point(&entity.geometry, range[1])),
+            geometric!(sketch_geometry_point(&entity.geometry, range[0], ctx)?),
+            geometric!(sketch_geometry_point(&entity.geometry, range[1], ctx)?),
         ] {
-            arrangement_node(&mut nodes, point, tolerance);
+            arrangement_node(&mut nodes, point, tolerance, ctx)?;
         }
-        pending.push(SketchProfileBoundaryUse {
-            entity: entity.id().clone(),
-            parameter_range: geometric!(
-                cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()
-            ),
-            reversed: use_.reversed,
-        });
+        let id = (entity.id()).try_clone_for_decode(ctx, "f3d arrangement pending entity id")?;
+        ctx.push_vec(
+            &mut pending,
+            SketchProfileBoundaryUse {
+                entity: id,
+                parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
+                    range
+                )
+                .ok()),
+                reversed: use_.reversed,
+            },
+            "f3d arrangement pending boundary",
+        )?;
     }
     for (use_, center, radius) in circles {
         if radius.get() <= tolerance {
             return Ok(None);
         }
-        let mut angles = nodes
-            .iter()
-            .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
-            .map(|point| {
-                (point.v - center.v)
-                    .atan2(point.u - center.u)
-                    .rem_euclid(std::f64::consts::TAU)
-            })
-            .collect::<Vec<_>>();
-        angles.sort_by(f64::total_cmp);
-        angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
+        let mut angles = arrangement_circle_angles(&nodes, center, radius, tolerance, ctx)?;
         if angles.len() < 2 {
             let additional = if angles.is_empty() {
-                vec![0.0, std::f64::consts::PI]
+                [Some(0.0), Some(std::f64::consts::PI)]
             } else {
-                vec![angles[0] + std::f64::consts::PI]
+                [Some(angles[0] + std::f64::consts::PI), None]
             };
-            for angle in additional {
+            for angle in additional.into_iter().flatten() {
                 arrangement_node(
                     &mut nodes,
                     Point2::new(
@@ -204,19 +247,10 @@ fn sketch_arrangement_faces(
                         center.v + radius.get() * angle.sin(),
                     ),
                     tolerance,
-                );
+                    ctx,
+                )?;
             }
-            angles = nodes
-                .iter()
-                .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
-                .map(|point| {
-                    (point.v - center.v)
-                        .atan2(point.u - center.u)
-                        .rem_euclid(std::f64::consts::TAU)
-                })
-                .collect::<Vec<_>>();
-            angles.sort_by(f64::total_cmp);
-            angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
+            angles = arrangement_circle_angles(&nodes, center, radius, tolerance, ctx)?;
         }
         if angles.len() < 2 {
             return Ok(None);
@@ -228,14 +262,20 @@ fn sketch_arrangement_faces(
                 end += std::f64::consts::TAU;
             }
             let range = [start, end];
-            pending.push(SketchProfileBoundaryUse {
-                entity: use_.entity.clone(),
-                parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
-                    range
-                )
-                .ok()),
-                reversed: use_.reversed,
-            });
+            let id =
+                (use_.entity).try_clone_for_decode(ctx, "f3d arrangement pending entity id")?;
+            ctx.push_vec(
+                &mut pending,
+                SketchProfileBoundaryUse {
+                    entity: id,
+                    parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
+                        range
+                    )
+                    .ok()),
+                    reversed: use_.reversed,
+                },
+                "f3d arrangement pending boundary",
+            )?;
         }
     }
     let mut split_pending = Vec::new();
@@ -252,31 +292,37 @@ fn sketch_arrangement_faces(
         )?);
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
-            split_pending.push((
-                SketchProfileBoundaryUse {
-                    entity: boundary.entity.clone(),
-                    parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
-                        range
-                    )
-                    .ok()),
-                    reversed: boundary.reversed,
-                },
-                geometric!(profile_use_polyline(
-                    entity,
-                    range,
-                    boundary.reversed,
-                    tolerance,
-                    ctx,
-                )?),
-            ));
+            let id =
+                (boundary.entity).try_clone_for_decode(ctx, "f3d arrangement split entity id")?;
+            let parameter_range =
+                geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
+            let polyline = geometric!(profile_use_polyline(
+                entity,
+                range,
+                boundary.reversed,
+                tolerance,
+                ctx,
+            )?);
+            ctx.push_vec(
+                &mut split_pending,
+                (
+                    SketchProfileBoundaryUse {
+                        entity: id,
+                        parameter_range,
+                        reversed: boundary.reversed,
+                    },
+                    polyline,
+                ),
+                "f3d arrangement split boundary",
+            )?;
         }
     }
     let mut edges = Vec::<SketchArrangementEdge>::new();
     for (boundary, polyline) in split_pending {
         let edge = SketchArrangementEdge {
             nodes: [
-                arrangement_node(&mut nodes, *geometric!(polyline.first()), tolerance),
-                arrangement_node(&mut nodes, *geometric!(polyline.last()), tolerance),
+                arrangement_node(&mut nodes, *geometric!(polyline.first()), tolerance, ctx)?,
+                arrangement_node(&mut nodes, *geometric!(polyline.last()), tolerance, ctx)?,
             ],
             boundary,
             polyline,
@@ -284,13 +330,19 @@ fn sketch_arrangement_faces(
         if edge.nodes[0] == edge.nodes[1] {
             return Ok(None);
         }
-        if edges.iter().any(|candidate| {
-            (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
-                && arrangement_edges_coincident(candidate, &edge, entities, tolerance)
-        }) {
+        let mut coincident = false;
+        for candidate in &edges {
+            if (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
+                && arrangement_edges_coincident(candidate, &edge, entities, tolerance, ctx)?
+            {
+                coincident = true;
+                break;
+            }
+        }
+        if coincident {
             continue;
         }
-        edges.push(edge);
+        ctx.push_vec(&mut edges, edge, "f3d arrangement edge")?;
     }
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
     if budget.exhausted() {
@@ -304,32 +356,32 @@ fn sketch_arrangement_faces(
         let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, ctx)? else {
             return Ok(None);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d arrangement edge tube set")?;
-        }
-        edge_tubes.push(tubes);
+        ctx.push_vec(&mut edge_tubes, tubes, "f3d arrangement edge tube set")?;
     }
-    let edge_bounds = edge_tubes
-        .iter()
-        .map(|tubes| certified_tube_bounds(tubes))
-        .collect::<Option<Vec<_>>>();
-    let edge_bounds = geometric!(edge_bounds);
+    let mut edge_bounds = Vec::new();
+    for tubes in &edge_tubes {
+        let bounds = geometric!(certified_tube_bounds(tubes));
+        ctx.push_vec(&mut edge_bounds, bounds, "f3d arrangement edge bounds")?;
+    }
     for left_index in 0..edges.len() {
         for right_index in left_index + 1..edges.len() {
             let left = &edges[left_index];
             let right = &edges[right_index];
-            let shared_nodes = left
-                .nodes
-                .into_iter()
-                .filter(|node| right.nodes.contains(node))
-                .collect::<Vec<_>>();
-            if !shared_nodes.is_empty() {
+            let mut shared_nodes = [0; 2];
+            let mut shared_count = 0;
+            for node in left.nodes {
+                if right.nodes.contains(&node) {
+                    shared_nodes[shared_count] = node;
+                    shared_count += 1;
+                }
+            }
+            if shared_count != 0 {
                 if !arrangement_edges_meet_only_at_nodes(
                     left,
                     right,
                     entities,
                     &nodes,
-                    &shared_nodes,
+                    &shared_nodes[..shared_count],
                     tolerance,
                 ) {
                     return Ok(None);
@@ -356,33 +408,49 @@ fn sketch_arrangement_faces(
             }
         }
     }
-    let mut outgoing = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            nodes.len(),
-            Vec::<(usize, bool, f64)>::new(),
-            "f3d_arrangement_outgoing",
-        )?,
-        None => alloc_filled(
-            nodes.len(),
-            Vec::<(usize, bool, f64)>::new(),
-            "f3d_arrangement_outgoing",
-        )?,
-    };
+    let mut outgoing = ctx.alloc_filled(
+        nodes.len(),
+        Vec::<(usize, bool, f64)>::new(),
+        "f3d_arrangement_outgoing",
+    )?;
+    let _outgoing_reservation = Some(
+        ({
+            let bytes = u64::try_from(edges.len())
+                .ok()
+                .and_then(|count| count.checked_mul(2))
+                .and_then(|count| {
+                    count
+                        .checked_mul(u64::try_from(std::mem::size_of::<(usize, bool, f64)>()).ok()?)
+                })
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("f3d arrangement outgoing bytes", u64::MAX - 1, u64::MAX)
+                })?;
+            ctx.reserve_scoped(bytes, "f3d arrangement outgoing entries")
+        })?,
+    );
     for (edge_index, edge) in edges.iter().enumerate() {
         let forward = geometric!(edge.polyline.get(1));
         let reverse = geometric!(edge
             .polyline
             .get(geometric!(edge.polyline.len().checked_sub(2))));
-        outgoing[edge.nodes[0]].push((
-            edge_index,
-            false,
-            (forward.v - nodes[edge.nodes[0]].v).atan2(forward.u - nodes[edge.nodes[0]].u),
-        ));
-        outgoing[edge.nodes[1]].push((
-            edge_index,
-            true,
-            (reverse.v - nodes[edge.nodes[1]].v).atan2(reverse.u - nodes[edge.nodes[1]].u),
-        ));
+        ctx.push_vec(
+            &mut outgoing[edge.nodes[0]],
+            (
+                edge_index,
+                false,
+                (forward.v - nodes[edge.nodes[0]].v).atan2(forward.u - nodes[edge.nodes[0]].u),
+            ),
+            "f3d arrangement outgoing entry",
+        )?;
+        ctx.push_vec(
+            &mut outgoing[edge.nodes[1]],
+            (
+                edge_index,
+                true,
+                (reverse.v - nodes[edge.nodes[1]].v).atan2(reverse.u - nodes[edge.nodes[1]].u),
+            ),
+            "f3d arrangement outgoing entry",
+        )?;
     }
     if edges
         .iter()
@@ -391,12 +459,9 @@ fn sketch_arrangement_faces(
         return Ok(None);
     }
     for uses in &mut outgoing {
-        uses.sort_by(|left, right| left.2.total_cmp(&right.2));
+        crate::design::sort::sort_by(ctx, &mut uses[..], |left, right| left.2.total_cmp(&right.2))?;
     }
-    let mut visited = match ctx {
-        Some(ctx) => ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?,
-        None => alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?,
-    };
+    let mut visited = ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?;
     let mut faces = Vec::new();
     for edge_index in 0..edges.len() {
         for reversed in [false, true] {
@@ -417,14 +482,20 @@ fn sketch_arrangement_faces(
                 }
                 visited[index][usize::from(reverse)] = true;
                 let edge = &edges[index];
-                let mut use_ = edge.boundary.clone();
-                let mut points = edge.polyline.clone();
+                let mut use_ = copy_arrangement_boundary(ctx, &edge.boundary)?;
                 if reverse {
                     use_.reversed = !use_.reversed;
-                    points.reverse();
                 }
-                boundary.push(use_);
-                polyline.extend(points.into_iter().take(edge.polyline.len() - 1));
+                ctx.push_vec(&mut boundary, use_, "f3d arrangement face boundary")?;
+                if reverse {
+                    for point in edge.polyline.iter().rev().take(edge.polyline.len() - 1) {
+                        ctx.push_vec(&mut polyline, *point, "f3d arrangement face point")?;
+                    }
+                } else {
+                    for point in edge.polyline.iter().take(edge.polyline.len() - 1) {
+                        ctx.push_vec(&mut polyline, *point, "f3d arrangement face point")?;
+                    }
+                }
                 let destination = edge.nodes[usize::from(!reverse)];
                 let uses = &outgoing[destination];
                 let twin = geometric!(uses.iter().position(|(candidate, candidate_reverse, _)| {
@@ -434,7 +505,11 @@ fn sketch_arrangement_faces(
                 current = (next.0, next.1);
             }
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
-                faces.push(SketchArrangementFace { boundary, polyline });
+                ctx.push_vec(
+                    &mut faces,
+                    SketchArrangementFace { boundary, polyline },
+                    "f3d arrangement face",
+                )?;
             }
         }
     }
@@ -517,7 +592,7 @@ fn arrangement_edges_meet_only_at_nodes(
         }
     }
     analytic_segment_intersections(&left_segment, &right_segment).is_some_and(|intersections| {
-        intersections.iter().all(|intersection| {
+        intersections.iter().flatten().all(|intersection| {
             shared_nodes
                 .iter()
                 .any(|node| point_distance(*intersection, nodes[*node]) <= tolerance)
@@ -720,7 +795,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
 fn analytic_segment_intersections(
     left: &ProfileBoundarySegment,
     right: &ProfileBoundarySegment,
-) -> Option<Vec<Point2>> {
+) -> Option<[Option<Point2>; 2]> {
     match (left, right) {
         (
             ProfileBoundarySegment::Line { start: a, end: b },
@@ -730,12 +805,15 @@ fn analytic_segment_intersections(
                 cadmpeg_ir::math::planar::line_line_parameters(*a, *b, *c, *d)?
                     .map(cadmpeg_ir::scalar::FiniteReal::get);
             if !(0.0..=1.0).contains(&parameter) || !(0.0..=1.0).contains(&other_parameter) {
-                return Some(Vec::new());
+                return Some([None; 2]);
             }
-            Some(vec![Point2::new(
-                cadmpeg_ir::math::interpolate(a.u, b.u, parameter)?.get(),
-                cadmpeg_ir::math::interpolate(a.v, b.v, parameter)?.get(),
-            )])
+            Some([
+                Some(Point2::new(
+                    cadmpeg_ir::math::interpolate(a.u, b.u, parameter)?.get(),
+                    cadmpeg_ir::math::interpolate(a.v, b.v, parameter)?.get(),
+                )),
+                None,
+            ])
         }
         (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
         | (arc @ ProfileBoundarySegment::Arc { .. }, ProfileBoundarySegment::Line { start, end }) => {
@@ -750,7 +828,7 @@ fn analytic_segment_intersections(
 fn line_arc_intersection_points(
     (start, end): (Point2, Point2),
     arc: &ProfileBoundarySegment,
-) -> Option<Vec<Point2>> {
+) -> Option<[Option<Point2>; 2]> {
     let ProfileBoundarySegment::Arc {
         center,
         radius,
@@ -763,16 +841,16 @@ fn line_arc_intersection_points(
     let radius = radius.get();
     let offset = Point2::new(start.u - center.u, start.v - center.v);
     if start == end {
-        return Some(
+        return Some([
             (offset.u.hypot(offset.v) == radius
                 && directed_angle_parameter(offset.v.atan2(offset.u), *start_angle, *end_angle)
                     .is_some())
-            .then_some(start)
-            .into_iter()
-            .collect(),
-        );
+            .then_some(start),
+            None,
+        ]);
     }
-    let mut points = Vec::new();
+    let mut points = [None; 2];
+    let mut point_count = 0;
     let Some(parameters) =
         cadmpeg_ir::math::planar::line_circle_intersections(start, end, *center, radius)
     else {
@@ -795,9 +873,10 @@ fn line_arc_intersection_points(
                     *end_angle,
                 )
                 .is_some()
-                && !points.contains(&point)
+                && !points.contains(&Some(point))
             {
-                points.push(point);
+                points[point_count] = Some(point);
+                point_count += 1;
             }
         }
     }
@@ -807,7 +886,7 @@ fn line_arc_intersection_points(
 fn arc_intersection_points(
     left: &ProfileBoundarySegment,
     right: &ProfileBoundarySegment,
-) -> Option<Vec<Point2>> {
+) -> Option<[Option<Point2>; 2]> {
     let ProfileBoundarySegment::Arc {
         center: lc,
         radius: lr,
@@ -827,15 +906,22 @@ fn arc_intersection_points(
         return None;
     };
     Some(
-        cadmpeg_ir::math::planar::circle_intersections(*lc, lr.get(), *rc, rr.get())?
-            .into_iter()
-            .map(cadmpeg_ir::units::FinitePoint2::get)
-            .filter(|point| {
-                directed_angle_parameter((point.v - lc.v).atan2(point.u - lc.u), *ls, *le).is_some()
-                    && directed_angle_parameter((point.v - rc.v).atan2(point.u - rc.u), *rs, *re)
-                        .is_some()
-            })
-            .collect(),
+        cadmpeg_ir::math::planar::circle_intersections(*lc, lr.get(), *rc, rr.get())?.map(
+            |point| {
+                point
+                    .map(cadmpeg_ir::units::FinitePoint2::get)
+                    .filter(|point| {
+                        directed_angle_parameter((point.v - lc.v).atan2(point.u - lc.u), *ls, *le)
+                            .is_some()
+                            && directed_angle_parameter(
+                                (point.v - rc.v).atan2(point.u - rc.u),
+                                *rs,
+                                *re,
+                            )
+                            .is_some()
+                    })
+            },
+        ),
     )
 }
 
@@ -844,14 +930,15 @@ fn arrangement_split_parameters(
     range: [f64; 2],
     nodes: &[Point2],
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<f64>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(2, "f3d arrangement split endpoints")?;
+    let mut parameters = Vec::new();
+    {
+        ctx.reserve_vec(&mut parameters, 2, "f3d arrangement split endpoints")?;
     }
-    let mut parameters = vec![range[0], range[1]];
+    parameters.extend(range);
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             if point_distance(start.get(), end.get()) <= tolerance {
@@ -868,8 +955,8 @@ fn arrangement_split_parameters(
                     && parameter < 1.0
                     && point_segment_distance(*point, (start.get(), end.get())) <= tolerance
                 {
-                    if let Some(ctx) = ctx {
-                        ctx.charge_collection_items(1, "f3d arrangement split parameter")?;
+                    {
+                        ctx.reserve_vec(&mut parameters, 1, "f3d arrangement split parameter")?;
                     }
                     parameters.push(parameter);
                 }
@@ -883,8 +970,8 @@ fn arrangement_split_parameters(
                 let angle = (point.v - center.v).atan2(point.u - center.u);
                 if let Some(parameter) = directed_angle_parameter(angle, range[0], range[1]) {
                     if parameter > 0.0 && parameter < 1.0 {
-                        if let Some(ctx) = ctx {
-                            ctx.charge_collection_items(1, "f3d arrangement split parameter")?;
+                        {
+                            ctx.reserve_vec(&mut parameters, 1, "f3d arrangement split parameter")?;
                         }
                         parameters.push(range[0] + parameter * (range[1] - range[0]));
                     }
@@ -893,24 +980,58 @@ fn arrangement_split_parameters(
         }
         _ => {}
     }
-    parameters.sort_by(|left, right| {
+    crate::design::sort::sort_by(ctx, &mut parameters[..], |left, right| {
         ((left - range[0]) / (range[1] - range[0]))
             .total_cmp(&((right - range[0]) / (range[1] - range[0])))
-    });
+    })?;
     let parameter_tolerance =
         tolerance / geometric!(sketch_geometry_speed_bound(geometry, range)).max(tolerance);
     parameters.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
     Ok((parameters.len() >= 2).then_some(parameters))
 }
 
-fn arrangement_node(nodes: &mut Vec<Point2>, point: Point2, tolerance: f64) -> usize {
-    nodes
+fn arrangement_circle_angles(
+    nodes: &[Point2],
+    center: Point2,
+    radius: PositiveLength,
+    tolerance: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<f64>, CodecError> {
+    let mut angles = Vec::new();
+    for point in nodes
+        .iter()
+        .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
+    {
+        let angle = (point.v - center.v)
+            .atan2(point.u - center.u)
+            .rem_euclid(std::f64::consts::TAU);
+        ctx.push_vec(&mut angles, angle, "f3d arrangement circle angle")?;
+    }
+    crate::design::sort::sort_by(ctx, &mut angles[..], f64::total_cmp)?;
+    angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
+    Ok(angles)
+}
+
+fn arrangement_node(
+    nodes: &mut Vec<Point2>,
+    point: Point2,
+    tolerance: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<usize, CodecError> {
+    if let Some(index) = nodes
         .iter()
         .position(|candidate| point_distance(*candidate, point) <= tolerance)
-        .unwrap_or_else(|| {
-            nodes.push(point);
-            nodes.len() - 1
-        })
+    {
+        return Ok(index);
+    }
+    ctx.push_vec(nodes, point, "f3d arrangement node")?;
+    Ok(nodes.len() - 1)
+}
+
+fn arrangement_cycle_work(edge_count: usize, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+    edge_count
+        .checked_mul(edge_count)
+        .ok_or_else(|| ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX))
 }
 
 /// Remove curve fragments that cannot bound a planar face.
@@ -924,35 +1045,34 @@ fn arrangement_retain_cycle_edges(
     edges: &mut Vec<SketchArrangementEdge>,
     node_count: usize,
     budget: &WorkBudget<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     loop {
         // Each retention pass may run a BFS per edge (O(E²) worst case).
-        if !budget.charge_by(edges.len().saturating_mul(edges.len())) {
+        let work = arrangement_cycle_work(edges.len(), ctx)?;
+        if !budget.charge_by(work) {
             return Ok(());
         }
-        let mut retained = Vec::new();
+        let mut keep = Vec::new();
         for (index, edge) in edges.iter().enumerate() {
-            if arrangement_has_alternate_path(
+            let has_cycle = arrangement_has_alternate_path(
                 edges,
                 index,
                 edge.nodes[0],
                 edge.nodes[1],
                 node_count,
                 ctx,
-            )? {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "f3d arrangement retained edge")?;
-                    ctx.charge_collection_items(
-                        edge.polyline.len() as u64,
-                        "f3d arrangement retained edge polyline",
-                    )?;
-                }
-                retained.push(edge.clone());
-            }
+            )?;
+            ctx.push_vec(&mut keep, has_cycle, "f3d arrangement retained edge mark")?;
         }
-        if retained.len() == edges.len() {
+        if keep.iter().all(|keep| *keep) {
             break;
+        }
+        let mut retained = Vec::new();
+        for (edge, keep) in std::mem::take(edges).into_iter().zip(keep) {
+            if keep {
+                ctx.push_vec(&mut retained, edge, "f3d arrangement retained edge")?;
+            }
         }
         *edges = retained;
     }
@@ -965,16 +1085,11 @@ fn arrangement_has_alternate_path(
     start: usize,
     destination: usize,
     node_count: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let mut visited = match ctx {
-        Some(ctx) => ctx.alloc_filled(node_count, false, "f3d arrangement visit marks")?,
-        None => alloc_filled(node_count, false, "f3d arrangement visit marks")?,
-    };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, "f3d arrangement pending nodes")?;
-    }
-    let mut pending = vec![start];
+    let mut visited = ctx.alloc_filled(node_count, false, "f3d arrangement visit marks")?;
+    let mut pending = Vec::new();
+    ctx.push_vec(&mut pending, start, "f3d arrangement pending nodes")?;
     visited[start] = true;
     while let Some(node) = pending.pop() {
         if node == destination {
@@ -992,10 +1107,7 @@ fn arrangement_has_alternate_path(
             };
             if !visited[next] {
                 visited[next] = true;
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "f3d arrangement pending nodes")?;
-                }
-                pending.push(next);
+                ctx.push_vec(&mut pending, next, "f3d arrangement pending nodes")?;
             }
         }
     }
@@ -1007,89 +1119,95 @@ fn arrangement_edges_coincident(
     right: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if left.boundary.entity == right.boundary.entity
         && left.boundary.parameter_range.endpoints() == right.boundary.parameter_range.endpoints()
     {
-        return true;
+        return Ok(true);
     }
     let Some(left_entity) = entities
         .iter()
         .find(|entity| entity.id() == &left.boundary.entity)
     else {
-        return false;
+        return Ok(false);
     };
     let Some(right_entity) = entities
         .iter()
         .find(|entity| entity.id() == &right.boundary.entity)
     else {
-        return false;
+        return Ok(false);
     };
-    match (
-        left_entity.geometry.definition(),
-        right_entity.geometry.definition(),
-    ) {
-        (SketchGeometryDefinition::Line { .. }, SketchGeometryDefinition::Line { .. }) => {
-            let left_midpoint = sketch_geometry_point(
-                &left_entity.geometry,
-                (left.boundary.parameter_range.endpoints()[0]
-                    + left.boundary.parameter_range.endpoints()[1])
-                    * 0.5,
-            );
-            left_midpoint
-                .zip(right.polyline.last().copied())
-                .is_some_and(|(point, end)| {
-                    point_segment_distance(point, (right.polyline[0], end)) <= tolerance
-                })
-        }
-        (
-            SketchGeometryDefinition::Circle {
-                center: left_center,
-                radius: left_radius,
-            }
-            | SketchGeometryDefinition::Arc {
-                center: left_center,
-                radius: left_radius,
-                ..
-            },
-            SketchGeometryDefinition::Circle {
-                center: right_center,
-                radius: right_radius,
-            }
-            | SketchGeometryDefinition::Arc {
-                center: right_center,
-                radius: right_radius,
-                ..
-            },
-        ) => {
-            point_distance(left_center.get(), right_center.get()) <= tolerance
-                && (left_radius.get() - right_radius.get()).abs() <= tolerance
-                && ((left.boundary.parameter_range.endpoints()[1]
-                    - left.boundary.parameter_range.endpoints()[0])
-                    .abs()
-                    - (right.boundary.parameter_range.endpoints()[1]
-                        - right.boundary.parameter_range.endpoints()[0])
-                        .abs())
-                .abs()
-                    <= tolerance / left_radius.get()
-                && sketch_geometry_point(
+    Ok(
+        match (
+            left_entity.geometry.definition(),
+            right_entity.geometry.definition(),
+        ) {
+            (SketchGeometryDefinition::Line { .. }, SketchGeometryDefinition::Line { .. }) => {
+                let left_midpoint = sketch_geometry_point(
                     &left_entity.geometry,
                     (left.boundary.parameter_range.endpoints()[0]
                         + left.boundary.parameter_range.endpoints()[1])
                         * 0.5,
-                )
-                .zip(sketch_geometry_point(
-                    &right_entity.geometry,
-                    (right.boundary.parameter_range.endpoints()[0]
-                        + right.boundary.parameter_range.endpoints()[1])
-                        * 0.5,
-                ))
-                .is_some_and(|(left, right)| point_distance(left, right) <= tolerance)
-        }
-        _ => false,
-    }
+                    ctx,
+                )?;
+                left_midpoint
+                    .zip(right.polyline.last().copied())
+                    .is_some_and(|(point, end)| {
+                        point_segment_distance(point, (right.polyline[0], end)) <= tolerance
+                    })
+            }
+            (
+                SketchGeometryDefinition::Circle {
+                    center: left_center,
+                    radius: left_radius,
+                }
+                | SketchGeometryDefinition::Arc {
+                    center: left_center,
+                    radius: left_radius,
+                    ..
+                },
+                SketchGeometryDefinition::Circle {
+                    center: right_center,
+                    radius: right_radius,
+                }
+                | SketchGeometryDefinition::Arc {
+                    center: right_center,
+                    radius: right_radius,
+                    ..
+                },
+            ) => {
+                point_distance(left_center.get(), right_center.get()) <= tolerance
+                    && (left_radius.get() - right_radius.get()).abs() <= tolerance
+                    && ((left.boundary.parameter_range.endpoints()[1]
+                        - left.boundary.parameter_range.endpoints()[0])
+                        .abs()
+                        - (right.boundary.parameter_range.endpoints()[1]
+                            - right.boundary.parameter_range.endpoints()[0])
+                            .abs())
+                    .abs()
+                        <= tolerance / left_radius.get()
+                    && sketch_geometry_point(
+                        &left_entity.geometry,
+                        (left.boundary.parameter_range.endpoints()[0]
+                            + left.boundary.parameter_range.endpoints()[1])
+                            * 0.5,
+                        ctx,
+                    )?
+                    .zip(sketch_geometry_point(
+                        &right_entity.geometry,
+                        (right.boundary.parameter_range.endpoints()[0]
+                            + right.boundary.parameter_range.endpoints()[1])
+                            * 0.5,
+                        ctx,
+                    )?)
+                    .is_some_and(|(left, right)| point_distance(left, right) <= tolerance)
+            }
+            _ => false,
+        },
+    )
 }
 
 fn arrangement_edges_proven_disjoint(
@@ -1140,7 +1258,7 @@ fn arrangement_edge_tubes(
     edge: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
@@ -1166,7 +1284,8 @@ fn arrangement_edge_tubes(
             edge.boundary.parameter_range.endpoints()[0],
             edge.boundary.parameter_range.endpoints()[1],
             target_error,
-        ),
+            ctx,
+        )?,
         SketchGeometryDefinition::Nurbs { curve }
             if !curve.periodic()
                 && sketch_geometry_parameter_range(&entity.geometry)
@@ -1222,7 +1341,7 @@ fn sketch_geometry_parameter_range(
             ..
         } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => Some([
-            curve.knots()[curve.degree() as usize],
+            curve.knots()[index_from_u32(curve.degree())],
             curve.knots()[curve.control_points().len()],
         ]),
         _ => None,
@@ -1234,7 +1353,7 @@ fn profile_use_polyline(
     range: [f64; 2],
     reversed: bool,
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point2>>, CodecError> {
     let travel = geometric!(sketch_geometry_speed_bound(&entity.geometry, range))
         * (range[1] - range[0]).abs();
@@ -1245,9 +1364,9 @@ fn profile_use_polyline(
         geometric!(cadmpeg_ir::math::interpolate(range[0], range[1], 0.5)).get()
     };
     let scale = [
-        geometric!(sketch_geometry_point(&entity.geometry, range[0])),
-        geometric!(sketch_geometry_point(&entity.geometry, range[1])),
-        geometric!(sketch_geometry_point(&entity.geometry, midpoint)),
+        geometric!(sketch_geometry_point(&entity.geometry, range[0], ctx)?),
+        geometric!(sketch_geometry_point(&entity.geometry, range[1], ctx)?),
+        geometric!(sketch_geometry_point(&entity.geometry, midpoint, ctx)?),
     ]
     .into_iter()
     .flat_map(|point| [point.u.abs(), point.v.abs()])
@@ -1257,28 +1376,27 @@ fn profile_use_polyline(
     // intersection witnesses only. Exact output retains source parameter
     // intervals rather than this derived representation.
     let count = if travel.is_finite() {
-        (travel / target).ceil().clamp(2.0, 256.0) as usize
+        geometric!(truncate_f64_to_usize(
+            (travel / target).ceil().clamp(2.0, 256.0)
+        ))
     } else {
         256
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items((count + 1) as u64, "f3d profile use polyline")?;
+    let mut points = Vec::new();
+    {
+        ctx.reserve_vec(&mut points, count + 1, "f3d profile use polyline")?;
     }
-    let points = (0..=count)
-        .map(|index| {
-            let fraction = index as f64 / count as f64;
-            let ordinary = range[0] + (range[1] - range[0]) * fraction;
-            let parameter = if ordinary.is_finite() {
-                ordinary
-            } else {
-                cadmpeg_ir::math::interpolate(range[0], range[1], fraction)?.get()
-            };
-            sketch_geometry_point(&entity.geometry, parameter)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(mut points) = points else {
-        return Ok(None);
-    };
+    for index in 0..=count {
+        let fraction = geometric!(f64_from_index(index)) / geometric!(f64_from_index(count));
+        let ordinary = range[0] + (range[1] - range[0]) * fraction;
+        let parameter = if ordinary.is_finite() {
+            ordinary
+        } else {
+            geometric!(cadmpeg_ir::math::interpolate(range[0], range[1], fraction)).get()
+        };
+        let point = geometric!(sketch_geometry_point(&entity.geometry, parameter, ctx)?);
+        points.push(point);
+    }
     if reversed {
         points.reverse();
     }
@@ -1309,10 +1427,11 @@ fn sketch_geometry_speed_bound(
 fn sketch_geometry_point(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     parameter: f64,
-) -> Option<Point2> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Point2>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry.definition() {
+    Ok(match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some(Point2::new(
             start.u + parameter * (end.u - start.u),
             start.v + parameter * (end.v - start.v),
@@ -1338,34 +1457,51 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().raw_points();
-            let weights = curve.pole_rows().weights();
-            cadmpeg_ir::eval::nurbs_pcurve_uv(
+            let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 curve.degree(),
                 curve.knots(),
                 &control_points,
                 weights.as_deref(),
                 parameter,
-            )
-            .ok()
+            ))?
             .map(Point2::from)
         }
         _ => None,
+    })
+}
+
+pub(super) fn nurbs_pcurve_evaluator_lanes(
+    curve: &PcurveNurbs,
+    ctx: &DecodeContext<'_>,
+) -> Result<(Vec<Point2>, Option<Vec<f64>>), CodecError> {
+    {
+        let count = u64::try_from(curve.pole_rows().count())
+            .map_err(|_| ctx.refuse_codec_limit("f3d nurbs evaluator poles", 0, 1))?;
+        ctx.charge_collection_items(count, "f3d nurbs evaluator poles")?;
+        if matches!(curve.pole_rows(), PcurveNurbsPoles::Rational { .. }) {
+            ctx.charge_collection_items(count, "f3d nurbs evaluator weights")?;
+        }
     }
+    Ok((
+        curve.pole_rows().try_raw_points()?,
+        curve.pole_rows().try_weights()?,
+    ))
 }
 
 fn point_on_profile_boundary_use(
+    ctx: &DecodeContext<'_>,
     point: Point2,
     use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
         return Ok(false);
     };
-    if !point_on_sketch_entity(point, entity, tolerance)? {
+    if !point_on_sketch_entity(ctx, point, entity, tolerance)? {
         return Ok(false);
     }
     Ok(match entity.geometry.definition() {
@@ -1397,7 +1533,7 @@ pub(super) fn region_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
@@ -1406,29 +1542,26 @@ pub(super) fn region_containing_points(
         let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
             return Ok(None);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d profile boundaries")?;
-        }
-        boundaries.push(boundary);
+        ctx.push_vec(&mut boundaries, boundary, "f3d profile boundaries")?;
     }
-    let containment = boundaries
-        .iter()
-        .enumerate()
-        .map(|(outer_index, outer)| {
-            boundaries
-                .iter()
-                .enumerate()
-                .map(|(inner_index, inner)| {
-                    outer_index != inner_index && outer.strictly_contains(inner)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let projected = points
-        .iter()
-        .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Option<Vec<_>>>();
-    let projected = geometric!(projected);
+    let mut containment = Vec::new();
+    for (outer_index, outer) in boundaries.iter().enumerate() {
+        let mut row = Vec::new();
+        for (inner_index, inner) in boundaries.iter().enumerate() {
+            let contains = outer_index != inner_index && outer.strictly_contains(inner, ctx)?;
+            ctx.push_vec(&mut row, contains, "f3d profile containment cell")?;
+        }
+        ctx.push_vec(&mut containment, row, "f3d profile containment row")?;
+    }
+    let mut projected = Vec::new();
+    for point in points {
+        let projected_point = geometric!(project_to_sketch(sketch, *point));
+        ctx.push_vec(
+            &mut projected,
+            projected_point,
+            "f3d profile projected point",
+        )?;
+    }
     let mut incidences = Vec::new();
     for point in &projected {
         let mut incident = HashSet::new();
@@ -1438,17 +1571,17 @@ pub(super) fn region_containing_points(
                 else {
                     continue;
                 };
-                if point_on_sketch_entity(*point, entity, tolerance)? {
-                    incident.insert(index);
+                if point_on_sketch_entity(ctx, *point, entity, tolerance)? {
+                    ctx.insert_hash_set(&mut incident, index, "f3d profile incident boundary")?;
                     break;
                 }
             }
         }
-        incidences.push(incident);
+        ctx.push_vec(&mut incidences, incident, "f3d profile incidence row")?;
     }
-    let region = |outer: usize| {
-        let holes = immediate_containment_children(outer, &containment);
-        projected
+    let region = |outer: usize| -> Result<Option<(usize, Vec<usize>)>, CodecError> {
+        let holes = immediate_containment_children(outer, &containment, ctx)?;
+        Ok(projected
             .iter()
             .zip(&incidences)
             .all(|(point, incident)| {
@@ -1460,29 +1593,38 @@ pub(super) fn region_containing_points(
                             .iter()
                             .all(|hole| !boundaries[*hole].contains_point(*point))
             })
-            .then_some((outer, holes))
+            .then_some((outer, holes)))
     };
-    let closure_matches = (0..boundaries.len()).filter_map(region).collect::<Vec<_>>();
+    let mut closure_matches = Vec::new();
+    for outer in 0..boundaries.len() {
+        if let Some(candidate) = region(outer)? {
+            ctx.push_vec(&mut closure_matches, candidate, "f3d profile closure match")?;
+        }
+    }
     if let [(outer, holes)] = closure_matches.as_slice() {
-        let holes = geometric!(holes
-            .iter()
-            .map(|hole| u32::try_from(*hole).ok())
-            .collect::<Option<Vec<_>>>());
-        return Ok(SketchProfileRegion::loops(geometric!(u32::try_from(*outer).ok()), holes).ok());
+        let mut converted_holes = Vec::new();
+        for hole in holes {
+            let hole = geometric!(u32::try_from(*hole).ok());
+            ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
+        }
+        return Ok(SketchProfileRegion::loops(
+            geometric!(u32::try_from(*outer).ok()),
+            converted_holes,
+        )
+        .ok());
     }
     if incidences.iter().any(|incident| !incident.is_empty()) {
         return Ok(None);
     }
-    let containing = boundaries
-        .iter()
-        .enumerate()
-        .filter(|(_, boundary)| {
-            projected
-                .iter()
-                .all(|point| boundary.contains_point(*point))
-        })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
+    let mut containing = Vec::new();
+    for (index, boundary) in boundaries.iter().enumerate() {
+        if projected
+            .iter()
+            .all(|point| boundary.contains_point(*point))
+        {
+            ctx.push_vec(&mut containing, index, "f3d profile containing boundary")?;
+        }
+    }
     if containing.iter().enumerate().any(|(left_index, left)| {
         containing
             .iter()
@@ -1496,11 +1638,13 @@ pub(super) fn region_containing_points(
             .iter()
             .all(|other| other == *candidate || containment[*other][**candidate])
     }));
-    let holes = immediate_containment_children(outer, &containment)
-        .into_iter()
-        .map(|candidate| u32::try_from(candidate).ok())
-        .collect::<Option<Vec<_>>>();
-    Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), geometric!(holes)).ok())
+    let holes = immediate_containment_children(outer, &containment, ctx)?;
+    let mut converted_holes = Vec::new();
+    for hole in holes {
+        let hole = geometric!(u32::try_from(hole).ok());
+        ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
+    }
+    Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes).ok())
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -1510,7 +1654,7 @@ pub(super) fn profile_loops_are_independent(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     profiles: &[u32],
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let mut boundaries = Vec::new();
     for profile in profiles {
@@ -1523,32 +1667,42 @@ pub(super) fn profile_loops_are_independent(
         let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
             return Ok(false);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d independent profile boundaries")?;
-        }
-        boundaries.push(boundary);
+        ctx.push_vec(
+            &mut boundaries,
+            boundary,
+            "f3d independent profile boundaries",
+        )?;
     }
-    Ok(boundaries.iter().enumerate().all(|(left_index, left)| {
-        boundaries
-            .iter()
-            .skip(left_index + 1)
-            .all(|right| left.is_provably_disjoint(right))
-    }))
+    for (left_index, left) in boundaries.iter().enumerate() {
+        for right in boundaries.iter().skip(left_index + 1) {
+            if !left.is_provably_disjoint(right, ctx)? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
-fn immediate_containment_children(outer: usize, containment: &[Vec<bool>]) -> Vec<usize> {
-    (0..containment.len())
-        .filter(|candidate| {
-            *candidate != outer
-                && containment[outer][*candidate]
-                && !(0..containment.len()).any(|intermediate| {
-                    intermediate != outer
-                        && intermediate != *candidate
-                        && containment[outer][intermediate]
-                        && containment[intermediate][*candidate]
-                })
-        })
-        .collect()
+fn immediate_containment_children(
+    outer: usize,
+    containment: &[Vec<bool>],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<usize>, CodecError> {
+    let mut children = Vec::new();
+    for candidate in 0..containment.len() {
+        if candidate != outer
+            && containment[outer][candidate]
+            && !(0..containment.len()).any(|intermediate| {
+                intermediate != outer
+                    && intermediate != candidate
+                    && containment[outer][intermediate]
+                    && containment[intermediate][candidate]
+            })
+        {
+            ctx.push_vec(&mut children, candidate, "f3d profile immediate hole")?;
+        }
+    }
+    Ok(children)
 }
 
 enum ProfileBoundary {
@@ -1596,8 +1750,8 @@ impl ProfileBoundary {
         }
     }
 
-    fn strictly_contains(&self, inner: &Self) -> bool {
-        match (self, inner) {
+    fn strictly_contains(&self, inner: &Self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        Ok(match (self, inner) {
             (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
             (
                 Self::Circle {
@@ -1647,14 +1801,23 @@ impl ProfileBoundary {
                         point_in_circular_arc_loop(boundary_segment_endpoints(segment).0, outer)
                     })
             }
-            (outer, inner) => outer
-                .certified_loop()
-                .zip(inner.certified_loop())
-                .is_some_and(|(outer, inner)| outer.strictly_contains(&inner)),
-        }
+            (outer, inner) => {
+                let Some(outer) = outer.certified_loop(ctx)? else {
+                    return Ok(false);
+                };
+                let Some(inner) = inner.certified_loop(ctx)? else {
+                    return Ok(false);
+                };
+                outer.strictly_contains(&inner)
+            }
+        })
     }
 
-    fn is_provably_disjoint(&self, other: &Self) -> bool {
+    fn is_provably_disjoint(
+        &self,
+        other: &Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
         let intersects = match (self, other) {
             (Self::Polygon(left), Self::Polygon(right)) => polygon_edges(left).any(|left_edge| {
                 polygon_edges(right).any(|right_edge| segments_intersect(left_edge, right_edge))
@@ -1686,18 +1849,31 @@ impl ProfileBoundary {
             | (Self::Circle { center, radius }, Self::CircularArcLoop(arc_loop)) => arc_loop
                 .iter()
                 .any(|segment| point_boundary_segment_distance(*center, segment) <= radius.get()),
-            (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return false,
+            (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return Ok(false),
         };
-        !intersects && !self.strictly_contains(other) && !other.strictly_contains(self)
+        Ok(!intersects
+            && !self.strictly_contains(other, ctx)?
+            && !other.strictly_contains(self, ctx)?)
     }
 
-    fn certified_loop(&self) -> Option<CertifiedProfileLoop> {
-        match self {
-            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices),
-            Self::CircularArcLoop(segments) => certified_analytic_loop(segments),
-            Self::Circle { center, radius } => certified_circle(*center, *radius),
-            Self::CertifiedLoop(loop_) => Some(loop_.clone()),
-        }
+    fn certified_loop(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<std::borrow::Cow<'_, CertifiedProfileLoop>>, CodecError> {
+        use std::borrow::Cow;
+
+        Ok(match self {
+            Self::Polygon(vertices) => {
+                CertifiedProfileLoop::from_vertices(vertices, ctx)?.map(Cow::Owned)
+            }
+            Self::CircularArcLoop(segments) => {
+                certified_analytic_loop(segments, ctx)?.map(Cow::Owned)
+            }
+            Self::Circle { center, radius } => {
+                certified_circle(*center, *radius, ctx)?.map(Cow::Owned)
+            }
+            Self::CertifiedLoop(loop_) => Some(Cow::Borrowed(loop_)),
+        })
     }
 }
 
@@ -1706,27 +1882,39 @@ impl CertifiedProfileLoop {
         (tubes.len() >= 3).then_some(Self { tubes })
     }
 
-    fn vertices(&self) -> impl Iterator<Item = Point2> + '_ {
+    fn vertices(&self) -> impl Iterator<Item = Point2> + Clone + '_ {
         self.tubes.iter().map(|tube| tube.start)
     }
 
-    fn from_vertices(vertices: &[Point2]) -> Option<Self> {
-        Self::new(
-            polygon_edges(vertices)
-                .map(|(start, end)| CertifiedCurveTube {
+    fn from_vertices(
+        vertices: &[Point2],
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<Self>, CodecError> {
+        let mut tubes = Vec::new();
+        for (start, end) in polygon_edges(vertices) {
+            ctx.push_vec(
+                &mut tubes,
+                CertifiedCurveTube {
                     start,
                     end,
                     error: 0.0,
-                })
-                .collect(),
-        )
+                },
+                "f3d certified polygon tube",
+            )?;
+        }
+        Ok(Self::new(tubes))
     }
 
     fn contains_point(&self, point: Point2) -> bool {
         self.tubes
             .iter()
             .all(|tube| point_segment_distance(point, (tube.start, tube.end)) > tube.error)
-            && point_in_polygon(point, &self.vertices().collect::<Vec<_>>())
+            && point_in_polygon_edges(
+                point,
+                self.vertices()
+                    .zip(self.vertices().cycle().skip(1))
+                    .take(self.tubes.len()),
+            )
     }
 
     fn strictly_contains(&self, inner: &Self) -> bool {
@@ -1746,7 +1934,7 @@ fn profile_boundary(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<ProfileBoundary>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
@@ -1759,10 +1947,10 @@ fn profile_boundary(
             }));
         }
     }
-    if let Some(polygon) = line_profile_vertices(profile, entities, tolerance) {
+    if let Some(polygon) = line_profile_vertices(profile, entities, tolerance, ctx)? {
         return Ok(Some(ProfileBoundary::Polygon(polygon)));
     }
-    if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance) {
+    if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance, ctx)? {
         return Ok(Some(ProfileBoundary::CircularArcLoop(arc_loop)));
     }
     Ok(certified_profile_loop(profile, entities, tolerance, ctx)?
@@ -1773,16 +1961,18 @@ fn certified_profile_loop(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let scale = entities
-        .iter()
-        .filter_map(sketch_entity_endpoints)
-        .flatten()
-        .flat_map(|point| [point.u.abs(), point.v.abs()])
-        .fold(1.0_f64, f64::max);
+    let mut scale = 1.0_f64;
+    for entity in entities {
+        if let Some(ends) = sketch_entity_endpoints(entity, ctx)? {
+            for point in ends {
+                scale = scale.max(point.u.abs()).max(point.v.abs());
+            }
+        }
+    }
     // The tube need only separate the selected point and peer boundaries; it
     // is not a geometric approximation exposed by the codec.  A square-root
     // scale keeps the conservative tube practical while exact boundary tests
@@ -1809,7 +1999,8 @@ fn certified_profile_loop(
                 start_angle.get(),
                 end_angle.get(),
                 target_error,
-            )),
+                ctx,
+            )?),
             SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
                 geometric!(certified_nurbs_tubes(curve, target_error, ctx)?)
             }
@@ -1826,8 +2017,12 @@ fn certified_profile_loop(
             return Ok(None);
         }
         previous_end = entity_tubes.last().map(|tube| tube.end);
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(entity_tubes.len() as u64, "f3d certified profile tubes")?;
+        {
+            ctx.reserve_vec(
+                &mut tubes,
+                entity_tubes.len(),
+                "f3d certified profile tubes",
+            )?;
         }
         tubes.extend(entity_tubes);
     }
@@ -1841,7 +2036,10 @@ fn certified_profile_loop(
     Ok(CertifiedProfileLoop::new(tubes))
 }
 
-fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<CertifiedProfileLoop> {
+fn certified_analytic_loop(
+    segments: &[ProfileBoundarySegment],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     let scale = segments
         .iter()
         .flat_map(|segment| {
@@ -1863,18 +2061,38 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
                 radius,
                 start_angle,
                 end_angle,
-            } => certified_arc_tubes(*center, *radius, *start_angle, *end_angle, tolerance)?,
+            } => geometric!(certified_arc_tubes(
+                *center,
+                *radius,
+                *start_angle,
+                *end_angle,
+                tolerance,
+                ctx
+            )?),
         };
-        tubes.extend(segment_tubes);
+        for tube in segment_tubes {
+            ctx.push_vec(&mut tubes, tube, "f3d certified analytic tube")?;
+        }
     }
-    CertifiedProfileLoop::new(tubes)
+    Ok(CertifiedProfileLoop::new(tubes))
 }
 
-fn certified_circle(center: Point2, radius: PositiveLength) -> Option<CertifiedProfileLoop> {
+fn certified_circle(
+    center: Point2,
+    radius: PositiveLength,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     let tolerance = EPS_GEOMETRY_CERTIFIED_CIRCLE_E6
         * (1.0 + center.u.abs().max(center.v.abs()).max(radius.get()));
-    let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
-    CertifiedProfileLoop::new(tubes)
+    let tubes = geometric!(certified_arc_tubes(
+        center,
+        radius,
+        0.0,
+        std::f64::consts::TAU,
+        tolerance,
+        ctx
+    )?);
+    Ok(CertifiedProfileLoop::new(tubes))
 }
 
 fn certified_arc_tubes(
@@ -1883,51 +2101,57 @@ fn certified_arc_tubes(
     start: f64,
     end: f64,
     target_error: f64,
-) -> Option<Vec<CertifiedCurveTube>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     let sweep = end - start;
     if !sweep.is_finite() || sweep == 0.0 {
-        return None;
+        return Ok(None);
     }
     let radius = radius.get();
-    let count = subdivision_count(radius * sweep.abs(), target_error)?;
-    let error = radius * sweep.abs() / count as f64;
-    (0..count)
-        .map(|index| {
-            let parameter = |ordinal: usize| start + sweep * ordinal as f64 / count as f64;
-            let point = |angle: f64| {
-                Point2::new(
-                    center.u + radius * angle.cos(),
-                    center.v + radius * angle.sin(),
-                )
-            };
-            Some(CertifiedCurveTube {
-                start: point(parameter(index)),
-                end: point(parameter(index + 1)),
-                error,
-            })
-        })
-        .collect()
+    let count = geometric!(subdivision_count(radius * sweep.abs(), target_error));
+    let count_float = geometric!(f64_from_index(count));
+    let error = radius * sweep.abs() / count_float;
+    let mut tubes = Vec::new();
+    {
+        ctx.reserve_vec(&mut tubes, count, "f3d certified arc tubes")?;
+    }
+    for index in 0..count {
+        let parameter = |ordinal: usize| {
+            f64_from_index(ordinal).map(|ordinal| start + sweep * ordinal / count_float)
+        };
+        let point = |angle: f64| {
+            Point2::new(
+                center.u + radius * angle.cos(),
+                center.v + radius * angle.sin(),
+            )
+        };
+        tubes.push(CertifiedCurveTube {
+            start: point(geometric!(parameter(index))),
+            end: point(geometric!(parameter(index + 1))),
+            error,
+        });
+    }
+    Ok(Some(tubes))
 }
 
 fn certified_nurbs_tubes(
     curve: &PcurveNurbs,
     target_error: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     let speed = geometric!(nurbs_speed_bound(curve));
-    let degree = curve.degree() as usize;
+    let degree = index_from_u32(curve.degree());
     let knots = curve.knots();
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(curve.control_points().len() as u64, "f3d nurbs tube points")?;
-        if curve.weights().is_some() {
-            ctx.charge_collection_items(
-                curve.control_points().len() as u64,
-                "f3d nurbs tube weights",
-            )?;
+    {
+        let count = u64::try_from(curve.pole_rows().count())
+            .map_err(|_| ctx.refuse_codec_limit("f3d nurbs tube points", 0, 1))?;
+        ctx.charge_collection_items(count, "f3d nurbs tube points")?;
+        if matches!(curve.pole_rows(), PcurveNurbsPoles::Rational { .. }) {
+            ctx.charge_collection_items(count, "f3d nurbs tube weights")?;
         }
     }
-    let control_points = curve.pole_rows().raw_points();
-    let weights = curve.pole_rows().weights();
+    let control_points = curve.pole_rows().try_raw_points()?;
+    let weights = curve.pole_rows().try_weights()?;
     let count = control_points.len();
     let mut tubes = Vec::new();
     for span in knots[degree..=count].windows(2) {
@@ -1943,36 +2167,40 @@ fn certified_nurbs_tubes(
             return Ok(None);
         };
         let subdivisions = geometric!(subdivision_count(travel_bound, target_error));
-        let error = travel_bound / subdivisions as f64;
+        let subdivisions_float = geometric!(f64_from_index(subdivisions));
+        let error = travel_bound / subdivisions_float;
         for index in 0..subdivisions {
             let parameter = |ordinal: usize| {
-                let fraction = ordinal as f64 / subdivisions as f64;
+                let ordinal = f64_from_index(ordinal)?;
+                let fraction = ordinal / subdivisions_float;
                 if width.is_finite() {
-                    span[0] + width * ordinal as f64 / subdivisions as f64
+                    Some(span[0] + width * ordinal / subdivisions_float)
                 } else {
-                    span[0].mul_add(1.0 - fraction, span[1] * fraction)
+                    Some(span[0].mul_add(1.0 - fraction, span[1] * fraction))
                 }
             };
-            let start = *geometric!(cadmpeg_ir::eval::nurbs_pcurve_uv(
-                degree as u32,
-                knots,
-                &control_points,
-                weights.as_deref(),
-                parameter(index),
-            )
-            .ok())
+            let start = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    curve.degree(),
+                    knots,
+                    &control_points,
+                    weights.as_deref(),
+                    geometric!(parameter(index)),
+                )
+            )?)
             .as_raw();
-            let end = *geometric!(cadmpeg_ir::eval::nurbs_pcurve_uv(
-                degree as u32,
-                knots,
-                &control_points,
-                weights.as_deref(),
-                parameter(index + 1),
-            )
-            .ok())
+            let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    curve.degree(),
+                    knots,
+                    &control_points,
+                    weights.as_deref(),
+                    geometric!(parameter(index + 1)),
+                )
+            )?)
             .as_raw();
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "f3d certified nurbs tube")?;
+            {
+                ctx.reserve_vec(&mut tubes, 1, "f3d certified nurbs tube")?;
             }
             tubes.push(CertifiedCurveTube { start, end, error });
         }
@@ -1983,7 +2211,7 @@ fn certified_nurbs_tubes(
 fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
     // Format invariant: densification above this count is outside the reader.
     // Session work for arrangement walks is charged separately via work_budget.
-    const MAX_SUBDIVISIONS: usize = 100_000;
+    const MAX_SUBDIVISIONS: f64 = 100_000.0;
     if !travel_bound.is_finite()
         || travel_bound < 0.0
         || !target_error.is_finite()
@@ -1992,7 +2220,9 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         return None;
     }
     let count = (travel_bound / target_error).ceil().max(1.0);
-    (count <= MAX_SUBDIVISIONS as f64).then_some(count as usize)
+    (count <= MAX_SUBDIVISIONS)
+        .then(|| truncate_f64_to_usize(count))
+        .flatten()
 }
 
 fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
@@ -2016,13 +2246,14 @@ fn circular_arc_profile_segments(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Option<Vec<ProfileBoundarySegment>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<ProfileBoundarySegment>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let mut segments = Vec::with_capacity(profile.len());
+    let mut segments = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         let segment = match *entity.geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => {
                 let [start, end] = if use_.reversed {
@@ -2053,34 +2284,35 @@ fn circular_arc_profile_segments(
                     end_angle,
                 }
             }
-            _ => return None,
+            _ => return Ok(None),
         };
         let (start, end) = boundary_segment_endpoints(&segment);
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
-            return None;
+            return Ok(None);
         }
         previous_end = Some(end);
-        segments.push(segment);
+        ctx.push_vec(&mut segments, segment, "f3d circular arc profile segment")?;
     }
-    let first_start = segments.first().map(boundary_segment_endpoints)?.0;
-    (segments.len() >= 2
+    let first_start = geometric!(segments.first().map(boundary_segment_endpoints)).0;
+    Ok((segments.len() >= 2
         && previous_end.is_some_and(|end| point_distance(end, first_start) <= tolerance))
-    .then_some(segments)
+    .then_some(segments))
 }
 
 fn line_profile_vertices(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Option<Vec<Point2>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Point2>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let mut vertices = Vec::with_capacity(profile.len());
+    let mut vertices = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition() else {
-            return None;
+            return Ok(None);
         };
         let (start, end) = (start.get(), end.get());
         let [start, end] = if use_.reversed {
@@ -2089,17 +2321,17 @@ fn line_profile_vertices(
             [start, end]
         };
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
-            return None;
+            return Ok(None);
         }
-        vertices.push(start);
+        ctx.push_vec(&mut vertices, start, "f3d line profile vertex")?;
         previous_end = Some(end);
     }
     if vertices.len() < 3
         || previous_end.is_none_or(|end| point_distance(end, vertices[0]) > tolerance)
     {
-        return None;
+        return Ok(None);
     }
-    Some(vertices)
+    Ok(Some(vertices))
 }
 
 fn boundary_segment_endpoints(segment: &ProfileBoundarySegment) -> (Point2, Point2) {
@@ -2169,12 +2401,13 @@ fn horizontal_ray_arc_winding(
     let principal = ordinate.asin();
     let sweep = end_angle - start_angle;
     let angles = if principal.cos().abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
-        vec![principal]
+        [Some(principal), None]
     } else {
-        vec![principal, std::f64::consts::PI - principal]
+        [Some(principal), Some(std::f64::consts::PI - principal)]
     };
     angles
         .into_iter()
+        .flatten()
         .filter(|angle| center.u + radius * angle.cos() > point.u)
         .filter_map(|angle| {
             let parameter = directed_angle_parameter(angle, start_angle, end_angle)?;
@@ -2275,11 +2508,11 @@ fn boundary_segment_max_distance(point: Point2, segment: &ProfileBoundarySegment
 }
 
 pub(super) fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
-    vertices
-        .iter()
-        .copied()
-        .zip(vertices.iter().copied().cycle().skip(1))
-        .take(vertices.len())
+    point_in_polygon_edges(point, polygon_edges(vertices))
+}
+
+fn point_in_polygon_edges(point: Point2, edges: impl Iterator<Item = (Point2, Point2)>) -> bool {
+    edges
         .filter(|(start, end)| {
             (start.v > point.v) != (end.v > point.v)
                 && point.u < start.u + (point.v - start.v) * (end.u - start.u) / (end.v - start.v)
@@ -2396,7 +2629,7 @@ fn boundary_segments_intersect(
         (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
         | (arc @ ProfileBoundarySegment::Arc { .. }, ProfileBoundarySegment::Line { start, end }) => {
             line_arc_intersection_points((*start, *end), arc)
-                .is_some_and(|points| !points.is_empty())
+                .is_some_and(|points| points.iter().any(Option::is_some))
         }
         (
             ProfileBoundarySegment::Arc {
@@ -2444,166 +2677,269 @@ fn arcs_intersect(
         start_angle: right_start,
         end_angle: right_end,
     };
-    arc_intersection_points(&left, &right).is_some_and(|points| !points.is_empty())
+    arc_intersection_points(&left, &right).is_some_and(|points| points.iter().any(Option::is_some))
 }
 
 pub(super) fn historical_member_points_in_state(
     member: &DesignExtrudeSelectionMember,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<Point3>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let (kind, entity_ref) = match &member.historical {
         Some(binding) => (binding.kind, binding.entity_ref),
         None => {
-            let kind = match member.resolved_geometry.as_ref()? {
+            let Some(geometry) = member.resolved_geometry.as_ref() else {
+                return Ok(None);
+            };
+            let kind = match geometry {
                 SketchRelationOperand::Point { .. } => AsmHistoricalEntityKind::Point,
                 SketchRelationOperand::Curve { .. } => AsmHistoricalEntityKind::Curve,
                 SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => {
-                    return None;
+                    return Ok(None);
                 }
             };
-            (kind, i64::try_from(member.local_id).ok()?)
+            let Ok(entity_ref) = i64::try_from(member.local_id) else {
+                return Ok(None);
+            };
+            (kind, entity_ref)
         }
     };
-    historical_entity_positions(kind, entity_ref, topology)
+    historical_entity_positions(kind, entity_ref, topology, ctx)
 }
 
 fn historical_entity_positions(
     kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<Point3>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let mut positions = Vec::new();
-    let edge_refs = match kind {
-        AsmHistoricalEntityKind::Coedge => topology
-            .coedge_topology
-            .iter()
-            .filter(|coedge| coedge.coedge == local_id)
-            .map(|coedge| coedge.edge)
-            .collect::<Vec<_>>(),
-        AsmHistoricalEntityKind::Edge => vec![local_id],
-        AsmHistoricalEntityKind::Curve => topology
-            .edge_curves
-            .iter()
-            .filter(|binding| binding.carrier == Some(local_id))
-            .map(|binding| binding.entity)
-            .collect(),
-        AsmHistoricalEntityKind::Loop => topology
-            .coedge_topology
-            .iter()
-            .filter(|coedge| coedge.owner_loop == local_id)
-            .map(|coedge| coedge.edge)
-            .collect(),
-        AsmHistoricalEntityKind::Pcurve => topology
-            .coedge_pcurves
-            .iter()
-            .filter(|binding| binding.carrier == Some(local_id))
-            .filter_map(|binding| {
-                topology
+    let mut edge_refs = Vec::new();
+    match kind {
+        AsmHistoricalEntityKind::Coedge => {
+            for coedge in topology
+                .coedge_topology
+                .iter()
+                .filter(|coedge| coedge.coedge == local_id)
+            {
+                ctx.push_vec(
+                    &mut edge_refs,
+                    coedge.edge,
+                    "f3d historical coedge edge reference",
+                )?;
+            }
+        }
+        AsmHistoricalEntityKind::Edge => {
+            ctx.push_vec(
+                &mut edge_refs,
+                local_id,
+                "f3d historical direct edge reference",
+            )?;
+        }
+        AsmHistoricalEntityKind::Curve => {
+            for binding in topology
+                .edge_curves
+                .iter()
+                .filter(|binding| binding.carrier == Some(local_id))
+            {
+                ctx.push_vec(
+                    &mut edge_refs,
+                    binding.entity,
+                    "f3d historical curve edge reference",
+                )?;
+            }
+        }
+        AsmHistoricalEntityKind::Loop => {
+            for coedge in topology
+                .coedge_topology
+                .iter()
+                .filter(|coedge| coedge.owner_loop == local_id)
+            {
+                ctx.push_vec(
+                    &mut edge_refs,
+                    coedge.edge,
+                    "f3d historical loop edge reference",
+                )?;
+            }
+        }
+        AsmHistoricalEntityKind::Pcurve => {
+            for binding in topology
+                .coedge_pcurves
+                .iter()
+                .filter(|binding| binding.carrier == Some(local_id))
+            {
+                if let Some(coedge) = topology
                     .coedge_topology
                     .iter()
                     .find(|coedge| coedge.coedge == binding.entity)
-                    .map(|coedge| coedge.edge)
-            })
-            .collect(),
+                {
+                    ctx.push_vec(
+                        &mut edge_refs,
+                        coedge.edge,
+                        "f3d historical pcurve edge reference",
+                    )?;
+                }
+            }
+        }
         AsmHistoricalEntityKind::Vertex => {
-            positions.extend(historical_vertex_positions(topology, local_id));
-            Vec::new()
+            for point in historical_vertex_positions(topology, local_id) {
+                ctx.push_vec(&mut positions, point, "f3d historical vertex position")?;
+            }
         }
         AsmHistoricalEntityKind::Point => {
-            positions.extend(
-                topology
-                    .point_positions
-                    .iter()
-                    .filter(|point| point.point == local_id)
-                    .map(|point| point.position),
-            );
-            Vec::new()
+            for point in topology
+                .point_positions
+                .iter()
+                .filter(|point| point.point == local_id)
+            {
+                ctx.push_vec(
+                    &mut positions,
+                    point.position,
+                    "f3d historical point position",
+                )?;
+            }
         }
         AsmHistoricalEntityKind::Face => {
-            positions.extend(historical_face_points(local_id, topology)?);
-            Vec::new()
+            let Some(points) = historical_face_points(local_id, topology, ctx)? else {
+                return Ok(None);
+            };
+            for point in points {
+                ctx.push_vec(&mut positions, point, "f3d historical face position")?;
+            }
         }
         AsmHistoricalEntityKind::Surface => {
-            let faces = topology
+            let mut found = false;
+            for binding in topology
                 .face_surfaces
                 .iter()
                 .filter(|binding| binding.carrier == local_id)
-                .map(|binding| binding.entity)
-                .collect::<Vec<_>>();
-            if faces.is_empty() {
-                return None;
+            {
+                found = true;
+                let Some(points) = historical_face_points(binding.entity, topology, ctx)? else {
+                    return Ok(None);
+                };
+                for point in points {
+                    ctx.push_vec(&mut positions, point, "f3d historical surface position")?;
+                }
             }
-            for face in faces {
-                positions.extend(historical_face_points(face, topology)?);
+            if !found {
+                return Ok(None);
             }
-            Vec::new()
         }
         AsmHistoricalEntityKind::Body
         | AsmHistoricalEntityKind::Region
         | AsmHistoricalEntityKind::Shell => {
-            let faces = historical_owned_faces(kind, local_id, topology)?;
+            let Some(faces) = historical_owned_faces(kind, local_id, topology, ctx)? else {
+                return Ok(None);
+            };
             for face in faces {
-                positions.extend(historical_face_points(face, topology)?);
+                let Some(points) = historical_face_points(face, topology, ctx)? else {
+                    return Ok(None);
+                };
+                for point in points {
+                    ctx.push_vec(&mut positions, point, "f3d historical owned face position")?;
+                }
             }
-            Vec::new()
         }
-    };
+    }
     for edge_ref in edge_refs {
-        let edge = topology
+        let Some(edge) = topology
             .edge_vertices
             .iter()
-            .find(|edge| edge.edge == edge_ref)?;
-        let start = historical_vertex_positions(topology, edge.start_vertex).collect::<Vec<_>>();
-        let end = historical_vertex_positions(topology, edge.end_vertex).collect::<Vec<_>>();
-        if start.is_empty() || end.is_empty() {
-            return None;
+            .find(|edge| edge.edge == edge_ref)
+        else {
+            return Ok(None);
+        };
+        let mut start = historical_vertex_positions(topology, edge.start_vertex).peekable();
+        let mut end = historical_vertex_positions(topology, edge.end_vertex).peekable();
+        if start.peek().is_none() || end.peek().is_none() {
+            return Ok(None);
         }
-        positions.extend(start);
-        positions.extend(end);
+        for point in start.chain(end) {
+            ctx.push_vec(&mut positions, point, "f3d historical edge position")?;
+        }
     }
-    (!positions.is_empty()).then_some(positions)
+    Ok((!positions.is_empty()).then_some(positions))
 }
 
 fn historical_owned_faces(
     kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<i64>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
-    let relation_members = |relations: &[crate::history_records::AsmHistoricalRelation], owner| {
-        let mut matches = relations
-            .iter()
-            .filter(|relation| relation.owner_ref == owner);
-        let members = matches.next()?.member_refs.clone();
-        matches.next().is_none().then_some(members)
-    };
-    let regions = match kind {
-        AsmHistoricalEntityKind::Body => relation_members(&topology.body_regions, local_id)?,
-        AsmHistoricalEntityKind::Region => vec![local_id],
-        AsmHistoricalEntityKind::Shell => Vec::new(),
-        _ => return None,
-    };
-    let shells = if kind == AsmHistoricalEntityKind::Shell {
-        vec![local_id]
-    } else {
-        let mut shells = Vec::new();
-        for region in regions {
-            shells.extend(relation_members(&topology.region_shells, region)?);
-        }
-        shells
-    };
     let mut faces = Vec::new();
-    for shell in shells {
-        faces.extend(relation_members(&topology.shell_faces, shell)?);
+    match kind {
+        AsmHistoricalEntityKind::Body => {
+            let Some(regions) = historical_relation_members(&topology.body_regions, local_id)
+            else {
+                return Ok(None);
+            };
+            for region in regions {
+                let Some(shells) = historical_relation_members(&topology.region_shells, *region)
+                else {
+                    return Ok(None);
+                };
+                for shell in shells {
+                    if !append_historical_shell_faces(*shell, topology, ctx, &mut faces)? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+        AsmHistoricalEntityKind::Region => {
+            let Some(shells) = historical_relation_members(&topology.region_shells, local_id)
+            else {
+                return Ok(None);
+            };
+            for shell in shells {
+                if !append_historical_shell_faces(*shell, topology, ctx, &mut faces)? {
+                    return Ok(None);
+                }
+            }
+        }
+        AsmHistoricalEntityKind::Shell => {
+            if !append_historical_shell_faces(local_id, topology, ctx, &mut faces)? {
+                return Ok(None);
+            }
+        }
+        _ => return Ok(None),
     }
     faces.sort_unstable();
     faces.dedup();
-    (!faces.is_empty()).then_some(faces)
+    Ok((!faces.is_empty()).then_some(faces))
+}
+
+fn historical_relation_members(
+    relations: &[crate::history_records::AsmHistoricalRelation],
+    owner: i64,
+) -> Option<&[i64]> {
+    let mut matches = relations
+        .iter()
+        .filter(|relation| relation.owner_ref == owner);
+    let members = &matches.next()?.member_refs;
+    matches.next().is_none().then_some(members)
+}
+
+fn append_historical_shell_faces(
+    shell: i64,
+    topology: &crate::history_records::AsmHistoricalTopology,
+    ctx: &DecodeContext<'_>,
+    faces: &mut Vec<i64>,
+) -> Result<bool, CodecError> {
+    let Some(members) = historical_relation_members(&topology.shell_faces, shell) else {
+        return Ok(false);
+    };
+    for face in members {
+        ctx.push_vec(faces, *face, "f3d historical owned face")?;
+    }
+    Ok(true)
 }
 
 fn historical_vertex_positions(
@@ -2634,18 +2970,19 @@ pub(super) fn project_to_sketch(
 }
 
 pub(super) fn point_on_sketch_entity(
+    ctx: &DecodeContext<'_>,
     point: Point2,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     tolerance: f64,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() {
         if curve.periodic() {
             return Ok(false);
         }
-        let control_points = curve.pole_rows().try_raw_points()?;
-        let weights = curve.pole_rows().try_weights()?;
+        let (control_points, weights) =
+            crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             curve.degree(),
             curve.knots(),
@@ -2654,7 +2991,8 @@ pub(super) fn point_on_sketch_entity(
             point,
             tolerance,
         )
-        .map(|contained| contained.unwrap_or(false));
+        .map(|contained| contained.unwrap_or(false))
+        .map_err(CodecError::ResourceLimit);
     }
     Ok((|| match entity.geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
@@ -2745,7 +3083,7 @@ fn point_distance(a: Point2, b: Point2) -> f64 {
 }
 
 pub(super) fn closed_sketch_profiles(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sketch: &cadmpeg_ir::sketches::SketchId,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
@@ -2755,50 +3093,66 @@ pub(super) fn closed_sketch_profiles(
     if !linear_tolerance.is_finite() || linear_tolerance <= 0.0 {
         return Ok(Vec::new());
     }
-    let mut profiles = entities
+    let mut profiles = Vec::new();
+    let mut edges = Vec::new();
+    for entity in entities
         .iter()
         .filter(|entity| &entity.sketch == sketch && !entity.construction)
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Circle { .. }
-                    | SketchGeometryDefinition::Ellipse { bounds: None, .. }
-            )
-        })
-        .map(|entity| {
-            vec![SketchEntityUse {
-                entity: entity.id().clone(),
-                reversed: false,
-            }]
-        })
-        .collect::<Vec<_>>();
-    let edges = entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch && !entity.construction)
-        .filter_map(|entity| sketch_entity_endpoints(entity).map(|ends| (entity, ends)))
-        .collect::<Vec<_>>();
+    {
+        if matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+                | SketchGeometryDefinition::Ellipse { bounds: None, .. }
+        ) {
+            let id =
+                (entity.id()).try_clone_for_decode(ctx, "f3d closed sketch profile entity id")?;
+            let mut profile = Vec::new();
+            ctx.push_vec(
+                &mut profile,
+                SketchEntityUse {
+                    entity: id,
+                    reversed: false,
+                },
+                "f3d closed sketch profile member",
+            )?;
+            ctx.push_vec(&mut profiles, profile, "f3d closed sketch circle profile")?;
+        }
+        if let Some(ends) = sketch_entity_endpoints(entity, ctx)? {
+            ctx.push_vec(&mut edges, (entity, ends), "f3d closed sketch edge")?;
+        }
+    }
     if edges.is_empty() {
-        profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
+        crate::design::sort::sort_by(ctx, &mut profiles[..], |a, b| a[0].entity.cmp(&b[0].entity))?;
         return Ok(profiles);
     }
 
-    let endpoints = edges
-        .iter()
-        .flat_map(|(_, [start, end])| [*start, *end])
-        .collect::<Vec<_>>();
-    let mut parents = (0..endpoints.len()).collect::<Vec<_>>();
+    let mut endpoints = Vec::new();
+    for (_, [start, end]) in &edges {
+        ctx.push_vec(&mut endpoints, *start, "f3d closed sketch endpoint")?;
+        ctx.push_vec(&mut endpoints, *end, "f3d closed sketch endpoint")?;
+    }
+    let mut parents = Vec::new();
+    for index in 0..endpoints.len() {
+        ctx.push_vec(&mut parents, index, "f3d closed sketch union parent")?;
+    }
     let mut endpoint_cells = HashMap::<(i64, i64), Vec<usize>>::new();
     for (endpoint, point) in endpoints.iter().copied().enumerate() {
-        let cell = (
-            (point.u / linear_tolerance).floor() as i64,
-            (point.v / linear_tolerance).floor() as i64,
-        );
+        let Some(u) = truncate_f64_to_i64((point.u / linear_tolerance).floor()) else {
+            return Ok(Vec::new());
+        };
+        let Some(v) = truncate_f64_to_i64((point.v / linear_tolerance).floor()) else {
+            return Ok(Vec::new());
+        };
+        let cell = (u, v);
         for u_offset in -1..=1 {
             for v_offset in -1..=1 {
-                let adjacent = (
-                    cell.0.saturating_add(u_offset),
-                    cell.1.saturating_add(v_offset),
-                );
+                let Some(adjacent_u) = cell.0.checked_add(u_offset) else {
+                    continue;
+                };
+                let Some(adjacent_v) = cell.1.checked_add(v_offset) else {
+                    continue;
+                };
+                let adjacent = (adjacent_u, adjacent_v);
                 for candidate in endpoint_cells.get(&adjacent).into_iter().flatten() {
                     if sketch_endpoints_close(point, endpoints[*candidate], linear_tolerance) {
                         union_endpoint_nodes(&mut parents, endpoint, *candidate);
@@ -2806,54 +3160,80 @@ pub(super) fn closed_sketch_profiles(
                 }
             }
         }
-        endpoint_cells.entry(cell).or_default().push(endpoint);
+        ctx.push_hash_group(
+            &mut endpoint_cells,
+            cell,
+            endpoint,
+            "f3d sketch endpoint cell",
+            "f3d sketch endpoint cell member",
+        )?;
     }
-    let edge_nodes = (0..edges.len())
-        .map(|edge| {
-            [
-                endpoint_root(&mut parents, edge * 2),
-                endpoint_root(&mut parents, edge * 2 + 1),
-            ]
-        })
-        .collect::<Vec<_>>();
+    let mut edge_nodes = Vec::new();
+    for edge in 0..edges.len() {
+        let nodes = [
+            endpoint_root(&mut parents, edge * 2),
+            endpoint_root(&mut parents, edge * 2 + 1),
+        ];
+        ctx.push_vec(&mut edge_nodes, nodes, "f3d closed sketch edge nodes")?;
+    }
     let mut adjacency = HashMap::<usize, Vec<usize>>::new();
     for (edge, [start, end]) in edge_nodes.iter().copied().enumerate() {
-        adjacency.entry(start).or_default().push(edge);
-        adjacency.entry(end).or_default().push(edge);
+        ctx.push_hash_group(
+            &mut adjacency,
+            start,
+            edge,
+            "f3d sketch edge adjacency",
+            "f3d sketch edge adjacency member",
+        )?;
+        ctx.push_hash_group(
+            &mut adjacency,
+            end,
+            edge,
+            "f3d sketch edge adjacency",
+            "f3d sketch edge adjacency member",
+        )?;
     }
     for incident in adjacency.values_mut() {
-        incident.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
+        crate::design::sort::sort_by(ctx, &mut incident[..], |a, b| {
+            edges[*a].0.id().cmp(edges[*b].0.id())
+        })?;
     }
 
-    let mut visited = match ctx {
-        Some(ctx) => ctx.alloc_filled(edges.len(), false, "f3d edge component marks")?,
-        None => alloc_filled(edges.len(), false, "f3d edge component marks")?,
-    };
-    let mut order = (0..edges.len()).collect::<Vec<_>>();
-    order.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
+    let mut visited = ctx.alloc_filled(edges.len(), false, "f3d edge component marks")?;
+    let mut order = Vec::new();
+    for edge in 0..edges.len() {
+        ctx.push_vec(&mut order, edge, "f3d closed sketch edge order")?;
+    }
+    crate::design::sort::sort_by(ctx, &mut order[..], |a, b| {
+        edges[*a].0.id().cmp(edges[*b].0.id())
+    })?;
     for first_edge in order {
         if visited[first_edge] {
             continue;
         }
         let mut component = Vec::new();
-        let mut pending = vec![first_edge];
+        let mut pending = Vec::new();
+        ctx.push_vec(&mut pending, first_edge, "f3d closed sketch pending edge")?;
         let mut component_seen = HashSet::new();
         while let Some(edge) = pending.pop() {
-            if !component_seen.insert(edge) {
+            if !ctx.insert_hash_set(
+                &mut component_seen,
+                edge,
+                "f3d closed sketch component seen",
+            )? {
                 continue;
             }
-            component.push(edge);
+            ctx.push_vec(&mut component, edge, "f3d closed sketch component edge")?;
             for node in edge_nodes[edge] {
-                pending.extend(adjacency[&node].iter().copied());
+                for next in adjacency[&node].iter().copied() {
+                    ctx.push_vec(&mut pending, next, "f3d closed sketch pending edge")?;
+                }
             }
         }
-        let component_nodes = component
+        if component
             .iter()
             .flat_map(|edge| edge_nodes[*edge])
-            .collect::<HashSet<_>>();
-        if component_nodes
-            .iter()
-            .any(|node| adjacency[node].len() != 2)
+            .any(|node| adjacency[&node].len() != 2)
         {
             if component.iter().all(|edge| {
                 matches!(
@@ -2862,19 +3242,22 @@ pub(super) fn closed_sketch_profiles(
                 )
             }) {
                 let branched_profiles =
-                    branched_line_profiles(&component, &edges, &edge_nodes, linear_tolerance);
+                    branched_line_profiles(ctx, &component, &edges, &edge_nodes, linear_tolerance)?;
                 if branched_profiles.is_empty() {
                     if let Some(profile) = tangent_nested_line_profile(
+                        ctx,
                         &component,
                         &edges,
                         &edge_nodes,
                         &adjacency,
                         linear_tolerance,
-                    ) {
-                        profiles.push(profile);
+                    )? {
+                        ctx.push_vec(&mut profiles, profile, "f3d closed sketch tangent profile")?;
                     }
                 } else {
-                    profiles.extend(branched_profiles);
+                    for profile in branched_profiles {
+                        ctx.push_vec(&mut profiles, profile, "f3d closed sketch branched profile")?;
+                    }
                 }
             }
             for edge in component {
@@ -2883,14 +3266,23 @@ pub(super) fn closed_sketch_profiles(
             continue;
         }
 
-        component.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
+        crate::design::sort::sort_by(ctx, &mut component[..], |a, b| {
+            edges[*a].0.id().cmp(edges[*b].0.id())
+        })?;
         let first_edge = component[0];
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
-        let mut profile = vec![SketchEntityUse {
-            entity: edges[first_edge].0.id().clone(),
-            reversed: false,
-        }];
+        let mut profile = Vec::new();
+        let first_id = (edges[first_edge].0.id())
+            .try_clone_for_decode(ctx, "f3d closed sketch component profile id")?;
+        ctx.push_vec(
+            &mut profile,
+            SketchEntityUse {
+                entity: first_id,
+                reversed: false,
+            },
+            "f3d closed sketch component profile member",
+        )?;
         visited[first_edge] = true;
         while current_node != start_node {
             let Some(next_edge) = adjacency[&current_node]
@@ -2905,16 +3297,26 @@ pub(super) fn closed_sketch_profiles(
             let reversed = stored_end == current_node;
             current_node = if reversed { stored_start } else { stored_end };
             visited[next_edge] = true;
-            profile.push(SketchEntityUse {
-                entity: edges[next_edge].0.id().clone(),
-                reversed,
-            });
+            let id = (edges[next_edge].0.id())
+                .try_clone_for_decode(ctx, "f3d closed sketch component profile id")?;
+            ctx.push_vec(
+                &mut profile,
+                SketchEntityUse {
+                    entity: id,
+                    reversed,
+                },
+                "f3d closed sketch component profile member",
+            )?;
         }
         if !profile.is_empty() && component.iter().all(|edge| visited[*edge]) {
-            profiles.push(profile);
+            ctx.push_vec(
+                &mut profiles,
+                profile,
+                "f3d closed sketch component profile",
+            )?;
         }
     }
-    profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
+    crate::design::sort::sort_by(ctx, &mut profiles[..], |a, b| a[0].entity.cmp(&b[0].entity))?;
     Ok(profiles)
 }
 
@@ -2922,27 +3324,41 @@ pub(super) fn closed_sketch_profiles(
 /// is the only adjacency this walk needs: it is built here from `edge_nodes`,
 /// so every half-edge reaches its twin by construction.
 fn branched_line_profiles(
+    ctx: &DecodeContext<'_>,
     component: &[usize],
     edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
     edge_nodes: &[[usize; 2]],
     linear_tolerance: f64,
-) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+) -> Result<Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
     use cadmpeg_ir::sketches::SketchEntityUse;
 
-    let component = component.iter().copied().collect::<HashSet<_>>();
+    let mut component_set = HashSet::new();
+    for edge in component.iter().copied() {
+        ctx.insert_hash_set(
+            &mut component_set,
+            edge,
+            "f3d branched profile component edge",
+        )?;
+    }
     let mut outgoing = HashMap::<usize, Vec<usize>>::new();
-    for edge in &component {
-        outgoing
-            .entry(edge_nodes[*edge][0])
-            .or_default()
-            .push(edge * 2);
-        outgoing
-            .entry(edge_nodes[*edge][1])
-            .or_default()
-            .push(edge * 2 + 1);
+    for edge in &component_set {
+        ctx.push_hash_group(
+            &mut outgoing,
+            edge_nodes[*edge][0],
+            edge * 2,
+            "f3d branched profile outgoing node",
+            "f3d branched profile outgoing edge",
+        )?;
+        ctx.push_hash_group(
+            &mut outgoing,
+            edge_nodes[*edge][1],
+            edge * 2 + 1,
+            "f3d branched profile outgoing node",
+            "f3d branched profile outgoing edge",
+        )?;
     }
     for half_edges in outgoing.values_mut() {
-        half_edges.sort_by(|first, second| {
+        crate::design::sort::sort_by(ctx, &mut half_edges[..], |first, second| {
             let angle = |half_edge: usize| {
                 let edge = half_edge / 2;
                 let [start, end] = edges[edge].1;
@@ -2957,23 +3373,40 @@ fn branched_line_profiles(
                 .total_cmp(&angle(*second))
                 .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
                 .then_with(|| first.cmp(second))
-        });
+        })?;
     }
 
     let mut next = HashMap::new();
     for around in outgoing.values() {
         for (&previous, &twin) in around.iter().zip(around.iter().cycle().skip(1)) {
-            next.insert(twin ^ 1, previous);
+            ctx.insert_hash_map(
+                &mut next,
+                twin ^ 1,
+                previous,
+                "f3d branched profile next half-edge",
+            )
+            .map(|_| ())?;
         }
     }
 
     let mut profiles = Vec::new();
     let mut visited = HashSet::new();
-    let mut starts = component
-        .iter()
-        .flat_map(|edge| [edge * 2, edge * 2 + 1])
-        .collect::<Vec<_>>();
-    starts.sort_by(|a, b| (edges[*a / 2].0.id(), *a % 2).cmp(&(edges[*b / 2].0.id(), *b % 2)));
+    let mut starts = Vec::new();
+    for edge in &component_set {
+        ctx.push_vec(
+            &mut starts,
+            edge * 2,
+            "f3d branched profile start half-edge",
+        )?;
+        ctx.push_vec(
+            &mut starts,
+            edge * 2 + 1,
+            "f3d branched profile start half-edge",
+        )?;
+    }
+    crate::design::sort::sort_by(ctx, &mut starts[..], |a, b| {
+        (edges[*a / 2].0.id(), *a % 2).cmp(&(edges[*b / 2].0.id(), *b % 2))
+    })?;
     for start in starts {
         if visited.contains(&start) {
             continue;
@@ -2982,7 +3415,11 @@ fn branched_line_profiles(
         let mut profile = Vec::new();
         let mut twice_area = 0.0;
         loop {
-            if !visited.insert(current) {
+            if !ctx.insert_hash_set(
+                &mut visited,
+                current,
+                "f3d branched profile visited half-edge",
+            )? {
                 if current != start {
                     profile.clear();
                 }
@@ -2997,18 +3434,24 @@ fn branched_line_profiles(
                 (stored_start, stored_end)
             };
             twice_area += from.u * to.v - from.v * to.u;
-            profile.push(SketchEntityUse {
-                entity: edges[edge].0.id().clone(),
-                reversed,
-            });
+            let id =
+                (edges[edge].0.id()).try_clone_for_decode(ctx, "f3d branched profile entity id")?;
+            ctx.push_vec(
+                &mut profile,
+                SketchEntityUse {
+                    entity: id,
+                    reversed,
+                },
+                "f3d branched profile member",
+            )?;
             current = next[&current];
         }
         if !profile.is_empty() && twice_area > 2.0 * linear_tolerance * linear_tolerance {
-            profiles.push(profile);
+            ctx.push_vec(&mut profiles, profile, "f3d branched profile output")?;
         }
     }
 
-    profiles
+    Ok(profiles)
 }
 
 /// Resolve a tangent nested pair that has one shared corner.
@@ -3022,48 +3465,51 @@ fn branched_line_profiles(
 /// boundary with a tangent notch. Other tangent branch shapes remain
 /// unresolved rather than choosing a profile by geometry alone.
 fn tangent_nested_line_profile(
+    ctx: &DecodeContext<'_>,
     component: &[usize],
     edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
     edge_nodes: &[[usize; 2]],
     adjacency: &HashMap<usize, Vec<usize>>,
     tolerance: f64,
-) -> Option<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+) -> Result<Option<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
     use cadmpeg_ir::sketches::SketchEntityUse;
 
-    let nodes = component
-        .iter()
-        .flat_map(|edge| edge_nodes[*edge])
-        .collect::<HashSet<_>>();
-    let junctions = nodes
-        .iter()
-        .copied()
-        .filter(|node| adjacency[node].len() > 2)
-        .collect::<Vec<_>>();
-    if junctions.len() != 1
-        || nodes
-            .iter()
-            .any(|node| !matches!(adjacency[node].len(), 2 | 4))
-    {
-        return None;
+    let mut junction = None;
+    for edge in component {
+        for node in edge_nodes[*edge] {
+            let degree = adjacency[&node].len();
+            if !matches!(degree, 2 | 4) {
+                return Ok(None);
+            }
+            if degree > 2 {
+                if junction.is_some_and(|existing| existing != node) {
+                    return Ok(None);
+                }
+                junction = Some(node);
+            }
+        }
     }
-    let junction = junctions[0];
+    let Some(junction) = junction else {
+        return Ok(None);
+    };
     if adjacency[&junction].len() != 4 {
-        return None;
+        return Ok(None);
     }
-    let directions = adjacency[&junction]
-        .iter()
-        .map(|edge| {
-            let [start, end] = edges[*edge].1;
-            let (from, to) = if edge_nodes[*edge][0] == junction {
-                (start, end)
-            } else {
-                (end, start)
-            };
-            let (du, dv) = (to.u - from.u, to.v - from.v);
-            let length = du.hypot(dv);
-            (length.is_finite() && length > tolerance).then_some((du / length, dv / length))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut directions = [(0.0, 0.0); 4];
+    for (index, edge) in adjacency[&junction].iter().enumerate() {
+        let [start, end] = edges[*edge].1;
+        let (from, to) = if edge_nodes[*edge][0] == junction {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        let (du, dv) = (to.u - from.u, to.v - from.v);
+        let length = du.hypot(dv);
+        if !length.is_finite() || length <= tolerance {
+            return Ok(None);
+        }
+        directions[index] = (du / length, dv / length);
+    }
     let same_ray = |left: (f64, f64), right: (f64, f64)| {
         let dot = left.0 * right.0 + left.1 * right.1;
         let cross = left.0 * right.1 - left.1 * right.0;
@@ -3079,7 +3525,7 @@ fn tangent_nested_line_profile(
             .count()
             != 1
     }) {
-        return None;
+        return Ok(None);
     }
 
     let mut cycles = Vec::new();
@@ -3098,22 +3544,24 @@ fn tangent_nested_line_profile(
                 .filter(|edge| !used.contains(edge) && edge_nodes[*edge][0] == current);
             let edge = if cycle.is_empty() {
                 if edge_nodes[first_edge][0] != current {
-                    return None;
+                    return Ok(None);
                 }
                 first_edge
             } else {
-                let edge = candidates.next()?;
+                let Some(edge) = candidates.next() else {
+                    return Ok(None);
+                };
                 if candidates.next().is_some() {
                     cycle.clear();
                     break;
                 }
                 edge
             };
-            if !used.insert(edge) {
+            if !ctx.insert_hash_set(&mut used, edge, "f3d tangent profile used edge")? {
                 cycle.clear();
                 break;
             }
-            cycle.push(edge);
+            ctx.push_vec(&mut cycle, edge, "f3d tangent profile cycle edge")?;
             current = edge_nodes[edge][1];
             if current == junction {
                 break;
@@ -3126,36 +3574,38 @@ fn tangent_nested_line_profile(
                 .iter()
                 .any(|candidate: &Vec<usize>| candidate == &cycle)
         {
-            cycles.push(cycle);
+            ctx.push_vec(&mut cycles, cycle, "f3d tangent profile cycle")?;
         }
     }
     if cycles.len() != 2
         || cycles[0].iter().any(|edge| cycles[1].contains(edge))
         || cycles.iter().flatten().count() != component.len()
     {
-        return None;
+        return Ok(None);
     }
 
-    let cycle_points = |cycle: &[usize]| {
-        cycle
-            .iter()
-            .map(|edge| edges[*edge].1[0])
-            .collect::<Vec<_>>()
+    let cycle_points = |cycle: &[usize]| -> Result<Vec<Point2>, CodecError> {
+        let mut points = Vec::new();
+        for edge in cycle {
+            ctx.push_vec(
+                &mut points,
+                edges[*edge].1[0],
+                "f3d tangent profile cycle point",
+            )?;
+        }
+        Ok(points)
     };
-    let points = cycles
-        .iter()
-        .map(|cycle| cycle_points(cycle))
-        .collect::<Vec<_>>();
-    let areas = points
-        .iter()
-        .map(|points| signed_polygon_area(points))
-        .collect::<Vec<_>>();
+    let points = [cycle_points(&cycles[0])?, cycle_points(&cycles[1])?];
+    let areas = [
+        signed_polygon_area(&points[0]),
+        signed_polygon_area(&points[1]),
+    ];
     if areas
         .iter()
         .any(|area| !area.is_finite() || area.abs() <= tolerance * tolerance)
         || areas[0].signum() == areas[1].signum()
     {
-        return None;
+        return Ok(None);
     }
 
     let probe = |cycle: &[usize]| {
@@ -3178,63 +3628,68 @@ fn tangent_nested_line_profile(
     } else if areas[1].abs() > areas[0].abs() && contains(1, 0) {
         1
     } else {
-        return None;
+        return Ok(None);
     };
     let inner = 1 - outer;
 
-    let oriented_cycle = |index: usize, positive: bool| {
+    let mut profile = Vec::new();
+    for (index, positive) in [(outer, true), (inner, false)] {
         let reverse = (areas[index] > 0.0) != positive;
-        if reverse {
-            cycles[index]
-                .iter()
-                .rev()
-                .map(|edge| SketchEntityUse {
-                    entity: edges[*edge].0.id().clone(),
-                    reversed: true,
-                })
-                .collect::<Vec<_>>()
-        } else {
-            cycles[index]
-                .iter()
-                .map(|edge| SketchEntityUse {
-                    entity: edges[*edge].0.id().clone(),
-                    reversed: false,
-                })
-                .collect::<Vec<_>>()
+        for position in 0..cycles[index].len() {
+            let offset = if reverse {
+                cycles[index].len() - 1 - position
+            } else {
+                position
+            };
+            let edge = cycles[index][offset];
+            let entity =
+                (edges[edge].0.id()).try_clone_for_decode(ctx, "f3d tangent profile entity id")?;
+            ctx.push_vec(
+                &mut profile,
+                SketchEntityUse {
+                    entity,
+                    reversed: reverse,
+                },
+                "f3d tangent profile member",
+            )?;
         }
-    };
-    let mut profile = oriented_cycle(outer, true);
-    profile.extend(oriented_cycle(inner, false));
-    let profile_points = profile
-        .iter()
-        .filter_map(|use_| {
-            let entity = edges
-                .iter()
-                .find(|(entity, _)| entity.id() == &use_.entity)?
-                .0;
-            match *entity.geometry.definition() {
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } => {
-                    Some(if use_.reversed {
-                        end.get()
-                    } else {
-                        start.get()
-                    })
-                }
-                _ => None,
-            }
-        })
-        .collect::<Vec<_>>();
-    (profile_points.len() == profile.len()
+    }
+    let mut profile_points = Vec::new();
+    for use_ in &profile {
+        let Some(entity) = edges
+            .iter()
+            .find(|(entity, _)| entity.id() == &use_.entity)
+            .map(|(entity, _)| entity)
+        else {
+            continue;
+        };
+        if let cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } =
+            *entity.geometry.definition()
+        {
+            let point = if use_.reversed {
+                end.get()
+            } else {
+                start.get()
+            };
+            ctx.push_vec(
+                &mut profile_points,
+                point,
+                "f3d tangent profile output point",
+            )?;
+        }
+    }
+    Ok((profile_points.len() == profile.len()
         && signed_polygon_area(&profile_points) > 2.0 * tolerance * tolerance)
-        .then_some(profile)
+        .then_some(profile))
 }
 
 pub(super) fn sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SketchEntity,
-) -> Option<[Point2; 2]> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[Point2; 2]>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match entity.geometry.definition() {
+    Ok(match entity.geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Arc {
             center,
@@ -3268,33 +3723,29 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().raw_points();
-            let weights = curve.pole_rows().weights();
-            let start_parameter = curve.knots()[curve.degree() as usize];
+            let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
+            let start_parameter = curve.knots()[index_from_u32(curve.degree())];
             let end_parameter = curve.knots()[control_points.len()];
-            Some([
-                *cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    curve.degree(),
-                    curve.knots(),
-                    &control_points,
-                    weights.as_deref(),
-                    start_parameter,
-                )
-                .ok()?
-                .as_raw(),
-                *cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    curve.degree(),
-                    curve.knots(),
-                    &control_points,
-                    weights.as_deref(),
-                    end_parameter,
-                )
-                .ok()?
-                .as_raw(),
-            ])
+            let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                curve.degree(),
+                curve.knots(),
+                &control_points,
+                weights.as_deref(),
+                start_parameter,
+            ))?;
+            let end = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                curve.degree(),
+                curve.knots(),
+                &control_points,
+                weights.as_deref(),
+                end_parameter,
+            ))?;
+            start
+                .zip(end)
+                .map(|(start, end)| [*start.as_raw(), *end.as_raw()])
         }
         _ => None,
-    }
+    })
 }
 
 fn sketch_endpoints_close(first: Point2, second: Point2, tolerance: f64) -> bool {

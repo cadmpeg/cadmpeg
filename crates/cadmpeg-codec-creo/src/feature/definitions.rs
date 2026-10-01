@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::{bounded_len, index_from_u32};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use crate::psb;
 use crate::scalar;
@@ -91,14 +92,19 @@ pub(crate) struct FeatureOutline {
     pub(crate) offset: usize,
 }
 
-fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField<Option<f64>>; 6] {
+fn outline_scalars(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Result<[DecodedField<Option<f64>>; 6], CodecError> {
     let mut cursor = 0;
-    std::array::from_fn(|_| {
+    let mut fields = std::array::from_fn(|_| DecodedField {
+        value: None,
+        body: Vec::new(),
+    });
+    for field in &mut fields {
         if cursor >= payload.len() || payload.get(cursor) == Some(&psb::token::NAMED_RECORD) {
-            return DecodedField {
-                value: None,
-                body: Vec::new(),
-            };
+            break;
         }
         let start = cursor;
         let value = if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
@@ -108,11 +114,12 @@ fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField
             cursor += 1;
             None
         };
-        DecodedField {
+        *field = DecodedField {
             value,
-            body: payload[start..cursor].to_vec(),
-        }
-    })
+            body: ctx.copy_retained(&payload[start..cursor], "creo feature outline scalar body")?,
+        };
+    }
+    Ok(fields)
 }
 
 /// Stored state of a solver scalar token.
@@ -232,6 +239,12 @@ pub(crate) struct FeatureVariableTable {
     pub(crate) offset: usize,
 }
 
+#[derive(Debug)]
+pub(crate) struct ReconciledPoints<T> {
+    pub(crate) points: BTreeMap<u32, T>,
+    pub(crate) ambiguous: BTreeSet<u32>,
+}
+
 impl FeatureVariableTable {
     /// Whether every row declared by the table decoded.
     pub(crate) fn is_complete(&self) -> bool {
@@ -274,14 +287,21 @@ impl FeatureVariableTable {
     }
 
     /// Reconcile repeated and complementary section-point rows by identity.
-    pub(crate) fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
-        let point_ids = self
+    pub(crate) fn reconciled_points(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<ReconciledPoints<[Option<f64>; 2]>, CodecError> {
+        let mut point_ids = BTreeSet::new();
+        for row in self
             .rows
             .iter()
-            .filter_map(|row| {
-                matches!(row.variable_type, VariableType::U | VariableType::V).then_some(row.key)
-            })
-            .collect::<BTreeSet<_>>();
+            .filter(|row| matches!(row.variable_type, VariableType::U | VariableType::V))
+        {
+            if !point_ids.contains(&row.key) {
+                ctx.charge_collection_items(1, "creo reconciled point ID nodes")?;
+                point_ids.insert(row.key);
+            }
+        }
         let mut points = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
         for point_id in point_ids {
@@ -289,19 +309,18 @@ impl FeatureVariableTable {
             let mut conflict = false;
             for coordinate in 0..2 {
                 let variable_type = [VariableType::U, VariableType::V][coordinate];
-                let values = self
-                    .rows
-                    .iter()
-                    .filter(|row| row.key == point_id && row.variable_type == variable_type)
-                    .filter_map(|row| row.value.value())
-                    .collect::<Vec<_>>();
-                let Some(first) = values.first().copied() else {
+                let values = || {
+                    self.rows
+                        .iter()
+                        .filter(|row| row.key == point_id && row.variable_type == variable_type)
+                        .filter_map(|row| row.value.value())
+                };
+                let Some(first) = values().next() else {
                     continue;
                 };
-                let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-                if values
-                    .iter()
-                    .all(|candidate| (*candidate - first).abs() <= EPS_PARAMETER_AGREEMENT * scale)
+                let scale = values().map(f64::abs).fold(1.0, f64::max);
+                if values()
+                    .all(|candidate| (candidate - first).abs() <= EPS_PARAMETER_AGREEMENT * scale)
                 {
                     point[coordinate] = Some(first);
                 } else {
@@ -309,12 +328,14 @@ impl FeatureVariableTable {
                 }
             }
             if conflict {
+                ctx.charge_collection_items(1, "creo ambiguous point nodes")?;
                 ambiguous.insert(point_id);
             } else {
+                ctx.charge_collection_items(1, "creo reconciled point nodes")?;
                 points.insert(point_id, point);
             }
         }
-        (points, ambiguous)
+        Ok(ReconciledPoints { points, ambiguous })
     }
 }
 
@@ -652,8 +673,11 @@ impl FeatureTrimEntityTable {
 
     /// Whether each retained external entity identifier occurs once.
     pub(crate) fn has_unique_external_ids(&self) -> bool {
-        let mut ids = BTreeSet::new();
-        self.rows.iter().all(|row| ids.insert(row.external_id))
+        self.rows.iter().enumerate().all(|(index, row)| {
+            self.rows[..index]
+                .iter()
+                .all(|previous| previous.external_id != row.external_id)
+        })
     }
 }
 
@@ -916,14 +940,20 @@ pub(crate) enum DimensionValue {
 }
 
 impl DimensionValue {
-    fn decoded(value: Option<f64>, body: &[u8]) -> Self {
-        match value {
+    fn decoded(
+        ctx: &DecodeContext<'_>,
+        value: Option<f64>,
+        body: &[u8],
+    ) -> Result<Self, CodecError> {
+        Ok(match value {
             Some(value) => Self::Resolved(value),
             None => match body {
-                [0x00, _, _] | [0x01, _, _, _] => Self::UnresolvedToken(body.to_vec()),
+                [0x00, _, _] | [0x01, _, _, _] => Self::UnresolvedToken(
+                    ctx.copy_retained(body, "creo dimension unresolved token")?,
+                ),
                 _ => Self::Undefined,
             },
-        }
+        })
     }
 
     pub(crate) fn resolved(&self) -> Option<f64> {
@@ -1079,7 +1109,9 @@ impl<T> SolverSubtable<T> {
 
     pub(crate) fn is_complete(&self) -> bool {
         match self {
-            Self::Declared { header, rows } => header.declared_rows() == rows.len(),
+            Self::Declared { header, rows } => {
+                cadmpeg_core::decode::index_from_u32(header.declared_count) == rows.len()
+            }
             Self::Unframed(_) => false,
         }
     }
@@ -1089,7 +1121,7 @@ impl<T> SolverSubtable<T> {
     pub(crate) fn missing_rows(&self) -> usize {
         match self {
             Self::Declared { header, rows } => {
-                let declared = header.declared_rows();
+                let declared = cadmpeg_core::decode::index_from_u32(header.declared_count);
                 // The two cases the doc sentence above names: a declaration
                 // above the decoded count is the shortfall, and rows decoded
                 // past the declaration are an over-run, not a shortfall.
@@ -1156,22 +1188,6 @@ pub(crate) struct FeatureSolverTableHeader {
     pub(crate) entity_ref: u32,
     /// Byte offset of the table label or positional array opener.
     pub(crate) offset: usize,
-}
-
-/// [`FeatureSolverTableHeader::declared_rows`] widens the stored 32-bit
-/// declaration to a row count. The widening is exact on every target this
-/// crate builds for, and it justifies nothing else.
-const _: () = assert!(usize::BITS >= u32::BITS);
-
-impl FeatureSolverTableHeader {
-    /// The declaration as a row count.
-    ///
-    /// `declared_count` is the `u32` the `f8` opener stored, which is what the
-    /// native record reproduces; the module assertion above proves the
-    /// widening exact, so this states no refusal.
-    fn declared_rows(&self) -> usize {
-        self.declared_count as usize
-    }
 }
 
 /// One entity incidence within a section solver `skamp_ptr` row.
@@ -1629,14 +1645,19 @@ fn decode_variable_guess(
 }
 
 fn variable_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureVariableTable> {
-    let table = find_bytes(payload, b"var_arr\0", start, end)?;
+) -> Result<Option<FeatureVariableTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"var_arr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"var_arr\0".len();
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
@@ -1646,7 +1667,9 @@ fn variable_table(
     } else {
         None
     };
-    let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
+    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+        return Ok(None);
+    };
     let named_row = (|| {
         let type_label = find_bytes(payload, b"type\0", cursor, close)?;
         let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
@@ -1657,29 +1680,41 @@ fn variable_table(
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
         let (guess, guess_end) =
             decode_section_coordinate_scalar(payload, guess_label, close, cache);
-        Some(FeatureVariableRow {
-            variable_type: variable_type.into(),
-            key,
-            value,
-            value_body: payload[value_label..value_end].to_vec(),
-            guess,
-            guess_body: payload[guess_label..guess_end].to_vec(),
-            known: named_compact_int(payload, b"known\0", cursor, close),
-            homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
-            uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
-            // The row header is the two bytes before its type label. A label
-            // below offset 2 states a header outside the payload and refuses
-            // the row; the label sits at or after the table opener plus eight,
-            // so the bound holds for every table this scanner reaches.
-            offset: type_label.checked_sub(2)?,
-        })
+        Some((
+            FeatureVariableRow {
+                variable_type: variable_type.into(),
+                key,
+                value,
+                value_body: Vec::new(),
+                guess,
+                guess_body: Vec::new(),
+                known: named_compact_int(payload, b"known\0", cursor, close),
+                homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
+                uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
+                // The row header is the two bytes before its type label. A label
+                // below offset 2 states a header outside the payload and refuses
+                // the row; the label sits at or after the table opener plus eight,
+                // so the bound holds for every table this scanner reaches.
+                offset: type_label.checked_sub(2)?,
+            },
+            (value_label, value_end),
+            (guess_label, guess_end),
+        ))
     })();
     let (_, after_close_ref) = psb::compact_int(payload, close + 2);
     cursor = after_close_ref;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
-    let mut rows = named_row.into_iter().collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    if let Some((mut row, (value_start, value_end), (guess_start, guess_end))) = named_row {
+        row.value_body =
+            ctx.copy_retained(&payload[value_start..value_end], "creo variable value body")?;
+        row.guess_body =
+            ctx.copy_retained(&payload[guess_start..guess_end], "creo variable guess body")?;
+        ctx.reserve_vec(&mut rows, 1, "creo variable rows")?;
+        rows.push(row);
+    }
     // Each row consumes at least one byte, so the declared count cannot admit
     // more rows than the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
@@ -1703,13 +1738,14 @@ fn variable_table(
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let value_body = payload[value_start..cursor].to_vec();
+        let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
-        let guess_body = payload[guess_start..cursor].to_vec();
-        let mut trailing = Vec::new();
-        while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
+        let guess_end = cursor;
+        let mut trailing = [None; 3];
+        let mut trailing_count = 0;
+        while cursor < end && payload[cursor] != 0xe2 && trailing_count < 3 {
             if payload[cursor] >= 0xc0 {
                 break;
             }
@@ -1717,42 +1753,47 @@ fn variable_table(
             if next == cursor {
                 break;
             }
-            trailing.push(field);
+            trailing[trailing_count] = Some(field);
+            trailing_count += 1;
             cursor = next;
         }
-        let row = FeatureVariableRow {
-            variable_type: variable_type.into(),
-            key,
-            value,
-            value_body,
-            guess,
-            guess_body,
-            known: trailing.first().copied(),
-            homogeneity: trailing.get(1).copied(),
-            uvar_id: trailing.get(2).copied(),
-            offset: row_offset,
-        };
         let Some(delimiter) = payload[cursor..end].iter().position(|&byte| byte == 0xe2) else {
             break;
         };
         cursor += delimiter + 1;
+        let row = FeatureVariableRow {
+            variable_type: variable_type.into(),
+            key,
+            value,
+            value_body: ctx
+                .copy_retained(&payload[value_start..value_end], "creo variable value body")?,
+            guess,
+            guess_body: ctx
+                .copy_retained(&payload[guess_start..guess_end], "creo variable guess body")?,
+            known: trailing[0],
+            homogeneity: trailing[1],
+            uvar_id: trailing[2],
+            offset: row_offset,
+        };
+        ctx.reserve_vec(&mut rows, 1, "creo variable rows")?;
         rows.push(row);
     }
-    Some(FeatureVariableTable {
+    Ok(Some(FeatureVariableTable {
         declared_count,
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn positional_variable_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureVariableTable> {
+) -> Result<Option<FeatureVariableTable>, CodecError> {
     let mut candidates = (start..end).filter_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -1765,16 +1806,21 @@ fn positional_variable_table(
                 table,
                 declared_count,
                 after_reference + 2,
-                payload[after_count + 1..after_reference].to_vec(),
+                &payload[after_count + 1..after_reference],
             )
         })
     });
-    let (table, declared_count, mut cursor, reference_bytes) = candidates.next()?;
+    let Some((table, declared_count, mut cursor, reference_bytes)) = candidates.next() else {
+        return Ok(None);
+    };
     // A positional definition has one variable array. Do not bind the first
     // header when another array in the same bounded definition matches it.
-    candidates.next().is_none().then_some(())?;
-    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    if candidates.next().is_some() || payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Ok(None);
+    }
+    let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
+        return Ok(None);
+    };
     cursor = after_row_class;
 
     let row_limit = index_from_u32(declared_count);
@@ -1782,10 +1828,9 @@ fn positional_variable_table(
     // count cannot exceed the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
     let capacity = bounded_len(u64::from(declared_count), 1, window).unwrap_or(0);
-    let mut rows = Vec::with_capacity(capacity);
-    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
-    prototype_separator.extend_from_slice(&reference_bytes);
-    prototype_separator.push(0xe2);
+    let mut rows = Vec::new();
+    ctx.reserve_vec(&mut rows, capacity, "creo variable rows")?;
+    let prototype_separator_len = 2 + reference_bytes.len() + 1;
     'rows: while cursor < end && rows.len() < row_limit {
         let row_offset = cursor;
         let (variable_type, next) = psb::compact_int(payload, cursor);
@@ -1795,13 +1840,14 @@ fn positional_variable_table(
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let value_body = payload[value_start..cursor].to_vec();
+        let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
-        let guess_body = payload[guess_start..cursor].to_vec();
-        let mut trailing = Vec::with_capacity(3);
-        while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
+        let guess_end = cursor;
+        let mut trailing = [None; 3];
+        let mut trailing_count = 0;
+        while cursor < end && payload[cursor] != 0xe2 && trailing_count < 3 {
             if payload[cursor] >= 0xc0 {
                 break 'rows;
             }
@@ -1809,29 +1855,20 @@ fn positional_variable_table(
             if next <= cursor {
                 break 'rows;
             }
-            trailing.push(field);
+            trailing[trailing_count] = Some(field);
+            trailing_count += 1;
             cursor = next;
         }
-        let row = FeatureVariableRow {
-            variable_type: variable_type.into(),
-            key,
-            value,
-            value_body,
-            guess,
-            guess_body,
-            known: trailing.first().copied(),
-            homogeneity: trailing.get(1).copied(),
-            uvar_id: trailing.get(2).copied(),
-            offset: row_offset,
-        };
         if rows.len() + 1 < row_limit {
             if rows.is_empty() {
-                if payload.get(cursor..cursor + prototype_separator.len())
-                    != Some(prototype_separator.as_slice())
+                if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
+                    || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
+                        != Some(reference_bytes)
+                    || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
                 {
                     break;
                 }
-                cursor += prototype_separator.len();
+                cursor += prototype_separator_len;
             } else {
                 if payload.get(cursor) != Some(&0xe2) {
                     break;
@@ -1839,14 +1876,28 @@ fn positional_variable_table(
                 cursor += 1;
             }
         }
+        let row = FeatureVariableRow {
+            variable_type: variable_type.into(),
+            key,
+            value,
+            value_body: ctx
+                .copy_retained(&payload[value_start..value_end], "creo variable value body")?,
+            guess,
+            guess_body: ctx
+                .copy_retained(&payload[guess_start..guess_end], "creo variable guess body")?,
+            known: trailing[0],
+            homogeneity: trailing[1],
+            uvar_id: trailing[2],
+            offset: row_offset,
+        };
         rows.push(row);
     }
-    Some(FeatureVariableTable {
+    Ok(Some(FeatureVariableTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
@@ -1906,109 +1957,133 @@ fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Optio
     next_segment_int(payload, offset).map(Some).ok_or(())
 }
 
-fn segment_slots(payload: &[u8], offset: &mut usize, count: usize) -> Option<Vec<Option<u32>>> {
-    let mut values = Vec::with_capacity(count);
-    while values.len() < count {
+fn segment_slots(payload: &[u8], offset: &mut usize, count: usize) -> Option<[Option<u32>; 7]> {
+    (count <= 7).then_some(())?;
+    let mut values = [None; 7];
+    let mut filled = 0;
+    while filled < count {
         match *payload.get(*offset)? {
             0xe4 => {
-                values.push(Some(1));
+                values[filled] = Some(1);
+                filled += 1;
                 *offset += 1;
             }
             0xe5 => {
-                (values.len() + 2 <= count).then_some(())?;
-                values.extend([Some(0), Some(0)]);
+                (filled + 2 <= count).then_some(())?;
+                values[filled..filled + 2].fill(Some(0));
+                filled += 2;
                 *offset += 1;
             }
             0xe6 => {
-                (values.len() + 3 <= count).then_some(())?;
-                values.extend([Some(0), Some(0), Some(0)]);
+                (filled + 3 <= count).then_some(())?;
+                values[filled..filled + 3].fill(Some(0));
+                filled += 3;
                 *offset += 1;
             }
             0xf6 => {
-                values.push(None);
+                filled += 1;
                 *offset += 1;
             }
-            _ => values.push(Some(next_segment_int(payload, offset)?)),
+            _ => {
+                values[filled] = Some(next_segment_int(payload, offset)?);
+                filled += 1;
+            }
         }
     }
     Some(values)
 }
 
-fn equation_argument_slots(payload: &[u8], offset: &mut usize) -> Option<Vec<Option<u32>>> {
+fn equation_argument_slots(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Option<([Option<u32>; 3], usize)> {
     match *payload.get(*offset)? {
         0xe4 => {
             *offset += 1;
-            Some(vec![Some(1)])
+            Some(([Some(1), None, None], 1))
         }
         0xe5 => {
             *offset += 1;
-            Some(vec![Some(0), Some(0)])
+            Some(([Some(0), Some(0), None], 2))
         }
         0xe6 => {
             *offset += 1;
-            Some(vec![Some(0), Some(0), Some(0)])
+            Some(([Some(0), Some(0), Some(0)], 3))
         }
         0xf6 => {
             *offset += 1;
-            Some(vec![None])
+            Some(([None; 3], 1))
         }
-        _ => Some(vec![Some(next_solver_int(payload, offset)?)]),
+        _ => Some(([Some(next_solver_int(payload, offset)?), None, None], 1)),
     }
 }
 
 fn equation_arguments(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: &mut usize,
     end: usize,
     explicit_count: Option<usize>,
-) -> Option<Vec<Option<u32>>> {
+) -> Result<Option<Vec<Option<u32>>>, CodecError> {
     let mut arguments = Vec::new();
     while match explicit_count {
         Some(count) => arguments.len() < count,
         None => *offset < end && payload.get(*offset) != Some(&0xf6),
     } {
         let before = *offset;
-        let slots = equation_argument_slots(payload, offset)?;
+        let Some((slots, slot_count)) = equation_argument_slots(payload, offset) else {
+            return Ok(None);
+        };
         if *offset <= before
             || *offset > end
-            || explicit_count.is_some_and(|count| arguments.len() + slots.len() > count)
+            || explicit_count.is_some_and(|count| arguments.len() + slot_count > count)
         {
-            return None;
+            return Ok(None);
         }
-        arguments.extend(slots);
+        ctx.reserve_vec(&mut arguments, slot_count, "creo equation arguments")?;
+        arguments.extend_from_slice(&slots[..slot_count]);
     }
-    explicit_count
+    Ok(explicit_count
         .is_none_or(|count| arguments.len() == count)
-        .then_some(arguments)
+        .then_some(arguments))
 }
 
 /// Decode the structurally framed `eqtn_arr` solver table in one bounded
 /// feature definition.
 pub(crate) fn equation_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<FeatureEquationTable> {
+) -> Result<Option<FeatureEquationTable>, CodecError> {
     if start > end || end > payload.len() {
-        return None;
+        return Ok(None);
     }
-    let table = find_bytes(payload, b"eqtn_arr\0", start, end)?;
+    let Some(table) = find_bytes(payload, b"eqtn_arr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"eqtn_arr\0".len();
     if payload.get(cursor) == Some(&0xf2) {
         cursor += 1;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-    let (declared_count, after_count) = next_bounded_compact_int(payload, cursor + 1)?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
+    let Some((declared_count, after_count)) = next_bounded_compact_int(payload, cursor + 1) else {
+        return Ok(None);
+    };
     cursor = after_count;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-        let (entity_ref, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        let Ok((entity_ref, next)) = psb::reference_id(payload, cursor + 1) else {
+            return Ok(None);
+        };
         cursor = next;
         Some(entity_ref)
     } else {
         None
     };
     if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
-        return None;
+        return Ok(None);
     }
     cursor += 2;
 
@@ -2022,17 +2097,26 @@ pub(crate) fn equation_table(
     .min()
     .unwrap_or(end);
     let prototype_start = cursor;
-    let prototype_reference = find_bytes(
+    let Some(prototype_reference) = find_bytes(
         payload,
         &[0xf1, psb::token::ENTITY_REF],
         prototype_start,
         rows_end,
+    ) else {
+        return Ok(None);
+    };
+    let Ok((_, after_prototype_reference)) = psb::reference_id(payload, prototype_reference + 2)
+    else {
+        return Ok(None);
+    };
+    if payload.get(after_prototype_reference) != Some(&0xe2) {
+        return Ok(None);
+    }
+    let prototype_end = after_prototype_reference + 1;
+    let prototype_body = ctx.copy_retained(
+        &payload[prototype_start..prototype_end],
+        "creo equation prototype body",
     )?;
-    let (_, after_prototype_reference) =
-        psb::reference_id(payload, prototype_reference + 2).ok()?;
-    let prototype_end = (payload.get(after_prototype_reference) == Some(&0xe2))
-        .then_some(after_prototype_reference + 1)?;
-    let prototype_body = payload[prototype_start..prototype_end].to_vec();
     cursor = prototype_end;
 
     let mut rows = Vec::new();
@@ -2045,7 +2129,9 @@ pub(crate) fn equation_table(
             break;
         };
         let explicit_argument_count = if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
-            let (count, next) = next_bounded_compact_int(payload, cursor + 1)?;
+            let Some((count, next)) = next_bounded_compact_int(payload, cursor + 1) else {
+                return Ok(None);
+            };
             cursor = next;
             Some(count)
         } else {
@@ -2053,15 +2139,22 @@ pub(crate) fn equation_table(
         };
         let arguments_start = cursor;
         let explicit_argument_count_usize = match explicit_argument_count {
-            Some(count) => Some(usize::try_from(count).ok()?),
+            Some(count) => {
+                let Some(count) = usize::try_from(count).ok() else {
+                    return Ok(None);
+                };
+                Some(count)
+            }
             None => None,
         };
         let Some(arguments) = equation_arguments(
+            ctx,
             payload,
             &mut cursor,
             rows_end,
             explicit_argument_count_usize,
-        ) else {
+        )?
+        else {
             break;
         };
         let arguments_body_end = cursor;
@@ -2070,7 +2163,6 @@ pub(crate) fn equation_table(
             break;
         }
         cursor += 1;
-        let auxiliary_body = payload[auxiliary_start..cursor].to_vec();
         let row_end = if payload.get(cursor) == Some(&0xe2) {
             cursor += 1;
             cursor
@@ -2081,83 +2173,83 @@ pub(crate) fn equation_table(
         } else {
             break;
         };
+        let arguments_body = ctx.copy_retained(
+            &payload[arguments_start..arguments_body_end],
+            "creo equation argument body",
+        )?;
+        let auxiliary_body = ctx.copy_retained(
+            &payload[auxiliary_start..=auxiliary_start],
+            "creo equation auxiliary body",
+        )?;
+        let body = ctx.copy_retained(&payload[row_start..row_end], "creo equation row body")?;
+        ctx.reserve_vec(&mut rows, 1, "creo equation rows")?;
         rows.push(FeatureEquation {
             equation_id,
             function_id,
             explicit_argument_count,
             arguments,
-            arguments_body: payload[arguments_start..arguments_body_end].to_vec(),
+            arguments_body,
             auxiliary_body,
-            body: payload[row_start..row_end].to_vec(),
+            body,
             offset: row_start,
         });
     }
 
-    Some(FeatureEquationTable {
+    Ok(Some(FeatureEquationTable {
         declared_count,
         entity_ref,
         prototype_body,
         rows,
         offset: table,
-    })
+    }))
 }
 
 /// Decode instantiated placement-instruction rows from one bounded feature
 /// definition.
 pub(crate) fn placement_instructions(
     definition: &FeatureDefinition,
-) -> Vec<FeaturePlacementInstruction> {
+) -> impl Iterator<Item = FeaturePlacementInstruction> + '_ {
     placement_instruction_rows(&definition.body, definition.offset)
 }
 
 fn placement_instruction_rows(
     payload: &[u8],
     definition_offset: usize,
-) -> Vec<FeaturePlacementInstruction> {
-    let Some(table_class) =
-        named_array_class(payload, b"place_instruction_ptrs\0", 0, payload.len())
-    else {
-        return Vec::new();
-    };
-    let mut rows = Vec::new();
-    for marker in 0..payload.len() {
+) -> impl Iterator<Item = FeaturePlacementInstruction> + '_ {
+    let table_class = named_array_class(payload, b"place_instruction_ptrs\0", 0, payload.len());
+    (0..payload.len()).filter_map(move |marker| {
+        let table_class = table_class?;
         if payload.get(marker..marker + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
-            continue;
+            return None;
         }
         let Ok((class, after_class)) = psb::reference_id(payload, marker + 2) else {
-            continue;
+            return None;
         };
         if class != table_class || payload.get(after_class) != Some(&psb::token::COMPOUND_CLOSE) {
-            continue;
+            return None;
         }
         let mut cursor = after_class + 1;
-        let Some(kind) = next_solver_int(payload, &mut cursor) else {
-            continue;
-        };
+        let kind = next_solver_int(payload, &mut cursor)?;
         let zero_offset = payload.get(cursor) == Some(&0x18);
         if !zero_offset {
-            continue;
+            return None;
         }
         cursor += 1;
         let Ok(dimension_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Ok(reference_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Ok(geometry1_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Ok(geometry2_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
-        let Some(member1) = next_segment_int(payload, &mut cursor) else {
-            continue;
-        };
-        let Some(member2) = next_segment_int(payload, &mut cursor) else {
-            continue;
-        };
-        rows.push(FeaturePlacementInstruction {
+        let member1 = next_segment_int(payload, &mut cursor)?;
+        let member2 = next_segment_int(payload, &mut cursor)?;
+        Some(FeaturePlacementInstruction {
             kind,
             zero_offset,
             dimension_id,
@@ -2167,13 +2259,19 @@ fn placement_instruction_rows(
             member1,
             member2,
             offset: definition_offset + marker,
-        });
-    }
-    rows
+        })
+    })
 }
 
-fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegmentTable> {
-    let table = find_bytes(payload, b"segtab_ptr\0", start, end)?;
+fn segment_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureSegmentTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"segtab_ptr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"segtab_ptr\0".len();
     while payload
         .get(cursor)
@@ -2181,21 +2279,27 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     {
         cursor += 1;
     }
-    segment_table_body(payload, table, cursor, end, PrototypeRow::Present)
+    segment_table_body(ctx, payload, table, cursor, end, PrototypeRow::Present)
 }
 
 fn positional_segment_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<FeatureSegmentTable> {
+) -> Result<Option<FeatureSegmentTable>, CodecError> {
     const NAME_WINDOW: usize = 256;
     let name_search_end = start
         .checked_add(NAME_WINDOW)
         .map_or(end, |window_end| window_end.min(end));
-    let name_end = find_bytes(payload, b"S2D", start, name_search_end)?;
-    let cursor = payload[name_end..end].iter().position(|&byte| byte == 0)? + name_end + 1;
-    segment_table_body(payload, cursor, cursor, end, PrototypeRow::Elided)
+    let Some(name_end) = find_bytes(payload, b"S2D", start, name_search_end) else {
+        return Ok(None);
+    };
+    let Some(nul) = payload[name_end..end].iter().position(|&byte| byte == 0) else {
+        return Ok(None);
+    };
+    let cursor = nul + name_end + 1;
+    segment_table_body(ctx, payload, cursor, cursor, end, PrototypeRow::Elided)
 }
 
 /// Whether a segment table's declared count includes an elided prototype row.
@@ -2208,14 +2312,17 @@ enum PrototypeRow {
 }
 
 fn segment_table_body(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     table: usize,
     mut cursor: usize,
     end: usize,
     prototype_row: PrototypeRow,
-) -> Option<FeatureSegmentTable> {
+) -> Result<Option<FeatureSegmentTable>, CodecError> {
     let has_elided_prototype = prototype_row == PrototypeRow::Elided;
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
@@ -2225,14 +2332,16 @@ fn segment_table_body(
     } else {
         None
     };
-    let (close, after_close_ref) = (cursor..end).find_map(|offset| {
+    let Some((close, after_close_ref)) = (cursor..end).find_map(|offset| {
         (payload.get(offset..offset + 2) == Some(&[0xf2, psb::token::ENTITY_REF])).then_some(())?;
         let (class, after_reference) = psb::reference_id(payload, offset + 2).ok()?;
         (entity_ref.is_none_or(|expected| class == expected)
             && payload.get(after_reference) == Some(&0xe2))
         .then_some((offset, after_reference))
-    })?;
-    let named_values = |label: &[u8], count: usize| -> Option<(usize, Vec<Option<u32>>)> {
+    }) else {
+        return Ok(None);
+    };
+    let named_values = |label: &[u8], count: usize| -> Option<(usize, [Option<u32>; 7])> {
         let offset = find_bytes(payload, label, cursor, close)?;
         let mut p = offset + label.len();
         if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
@@ -2285,19 +2394,27 @@ fn segment_table_body(
     .filter_map(|label| find_bytes(payload, label, cursor, end))
     .min()
     .unwrap_or(end);
-    let mut rows = named_row
-        .and_then(typed_segment_row)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    if let Some(row) = named_row.and_then(typed_segment_row) {
+        ctx.reserve_vec(&mut rows, 1, "creo segment rows")?;
+        rows.push(row);
+    }
     let first_row = cursor;
     // The declared count of an elided-prototype table counts the prototype row
     // that the body does not carry. A declared count below that one row states
     // a body-row count the table cannot hold, and refuses the table.
     let declared_body_rows = match prototype_row {
-        PrototypeRow::Elided => declared_count.checked_sub(1)?,
+        PrototypeRow::Elided => {
+            let Some(count) = declared_count.checked_sub(1) else {
+                return Ok(None);
+            };
+            count
+        }
         PrototypeRow::Present => declared_count,
     };
-    let row_limit = usize::try_from(declared_body_rows).ok()?;
+    let Ok(row_limit) = usize::try_from(declared_body_rows) else {
+        return Ok(None);
+    };
     while cursor < region_end && rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
@@ -2322,9 +2439,7 @@ fn segment_table_body(
             cursor += 1;
             continue;
         };
-        let Some(prefix) = segment_slots(payload, &mut p, 7)
-            .and_then(|values| <[Option<u32>; 7]>::try_from(values).ok())
-        else {
+        let Some(prefix) = segment_slots(payload, &mut p, 7) else {
             cursor += 1;
             continue;
         };
@@ -2348,9 +2463,7 @@ fn segment_table_body(
             };
             values[0]
         };
-        let Some(suffix) = segment_slots(payload, &mut p, 3)
-            .and_then(|values| <[Option<u32>; 3]>::try_from(values).ok())
-        else {
+        let Some(suffix) = segment_slots(payload, &mut p, 3) else {
             cursor += 1;
             continue;
         };
@@ -2361,7 +2474,7 @@ fn segment_table_body(
             continue;
         };
         if payload.get(p) == Some(&0xe2) {
-            if let Some(row) = typed_segment_row(FeatureOpaqueSegment {
+            if let Some(mut row) = typed_segment_row(FeatureOpaqueSegment {
                 kind,
                 directions,
                 point_ids: [point0, point1],
@@ -2371,9 +2484,21 @@ fn segment_table_body(
                 radius_ref,
                 radius2_ref,
                 external_id,
-                body: payload[row_start..=p].to_vec(),
+                body: Vec::new(),
                 offset: row_start,
             }) {
+                match &mut row {
+                    SegmentRow::Opaque(opaque) => {
+                        opaque.body =
+                            ctx.copy_retained(&payload[row_start..=p], "creo segment row body")?;
+                    }
+                    SegmentRow::Ordinary(segment) => {
+                        segment.body =
+                            ctx.copy_retained(&payload[row_start..=p], "creo segment row body")?;
+                    }
+                    _ => {}
+                }
+                ctx.reserve_vec(&mut rows, 1, "creo segment rows")?;
                 rows.push(row);
             }
             cursor = p + 1;
@@ -2381,13 +2506,13 @@ fn segment_table_body(
             cursor += 1;
         }
     }
-    Some(FeatureSegmentTable {
+    Ok(Some(FeatureSegmentTable {
         declared_count,
         has_elided_prototype,
         entity_ref,
-        rows: rows.into_iter().collect(),
+        rows: SegmentRows::from_parsed_rows(ctx, rows)?,
         offset: table,
-    })
+    }))
 }
 
 fn typed_segment_row(row: FeatureOpaqueSegment) -> Option<SegmentRow> {
@@ -2514,11 +2639,20 @@ fn typed_segment_row(row: FeatureOpaqueSegment) -> Option<SegmentRow> {
     }))
 }
 
-fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureTrimEntityTable> {
-    let table = find_bytes(payload, b"ent_tab\0", start, end)?;
+fn trim_entity_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureTrimEntityTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"ent_tab\0", start, end) else {
+        return Ok(None);
+    };
     let header = trim_table_header(payload, b"ent_tab\0", start, end);
-    let prototype = find_bytes(payload, b"entry_ptr(entity_entry)", table, end)?;
-    let mut cursor = header
+    let Some(prototype) = find_bytes(payload, b"entry_ptr(entity_entry)", table, end) else {
+        return Ok(None);
+    };
+    let Some(mut cursor) = header
         .and_then(|header| {
             (prototype..end).find_map(|offset| {
                 (payload.get(offset..offset + 3) == Some(&[0xf4, 0x04, psb::token::ENTITY_REF]))
@@ -2532,15 +2666,26 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
             let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], prototype, end)?;
             let (_, after_reference) = psb::reference_id(payload, close + 2).ok()?;
             Some(after_reference)
-        })?;
+        })
+    else {
+        return Ok(None);
+    };
     if payload.get(cursor) == Some(&0xe3) {
         cursor += 1;
     }
     let first_row = cursor;
     let region_end = find_bytes(payload, b"vert_tab", cursor, end).unwrap_or(end);
-    let buckets = header.map_or_else(Vec::new, |header| {
-        trim_buckets(payload, table, region_end, header, TrimEntryKind::Entity)
-    });
+    let buckets = match header {
+        Some(header) => trim_buckets(
+            ctx,
+            payload,
+            table,
+            region_end,
+            header,
+            TrimEntryKind::Entity,
+        )?,
+        None => Vec::new(),
+    };
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     while cursor < region_end {
@@ -2559,7 +2704,11 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
             (external_id, start_vertex, end_vertex)
         {
             if external_id != 0 && payload.get(p) == Some(&0) {
-                seen.insert(external_id);
+                if !seen.contains(&external_id) {
+                    ctx.charge_collection_items(1, "creo trim entity ID nodes")?;
+                    seen.insert(external_id);
+                }
+                ctx.reserve_vec(&mut rows, 1, "creo trim entity rows")?;
                 rows.push(FeatureTrimEntity {
                     external_id,
                     mode,
@@ -2573,15 +2722,22 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
         }
         cursor += 1;
     }
-    Some(FeatureTrimEntityTable {
+    let mut solved_external_ids = Vec::new();
+    ctx.reserve_vec(
+        &mut solved_external_ids,
+        seen.len(),
+        "creo trim entity solved IDs",
+    )?;
+    solved_external_ids.extend(seen);
+    Ok(Some(FeatureTrimEntityTable {
         declared_count: header.map(|header| header.declared_count),
         entity_ref: header.map(|header| header.classes.table),
         entry_ref: header.map(|header| header.classes.entry),
         buckets,
-        solved_external_ids: seen.into_iter().collect(),
+        solved_external_ids,
         rows,
         offset: table,
-    })
+    }))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2612,36 +2768,39 @@ struct TrimBucketStart {
 }
 
 fn trim_buckets(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     table: usize,
     end: usize,
     header: TrimTableHeader,
     kind: TrimEntryKind,
-) -> Vec<FeatureTrimBucket> {
+) -> Result<Vec<FeatureTrimBucket>, CodecError> {
     if header.declared_count == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(label) = find_bytes(payload, b"bucket_index\0", table, end) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let first_offset = label + b"bucket_index\0".len();
     let (Some(first), mut cursor) = segment_int(payload, first_offset) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if first != 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some((first_count, first_body)) =
         named_trim_bucket_count(payload, cursor, end, header.classes.bucket)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut starts = vec![TrimBucketStart {
+    let mut starts = Vec::new();
+    ctx.reserve_vec(&mut starts, 1, "creo trim bucket starts")?;
+    starts.push(TrimBucketStart {
         index: first,
         declared_entry_count: first_count,
         offset: first_offset,
         body_start: first_body,
-    }];
+    });
     while starts.len() < index_from_u32(header.declared_count) {
         let Some((offset, index, next)) = (cursor..end).find_map(|offset| {
             (preceding_byte(payload, offset) == Some(0xe2)).then_some(())?;
@@ -2659,6 +2818,7 @@ fn trim_buckets(
         else {
             break;
         };
+        ctx.reserve_vec(&mut starts, 1, "creo trim bucket starts")?;
         starts.push(TrimBucketStart {
             index,
             declared_entry_count,
@@ -2667,31 +2827,31 @@ fn trim_buckets(
         });
         cursor = next;
     }
-    starts
-        .iter()
-        .enumerate()
-        .map(|(position, start)| {
-            // Every bucket start after the first follows an 0xe2 separator, so
-            // it has a preceding byte.
-            let body_end = starts
-                .get(position + 1)
-                .and_then(|next| next.offset.checked_sub(1))
-                .unwrap_or(end);
-            FeatureTrimBucket {
-                index: start.index,
-                declared_entry_count: start.declared_entry_count,
-                decoded_entry_count: trim_bucket_entry_count(
-                    payload,
-                    start.body_start,
-                    body_end,
-                    header.classes,
-                    kind,
-                    position == 0,
-                ),
-                offset: start.offset,
-            }
-        })
-        .collect()
+    let mut buckets = Vec::new();
+    ctx.reserve_vec(&mut buckets, starts.len(), "creo trim buckets")?;
+    for (position, start) in starts.iter().enumerate() {
+        // Every bucket start after the first follows an 0xe2 separator, so
+        // it has a preceding byte.
+        let body_end = starts
+            .get(position + 1)
+            .and_then(|next| next.offset.checked_sub(1))
+            .unwrap_or(end);
+        buckets.push(FeatureTrimBucket {
+            index: start.index,
+            declared_entry_count: start.declared_entry_count,
+            decoded_entry_count: trim_bucket_entry_count(
+                ctx,
+                payload,
+                start.body_start,
+                body_end,
+                header.classes,
+                kind,
+                position == 0,
+            )?,
+            offset: start.offset,
+        });
+    }
+    Ok(buckets)
 }
 
 fn named_trim_bucket_count(
@@ -2745,43 +2905,53 @@ fn trim_bucket_array_count(
 }
 
 fn trim_bucket_entry_count(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     classes: TrimTableClasses,
     kind: TrimEntryKind,
     named_first: bool,
-) -> Option<u32> {
+) -> Result<Option<u32>, CodecError> {
     match kind {
         TrimEntryKind::Entity => {
-            let rows = (start..end)
-                .filter(|&offset| {
-                    preceding_byte(payload, offset) == Some(0xe3)
-                        && complete_trim_entity_entry(payload, offset, end)
-                })
-                .count();
+            let mut rows = 0usize;
+            for offset in start..end {
+                ctx.charge_work(1, "creo trim bucket entry scan")?;
+                if preceding_byte(payload, offset) == Some(0xe3)
+                    && complete_trim_entity_entry(payload, offset, end)
+                {
+                    rows += 1;
+                }
+            }
             let prototype = usize::from(
                 named_first && named_trim_entity_prototype_complete(payload, start, end, classes),
             );
             // Decoded rows counted over `start..end`, not a stated count. The
             // count is stated in the width the declared count is stored in,
             // and a scan that passes that width states none.
-            u32::try_from(rows + prototype).ok()
+            Ok(u32::try_from(rows + prototype).ok())
         }
         TrimEntryKind::Vertex => {
             let mut rows = BTreeSet::new();
             for offset in start..end {
+                ctx.charge_work(1, "creo trim bucket entry scan")?;
                 if payload.get(offset) == Some(&psb::token::ENTITY_REF) {
                     if let Ok((class, row)) = psb::reference_id(payload, offset + 1) {
-                        if class == classes.entry && trim_vertex_entry(payload, row, end).is_some()
+                        if class == classes.entry
+                            && trim_vertex_entry_bounds(payload, row, end).is_some()
+                            && !rows.contains(&row)
                         {
+                            ctx.charge_collection_items(1, "creo trim bucket vertex nodes")?;
                             rows.insert(row);
                         }
                     }
                 }
                 if preceding_byte(payload, offset) == Some(0xe3)
-                    && trim_vertex_entry(payload, offset, end).is_some()
+                    && trim_vertex_entry_bounds(payload, offset, end).is_some()
+                    && !rows.contains(&offset)
                 {
+                    ctx.charge_collection_items(1, "creo trim bucket vertex nodes")?;
                     rows.insert(offset);
                 }
             }
@@ -2791,7 +2961,7 @@ fn trim_bucket_entry_count(
             // Decoded rows counted over `start..end`, not a stated count. The
             // count is stated in the width the declared count is stored in,
             // and a scan that passes that width states none.
-            u32::try_from(rows.len() + prototype).ok()
+            Ok(u32::try_from(rows.len() + prototype).ok())
         }
     }
 }
@@ -2807,38 +2977,74 @@ fn complete_trim_entity_entry(payload: &[u8], offset: usize, end: usize) -> bool
     cursor < end && payload.get(cursor) == Some(&0)
 }
 
-fn trim_vertex_entry(payload: &[u8], offset: usize, end: usize) -> Option<(Vec<u32>, u32, usize)> {
+fn trim_vertex_entry_bounds(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+) -> Option<(usize, u32, usize, usize)> {
     let mut cursor = offset;
     if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
         let (count, next) = psb::compact_int(payload, cursor + 1);
         cursor = next;
-        let mut entities = Vec::with_capacity(usize::try_from(count).ok()?);
+        let entities_start = cursor;
         for _ in 0..count {
             let (value, next) = segment_int(payload, cursor);
-            entities.push(value?);
+            value?;
             (next <= end).then_some(())?;
             cursor = next;
         }
         let (vertex_id, next) = segment_int(payload, cursor);
         let vertex_id = vertex_id?;
         return (next < end && payload.get(next) == Some(&0)).then_some((
-            entities,
+            usize::try_from(count).ok()?,
             vertex_id,
             next + 1,
+            entities_start,
         ));
     }
-    let mut values = Vec::new();
+    let entities_start = cursor;
+    let mut value_count = 0usize;
+    let mut vertex_id = None;
     while cursor < end && payload.get(cursor) != Some(&0) {
         let (value, next) = segment_int(payload, cursor);
-        values.push(value?);
+        vertex_id = Some(value?);
         (next <= end).then_some(())?;
         cursor = next;
-        if values.len() > 64 {
+        value_count += 1;
+        if value_count > 64 {
             return None;
         }
     }
-    let vertex_id = values.pop()?;
-    (values.len() >= 2 && cursor < end).then_some((values, vertex_id, cursor + 1))
+    (value_count >= 3 && cursor < end).then_some((
+        value_count - 1,
+        vertex_id?,
+        cursor + 1,
+        entities_start,
+    ))
+}
+
+fn trim_vertex_entry(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+) -> Result<Option<(Vec<u32>, u32, usize)>, CodecError> {
+    let Some((entity_count, vertex_id, next, mut cursor)) =
+        trim_vertex_entry_bounds(payload, offset, end)
+    else {
+        return Ok(None);
+    };
+    let mut entities = Vec::new();
+    ctx.reserve_vec(&mut entities, entity_count, "creo trim vertex entities")?;
+    for _ in 0..entity_count {
+        let (value, after_value) = segment_int(payload, cursor);
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        entities.push(value);
+        cursor = after_value;
+    }
+    Ok(Some((entities, vertex_id, next)))
 }
 
 fn trim_entry_field(payload: &[u8], offset: usize, end: usize) -> Option<usize> {
@@ -3018,19 +3224,23 @@ fn positional_table_region(
 }
 
 fn positional_trim_entity_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     classes: TrimTableClasses,
     next_table_class: Option<u32>,
-) -> Option<FeatureTrimEntityTable> {
+) -> Result<Option<FeatureTrimEntityTable>, CodecError> {
     let TrimTableClasses {
         table: table_class,
         entry: entry_class,
         ..
     } = classes;
-    let (table, declared_count, rows_start, region_end) =
-        positional_table_region(payload, start, end, table_class, next_table_class)?;
+    let Some((table, declared_count, rows_start, region_end)) =
+        positional_table_region(payload, start, end, table_class, next_table_class)
+    else {
+        return Ok(None);
+    };
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     let has_entry_class = (rows_start..region_end).any(|offset| {
@@ -3063,7 +3273,11 @@ fn positional_trim_entity_table(
             (external_id, start_vertex, end_vertex)
         {
             if external_id != 0 && payload.get(p) == Some(&0) {
-                seen.insert(external_id);
+                if !seen.contains(&external_id) {
+                    ctx.charge_collection_items(1, "creo trim entity ID nodes")?;
+                    seen.insert(external_id);
+                }
+                ctx.reserve_vec(&mut rows, 1, "creo trim entity rows")?;
                 rows.push(FeatureTrimEntity {
                     external_id,
                     mode,
@@ -3077,35 +3291,47 @@ fn positional_trim_entity_table(
         }
         cursor += 1;
     }
-    Some(FeatureTrimEntityTable {
+    let buckets = trim_buckets(
+        ctx,
+        payload,
+        table,
+        region_end,
+        TrimTableHeader {
+            declared_count,
+            classes,
+        },
+        TrimEntryKind::Entity,
+    )?;
+    let mut solved_external_ids = Vec::new();
+    ctx.reserve_vec(
+        &mut solved_external_ids,
+        seen.len(),
+        "creo trim entity solved IDs",
+    )?;
+    solved_external_ids.extend(seen);
+    Ok(Some(FeatureTrimEntityTable {
         declared_count: Some(declared_count),
         entity_ref: Some(table_class),
         entry_ref: Some(entry_class),
-        buckets: trim_buckets(
-            payload,
-            table,
-            region_end,
-            TrimTableHeader {
-                declared_count,
-                classes,
-            },
-            TrimEntryKind::Entity,
-        ),
-        solved_external_ids: seen.into_iter().collect(),
+        buckets,
+        solved_external_ids,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn trim_vertex_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-) -> Option<FeatureTrimVertexTable> {
+) -> Result<Option<FeatureTrimVertexTable>, CodecError> {
     const CHAINS_WINDOW: usize = 120;
-    let table = find_bytes(payload, b"vert_tab\0", start, end)?;
+    let Some(table) = find_bytes(payload, b"vert_tab\0", start, end) else {
+        return Ok(None);
+    };
     let header = trim_table_header(payload, b"vert_tab\0", start, end);
     let region_end = [
         b"skamp_ptr\0".as_slice(),
@@ -3124,23 +3350,46 @@ fn trim_vertex_table(
         .checked_add(b"vert_tab\0".len())
         .and_then(|after_label| after_label.checked_add(CHAINS_WINDOW))
         .map_or(end, |window_end| window_end.min(end));
-    let chains = find_bytes(payload, b"chains\0", table, chains_end)?;
+    let Some(chains) = find_bytes(payload, b"chains\0", table, chains_end) else {
+        return Ok(None);
+    };
     let mut cursor = chains + b"chains\0".len();
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (_, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
-    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Ok(None);
+    }
     let reference_start = cursor + 1;
-    let (_, reference_end) = psb::reference_id(payload, reference_start).ok()?;
-    let mut block_marker = vec![0xf3, psb::token::ENTITY_REF];
-    block_marker.extend_from_slice(payload.get(reference_start..reference_end)?);
-    block_marker.push(0xe2);
-    cursor = find_bytes(payload, &block_marker, reference_end, region_end)?;
+    let Ok((_, reference_end)) = psb::reference_id(payload, reference_start) else {
+        return Ok(None);
+    };
+    let Some(reference) = payload.get(reference_start..reference_end) else {
+        return Ok(None);
+    };
+    let Some(marker_len) = reference.len().checked_add(3) else {
+        return Ok(None);
+    };
+    let is_block_marker = |offset: usize| {
+        payload.get(offset..region_end).is_some_and(|tail| {
+            tail.starts_with(&[0xf3, psb::token::ENTITY_REF])
+                && tail.get(2..).is_some_and(|tail| {
+                    tail.starts_with(reference) && tail.get(reference.len()) == Some(&0xe2)
+                })
+        })
+    };
+    let Some(first_marker) = (reference_end..region_end).find(|&offset| is_block_marker(offset))
+    else {
+        return Ok(None);
+    };
+    cursor = first_marker;
 
     let mut rows = Vec::new();
     while cursor < region_end {
-        if payload.get(cursor..cursor + block_marker.len()) == Some(block_marker.as_slice()) {
-            cursor += block_marker.len();
+        if is_block_marker(cursor) {
+            cursor += marker_len;
             let (_, next) = segment_int(payload, cursor);
             cursor = next;
             continue;
@@ -3148,12 +3397,13 @@ fn trim_vertex_table(
         match payload[cursor] {
             psb::token::ARRAY_OPEN => {
                 if let Some((entities, vertex_id, next)) =
-                    trim_vertex_entry(payload, cursor, region_end)
+                    trim_vertex_entry(ctx, payload, cursor, region_end)?
                 {
+                    ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
                     rows.push(FeatureTrimVertex {
                         section_coordinates: trim_vertex_intersection(
-                            &entities, segments, variables,
-                        ),
+                            ctx, &entities, segments, variables,
+                        )?,
                         vertex_id,
                         entities,
                         offset: cursor,
@@ -3172,12 +3422,13 @@ fn trim_vertex_table(
                 };
                 if header.is_some_and(|header| class == header.classes.entry) {
                     if let Some((entities, vertex_id, after_entry)) =
-                        trim_vertex_entry(payload, next, region_end)
+                        trim_vertex_entry(ctx, payload, next, region_end)?
                     {
+                        ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
                         rows.push(FeatureTrimVertex {
                             section_coordinates: trim_vertex_intersection(
-                                &entities, segments, variables,
-                            ),
+                                ctx, &entities, segments, variables,
+                            )?,
                             vertex_id,
                             entities,
                             offset: next,
@@ -3196,46 +3447,61 @@ fn trim_vertex_table(
             _ => {}
         }
         let row_offset = cursor;
-        let Some((entities, vertex_id, next)) = trim_vertex_entry(payload, cursor, region_end)
+        let Some((entities, vertex_id, next)) =
+            trim_vertex_entry(ctx, payload, cursor, region_end)?
         else {
             cursor += 1;
             continue;
         };
+        ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
-            section_coordinates: trim_vertex_intersection(&entities, segments, variables),
+            section_coordinates: trim_vertex_intersection(ctx, &entities, segments, variables)?,
             vertex_id,
             entities,
             offset: row_offset,
         });
         cursor = next;
     }
-    Some(FeatureTrimVertexTable {
+    let buckets = match header {
+        Some(header) => trim_buckets(
+            ctx,
+            payload,
+            table,
+            region_end,
+            header,
+            TrimEntryKind::Vertex,
+        )?,
+        None => Vec::new(),
+    };
+    Ok(Some(FeatureTrimVertexTable {
         declared_count: header.map(|header| header.declared_count),
         entity_ref: header.map(|header| header.classes.table),
         entry_ref: header.map(|header| header.classes.entry),
-        buckets: header.map_or_else(Vec::new, |header| {
-            trim_buckets(payload, table, region_end, header, TrimEntryKind::Vertex)
-        }),
+        buckets,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn positional_trim_vertex_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     classes: TrimTableClasses,
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-) -> Option<FeatureTrimVertexTable> {
+) -> Result<Option<FeatureTrimVertexTable>, CodecError> {
     let TrimTableClasses {
         table: table_class,
         entry: entry_class,
         ..
     } = classes;
-    let (table, declared_count, rows_start, region_end) =
-        positional_table_region(payload, start, end, table_class, None)?;
+    let Some((table, declared_count, rows_start, region_end)) =
+        positional_table_region(payload, start, end, table_class, None)
+    else {
+        return Ok(None);
+    };
     let mut rows = Vec::new();
     let mut cursor = rows_start;
     while cursor < region_end {
@@ -3252,36 +3518,40 @@ fn positional_trim_vertex_table(
             continue;
         }
         let row_offset = after_reference;
-        let Some((entities, vertex_id, next)) = trim_vertex_entry(payload, row_offset, region_end)
+        let Some((entities, vertex_id, next)) =
+            trim_vertex_entry(ctx, payload, row_offset, region_end)?
         else {
             cursor += 1;
             continue;
         };
+        ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
-            section_coordinates: trim_vertex_intersection(&entities, segments, variables),
+            section_coordinates: trim_vertex_intersection(ctx, &entities, segments, variables)?,
             vertex_id,
             entities,
             offset: row_offset,
         });
         cursor = next.max(cursor + 1);
     }
-    Some(FeatureTrimVertexTable {
+    let buckets = trim_buckets(
+        ctx,
+        payload,
+        table,
+        region_end,
+        TrimTableHeader {
+            declared_count,
+            classes,
+        },
+        TrimEntryKind::Vertex,
+    )?;
+    Ok(Some(FeatureTrimVertexTable {
         declared_count: Some(declared_count),
         entity_ref: Some(table_class),
         entry_ref: Some(entry_class),
-        buckets: trim_buckets(
-            payload,
-            table,
-            region_end,
-            TrimTableHeader {
-                declared_count,
-                classes,
-            },
-            TrimEntryKind::Vertex,
-        ),
+        buckets,
         rows,
         offset: table,
-    })
+    }))
 }
 
 const TRIM_COORDINATE_EPS: f64 = 1.0e-9;
@@ -3300,12 +3570,16 @@ enum TrimCarrier {
 }
 
 fn trim_vertex_intersection(
+    ctx: &DecodeContext<'_>,
     entities: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-) -> Option<cadmpeg_ir::units::FinitePoint2> {
-    let [u, v] = entity_intersection(entities, segments, variables)?;
-    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(u, v))
+) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
+    Ok(
+        entity_intersection(ctx, entities, segments, variables)?.and_then(|[u, v]| {
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(u, v))
+        }),
+    )
 }
 
 fn resolved_trim_scalar(
@@ -3313,28 +3587,32 @@ fn resolved_trim_scalar(
     variable_type: VariableType,
     key: u32,
 ) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, ()> {
-    let values = variables
+    let mut first: Option<cadmpeg_ir::scalar::FiniteReal> = None;
+    let mut missing = false;
+    for row in variables
         .rows
         .iter()
         .filter(|row| row.variable_type == variable_type && row.key == key)
-        .map(|row| row.value.value())
-        .collect::<Vec<_>>();
-    if values.is_empty() || values.iter().all(Option::is_none) {
-        return Ok(None);
-    }
-    let values = values.into_iter().collect::<Option<Vec<_>>>().ok_or(())?;
-    let first = cadmpeg_ir::scalar::FiniteReal::new(*values.first().ok_or(())?).ok_or(())?;
-    values
-        .iter()
-        .copied()
-        .try_fold(first, |first, value| {
-            let value = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or(())?;
+    {
+        let Some(value) = row.value.value() else {
+            missing = true;
+            continue;
+        };
+        let value = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or(())?;
+        if let Some(first) = first {
             let scale = first.get().abs().max(value.get().abs()).max(1.0);
             ((value.get() - first.get()).abs() <= TRIM_COORDINATE_EPS * scale)
-                .then_some(first)
-                .ok_or(())
-        })
-        .map(Some)
+                .then_some(())
+                .ok_or(())?;
+        } else {
+            first = Some(value);
+        }
+    }
+    if missing && first.is_some() {
+        Err(())
+    } else {
+        Ok(first)
+    }
 }
 
 fn trim_endpoint_radius(
@@ -3342,7 +3620,7 @@ fn trim_endpoint_radius(
     center: [f64; 2],
     points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, ()> {
-    let mut radii = Vec::new();
+    let mut first: Option<cadmpeg_ir::scalar::PositiveReal> = None;
     for point_id in segment.point_ids() {
         let Some([Some(u), Some(v)]) = points.get(&point_id).copied() else {
             continue;
@@ -3352,21 +3630,16 @@ fn trim_endpoint_radius(
         if radius.get() <= TRIM_INTERSECTION_EPS {
             return Err(());
         }
-        radii.push(radius);
-    }
-    let Some(first) = radii.first().copied() else {
-        return Ok(None);
-    };
-    radii
-        .iter()
-        .copied()
-        .try_fold(first, |first, radius| {
+        if let Some(first) = first {
             let scale = first.get().max(radius.get()).max(1.0);
             ((radius.get() - first.get()).abs() <= TRIM_COORDINATE_EPS * scale)
-                .then_some(first)
-                .ok_or(())
-        })
-        .map(Some)
+                .then_some(())
+                .ok_or(())?;
+        } else {
+            first = Some(radius);
+        }
+    }
+    Ok(first)
 }
 
 fn trim_radius(
@@ -3542,56 +3815,68 @@ fn trim_circle_circle_intersection(
 }
 
 fn entity_intersection(
+    ctx: &DecodeContext<'_>,
     entity_ids: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-) -> Option<[f64; 2]> {
-    let segments = segments?;
-    let variables = variables?;
-    (variables.is_complete() && entity_ids.len() >= 2).then_some(())?;
-    let mut unique_entities = BTreeSet::new();
-    if !entity_ids
-        .iter()
-        .all(|entity_id| unique_entities.insert(*entity_id))
-    {
-        return None;
+) -> Result<Option<[f64; 2]>, CodecError> {
+    let (Some(segments), Some(variables)) = (segments, variables) else {
+        return Ok(None);
+    };
+    if !variables.is_complete() || entity_ids.len() < 2 {
+        return Ok(None);
     }
-    let (points, ambiguous_points) = variables.reconciled_points();
-    let segments = entity_ids
-        .iter()
-        .map(|entity_id| segments.unique_segment(*entity_id))
-        .collect::<Option<Vec<_>>>()?;
-    let common_point_ids = segments
-        .iter()
-        .skip(1)
-        .fold(
-            segments[0].point_ids().into_iter().collect::<BTreeSet<_>>(),
-            |common, segment| {
-                let segment_points = segment.point_ids().into_iter().collect::<BTreeSet<_>>();
-                common.intersection(&segment_points).copied().collect()
-            },
-        )
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut unique_entities = BTreeSet::new();
+    for entity_id in entity_ids {
+        if unique_entities.contains(entity_id) {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "creo trim intersection entity nodes")?;
+        unique_entities.insert(*entity_id);
+    }
+    let crate::feature::definitions::ReconciledPoints {
+        points,
+        ambiguous: ambiguous_points,
+    } = variables.reconciled_points(ctx)?;
+    let mut segments_for_intersection = Vec::new();
+    for entity_id in entity_ids {
+        let Some(segment) = segments.unique_segment(*entity_id) else {
+            return Ok(None);
+        };
+        ctx.reserve_vec(
+            &mut segments_for_intersection,
+            1,
+            "creo trim intersection segments",
+        )?;
+        segments_for_intersection.push(segment);
+    }
     if entity_ids.len() == 2 {
-        if let [point_id] = common_point_ids.as_slice() {
-            if !ambiguous_points.contains(point_id) {
-                if let Some([Some(u), Some(v)]) = points.get(point_id).copied() {
+        let first_ids = segments_for_intersection[0].point_ids();
+        let second_ids = segments_for_intersection[1].point_ids();
+        let mut common = first_ids.into_iter().filter(|id| second_ids.contains(id));
+        let point_id = common.next();
+        if let Some(point_id) = point_id.filter(|id| common.all(|other| other == *id)) {
+            if !ambiguous_points.contains(&point_id) {
+                if let Some([Some(u), Some(v)]) = points.get(&point_id).copied() {
                     if u.is_finite() && v.is_finite() {
-                        return Some([u, v]);
+                        return Ok(Some([u, v]));
                     }
                 }
             }
         }
     }
-    let carriers = segments
-        .iter()
-        .map(|segment| trim_carrier(segment, &points, variables))
-        .collect::<Option<Vec<_>>>()?;
+    let mut carriers = Vec::new();
+    for segment in &segments_for_intersection {
+        let Some(carrier) = trim_carrier(segment, &points, variables) else {
+            return Ok(None);
+        };
+        ctx.reserve_vec(&mut carriers, 1, "creo trim intersection carriers")?;
+        carriers.push(carrier);
+    }
     let mut intersections = Vec::new();
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
-            let coordinate = match (carriers[first], carriers[second]) {
+            let Some(coordinate) = (match (carriers[first], carriers[second]) {
                 (
                     TrimCarrier::Line { start, end },
                     TrimCarrier::Line {
@@ -3615,11 +3900,16 @@ fn entity_intersection(
                     second_center,
                     second_radius.get(),
                 ),
-            }?;
+            }) else {
+                return Ok(None);
+            };
+            ctx.reserve_vec(&mut intersections, 1, "creo trim intersections")?;
             intersections.push(coordinate);
         }
     }
-    let first = *intersections.first()?;
+    let Some(first) = intersections.first().copied() else {
+        return Ok(None);
+    };
     let rest = &intersections[1..];
     let scale = first
         .into_iter()
@@ -3629,28 +3919,42 @@ fn entity_intersection(
         )
         .map(f64::abs)
         .fold(1.0, f64::max);
-    rest.iter()
+    Ok(rest
+        .iter()
         .all(|coordinate| {
             (coordinate[0] - first[0]).hypot(coordinate[1] - first[1])
                 <= TRIM_COORDINATE_EPS * scale
         })
-        .then_some(first)
+        .then_some(first))
 }
 
-fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
-    let table = find_bytes(payload, b"order_table\0", start, end)?;
+fn order_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureOrderTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"order_table\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"order_table\0".len();
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-        let (value, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        let Ok((value, next)) = psb::reference_id(payload, cursor + 1) else {
+            return Ok(None);
+        };
         cursor = next;
         Some(value)
     } else {
         None
     };
-    let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
+    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+        return Ok(None);
+    };
     let prototype = (|| {
         let mut field = cursor;
         for label in [b"ext_id\0".as_slice(), b"int_id\0", b"bitmask\0"] {
@@ -3661,7 +3965,9 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         }
         Some(())
     })();
-    let (_, next) = psb::reference_id(payload, close + 2).ok()?;
+    let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
+        return Ok(None);
+    };
     cursor = next;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
@@ -3673,11 +3979,16 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
     // zero with the prototype row present states a body-row count the table
     // cannot hold, and refuses the table.
     let declared_body_rows = if prototype.is_some() {
-        declared_count.checked_sub(1)?
+        let Some(count) = declared_count.checked_sub(1) else {
+            return Ok(None);
+        };
+        count
     } else {
         declared_count
     };
-    let row_limit = usize::try_from(declared_body_rows).ok()?;
+    let Ok(row_limit) = usize::try_from(declared_body_rows) else {
+        return Ok(None);
+    };
     while cursor < end && rows.len() < row_limit {
         if payload[cursor] == 0xe2 {
             cursor += 1;
@@ -3700,12 +4011,20 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
             || payload
                 .get(next)
                 .is_some_and(|byte| matches!(byte, 0xe0 | 0xf1 | 0xf3));
-        if (!row_separator && !table_boundary)
-            || !external_ids.insert(external_id)
-            || !internal_ids.insert(internal_id)
-        {
+        if !row_separator && !table_boundary {
             break;
         }
+        if external_ids.contains(&external_id) {
+            break;
+        }
+        ctx.charge_collection_items(1, "creo order external ID nodes")?;
+        external_ids.insert(external_id);
+        if internal_ids.contains(&internal_id) {
+            break;
+        }
+        ctx.charge_collection_items(1, "creo order internal ID nodes")?;
+        internal_ids.insert(internal_id);
+        ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
         rows.push(FeatureOrderRow {
             external_id,
             internal_id,
@@ -3717,22 +4036,23 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         }
         cursor = next + 1;
     }
-    Some(FeatureOrderTable {
+    Ok(Some(FeatureOrderTable {
         declared_count,
         has_prototype: prototype.is_some(),
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn positional_order_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
-) -> Option<FeatureOrderTable> {
-    let (table, declared_count, cursor) = (start..end).find_map(|table| {
+) -> Result<Option<FeatureOrderTable>, CodecError> {
+    let Some((table, declared_count, cursor)) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -3740,7 +4060,9 @@ fn positional_order_table(
         (class == table_class
             && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
         .then_some((table, declared_count, after_reference + 2))
-    })?;
+    }) else {
+        return Ok(None);
+    };
     let prototype = (|| {
         (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
         let (_, mut prototype) = psb::reference_id(payload, cursor + 1).ok()?;
@@ -3760,17 +4082,19 @@ fn positional_order_table(
     // count the table cannot hold, and refuses the table. Each row consumes at
     // least one byte before its 0xe2 separator, so the row count cannot exceed
     // the unread bytes in the table window.
-    let (row_limit, capacity) = match prototype.filter(|&rows_start| rows_start < end) {
-        Some(rows_start) => {
-            let declared_body_rows = declared_count.checked_sub(1)?;
-            (
-                usize::try_from(declared_body_rows).ok()?,
-                bounded_len(u64::from(declared_body_rows), 1, end - rows_start).unwrap_or(0),
-            )
+    let row_limit = match prototype.filter(|&rows_start| rows_start < end) {
+        Some(_) => {
+            let Some(declared_body_rows) = declared_count.checked_sub(1) else {
+                return Ok(None);
+            };
+            let Ok(row_limit) = usize::try_from(declared_body_rows) else {
+                return Ok(None);
+            };
+            row_limit
         }
-        None => (0, 0),
+        None => 0,
     };
-    let mut rows = Vec::with_capacity(capacity);
+    let mut rows = Vec::new();
     let mut cursor = prototype.unwrap_or(end);
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
@@ -3784,9 +4108,16 @@ fn positional_order_table(
         else {
             break;
         };
-        if !external_ids.insert(external_id) || !internal_ids.insert(internal_id) {
+        if external_ids.contains(&external_id) {
             break;
         }
+        ctx.charge_collection_items(1, "creo order external ID nodes")?;
+        external_ids.insert(external_id);
+        if internal_ids.contains(&internal_id) {
+            break;
+        }
+        ctx.charge_collection_items(1, "creo order internal ID nodes")?;
+        internal_ids.insert(internal_id);
         let row = FeatureOrderRow {
             external_id,
             internal_id,
@@ -3795,6 +4126,7 @@ fn positional_order_table(
         };
         cursor = next;
         if rows.len() + 1 == row_limit {
+            ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
             rows.push(row);
             break;
         }
@@ -3802,15 +4134,16 @@ fn positional_order_table(
             break;
         }
         cursor += 1;
+        ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
         rows.push(row);
     }
-    Some(FeatureOrderTable {
+    Ok(Some(FeatureOrderTable {
         declared_count,
         has_prototype: prototype.is_some(),
         entity_ref: Some(table_class),
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn named_compact_int(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
@@ -3848,10 +4181,17 @@ fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     None
 }
 
-fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
+fn section_3d(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureSection3d>, CodecError> {
     const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
     const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
-    let section = find_bytes(payload, GSEC3D, start, end)?;
+    let Some(section) = find_bytes(payload, GSEC3D, start, end) else {
+        return Ok(None);
+    };
     let record_end = find_bytes(payload, GSEC3D, section + GSEC3D.len(), end).unwrap_or(end);
     let placement_end =
         find_bytes(payload, SAVED_RESULT, section, record_end).unwrap_or(record_end);
@@ -3874,6 +4214,11 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
                 let Ok((entity_id, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
+                ctx.reserve_vec(
+                    &mut reference_plane_entity_ids,
+                    1,
+                    "creo named section reference planes",
+                )?;
                 reference_plane_entity_ids.push(entity_id);
                 cursor = next;
             }
@@ -3911,12 +4256,13 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
                 let (Some(value), next) = segment_int(payload, cursor) else {
                     break;
                 };
+                ctx.reserve_vec(&mut dimension_ids, 1, "creo section dimension IDs")?;
                 dimension_ids.push(value);
                 cursor = next;
             }
         }
     }
-    Some(FeatureSection3d {
+    Ok(Some(FeatureSection3d {
         sketch_plane_entity_id,
         sketch_plane_flip,
         reference_planes: ReferencePlanes::Named(reference_plane_entity_ids),
@@ -3924,11 +4270,16 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
         orientation,
         dimension_ids,
         offset: section,
-    })
+    }))
 }
 
-fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
-    let (section, name_end) = payload[start..end]
+fn positional_section_3d(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureSection3d>, CodecError> {
+    let Some((section, name_end)) = payload[start..end]
         .windows(4)
         .enumerate()
         .filter(|(_, window)| *window == b"\x07S2D")
@@ -3940,7 +4291,10 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
                 + section
                 + 1;
             Some((section, name_end))
-        })?;
+        })
+    else {
+        return Ok(None);
+    };
     let mut result = FeatureSection3d {
         sketch_plane_entity_id: None,
         sketch_plane_flip: None,
@@ -3952,62 +4306,59 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
     };
     let mut cursor = name_end + 1;
     let Some(section_flip) = payload.get(cursor).copied() else {
-        return Some(result);
+        return Ok(Some(result));
     };
     result.orientation.section_flip = BinaryFlag::decode(section_flip);
     cursor += 1;
     for _ in 0..3 {
         let (_, next) = segment_int(payload, cursor);
         if next <= cursor {
-            return Some(result);
+            return Ok(Some(result));
         }
         cursor = next;
     }
     let (sketch_plane_entity_id, next) = segment_int(payload, cursor);
     if next <= cursor {
-        return Some(result);
+        return Ok(Some(result));
     }
     result.sketch_plane_entity_id = sketch_plane_entity_id;
     cursor = next;
     let Some(sketch_plane_flip) = payload.get(cursor).copied() else {
-        return Some(result);
+        return Ok(Some(result));
     };
     result.sketch_plane_flip = BinaryFlag::decode(sketch_plane_flip);
     cursor += 1;
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Some(result);
+        return Ok(Some(result));
     }
     let (reference_count, next) = psb::compact_int(payload, cursor + 1);
     if next <= cursor + 1 {
-        return Some(result);
+        return Ok(Some(result));
     }
     cursor = next;
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Some(result);
+        return Ok(Some(result));
     }
     let table_reference_start = cursor + 1;
     let Ok((_, next)) = psb::reference_id(payload, table_reference_start) else {
-        return Some(result);
+        return Ok(Some(result));
     };
-    let table_reference = payload[table_reference_start..next].to_vec();
+    let table_reference = &payload[table_reference_start - 1..next];
     cursor = next;
     if payload.get(cursor..cursor + 2) != Some(&[0xfb, 0xe2]) {
-        return Some(result);
+        return Ok(Some(result));
     }
     cursor += 2;
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Some(result);
+        return Ok(Some(result));
     }
     let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-        return Some(result);
+        return Ok(Some(result));
     };
     cursor = next;
 
     let row_count = index_from_u32(reference_count);
     let mut reference_plane_rows = Vec::new();
-    let mut separator = vec![0xf2, psb::token::ENTITY_REF];
-    separator.extend_from_slice(&table_reference);
-    separator.push(0xe2);
     for row in 0..row_count {
         let (Some(plane_id), next) = segment_int(payload, cursor) else {
             break;
@@ -4039,6 +4390,11 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
             break;
         }
         cursor = next;
+        ctx.reserve_vec(
+            &mut reference_plane_rows,
+            1,
+            "creo positional section reference planes",
+        )?;
         reference_plane_rows.push(FeatureSectionReferencePlane {
             plane_entity_id: plane_id,
             reference_type,
@@ -4048,14 +4404,15 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
             reference_flip,
         });
         if row + 1 < row_count {
-            let Some(separator_at) = find_bytes(payload, &separator, cursor, end) else {
+            let Some(separator_at) = find_class_close(payload, cursor, end, 0xf2, table_reference)
+            else {
                 break;
             };
-            cursor = separator_at + separator.len();
+            cursor = separator_at + table_reference.len() + 2;
         }
     }
     result.reference_planes = ReferencePlanes::Positional(reference_plane_rows);
-    Some(result)
+    Ok(Some(result))
 }
 
 pub(super) fn dimension_unit(dimension_type: u32) -> DimensionUnit {
@@ -4084,7 +4441,7 @@ fn named_dimension_reference(
     (declared_count == 2).then_some(())?;
     cursor = after_count;
     let point = segment_slots(payload, &mut cursor, 2)?;
-    let [first, second] = point.try_into().ok()?;
+    let [first, second] = [point[0], point[1]];
     Some((
         FeatureDimensionReference {
             item_id,
@@ -4097,11 +4454,14 @@ fn named_dimension_reference(
 }
 
 fn dimension_reference_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<FeatureDimensionReferenceTable> {
-    let table = find_bytes(payload, b"dim_ref\0", start, end)?;
+) -> Result<Option<FeatureDimensionReferenceTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"dim_ref\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"dim_ref\0".len();
     while payload
         .get(cursor)
@@ -4109,14 +4469,18 @@ fn dimension_reference_table(
     {
         cursor += 1;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
     let mut reference_bytes = None;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
         let reference_start = cursor + 1;
-        let (value, next) = psb::reference_id(payload, reference_start).ok()?;
-        reference_bytes = payload.get(reference_start..next).map(<[u8]>::to_vec);
+        let Ok((value, next)) = psb::reference_id(payload, reference_start) else {
+            return Ok(None);
+        };
+        reference_bytes = payload.get(reference_start..next);
         cursor = next;
         Some(value)
     } else {
@@ -4125,54 +4489,56 @@ fn dimension_reference_table(
     if payload.get(cursor..cursor + 2) == Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
         cursor += 2;
     } else {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows: Vec::new(),
             offset: table,
-        });
+        }));
     }
     if declared_count == 0 {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows: Vec::new(),
             offset: table,
-        });
+        }));
     }
 
     let mut rows = Vec::new();
     let Some((prototype, prototype_end)) = named_dimension_reference(payload, cursor, end) else {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows,
             offset: table,
-        });
+        }));
     };
+    ctx.reserve_vec(&mut rows, 1, "creo dimension reference rows")?;
     rows.push(prototype);
     let Some(reference_bytes) = reference_bytes else {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows,
             offset: table,
-        });
+        }));
     };
-    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
-    prototype_separator.extend_from_slice(&reference_bytes);
-    prototype_separator.push(0xe2);
-    if payload.get(prototype_end..prototype_end + prototype_separator.len())
-        != Some(prototype_separator.as_slice())
-    {
-        return Some(FeatureDimensionReferenceTable {
+    let separator_len = reference_bytes.len() + 3;
+    let separator_matches = |offset, prefix| {
+        payload.get(offset..offset + 2) == Some(&[prefix, psb::token::ENTITY_REF])
+            && payload.get(offset + 2..offset + 2 + reference_bytes.len()) == Some(reference_bytes)
+            && payload.get(offset + separator_len - 1) == Some(&0xe2)
+    };
+    if !separator_matches(prototype_end, 0xf1) {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows,
             offset: table,
-        });
+        }));
     }
-    cursor = prototype_end + prototype_separator.len();
+    cursor = prototype_end + separator_len;
 
     let row_limit = index_from_u32(declared_count);
     while rows.len() < row_limit && cursor < end {
@@ -4186,10 +4552,8 @@ fn dimension_reference_table(
         let Some(point) = segment_slots(payload, &mut cursor, 2) else {
             break;
         };
-        if point.len() != 2 {
-            break;
-        }
         let [first, second] = [point[0], point[1]];
+        ctx.reserve_vec(&mut rows, 1, "creo dimension reference rows")?;
         rows.push(FeatureDimensionReference {
             item_id,
             sense,
@@ -4199,67 +4563,91 @@ fn dimension_reference_table(
         if rows.len() == row_limit {
             break;
         }
-        let mut row_separator = vec![0xf3, psb::token::ENTITY_REF];
-        row_separator.extend_from_slice(&reference_bytes);
-        row_separator.push(0xe2);
-        if payload.get(cursor..cursor + row_separator.len()) != Some(row_separator.as_slice()) {
+        if !separator_matches(cursor, 0xf3) {
             break;
         }
-        cursor += row_separator.len();
+        cursor += separator_len;
     }
-    Some(FeatureDimensionReferenceTable {
+    Ok(Some(FeatureDimensionReferenceTable {
         declared_count,
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn labeled_dimension(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimension> {
-    let type_label = find_bytes(payload, b"type\0", start, end)?;
+) -> Result<Option<FeatureDimension>, CodecError> {
+    let Some(type_label) = find_bytes(payload, b"type\0", start, end) else {
+        return Ok(None);
+    };
     let (dimension_type, after_type) = segment_int(payload, type_label + b"type\0".len());
-    let dimension_type = dimension_type?;
-    let value_label = find_bytes(payload, b"value\0", after_type, end)?;
+    let Some(dimension_type) = dimension_type else {
+        return Ok(None);
+    };
+    let Some(value_label) = find_bytes(payload, b"value\0", after_type, end) else {
+        return Ok(None);
+    };
     let value_start = value_label + b"value\0".len();
     let (value, after_value) = decode_variable_scalar(payload, value_start, end, cache);
-    let value_body = payload.get(value_start..after_value)?.to_vec();
-    let value = DimensionValue::decoded(value.value(), &value_body);
-    let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
-    let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
-    let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
+    let Some(value_bytes) = payload.get(value_start..after_value) else {
+        return Ok(None);
+    };
+    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
+    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
+    let Some(direction_label) = find_bytes(payload, b"direct\0", after_value, end) else {
+        return Ok(None);
+    };
+    let Some(&direction_byte) = payload.get(direction_label + b"direct\0".len()) else {
+        return Ok(None);
+    };
+    let Some(auxiliary_label) = find_bytes(payload, b"aux_value\0", direction_label, end) else {
+        return Ok(None);
+    };
     let auxiliary_start = auxiliary_label + b"aux_value\0".len();
     let (auxiliary_value, after_auxiliary) =
         decode_variable_scalar(payload, auxiliary_start, end, cache);
-    let auxiliary_body = payload.get(auxiliary_start..after_auxiliary)?.to_vec();
-    let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
+    let Some(auxiliary_bytes) = payload.get(auxiliary_start..after_auxiliary) else {
+        return Ok(None);
+    };
+    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
+    let Some(external_label) = find_bytes(payload, b"ext_id\0", after_auxiliary, end) else {
+        return Ok(None);
+    };
     let (external_id, after_external) = segment_int(payload, external_label + b"ext_id\0".len());
-    let references = dimension_reference_table(payload, after_external, end);
-    Some(FeatureDimension {
+    let Some(external_id) = external_id else {
+        return Ok(None);
+    };
+    let references = dimension_reference_table(ctx, payload, after_external, end)?;
+    Ok(Some(FeatureDimension {
         dimension_type,
         value,
         value_body,
         direction_byte,
         auxiliary_value: auxiliary_value.value(),
         auxiliary_body,
-        external_id: external_id?,
+        external_id,
         references,
         offset: type_label,
-    })
+    }))
 }
 
 fn positional_dimension(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimension> {
+) -> Result<Option<FeatureDimension>, CodecError> {
     let (dimension_type, cursor) = segment_int(payload, start);
-    let dimension_type = dimension_type?;
+    let Some(dimension_type) = dimension_type else {
+        return Ok(None);
+    };
     let value_start = cursor;
     let (value, cursor) = match payload.get(cursor) {
         Some(0x00) if cursor + 3 <= end => (ScalarLane::Undefined, cursor + 3),
@@ -4268,9 +4656,14 @@ fn positional_dimension(
         Some(0x18) => (ScalarLane::Value(0.0), cursor + 1),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
-    let value_body = payload.get(value_start..cursor)?.to_vec();
-    let value = DimensionValue::decoded(value.value(), &value_body);
-    let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
+    let Some(value_bytes) = payload.get(value_start..cursor) else {
+        return Ok(None);
+    };
+    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
+    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
+    let Some(&direction_byte) = payload.get(cursor).filter(|_| cursor < end) else {
+        return Ok(None);
+    };
     let auxiliary_start = cursor + 1;
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
         (Some(0.0), auxiliary_start + 1)
@@ -4278,28 +4671,37 @@ fn positional_dimension(
         let (value, next) = decode_variable_scalar(payload, auxiliary_start, end, cache);
         (value.value(), next)
     };
-    let auxiliary_body = payload.get(auxiliary_start..cursor)?.to_vec();
+    let Some(auxiliary_bytes) = payload.get(auxiliary_start..cursor) else {
+        return Ok(None);
+    };
+    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
     let (external_id, _) = segment_int(payload, cursor);
-    Some(FeatureDimension {
+    let Some(external_id) = external_id else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDimension {
         dimension_type,
         value,
         value_body,
         direction_byte,
         auxiliary_value,
         auxiliary_body,
-        external_id: external_id?,
+        external_id,
         references: None,
         offset: start,
-    })
+    }))
 }
 
 fn dimension_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimensionTable> {
-    let table = find_bytes(payload, b"dimtab_ptr\0", start, end)?;
+) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"dimtab_ptr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"dimtab_ptr\0".len();
     while payload
         .get(cursor)
@@ -4307,120 +4709,132 @@ fn dimension_table(
     {
         cursor += 1;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let mut reference_bytes = None;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
         let reference_start = cursor + 1;
-        let (value, next) = psb::reference_id(payload, reference_start).ok()?;
-        reference_bytes = payload.get(reference_start..next).map(<[u8]>::to_vec);
+        let Ok((value, next)) = psb::reference_id(payload, reference_start) else {
+            return Ok(None);
+        };
+        reference_bytes = payload.get(cursor..next);
         cursor = next;
         Some(value)
     } else {
         None
     };
     let region_end = find_bytes(payload, b"\xe0\x00relat_ptr\0", cursor, end).unwrap_or(end);
-    let mut separator = vec![0xf3, psb::token::ENTITY_REF];
-    if let Some(bytes) = &reference_bytes {
-        separator.extend_from_slice(bytes);
-    }
-    separator.push(0xe2);
-    let first_end = if reference_bytes.is_some() {
-        find_bytes(payload, &separator, cursor, region_end).unwrap_or(region_end)
+    let first_end = if let Some(class) = reference_bytes {
+        find_class_close(payload, cursor, region_end, 0xf3, class).unwrap_or(region_end)
     } else {
         region_end
     };
     let mut rows = Vec::new();
-    if let Some(row) = labeled_dimension(payload, cursor, first_end, cache) {
+    if let Some(row) = labeled_dimension(ctx, payload, cursor, first_end, cache)? {
+        ctx.reserve_vec(&mut rows, 1, "creo dimension rows")?;
         rows.push(row);
     }
-    if reference_bytes.is_some() {
+    if let Some(class) = reference_bytes {
+        let separator_len = class.len() + 2;
         let mut replay = first_end;
         while replay < region_end && rows.len() < index_from_u32(declared_count) {
-            if payload.get(replay..replay + separator.len()) != Some(separator.as_slice()) {
+            if !class_close_at(payload, replay, 0xf3, class) {
                 break;
             }
-            replay += separator.len();
+            replay += separator_len;
             let next_separator =
-                find_bytes(payload, &separator, replay, region_end).unwrap_or(region_end);
-            let Some(row) = positional_dimension(payload, replay, next_separator, cache) else {
+                find_class_close(payload, replay, region_end, 0xf3, class).unwrap_or(region_end);
+            let Some(row) = positional_dimension(ctx, payload, replay, next_separator, cache)?
+            else {
                 break;
             };
+            ctx.reserve_vec(&mut rows, 1, "creo dimension rows")?;
             rows.push(row);
             replay = next_separator;
         }
     }
-    Some(FeatureDimensionTable {
+    Ok(Some(FeatureDimensionTable {
         declared_count,
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn positional_dimension_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimensionTable> {
-    let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
-        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
-        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let reference_start = after_count + 1;
-        let (class, after_reference) = psb::reference_id(payload, reference_start).ok()?;
-        (class == table_class
-            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
-        .then(|| {
-            (
-                table,
-                declared_count,
-                after_reference + 2,
-                payload[reference_start..after_reference].to_vec(),
-            )
+) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    let Some((table, declared_count, mut cursor, reference_bytes)) =
+        (start..end).find_map(|table| {
+            (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+            let (declared_count, after_count) = psb::compact_int(payload, table + 1);
+            (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let reference_start = after_count + 1;
+            let (class, after_reference) = psb::reference_id(payload, reference_start).ok()?;
+            (class == table_class
+                && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
+            .then(|| {
+                (
+                    table,
+                    declared_count,
+                    after_reference + 2,
+                    &payload[reference_start - 1..after_reference],
+                )
+            })
         })
-    })?;
-    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    else {
+        return Ok(None);
+    };
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Ok(None);
+    }
+    let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
+        return Ok(None);
+    };
     cursor = after_row_class;
 
-    let mut separator = vec![0xf3, psb::token::ENTITY_REF];
-    separator.extend_from_slice(&reference_bytes);
-    separator.push(0xe2);
+    let separator_len = reference_bytes.len() + 2;
     let mut rows = Vec::new();
     let row_limit = index_from_u32(declared_count);
     while cursor < end && rows.len() < row_limit {
-        let row_end = find_bytes(payload, &separator, cursor, end).unwrap_or(end);
-        let Some(row) = positional_dimension(payload, cursor, row_end, cache) else {
+        let row_end = find_class_close(payload, cursor, end, 0xf3, reference_bytes).unwrap_or(end);
+        let Some(row) = positional_dimension(ctx, payload, cursor, row_end, cache)? else {
             break;
         };
+        ctx.reserve_vec(&mut rows, 1, "creo dimension rows")?;
         rows.push(row);
         if rows.len() == row_limit {
             break;
         }
-        if payload.get(row_end..row_end + separator.len()) != Some(separator.as_slice()) {
+        if !class_close_at(payload, row_end, 0xf3, reference_bytes) {
             break;
         }
-        cursor = row_end + separator.len();
+        cursor = row_end + separator_len;
     }
-    Some(FeatureDimensionTable {
+    Ok(Some(FeatureDimensionTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn self_described_positional_dimension_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimensionTable> {
-    let mut candidates = Vec::new();
+) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    let mut candidate = None;
     for table in start..end {
         if payload.get(table) != Some(&psb::token::ARRAY_OPEN) {
             continue;
@@ -4435,31 +4849,36 @@ fn self_described_positional_dimension_table(
         if payload.get(after_reference..after_reference + 2) != Some(&[0xfb, 0xe2]) {
             continue;
         }
-        let Some(candidate) = positional_dimension_table(payload, table, end, table_class, cache)
+        let Some(found) = positional_dimension_table(ctx, payload, table, end, table_class, cache)?
         else {
             continue;
         };
-        if candidate.offset == table
+        if found.offset == table
             && declared_count > 1
-            && candidate.declared_count == declared_count
-            && usize::try_from(declared_count).ok() == Some(candidate.rows.len())
-            && candidate
+            && found.declared_count == declared_count
+            && usize::try_from(declared_count).ok() == Some(found.rows.len())
+            && found
                 .rows
                 .iter()
                 .all(|row| matches!(row.dimension_type, 0x01..=0x05 | 0x0a))
         {
-            candidates.push(candidate);
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some(found);
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    Ok(candidate)
 }
 
-fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
+fn feature_skamps(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Vec<FeatureSkamp>, CodecError> {
     let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut cursor = table + b"skamp_ptr\0".len();
     if payload
@@ -4471,26 +4890,22 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         cursor += 2;
     }
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let class_start = cursor;
     let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let class_encoding = &payload[class_start..next];
     cursor = next;
     if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     cursor += 2;
-    let mut trailer = Vec::with_capacity(class_encoding.len() + 2);
-    trailer.push(0xf3);
-    trailer.extend_from_slice(class_encoding);
-    trailer.push(0xe2);
-    let Some(prototype_end) = find_bytes(payload, &trailer, cursor, end) else {
-        return Vec::new();
+    let Some(prototype_end) = find_class_close(payload, cursor, end, 0xf3, class_encoding) else {
+        return Ok(Vec::new());
     };
     let named_item = (|| {
         Some(FeatureSkampItem {
@@ -4499,49 +4914,56 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         })
     })();
     let Some(items_label) = find_bytes(payload, b"items\0", cursor, prototype_end) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut item_cursor = items_label + b"items\0".len();
     if payload.get(item_cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (prototype_item_count, after_count) = psb::compact_int(payload, item_cursor + 1);
     item_cursor = after_count;
     let item_class_start = item_cursor;
     let Ok((_, after_item_class)) = psb::reference_id(payload, item_cursor + 1) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let item_class_encoding = &payload[item_class_start..after_item_class];
-    let mut item_close = Vec::with_capacity(item_class_encoding.len() + 2);
-    item_close.push(0xf1);
-    item_close.extend_from_slice(item_class_encoding);
-    item_close.push(0xe2);
-    let named_item_end = find_bytes(payload, &item_close, after_item_class, prototype_end);
+    let named_item_end = find_class_close(
+        payload,
+        after_item_class,
+        prototype_end,
+        0xf1,
+        item_class_encoding,
+    );
     let (named_item_end, named_item_close_len) = match named_item_end {
-        Some(offset) => (offset, item_close.len()),
+        Some(offset) => (offset, item_class_encoding.len() + 2),
         None if prototype_item_count == 1 && named_item.is_some() => {
             // Some named prototypes store the one named item directly in the
             // array body. The outer table trailer closes both the prototype
             // and its one-item schema; there is no inner item trailer.
             (prototype_end, 0)
         }
-        None => return Vec::new(),
+        None => return Ok(Vec::new()),
     };
     item_cursor = named_item_end + named_item_close_len;
-    let mut prototype_items = named_item.into_iter().collect::<Vec<_>>();
+    let mut prototype_items = Vec::new();
+    if let Some(item) = named_item {
+        ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items")?;
+        prototype_items.push(item);
+    }
     while prototype_items.len() < index_from_u32(prototype_item_count) {
         let (Some(entity_id), next) = segment_int(payload, item_cursor) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         item_cursor = next;
         let (Some(sense), next) = segment_int(payload, item_cursor) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         item_cursor = next;
+        ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items")?;
         prototype_items.push(FeatureSkampItem { entity_id, sense });
     }
     if item_cursor != prototype_end {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(prototype) = (|| {
         Some(FeatureSkamp {
@@ -4553,10 +4975,12 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
             offset: cursor,
         })
     })() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut rows = vec![prototype];
-    cursor = prototype_end + trailer.len();
+    let mut rows = Vec::new();
+    ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
+    rows.push(prototype);
+    cursor = prototype_end + class_encoding.len() + 2;
     'rows: while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
@@ -4601,6 +5025,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
+            ctx.reserve_vec(&mut items, 1, "creo skamp items")?;
             items.push(FeatureSkampItem { entity_id, sense });
             if payload.get(cursor) == Some(&0xf1) {
                 let Ok((_, next)) = psb::reference_id(payload, cursor + 2) else {
@@ -4613,8 +5038,8 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
                 cursor += 1;
             }
         }
-        if payload.get(cursor..cursor + trailer.len()) == Some(trailer.as_slice()) {
-            cursor += trailer.len();
+        if class_close_at(payload, cursor, 0xf3, class_encoding) {
+            cursor += class_encoding.len() + 2;
         } else if payload.get(cursor) == Some(&0xe2) {
             cursor += 1;
         } else if payload.get(cursor) == Some(&0xe0) {
@@ -4622,6 +5047,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         } else {
             break;
         }
+        ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(FeatureSkamp {
             id,
             kind,
@@ -4631,7 +5057,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
             offset: row_offset,
         });
     }
-    rows
+    Ok(rows)
 }
 
 fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
@@ -4694,30 +5120,52 @@ fn positional_array_header(
     start: usize,
     end: usize,
     table_class: u32,
-) -> Option<(usize, u32, usize, Vec<u8>)> {
-    let candidates = (start..end)
-        .filter_map(|offset| {
-            (payload.get(offset) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-            let (count, after_count) = psb::compact_int(payload, offset + 1);
-            (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let reference_start = after_count + 1;
-            let (class, after_class) = psb::reference_id(payload, reference_start).ok()?;
-            (class == table_class
-                && payload.get(after_class..after_class + 2) == Some(&[0xfb, 0xe2]))
+) -> Option<(usize, u32, usize, &[u8])> {
+    let mut candidates = (start..end).filter_map(|offset| {
+        (payload.get(offset) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (count, after_count) = psb::compact_int(payload, offset + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let reference_start = after_count + 1;
+        let (class, after_class) = psb::reference_id(payload, reference_start).ok()?;
+        (class == table_class && payload.get(after_class..after_class + 2) == Some(&[0xfb, 0xe2]))
             .then(|| {
                 (
                     offset,
                     count,
                     after_class + 2,
-                    payload[after_count..after_class].to_vec(),
+                    &payload[after_count..after_class],
                 )
             })
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
+    });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn class_close_at(payload: &[u8], offset: usize, prefix: u8, class: &[u8]) -> bool {
+    let Some(length) = class.len().checked_add(2) else {
+        return false;
     };
-    Some(candidate.clone())
+    let Some(close) = offset.checked_add(length) else {
+        return false;
+    };
+    payload.get(offset..close).is_some_and(|window| {
+        window.first() == Some(&prefix)
+            && window.get(1..length - 1) == Some(class)
+            && window.last() == Some(&0xe2)
+    })
+}
+
+fn find_class_close(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    prefix: u8,
+    class: &[u8],
+) -> Option<usize> {
+    payload.get(start..end)?;
+    let length = class.len().checked_add(2)?;
+    let last = end.checked_sub(length)?;
+    (start..=last).find(|&offset| class_close_at(payload, offset, prefix, class))
 }
 
 fn consume_positional_separator(
@@ -4741,25 +5189,26 @@ fn consume_positional_separator(
 }
 
 fn positional_feature_skamps(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
-) -> Vec<FeatureSkamp> {
+) -> Result<Vec<FeatureSkamp>, CodecError> {
     let Some((_, count, mut cursor, table_class_encoding)) =
         positional_array_header(payload, start, end, table_class)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
-    let mut item_classes = None::<(Vec<u8>, Vec<u8>)>;
+    let mut item_classes = None::<(&[u8], &[u8])>;
     'rows: while rows.len() < index_from_u32(count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
@@ -4779,9 +5228,9 @@ fn positional_feature_skamps(
                 payload,
                 cursor,
                 end,
-                &table_class_encoding,
-                item_classes.as_ref().map(|classes| classes.0.as_slice()),
-                item_classes.as_ref().map(|classes| classes.1.as_slice()),
+                table_class_encoding,
+                item_classes.as_ref().map(|classes| classes.0),
+                item_classes.as_ref().map(|classes| classes.1),
             )
         else {
             break;
@@ -4796,15 +5245,12 @@ fn positional_feature_skamps(
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
+            ctx.reserve_vec(&mut items, 1, "creo skamp items")?;
             items.push(FeatureSkampItem { entity_id, sense });
             if items.len() < index_from_u32(item_count) {
-                let Some(next) = consume_positional_separator(
-                    payload,
-                    cursor,
-                    end,
-                    classes.0.as_slice(),
-                    &[0xf1],
-                ) else {
+                let Some(next) =
+                    consume_positional_separator(payload, cursor, end, classes.0, &[0xf1])
+                else {
                     break 'rows;
                 };
                 cursor = next;
@@ -4820,30 +5266,27 @@ fn positional_feature_skamps(
         };
         if rows.len() + 1 < index_from_u32(count) {
             let Some(next) =
-                consume_positional_separator(payload, cursor, end, &table_class_encoding, &[0xf3])
+                consume_positional_separator(payload, cursor, end, table_class_encoding, &[0xf3])
             else {
                 break;
             };
             cursor = next;
         }
+        ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(row);
     }
-    rows
+    Ok(rows)
 }
 
-fn positional_skamp_item_array(
-    payload: &[u8],
+fn positional_skamp_item_array<'a>(
+    payload: &'a [u8],
     start: usize,
     end: usize,
     outer_table_class: &[u8],
     expected_table_class: Option<&[u8]>,
     expected_row_class: Option<&[u8]>,
-) -> Option<(u32, usize, Vec<u8>, Vec<u8>)> {
-    let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
-    row_separator.push(0xf3);
-    row_separator.extend_from_slice(outer_table_class);
-    row_separator.push(0xe2);
-    let row_end = find_bytes(payload, &row_separator, start, end).unwrap_or(end);
+) -> Option<(u32, usize, &'a [u8], &'a [u8])> {
+    let row_end = find_class_close(payload, start, end, 0xf3, outer_table_class).unwrap_or(end);
     let candidate = (start..row_end).find_map(|array| {
         positional_skamp_item_array_candidate(
             payload,
@@ -4854,7 +5297,7 @@ fn positional_skamp_item_array(
         )
     })?;
     let item_end =
-        positional_skamp_item_array_body_end(payload, candidate.1, candidate.0, &candidate.2, end)?;
+        positional_skamp_item_array_body_end(payload, candidate.1, candidate.0, candidate.2, end)?;
     if payload.get(item_end) == Some(&psb::token::ARRAY_OPEN)
         && positional_skamp_item_array_candidate(
             payload,
@@ -4864,7 +5307,7 @@ fn positional_skamp_item_array(
             expected_row_class,
         )
         .is_some_and(|second| {
-            positional_skamp_item_array_body_end(payload, second.1, second.0, &second.2, end)
+            positional_skamp_item_array_body_end(payload, second.1, second.0, second.2, end)
                 .is_some()
         })
     {
@@ -4874,20 +5317,20 @@ fn positional_skamp_item_array(
         payload,
         candidate.1,
         candidate.0,
-        &candidate.2,
+        candidate.2,
         outer_table_class,
         end,
     )?;
     Some(candidate)
 }
 
-fn positional_skamp_item_array_candidate(
-    payload: &[u8],
+fn positional_skamp_item_array_candidate<'a>(
+    payload: &'a [u8],
     array: usize,
     end: usize,
     expected_table_class: Option<&[u8]>,
     expected_row_class: Option<&[u8]>,
-) -> Option<(u32, usize, Vec<u8>, Vec<u8>)> {
+) -> Option<(u32, usize, &'a [u8], &'a [u8])> {
     (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (count, after_count) = psb::compact_int(payload, array + 1);
     (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -4905,12 +5348,7 @@ fn positional_skamp_item_array_candidate(
     expected_row_class
         .is_none_or(|expected| expected == row_class)
         .then_some(())?;
-    Some((
-        count,
-        after_row_class,
-        table_class.to_vec(),
-        row_class.to_vec(),
-    ))
+    Some((count, after_row_class, table_class, row_class))
 }
 
 fn positional_skamp_item_array_body_end(
@@ -4944,14 +5382,10 @@ fn positional_skamp_item_array_has_valid_boundary(
     cursor =
         positional_skamp_item_array_body_end(payload, cursor, item_count, item_table_class, end)?;
 
-    let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
-    row_separator.push(0xf3);
-    row_separator.extend_from_slice(outer_table_class);
-    row_separator.push(0xe2);
     if cursor == end {
         return Some(());
     }
-    if payload.get(cursor..cursor + row_separator.len()) == Some(row_separator.as_slice()) {
+    if class_close_at(payload, cursor, 0xf3, outer_table_class) {
         return Some(());
     }
     if payload.get(cursor) == Some(&0xe2) {
@@ -5012,32 +5446,33 @@ fn positional_skamp_following_table_header(
 }
 
 fn feature_relation_triples(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Vec<FeatureRelationTriple> {
+) -> Result<Vec<FeatureRelationTriple>, CodecError> {
     let Some(table) = find_bytes(payload, b"triples_ptr\0", start, end) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut cursor = table + b"triples_ptr\0".len();
     if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
         cursor += 2;
     }
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     cursor = next;
     if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     cursor += 2;
     let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let prototype = FeatureRelationTriple {
         relation_id: named_compact_int(payload, b"rel_id\0", cursor, close),
@@ -5046,14 +5481,16 @@ fn feature_relation_triples(
         offset: cursor,
     };
     let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     cursor = next;
     if payload.get(cursor) != Some(&0xe2) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     cursor += 1;
-    let mut rows = vec![prototype];
+    let mut rows = Vec::new();
+    ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
+    rows.push(prototype);
     while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
         let relation_id = next_solver_int(payload, &mut cursor);
@@ -5067,6 +5504,7 @@ fn feature_relation_triples(
         if !terminal_named_boundary {
             cursor += 1;
         }
+        ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
         rows.push(FeatureRelationTriple {
             relation_id,
             equation_id,
@@ -5074,25 +5512,26 @@ fn feature_relation_triples(
             offset: row_offset,
         });
     }
-    rows
+    Ok(rows)
 }
 
 fn positional_relation_triples(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
-) -> Vec<FeatureRelationTriple> {
+) -> Result<Vec<FeatureRelationTriple>, CodecError> {
     let Some((_, count, mut cursor, class_encoding)) =
         positional_array_header(payload, start, end, table_class)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
@@ -5121,64 +5560,82 @@ fn positional_relation_triples(
         };
         if rows.len() + 1 < index_from_u32(count) {
             let Some(next) =
-                consume_positional_separator(payload, cursor, end, &class_encoding, &[0xf1])
+                consume_positional_separator(payload, cursor, end, class_encoding, &[0xf1])
             else {
                 break;
             };
             cursor = next;
         }
+        ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
         rows.push(row);
     }
-    rows
+    Ok(rows)
 }
 
 fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
-    let mut values = Vec::with_capacity(12);
+    let mut values = [None; 14];
+    let mut filled = 0;
     let mut cursor = 0;
-    while cursor < bytes.len() && values.len() < 12 {
+    while cursor < bytes.len() && filled < 12 {
         match bytes[cursor] {
             0xe4 => {
-                values.push(Some(1));
+                values[filled] = Some(1);
+                filled += 1;
                 cursor += 1;
             }
             0xe5 => {
-                values.extend([Some(0); 2]);
+                values[filled..filled + 2].fill(Some(0));
+                filled += 2;
                 cursor += 1;
             }
             0xe6 => {
-                values.extend([Some(0); 3]);
+                values[filled..filled + 3].fill(Some(0));
+                filled += 3;
                 cursor += 1;
             }
             0xf6 => {
-                values.push(None);
+                filled += 1;
                 cursor += 1;
             }
             _ => {
                 let value = next_solver_int(bytes, &mut cursor)?;
-                values.push(Some(value));
+                values[filled] = Some(value);
+                filled += 1;
             }
         }
     }
-    if cursor != bytes.len() {
+    if cursor != bytes.len() || filled != 12 {
         return None;
     }
-    let ([first, second, third], []) = values.as_chunks::<4>() else {
-        return None;
-    };
-    Some([*first, *second, *third])
+    Some([
+        [values[0], values[1], values[2], values[3]],
+        [values[4], values[5], values[6], values[7]],
+        [values[8], values[9], values[10], values[11]],
+    ])
 }
 
-fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
-    let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
+fn relation_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureRelationTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"relat_ptr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"relat_ptr\0".len();
     if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
         cursor += 2;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-        let (value, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        let Ok((value, next)) = psb::reference_id(payload, cursor + 1) else {
+            return Ok(None);
+        };
         cursor = next;
         Some(value)
     } else {
@@ -5200,28 +5657,30 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
         (payload.get(after_ref) == Some(&0xe2)).then_some(after_ref + 1)
     })();
-    let rows = rows_start.map_or_else(Vec::new, |rows_start| {
-        positional_relation_rows(
+    let rows = match rows_start {
+        Some(rows_start) => positional_relation_rows(
+            ctx,
             payload,
             rows_start,
             rows_end,
             RelationBodyRows::from_declared(declared_count),
-        )
-    });
-    Some(FeatureRelationTable {
+        )?,
+        None => Vec::new(),
+    };
+    Ok(Some(FeatureRelationTable {
         declared_count,
         entity_ref,
         rows,
         skamps: SolverSubtable::from_parts(
             named_solver_table_header(payload, b"skamp_ptr\0", start, end),
-            feature_skamps(payload, start, end),
+            feature_skamps(ctx, payload, start, end)?,
         ),
         triples: SolverSubtable::from_parts(
             named_solver_table_header(payload, b"triples_ptr\0", start, end),
-            feature_relation_triples(payload, start, end),
+            feature_relation_triples(ctx, payload, start, end)?,
         ),
         offset: table,
-    })
+    }))
 }
 
 /// Body rows stated by a `relat_ptr` allocation count. A count of one is the
@@ -5255,16 +5714,17 @@ impl RelationBodyRows {
 }
 
 fn positional_relation_rows(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     end: usize,
     row_count: RelationBodyRows,
-) -> Vec<FeatureRelation> {
+) -> Result<Vec<FeatureRelation>, CodecError> {
     if cursor > end || end > payload.len() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(row_count) = row_count.get() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut rows = Vec::new();
     for _ in 0..row_count {
@@ -5283,7 +5743,7 @@ fn positional_relation_rows(
         if after_used <= after_id || after_used >= row_end {
             break;
         }
-        let mut suffixes = Vec::new();
+        let mut suffix = None;
         for suffix_start in after_used..row_end {
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
             let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);
@@ -5293,36 +5753,44 @@ fn positional_relation_rows(
                 && after_type > after_dimension
                 && after_type == row_end
             {
-                suffixes.push((suffix_start, sign, dimension_id, relation_type));
+                if suffix.is_some() {
+                    suffix = None;
+                    break;
+                }
+                suffix = Some((suffix_start, sign, dimension_id, relation_type));
             }
         }
-        let [(suffix_start, sign, dimension_id, relation_type)] = suffixes.as_slice() else {
+        let Some((suffix_start, sign, dimension_id, relation_type)) = suffix else {
             break;
         };
-        let operands = payload[after_used..*suffix_start].to_vec();
+        let operands =
+            ctx.copy_retained(&payload[after_used..suffix_start], "creo relation operands")?;
+        let body = ctx.copy_retained(&payload[cursor..row_end], "creo relation row body")?;
+        ctx.reserve_vec(&mut rows, 1, "creo relation rows")?;
         rows.push(FeatureRelation {
             relation_id,
             used,
             operand_vectors: relation_operand_vectors(&operands),
             operands,
-            sign: *sign,
-            dimension_id: *dimension_id,
-            relation_type: *relation_type,
-            body: payload[cursor..row_end].to_vec(),
+            sign,
+            dimension_id,
+            relation_type,
+            body,
             offset: cursor,
         });
         cursor = row_end + 1;
     }
-    rows
+    Ok(rows)
 }
 
 fn positional_relation_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
-) -> Option<FeatureRelationTable> {
-    let (table, declared_count, cursor, reference_bytes) = (start..end).find_map(|table| {
+) -> Result<Option<FeatureRelationTable>, CodecError> {
+    let Some((table, declared_count, cursor, reference_bytes)) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -5335,35 +5803,36 @@ fn positional_relation_table(
                 table,
                 declared_count,
                 after_reference + 2,
-                payload[reference_start..after_reference].to_vec(),
+                &payload[reference_start - 1..after_reference],
             )
         })
-    })?;
-    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
-    prototype_separator.extend_from_slice(&reference_bytes);
-    prototype_separator.push(0xe2);
+    }) else {
+        return Ok(None);
+    };
     let rows_start = (|| {
         (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
         let (_, prototype) = psb::reference_id(payload, cursor + 1).ok()?;
-        let prototype_end = find_bytes(payload, &prototype_separator, prototype, end)?;
-        Some(prototype_end + prototype_separator.len())
+        let prototype_end = find_class_close(payload, prototype, end, 0xf1, reference_bytes)?;
+        Some(prototype_end + reference_bytes.len() + 2)
     })();
-    let rows = rows_start.map_or_else(Vec::new, |rows_start| {
-        positional_relation_rows(
+    let rows = match rows_start {
+        Some(rows_start) => positional_relation_rows(
+            ctx,
             payload,
             rows_start,
             end,
             RelationBodyRows::from_declared(declared_count),
-        )
-    });
-    Some(FeatureRelationTable {
+        )?,
+        None => Vec::new(),
+    };
+    Ok(Some(FeatureRelationTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
         skamps: None,
         triples: None,
         offset: table,
-    })
+    }))
 }
 
 fn saved_section_scalar(
@@ -5447,11 +5916,12 @@ fn saved_section_scalar(
 }
 
 fn saved_line_block(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     segment_end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     if payload.get(cursor) == Some(&0xf1) {
         cursor = payload[cursor..segment_end]
             .iter()
@@ -5495,6 +5965,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
             } else if payload
@@ -5504,6 +5975,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
             } else if payload.get(cursor) == Some(&0xeb) {
@@ -5512,6 +5984,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
+                ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
                 attributes.push(attribute);
                 cursor += 6;
             } else {
@@ -5527,15 +6000,17 @@ fn saved_line_block(
             continue;
         }
         cursor = next + 1;
-        let mut values = Vec::with_capacity(6);
-        while cursor < segment_end && values.len() < 6 {
+        let mut values = [None; 8];
+        let mut filled = 0;
+        while cursor < segment_end && filled < 6 {
             if payload.get(cursor) == Some(&0xe3)
                 || payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
             {
                 break;
             }
             if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-                values.extend([Some(0.0), Some(1.0), Some(0.0)]);
+                values[filled..filled + 3].copy_from_slice(&[Some(0.0), Some(1.0), Some(0.0)]);
+                filled += 3;
                 cursor += 2;
                 continue;
             }
@@ -5543,6 +6018,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -5554,6 +6030,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -5564,6 +6041,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
+                ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
                 attributes.push(attribute);
                 cursor += 6;
                 continue;
@@ -5576,7 +6054,8 @@ fn saved_line_block(
             if next <= cursor {
                 break;
             }
-            values.push(value);
+            values[filled] = value;
+            filled += 1;
             cursor = next;
         }
         loop {
@@ -5606,6 +6085,7 @@ fn saved_line_block(
             let Ok((reference, next)) = psb::reference_id(payload, reference_start) else {
                 break;
             };
+            ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
             references.push(reference);
             cursor = next;
         }
@@ -5620,7 +6100,9 @@ fn saved_line_block(
         if row_separator {
             cursor += 1;
         }
-        values.resize(6, None);
+        let body =
+            ctx.copy_retained(&payload[record_offset..record_end], "creo saved line body")?;
+        ctx.reserve_vec(&mut entities, 1, "creo saved line block entities")?;
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
             entity_id,
             references,
@@ -5629,19 +6111,20 @@ fn saved_line_block(
                 [values[0], values[1], values[2]],
                 [values[3], values[4], values[5]],
             ],
-            body: payload[record_offset..record_end].to_vec(),
+            body,
             offset: record_offset,
         }));
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_line_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let label = b"\xe0\x00entity(line)\0";
     let mut entities = Vec::new();
     let mut search = start;
@@ -5656,10 +6139,12 @@ fn saved_line_entities(
         .filter_map(|next_label| find_bytes(payload, next_label, body_start, end))
         .min()
         .unwrap_or(end);
-        entities.extend(saved_line_block(payload, body_start, body_end, cache));
+        let block = saved_line_block(ctx, payload, body_start, body_end, cache)?;
+        ctx.reserve_vec(&mut entities, block.len(), "creo saved line entities")?;
+        entities.extend(block);
         search = body_end;
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_named_scalars<const N: usize>(
@@ -5669,10 +6154,13 @@ fn saved_named_scalars<const N: usize>(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<[Option<f64>; N]> {
-    let mut label = vec![0xe0, 0x02];
-    label.extend_from_slice(field);
-    label.push(0);
-    let mut cursor = find_bytes(payload, &label, start, end)? + label.len();
+    let window = payload.get(start..end)?;
+    let label_start = (0..window.len()).find(|&offset| {
+        window.get(offset..offset + 2) == Some(&[0xe0, 0x02])
+            && window.get(offset + 2..offset + 2 + field.len()) == Some(field)
+            && window.get(offset + 2 + field.len()) == Some(&0)
+    })?;
+    let mut cursor = start + label_start + field.len() + 3;
     while payload
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
@@ -5768,28 +6256,33 @@ fn saved_arc_scalar(
 }
 
 fn saved_positional_generated_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     const HEADER_WINDOW: usize = 24;
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let generated_segments = order_table
-        .rows
-        .iter()
-        .filter_map(|row| {
-            (order_table.internal_id(row.external_id) == Some(row.internal_id)
-                && order_table.external_id(row.internal_id) == Some(row.external_id))
-            .then_some(())?;
-            let segment = segments.unique_segment(row.external_id)?;
-            Some((row.internal_id, segment))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut generated_segments = BTreeMap::new();
+    for row in &order_table.rows {
+        if order_table.internal_id(row.external_id) != Some(row.internal_id)
+            || order_table.external_id(row.internal_id) != Some(row.external_id)
+        {
+            continue;
+        }
+        let Some(segment) = segments.unique_segment(row.external_id) else {
+            continue;
+        };
+        if !generated_segments.contains_key(&row.internal_id) {
+            ctx.charge_collection_items(1, "creo saved generated segment nodes")?;
+        }
+        generated_segments.insert(row.internal_id, segment);
+    }
     let mut starts = Vec::new();
     for separator in start..end {
         if payload.get(separator) != Some(&0xe3) {
@@ -5812,6 +6305,7 @@ fn saved_positional_generated_entities(
             continue;
         }
         if payload[after_id..header_end].contains(&0xe2) {
+            ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")?;
             starts.push(row_start);
         }
     }
@@ -5844,13 +6338,15 @@ fn saved_positional_generated_entities(
             continue;
         };
         let mut cursor = after_id + header_size + 1;
-        let mut values = Vec::with_capacity(value_count);
-        while cursor < row_end && values.len() < value_count {
+        let mut values = [None; 14];
+        let mut filled = 0;
+        while cursor < row_end && filled < value_count {
             if payload.get(cursor) == Some(&0xe3) {
                 break;
             }
             if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-                values.extend([Some(0.0), Some(1.0), Some(0.0)]);
+                values[filled..filled + 3].copy_from_slice(&[Some(0.0), Some(1.0), Some(0.0)]);
+                filled += 3;
                 cursor += 2;
                 continue;
             }
@@ -5883,17 +6379,16 @@ fn saved_positional_generated_entities(
             if next <= cursor {
                 break;
             }
-            values.push(value);
+            values[filled] = value;
+            filled += 1;
             cursor = next;
         }
-        if values.len() != value_count {
-            if !matches!(segment.kind, FeatureSegmentKind::Arc(_))
-                || values.len() > value_count
-                || (cursor != row_end && payload.get(cursor) != Some(&0xe3))
-            {
-                continue;
-            }
-            values.resize(value_count, None);
+        if filled != value_count
+            && (!matches!(segment.kind, FeatureSegmentKind::Arc(_))
+                || filled > value_count
+                || (cursor != row_end && payload.get(cursor) != Some(&0xe3)))
+        {
+            continue;
         }
         match segment.kind {
             FeatureSegmentKind::Line(_) => {
@@ -5920,18 +6415,28 @@ fn saved_positional_generated_entities(
                 };
                 if orientation_matches {
                     let body_end = saved_positional_body_end(payload, row_end);
+                    let body = ctx.copy_retained(
+                        &payload[row_start..body_end],
+                        "creo saved generated line body",
+                    )?;
+                    ctx.reserve_vec(&mut entities, 1, "creo saved generated entities")?;
                     entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
                         entity_id,
                         references: Vec::new(),
                         attributes: Vec::new(),
                         endpoints,
-                        body: payload[row_start..body_end].to_vec(),
+                        body,
                         offset: row_start,
                     }));
                 }
             }
             FeatureSegmentKind::Arc(_) => {
                 let body_end = saved_positional_body_end(payload, row_end);
+                let body = ctx.copy_retained(
+                    &payload[row_start..body_end],
+                    "creo saved generated arc body",
+                )?;
+                ctx.reserve_vec(&mut entities, 1, "creo saved generated entities")?;
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center: [values[0], values[1], values[2]],
@@ -5941,14 +6446,14 @@ fn saved_positional_generated_entities(
                         [values[7], values[8], values[9]],
                     ],
                     parameters: [values[10], values[11]],
-                    body: payload[row_start..body_end].to_vec(),
+                    body,
                     offset: row_start,
                 }));
             }
             FeatureSegmentKind::Point(_) => {}
         }
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
@@ -5959,13 +6464,14 @@ fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
 }
 
 fn saved_circular_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
     for (kind, label) in [
         ("arc", b"\xe0\x00entity(arc)\0".as_slice()),
@@ -5985,13 +6491,14 @@ fn saved_circular_entities(
                 .unwrap_or([None])[0];
             if kind == "arc" {
                 let positional = saved_positional_generated_entities(
+                    ctx,
                     payload,
                     body_start,
                     body_end,
                     cache,
                     order_table,
                     segments,
-                );
+                )?;
                 let named_body_end = positional
                     .iter()
                     .map(saved_entity_offset)
@@ -6010,37 +6517,49 @@ fn saved_circular_entities(
                 let end_parameter =
                     saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
                         .unwrap_or([None])[0];
+                let body =
+                    ctx.copy_retained(&payload[body_start..named_body_end], "creo saved arc body")?;
+                ctx.reserve_vec(&mut entities, 1, "creo saved circular entities")?;
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center,
                     radius,
                     endpoints: [first, second],
                     parameters: [start_parameter, end_parameter],
-                    body: payload[body_start..named_body_end].to_vec(),
+                    body,
                     offset: entity_offset,
                 }));
+                ctx.reserve_vec(
+                    &mut entities,
+                    positional.len(),
+                    "creo saved circular entities",
+                )?;
                 entities.extend(positional);
             } else {
+                let body =
+                    ctx.copy_retained(&payload[body_start..body_end], "creo saved circle body")?;
+                ctx.reserve_vec(&mut entities, 1, "creo saved circular entities")?;
                 entities.push(FeatureSavedEntity::Circle(FeatureSavedCircle {
                     entity_id,
                     center,
                     radius,
-                    body: payload[body_start..body_end].to_vec(),
+                    body,
                     offset: entity_offset,
                 }));
             }
             search = body_end;
         }
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_conic_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let label = b"\xe0\x00entity(conic)\0";
     let local_system_label = b"\xe0\x02local_sys\0";
     let mut entities = Vec::new();
@@ -6079,35 +6598,44 @@ fn saved_conic_entities(
                 )
                 .map(|(frame, _)| frame)
             });
+        let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved conic body")?;
+        ctx.reserve_vec(&mut entities, 1, "creo saved conic entities")?;
         entities.push(FeatureSavedEntity::Conic(FeatureSavedConic {
             entity_id,
             endpoints: [first, second],
             parameters: [start_parameter, end_parameter],
             coefficients: [first_coefficient, second_coefficient],
             local_system,
-            body: payload[body_start..body_end].to_vec(),
+            body,
             offset: entity_offset,
         }));
         search = body_end;
     }
-    entities
+    Ok(entities)
 }
 
-fn saved_dummy_entities(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSavedEntity> {
+fn saved_dummy_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let label = b"\xe0\x00entity(dummy_ent)\0";
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, label, search, end) {
         let body_start = entity_offset + label.len();
         let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
+        let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved dummy body")?;
+        ctx.reserve_vec(&mut entities, 1, "creo saved dummy entities")?;
         entities.push(FeatureSavedEntity::Dummy(FeatureSavedDummy {
             entity_id: saved_entity_id(payload, body_start, body_end),
-            body: payload[body_start..body_end].to_vec(),
+            body,
             offset: entity_offset,
         }));
         search = body_end;
     }
-    entities
+    Ok(entities)
 }
 
 /// Interpolation points a saved-spline body of `remaining` bytes can state.
@@ -6124,18 +6652,17 @@ fn admitted_interpolation_point_count(declared: u32, remaining: usize) -> Option
 }
 
 fn saved_spline_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
     const POINTS_LABEL: &[u8] = b"\xe0\x02i_pnts\0";
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
     const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
-    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
-    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
@@ -6146,7 +6673,7 @@ fn saved_spline_entities(
         let mut declared_point_count = None;
         let mut point_count = None;
         let mut points = Vec::new();
-        let mut interpolation_points_body = Vec::new();
+        let mut interpolation_body_range = None;
         let mut fields_start = body_start;
         if let Some(points_label) = points_label {
             let value_start = points_label + POINTS_LABEL.len();
@@ -6155,12 +6682,12 @@ fn saved_spline_entities(
             let (coordinate_count, mut cursor) = psb::compact_int(payload, dimensions_end);
             if dimensions_end > extents_start && cursor > dimensions_end && coordinate_count == 3 {
                 declared_point_count = Some(declared);
-                interpolation_points_body = payload[value_start..cursor].to_vec();
+                interpolation_body_range = Some((value_start, cursor));
                 point_count = payload.get(cursor..body_end).and_then(|remaining| {
                     admitted_interpolation_point_count(declared, remaining.len())
                 });
                 if let Some(point_count) = point_count {
-                    points.reserve(point_count);
+                    ctx.reserve_vec(&mut points, point_count, "creo saved spline points")?;
                     for _ in 0..point_count {
                         let mut point = [0.0; 3];
                         let mut next_cursor = cursor;
@@ -6183,10 +6710,17 @@ fn saved_spline_entities(
                         cursor = next_cursor;
                     }
                     fields_start = cursor;
-                    interpolation_points_body = payload[value_start..cursor].to_vec();
+                    interpolation_body_range = Some((value_start, cursor));
                 }
             }
         }
+        let interpolation_points_body = match interpolation_body_range {
+            Some((body_start, body_end)) => ctx.copy_retained(
+                &payload[body_start..body_end],
+                "creo saved spline point body",
+            )?,
+            None => Vec::new(),
+        };
         let endpoint_tangents =
             find_bytes(payload, TANGENTS, fields_start, body_end).and_then(|label| {
                 let value_start = label + TANGENTS_LABEL.len();
@@ -6200,30 +6734,26 @@ fn saved_spline_entities(
                         at = next;
                     }
                 }
-                Some(DecodedField {
-                    value: tangents,
-                    body: payload[value_start..at].to_vec(),
-                })
+                Some((tangents, value_start, at))
             });
-        let parameters = point_count.and_then(|point_count| {
-            find_bytes(payload, PARAMETERS, fields_start, body_end).and_then(|label| {
-                let value_start = label + PARAMETERS_LABEL.len();
-                let count_at = label + PARAMETERS.len();
-                let (count, mut at) = psb::compact_int(payload, count_at);
-                (usize::try_from(count).ok() == Some(point_count) && at > count_at).then_some(())?;
-                let mut values = Vec::with_capacity(point_count);
-                for _ in 0..count {
-                    let (value, next) = saved_spline_parameter(payload, at, cache)?;
-                    (next <= body_end).then_some(())?;
-                    values.push(value);
-                    at = next;
-                }
-                Some(DecodedField {
-                    value: values,
-                    body: payload[value_start..at].to_vec(),
+        let endpoint_tangents = endpoint_tangents
+            .map(|(value, body_start, body_end)| -> Result<_, CodecError> {
+                Ok(DecodedField {
+                    value,
+                    body: ctx.copy_retained(
+                        &payload[body_start..body_end],
+                        "creo saved spline tangent body",
+                    )?,
                 })
             })
-        });
+            .transpose()?;
+        let parameters = match point_count {
+            Some(point_count) => {
+                saved_spline_parameters(ctx, payload, fields_start, body_end, point_count, cache)?
+            }
+            None => None,
+        };
+        ctx.reserve_vec(&mut entities, 1, "creo saved spline entities")?;
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: saved_entity_id(payload, body_start, entity_id_end),
             declared_point_count,
@@ -6235,7 +6765,47 @@ fn saved_spline_entities(
         }));
         search = body_start;
     }
-    entities
+    Ok(entities)
+}
+
+fn saved_spline_parameters(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    point_count: usize,
+    cache: &scalar::ScalarCache,
+) -> Result<Option<DecodedField<Vec<f64>>>, CodecError> {
+    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
+    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
+    let Some(label) = find_bytes(payload, PARAMETERS, start, end) else {
+        return Ok(None);
+    };
+    let value_start = label + PARAMETERS_LABEL.len();
+    let count_at = label + PARAMETERS.len();
+    let (count, mut cursor) = psb::compact_int(payload, count_at);
+    if usize::try_from(count).ok() != Some(point_count) || cursor <= count_at {
+        return Ok(None);
+    }
+    let mut values = Vec::new();
+    ctx.reserve_vec(&mut values, point_count, "creo saved spline parameters")?;
+    for _ in 0..count {
+        let Some((value, next)) = saved_spline_parameter(payload, cursor, cache) else {
+            return Ok(None);
+        };
+        if next > end {
+            return Ok(None);
+        }
+        values.push(value);
+        cursor = next;
+    }
+    Ok(Some(DecodedField {
+        value: values,
+        body: ctx.copy_retained(
+            &payload[value_start..cursor],
+            "creo saved spline parameter body",
+        )?,
+    }))
 }
 
 fn saved_spline_parameter(
@@ -6278,59 +6848,91 @@ pub(crate) fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
 }
 
 fn saved_section(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Option<FeatureSavedSection> {
-    let table = find_bytes(payload, b"\xe0\x00p_saved_result\0", start, end)?;
+) -> Result<Option<FeatureSavedSection>, CodecError> {
+    let Some(table) = find_bytes(payload, b"\xe0\x00p_saved_result\0", start, end) else {
+        return Ok(None);
+    };
     let table_end = find_bytes(payload, b"\xe0\x02local_sys\0", table, end)
         .or_else(|| find_bytes(payload, b"\xe0\x00rigid_data\0", table, end))
         .unwrap_or(end);
-    let mut entities = saved_line_entities(payload, table, table_end, cache);
-    entities.extend(saved_circular_entities(
-        payload,
-        table,
-        table_end,
-        cache,
-        order_table,
-        segments,
-    ));
-    entities.extend(saved_conic_entities(payload, table, end, cache));
-    entities.extend(saved_dummy_entities(payload, table, table_end));
-    entities.extend(saved_spline_entities(payload, start, end, cache));
-    entities.sort_by_key(saved_entity_offset);
-    Some(FeatureSavedSection {
+    let mut entities = saved_line_entities(ctx, payload, table, table_end, cache)?;
+    let circular =
+        saved_circular_entities(ctx, payload, table, table_end, cache, order_table, segments)?;
+    ctx.reserve_vec(&mut entities, circular.len(), "creo saved section entities")?;
+    entities.extend(circular);
+    let conic = saved_conic_entities(ctx, payload, table, end, cache)?;
+    ctx.reserve_vec(&mut entities, conic.len(), "creo saved section entities")?;
+    entities.extend(conic);
+    let dummy = saved_dummy_entities(ctx, payload, table, table_end)?;
+    ctx.reserve_vec(&mut entities, dummy.len(), "creo saved section entities")?;
+    entities.extend(dummy);
+    let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
+    ctx.reserve_vec(&mut entities, spline.len(), "creo saved section entities")?;
+    entities.extend(spline);
+    crate::sort::stable_sort_by_key(
+        ctx,
+        entities.as_mut_slice(),
+        saved_entity_offset,
+        "creo saved section entities ordering",
+    )?;
+    Ok(Some(FeatureSavedSection {
         entities,
         offset: table,
-    })
+    }))
 }
 
 fn positional_saved_section(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Option<FeatureSavedSection> {
-    let mut entities =
-        saved_positional_generated_entities(payload, start, end, cache, order_table, segments);
-    entities.extend(saved_conic_entities(payload, start, end, cache));
-    entities.sort_by_key(saved_entity_offset);
-    let offset = entities.first().map(saved_entity_offset)?;
-    Some(FeatureSavedSection { entities, offset })
+) -> Result<Option<FeatureSavedSection>, CodecError> {
+    let mut entities = saved_positional_generated_entities(
+        ctx,
+        payload,
+        start,
+        end,
+        cache,
+        order_table,
+        segments,
+    )?;
+    let conic = saved_conic_entities(ctx, payload, start, end, cache)?;
+    ctx.reserve_vec(
+        &mut entities,
+        conic.len(),
+        "creo positional saved section entities",
+    )?;
+    entities.extend(conic);
+    crate::sort::stable_sort_by_key(
+        ctx,
+        entities.as_mut_slice(),
+        saved_entity_offset,
+        "creo positional saved section entities ordering",
+    )?;
+    let Some(offset) = entities.first().map(saved_entity_offset) else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureSavedSection { entities, offset }))
 }
 
 /// Decode full-turn termination stored inside an owned DEPDB section
 /// definition. The owning current-state recipe must independently select a
 /// rotational sweep.
 pub(crate) fn definition_revolution_extents(
+    ctx: &DecodeContext<'_>,
     definitions: &[FeatureDefinition],
     operations: &[FeatureOperation],
-) -> Vec<FeatureRevolutionExtent> {
+) -> Result<Vec<FeatureRevolutionExtent>, CodecError> {
     const FULL_TURN: &[u8] = &[
         0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
         0x00, 0x00,
@@ -6350,26 +6952,31 @@ pub(crate) fn definition_revolution_extents(
         if !recipe_matches {
             continue;
         }
-        let offsets = definition
-            .body
-            .windows(FULL_TURN.len())
-            .enumerate()
-            .filter_map(|(offset, window)| (window == FULL_TURN).then_some(offset))
-            .collect::<Vec<_>>();
-        result.extend(offsets.into_iter().map(|offset| FeatureRevolutionExtent {
-            feature_id,
-            offset: definition.offset + offset + 6,
-        }));
+        for (offset, window) in definition.body.windows(FULL_TURN.len()).enumerate() {
+            if window == FULL_TURN {
+                ctx.reserve_vec(&mut result, 1, "creo definition revolution extents")?;
+                result.push(FeatureRevolutionExtent {
+                    feature_id,
+                    offset: definition.offset + offset + 6,
+                });
+            }
+        }
     }
-    result.sort_by_key(|record| record.offset);
-    result
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |record| record.offset,
+        "creo definition revolution extents result ordering",
+    )?;
+    Ok(result)
 }
 
 fn definitions_in_ranges(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
-    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
-) -> Vec<FeatureDefinition> {
-    let cache = scalar::ScalarCache::from_section(payload);
+    starts: &[DefinitionStart],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut replay_dimension_class = None;
     let mut replay_variable_class = None;
@@ -6379,14 +6986,23 @@ fn definitions_in_ranges(
     let mut replay_trim_entity_classes: Option<TrimTableClasses> = None;
     let mut replay_trim_vertex_classes: Option<TrimTableClasses> = None;
     let mut replay_order_class = None;
-    for (index, &(start, id, owner_override, positional)) in starts.iter().enumerate() {
+    for (
+        index,
+        &DefinitionStart {
+            offset: start,
+            id,
+            owner_override,
+            positional,
+        },
+    ) in starts.iter().enumerate()
+    {
         let end = starts
             .get(index + 1)
-            .map_or(payload.len(), |&(offset, _, _, _)| offset);
+            .map_or(payload.len(), |entry| entry.offset);
         let schema_end = starts[index + 1..]
             .iter()
-            .find(|(_, _, _, positional)| !positional)
-            .map_or(payload.len(), |(offset, _, _, _)| *offset);
+            .find(|entry| !entry.positional)
+            .map_or(payload.len(), |entry| entry.offset);
         let mut parameter_frames = Vec::new();
         for &(label, kind) in &[
             (
@@ -6395,19 +7011,23 @@ fn definitions_in_ranges(
             ),
             (b"transf".as_slice(), FeatureParameterFrameKind::Transform),
         ] {
-            let needle = [label, b"\0\xf9\x04\x03"].concat();
+            let needle_len = label.len() + 4;
             let mut from = start;
-            while let Some(relative) = payload[from..end]
-                .windows(needle.len())
-                .position(|window| window == needle)
-            {
+            while let Some(relative) = payload[from..end].windows(needle_len).position(|window| {
+                window.get(..label.len()) == Some(label)
+                    && window.get(label.len()..) == Some(b"\0\xf9\x04\x03")
+            }) {
                 let field_offset = from + relative;
-                let body_start = field_offset + needle.len();
+                let body_start = field_offset + needle_len;
                 let body_end = payload[body_start..end]
                     .windows(1)
                     .position(|window| window[0] == psb::token::NAMED_RECORD)
                     .map_or(end, |relative| body_start + relative);
-                let body = payload[body_start..body_end].to_vec();
+                let body = ctx.copy_retained(
+                    &payload[body_start..body_end],
+                    "creo feature parameter frame body",
+                )?;
+                ctx.reserve_vec(&mut parameter_frames, 1, "creo feature parameter frames")?;
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
                     decoded_values: scalar::decode_feature_local_system_slots(&body, &cache),
@@ -6417,14 +7037,21 @@ fn definitions_in_ranges(
                 from = body_start;
             }
         }
-        parameter_frames.sort_by_key(|frame| frame.offset);
+        crate::sort::stable_sort_by_key(
+            ctx,
+            parameter_frames.as_mut_slice(),
+            |frame| frame.offset,
+            "creo definitions in ranges parameter frames ordering",
+        )?;
         let mut outlines = Vec::new();
         if let Some(info) = find_bytes(payload, b"\xe0\x00feat_outl_info\0", start, end) {
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
+                let local_scalars = outline_scalars(ctx, &payload[scalar_start..end], &cache)?;
+                ctx.reserve_vec(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
-                    local_scalars: outline_scalars(&payload[scalar_start..end], &cache),
+                    local_scalars,
                     offset: label,
                 });
             }
@@ -6450,99 +7077,134 @@ fn definitions_in_ranges(
                 {
                     continue;
                 }
+                let local_scalars = outline_scalars(ctx, &payload[after_ref + 4..end], &cache)?;
+                ctx.reserve_vec(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase,
-                    local_scalars: outline_scalars(&payload[after_ref + 4..end], &cache),
+                    local_scalars,
                     offset: label_offset,
                 });
             }
         }
-        outlines.sort_by_key(|outline| outline.offset);
-        let variables = variable_table(payload, start, end, &cache).or_else(|| {
-            positional
-                .then(|| {
-                    positional_variable_table(payload, start, end, replay_variable_class?, &cache)
-                })
-                .flatten()
-        });
+        crate::sort::stable_sort_by_key(
+            ctx,
+            outlines.as_mut_slice(),
+            |outline| outline.offset,
+            "creo definitions in ranges outlines ordering",
+        )?;
+        let variables = match variable_table(ctx, payload, start, end, &cache)? {
+            Some(variables) => Some(variables),
+            None if positional => match replay_variable_class {
+                Some(table_class) => {
+                    positional_variable_table(ctx, payload, start, end, table_class, &cache)?
+                }
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_variable_class = variables.as_ref().and_then(|table| table.entity_ref);
         }
-        let segments = segment_table(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_segment_table(payload, start, end))
-                .flatten()
-        });
-        let trim_entities = trim_entity_table(payload, start, end).or_else(|| {
-            if positional {
-                positional_trim_entity_table(
+        let segments = match segment_table(ctx, payload, start, end)? {
+            Some(segments) => Some(segments),
+            None if positional => positional_segment_table(ctx, payload, start, end)?,
+            None => None,
+        };
+        let trim_entities = match trim_entity_table(ctx, payload, start, end)? {
+            Some(table) => Some(table),
+            None if positional => match replay_trim_entity_classes {
+                Some(classes) => positional_trim_entity_table(
+                    ctx,
                     payload,
                     start,
                     end,
-                    replay_trim_entity_classes?,
+                    classes,
                     replay_trim_vertex_classes.map(|classes| classes.table),
-                )
-            } else {
-                None
-            }
-        });
+                )?,
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_trim_entity_classes =
                 trim_table_header(payload, b"ent_tab\0", start, end).map(|header| header.classes);
         }
-        let trim_vertices =
-            trim_vertex_table(payload, start, end, segments.as_ref(), variables.as_ref()).or_else(
-                || {
-                    if positional {
-                        positional_trim_vertex_table(
-                            payload,
-                            start,
-                            end,
-                            replay_trim_vertex_classes?,
-                            segments.as_ref(),
-                            variables.as_ref(),
-                        )
-                    } else {
-                        None
-                    }
-                },
-            );
+        let trim_vertices = match trim_vertex_table(
+            ctx,
+            payload,
+            start,
+            end,
+            segments.as_ref(),
+            variables.as_ref(),
+        )? {
+            Some(table) => Some(table),
+            None if positional => match replay_trim_vertex_classes {
+                Some(classes) => positional_trim_vertex_table(
+                    ctx,
+                    payload,
+                    start,
+                    end,
+                    classes,
+                    segments.as_ref(),
+                    variables.as_ref(),
+                )?,
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_trim_vertex_classes =
                 trim_table_header(payload, b"vert_tab\0", start, end).map(|header| header.classes);
         }
-        let order_table = order_table(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_order_table(payload, start, end, replay_order_class?))
-                .flatten()
-        });
+        let order_table = match order_table(ctx, payload, start, end)? {
+            Some(table) => Some(table),
+            None if positional => match replay_order_class {
+                Some(class) => positional_order_table(ctx, payload, start, end, class)?,
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_order_class = order_table.as_ref().and_then(|table| table.entity_ref);
         }
-        let section_3d = section_3d(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_section_3d(payload, start, end))
-                .flatten()
-        });
-        let dimensions = dimension_table(payload, start, end, &cache).or_else(|| {
-            positional.then_some(()).and_then(|()| {
-                replay_dimension_class
-                    .and_then(|table_class| {
-                        positional_dimension_table(payload, start, end, table_class, &cache)
-                    })
-                    .or_else(|| {
-                        self_described_positional_dimension_table(payload, start, end, &cache)
-                    })
-            })
-        });
+        let section_3d = match section_3d(ctx, payload, start, end)? {
+            Some(section) => Some(section),
+            None if positional => positional_section_3d(ctx, payload, start, end)?,
+            None => None,
+        };
+        let dimensions = if let Some(table) = dimension_table(ctx, payload, start, end, &cache)? {
+            Some(table)
+        } else if positional {
+            match replay_dimension_class {
+                Some(table_class) => {
+                    match positional_dimension_table(ctx, payload, start, end, table_class, &cache)?
+                    {
+                        Some(table) => Some(table),
+                        None => self_described_positional_dimension_table(
+                            ctx, payload, start, end, &cache,
+                        )?,
+                    }
+                }
+                None => {
+                    self_described_positional_dimension_table(ctx, payload, start, end, &cache)?
+                }
+            }
+        } else {
+            None
+        };
         if !positional {
             replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
         }
-        let mut relations = relation_table(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_relation_table(payload, start, end, replay_relation_class?))
-                .flatten()
-        });
+        let mut relations = match relation_table(ctx, payload, start, end)? {
+            Some(table) => Some(table),
+            None if positional => match replay_relation_class {
+                Some(table_class) => {
+                    positional_relation_table(ctx, payload, start, end, table_class)?
+                }
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_relation_class = relations.as_ref().and_then(|table| table.entity_ref);
             replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
@@ -6558,15 +7220,16 @@ fn definitions_in_ranges(
                 {
                     table.skamps = Some(SolverSubtable::Declared {
                         header,
-                        rows: feature_skamps(payload, start, end),
+                        rows: feature_skamps(ctx, payload, start, end)?,
                     });
                 } else {
-                    table.skamps = replay_skamp_class.and_then(|table_class| {
-                        SolverSubtable::from_parts(
+                    table.skamps = match replay_skamp_class {
+                        Some(table_class) => SolverSubtable::from_parts(
                             positional_solver_table_header(payload, start, end, table_class),
-                            positional_feature_skamps(payload, start, end, table_class),
-                        )
-                    });
+                            positional_feature_skamps(ctx, payload, start, end, table_class)?,
+                        ),
+                        None => None,
+                    };
                 }
             }
             if table
@@ -6580,53 +7243,55 @@ fn definitions_in_ranges(
                 {
                     table.triples = Some(SolverSubtable::Declared {
                         header,
-                        rows: feature_relation_triples(payload, start, end),
+                        rows: feature_relation_triples(ctx, payload, start, end)?,
                     });
                 } else {
-                    table.triples = replay_triples_class.and_then(|table_class| {
-                        SolverSubtable::from_parts(
+                    table.triples = match replay_triples_class {
+                        Some(table_class) => SolverSubtable::from_parts(
                             positional_solver_table_header(payload, start, end, table_class),
-                            positional_relation_triples(payload, start, end, table_class),
-                        )
-                    });
+                            positional_relation_triples(ctx, payload, start, end, table_class)?,
+                        ),
+                        None => None,
+                    };
                 }
             }
         }
-        let saved_section = saved_section(
+        let named_saved_section = saved_section(
+            ctx,
             payload,
             start,
             end,
             &cache,
             order_table.as_ref(),
             segments.as_ref(),
-        )
-        .or_else(|| {
-            if positional {
-                positional_saved_section(
-                    payload,
-                    start,
-                    end,
-                    &cache,
-                    order_table.as_ref(),
-                    segments.as_ref(),
-                )
-            } else {
-                None
-            }
-        });
+        )?;
+        let saved_section = match named_saved_section {
+            Some(section) => Some(section),
+            None if positional => positional_saved_section(
+                ctx,
+                payload,
+                start,
+                end,
+                &cache,
+                order_table.as_ref(),
+                segments.as_ref(),
+            )?,
+            None => None,
+        };
         let owner_feature_id = owner_override.or_else(|| {
-            let ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
-                .into_iter()
-                .map(|(_, id)| id)
-                .collect::<BTreeSet<_>>();
-            ids.first().copied().filter(|_| ids.len() == 1)
+            let mut ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
+                .map(|(_, id)| id);
+            let first = ids.next()?;
+            ids.all(|id| id == first).then_some(first)
         });
+        let body = ctx.copy_retained(&payload[start..end], "creo feature definition body")?;
+        ctx.reserve_vec(&mut result, 1, "creo parsed feature definitions")?;
         result.push(FeatureDefinition {
             identity: DefinitionIdentity::Parsed {
                 schema_id: id,
                 owner_feature_id,
             },
-            body: payload[start..end].to_vec(),
+            body,
             parameter_frames,
             outlines,
             variables,
@@ -6641,26 +7306,29 @@ fn definitions_in_ranges(
             offset: start,
         });
     }
-    result
+    Ok(result)
 }
 
-fn contextual_references(
-    payload: &[u8],
+fn contextual_references<'a>(
+    payload: &'a [u8],
     start: usize,
     end: usize,
-    field: &[u8],
-    following_record: &[u8],
-) -> Vec<(usize, u32)> {
-    let needle = [&[psb::token::NAMED_RECORD, 1][..], field, &[0]].concat();
+    field: &'a [u8],
+    following_record: &'a [u8],
+) -> impl Iterator<Item = (usize, u32)> + 'a {
+    let needle_len = 2 + field.len() + 1;
     payload[start..end]
-        .windows(needle.len())
+        .windows(needle_len)
         .enumerate()
-        .filter_map(|(relative, window)| {
-            if window != needle {
+        .filter_map(move |(relative, window)| {
+            if window.get(..2) != Some(&[psb::token::NAMED_RECORD, 1])
+                || window.get(2..2 + field.len()) != Some(field)
+                || window.last() != Some(&0)
+            {
                 return None;
             }
             let record_start = start + relative;
-            let value_start = record_start + needle.len();
+            let value_start = record_start + needle_len;
             let (value, after_value) = psb::reference_id(payload, value_start).ok()?;
             let following_end = after_value.checked_add(3 + following_record.len())?;
             (following_end <= end
@@ -6670,12 +7338,22 @@ fn contextual_references(
                 && payload.get(following_end - 1) == Some(&0))
             .then_some((record_start, value))
         })
-        .collect()
 }
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-fn definition_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
+#[derive(Debug, Clone, Copy)]
+struct DefinitionStart {
+    offset: usize,
+    id: Option<NonZeroU32>,
+    owner_override: Option<u32>,
+    positional: bool,
+}
+
+fn definition_starts(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<DefinitionStart>, CodecError> {
     const PREFIX: &[u8] = b"feat_defs_";
     let mut starts = Vec::new();
     for offset in 0..payload.len() {
@@ -6690,33 +7368,54 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
             continue;
         }
-        let Ok(id) = String::from_utf8_lossy(digits).parse::<u32>() else {
+        let Ok(digits) = std::str::from_utf8(digits) else {
             continue;
         };
-        starts.push((offset, NonZeroU32::new(id), None, false));
+        let Ok(id) = digits.parse::<u32>() else {
+            continue;
+        };
+        ctx.reserve_vec(&mut starts, 1, "creo feature definition starts")?;
+        starts.push(DefinitionStart {
+            offset,
+            id: NonZeroU32::new(id),
+            owner_override: None,
+            positional: false,
+        });
     }
-    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
-    let labeled_starts = starts.clone();
-    for (index, &(start, _, _, _)) in labeled_starts.iter().enumerate() {
-        let end = labeled_starts
-            .get(index + 1)
-            .map_or(payload.len(), |&(offset, _, _, _)| offset);
+    starts.sort_unstable_by_key(|entry| entry.offset);
+    let labeled_count = starts.len();
+    for index in 0..labeled_count {
+        let start = starts[index].offset;
+        let end = if index + 1 < labeled_count {
+            starts[index + 1].offset
+        } else {
+            payload.len()
+        };
         for (offset, owner) in
             contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
         {
-            starts.push((offset, NonZeroU32::new(owner), Some(owner), true));
+            ctx.reserve_vec(&mut starts, 1, "creo feature definition starts")?;
+            starts.push(DefinitionStart {
+                offset,
+                id: NonZeroU32::new(owner),
+                owner_override: Some(owner),
+                positional: true,
+            });
         }
     }
-    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
-    starts.dedup_by_key(|entry| entry.0);
-    starts
+    starts.sort_unstable_by_key(|entry| entry.offset);
+    starts.dedup_by_key(|entry| entry.offset);
+    Ok(starts)
 }
 
-fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
+fn depdb_gsec2d_starts(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<DefinitionStart>, CodecError> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
-    payload
+    let candidates = payload
         .windows(GSEC.len())
         .enumerate()
         .filter_map(|(start, window)| {
@@ -6733,58 +7432,94 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option
             if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
                 return None;
             }
-            let id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
-            Some((start, NonZeroU32::new(id), None, false))
-        })
-        .collect()
+            let id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
+            Some(DefinitionStart {
+                offset: start,
+                id: NonZeroU32::new(id),
+                owner_override: None,
+                positional: false,
+            })
+        });
+    let mut starts = Vec::new();
+    for start in candidates {
+        ctx.reserve_vec(&mut starts, 1, "creo DEPDB section starts")?;
+        starts.push(start);
+    }
+    Ok(starts)
 }
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-pub(crate) fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
-    let mut starts = definition_starts(payload);
-    let retained_offsets = starts
-        .iter()
-        .map(|(offset, _, _, _)| *offset)
-        .collect::<BTreeSet<_>>();
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    let replay_starts = replay_markers
-        .into_iter()
-        .filter(|offset| !claimed_markers.contains(offset))
-        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
-        .collect::<Vec<_>>();
-    starts.extend(replay_starts);
-    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
-    starts.dedup_by_key(|entry| entry.0);
-    definitions_in_ranges(payload, &starts)
-        .into_iter()
-        .filter(|definition| retained_offsets.contains(&definition.offset))
-        .collect()
+pub(crate) fn definitions(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut starts = definition_starts(ctx, payload)?;
+    let mut retained_offsets = BTreeSet::new();
+    for DefinitionStart { offset, .. } in &starts {
+        if !retained_offsets.contains(offset) {
+            ctx.charge_collection_items(1, "creo retained definition offset nodes")?;
+            retained_offsets.insert(*offset);
+        }
+    }
+    let replay_markers = s2d_replay_starts(ctx, payload)?;
+    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
+    for offset in replay_markers {
+        if !claimed_markers.contains(&offset) {
+            let id = inherited_definition_id(&starts, offset);
+            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
+            starts.push(DefinitionStart {
+                offset,
+                id,
+                owner_override: None,
+                positional: true,
+            });
+        }
+    }
+    starts.sort_unstable_by_key(|entry| entry.offset);
+    starts.dedup_by_key(|entry| entry.offset);
+    let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
+    definitions.retain(|definition| retained_offsets.contains(&definition.offset));
+    Ok(definitions)
 }
 
 /// Decode labelled and positional feature definitions embedded directly in a
 /// DEPDB section. A labelled `gsec2d_ptr` definition supplies the table schema
 /// for its following positional `S2D` instances.
-pub(crate) fn depdb_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
-    let mut starts = definition_starts(payload);
-    starts.extend(depdb_gsec2d_starts(payload));
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    let replay_starts = replay_markers
-        .into_iter()
-        .filter(|offset| !claimed_markers.contains(offset))
-        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
-        .collect::<Vec<_>>();
-    starts.extend(replay_starts);
-    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
-    starts.dedup_by_key(|entry| entry.0);
-    definitions_in_ranges(payload, &starts)
+pub(crate) fn depdb_definitions(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut starts = definition_starts(ctx, payload)?;
+    let depdb_starts = depdb_gsec2d_starts(ctx, payload)?;
+    ctx.reserve_vec(
+        &mut starts,
+        depdb_starts.len(),
+        "creo DEPDB definition starts",
+    )?;
+    starts.extend(depdb_starts);
+    let replay_markers = s2d_replay_starts(ctx, payload)?;
+    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
+    for offset in replay_markers {
+        if !claimed_markers.contains(&offset) {
+            let id = inherited_definition_id(&starts, offset);
+            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
+            starts.push(DefinitionStart {
+                offset,
+                id,
+                owner_override: None,
+                positional: true,
+            });
+        }
+    }
+    starts.sort_unstable_by_key(|entry| entry.offset);
+    starts.dedup_by_key(|entry| entry.offset);
+    definitions_in_ranges(ctx, payload, &starts)
 }
 
-fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
+fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usize>, CodecError> {
     const PREFIX: &[u8] = b"\xe3S2D";
-    payload
+    let candidates = payload
         .windows(PREFIX.len())
         .enumerate()
         .filter_map(|(offset, window)| {
@@ -6794,205 +7529,239 @@ fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
             let suffix = payload.get(offset + PREFIX.len()..)?;
             let nul = suffix.iter().take(12).position(|byte| *byte == 0)?;
             (nul > 0 && suffix[..nul].iter().all(u8::is_ascii_digit)).then_some(offset)
-        })
-        .collect()
+        });
+    let mut starts = Vec::new();
+    for offset in candidates {
+        ctx.reserve_vec(&mut starts, 1, "creo S2D replay starts")?;
+        starts.push(offset);
+    }
+    Ok(starts)
 }
 
-fn inherited_definition_id(
-    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
-    replay_offset: usize,
-) -> Option<NonZeroU32> {
+fn inherited_definition_id(starts: &[DefinitionStart], replay_offset: usize) -> Option<NonZeroU32> {
     starts
         .iter()
-        .filter(|(offset, _, _, positional)| !positional && *offset < replay_offset)
-        .max_by_key(|(offset, _, _, _)| *offset)
-        .and_then(|(_, id, _, _)| *id)
+        .filter(|entry| !entry.positional && entry.offset < replay_offset)
+        .max_by_key(|entry| entry.offset)
+        .and_then(|entry| entry.id)
 }
 
 fn claimed_s2d_replay_markers(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
-    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
+    starts: &[DefinitionStart],
     replay_markers: &[usize],
-) -> BTreeSet<usize> {
-    starts
+) -> Result<BTreeSet<usize>, CodecError> {
+    let candidates = starts
         .iter()
         .enumerate()
-        .filter(|(_, (_, _, _, positional))| *positional)
-        .filter_map(|(index, (start, _, _, _))| {
+        .filter(|(_, entry)| entry.positional)
+        .filter_map(|(index, DefinitionStart { offset: start, .. })| {
             let end = starts
                 .get(index + 1)
-                .map_or(payload.len(), |(offset, _, _, _)| *offset);
+                .map_or(payload.len(), |entry| entry.offset);
             replay_markers
                 .iter()
                 .copied()
                 .find(|marker| marker >= start && *marker < end)
-        })
-        .collect()
+        });
+    let mut markers = BTreeSet::new();
+    for marker in candidates {
+        if !markers.contains(&marker) {
+            ctx.charge_collection_items(1, "creo claimed S2D marker nodes")?;
+            markers.insert(marker);
+        }
+    }
+    Ok(markers)
 }
 
 /// Decode unlabeled positional `S2D` replay instances without assigning an
 /// owner. Ownership remains absent unless an independent entity join proves it.
-pub(crate) fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
-    let mut starts = definition_starts(payload);
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    let pending_offsets = replay_markers
-        .into_iter()
-        .filter(|offset| !claimed_markers.contains(offset))
-        .collect::<BTreeSet<_>>();
-    let replay_starts = pending_offsets
-        .iter()
-        .copied()
-        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
-        .collect::<Vec<_>>();
-    starts.extend(replay_starts);
-    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
-    starts.dedup_by_key(|entry| entry.0);
-    definitions_in_ranges(payload, &starts)
-        .into_iter()
-        .filter(|definition| pending_offsets.contains(&definition.offset))
-        .collect()
+pub(crate) fn positional_replay_definitions(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut starts = definition_starts(ctx, payload)?;
+    let replay_markers = s2d_replay_starts(ctx, payload)?;
+    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
+    let mut pending_offsets = BTreeSet::new();
+    for offset in replay_markers {
+        if !claimed_markers.contains(&offset) {
+            if !pending_offsets.contains(&offset) {
+                ctx.charge_collection_items(1, "creo pending S2D marker nodes")?;
+                pending_offsets.insert(offset);
+            }
+            let id = inherited_definition_id(&starts, offset);
+            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
+            starts.push(DefinitionStart {
+                offset,
+                id,
+                owner_override: None,
+                positional: true,
+            });
+        }
+    }
+    starts.sort_unstable_by_key(|entry| entry.offset);
+    starts.dedup_by_key(|entry| entry.offset);
+    let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
+    definitions.retain(|definition| pending_offsets.contains(&definition.offset));
+    Ok(definitions)
 }
 
 /// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
 /// The sole `gsec2d_ptr` starts the range, so no contextual owner pair occurs inside it.
 pub(crate) fn depdb_section_definition(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     owner_feature_id: Option<u32>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
     const PREFIX: &[u8] = b"feat_defs_";
-    let starts = payload
+    let mut starts = payload
         .windows(GSEC.len())
         .enumerate()
-        .filter_map(|(offset, window)| (window == GSEC).then_some(offset))
-        .collect::<Vec<_>>();
-    let [start] = starts.as_slice() else {
-        return None;
+        .filter_map(|(offset, window)| (window == GSEC).then_some(offset));
+    let Some((start, section_id, end)) = (|| {
+        let (Some(start), None) = (starts.next(), starts.next()) else {
+            return None;
+        };
+        let name_search_end = start
+            .checked_add(NAME_WINDOW)
+            .map_or(payload.len(), |window_end| window_end.min(payload.len()));
+        let name = find_bytes(payload, NAME, start, name_search_end)? + NAME.len();
+        let name_end = payload[name..name_search_end]
+            .iter()
+            .position(|byte| *byte == 0)?
+            + name;
+        let digits = payload.get(name..name_end)?;
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        let section_id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
+        let end =
+            find_bytes(payload, PREFIX, start + GSEC.len(), payload.len()).unwrap_or(payload.len());
+        Some((start, section_id, end))
+    })() else {
+        return Ok(None);
     };
-    let name_search_end = start
-        .checked_add(NAME_WINDOW)
-        .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-    let name = find_bytes(payload, NAME, *start, name_search_end)? + NAME.len();
-    let name_end = payload[name..name_search_end]
-        .iter()
-        .position(|byte| *byte == 0)?
-        + name;
-    let digits = payload.get(name..name_end)?;
-    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
-    let section_id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
-    let end =
-        find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len()).unwrap_or(payload.len());
-    definitions_in_ranges(
+    Ok(definitions_in_ranges(
+        ctx,
         &payload[..end],
-        &[(*start, NonZeroU32::new(section_id), owner_feature_id, true)],
-    )
-    .pop()
+        &[DefinitionStart {
+            offset: start,
+            id: NonZeroU32::new(section_id),
+            owner_override: owner_feature_id,
+            positional: true,
+        }],
+    )?
+    .pop())
 }
 
 /// Bind an owner omitted by `feat_id` through the section's unique generated
 /// datum entry. An explicit canonical `feat_id` remains authoritative.
 pub(crate) fn bind_definition_owners(
-    definitions: Vec<FeatureDefinition>,
+    mut definitions: Vec<FeatureDefinition>,
     geometry_tables: &[FeatureGeometryTable],
 ) -> Vec<FeatureDefinition> {
+    for definition in &mut definitions {
+        if definition.identity.owner_feature_id().is_some() {
+            continue;
+        }
+        let Some(sketch_plane) = definition
+            .section_3d
+            .as_ref()
+            .and_then(|section| section.sketch_plane_entity_id)
+        else {
+            continue;
+        };
+        let mut owners = geometry_tables
+            .iter()
+            .filter(|table| {
+                table
+                    .kind
+                    .datum_ids()
+                    .is_some_and(|ids| ids.contains(&sketch_plane))
+            })
+            .map(|table| table.feature_id);
+        let Some(owner) = owners.next() else {
+            continue;
+        };
+        if owners.any(|candidate| candidate != owner) {
+            continue;
+        }
+        definition.identity = DefinitionIdentity::Parsed {
+            schema_id: definition.identity.schema_id(),
+            owner_feature_id: Some(owner),
+        };
+    }
     definitions
-        .into_iter()
-        .map(|definition| {
-            if definition.identity.owner_feature_id().is_some() {
-                return definition;
-            }
-            let Some(sketch_plane) = definition
-                .section_3d
-                .as_ref()
-                .and_then(|section| section.sketch_plane_entity_id)
-            else {
-                return definition;
-            };
-            let owners = geometry_tables
-                .iter()
-                .filter(|table| {
-                    table
-                        .kind
-                        .datum_ids()
-                        .is_some_and(|ids| ids.contains(&sketch_plane))
-                })
-                .map(|table| table.feature_id)
-                .collect::<BTreeSet<_>>();
-            let Some(owner) = owners.first().copied().filter(|_| owners.len() == 1) else {
-                return definition;
-            };
-            FeatureDefinition {
-                identity: DefinitionIdentity::Parsed {
-                    schema_id: definition.identity.schema_id(),
-                    owner_feature_id: Some(owner),
-                },
-                ..definition
-            }
-        })
-        .collect()
 }
 
 /// Bind instantiated saved sections through the exact set of trimmed section
 /// entities copied into the owning feature's generated-entity table. Schema
 /// identifiers remain unchanged; only the omitted canonical owner is filled.
 pub(crate) fn bind_trimmed_definition_owners(
-    definitions: Vec<FeatureDefinition>,
+    ctx: &DecodeContext<'_>,
+    mut definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
-) -> Vec<FeatureDefinition> {
-    let claimed_owner_ids = definitions
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut claimed_owner_ids = BTreeSet::new();
+    for owner in definitions
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
-        .collect::<BTreeSet<_>>();
-    let candidates = definitions
-        .iter()
-        .map(|definition| {
-            let external_ids = unique_trimmed_external_ids(definition);
-            if definition.identity.owner_feature_id().is_some() || external_ids.is_empty() {
-                return BTreeSet::new();
+    {
+        if !claimed_owner_ids.contains(&owner) {
+            ctx.charge_collection_items(1, "creo trimmed claimed owner nodes")?;
+            claimed_owner_ids.insert(owner);
+        }
+    }
+    let mut candidates = Vec::new();
+    for definition in &definitions {
+        let external_ids = unique_trimmed_external_ids(definition);
+        let mut owners = BTreeSet::new();
+        if definition.identity.owner_feature_id().is_none() && !external_ids.is_empty() {
+            for table in entity_tables {
+                let owner = table.feature_id;
+                if claimed_owner_ids.contains(&owner) {
+                    continue;
+                }
+                let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
+                if source_ids.len() == external_ids.len()
+                    && source_ids.iter().copied().eq(external_ids.iter().copied())
+                    && !owners.contains(&owner)
+                {
+                    ctx.charge_collection_items(1, "creo trimmed owner candidate nodes")?;
+                    owners.insert(owner);
+                }
             }
-            entity_tables
-                .iter()
-                .filter_map(|table| {
-                    let owner = table.feature_id;
-                    if claimed_owner_ids.contains(&owner) {
-                        return None;
-                    }
-                    let source_ids = generated_class_200_source_entity_ids(table);
-                    (source_ids == external_ids).then_some(owner)
-                })
-                .collect::<BTreeSet<_>>()
-        })
-        .collect::<Vec<_>>();
+        }
+        ctx.reserve_vec(&mut candidates, 1, "creo trimmed owner candidate rows")?;
+        candidates.push(owners);
+    }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
+        if !owner_candidate_counts.contains_key(owner) {
+            ctx.charge_collection_items(1, "creo trimmed owner count nodes")?;
+        }
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    definitions
-        .into_iter()
-        .zip(candidates)
-        .map(|(definition, owners)| {
-            let Some(owner) = owners
-                .first()
-                .copied()
-                .filter(|_| owners.len() == 1)
-                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-            else {
-                return definition;
-            };
-            FeatureDefinition {
-                identity: DefinitionIdentity::Parsed {
-                    schema_id: definition.identity.schema_id(),
-                    owner_feature_id: Some(owner),
-                },
-                ..definition
-            }
-        })
-        .collect()
+    for (definition, owners) in definitions.iter_mut().zip(candidates) {
+        let Some(owner) = owners
+            .first()
+            .copied()
+            .filter(|_| owners.len() == 1)
+            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+        else {
+            continue;
+        };
+        definition.identity = DefinitionIdentity::Parsed {
+            schema_id: definition.identity.schema_id(),
+            owner_feature_id: Some(owner),
+        };
+    }
+    Ok(definitions)
 }
 
 /// Bind unlabeled positional definitions through section-entity IDs in the
@@ -7000,93 +7769,95 @@ pub(crate) fn bind_trimmed_definition_owners(
 /// exact; otherwise the generated IDs must be a nonempty subset of the order
 /// table. Empty and non-unique joins remain unbound.
 pub(crate) fn bind_replay_definition_owners(
-    definitions: Vec<FeatureDefinition>,
+    ctx: &DecodeContext<'_>,
+    mut definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
     claimed_owner_ids: &BTreeSet<u32>,
-) -> Vec<FeatureDefinition> {
-    let candidates = definitions
-        .iter()
-        .map(|definition| {
-            if definition.identity.owner_feature_id().is_some() {
-                return BTreeSet::new();
-            }
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut candidates = Vec::new();
+    for definition in &definitions {
+        let mut owners = BTreeSet::new();
+        if definition.identity.owner_feature_id().is_none() {
             let trimmed_external_ids = unique_trimmed_external_ids(definition);
-            let order_external_ids = definition
-                .order_table
-                .as_ref()
-                .map(|table| {
-                    table
-                        .rows
-                        .iter()
-                        .map(|row| row.external_id)
-                        .collect::<BTreeSet<_>>()
-                })
-                .unwrap_or_default();
-            if trimmed_external_ids.is_empty() && order_external_ids.is_empty() {
-                return BTreeSet::new();
+            let mut order_external_ids = BTreeSet::new();
+            if let Some(table) = &definition.order_table {
+                for row in &table.rows {
+                    if !order_external_ids.contains(&row.external_id) {
+                        ctx.charge_collection_items(1, "creo replay order entity ID nodes")?;
+                        order_external_ids.insert(row.external_id);
+                    }
+                }
             }
-            let exact_candidates = entity_tables
-                .iter()
-                .filter_map(|table| {
+            if !trimmed_external_ids.is_empty() || !order_external_ids.is_empty() {
+                for table in entity_tables {
                     let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
-                        return None;
+                        continue;
                     }
-                    let source_ids = generated_class_200_source_entity_ids(table);
-                    (!trimmed_external_ids.is_empty() && source_ids == trimmed_external_ids)
-                        .then_some(owner)
-                })
-                .collect::<BTreeSet<_>>();
-            if !exact_candidates.is_empty() {
-                return exact_candidates;
+                    let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
+                    if !trimmed_external_ids.is_empty()
+                        && source_ids.len() == trimmed_external_ids.len()
+                        && source_ids
+                            .iter()
+                            .copied()
+                            .eq(trimmed_external_ids.iter().copied())
+                        && !owners.contains(&owner)
+                    {
+                        ctx.charge_collection_items(1, "creo replay exact owner nodes")?;
+                        owners.insert(owner);
+                    }
+                }
+                if owners.is_empty() {
+                    for table in entity_tables {
+                        let owner = table.feature_id;
+                        if claimed_owner_ids.contains(&owner) {
+                            continue;
+                        }
+                        let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
+                        if !source_ids.is_empty()
+                            && source_ids.is_subset(&order_external_ids)
+                            && !owners.contains(&owner)
+                        {
+                            ctx.charge_collection_items(1, "creo replay subset owner nodes")?;
+                            owners.insert(owner);
+                        }
+                    }
+                }
             }
-            entity_tables
-                .iter()
-                .filter_map(|table| {
-                    let owner = table.feature_id;
-                    if claimed_owner_ids.contains(&owner) {
-                        return None;
-                    }
-                    let source_ids = generated_class_200_source_entity_ids(table);
-                    (!source_ids.is_empty() && source_ids.is_subset(&order_external_ids))
-                        .then_some(owner)
-                })
-                .collect()
-        })
-        .collect::<Vec<_>>();
+        }
+        ctx.reserve_vec(&mut candidates, 1, "creo replay owner candidate rows")?;
+        candidates.push(owners);
+    }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
+        if !owner_candidate_counts.contains_key(owner) {
+            ctx.charge_collection_items(1, "creo replay owner count nodes")?;
+        }
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    definitions
-        .into_iter()
-        .zip(candidates)
-        .map(|(definition, owners)| {
-            let Some(owner) = owners
-                .first()
-                .copied()
-                .filter(|_| owners.len() == 1)
-                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-            else {
-                return definition;
-            };
-            FeatureDefinition {
-                identity: DefinitionIdentity::BoundOwner {
-                    schema_id: definition.identity.schema_id(),
-                    owner_feature_id: owner,
-                },
-                ..definition
-            }
-        })
-        .collect()
+    for (definition, owners) in definitions.iter_mut().zip(candidates) {
+        let Some(owner) = owners
+            .first()
+            .copied()
+            .filter(|_| owners.len() == 1)
+            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+        else {
+            continue;
+        };
+        definition.identity = DefinitionIdentity::BoundOwner {
+            schema_id: definition.identity.schema_id(),
+            owner_feature_id: owner,
+        };
+    }
+    Ok(definitions)
 }
 
-fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> {
+fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> &[u32] {
     definition
         .trim_entities
         .as_ref()
         .filter(|table| table.has_unique_external_ids())
-        .map(|table| table.rows.iter().map(|row| row.external_id).collect())
+        .map(|table| table.solved_external_ids.as_slice())
         .unwrap_or_default()
 }
 
@@ -7095,80 +7866,90 @@ fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> 
 /// plane remain unowned because the current regeneration snapshot is not
 /// established.
 pub(crate) fn bind_section_owners(
-    definitions: Vec<FeatureDefinition>,
+    ctx: &DecodeContext<'_>,
+    mut definitions: Vec<FeatureDefinition>,
     operations: &[FeatureOperation],
     section_ranges: &[(usize, usize)],
-) -> Vec<FeatureDefinition> {
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let in_section_range = |offset: usize| {
         section_ranges
             .iter()
             .any(|(start, end)| offset >= *start && offset < *end)
     };
-    let claimed_owner_ids = definitions
+    let mut claimed_owner_ids = BTreeSet::new();
+    for owner in definitions
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
-        .collect::<BTreeSet<_>>();
+    {
+        if !claimed_owner_ids.contains(&owner) {
+            ctx.charge_collection_items(1, "creo section claimed owner nodes")?;
+            claimed_owner_ids.insert(owner);
+        }
+    }
     let mut definitions_per_plane = BTreeMap::new();
     for plane_id in definitions.iter().filter_map(|definition| {
         (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
+        if !definitions_per_plane.contains_key(&plane_id) {
+            ctx.charge_collection_items(1, "creo section plane count nodes")?;
+        }
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
-    let mut ordered_operations = operations.iter().collect::<Vec<_>>();
-    ordered_operations.sort_by_key(|operation| operation.offset);
-    definitions
-        .into_iter()
-        .map(|definition| {
-            if definition.identity.owner_feature_id().is_some()
-                || !in_section_range(definition.offset)
-            {
-                return definition;
-            }
-            let Some(plane_id) = definition
-                .section_3d
-                .as_ref()
-                .and_then(|section| section.sketch_plane_entity_id)
-                .filter(|plane_id| *plane_id >= 2)
-            else {
-                return definition;
-            };
-            if definitions_per_plane.get(&plane_id) != Some(&1) {
-                return definition;
-            }
-            let owner_id = plane_id - 2;
-            let datum_id = plane_id - 1;
-            if claimed_owner_ids.contains(&owner_id) {
-                return definition;
-            }
-            let matches = ordered_operations
-                .windows(2)
-                .filter(|pair| {
-                    pair[0].feature_id == owner_id
-                        && pair[0].recipe.resolved().is_some()
-                        && pair[1].feature_id == datum_id
-                        && pair[1].recipe.resolved().is_none()
-                })
-                .count();
-            if matches != 1 {
-                return definition;
-            }
-            let identity = match definition.identity.schema_id() {
-                Some(schema_id) => DefinitionIdentity::Parsed {
-                    schema_id: Some(schema_id),
-                    owner_feature_id: Some(owner_id),
-                },
-                None => DefinitionIdentity::BoundOwner {
-                    schema_id: None,
-                    owner_feature_id: owner_id,
-                },
-            };
-            FeatureDefinition {
-                identity,
-                ..definition
-            }
-        })
-        .collect()
+    let mut ordered_operations =
+        crate::decode::collect_items(ctx, operations.iter(), "creo section ordered operations")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        ordered_operations.as_mut_slice(),
+        |operation| operation.offset,
+        "creo bind section owners ordered operations ordering",
+    )?;
+    for definition in &mut definitions {
+        if definition.identity.owner_feature_id().is_some() || !in_section_range(definition.offset)
+        {
+            continue;
+        }
+        let Some(plane_id) = definition
+            .section_3d
+            .as_ref()
+            .and_then(|section| section.sketch_plane_entity_id)
+            .filter(|plane_id| *plane_id >= 2)
+        else {
+            continue;
+        };
+        if definitions_per_plane.get(&plane_id) != Some(&1) {
+            continue;
+        }
+        let owner_id = plane_id - 2;
+        let datum_id = plane_id - 1;
+        if claimed_owner_ids.contains(&owner_id) {
+            continue;
+        }
+        let matches = ordered_operations
+            .windows(2)
+            .filter(|pair| {
+                pair[0].feature_id == owner_id
+                    && pair[0].recipe.resolved().is_some()
+                    && pair[1].feature_id == datum_id
+                    && pair[1].recipe.resolved().is_none()
+            })
+            .count();
+        if matches != 1 {
+            continue;
+        }
+        let identity = match definition.identity.schema_id() {
+            Some(schema_id) => DefinitionIdentity::Parsed {
+                schema_id: Some(schema_id),
+                owner_feature_id: Some(owner_id),
+            },
+            None => DefinitionIdentity::BoundOwner {
+                schema_id: None,
+                owner_feature_id: owner_id,
+            },
+        };
+        definition.identity = identity;
+    }
+    Ok(definitions)
 }
 
 #[cfg(test)]
@@ -7185,6 +7966,345 @@ mod tables_tests;
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn trim_endpoint_radius_preserves_missing_agreement_and_refusal() {
+        let segment = super::FeatureSegment {
+            kind: super::FeatureSegmentKind::Arc([1, 2]),
+            directions: [None; 3],
+            center_id: Some(3),
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 7,
+            body: Vec::new(),
+            offset: 0,
+        };
+        for (points, expected) in [
+            (Vec::new(), Ok(None)),
+            (vec![(1, [Some(3.0), Some(4.0)])], Ok(Some(5.0))),
+            (
+                vec![(1, [Some(3.0), Some(4.0)]), (2, [Some(0.0), Some(5.0)])],
+                Ok(Some(5.0)),
+            ),
+            (
+                vec![(1, [Some(3.0), Some(4.0)]), (2, [Some(0.0), Some(6.0)])],
+                Err(()),
+            ),
+            (vec![(1, [Some(0.0), Some(0.0)])], Err(())),
+            (vec![(1, [Some(f64::NAN), Some(0.0)])], Err(())),
+        ] {
+            let points = points.into_iter().collect();
+            assert_eq!(
+                super::trim_endpoint_radius(&segment, [0.0; 2], &points)
+                    .map(|radius| radius.map(cadmpeg_ir::scalar::PositiveReal::get)),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_trim_scalar_preserves_missing_duplicate_and_conflict_rules() {
+        use super::{
+            resolved_trim_scalar, FeatureVariableRow, FeatureVariableTable, ScalarLane,
+            VariableType,
+        };
+
+        let row = |value| FeatureVariableRow {
+            variable_type: VariableType::Radius,
+            key: 7,
+            value,
+            value_body: Vec::new(),
+            guess: ScalarLane::Undefined,
+            guess_body: Vec::new(),
+            known: None,
+            homogeneity: None,
+            uvar_id: None,
+            offset: 0,
+        };
+        let table = |rows: Vec<FeatureVariableRow>| FeatureVariableTable {
+            declared_count: u32::try_from(rows.len()).expect("row count fits"),
+            entity_ref: None,
+            rows,
+            offset: 0,
+        };
+        let resolve = |rows| resolved_trim_scalar(&table(rows), VariableType::Radius, 7);
+        assert_eq!(resolve(Vec::new()), Ok(None));
+        assert_eq!(resolve(vec![row(ScalarLane::Undefined)]), Ok(None));
+        assert_eq!(resolve(vec![row(ScalarLane::DimensionDriven)]), Ok(None));
+        assert_eq!(
+            resolve(vec![
+                row(ScalarLane::Value(2.0)),
+                row(ScalarLane::Value(2.0))
+            ])
+            .expect("matching values")
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+            Some(2.0)
+        );
+        assert_eq!(
+            resolve(vec![
+                row(ScalarLane::Undefined),
+                row(ScalarLane::Value(2.0))
+            ]),
+            Err(())
+        );
+        assert_eq!(
+            resolve(vec![
+                row(ScalarLane::Value(2.0)),
+                row(ScalarLane::Undefined)
+            ]),
+            Err(())
+        );
+        assert_eq!(
+            resolve(vec![
+                row(ScalarLane::Value(2.0)),
+                row(ScalarLane::Value(3.0))
+            ]),
+            Err(())
+        );
+        assert_eq!(resolve(vec![row(ScalarLane::Value(f64::NAN))]), Err(()));
+    }
+
+    fn assert_definition_limit(
+        payload: &[u8],
+        operation: &'static str,
+        retained: bool,
+        parse: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+    ) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if retained {
+                policy.limits.max_retained_bytes = limit;
+            } else {
+                policy.limits.max_collection_items = limit;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
+            parse(&ctx)
+        };
+        assert!(run(u64::MAX).is_ok(), "service input should parse");
+        let dimension = if retained {
+            ResourceDimension::RetainedBytes
+        } else {
+            ResourceDimension::CollectionItems
+        };
+        let found = (0..128).any(|limit| {
+            matches!(run(limit), Err(CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == dimension && refusal.operation == operation)
+        });
+        assert!(found, "expected a refusal at {operation}");
+    }
+
+    #[test]
+    fn feature_definition_start_vec_refuses_before_growth() {
+        let payload = b"feat_defs_1\0";
+        assert_definition_limit(payload, "creo feature definition starts", false, |ctx| {
+            super::definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn contextual_definition_start_vec_refuses_before_growth() {
+        let payload = b"feat_defs_1\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+                .expect("definition input admitted");
+        assert!(matches!(super::definition_starts(&ctx, payload),
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == "creo feature definition starts"));
+    }
+
+    #[test]
+    fn retained_definition_offset_node_refuses_before_insertion() {
+        let payload = b"feat_defs_1\0";
+        assert_definition_limit(
+            payload,
+            "creo retained definition offset nodes",
+            false,
+            |ctx| super::definitions(ctx, payload).map(|_| ()),
+        );
+    }
+
+    #[test]
+    fn replay_marker_vec_refuses_before_growth() {
+        let payload = b"\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo S2D replay starts", false, |ctx| {
+            super::positional_replay_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn pending_replay_marker_node_refuses_before_insertion() {
+        let payload = b"\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo pending S2D marker nodes", false, |ctx| {
+            super::positional_replay_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn definition_replay_start_vec_refuses_before_growth() {
+        let payload = b"feat_defs_1\0\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo definition replay starts", false, |ctx| {
+            super::definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn claimed_replay_marker_node_refuses_before_insertion() {
+        let payload = b"feat_defs_1\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo claimed S2D marker nodes", false, |ctx| {
+            super::positional_replay_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn depdb_section_start_vec_refuses_before_growth() {
+        let payload = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0";
+        assert_definition_limit(payload, "creo DEPDB section starts", false, |ctx| {
+            super::depdb_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn depdb_definition_start_vec_refuses_before_growth() {
+        let payload = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0";
+        assert_definition_limit(payload, "creo DEPDB definition starts", false, |ctx| {
+            super::depdb_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn parsed_definition_vec_refuses_before_growth() {
+        let payload = b"plain body";
+        assert_definition_limit(payload, "creo parsed feature definitions", false, |ctx| {
+            super::definitions_in_ranges(
+                ctx,
+                payload,
+                &[crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: None,
+                    owner_override: None,
+                    positional: false,
+                }],
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[test]
+    fn definition_scalar_cache_refuses_before_unique_image_insertion() {
+        let payload = b"\x46\x08\0\0\0\0\0\0";
+        assert_definition_limit(payload, "creo scalar cache unique images", false, |ctx| {
+            super::definitions_in_ranges(
+                ctx,
+                payload,
+                &[crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: None,
+                    owner_override: None,
+                    positional: false,
+                }],
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[test]
+    fn definition_body_refuses_before_retained_copy() {
+        let payload = b"plain body";
+        assert_definition_limit(payload, "creo feature definition body", true, |ctx| {
+            super::definitions_in_ranges(
+                ctx,
+                payload,
+                &[crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: None,
+                    owner_override: None,
+                    positional: false,
+                }],
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_parameter_frame_vec_refuses_before_growth() {
+        let payload = b"local_sys\0\xf9\x04\x03\xe4";
+        assert_definition_limit(payload, "creo feature parameter frames", false, |ctx| {
+            super::definitions_in_ranges(
+                ctx,
+                payload,
+                &[crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: None,
+                    owner_override: None,
+                    positional: false,
+                }],
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_parameter_frame_body_refuses_before_retained_copy() {
+        let payload = b"local_sys\0\xf9\x04\x03\xe4";
+        assert_definition_limit(payload, "creo feature parameter frame body", true, |ctx| {
+            super::definitions_in_ranges(
+                ctx,
+                payload,
+                &[crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: None,
+                    owner_override: None,
+                    positional: false,
+                }],
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_outline_vec_refuses_before_growth() {
+        let payload = b"\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03\xe4";
+        assert_definition_limit(payload, "creo feature outlines", false, |ctx| {
+            super::definitions_in_ranges(
+                ctx,
+                payload,
+                &[crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: None,
+                    owner_override: None,
+                    positional: false,
+                }],
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_outline_scalar_refuses_before_retained_copy() {
+        let payload = b"\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03\xe4";
+        assert_definition_limit(payload, "creo feature outline scalar body", true, |ctx| {
+            super::definitions_in_ranges(
+                ctx,
+                payload,
+                &[crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: None,
+                    owner_override: None,
+                    positional: false,
+                }],
+            )
+            .map(|_| ())
+        });
+    }
 
     #[test]
     fn numerical_ranges_trim_line_intersection_is_scale_independent() {
@@ -7257,6 +8377,83 @@ mod tests {
         VariableType,
     };
 
+    fn one_segment_with_limits(
+        collection_limit: u64,
+        retained_limit: u64,
+    ) -> Result<super::FeatureSegmentTable, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let mut payload = b"\xf8\x01\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
+        Ok(
+            segment_table_body(&ctx, &payload, 0, 0, payload.len(), PrototypeRow::Present)?
+                .expect("complete segment table"),
+        )
+    }
+
+    #[test]
+    fn segment_row_vec_refuses_before_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        assert_eq!(
+            one_segment_with_limits(2, u64::MAX)
+                .expect("one row admitted")
+                .rows
+                .len(),
+            1
+        );
+        let error = one_segment_with_limits(0, u64::MAX).expect_err("row needs one item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo segment rows"));
+    }
+
+    #[test]
+    fn segment_identity_node_refuses_before_insertion() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let error = one_segment_with_limits(1, u64::MAX).expect_err("ID node needs one item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo segment identity nodes"));
+    }
+
+    #[test]
+    fn segment_body_copy_refuses_before_retention() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let error = one_segment_with_limits(2, 0).expect_err("row body needs retained bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo segment row body"));
+    }
+
+    #[test]
+    fn equation_argument_tokens_expand_into_fixed_stack_slots() {
+        for (token, expected, count) in [
+            (0xe4, [Some(1), None, None], 1),
+            (0xe5, [Some(0), Some(0), None], 2),
+            (0xe6, [Some(0), Some(0), Some(0)], 3),
+            (0xf6, [None, None, None], 1),
+            (0x2a, [Some(42), None, None], 1),
+        ] {
+            let mut offset = 0;
+            assert_eq!(
+                super::equation_argument_slots(&[token], &mut offset),
+                Some((expected, count))
+            );
+            assert_eq!(offset, 1);
+        }
+    }
+
     #[test]
     fn variable_classes_normalize_known_codes_and_preserve_unknown_codes() {
         for (code, class) in [
@@ -7284,15 +8481,25 @@ mod tests {
         let zero = b"\xf8\x00\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
         let one = b"\xf8\x01\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
 
-        assert!(segment_table_body(zero, 0, 0, zero.len(), PrototypeRow::Elided).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            segment_table_body(ctx, zero, 0, 0, zero.len(), PrototypeRow::Elided)
+        })
+        .expect("segment table admitted")
+        .is_none());
         assert_eq!(
-            segment_table_body(one, 0, 0, one.len(), PrototypeRow::Elided)
-                .map(|table| (table.declared_count, table.rows.ordinary().count())),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                segment_table_body(ctx, one, 0, 0, one.len(), PrototypeRow::Elided)
+            })
+            .expect("segment table admitted")
+            .map(|table| (table.declared_count, table.rows.ordinary().count())),
             Some((1, 0))
         );
         assert_eq!(
-            segment_table_body(zero, 0, 0, zero.len(), PrototypeRow::Present)
-                .map(|table| table.declared_count),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                segment_table_body(ctx, zero, 0, 0, zero.len(), PrototypeRow::Present)
+            })
+            .expect("segment table admitted")
+            .map(|table| table.declared_count),
             Some(0)
         );
     }
@@ -7310,15 +8517,17 @@ mod tests {
         };
 
         let zero = table(0);
-        assert!(order_table(&zero, 0, zero.len()).is_none());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| order_table(ctx, &zero, 0, zero.len()))
+                .expect("order table admitted")
+                .is_none()
+        );
 
         let one = table(1);
         assert_eq!(
-            order_table(&one, 0, one.len()).map(|table| (
-                table.declared_count,
-                table.has_prototype,
-                table.rows.len()
-            )),
+            crate::decode::with_test_decode_ctx(|ctx| order_table(ctx, &one, 0, one.len()))
+                .expect("order table admitted")
+                .map(|table| (table.declared_count, table.has_prototype, table.rows.len())),
             Some((1, true, 0))
         );
     }
@@ -7335,11 +8544,19 @@ mod tests {
         };
 
         let zero = table(0);
-        assert!(positional_order_table(&zero, 0, zero.len(), 66).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            positional_order_table(ctx, &zero, 0, zero.len(), 66)
+        })
+        .expect("positional order table admitted")
+        .is_none());
 
         let two = table(2);
         assert_eq!(
-            positional_order_table(&two, 0, two.len(), 66).map(|table| (
+            crate::decode::with_test_decode_ctx(|ctx| {
+                positional_order_table(ctx, &two, 0, two.len(), 66)
+            })
+            .expect("positional order table admitted")
+            .map(|table| (
                 table.declared_count,
                 table.has_prototype,
                 table.rows.len()
@@ -7390,7 +8607,10 @@ mod tests {
         assert_eq!(table(2, 5).missing_rows(), 0);
         assert!(!table(2, 5).is_complete());
 
-        assert_eq!(table(u32::MAX, 1).missing_rows(), u32::MAX as usize - 1);
+        assert_eq!(
+            table(u32::MAX, 1).missing_rows(),
+            usize::try_from(u32::MAX).expect("fixture index fits usize") - 1
+        );
     }
 
     #[test]
@@ -7409,6 +8629,22 @@ mod tests {
         assert_eq!(admitted(0, 0), Some(0));
         assert_eq!(admitted(4, 0), None);
         assert_eq!(admitted(u32::MAX, 0), None);
+    }
+
+    #[test]
+    fn segment_slots_keep_zero_runs_and_nullable_positions() {
+        let payload = [0xe5, 0xf6, 0xe6, 0xe4];
+        let mut offset = 0;
+        let slots = super::segment_slots(&payload, &mut offset, 7)
+            .expect("seven slots fit the fixed segment frame");
+        assert_eq!(
+            slots,
+            [Some(0), Some(0), None, Some(0), Some(0), Some(0), Some(1)]
+        );
+        assert_eq!(offset, payload.len());
+
+        let mut offset = 0;
+        assert_eq!(super::segment_slots(&payload, &mut offset, 1), None);
     }
 }
 

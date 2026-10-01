@@ -150,7 +150,15 @@ fn section_axis_line_carrier(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let variable_points = definition.variables.as_ref()?.reconciled_points().0;
+    let variable_points = crate::decode::with_test_decode_ctx(|ctx| {
+        definition
+            .variables
+            .as_ref()?
+            .reconciled_points(ctx)
+            .map(|result| (result.points, result.ambiguous))
+            .ok()
+            .map(|points| points.0)
+    })?;
     section_axis_line_carrier_with_points(&variable_points, segment)
 }
 
@@ -161,20 +169,35 @@ fn section_segment_intersection_carrier(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let missing_line = saved_section_missing_line_geometry(definition);
+    let missing_line = crate::decode::with_test_decode_ctx(|ctx| {
+        saved_section_missing_line_geometry(ctx, definition)
+    })
+    .expect("test missing-line geometry admitted");
     let variable_points = definition
         .variables
         .as_ref()
-        .map(|variables| variables.reconciled_points().0)
+        .map(|variables| {
+            crate::decode::with_test_decode_ctx(|ctx| {
+                variables
+                    .reconciled_points(ctx)
+                    .map(|result| (result.points, result.ambiguous))
+                    .expect("test point reconciliation")
+                    .0
+            })
+        })
         .unwrap_or_default();
-    section_segment_intersection_carrier_with_missing_line(
-        definition,
-        radii,
-        points,
-        segment,
-        missing_line.as_ref(),
-        &variable_points,
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_segment_intersection_carrier_with_missing_line(
+            ctx,
+            definition,
+            radii,
+            points,
+            segment,
+            missing_line.as_ref(),
+            &variable_points,
+        )
+    })
+    .expect("test section carrier")
 }
 
 #[cfg(test)]
@@ -218,6 +241,6 @@ pub(super) fn opaque(external_id: u32) -> crate::feature::definitions::FeatureOp
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     }
 }

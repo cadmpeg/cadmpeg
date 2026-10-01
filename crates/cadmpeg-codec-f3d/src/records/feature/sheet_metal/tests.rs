@@ -122,7 +122,7 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
         u32::MAX
     );
     let mut edge = DesignEdgeFlangeEdge {
-        wrapper_record_index: 10,
+        wrapper: 10,
         group_record_index: 20_u32.try_into().unwrap(),
         aggregate_operand_record_index: 33,
     };
@@ -151,7 +151,7 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
             edges: vec![
                 edge,
                 DesignEdgeFlangeEdge {
-                    wrapper_record_index: 11,
+                    wrapper: 11,
                     group_record_index: 26_u32.try_into().unwrap(),
                     aggregate_operand_record_index: 35
                 }

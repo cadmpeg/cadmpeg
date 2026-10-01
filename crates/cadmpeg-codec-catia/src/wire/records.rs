@@ -10,11 +10,23 @@
 //! `families::consolidated::records`; a rename cascades across ~40 call sites
 //! and several `native` field paths, so the names carry naming debt here.
 
-use std::{collections::HashSet, ops::Range};
+use cadmpeg_core::decode::u64_from_index;
 
-use cadmpeg_core::decode::View;
+type NativePcurveLanesOutput = Result<
+    (
+        Vec<FiniteReal>,
+        Vec<FiniteVector<2>>,
+        Vec<FiniteVector<2>>,
+        Vec<FiniteVector<2>>,
+    ),
+    CodecError,
+>;
+
+use std::{borrow::Borrow, collections::HashSet, ops::Range};
+
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
@@ -58,34 +70,62 @@ pub(crate) struct ConsolidatedPcurve {
 
 /// Decode class-`0x20` UV jets from one framed record family.
 pub(crate) fn family_pcurves_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     family: ConsolidatedFamily,
-) -> Vec<ConsolidatedPcurve> {
-    family_frames_from_records(records, family, 0x20)
-        .into_iter()
-        .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
-        .collect()
+) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
+    let mut pcurves = Vec::new();
+    for frame in family_frames_from_records(records, family, 0x20) {
+        if let Some(pcurve) =
+            parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
+        {
+            ctx.push_vec(&mut pcurves, pcurve, "catia_consolidated_pcurves")?;
+        }
+    }
+    Ok(pcurves)
 }
 
 impl ConsolidatedPcurve {
     pub(crate) const DEGREE: u32 = 5;
 
+    pub(crate) fn native_lanes(&self, ctx: &DecodeContext<'_>) -> NativePcurveLanesOutput {
+        let mut knots = Vec::new();
+        let mut points = Vec::new();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        ctx.reserve_vec(&mut knots, self.sites.len(), "catia_native_pcurve_knots")?;
+        ctx.reserve_vec(&mut points, self.sites.len(), "catia_native_pcurve_points")?;
+        ctx.reserve_vec(
+            &mut first,
+            self.sites.len(),
+            "catia_native_pcurve_first_derivatives",
+        )?;
+        ctx.reserve_vec(
+            &mut second,
+            self.sites.len(),
+            "catia_native_pcurve_second_derivatives",
+        )?;
+        for site in &self.sites {
+            knots.push(site.knot);
+            points.push(site.point);
+            first.push(site.first_derivatives);
+            second.push(site.second_derivatives);
+        }
+        Ok((knots, points, first, second))
+    }
+
+    #[cfg(test)]
     pub(crate) fn knots(&self) -> Vec<FiniteReal> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn points(&self) -> Vec<FiniteVector<2>> {
         self.sites.iter().map(|site| site.point).collect()
     }
 
-    pub(crate) fn first_derivatives(&self) -> Vec<FiniteVector<2>> {
-        self.sites
-            .iter()
-            .map(|site| site.first_derivatives)
-            .collect()
-    }
-
+    #[cfg(test)]
     pub(crate) fn second_derivatives(&self) -> Vec<FiniteVector<2>> {
         self.sites
             .iter()
@@ -95,11 +135,55 @@ impl ConsolidatedPcurve {
 }
 
 fn parse_consolidated_pcurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     pos: usize,
     payload: usize,
     end: usize,
-) -> Option<ConsolidatedPcurve> {
+) -> Result<Option<ConsolidatedPcurve>, CodecError> {
+    let Some((support_id, count, extrapolation_sites, lanes, range, tail_at)) =
+        pcurve_layout(data, payload, end)
+    else {
+        return Ok(None);
+    };
+    let mut sites = Vec::new();
+    ctx.reserve_vec(&mut sites, count, "catia_consolidated_pcurve_sites")?;
+    for index in 0..count {
+        let offset = index * 8;
+        let values = lanes.map(|lane| f64_le(data, lane + offset));
+        let [Some(knot), Some(u), Some(v), Some(du), Some(dv), Some(ddu), Some(ddv)] = values
+        else {
+            return Ok(None);
+        };
+        sites.push(ConsolidatedPcurveSite {
+            knot,
+            point: [u, v].into(),
+            first_derivatives: [du, dv].into(),
+            second_derivatives: [ddu, ddv].into(),
+        });
+    }
+    Ok(Some(ConsolidatedPcurve {
+        pos,
+        support_id,
+        extrapolation_sites,
+        sites,
+        range,
+        tail: ctx.copy_retained_slice(&data[tail_at..end], "catia_consolidated_pcurve_tail")?,
+    }))
+}
+
+fn pcurve_layout(
+    data: &[u8],
+    payload: usize,
+    end: usize,
+) -> Option<(
+    u32,
+    usize,
+    u32,
+    [usize; 7],
+    IncreasingParameterInterval,
+    usize,
+)> {
     let mut at = payload;
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -126,15 +210,8 @@ fn parse_consolidated_pcurve(
     if at.checked_add(knot_bytes.checked_add(20)?)? > end {
         return None;
     }
-    let read = |at: &mut usize| -> Option<Vec<FiniteReal>> {
-        let mut values = Vec::with_capacity(count);
-        for _ in 0..count {
-            values.push(f64_le(data, *at)?);
-            *at += 8;
-        }
-        Some(values)
-    };
-    let knots = read(&mut at)?;
+    let knot_at = at;
+    at += knot_bytes;
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
@@ -146,46 +223,42 @@ fn parse_consolidated_pcurve(
     if at.checked_add(remaining_array_bytes.checked_add(18)?)? > end {
         return None;
     }
-    let u = read(&mut at)?;
-    let v = read(&mut at)?;
-    let du = read(&mut at)?;
-    let dv = read(&mut at)?;
+    let u_at = at;
+    at += knot_bytes;
+    let v_at = at;
+    at += knot_bytes;
+    let du_at = at;
+    at += knot_bytes;
+    let dv_at = at;
+    at += knot_bytes;
     if data.get(at) != Some(&0x05) {
         return None;
     }
     at += 1;
-    let ddu = read(&mut at)?;
-    let ddv = read(&mut at)?;
+    let ddu_at = at;
+    at += knot_bytes;
+    let ddv_at = at;
+    at += knot_bytes;
     let range =
         IncreasingParameterInterval::new([f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()])?;
     at += 16;
-    if at > end
-        || !matches!(&data[at..end], [0x07] | [0x07, 0x00])
-        || !knots_strictly_increasing(&FiniteReal::raw_lane(&knots))
-    {
+    let lanes = [knot_at, u_at, v_at, du_at, dv_at, ddu_at, ddv_at];
+    if at > end || !matches!(&data[at..end], [0x07] | [0x07, 0x00]) {
         return None;
     }
-    Some(ConsolidatedPcurve {
-        pos,
-        support_id,
-        extrapolation_sites,
-        sites: knots
-            .into_iter()
-            .zip(u.into_iter().zip(v))
-            .zip(du.into_iter().zip(dv))
-            .zip(ddu.into_iter().zip(ddv))
-            .map(
-                |(((knot, (u, v)), (du, dv)), (ddu, ddv))| ConsolidatedPcurveSite {
-                    knot,
-                    point: [u, v].into(),
-                    first_derivatives: [du, dv].into(),
-                    second_derivatives: [ddu, ddv].into(),
-                },
-            )
-            .collect(),
-        range,
-        tail: data[at..end].to_vec(),
-    })
+    let mut previous = None;
+    for index in 0..count {
+        let offset = index * 8;
+        for lane in lanes {
+            f64_le(data, lane + offset)?;
+        }
+        let knot = f64_le(data, knot_at + offset)?.get();
+        if previous.is_some_and(|value| value >= knot) {
+            return None;
+        }
+        previous = Some(knot);
+    }
+    Some((support_id, count, extrapolation_sites, lanes, range, at))
 }
 
 /// Header-token width of a length-closed A/B-family frame.
@@ -301,7 +374,7 @@ impl ConsolidatedRawFrame {
 impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
     fn from(frame: ConsolidatedRawFrame) -> Self {
         Self {
-            pos: frame.pos as u64,
+            pos: u64_from_index(frame.pos),
             width: frame.width,
             flag: frame.flag,
             header_token: frame.header_token,
@@ -408,11 +481,16 @@ pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
 /// [`consolidated_records_in_sources`] so directory and unrelated-file bytes
 /// cannot seed the inventory.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(
-        data,
-        std::iter::once(std::iter::once(SourceExtent::whole(data))),
-    )
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_records_in_sources(
+            ctx,
+            data,
+            std::iter::once(std::iter::once(SourceExtent::whole(data))),
+        )
+        .expect("service decode")
+    })
 }
 
 /// A physical record-source extent proved to lie inside the image it indexes.
@@ -428,7 +506,7 @@ pub(crate) struct SourceExtent(Range<usize>);
 impl SourceExtent {
     /// The complete image.
     #[must_use]
-    fn whole(data: &[u8]) -> Self {
+    pub(crate) fn whole(data: &[u8]) -> Self {
         Self(0..data.len())
     }
 
@@ -462,13 +540,17 @@ pub(crate) fn consolidated_records_in_ranges(
     data: &[u8],
     ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(
-        data,
-        ranges
-            .into_iter()
-            .filter_map(|range| SourceExtent::within(data, range.start, range.end))
-            .map(std::iter::once),
-    )
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_records_in_sources(
+            ctx,
+            data,
+            ranges
+                .into_iter()
+                .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+                .map(std::iter::once),
+        )
+        .expect("service decode")
+    })
 }
 
 /// Inventory records in descriptor-scoped logical sources stated as byte
@@ -486,15 +568,19 @@ where
     S: IntoIterator<Item = R>,
     R: IntoIterator<Item = Range<usize>>,
 {
-    consolidated_records_in_sources(
-        data,
-        sources.into_iter().map(|ranges| {
-            ranges
-                .into_iter()
-                .filter_map(|range| SourceExtent::within(data, range.start, range.end))
-                .collect::<Vec<_>>()
-        }),
-    )
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_records_in_sources(
+            ctx,
+            data,
+            sources.into_iter().map(|ranges| {
+                ranges
+                    .into_iter()
+                    .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+                    .collect::<Vec<_>>()
+            }),
+        )
+        .expect("service decode")
+    })
 }
 
 /// Inventory records in descriptor-scoped logical sources. Physical extents
@@ -503,22 +589,26 @@ where
 /// as an ordinal-bearing non-contiguous frame; typed payload decoding requires
 /// one physical extent.
 pub(crate) fn consolidated_records_in_sources<S, R>(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     sources: S,
-) -> Vec<ConsolidatedRecord>
+) -> Result<Vec<ConsolidatedRecord>, CodecError>
 where
     S: IntoIterator<Item = R>,
-    R: IntoIterator<Item = SourceExtent>,
+    R: IntoIterator,
+    R::Item: Borrow<SourceExtent>,
 {
     let mut records = Vec::new();
     for (source_index, extents) in sources.into_iter().enumerate() {
         // Every extent is inside the image by construction. An empty extent
         // holds no record, so it opens no logical source offset.
-        let source_ranges = extents
-            .into_iter()
-            .map(|extent| extent.range())
-            .filter(|range| range.start < range.end)
-            .collect::<Vec<_>>();
+        let source_ranges = ctx.collect_vec(
+            extents
+                .into_iter()
+                .map(|extent| extent.borrow().range())
+                .filter(|range| range.start < range.end),
+            "catia_record_source_ranges",
+        )?;
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
         for range in &source_ranges {
@@ -531,39 +621,49 @@ where
                     continue;
                 };
                 let Some(physical_range) = record.range() else {
-                    return records;
+                    return Ok(records);
                 };
                 record.source_index = source_index;
                 let Some(source_start) = source_offset.checked_add(physical_range.start - start)
                 else {
-                    return records;
+                    return Ok(records);
                 };
                 let Some(source_end) = source_offset.checked_add(physical_range.end - start) else {
-                    return records;
+                    return Ok(records);
                 };
                 pos = physical_range.end;
                 record.source_range = source_start..source_end;
-                source_records.push(record);
+                ctx.push_vec(&mut source_records, record, "catia_source_records")?;
             }
             let Some(next_source_offset) = source_offset.checked_add(end - start) else {
-                return records;
+                return Ok(records);
             };
             source_offset = next_source_offset;
         }
-        let mut record_starts = source_records
-            .iter()
-            .map(|record| record.source_range.start)
-            .collect::<HashSet<_>>();
-        let mut record_ranges = source_records
-            .iter()
-            .map(|record| (record.source_range.start, record.source_range.end))
-            .collect::<HashSet<_>>();
+        let mut record_starts = HashSet::new();
+        let mut record_ranges = HashSet::new();
+        for record in &source_records {
+            ctx.insert_hash_set(
+                &mut record_starts,
+                record.source_range.start,
+                "catia_record_starts",
+            )?;
+            ctx.insert_hash_set(
+                &mut record_ranges,
+                (record.source_range.start, record.source_range.end),
+                "catia_record_ranges",
+            )?;
+        }
         loop {
             let mut added = Vec::new();
-            let source_ends = source_records
-                .iter()
-                .map(|record| record.source_range.end)
-                .collect::<HashSet<_>>();
+            let mut source_ends = HashSet::new();
+            for record in &source_records {
+                ctx.insert_hash_set(
+                    &mut source_ends,
+                    record.source_range.end,
+                    "catia_record_source_ends",
+                )?;
+            }
             for source_start in source_ends {
                 if record_starts.contains(&source_start) {
                     continue;
@@ -576,20 +676,34 @@ where
                 ) else {
                     continue;
                 };
-                if record_ranges.insert((record.source_range.start, record.source_range.end)) {
-                    record_starts.insert(record.source_range.start);
-                    added.push(record);
+                if ctx.insert_hash_set(
+                    &mut record_ranges,
+                    (record.source_range.start, record.source_range.end),
+                    "catia_record_ranges",
+                )? {
+                    ctx.insert_hash_set(
+                        &mut record_starts,
+                        record.source_range.start,
+                        "catia_record_starts",
+                    )?;
+                    ctx.push_vec(&mut added, record, "catia_spanning_records")?;
                 }
             }
             if added.is_empty() {
                 break;
             }
+            ctx.reserve_vec(&mut source_records, added.len(), "catia_source_records")?;
             source_records.extend(added);
             source_records.sort_by_key(|record| record.source_range.start);
         }
+        ctx.reserve_vec(
+            &mut records,
+            source_records.len(),
+            "catia_consolidated_records",
+        )?;
         records.extend(source_records);
     }
-    records
+    Ok(records)
 }
 
 fn parse_spanning_consolidated_record(
@@ -656,7 +770,8 @@ fn parse_spanning_consolidated_record(
     }
     let mut logical_boundary = 0usize;
     let mut crosses_extent = false;
-    for range in ranges.iter().take(ranges.len().saturating_sub(1)) {
+    let (_, preceding_ranges) = ranges.split_last()?;
+    for range in preceding_ranges {
         logical_boundary = logical_boundary.checked_add(range.end - range.start)?;
         crosses_extent |= source_start < logical_boundary && logical_boundary < source_end;
     }
@@ -753,10 +868,10 @@ pub(crate) fn family_frames_from_records(
     records: &[ConsolidatedRecord],
     family: ConsolidatedFamily,
     class: u8,
-) -> Vec<ConsolidatedFrame> {
+) -> impl Iterator<Item = ConsolidatedFrame> + '_ {
     records
         .iter()
-        .filter(|record| record.family == family && record.class == class)
+        .filter(move |record| record.family == family && record.class == class)
         .filter_map(|record| {
             Some(ConsolidatedFrame {
                 pos: record.byte_offset(),
@@ -765,53 +880,48 @@ pub(crate) fn family_frames_from_records(
                 header_token: record.header_token,
             })
         })
-        .collect()
 }
 
 #[cfg(test)]
 pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
     let records = consolidated_records(data);
-    family_frames_from_records(&records, ConsolidatedFamily::B, class)
+    family_frames_from_records(&records, ConsolidatedFamily::B, class).collect()
 }
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
-pub(crate) fn scan_vertex_records(bytes: &[u8]) -> Vec<FinitePoint3> {
-    scan_vertex_rows(bytes)
-        .into_iter()
-        .map(|(_, point)| point)
-        .collect()
+pub(crate) fn scan_vertex_records(bytes: &[u8]) -> impl Iterator<Item = FinitePoint3> + '_ {
+    scan_vertex_rows(bytes).map(|(_, point)| point)
 }
 
 /// Locate every finite `05 08 01` coordinate row in `bytes`.
-pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
-    scan_vertex_rows(bytes)
-        .into_iter()
-        .map(|(range, _)| range)
-        .collect()
+pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
+    scan_vertex_rows(bytes).map(|(range, _)| range)
 }
 
 /// Every `05 08 01` row whose three coordinates are finite, with its byte
 /// range and admitted point.
-fn scan_vertex_rows(bytes: &[u8]) -> Vec<(Range<usize>, FinitePoint3)> {
-    let mut rows = Vec::new();
+fn scan_vertex_rows(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, FinitePoint3)> + '_ {
     let mut p = 0usize;
-    while p + 15 <= bytes.len() {
+    std::iter::from_fn(move || loop {
+        if p + 15 > bytes.len() {
+            return None;
+        }
         if bytes[p] == 0x05 && bytes[p + 1] == 0x08 && bytes[p + 2] == 0x01 {
             let x = f32_le(bytes, p + 3);
             let y = f32_le(bytes, p + 7);
             let z = f32_le(bytes, p + 11);
+            let start = p;
+            p += 15;
             if let Some(point) =
                 FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
             {
-                rows.push((p..p + 15, point));
+                return Some((start..p, point));
             }
-            p += 15;
         } else {
             p += 1;
         }
-    }
-    rows
+    })
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
@@ -829,6 +939,171 @@ mod tests {
         ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
         ConsolidatedRecord,
     };
+
+    #[test]
+    fn consolidated_record_inventory_refuses_each_contiguous_collection() {
+        let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
+        for (limit, operation) in [
+            (0, "catia_record_source_ranges"),
+            (1, "catia_source_records"),
+            (2, "catia_record_starts"),
+            (3, "catia_record_ranges"),
+            (4, "catia_record_source_ends"),
+            (5, "catia_consolidated_records"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::consolidated_records_in_sources(
+                    ctx,
+                    &bytes,
+                    std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+                )
+            });
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let records = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+            )
+        })
+        .expect("service decode");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].class, 0x06);
+    }
+
+    #[test]
+    fn borrowed_source_extents_keep_record_inventory_limits() {
+        let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
+        let sources = [vec![super::SourceExtent::whole(&bytes)]];
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                sources.iter().map(|source| source.iter()),
+            )
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_record_source_ranges"
+        ));
+        let records = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                sources.iter().map(|source| source.iter()),
+            )
+        })
+        .expect("borrowed source inventory fits service profile");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].class, 0x06);
+    }
+
+    #[test]
+    fn spanning_record_inventory_refuses_nested_growth() {
+        let mut bytes = vec![0xb2, 0x03, 0x20, 0x01, 0x05, 0];
+        let spanning_start = bytes.len();
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x34]);
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
+        let split = spanning_start + 10;
+        for (limit, operation) in [
+            (8, "catia_spanning_records"),
+            (9, "catia_source_records"),
+            (13, "catia_consolidated_records"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::consolidated_records_in_sources(
+                    ctx,
+                    &bytes,
+                    [[
+                        super::SourceExtent::within(&bytes, 0, split).expect("first extent"),
+                        super::SourceExtent::within(&bytes, split, bytes.len())
+                            .expect("second extent"),
+                    ]],
+                )
+            });
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let records =
+            consolidated_records_in_range_sources(&bytes, [[0..split, split..bytes.len()]]);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1].source_range, spanning_start..bytes.len());
+    }
+
+    #[test]
+    fn consolidated_pcurve_sites_tail_and_outer_collection_refuse_limits() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        for (limit, operation) in [
+            (1, "catia_consolidated_pcurve_sites"),
+            (2, "catia_consolidated_pcurve_tail"),
+            (3, "catia_consolidated_pcurves"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+            });
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_consolidated_pcurve_tail")
+        );
+        let pcurves = crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        })
+        .expect("service decode");
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].sites.len(), 2);
+        assert_eq!(pcurves[0].tail, [0x07]);
+    }
+
+    #[test]
+    fn consolidated_pcurve_native_lanes_refuse_each_materialization() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let pcurves = crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        })
+        .expect("service decode");
+        let pcurve = &pcurves[0];
+        for (limit, operation) in [
+            (1, "catia_native_pcurve_knots"),
+            (3, "catia_native_pcurve_points"),
+            (5, "catia_native_pcurve_first_derivatives"),
+            (7, "catia_native_pcurve_second_derivatives"),
+        ] {
+            let limited =
+                crate::test_support::with_collection_limit(limit, |ctx| pcurve.native_lanes(ctx));
+            assert!(
+                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation),
+                "limit {limit}"
+            );
+        }
+        let lanes = crate::test_support::with_service_context(|ctx| pcurve.native_lanes(ctx))
+            .expect("service decode");
+        assert_eq!(
+            (lanes.0.len(), lanes.1.len(), lanes.2.len(), lanes.3.len()),
+            (2, 2, 2, 2)
+        );
+    }
 
     #[test]
     fn frame_states_admit_only_defined_widths_and_flags() {
@@ -910,7 +1185,11 @@ mod tests {
         assert_eq!(records[1].class, 0x34);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
         assert!(records[1].range().is_none());
-        assert!(family_frames_from_records(&records, ConsolidatedFamily::A, 0x34).is_empty());
+        assert!(
+            family_frames_from_records(&records, ConsolidatedFamily::A, 0x34)
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -970,6 +1249,7 @@ mod tests {
         }
 
         let [point] = scan_vertex_records(&bytes)
+            .collect::<Vec<_>>()
             .try_into()
             .expect("one vertex row");
         assert_eq!(point.x, 2_000_000.0);

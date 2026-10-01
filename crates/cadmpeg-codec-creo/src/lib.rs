@@ -76,14 +76,15 @@ mod legacy_family;
 mod legacy_feature;
 mod legacy_geometry;
 mod loop_array;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod placement;
 mod primdata;
 mod psb;
 mod reference;
 mod scalar;
+mod sort;
 mod surface;
+mod text;
 mod topology;
 mod vecmath;
 
@@ -118,8 +119,8 @@ impl CodecBackend for CreoCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(ctx, root.window())?;
-        let classification = dialect::classify(&scan);
-        Ok(container::summarize(&scan, &classification))
+        let classification = dialect::classify(ctx, &scan)?;
+        container::summarize(ctx, &scan, classification)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

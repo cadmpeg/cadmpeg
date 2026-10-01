@@ -24,7 +24,7 @@ pub fn sha256(bytes: &[u8]) -> [u8; 32] {
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    encode_hex(&sha256(bytes))
+    LowerHex(&sha256(bytes)).to_string()
 }
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `value`'s canonical
@@ -40,7 +40,7 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestEr
     write_canonical_json(&mut writer, value)?;
     writer.flush().map_err(DigestError::Write)?;
     drop(writer);
-    Ok(encode_hex(&hasher.finalize()))
+    Ok(LowerHex(&hasher.finalize()).to_string())
 }
 
 /// Hash canonical JSON while admitting each emitted byte through the caller.
@@ -211,7 +211,7 @@ fn document_local_sha256_with_source_and_charge<E: From<DigestError>>(
         return Err(E::from(DigestError::Write(error)));
     }
     drop(writer);
-    Ok(encode_hex(&hasher.finalize()))
+    Ok(LowerHex(&hasher.finalize()).to_string())
 }
 
 /// Reduce the `format` unknown arena to record identities and links, dropping
@@ -322,7 +322,7 @@ where
     F: FnMut(u64) -> Result<(), E>,
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) = (self.charge)(buf.len() as u64) {
+        if let Err(error) = (self.charge)(cadmpeg_core::decode::u64_from_index(buf.len())) {
             self.error = Some(error);
             return Err(std::io::Error::other("digest work charge rejected"));
         }
@@ -335,22 +335,22 @@ where
     }
 }
 
-/// Lowercase hexadecimal digits, indexed by nibble.
-const HEX_DIGITS: [char; 16] = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-];
+/// Borrowed bytes displayed and serialized as two lowercase hexadecimal digits per byte.
+pub struct LowerHex<'a>(pub &'a [u8]);
 
-/// Render a digest as lowercase hexadecimal.
-///
-/// A nibble indexes the digit table, so this writes without a formatter and
-/// has no failure to report.
-fn encode_hex(digest: &[u8]) -> String {
-    let mut encoded = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        encoded.push(HEX_DIGITS[usize::from(byte >> 4)]);
-        encoded.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
+impl std::fmt::Display for LowerHex<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
     }
-    encoded
+}
+
+impl Serialize for LowerHex<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
 }
 
 #[cfg(test)]
@@ -385,6 +385,21 @@ mod tests {
             };
             assert_eq!(refused.is_nan(), value.is_nan());
             assert_eq!(refused.is_infinite(), value.is_infinite());
+        }
+    }
+
+    #[test]
+    fn lower_hex_display_and_serialization() {
+        for (bytes, expected) in [
+            (&[][..], ""),
+            (&[0x00, 0x01, 0x0f, 0x10, 0xab, 0xff][..], "00010f10abff"),
+        ] {
+            let hex = super::LowerHex(bytes);
+            assert_eq!(hex.to_string(), expected);
+            assert_eq!(
+                serde_json::to_value(&hex).unwrap(),
+                serde_json::json!(expected)
+            );
         }
     }
 
@@ -425,7 +440,11 @@ mod tests {
         }) else {
             panic!("the pinned record literal is a JSON object");
         };
-        NativeRecord::new("pin:test:record#0", fields).expect("valid native identity")
+        NativeRecord::new(
+            crate::ids::Identity::new("pin:test:record#0").expect("valid identity"),
+            fields,
+        )
+        .expect("valid native identity")
     }
 
     fn pinned_native() -> Native {
@@ -555,7 +574,11 @@ mod tests {
         let mut ir = pinned_document();
         ir.native.namespace_mut("pin").arenas_mut().insert(
             "unknowns".into(),
-            vec![NativeRecord::new("pin:model:record#0", fields).expect("valid native identity")],
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("pin:model:record#0").expect("valid identity"),
+                fields,
+            )
+            .expect("valid native identity")],
         );
         ir.finalize();
         ir
@@ -808,6 +831,10 @@ mod tests {
             .collect(),
         ));
         let body_id = ir.model.bodies[0].id.as_str().to_owned();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         let mut source_fidelity = crate::SourceFidelity::default();
         source_fidelity
             .attach_native_unknown_records(
@@ -821,16 +848,19 @@ mod tests {
                         vec![4, 5],
                         vec![body_id],
                     ),
-                ],
+                ]
+                .into(),
+                &ctx,
             )
             .unwrap();
         let namespace = ir.native.namespace_mut("other");
         namespace.arenas_mut().insert(
             "records".into(),
-            vec![
-                NativeRecord::new("other:test:record#0", serde_json::Map::new())
-                    .expect("valid native identity"),
-            ],
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("other:test:record#0").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity")],
         );
         (ir, source_fidelity)
     }

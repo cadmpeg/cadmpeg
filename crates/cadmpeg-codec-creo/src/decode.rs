@@ -16,6 +16,33 @@ use cadmpeg_ir::codec::Decoded;
 
 use crate::container;
 
+pub(crate) fn collect_items<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut result = Vec::new();
+    for value in values {
+        ctx.reserve_vec(&mut result, 1, operation)?;
+        result.push(value);
+    }
+    Ok(result)
+}
+
+pub(crate) fn project_items<I, T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = I>,
+    operation: &'static str,
+    mut project: impl FnMut(I) -> Result<T, CodecError>,
+) -> Result<Vec<T>, CodecError> {
+    let mut result = Vec::new();
+    for value in values {
+        ctx.reserve_vec(&mut result, 1, operation)?;
+        result.push(project(value)?);
+    }
+    Ok(result)
+}
+
 mod analytic;
 pub(crate) mod axis;
 mod build;
@@ -59,9 +86,12 @@ pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(ctx, root.window())?;
-    let classification = crate::dialect::classify(&scan);
+    let classification = crate::dialect::classify(ctx, &scan)?;
     // Admit section identities before model construction.
-    ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(scan.framing.sections.len()),
+        "admit Creo sections",
+    )?;
     let BuiltIr {
         mut ir,
         annotations,
@@ -75,16 +105,22 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         build_ir(ctx, &scan, &classification)?
     };
     let mut body = build_report(
+        ctx,
         &scan,
         &classification,
         &ir,
         coverage,
         &brep_diagnostics,
         ctx.container_only(),
-    );
+    )?;
+    ctx.reserve_vec(
+        &mut body.losses,
+        transfer_losses.len(),
+        "creo transfer report losses",
+    )?;
     body.losses.extend(transfer_losses);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,

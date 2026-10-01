@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::operands::body_recipe_operand_end;
 use crate::design::decode::operands::body_recipe_prologue_end;
 use crate::design::decode::operands::parse_body_recipe_operand;
@@ -17,8 +19,80 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::FaceId;
 
 #[test]
+fn body_recipe_candidate_index_refuses_collection_limit() {
+    let recipe = ConstructionRecipe {
+        id: "f3d:Design/BulkStream.dat:construction-recipe#1".into(),
+        byte_offset: 1,
+        kind: ConstructionRecipeKind::Body,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::bind_body_recipe_operand_candidates(
+            &ctx, &mut [], std::slice::from_ref(&recipe), &[], &[],
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d body recipe candidate index"
+    ));
+}
+
+#[test]
+fn body_recipe_decode_indices_refuse_collection_limits() {
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let header = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#100".into(),
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned())
+                .unwrap(),
+            record_index: 100,
+        };
+        let recipe = ConstructionRecipe {
+            id: "f3d:Design/BulkStream.dat:construction-recipe#1".into(),
+            byte_offset: 1,
+            kind: ConstructionRecipeKind::Body,
+            design: None,
+            recipe_index: 0,
+            record_index: None,
+        };
+        for (limit, operation) in [
+            (0, "f3d body recipe header index"),
+            (1, "f3d body recipe stream index"),
+            (2, "f3d body recipe stream entries"),
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                crate::design::decode::operands::decode_body_recipe_operands(
+                    &ctx, scan, &[], &[], std::slice::from_ref(&header), std::slice::from_ref(&recipe),
+                ),
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ));
+        }
+    });
+}
+
+#[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
-    let group = DesignConstructionOperandGroup::try_from(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
             scope_record_index: 80,
@@ -66,7 +140,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         },
     )
     .unwrap();
-    let record = DesignRecordHeader {
+    let mut record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
         class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
@@ -96,9 +170,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     bytes.extend_from_slice(b"body_recipe_data");
     let next_at = bytes.len();
     indexed_header(&mut bytes, *b"311", 104);
-    let recipe = ConstructionRecipe {
+    let mut recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
-        byte_offset: recipe_at as u64,
+        byte_offset: u64_from_index(recipe_at),
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
@@ -122,8 +196,46 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         80,
     );
 
-    let mut operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
-        .expect("body recipe operand");
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+    limited_policy.limits.max_collection_items = 1;
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .unwrap();
+    assert!(matches!(
+        parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe),
+        Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d body recipe references"
+    ));
+    for (limit, operation) in [
+        (35, "f3d Design UTF-16 text"),
+        (71, "f3d Design UTF-16 text"),
+        (
+            u64::try_from(72 + recipe.id.len() - 1).unwrap(),
+            "f3d body recipe operand recipe ID",
+        ),
+    ] {
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_retained_bytes = limit;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
+        assert!(matches!(
+            parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ));
+    }
+
+    let mut operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
+        .expect("body recipe operand")
+        .unwrap();
     assert_eq!(operand.references().len(), 2);
     assert_eq!(operand.references()[0].design_reference, 2265);
     assert_eq!(operand.references()[0].form, 3);
@@ -154,45 +266,104 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
     assert_eq!(operand.nested_record_index(), 103);
     assert_eq!(operand.recipe_id, recipe.id);
-    assert_eq!(operand.next_byte_offset(), next_at as u64);
+    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
     operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#0".into();
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+    limited_policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::push_body_recipe_operand(
+            &limited_ctx, &mut Vec::new(), operand.clone(), "Design/BulkStream.dat", 0,
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d body recipe operand output"
+    ));
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
+        + ":design-body-recipe-operand#".len()
+        + 1;
+    limited_policy.limits.max_retained_bytes = u64::try_from(id_len - 1).unwrap();
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::push_body_recipe_operand(
+            &limited_ctx, &mut Vec::new(), operand.clone(), "Design/BulkStream.dat", 0,
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && failure.operation == "f3d body recipe operand ID"
+    ));
+    let candidate_tags = [
+        PersistentSubentityTag {
+            id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
+            ),
+            selector: 1,
+            token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+            design_references: vec![2265],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
+            ),
+            selector: 2,
+            token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+            design_references: vec![2265, 2266],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
+            ),
+            selector: 0,
+            token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+            design_references: vec![2265],
+            ordinal: 0,
+        },
+    ];
+    for (collection_limit, retained_limit, operation) in [
+        (1, u64::MAX, "f3d operand face candidate"),
+        (
+            u64::MAX,
+            u64::try_from(operand.id.len() - 1).unwrap(),
+            "f3d body recipe candidate operand ID",
+        ),
+        (
+            u64::MAX,
+            u64::try_from(operand.id.len() + "test:model:face#same-stream".len() - 1).unwrap(),
+            "f3d operand face candidate ID",
+        ),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (limited_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut limited_operand = operand.clone();
+        assert!(matches!(
+            crate::design::decode::operands::bind_body_recipe_operand_candidates(&limited_ctx, std::slice::from_mut(&mut limited_operand), std::slice::from_ref(&recipe), &candidate_tags, std::slice::from_ref(&scope)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure)) if failure.operation == operation
+        ));
+    }
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        &ctx,
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&recipe),
-        &[
-            PersistentSubentityTag {
-                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
-                ),
-                selector: 1,
-                token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
-                design_references: vec![2265],
-                ordinal: 0,
-            },
-            PersistentSubentityTag {
-                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
-                ),
-                selector: 2,
-                token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
-                design_references: vec![2265, 2266],
-                ordinal: 0,
-            },
-            PersistentSubentityTag {
-                id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
-                ),
-                selector: 0,
-                token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
-                design_references: vec![2265],
-                ordinal: 0,
-            },
-        ],
+        &candidate_tags,
         std::slice::from_ref(&scope),
-    );
+    )
+    .unwrap();
     assert_eq!(
         operand.references()[0].candidate_faces,
         [
@@ -211,14 +382,15 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let empty_next_at = next_at - 24;
     let empty_recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{empty_recipe_at}"),
-        byte_offset: empty_recipe_at as u64,
+        byte_offset: u64_from_index(empty_recipe_at),
         ..recipe.clone()
     };
-    let empty = parse_body_recipe_operand(&empty_bytes, &group, 0, &record, &empty_recipe)
-        .expect("empty body recipe operand");
+    let empty = parse_body_recipe_operand(&ctx, &empty_bytes, &group, 0, &record, &empty_recipe)
+        .expect("empty body recipe operand")
+        .unwrap();
     assert!(empty.references().is_empty());
     assert_eq!(empty.nested_record_index(), 103);
-    assert_eq!(empty.next_byte_offset(), empty_next_at as u64);
+    assert_eq!(empty.next_byte_offset(), u64_from_index(empty_next_at));
 
     let mut combine_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#80",
@@ -252,6 +424,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        &ctx,
         std::slice::from_mut(&mut combine_operand),
         std::slice::from_ref(&combine_recipe),
         &[
@@ -277,7 +450,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
         ],
         std::slice::from_ref(&combine_scope),
-    );
+    )
+    .unwrap();
     assert_eq!(
         combine_operand.references()[0].candidate_faces,
         [FaceId::mint("test:model:face#same-stream").expect("identity grammar")]
@@ -287,13 +461,65 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     indexed_header(&mut nested, *b"302", 1);
     indexed_header(&mut nested, *b"305", 11);
     bytes.splice(next_at..next_at, nested.iter().copied());
-    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
-        .expect("body recipe operand with nested recipe records");
-    assert_eq!(operand.next_byte_offset(), (next_at + nested.len()) as u64);
+    let operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
+        .expect("body recipe operand with nested recipe records")
+        .unwrap();
+    assert_eq!(
+        operand.next_byte_offset(),
+        u64_from_index(next_at + nested.len())
+    );
+
+    let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let archive = crate::test_support::zip_test::f3d_with_configuration(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+        stream_name,
+        &bytes,
+    );
+    group.id = crate::ids::native_scoped_id(stream_name, "operand-group", 90);
+    record.id = crate::ids::native_scoped_id(stream_name, "record", 100);
+    recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);
+    let output_id = crate::ids::native_scoped_id(stream_name, "design-body-recipe-operand", 0);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let decoded = crate::design::decode::operands::decode_body_recipe_operands(
+            &ctx,
+            scan,
+            &[],
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&recipe),
+        )
+        .unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].id, output_id);
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes =
+            u64::try_from(72 + recipe.id.len() + output_id.len() * 2 - 1).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            crate::design::decode::operands::decode_body_recipe_operands(
+                &ctx, scan, &[], std::slice::from_ref(&group),
+                std::slice::from_ref(&record), std::slice::from_ref(&recipe),
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d body recipe owner ID"
+        ));
+    });
 }
 
 #[test]
 fn class_367_body_recipe_operand_decodes_scale_member_frame() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"367", 100);
     bytes.extend_from_slice(&[0; 10]);
@@ -369,7 +595,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     };
     let recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
-        byte_offset: recipe_at as u64,
+        byte_offset: u64_from_index(recipe_at),
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
@@ -388,8 +614,9 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         }),
     };
 
-    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
-        .expect("class-367 body recipe operand");
+    let operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
+        .expect("class-367 body recipe operand")
+        .unwrap();
     assert_eq!(operand.references().len(), 1);
     assert_eq!(operand.references()[0].design_reference, 301);
     assert_eq!(operand.references()[0].form, 33);
@@ -410,7 +637,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         Some(208)
     );
     assert_eq!(operand.nested_record_index(), 103);
-    assert_eq!(operand.next_byte_offset(), next_at as u64);
+    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
 }
 
 #[test]
@@ -446,7 +673,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     };
     let early = ConstructionRecipe {
         id: "stream:recipe-early".into(),
-        byte_offset: EARLY_RECIPE_AT as u64,
+        byte_offset: u64_from_index(EARLY_RECIPE_AT),
         kind: ConstructionRecipeKind::Body,
         design: None,
         recipe_index: 0,
@@ -457,7 +684,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     };
     let late = ConstructionRecipe {
         id: "stream:recipe-late".into(),
-        byte_offset: LATE_RECIPE_AT as u64,
+        byte_offset: u64_from_index(LATE_RECIPE_AT),
         recipe_index: 1,
         ..early.clone()
     };

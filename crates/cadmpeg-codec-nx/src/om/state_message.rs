@@ -3,7 +3,8 @@
 
 use super::state_message_text::StateMessageText;
 use super::state_tagged_value::StateTaggedValue;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -41,12 +42,15 @@ impl<S: AsRef<str>> StateMessage<S> {
 }
 
 impl StateMessage<&str> {
-    pub(crate) fn into_owned(self) -> StateMessage<String> {
-        StateMessage {
-            text: self.text.into_owned(),
+    pub(crate) fn into_owned(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<StateMessage<String>, CodecError> {
+        Ok(StateMessage {
+            text: self.text.into_owned(ctx)?,
             value: self.value,
             count_or_severity: self.count_or_severity,
-        }
+        })
     }
 }
 

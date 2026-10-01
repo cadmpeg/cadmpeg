@@ -4,8 +4,8 @@
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
-use crate::bytes::lp_ascii_filtered;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
@@ -21,7 +21,9 @@ use crate::records::feature::fixed_parameters::DesignFixedFilletParameters;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 
 pub(super) fn exact_fixed_extrude_parameters(
@@ -39,36 +41,35 @@ pub(super) fn exact_fixed_extrude_parameters(
     {
         return None;
     }
-    let fixed_lanes = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index))
-                .then_some((*record_index, scalar))
-        })
-        .collect::<Vec<_>>();
-    let embedded_distances = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
+    let mut fixed_lanes = [None; 2];
+    let mut fixed_count = 0;
+    let mut embedded_distance = None;
+    for record_index in scope.reference_members().values() {
+        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+            .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
+        {
+            let slot = fixed_lanes.get_mut(fixed_count)?;
+            *slot = Some((*record_index, scalar));
+            fixed_count += 1;
+        }
+        if let Some(scalar) =
             exact_embedded_extrude_distance(bytes, records, *record_index, scope.record_index)
-                .map(|scalar| (*record_index, scalar))
-        })
-        .collect::<Vec<_>>();
-    if fixed_lanes.len() > 2 || embedded_distances.len() > 1 {
-        return None;
+        {
+            if embedded_distance.replace((*record_index, scalar)).is_some() {
+                return None;
+            }
+        }
     }
-    let mut along_distance = embedded_distances.first().map(|(record_index, lane)| {
+    let mut along_distance = embedded_distance.map(|(record_index, lane)| {
         DesignFixedExtrudeDistance::DistanceConstruction(DesignFixedExtrudeScalar {
             value: lane.value,
-            record_index: *record_index,
+            record_index,
             value_offset: lane.value_offset,
         })
     });
     let mut taper_angle = None;
     let mut seen_fixed_ordinals = [false; 2];
-    for (record_index, lane) in fixed_lanes {
+    for (record_index, lane) in fixed_lanes.into_iter().flatten() {
         let ordinal = usize::from(lane.ordinal);
         if ordinal >= seen_fixed_ordinals.len() || seen_fixed_ordinals[ordinal] {
             return None;
@@ -148,77 +149,70 @@ fn exact_embedded_extrude_distance(
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<FixedScalarFrame<PositiveReal>> {
-    let candidates = records
-        .frames(record_index)
-        .filter_map(|(start, end)| {
-            (end.checked_sub(start)? == 100).then_some(())?;
-            let (class_tag, after_tag) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-            let first_auxiliary = record_index.checked_add(1)?;
-            let second_auxiliary = record_index.checked_add(2)?;
-            if after_tag != start + 7
-                || class_tag.len() != 3
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                || bytes.get(start + 11..start + 21) != Some(&[0; 10])
-                || marked_record_reference(bytes, start + 21)? != scope_record_index
-                || bytes.get(start + 26..start + 32) != Some(&[0; 6])
-                || View::u32_le_at(bytes, start + 32)? != 1
-                || marked_record_reference(bytes, start + 36).is_none()
-                || bytes.get(start + 41..start + 47) != Some(&[0; 6])
-                || View::u32_le_at(bytes, start + 47)? != 210
-                || View::u32_le_at(bytes, start + 59)? != 210
-                || marked_record_reference(bytes, start + 63)? != second_auxiliary
-                || bytes.get(start + 68..start + 74) != Some(&[0; 6])
-                || bytes.get(start + 74..start + 77) != Some(&[1, 0, 0])
-                || marked_record_reference(bytes, start + 77)? != first_auxiliary
-                || bytes.get(start + 82..start + 89) != Some(&[0; 7])
-                || marked_record_reference(bytes, start + 89)? != scope_record_index
-                || bytes.get(start + 94..start + 100) != Some(&[0; 6])
-            {
-                return None;
-            }
-            let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
-            Some(FixedScalarFrame {
-                owner_record_index: Some(scope_record_index),
-                ordinal: 0,
-                value,
-                value_offset: u64::try_from(start + 51).ok()?,
-            })
+    let mut candidates = records.frames(record_index).filter_map(|(start, end)| {
+        (end.checked_sub(start)? == 100).then_some(())?;
+        let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        let first_auxiliary = record_index.checked_add(1)?;
+        let second_auxiliary = record_index.checked_add(2)?;
+        if after_tag != start + 7
+            || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+            || marked_record_reference(bytes, start + 21)? != scope_record_index
+            || bytes.get(start + 26..start + 32) != Some(&[0; 6])
+            || View::u32_le_at(bytes, start + 32)? != 1
+            || marked_record_reference(bytes, start + 36).is_none()
+            || bytes.get(start + 41..start + 47) != Some(&[0; 6])
+            || View::u32_le_at(bytes, start + 47)? != 210
+            || View::u32_le_at(bytes, start + 59)? != 210
+            || marked_record_reference(bytes, start + 63)? != second_auxiliary
+            || bytes.get(start + 68..start + 74) != Some(&[0; 6])
+            || bytes.get(start + 74..start + 77) != Some(&[1, 0, 0])
+            || marked_record_reference(bytes, start + 77)? != first_auxiliary
+            || bytes.get(start + 82..start + 89) != Some(&[0; 7])
+            || marked_record_reference(bytes, start + 89)? != scope_record_index
+            || bytes.get(start + 94..start + 100) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
+        Some(FixedScalarFrame {
+            owner_record_index: Some(scope_record_index),
+            ordinal: 0,
+            value,
+            value_offset: u64::try_from(start + 51).ok()?,
         })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 pub(super) fn exact_fixed_fillet_parameters(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignFixedFilletParameters> {
+) -> Result<Option<DesignFixedFilletParameters>, CodecError> {
     use crate::records::feature::fixed_parameters::{
         DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
     };
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Fillet) {
-        return None;
+        return Ok(None);
     }
-    let lanes = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index))
-                .then_some((*record_index, scalar))
-        })
-        .collect::<Vec<_>>();
+    let mut lanes = Vec::new();
+    for record_index in scope.reference_members().values() {
+        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+            .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
+        {
+            ctx.reserve_vec(&mut lanes, 1, "f3d fixed Fillet scalar lanes")?;
+            lanes.push((*record_index, scalar));
+        }
+    }
     if lanes.is_empty()
         || lanes
             .iter()
             .enumerate()
             .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
     {
-        return None;
+        return Ok(None);
     }
 
     let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
@@ -229,38 +223,57 @@ pub(super) fn exact_fixed_fillet_parameters(
     let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
         DesignFixedFilletGroup::try_new(tangency_lane.map(scalar), law).ok()
     };
-    let groups = if lanes.len() == 1 {
-        vec![group(
-            None,
-            DesignFixedFilletLaw::Constant(scalar(&lanes[0])),
-        )?]
-    } else if lanes.len() % 2 == 0 {
-        lanes
-            .chunks_exact(2)
-            .map(|pair| {
-                group(
-                    Some(&pair[0]),
-                    DesignFixedFilletLaw::Constant(scalar(&pair[1])),
-                )
-            })
-            .collect::<Option<Vec<_>>>()?
+    let mut groups = Vec::new();
+    let group_count = if lanes.len() == 1 || !lanes.len().is_multiple_of(2) {
+        1
     } else {
-        vec![group(
+        lanes.len() / 2
+    };
+
+    ctx.reserve_vec(&mut groups, group_count, "f3d fixed Fillet groups")?;
+    if lanes.len() == 1 {
+        let Some(value) = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0]))) else {
+            return Ok(None);
+        };
+        groups.push(value);
+    } else if lanes.len() % 2 == 0 {
+        for pair in lanes.chunks_exact(2) {
+            let Some(value) = group(
+                Some(&pair[0]),
+                DesignFixedFilletLaw::Constant(scalar(&pair[1])),
+            ) else {
+                return Ok(None);
+            };
+            groups.push(value);
+        }
+    } else {
+        let intermediate_count = (lanes.len() - 3) / 2;
+
+        let mut intermediate = Vec::new();
+        ctx.reserve_vec(
+            &mut intermediate,
+            intermediate_count,
+            "f3d fixed Fillet intermediate rows",
+        )?;
+        for pair in lanes[3..].chunks_exact(2) {
+            intermediate.push(DesignFixedFilletIntermediate {
+                radius: scalar(&pair[0]),
+                parameter: scalar(&pair[1]),
+            });
+        }
+        let Some(value) = group(
             Some(&lanes[0]),
             DesignFixedFilletLaw::Variable {
                 start: scalar(&lanes[1]),
                 end: scalar(&lanes[2]),
-                intermediate: lanes[3..]
-                    .chunks_exact(2)
-                    .map(|pair| DesignFixedFilletIntermediate {
-                        radius: scalar(&pair[0]),
-                        parameter: scalar(&pair[1]),
-                    })
-                    .collect(),
+                intermediate,
             },
-        )?]
-    };
-    Some(DesignFixedFilletParameters { groups })
+        ) else {
+            return Ok(None);
+        };
+        groups.push(value);
+    }
+    Ok(Some(DesignFixedFilletParameters { groups }))
 }
 
 pub(super) fn exact_fixed_chamfer_parameters(
@@ -280,38 +293,32 @@ pub(super) fn exact_fixed_chamfer_parameters(
     }) {
         return None;
     }
-    let lanes = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index))
-                .then_some((*record_index, scalar))
-        })
-        .collect::<Vec<_>>();
-    if !(1..=2).contains(&lanes.len())
-        || lanes
-            .iter()
-            .enumerate()
-            .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
-    {
-        return None;
+    let mut lanes = [None; 2];
+    let mut lane_count = 0;
+    for record_index in scope.reference_members().values() {
+        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+            .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
+        {
+            if usize::from(scalar.ordinal) != lane_count {
+                return None;
+            }
+            let slot = lanes.get_mut(lane_count)?;
+            *slot = Some((*record_index, scalar));
+            lane_count += 1;
+        }
     }
-    let mut distances = lanes
-        .into_iter()
-        .map(|(record_index, scalar)| {
-            Some(DesignFixedChamferDistance {
-                value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
-                record_index,
-                value_offset: scalar.value_offset,
-            })
+    let mut distances = lanes.into_iter().flatten().map(|(record_index, scalar)| {
+        Some(DesignFixedChamferDistance {
+            value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
+            record_index,
+            value_offset: scalar.value_offset,
         })
-        .collect::<Option<Vec<_>>>()?
-        .into_iter();
-    let first = distances.next()?;
+    });
+    let first = distances.next()??;
     Some(match distances.next() {
-        Some(second) => DesignFixedChamferParameters::TwoDistances { first, second },
+        Some(Some(second)) => DesignFixedChamferParameters::TwoDistances { first, second },
         None => DesignFixedChamferParameters::EqualDistance { distance: first },
+        Some(None) => return None,
     })
 }
 

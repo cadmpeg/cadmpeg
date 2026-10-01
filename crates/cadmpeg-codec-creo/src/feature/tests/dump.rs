@@ -138,7 +138,8 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -189,7 +190,8 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -302,7 +304,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes_ok(data.clone());
-    let offset = scan.features.definitions[0].offset as u64;
+    let offset = cadmpeg_core::decode::u64_from_index(scan.features.definitions[0].offset);
     let variable_offset = scan.features.definitions[0]
         .variables
         .as_ref()
@@ -515,7 +517,8 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
         ]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -834,7 +837,8 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
                  scalar encodings remain unresolved",
             )
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -902,7 +906,8 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
                 cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
             ))
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1123,7 +1128,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         &result.source_fidelity().annotations,
         "creo:model:feature#8053",
         "creo:DEPDB_DATA",
-        operation.offset as u64,
+        cadmpeg_core::decode::u64_from_index(operation.offset),
         "feature_recipe",
         Exactness::ByteExact,
     );

@@ -97,9 +97,9 @@ mod f3z;
 mod history;
 mod history_records;
 mod ids;
+mod json_budget;
 /// Byte-offset constants generated from `docs/layouts/f3d.toml`.
 mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod manifest;
 mod materials;
@@ -171,10 +171,10 @@ impl CodecBackend for F3dCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn validate_native(
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         ir: &CadIr,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-        Ok(validate::validate_native(ir))
+        validate::validate_native_charged(ctx, ir)
     }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
@@ -204,7 +204,7 @@ impl CodecBackend for F3dCodec {
         match &scan.kind {
             container::F3dContainerKind::MultiDocument { .. } => f3z::inspect(ctx, &scan),
             container::F3dContainerKind::Document { .. } => {
-                Ok(report::build_inspection_summary(&scan))
+                report::build_inspection_summary(ctx, &scan)
             }
         }
     }

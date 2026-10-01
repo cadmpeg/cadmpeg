@@ -147,14 +147,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .unwrap();
 
-    let definition = crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None,
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .expect("exact legacy Pipe reference form");
     assert!(matches!(
@@ -189,14 +191,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    let hollow_definition = crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None,
-    )
+    let hollow_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .expect("exact hollow circular Pipe reference form");
     assert!(matches!(
@@ -239,14 +243,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &too_thick_parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &too_thick_parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_none());
 
@@ -286,14 +292,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_none());
 
@@ -314,14 +322,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         crate::records::references::DesignClassTag::try_from("475".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_some());
 
@@ -351,14 +361,115 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_some());
+}
+
+fn pipe_reference_limit_fixture() -> (DesignParameterScope, DesignConstructionOperandGroup) {
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
+    };
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:pipe-scope#1",
+        crate::records::feature::scope::DesignFeatureKind::Pipe,
+        1,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: "f3d:test:pipe-group#20".into(),
+        scope_record_index: 1,
+        scope_reference_ordinal: 4,
+        record_index: 20,
+        byte_offset: 0,
+        class_tag: "312".to_owned().try_into().unwrap(),
+        members: vec![crate::records::identity::Located {
+            value: 21,
+            offset: 0,
+        }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 0,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 18,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 22,
+                variant: false,
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5),
+        role_offset: 0,
+        paired_class_tag: "258".to_owned().try_into().unwrap(),
+        paired_byte_offset: 0,
+    })
+    .unwrap();
+    (scope, group)
+}
+
+#[test]
+fn legacy_pipe_claimed_records_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group) = pipe_reference_limit_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::legacy_pipe_references_complete(
+            &ctx, &scope, &group, [10, 11, 12, 13],
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d Pipe claimed record"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn legacy_pipe_reference_records_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group) = pipe_reference_limit_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 12;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::legacy_pipe_references_complete(
+            &ctx, &scope, &group, [10, 11, 12, 13],
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d Pipe reference record"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
 }

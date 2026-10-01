@@ -600,17 +600,18 @@ pub(crate) fn write_semantic(
             })?;
             continue;
         }
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        let mut bytes = Vec::new();
         let mut chunk = [0_u8; 16 * 1024];
         loop {
             let read = entry.read(&mut chunk)?;
             if read == 0 {
                 break;
             }
-            bytes.try_reserve(read).map_err(|_| {
-                CodecError::malformed(format_args!("cannot allocate ZIP entry {name}"))
-            })?;
-            bytes.extend_from_slice(&chunk[..read]);
+            encode_ctx.extend_retained_bytes(
+                &mut bytes,
+                &chunk[..read],
+                "retain F3D patch ZIP entry",
+            )?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);

@@ -48,7 +48,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSides {
                     edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                        wrapper_record_index: 383,
+                        wrapper: 383,
                         group_record_index: 385_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 407,
                     }],
@@ -173,26 +173,14 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: std::slice::from_ref(&group),
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
-    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
-        .unwrap()
-        .expect("typed EdgeFlange definition");
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx)
+    })
+    .unwrap()
+    .expect("typed EdgeFlange definition");
 
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
         height,
@@ -273,27 +261,18 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let offset_inputs = crate::design::feature_project::ProjectInputs {
         native: &offset_parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: std::slice::from_ref(&group),
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
-    let offset_definition =
-        crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs, None)
-            .unwrap()
-            .expect("typed signed-offset EdgeFlange definition");
+    let offset_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(
+            &offset_scope,
+            &offset_inputs,
+            decode_ctx,
+        )
+    })
+    .unwrap()
+    .expect("typed signed-offset EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         offset_definition
     else {
@@ -322,7 +301,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         &mut multi_shape
     {
         edges.push(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-            wrapper_record_index: edges[0].wrapper_record_index,
+            wrapper: edges[0].wrapper,
             group_record_index: 415_u32.try_into().unwrap(),
             aggregate_operand_record_index: 420,
         });
@@ -351,27 +330,14 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let multi_inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
-    let multi_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, None)
-            .unwrap()
-            .expect("typed multi-edge EdgeFlange definition");
+    let multi_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, decode_ctx)
+    })
+    .unwrap()
+    .expect("typed multi-edge EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { edges, .. }) =
         multi_definition
     else {
@@ -436,27 +402,18 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let per_edge_inputs = crate::design::feature_project::ProjectInputs {
         native: &per_edge_parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
-    let per_edge_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs, None)
-            .unwrap()
-            .expect("equal per-edge symmetric widths project to one neutral width");
+    let per_edge_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(
+            &multi_scope,
+            &per_edge_inputs,
+            decode_ctx,
+        )
+    })
+    .unwrap()
+    .expect("equal per-edge symmetric widths project to one neutral width");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         per_edge_definition
     else {
@@ -473,27 +430,19 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let distinct_inputs = crate::design::feature_project::ProjectInputs {
         native: &distinct_parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
     assert!(
-        crate::design::feature_project::project_edge_flange(&multi_scope, &distinct_inputs, None)
-            .unwrap()
-            .is_none(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_edge_flange(
+                &multi_scope,
+                &distinct_inputs,
+                decode_ctx,
+            )
+        })
+        .unwrap()
+        .is_none(),
         "distinct per-edge widths must remain source-native"
     );
 
@@ -538,27 +487,18 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let two_sided_inputs = crate::design::feature_project::ProjectInputs {
         native: &two_sided_parameters,
         owners: &two_sided_owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
-    let two_sided_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs, None)
-            .unwrap()
-            .expect("independent two-sided per-edge widths project to a typed neutral law");
+    let two_sided_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(
+            &multi_scope,
+            &two_sided_inputs,
+            decode_ctx,
+        )
+    })
+    .unwrap()
+    .expect("independent two-sided per-edge widths project to a typed neutral law");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         two_sided_definition
     else {
@@ -582,18 +522,23 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     );
 }
 
-#[test]
-fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
+fn edge_flange_to_object_fixture(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    include_target_scope: bool,
+    two_sided_width: bool,
+) -> Result<
+    Option<(
+        cadmpeg_ir::features::FeatureDefinition,
+        crate::records::feature::scope::DesignParameterScope,
+    )>,
+    cadmpeg_core::CodecError,
+> {
     use crate::records::feature::{
         scope::DesignParameterScope,
         sheet_metal::{
             DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation,
             DesignSheetMetalHeightDatum,
         },
-    };
-
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
@@ -615,18 +560,32 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
             bend_position: DesignBendPosition::Inside,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
-                crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
-                    edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                        wrapper_record_index: 383,
+                if two_sided_width {
+                    crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
+                        edges: vec![crate::records::feature::sheet_metal::DesignFlangeEdgeWidth {
+                            edge: crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
+                                wrapper: 383,
+                                group_record_index: 385_u32.try_into().unwrap(),
+                                aggregate_operand_record_index: 407,
+                            },
+                            owners: [435, 438],
+                        }],
+                        source: crate::records::feature::sheet_metal::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+                    }
+                } else {
+                    crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
+                        edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
+                        wrapper: 383,
                         group_record_index: 385_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 407,
                     }],
-                    height: DesignEdgeFlangeHeightExtent::ToObject {
+                        height: DesignEdgeFlangeHeightExtent::ToObject {
                         target_group_record_index: 421,
                         target_operand_record_index: 424,
                         offset_owner_record_index: 430,
                         reference_record_indices: [469, 470],
                     },
+                    }
                 },
                 404,
             )
@@ -686,12 +645,18 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         )
         .unwrap()
     };
-    let owners = [owner(399, 398), owner(402, 401), owner(430, 429)];
-    let parameters = [
+    let mut owners = vec![owner(399, 398), owner(402, 401), owner(430, 429)];
+    let mut parameters = vec![
         parameter(398, "FlangeHeight", "mm", 2.5),
         parameter(401, "FlangeAngle", "deg", std::f64::consts::FRAC_PI_2),
         parameter(429, "ToObjectOffset", "mm", 1.5),
     ];
+    if two_sided_width {
+        owners.push(owner(435, 434));
+        owners.push(owner(438, 437));
+        parameters.push(parameter(434, "EdgeWidth_1", "mm", 3.0));
+        parameters.push(parameter(437, "EdgeWidth_2", "mm", 1.5));
+    }
 
     let edge_group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
@@ -808,26 +773,29 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
         owners: &owners,
-        scopes: &target_scopes,
-        timelines: &[],
+        scopes: if include_target_scope {
+            &target_scopes
+        } else {
+            &[]
+        },
         construction_groups: &groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
         entity_selection_operands: &target_selections,
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
-    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
-        .unwrap()
-        .expect("typed to-object EdgeFlange definition");
+    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, ctx)?;
+    Ok(definition.map(|definition| (definition, target_scope)))
+}
+
+#[test]
+fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    };
+    let (definition, target_scope) = crate::test_support::with_decode_context(|decode_ctx| {
+        edge_flange_to_object_fixture(decode_ctx, true, false)
+    })
+    .unwrap()
+    .expect("typed to-object EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
         definition
     else {
@@ -841,6 +809,68 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         SheetMetalFlangeHeightTarget::Feature(crate::ids::neutral_feature_id(&target_scope))
     );
     assert_eq!(offset.get(), 15.0);
+}
+
+#[test]
+fn edge_flange_native_height_target_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    };
+
+    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        edge_flange_to_object_fixture(decode_ctx, false, false)
+    })
+    .unwrap()
+    .expect("unresolved to-object EdgeFlange");
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
+        height:
+            SheetMetalFlangeHeight::ToObject {
+                target: SheetMetalFlangeHeightTarget::Native(native),
+                ..
+            },
+        ..
+    }) = definition
+    else {
+        panic!("native to-object target");
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(native.len() - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = edge_flange_to_object_fixture(&ctx, false, false);
+    assert!(
+        matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        if failure.operation == "f3d EdgeFlange native height target id"
+            && failure.dimension == ResourceDimension::RetainedBytes),
+        "expected native height target refusal, got {result:?}"
+    );
+}
+
+#[test]
+fn edge_flange_two_sided_edge_width_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(
+            decode_ctx, true, true
+        ))
+        .unwrap()
+        .is_some()
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = edge_flange_to_object_fixture(&ctx, true, true);
+    assert!(
+        matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        if failure.operation == "f3d EdgeFlange two-sided edge width"
+            && failure.dimension == ResourceDimension::CollectionItems),
+        "expected two-sided edge width refusal, got {result:?}"
+    );
 }
 
 #[test]
@@ -882,7 +912,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::Symmetric {
                     edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                        wrapper_record_index: 318,
+                        wrapper: 318,
                         group_record_index: 320_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 339,
                     }],
@@ -895,30 +925,13 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
     }
 
     let inputs = crate::design::feature_project::ProjectInputs {
-        native: &[],
-        owners: &[],
-        scopes: &[],
-        timelines: &[],
-        construction_groups: &[],
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
+        ..Default::default()
     };
-    assert!(
-        crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
-            .unwrap()
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx)
+    })
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -953,7 +966,12 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
         cadmpeg_ir::features::NonEmptyMembers::try_from(
-            crate::design::feature_project::surface_patch_boundary_continuities(scope),
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::feature_project::surface_patch_boundary_continuities(
+                    decode_ctx, scope,
+                )
+            })
+            .unwrap(),
         )
         .ok()
         .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
@@ -979,7 +997,10 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         boundary(DesignPatchContinuity::Connected),
     ]);
     assert_eq!(
-        crate::design::feature_project::surface_patch_boundary_continuities(&mixed),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &mixed)
+        })
+        .unwrap(),
         vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
     );
     assert!(uniform_continuity(&mixed).is_none());
@@ -990,12 +1011,14 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         ))]))
         .is_none()
     );
-    assert!(
-        crate::design::feature_project::surface_patch_boundary_continuities(&scope_with(vec![
-            boundary(DesignPatchContinuity::Unknown(9))
-        ]))
-        .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::surface_patch_boundary_continuities(
+            decode_ctx,
+            &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))]),
+        )
+    })
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -1111,13 +1134,7 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
     };
     let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &scope,
-            &shifted_groups,
-            &[],
-            &[],
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &shifted_groups, &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1136,7 +1153,7 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
     let error = crate::design::feature_project::project_surface_patch(
-        Some(&ctx),
+        &ctx,
         &scope,
         &shifted_groups,
         &[],
@@ -1168,13 +1185,7 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
     }
     let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &scope,
-            &endpoint_groups,
-            &[],
-            &[],
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &endpoint_groups, &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1338,26 +1349,14 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         let inputs = crate::design::feature_project::ProjectInputs {
             native: &parameters,
             owners: &owners,
-            scopes: &[],
-            timelines: &[],
             construction_groups: &groups,
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
+            ..Default::default()
         };
-        crate::design::feature_project::project_hem(&scope, &inputs, None)
-            .unwrap()
-            .expect("typed Hem definition")
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_hem(&scope, &inputs, decode_ctx)
+        })
+        .unwrap()
+        .expect("typed Hem definition")
     };
 
     let gap_length = project(
@@ -1447,5 +1446,43 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
         }
+    );
+}
+
+#[test]
+fn surface_patch_continuities_refuse_collection_limit() {
+    use crate::records::feature::scope::DesignParameterScope;
+    use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#1",
+        crate::records::feature::scope::DesignFeatureKind::SurfacePatch,
+        1,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::SurfacePatch(slot) =
+        scope.payload_mut()
+    {
+        *slot = vec![
+            DesignSurfacePatchBoundary {
+                scope_reference_ordinal: 0,
+                record_index: 0,
+                is_seed_selection: false,
+                continuity: DesignPatchContinuity::Connected,
+                flip: 2,
+                scale: crate::test_support::real(-1.0),
+                model_reference: 0,
+            };
+            2
+        ];
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        matches!(crate::design::feature_project::surface_patch_boundary_continuities(&ctx, &scope),
+        Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d surface-patch continuity")
     );
 }

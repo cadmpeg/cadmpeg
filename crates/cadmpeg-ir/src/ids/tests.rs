@@ -295,8 +295,8 @@ fn local_identity_composition_uses_the_admitted_wire_shape() {
 
 #[test]
 // Standard formatting is an independent oracle for the complete byte alphabet.
-#[allow(clippy::format_collect)]
 fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
+    use std::fmt::Write;
     let bytes = (u8::MIN..=u8::MAX).collect::<Vec<_>>();
     let mut distinct = std::collections::HashSet::new();
     for &byte in &bytes {
@@ -307,10 +307,10 @@ fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
     let prefix = crate::identity_key!("source-");
     assert_eq!(prefix.clone().with_hex_bytes(&[]), prefix);
     let encoded = prefix.with_hex_bytes(&bytes);
-    let expected = bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let mut expected = String::new();
+    for byte in &bytes {
+        write!(&mut expected, "{byte:02x}").expect("writing to a String succeeds");
+    }
     assert_eq!(encoded.as_str(), format!("source-{expected}"));
     assert_eq!(
         crate::identity_key!("source-")
@@ -455,4 +455,70 @@ fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() 
             "key grammar disagrees with identity grammar for U+{scalar:04X}"
         );
     }
+}
+
+#[test]
+fn typed_identity_copy_refuses_retained_bytes_before_duplication() {
+    let id = crate::sketches::SketchId::mint("synthetic:test:sketch#42").expect("valid fixture ID");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = id
+        .try_clone_for_decode(&ctx, "typed identity copy")
+        .expect_err("copy exceeds cap");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "typed identity copy")
+    );
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
+        .expect("empty root");
+    assert_eq!(
+        id.try_clone_for_decode(&ctx, "typed identity copy")
+            .expect("service copy"),
+        id
+    );
+}
+
+#[test]
+fn local_identity_copy_refuses_one_below_retained_need() {
+    let id = super::HistoricalFaceId::mint("synthetic-face-42").expect("valid local identity");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id.as_str().len()).expect("length") - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = id
+        .try_clone_for_decode(&ctx, "local identity copy")
+        .expect_err("one below need");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "local identity copy")
+    );
+}
+
+#[test]
+fn local_identity_copy_succeeds_under_service_profile() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    macro_rules! check_copy {
+        ($id:ty) => {{
+            let id = <$id>::mint("synthetic-local-42").expect("valid local identity");
+            assert_eq!(
+                id.try_clone_for_decode(&ctx, "local identity copy")
+                    .expect("service copy"),
+                id
+            );
+        }};
+    }
+    check_copy!(super::HistoricalBodyId);
+    check_copy!(super::HistoricalFaceId);
+    check_copy!(super::HistoricalEdgeId);
+    check_copy!(super::HistoricalVertexId);
 }

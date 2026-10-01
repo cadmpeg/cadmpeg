@@ -421,7 +421,10 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .enumerate()
         .map(|(index, body)| {
             Tessellation::new(
-                format!("synthetic:test:tessellation#{index}"),
+                cadmpeg_ir::tessellation::TessellationId::mint(format!(
+                    "synthetic:test:tessellation#{index}"
+                ))
+                .expect("valid identity"),
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
                     vec![
                         Point3::new(0.0, 0.0, 0.0),
@@ -1083,7 +1086,8 @@ fn semantic_writer_preserves_sheet_body_classification() {
         ))
         .expect("a finite position is a point"),
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -1425,14 +1429,17 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         else {
             panic!("expected NURBS curve");
         };
-        let mut pole_index = 0usize;
         curve
-            .edit_control_points(|point| {
-                if pole_index == 1 {
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
+                if index == 1 {
                     point.y += 250.0;
                 }
-                pole_index += 1;
-                Ok(())
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
             })
             .unwrap();
         let expected_curve = curve.clone();
@@ -1442,14 +1449,17 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             panic!("expected NURBS surface");
         };
         let target = surface.v_count() + 1;
-        let mut pole_index = 0usize;
         surface
-            .edit_control_points(|pole| {
-                if pole_index == target {
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == target {
                     pole.z += 500.0;
                 }
-                pole_index += 1;
-                Ok(())
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
             })
             .unwrap();
         let expected_surface = surface.clone();
@@ -1497,7 +1507,8 @@ fn semantic_writer_preserves_unbound_material_definition() {
         ))
         .expect("a finite position is a point"),
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();

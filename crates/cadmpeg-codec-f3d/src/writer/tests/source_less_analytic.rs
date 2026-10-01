@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::convert::f64_from_index;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -104,17 +106,23 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
         let mut order = configuration.variant_order();
         order.push("Narrow".into());
-        *configuration = crate::records::configuration::DesignConfiguration::try_new(
-            configuration.entry_name().clone(),
-            configuration.kind(),
-            order,
-            payload,
-        )
+        *configuration = crate::test_support::with_decode_context(|ctx| {
+            crate::records::configuration::DesignConfiguration::try_new_charged(
+                ctx,
+                configuration.entry_name().clone(),
+                configuration.kind(),
+                order,
+                payload,
+            )
+        })
         .unwrap();
     });
-    retained.model.configurations = crate::design::configurations::project_configurations(
-        &f3d_native(&retained).design_configurations,
-    )
+    retained.model.configurations = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::configurations::project_configurations(
+            decode_ctx,
+            &f3d_native(&retained).design_configurations,
+        )
+    })
     .expect("edited configuration order");
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
@@ -947,16 +955,20 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         )
         .unwrap(),
     );
-    let (_, parameters) = crate::design::feature_project::project_parameter_design(
-        &f3d_native(&source_less).design_parameters,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &f3d_native(&source_less).design_parameters,
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     source_less.model.parameters = parameters;
 
     let mut encoded = Vec::new();
@@ -1134,7 +1146,8 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     source_less.model.curves.pop();
     source_less.model.tessellations.push(
         Tessellation::new(
-            "generated:test:tessellation#0",
+            cadmpeg_ir::tessellation::TessellationId::mint("generated:test:tessellation#0")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -1430,7 +1443,8 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     );
     assert!(round_trip.ir().model.edges[0].curve().is_some());
     assert!(
-        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail")
+        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
@@ -1507,7 +1521,8 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         Some([0.5, 2.0])
     );
     assert!(
-        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail")
+        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
@@ -1635,7 +1650,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         source_object: None,
     });
     for index in 0..2 {
-        let z = index as f64 * 10.0;
+        let z = f64_from_index(index).expect("fixture index is exact in f64") * 10.0;
         source_less.model.loops.push(Loop {
             id: loops[index].clone(),
             face: face.clone(),

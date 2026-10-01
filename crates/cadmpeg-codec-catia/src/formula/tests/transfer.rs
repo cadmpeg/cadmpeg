@@ -62,7 +62,8 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
         1
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -301,7 +302,8 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         cadmpeg_ir::Exactness::Derived
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -574,7 +576,8 @@ fn decode_transfers_typed_integer_to_angle_formula() {
         std::slice::from_ref(&input.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -687,7 +690,11 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
         ),
         5
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -757,7 +764,11 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert!(input.dependencies.is_empty());
         assert_eq!(input.properties["value_type"], parameter_type);
         assert_eq!(input.properties["catia_binding"], "#1_ /2");
-        assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(
+            cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+                .expect("resource allocation did not fail")
+                .is_ok()
+        );
     }
 }
 
@@ -792,7 +803,11 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
         std::slice::from_ref(&input.id)
     );
     assert_eq!(output.properties["value_type"], "String");
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -906,7 +921,8 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
         ))
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -997,6 +1013,89 @@ fn formula_parameter_entity_limit_refuses_before_model_extend() {
 }
 
 #[test]
+fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unresolved,
+        )
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_formula_entity_index")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unresolved,
+        )
+    })
+    .expect("service profile admits formula scan");
+    assert!(admitted.consumed_object_records.is_empty());
+    assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
+fn formula_finalization_refuses_each_collection_boundary() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..=512 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            crate::formula::transfer_parameters(
+                ctx,
+                &mut CadIr::empty(),
+                &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => {}
+            Err(error) => panic!("unexpected formula transfer error: {error}"),
+        }
+    }
+    for operation in [
+        "catia_formula_derivable_parameters",
+        "catia_formula_consumed_entities",
+        "catia_formula_ordered_parameters",
+        "catia_formula_annotations",
+        "catia_formula_neutral_parameters",
+    ] {
+        assert!(
+            refused.contains(operation),
+            "no low-limit refusal at {operation}"
+        );
+    }
+}
+
+#[test]
 fn formula_candidate_entity_limit_refuses_before_first_candidate() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
@@ -1064,6 +1163,113 @@ fn formula_definition_chain_limit_refuses_before_candidate_creation() {
     assert_eq!(limit.used, 0);
     assert_eq!(limit.operation, "admit CATIA formula candidate");
     assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
+fn definition_chain_history_id_refuses_retained_limit() {
+    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+        "Boolean",
+        &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.definition_chain_value().is_some())
+        .expect("definition chain entity");
+    let chain = entity.definition_chain_value().expect("typed chain");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_neutral_history_source")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
+    })
+    .expect("service profile admits definition candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
+fn typed_parameter_history_id_refuses_retained_limit() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.parameter_value().is_some())
+        .expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_neutral_history_source")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    })
+    .expect("service profile admits typed candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
+fn typed_parameter_name_and_native_ref_refuse_retained_limits() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.parameter_value().is_some())
+        .expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    })
+    .expect("service profile admits typed candidate")
+    .expect("typed candidate");
+    let before_name = entity.id.len() + admitted.parameter.id.as_str().len();
+    for (cap, operation) in [
+        (
+            cadmpeg_core::decode::u64_from_index(before_name),
+            "catia_formula_typed_parameter_name",
+        ),
+        (
+            cadmpeg_core::decode::u64_from_index(before_name + value.name.value.len()),
+            "catia_formula_typed_parameter_native_ref",
+        ),
+    ] {
+        let refused = crate::test_support::with_retained_limit(cap, |ctx| {
+            super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation),
+            "missing refusal at {operation}"
+        );
+    }
+    assert_eq!(admitted.parameter.name, value.name.value);
+    assert_eq!(
+        admitted.parameter.native_ref.as_deref(),
+        Some(entity.id.as_str())
+    );
 }
 
 #[test]
@@ -1209,7 +1415,8 @@ fn decode_transfers_a_chained_formula_definition_once() {
         std::slice::from_ref(&intermediate.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -1263,7 +1470,8 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
         std::slice::from_ref(&intermediate.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -1291,7 +1499,8 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
         std::slice::from_ref(&input.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -1314,7 +1523,8 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
     assert_eq!(input.name, "Input");
     assert!(input.dependencies.is_empty());
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );

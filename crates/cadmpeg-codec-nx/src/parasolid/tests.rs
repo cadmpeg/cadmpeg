@@ -26,13 +26,17 @@ fn legacy_stream_boundaries_require_complete_transmit_headers() {
     let first = bytes.len();
     let first_description = b": TRANSMIT FILE (partition) created by test";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(first_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(first_description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(first_description);
     bytes.extend_from_slice(b"payload PS\x00\x00not a header");
     let second = bytes.len();
     let second_description = b": TRANSMIT FILE (deltas) created by test";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(second_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(second_description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(second_description);
 
     assert_eq!(super::legacy_stream_start(&bytes, 0), Some(first));
@@ -45,24 +49,32 @@ fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
     let mut bytes = Vec::new();
     let first_description = b": TRANSMIT FILE (partition)";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(first_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(first_description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(first_description);
     let second = bytes.len();
     let second_description = b": TRANSMIT FILE (deltas)";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(second_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(second_description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(second_description);
     bytes.extend_from_slice(&[0; 64]);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let streams = super::extract_legacy_streams(&ctx, root).unwrap();
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-    assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].file_offset, 0);
-    assert_eq!(streams[1].file_offset, second);
+            let streams = super::extract_legacy_streams(ctx, root).unwrap();
+
+            assert_eq!(streams.len(), 2);
+            assert_eq!(streams[0].file_offset, 0);
+            assert_eq!(streams[1].file_offset, second);
+        },
+    );
 }
 
 #[test]
@@ -120,13 +132,18 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         direct.extend_from_slice(&2u32.to_be_bytes());
         direct.extend_from_slice(&0x21u16.to_be_bytes());
         for reference in 0..flags + 5 {
-            direct.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+            direct.extend_from_slice(
+                &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+            );
         }
         direct.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
         assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(record.trailing_references.values().len(), flags as usize);
+        assert_eq!(
+            record.trailing_references.values().len(),
+            usize::try_from(flags).expect("fixture value fits usize")
+        );
         assert_eq!(record.byte_len, direct.len() - 2);
         assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
 
@@ -137,14 +154,19 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         prefixed.extend_from_slice(&0x21u16.to_be_bytes());
         for reference in 0..flags + 5 {
             prefixed.push(u8::from(reference % 2 == 0));
-            prefixed.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+            prefixed.extend_from_slice(
+                &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+            );
         }
         prefixed.push(0);
         prefixed.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
         assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(record.trailing_references.values().len(), flags as usize);
+        assert_eq!(
+            record.trailing_references.values().len(),
+            usize::try_from(flags).expect("fixture value fits usize")
+        );
         assert_eq!(record.byte_len, prefixed.len() - 2);
         assert!(
             crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()
@@ -291,14 +313,21 @@ fn external_reference_tail_pairs_require_adjacent_complete_tokens() {
         0x00,
     ];
     assert_eq!(
-        crate::container::parse_extref_reference_pairs(&bytes),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::container::parse_extref_reference_pairs(ctx, &bytes)
+        })
+        .expect("tail pair resources"),
         vec![(
             1,
             0x1234_5678,
             crate::om::reference_value::Tagged28::try_from(0x0abc_def0).unwrap()
         )]
     );
-    assert!(crate::container::parse_extref_reference_pairs(&bytes[10..]).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_reference_pairs(ctx, &bytes[10..])
+    })
+    .expect("tail pair resources")
+    .is_empty());
 }
 
 #[test]
@@ -356,35 +385,47 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
     let mut indexed = segment_stream_payload();
     *indexed.last_mut().expect("indexed zlib integrity trailer") ^= 0x01;
     let indexed = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", indexed)]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
-            .expect("bounded test input");
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, indexed.clone()))
+
+    crate::test_support::with_decode_context_over(
+        &indexed,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&indexed);
+
+            let container = crate::test_support::with_decode_context(|ctx| {
+                container::scan_bytes(ctx, indexed.clone())
+            })
             .expect("test SPLMSSTR container");
-    assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
+            assert!(parasolid::extract_streams(ctx, root, &container).is_err());
+        },
+    );
 }
 
 #[test]
 fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
     let file = prt_with_partition(&partition_stream());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&file, &arena, &policy)
-        .expect("bounded test input");
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+
+    crate::test_support::with_decode_context_over(
+        &file,
+        |policy| {
+            policy.limits.max_retained_bytes = 1;
+        },
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&file);
+
+            let container = crate::test_support::with_decode_context(|ctx| {
+                container::scan_bytes(ctx, file.clone())
+            })
             .expect("test SPLMSSTR container");
 
-    assert!(matches!(
-        parasolid::extract_streams(&ctx, root, &container),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain NX inflated stream"
-    ));
+            assert!(matches!(
+                parasolid::extract_streams(ctx, root, &container),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && limit.operation == "retain NX inflated stream"
+            ));
+        },
+    );
 }
 
 #[test]
@@ -488,7 +529,11 @@ fn a_packed_member_reporting_fewer_bytes_than_a_zlib_member_holds_is_refused_by_
     // The shortest member a decompressor can report is admitted, and the scan
     // advances by exactly the bytes the member consumed.
     assert_eq!(
-        packed_member_advance(4096, MIN_ZLIB_MEMBER_LEN as u64).expect("the shortest zlib member"),
+        packed_member_advance(
+            4096,
+            cadmpeg_core::decode::u64_from_index(MIN_ZLIB_MEMBER_LEN)
+        )
+        .expect("the shortest zlib member"),
         MIN_ZLIB_MEMBER_LEN
     );
     assert_eq!(

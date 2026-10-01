@@ -1,24 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::feature_completeness::incomplete_expression_parameters;
 use crate::native::attach::attach_active_configuration_feature_states;
 use crate::native::attach::attach_active_configuration_parameter_values;
-use crate::native::attach::attach_block_dimension_parameter_consumers;
 use crate::native::attach::attach_current_feature_states;
-use crate::native::attach::attach_expression_parameters;
 use crate::native::attach::attach_sketch_graph;
-use crate::native::attach::blind_hole_operations;
-use crate::native::attach::boolean_target_output;
-use crate::native::attach::expression_parameter_id;
+use crate::native::attach::body_selection::boolean_target_output;
 use crate::native::attach::extrude_boolean_op;
 use crate::native::attach::extrude_feature_definition;
-use crate::native::attach::hole_package_projection;
-use crate::native::attach::native_feature_parameters;
+use crate::native::attach::feature_projection::blind_hole_operations;
+use crate::native::attach::feature_projection::hole_package_projection;
+use crate::native::attach::feature_projection::native_feature_parameters;
+use crate::native::attach::feature_projection::non_boolean_feature_definition_with_parameters;
+use crate::native::attach::feature_projection::simple_hole_operations;
+use crate::native::attach::feature_projection::HolePackageSources;
+use crate::native::attach::feature_projection::HoleProjection;
 use crate::native::attach::native_result_body_identity;
-use crate::native::attach::non_boolean_feature_definition_with_parameters;
-use crate::native::attach::parameter_owner_dependencies;
 use crate::native::attach::resolve_rm_source_color_bindings;
-use crate::native::attach::simple_hole_operations;
 use crate::native::attach::Angle;
 use crate::native::attach::AnnotationBuilder;
 use crate::native::attach::BodyId;
@@ -31,7 +28,6 @@ use crate::native::attach::FeatureDefinition;
 use crate::native::attach::FeatureId;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
-use crate::native::attach::HoleProjection;
 use crate::native::attach::Length;
 use crate::native::attach::ParameterId;
 use crate::native::attach::ParameterValue;
@@ -84,7 +80,11 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
         assignment("assignment-f", None, "color-a", 60),
     ];
     assert_eq!(
-        resolve_rm_source_color_bindings(&assignments),
+        crate::test_support::with_decode_context(|ctx| resolve_rm_source_color_bindings(
+            ctx,
+            &assignments
+        ))
+        .expect("admitted RM source colors"),
         vec![
             RmSourceColorBinding {
                 source_id: "source-a".into(),
@@ -108,87 +108,237 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
 
-    let template = |operation_label: &str| FeatureSimpleHoleTemplate {
-        id: format!("template-{operation_label}"),
-        operation_label: operation_label.to_string(),
-        payload_string: format!("payload-{operation_label}"),
-        family: SimpleHoleFamily::GeneralHole,
-        form: SimpleHoleForm::Simple,
-        extent: SimpleHoleExtent::Through,
-        start_treatment: SimpleHoleEndTreatment::Chamfer,
-        end_treatment: SimpleHoleEndTreatment::Chamfer,
-    };
-    let templates = vec![template("operation#newer"), template("operation#older")];
-    let operation_positions =
-        BTreeMap::from([("operation#older", 0usize), ("operation#newer", 1usize)]);
-    assert_eq!(
-        simple_hole_operations(&templates, &[], &operation_positions),
-        Some(vec!["operation#older".into(), "operation#newer".into()])
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let template = |operation_label: &str| FeatureSimpleHoleTemplate {
+            id: format!("template-{operation_label}"),
+            operation_label: operation_label.to_string(),
+            payload_string: format!("payload-{operation_label}"),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Simple,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::Chamfer,
+            end_treatment: SimpleHoleEndTreatment::Chamfer,
+        };
+        let templates = vec![template("operation#newer"), template("operation#older")];
+        let operation_positions =
+            BTreeMap::from([("operation#older", 0usize), ("operation#newer", 1usize)]);
+        assert_eq!(
+            simple_hole_operations(ctx, &templates, &[], &operation_positions).unwrap(),
+            Some(vec!["operation#older".into(), "operation#newer".into()])
+        );
 
-    let unordered_group = FeatureSimpleHoleConstructionGroup {
-        id: "group".into(),
-        first_data_blocks: ["a".into(), "b".into()],
-        second_data_blocks: ["c".into(), "d".into()],
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#newer".into(),
-                scalar_lane: "lane-newer".into(),
-                block_reference: "blocks-newer".into(),
-            },
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#older".into(),
-                scalar_lane: "lane-older".into(),
-                block_reference: "blocks-older".into(),
-            },
-        ])
-        .unwrap(),
-    };
-    assert!(
-        simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
-    );
+        let unordered_group = FeatureSimpleHoleConstructionGroup {
+            id: "group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "operation#newer".into(),
+                    scalar_lane: "lane-newer".into(),
+                    block_reference: "blocks-newer".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "operation#older".into(),
+                    scalar_lane: "lane-older".into(),
+                    block_reference: "blocks-older".into(),
+                },
+            ])
+            .unwrap(),
+        };
+        assert!(
+            simple_hole_operations(ctx, &templates, &[unordered_group], &operation_positions,)
+                .unwrap()
+                .is_none()
+        );
 
-    let mut blind_template = template("operation#blind");
-    blind_template.extent = SimpleHoleExtent::Blind;
-    blind_template.start_treatment = SimpleHoleEndTreatment::None;
-    blind_template.end_treatment = SimpleHoleEndTreatment::None;
-    let mixed_templates = vec![
-        templates[0].clone(),
-        blind_template.clone(),
-        templates[1].clone(),
-    ];
-    let mixed_positions = BTreeMap::from([
-        ("operation#older", 0usize),
-        ("operation#newer", 1usize),
-        ("operation#blind", 2usize),
-    ]);
-    assert_eq!(
-        simple_hole_operations(&mixed_templates, &[], &mixed_positions),
-        Some(vec!["operation#older".into(), "operation#newer".into()])
-    );
-    assert_eq!(
-        blind_hole_operations(&mixed_templates, &mixed_positions),
-        Some(vec!["operation#blind".into()])
-    );
-    let duplicate_members =
-        crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#older".into(),
-                scalar_lane: "lane-a".into(),
-                block_reference: "refs-a".into(),
-            },
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#newer".into(),
-                scalar_lane: "lane-b".into(),
-                block_reference: "refs-b".into(),
-            },
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#older".into(),
-                scalar_lane: "lane-a".into(),
-                block_reference: "refs-a".into(),
-            },
+        let mut blind_template = template("operation#blind");
+        blind_template.extent = SimpleHoleExtent::Blind;
+        blind_template.start_treatment = SimpleHoleEndTreatment::None;
+        blind_template.end_treatment = SimpleHoleEndTreatment::None;
+        let mixed_templates = vec![
+            templates[0].clone(),
+            blind_template.clone(),
+            templates[1].clone(),
+        ];
+        let mixed_positions = BTreeMap::from([
+            ("operation#older", 0usize),
+            ("operation#newer", 1usize),
+            ("operation#blind", 2usize),
         ]);
-    assert!(duplicate_members.is_err());
+        assert_eq!(
+            simple_hole_operations(ctx, &mixed_templates, &[], &mixed_positions).unwrap(),
+            Some(vec!["operation#older".into(), "operation#newer".into()])
+        );
+        assert_eq!(
+            blind_hole_operations(ctx, &mixed_templates, &mixed_positions).unwrap(),
+            Some(vec!["operation#blind".into()])
+        );
+        let duplicate_members =
+            crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "operation#older".into(),
+                    scalar_lane: "lane-a".into(),
+                    block_reference: "refs-a".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "operation#newer".into(),
+                    scalar_lane: "lane-b".into(),
+                    block_reference: "refs-b".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "operation#older".into(),
+                    scalar_lane: "lane-a".into(),
+                    block_reference: "refs-a".into(),
+                },
+            ]);
+        assert!(duplicate_members.is_err());
+    });
+}
+
+#[derive(Clone, Copy)]
+enum HoleSelectorRoute {
+    Simple,
+    Blind,
+    Counterbore,
+}
+
+fn hole_selector_result(
+    route: HoleSelectorRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Option<Vec<String>>, cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{
+        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+        SimpleHoleForm,
+    };
+    let (form, extent) = match route {
+        HoleSelectorRoute::Simple => (SimpleHoleForm::Simple, SimpleHoleExtent::Through),
+        HoleSelectorRoute::Blind => (SimpleHoleForm::Simple, SimpleHoleExtent::Blind),
+        HoleSelectorRoute::Counterbore => (SimpleHoleForm::Counterbored, SimpleHoleExtent::Through),
+    };
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(),
+        operation_label: "operation".into(),
+        payload_string: "value".into(),
+        family: SimpleHoleFamily::GeneralHole,
+        form,
+        extent,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    };
+    let positions = BTreeMap::from([("operation", 0usize)]);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| match route {
+            HoleSelectorRoute::Simple => simple_hole_operations(ctx, &[template], &[], &positions),
+            HoleSelectorRoute::Blind => blind_hole_operations(ctx, &[template], &positions),
+            HoleSelectorRoute::Counterbore => {
+                crate::native::attach::feature_projection::counterbore_operations(
+                    ctx,
+                    &[template],
+                    &positions,
+                )
+            }
+        },
+    )
+}
+
+fn assert_hole_selector_limit(
+    route: HoleSelectorRoute,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) {
+    let error = hole_selector_result(route, |policy| {
+        if dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems {
+            policy.limits.max_collection_items = 0;
+        }
+        if dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes {
+            policy.limits.max_retained_bytes = 0;
+        }
+        if dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes {
+            policy.limits.max_materialized_bytes = 0;
+        }
+        if dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits {
+            policy.limits.max_work_units = 0;
+        }
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+    );
+}
+
+#[test]
+fn simple_hole_selector_refuses_collection_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Simple,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+    );
+}
+#[test]
+fn simple_hole_selector_refuses_retained_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Simple,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    );
+}
+#[test]
+fn simple_hole_selector_refuses_scoped_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Simple,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+    );
+}
+#[test]
+fn simple_hole_selector_refuses_work_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Simple,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+    );
+}
+#[test]
+fn blind_hole_selector_refuses_collection_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Blind,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+    );
+}
+#[test]
+fn blind_hole_selector_refuses_retained_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Blind,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    );
+}
+#[test]
+fn blind_hole_selector_refuses_work_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Blind,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+    );
+}
+#[test]
+fn counterbore_selector_refuses_collection_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Counterbore,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+    );
+}
+#[test]
+fn counterbore_selector_refuses_retained_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Counterbore,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    );
+}
+#[test]
+fn counterbore_selector_refuses_work_limit() {
+    assert_hole_selector_limit(
+        HoleSelectorRoute::Counterbore,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+    );
 }
 
 #[test]
@@ -260,79 +410,204 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), chamfer))
         .collect();
 
-    let projection = hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(),
-        &templates,
-        std::slice::from_ref(&group),
-        std::slice::from_ref(&use_),
-        &outputs,
-        &diameters,
-        &chamfers,
-    );
-    assert_eq!(
-        projection.internal_operations,
-        operations.iter().cloned().collect()
-    );
-    assert_eq!(projection.outputs["package"], std::slice::from_ref(&body));
-    assert_eq!(projection.diameters["package"], Length::new(5.1).unwrap());
-    assert_eq!(projection.chamfers["package"], chamfer);
+    crate::test_support::with_decode_context(|ctx| {
+        let projection = hole_package_projection(
+            ctx,
+            &cadmpeg_ir::document::CadIr::empty(),
+            &templates,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
+            HolePackageSources {
+                outputs: &outputs,
+                diameters: &diameters,
+                chamfers: &chamfers,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            projection.internal_operations,
+            operations.iter().cloned().collect()
+        );
+        assert_eq!(projection.outputs["package"], std::slice::from_ref(&body));
+        assert_eq!(projection.diameters["package"], Length::new(5.1).unwrap());
+        assert_eq!(projection.chamfers["package"], chamfer);
 
-    let untreated_templates = templates
-        .iter()
-        .cloned()
-        .map(|mut template| {
-            template.start_treatment = SimpleHoleEndTreatment::None;
-            template.end_treatment = SimpleHoleEndTreatment::None;
-            template
-        })
-        .collect::<Vec<_>>();
-    let projection = hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(),
-        &untreated_templates,
-        std::slice::from_ref(&group),
-        std::slice::from_ref(&use_),
-        &outputs,
-        &diameters,
-        &BTreeMap::new(),
-    );
-    assert_eq!(
-        projection.internal_operations,
-        operations.iter().cloned().collect()
-    );
-    assert_eq!(projection.outputs["package"], [body]);
-    assert_eq!(projection.diameters["package"], Length::new(5.1).unwrap());
-    assert!(!projection.chamfers.contains_key("package"));
+        let untreated_templates = templates
+            .iter()
+            .cloned()
+            .map(|mut template| {
+                template.start_treatment = SimpleHoleEndTreatment::None;
+                template.end_treatment = SimpleHoleEndTreatment::None;
+                template
+            })
+            .collect::<Vec<_>>();
+        let projection = hole_package_projection(
+            ctx,
+            &cadmpeg_ir::document::CadIr::empty(),
+            &untreated_templates,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
+            HolePackageSources {
+                outputs: &outputs,
+                diameters: &diameters,
+                chamfers: &BTreeMap::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            projection.internal_operations,
+            operations.iter().cloned().collect()
+        );
+        assert_eq!(projection.outputs["package"], [body]);
+        assert_eq!(projection.diameters["package"], Length::new(5.1).unwrap());
+        assert!(!projection.chamfers.contains_key("package"));
 
-    let mut mixed_templates = untreated_templates.clone();
-    mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
-    let projection = hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(),
-        &mixed_templates,
-        std::slice::from_ref(&group),
-        std::slice::from_ref(&use_),
-        &outputs,
-        &diameters,
-        &BTreeMap::new(),
-    );
-    assert!(projection.internal_operations.is_empty());
-    assert!(projection.outputs.is_empty());
+        let mut mixed_templates = untreated_templates.clone();
+        mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
+        let projection = hole_package_projection(
+            ctx,
+            &cadmpeg_ir::document::CadIr::empty(),
+            &mixed_templates,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
+            HolePackageSources {
+                outputs: &outputs,
+                diameters: &diameters,
+                chamfers: &BTreeMap::new(),
+            },
+        )
+        .unwrap();
+        assert!(projection.internal_operations.is_empty());
+        assert!(projection.outputs.is_empty());
 
-    let mut mismatched_outputs = outputs;
-    mismatched_outputs.insert(
-        "simple-b".into(),
-        vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
+        let mut mismatched_outputs = outputs;
+        mismatched_outputs.insert(
+            "simple-b".into(),
+            vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
+        );
+        let projection = hole_package_projection(
+            ctx,
+            &cadmpeg_ir::document::CadIr::empty(),
+            &templates,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
+            HolePackageSources {
+                outputs: &mismatched_outputs,
+                diameters: &diameters,
+                chamfers: &chamfers,
+            },
+        )
+        .unwrap();
+        assert!(projection.internal_operations.is_empty());
+        assert!(projection.outputs.is_empty());
+    });
+}
+
+fn hole_package_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{
+        FeatureHolePackageConstructionGroupUse, FeatureSimpleHoleConstructionGroup,
+        FeatureSimpleHoleConstructionMember, FeatureSimpleHoleTemplate,
+        SimpleHoleConstructionMembers, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+        SimpleHoleForm,
+    };
+    let operations = ["simple-a".to_string(), "simple-b".to_string()];
+    let templates = operations
+        .clone()
+        .map(|operation| FeatureSimpleHoleTemplate {
+            id: operation.clone(),
+            operation_label: operation.clone(),
+            payload_string: operation,
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Simple,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::None,
+            end_treatment: SimpleHoleEndTreatment::None,
+        });
+    let group = FeatureSimpleHoleConstructionGroup {
+        id: "group".into(),
+        first_data_blocks: ["a".into(), "b".into()],
+        second_data_blocks: ["c".into(), "d".into()],
+        members: SimpleHoleConstructionMembers::new(
+            operations
+                .clone()
+                .map(|operation| FeatureSimpleHoleConstructionMember {
+                    operation_label: operation,
+                    scalar_lane: "lane".into(),
+                    block_reference: "blocks".into(),
+                })
+                .into_iter()
+                .collect(),
+        )
+        .unwrap(),
+    };
+    let use_ = FeatureHolePackageConstructionGroupUse {
+        id: "use".into(),
+        operation_label: "package".into(),
+        construction_group_lane: "package-lane".into(),
+        simple_hole_construction_group: group.id.clone(),
+        source_offset: 0,
+    };
+    let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#package-body").unwrap();
+    let outputs = BTreeMap::from(
+        operations
+            .clone()
+            .map(|operation| (operation, vec![body.clone()])),
     );
-    let projection = hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(),
-        &templates,
-        std::slice::from_ref(&group),
-        std::slice::from_ref(&use_),
-        &mismatched_outputs,
-        &diameters,
-        &chamfers,
+    let diameters = BTreeMap::from(
+        operations.map(|operation| (operation, cadmpeg_ir::scalar::Length::new(5.1).unwrap())),
     );
-    assert!(projection.internal_operations.is_empty());
-    assert!(projection.outputs.is_empty());
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let projection = hole_package_projection(
+                ctx,
+                &cadmpeg_ir::document::CadIr::empty(),
+                &templates,
+                std::slice::from_ref(&group),
+                std::slice::from_ref(&use_),
+                HolePackageSources {
+                    outputs: &outputs,
+                    diameters: &diameters,
+                    chamfers: &BTreeMap::new(),
+                },
+            )?;
+            assert_eq!(projection.outputs["package"], [body]);
+            Ok(())
+        },
+    )
+}
+
+#[test]
+fn hole_package_refuses_collection_limit() {
+    let error = hole_package_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn hole_package_refuses_retained_limit() {
+    let error = hole_package_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn hole_package_refuses_work_limit() {
+    let error = hole_package_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -383,8 +658,10 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     });
     let mut annotations = AnnotationBuilder::new();
 
-    attach_active_configuration_parameter_values(&mut ir, &mut annotations)
-        .expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations)
+    })
+    .expect("valid exactness fields");
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,
@@ -398,6 +675,79 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
                 ParameterValue::Length(Length::new(25.4).unwrap())
             ),
         ])
+    );
+}
+
+fn configuration_parameter_value_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut ir = CadIr::empty();
+    ir.model.parameters.push(DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#value").unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "Value".to_string(),
+        expression: "value".into(),
+        display: None,
+        value: Some(ParameterValue::String("text".to_string())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#active").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Model".to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    let mut annotations = AnnotationBuilder::new();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations),
+    )
+}
+
+#[test]
+fn configuration_parameter_values_refuse_collection_limit() {
+    let error =
+        configuration_parameter_value_result(|policy| policy.limits.max_collection_items = 0)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn configuration_parameter_values_refuse_retained_limit() {
+    let error = configuration_parameter_value_result(|policy| policy.limits.max_retained_bytes = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn configuration_parameter_values_refuse_work_limit() {
+    let error = configuration_parameter_value_result(|policy| policy.limits.max_work_units = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -478,8 +828,10 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
-        attach_active_configuration_parameter_values(&mut ir, &mut annotations)
-            .expect("valid exactness fields");
+        crate::test_support::with_decode_context(|ctx| {
+            attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations)
+        })
+        .expect("valid exactness fields");
 
         assert!(ir.model.configurations[0].parameter_values.is_empty());
     }
@@ -535,13 +887,15 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         feature("synthetic:test:id#unrelated", Vec::new(), Vec::new(), None),
     ];
     for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
-        feature.ordinal = ordinal as u64;
+        feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
     }
     ir.model.configurations = vec![configuration(true, Some((vec![body]).try_into().unwrap()))];
     let mut annotations = AnnotationBuilder::new();
 
-    attach_active_configuration_feature_states(&mut ir, &mut annotations)
-        .expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        attach_active_configuration_feature_states(ctx, &mut ir, &mut annotations)
+    })
+    .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -611,7 +965,10 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ];
     let mut annotations = AnnotationBuilder::new();
 
-    attach_current_feature_states(&mut ir, &mut annotations).expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        attach_current_feature_states(ctx, &mut ir, &mut annotations)
+    })
+    .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -695,8 +1052,10 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ),
     )];
     let mut annotations = AnnotationBuilder::new();
-    attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations)
-        .expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        attach_active_configuration_feature_states(ctx, &mut missing_dependency, &mut annotations)
+    })
+    .expect("valid exactness fields");
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
     assert!(missing_dependency.model.configurations[0]
         .feature_states
@@ -707,8 +1066,10 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations =
         vec![configuration("synthetic:test:id#active", true, None)];
-    attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
-        .expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        attach_active_configuration_feature_states(ctx, &mut unresolved_bodies, &mut annotations)
+    })
+    .expect("valid exactness fields");
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
     assert!(unresolved_bodies.model.configurations[0]
         .feature_states
@@ -727,8 +1088,10 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
                 .unwrap(),
         ),
     )];
-    attach_active_configuration_feature_states(&mut contradicted, &mut annotations)
-        .expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        attach_active_configuration_feature_states(ctx, &mut contradicted, &mut annotations)
+    })
+    .expect("valid exactness fields");
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
     assert!(contradicted.model.configurations[0]
         .feature_states
@@ -757,8 +1120,10 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             ),
         ),
     ];
-    attach_active_configuration_feature_states(&mut ambiguous, &mut annotations)
-        .expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        attach_active_configuration_feature_states(ctx, &mut ambiguous, &mut annotations)
+    })
+    .expect("valid exactness fields");
     assert_eq!(ambiguous.model.features[0].suppressed, None);
     assert!(ambiguous
         .model
@@ -800,48 +1165,55 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let sketch = attach_sketch_graph(
-        &mut ir,
-        &label,
-        &SketchSources {
-            point_uses: &[&point_use],
-            point_groups: std::slice::from_ref(&group),
-            points: &[],
-            payload_scalars: &[],
-            fixed_points: &[],
-            coordinate_pairs: &[],
-        },
-        &mut annotations,
-        &stream,
-    )
-    .expect("one exact point use projects a sketch");
-    assert_eq!(ir.model.sketches[0].id, sketch);
-    assert!(matches!(
-        *ir.model.sketch_entities[0].geometry.definition(),
-        SketchGeometryDefinition::Point { position }
-            if position == Point2 { u: 12.5, v: -3.0 }
-    ));
 
-    let mut rejected_ir = CadIr::empty();
-    let mut rejected_annotations = AnnotationBuilder::new();
-    let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    assert!(attach_sketch_graph(
-        &mut rejected_ir,
-        &label,
-        &SketchSources {
-            point_uses: &[&point_use, &point_use],
-            point_groups: &[group],
-            points: &[],
-            payload_scalars: &[],
-            fixed_points: &[],
-            coordinate_pairs: &[],
-        },
-        &mut rejected_annotations,
-        &rejected_stream,
-    )
-    .is_none());
-    assert!(rejected_ir.model.sketches.is_empty());
-    assert!(rejected_ir.model.sketch_entities.is_empty());
+    crate::test_support::with_decode_context(|ctx| {
+        let sketch = attach_sketch_graph(
+            ctx,
+            &mut ir,
+            &label,
+            &SketchSources {
+                point_uses: &[&point_use],
+                point_groups: std::slice::from_ref(&group),
+                points: &[],
+                payload_scalars: &[],
+                fixed_points: &[],
+                coordinate_pairs: &[],
+            },
+            &mut annotations,
+            &stream,
+        )
+        .unwrap()
+        .expect("one exact point use projects a sketch");
+        assert_eq!(ir.model.sketches[0].id, sketch);
+        assert!(matches!(
+            *ir.model.sketch_entities[0].geometry.definition(),
+            SketchGeometryDefinition::Point { position }
+                if position == Point2 { u: 12.5, v: -3.0 }
+        ));
+
+        let mut rejected_ir = CadIr::empty();
+        let mut rejected_annotations = AnnotationBuilder::new();
+        let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+        assert!(attach_sketch_graph(
+            ctx,
+            &mut rejected_ir,
+            &label,
+            &SketchSources {
+                point_uses: &[&point_use, &point_use],
+                point_groups: &[group],
+                points: &[],
+                payload_scalars: &[],
+                fixed_points: &[],
+                coordinate_pairs: &[],
+            },
+            &mut rejected_annotations,
+            &rejected_stream,
+        )
+        .unwrap()
+        .is_none());
+        assert!(rejected_ir.model.sketches.is_empty());
+        assert!(rejected_ir.model.sketch_entities.is_empty());
+    });
 }
 
 #[test]
@@ -885,7 +1257,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
                 raw[0] -= 0x10;
                 crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
             },
-            payload_offset: ordinal as u64,
+            payload_offset: u64::from(ordinal),
             source_offset,
         }
     };
@@ -896,37 +1268,42 @@ fn named_sketch_points_project_without_an_external_named_point() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let sketch = attach_sketch_graph(
-        &mut ir,
-        &label,
-        &SketchSources {
-            point_uses: &[],
-            point_groups: std::slice::from_ref(&group),
-            points: std::slice::from_ref(&point),
-            payload_scalars: &scalars,
-            fixed_points: &[],
-            coordinate_pairs: &[],
-        },
-        &mut annotations,
-        &stream,
-    )
-    .expect("a complete named payload point projects a sketch");
-    assert_eq!(ir.model.sketches[0].id, sketch);
-    assert_eq!(ir.model.sketch_entities.len(), 1);
-    assert_eq!(
-        ir.model.sketch_entities[0].native_ref.as_deref(),
-        Some("point-group")
-    );
-    assert!(matches!(
-        *ir.model.sketch_entities[0].geometry.definition(),
-        SketchGeometryDefinition::Point { position }
-            if position == Point2 { u: 12.5, v: -3.0 }
-    ));
+
+    crate::test_support::with_decode_context(|ctx| {
+        let sketch = attach_sketch_graph(
+            ctx,
+            &mut ir,
+            &label,
+            &SketchSources {
+                point_uses: &[],
+                point_groups: std::slice::from_ref(&group),
+                points: std::slice::from_ref(&point),
+                payload_scalars: &scalars,
+                fixed_points: &[],
+                coordinate_pairs: &[],
+            },
+            &mut annotations,
+            &stream,
+        )
+        .unwrap()
+        .expect("a complete named payload point projects a sketch");
+        assert_eq!(ir.model.sketches[0].id, sketch);
+        assert_eq!(ir.model.sketch_entities.len(), 1);
+        assert_eq!(
+            ir.model.sketch_entities[0].native_ref.as_deref(),
+            Some("point-group")
+        );
+        assert!(matches!(
+            *ir.model.sketch_entities[0].geometry.definition(),
+            SketchGeometryDefinition::Point { position }
+                if position == Point2 { u: 12.5, v: -3.0 }
+        ));
+    });
 }
 
 #[test]
 fn nx_native_feature_parameters_require_unique_resolved_names() {
-    let expression = |id: &str, name: &str, text: &str| crate::native::om::Expression {
+    let expression = |id: &str, name: &str, text: &str| crate::native::om::ParameterFormula {
         id: id.to_string(),
         owner: None,
         declaration: None,
@@ -957,7 +1334,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         parameter_use("use-b", "expression-b"),
     ];
     let use_refs = uses.iter().collect::<Vec<_>>();
-    let parameters = native_feature_parameters(&use_refs, &expressions);
+    let parameters = crate::test_support::with_decode_context(|ctx| {
+        native_feature_parameters(ctx, &use_refs, &expressions)
+    })
+    .unwrap();
     assert_eq!(
         parameters,
         std::collections::BTreeMap::from([
@@ -1038,10 +1418,89 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),
     ];
-    assert!(native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| native_feature_parameters(
+            ctx,
+            &use_refs,
+            &duplicate_expressions
+        ))
+        .unwrap()
+        .is_empty()
+    );
     let unresolved = [parameter_use("use-c", "missing")];
     assert!(
-        native_feature_parameters(&unresolved.iter().collect::<Vec<_>>(), &expressions,).is_empty()
+        crate::test_support::with_decode_context(|ctx| native_feature_parameters(
+            ctx,
+            &unresolved.iter().collect::<Vec<_>>(),
+            &expressions
+        ))
+        .unwrap()
+        .is_empty()
+    );
+}
+
+fn native_parameter_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let expression = crate::native::om::ParameterFormula {
+        id: "expression".into(),
+        owner: None,
+        declaration: None,
+        name: crate::om::parameter_name::ParameterName::new("length".into()),
+        unit: crate::native::om::ExpressionUnit::Millimeter,
+        expression: "12.5".into(),
+        value: None,
+        source_entry: "entry".into(),
+        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+            .unwrap(),
+        source_offset: 0,
+    };
+    let use_ = crate::native::features::FeatureParameterUse {
+        id: "use".into(),
+        operation_label: "operation".into(),
+        expression: "expression".into(),
+        bindings: Vec::new(),
+    };
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let parameters = native_feature_parameters(ctx, &[&use_], &[expression])?;
+            assert_eq!(parameters["length"], "12.5");
+            Ok(())
+        },
+    )
+}
+
+#[test]
+fn native_parameter_refuses_collection_limit() {
+    let error =
+        native_parameter_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn native_parameter_refuses_retained_limit() {
+    let error =
+        native_parameter_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn native_parameter_refuses_work_limit() {
+    let error = native_parameter_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -1087,37 +1546,85 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
     };
 
-    let boolean = FeatureBooleanOperation {
-        id: "nx:test:boolean#0".into(),
-        operation_label: "nx:test:operation#0".into(),
-        kind: FeatureBooleanKind::Unite,
-        target: crate::test_support::native_references::boolean_reference(7, 1),
-        tools: vec![crate::test_support::native_references::boolean_reference(
-            8, 2,
-        )],
-        source_offset: 0,
-    };
-    assert_eq!(
-        native_result_body_identity(None, Some(&boolean)),
-        Some((
-            cadmpeg_core::nonblank_literal!("nx:test:boolean#0:target"),
-            "nx:test:boolean#0".into(),
-        ))
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let boolean = FeatureBooleanOperation {
+            id: "nx:test:boolean#0".into(),
+            operation_label: "nx:test:operation#0".into(),
+            kind: FeatureBooleanKind::Unite,
+            target: crate::test_support::native_references::boolean_reference(7, 1),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                8, 2,
+            )],
+            source_offset: 0,
+        };
+        assert_eq!(
+            native_result_body_identity(ctx, None, Some(&boolean)).unwrap(),
+            Some((
+                cadmpeg_core::nonblank_literal!("nx:test:boolean#0:target"),
+                "nx:test:boolean#0".into(),
+            ))
+        );
 
-    let primary = FeatureBodyReference {
-        ordinal: None,
-        id: "nx:test:primary#0".into(),
-        operation_label: boolean.operation_label.clone(),
-        body: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
-        source_offset: 3,
+        let primary = FeatureBodyReference {
+            ordinal: None,
+            id: "nx:test:primary#0".into(),
+            operation_label: boolean.operation_label.clone(),
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
+            source_offset: 3,
+        };
+        assert_eq!(
+            native_result_body_identity(ctx, Some(&primary), Some(&boolean)).unwrap(),
+            Some((
+                cadmpeg_core::nonblank_literal!("nx:test:primary#0"),
+                "nx:test:primary#0".into(),
+            ))
+        );
+    });
+}
+
+fn native_result_identity_with_limit(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        _ => {
+            return Err(cadmpeg_core::CodecError::InvalidInput(
+                "unsupported result identity test limit".to_string(),
+            ))
+        }
     };
-    assert_eq!(
-        native_result_body_identity(Some(&primary), Some(&boolean)),
-        Some((
-            cadmpeg_core::nonblank_literal!("nx:test:primary#0"),
-            "nx:test:primary#0".into(),
-        ))
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+        let primary = crate::native::features::FeatureBodyReference {
+            ordinal: None,
+            id: "nx:test:primary#0".into(),
+            operation_label: "nx:test:operation#0".into(),
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
+            source_offset: 3,
+        };
+        let result = native_result_body_identity(ctx, Some(&primary), None)?;
+        assert!(result.is_some());
+        Ok(())
+    })
+}
+
+#[test]
+fn native_result_identity_refuses_retained_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::RetainedBytes;
+    assert!(
+        matches!(native_result_identity_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
+}
+
+#[test]
+fn native_result_identity_refuses_work_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
+    assert!(
+        matches!(native_result_identity_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
     );
 }
 
@@ -1140,7 +1647,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         op: BooleanKind::Join,
         keep_tools: false,
     });
-    assert_eq!(boolean_target_output(Some(&definition)), Some(body));
+    assert_eq!(boolean_target_output(Some(&definition)), Some(&body));
 
     let ambiguous = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
@@ -1255,215 +1762,67 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
-    let history = BodyWriterHistory::default();
-    assert_eq!(
-        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
-        BooleanOp::NewBody
-    );
-    assert_eq!(
-        extrude_boolean_op(
-            &BodyWriterHistory::default(),
-            None,
-            None,
-            &[BodyKind::Solid],
-        ),
-        BooleanOp::Unresolved
-    );
-    assert_eq!(
-        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Sheet]),
-        BooleanOp::NewBody
-    );
-    assert_eq!(
-        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Wire]),
-        BooleanOp::Unresolved
-    );
-    assert_eq!(
-        extrude_boolean_op(&history, Some(7), None, &[BodyKind::General]),
-        BooleanOp::Unresolved
-    );
-    assert_eq!(
-        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid, BodyKind::Solid],),
-        BooleanOp::Unresolved
-    );
-    assert_eq!(
-        extrude_boolean_op(&history, Some(7), None, &[]),
-        BooleanOp::Unresolved
-    );
-
-    let prior = FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
-    let offset_body = "store:block#7";
-    let mut offset_history = BodyWriterHistory::default();
-    offset_history.record_writer(None, Some(offset_body), &[], &prior);
-    assert_eq!(
-        extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
-        BooleanOp::Unresolved
-    );
-    assert_eq!(
-        extrude_boolean_op(
-            &offset_history,
-            None,
-            Some("store:block#8"),
-            &[BodyKind::Solid],
-        ),
-        BooleanOp::NewBody
-    );
-}
-
-#[test]
-fn nx_block_dimension_parameters_name_the_block_as_consumer() {
-    let expression = |key: u32| crate::native::om::Expression {
-        id: format!("nx:test:expression#{key}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(format!("p{key}")),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: key.to_string(),
-        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(key)).unwrap()),
-        source_entry: "part".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset: u64::from(key),
-    };
-    let expressions = [expression(20), expression(21), expression(22)];
-    let dimensions = crate::native::features::FeatureBlockDimensions {
-        id: "dimensions".into(),
-        operation_label: "nx:feature-history:operation-label#1-4".into(),
-        construction: "construction".into(),
-        anchor_bindings: vec!["binding".into()],
-        dimensions: std::array::from_fn(|slot| crate::native::features::FeatureBlockDimension {
-            declaration: ["d20", "d21", "d22"][slot].into(),
-            expression: expressions[slot].id.clone(),
-            value: cadmpeg_ir::scalar::FiniteReal::new([20.0, 21.0, 22.0][slot])
-                .expect("finite dimension"),
-        }),
-    };
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
-        .expect("valid exactness fields");
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect();
-    let parameter_references = dimensions
-        .dimensions
-        .iter()
-        .filter_map(|dimension| expression_parameter_id(&dimension.expression))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        parameter_owner_dependencies(&parameter_owners, &parameter_references),
-        [ir.model.features[0].id.clone()]
-    );
-    assert_eq!(
-        (&*ir.model.features[0].source_content),
-        ir.model
-            .parameters
-            .iter()
-            .map(|parameter| {
-                cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone())
-            })
-            .collect::<Vec<_>>()
-    );
-    attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
-        .expect("valid exactness fields");
-    assert_eq!(ir.model.parameters.len(), 3);
-    for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
+    crate::test_support::with_decode_context(|ctx| {
+        let history = BodyWriterHistory::default();
         assert_eq!(
-            parameter.properties[format!("block_dimension.{ordinal}").as_str()],
-            "dimensions"
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
+            BooleanOp::NewBody
         );
         assert_eq!(
-            parameter.properties["consumer.0"],
-            "nx:feature-history:feature#1-4"
+            extrude_boolean_op(
+                &BodyWriterHistory::default(),
+                None,
+                None,
+                &[BodyKind::Solid],
+            ),
+            BooleanOp::Unresolved
         );
-    }
-}
+        assert_eq!(
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Sheet]),
+            BooleanOp::NewBody
+        );
+        assert_eq!(
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Wire]),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::General]),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid, BodyKind::Solid],),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            extrude_boolean_op(&history, Some(7), None, &[]),
+            BooleanOp::Unresolved
+        );
 
-#[test]
-fn nx_inch_expression_values_are_attached_in_millimeters() {
-    let expression =
-        |key: u32, name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
-            id: format!("nx:test:expression#{key}"),
-            owner: None,
-            declaration: None,
-            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-            unit: crate::native::om::ExpressionUnit::Inch,
-            expression: formula.into(),
-            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
-            source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-                .unwrap(),
-            source_offset: u64::from(key),
-        };
-    let expressions = [
-        expression(1, "p1", "2", Some(2.0)),
-        expression(2, "p2", "p1 * 3", Some(6.0)),
-    ];
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-
-    attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
-        .expect("valid exactness fields");
-
-    assert_eq!(
-        ir.model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(2.0 * 25.4).unwrap()
-        ))
-    );
-    assert_eq!(
-        ir.model.parameters[1].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(6.0 * 25.4).unwrap()
-        ))
-    );
-    assert_eq!(
-        ir.model.parameters[0]
-            .properties
-            .get("unit")
-            .map(String::as_str),
-        Some("inch")
-    );
-    assert!(incomplete_expression_parameters(&ir).is_empty());
-}
-
-#[test]
-fn nx_native_expression_units_remain_outside_neutral_values() {
-    let expression = crate::native::om::Expression {
-        id: "nx:test:expression#native".into(),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new("p1".to_string()),
-        unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
-        expression: "4".into(),
-        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(4.0).unwrap()),
-        source_entry: "part".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset: 1,
-    };
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-
-    attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations)
-        .expect("valid exactness fields");
-
-    assert_eq!(ir.model.parameters[0].value, None);
-    assert_eq!(
-        ir.model.parameters[0]
-            .properties
-            .get("unit")
-            .map(String::as_str),
-        Some("custom/unit")
-    );
-    assert_eq!(
-        incomplete_expression_parameters(&ir),
-        [ir.model.parameters[0].id.clone()].into()
-    );
+        let prior =
+            FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
+        let offset_body = "store:block#7";
+        let mut offset_history = BodyWriterHistory::default();
+        offset_history
+            .record_writer(ctx, None, Some(offset_body), &[], &prior)
+            .expect("admitted writer history");
+        assert_eq!(
+            extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            extrude_boolean_op(
+                &offset_history,
+                None,
+                Some("store:block#8"),
+                &[BodyKind::Solid],
+            ),
+            BooleanOp::NewBody
+        );
+    });
 }
 
 mod colors;
 
 mod body_selection;
+
+mod parameter_projection;

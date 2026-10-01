@@ -116,20 +116,18 @@ impl TextTriangulation {
     }
 
     fn checked_triangles(
-        triangles: Vec<[u32; 3]>,
+        mut triangles: Vec<[u32; 3]>,
         node_count: usize,
     ) -> Result<Vec<[u32; 3]>, String> {
-        triangles
-            .into_iter()
-            .map(|triangle| {
-                if triangle.iter().any(|&index| {
-                    index == 0 || usize::try_from(index).map_or(true, |index| index > node_count)
-                }) {
-                    return Err("triangles node index is out of bounds".to_owned());
-                }
-                Ok(triangle.map(|index| index - 1))
-            })
-            .collect()
+        for triangle in &mut triangles {
+            if triangle.iter().any(|&index| {
+                index == 0 || usize::try_from(index).map_or(true, |index| index > node_count)
+            }) {
+                return Err("triangles node index is out of bounds".to_owned());
+            }
+            *triangle = triangle.map(|index| index - 1);
+        }
+        Ok(triangles)
     }
 
     /// Returns ordered model-space vertices.

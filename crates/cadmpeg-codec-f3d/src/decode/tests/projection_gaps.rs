@@ -2,7 +2,7 @@
 //! Decode-module projection and completeness unit tests.
 
 use super::super::{
-    apply_appearance_base_colors, container_only_dimension_parameters, design_projection_gaps,
+    apply_appearance_base_colors, container_only_dimension_parameters,
     unresolved_dimension_companion_count, DesignProjectionGaps,
 };
 use crate::native::F3dNative;
@@ -17,6 +17,77 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::SketchRelation,
 };
+
+fn design_projection_gaps(
+    ir: &cadmpeg_ir::document::CadIr,
+    native: &F3dNative,
+) -> DesignProjectionGaps {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    super::super::design_projection_gaps(&ctx, ir, native).unwrap()
+}
+
+#[test]
+fn projection_set_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ctx
+        .collect_hash_set(["native:one"], "index projected F3D constraints")
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index projected F3D constraints")
+    );
+}
+
+#[test]
+fn projection_map_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ctx
+        .collect_hash_map([("native:one", 1)], "index projected F3D feature records")
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index projected F3D feature records")
+    );
+}
+
+#[test]
+fn lost_edge_reference_index_refuses_collection_limit() {
+    let mut native = F3dNative::default();
+    native.lost_edge_references.push(
+        LostEdgeReference::new(
+            "f3d:test:lost-edge-reference#1".into(),
+            0,
+            "000".into(),
+            0,
+            "001".into(),
+            1,
+        )
+        .unwrap(),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        super::super::design_projection_gaps(&ctx, &cadmpeg_ir::document::CadIr::empty(), &native)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D lost edge references")
+    );
+}
 
 #[test]
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
@@ -697,31 +768,17 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) =
+    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
         crate::design::feature_project::project_parameter_design_with_edge_identities(
-            None,
+            decode_ctx,
             &crate::design::feature_project::ProjectInputs {
-                native: &[],
-                owners: &[],
                 scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
-                construction_groups: &[],
-                fillet_radius_groups: &[],
-                edge_operands: &[],
-                edge_identity_operands: &[],
-                edge_treatment_vertex_operands: &[],
-                entity_selection_operands: &[],
-                curve_identities: &[],
-                face_operands: &[],
-                body_recipe_operands: &[],
-                legacy_loft_body_carriers: &[],
-                placements: &[],
-                body_bindings: &[],
-                component_naming_spaces: &[],
-                histories: &[],
+                ..Default::default()
             },
         )
-        .expect("timeline projection through one internal scope");
+    })
+    .expect("timeline projection through one internal scope");
     let mut native = F3dNative::default();
     native.design_parameter_scopes = scopes;
     native.design_feature_timelines = vec![timeline];
@@ -808,7 +865,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             Vec::new(),
         )),
     );
-    assert_eq!(unresolved_dimension_companion_count(&native, &ir), 1);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        1
+    );
     ir.model.sketch_constraints.push(
         serde_json::from_value(serde_json::json!({
             "id": "f3d:model:sketch-constraint#dimension",
@@ -822,7 +887,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         }))
         .expect("neutral dimension constraint"),
     );
-    assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
     ir.model.sketch_constraints.clear();
 
     let mut recipe_backed = native.clone();
@@ -846,7 +919,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             program: vec![-1],
             matching_edge_operand_ids: Vec::new(),
         });
-    assert_eq!(unresolved_dimension_companion_count(&recipe_backed, &ir), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &recipe_backed,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
 
     native.design_dimension_locus_pairs = vec![DesignDimensionLocusPair::try_new(
         crate::records::dimensions::DesignDimensionLocusPairDraft {
@@ -886,14 +967,43 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     .unwrap()]
     .try_into()
     .expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    assert!(container_only_dimension_parameters(&native).is_empty());
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
+    assert!(container_only_dimension_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &native
+    )
+    .unwrap()
+    .is_empty());
     let mut pairs = native.design_dimension_locus_pairs.to_vec();
     pairs[0].companion_record_index = 30;
     pairs[0].governing_companion_record_index = 99;
     native.design_dimension_locus_pairs = pairs.try_into().expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    assert_eq!(container_only_dimension_parameters(&native).len(), 1);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        container_only_dimension_parameters(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap()
+        .len(),
+        1
+    );
 
     native.design_dimension_locus_pairs = Default::default();
     native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair::try_new(
@@ -931,12 +1041,188 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     .unwrap()]
     .try_into()
     .expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
     let mut pairs = native.design_dimension_null_locus_pairs.to_vec();
     pairs[0].companion_record_index = 30;
     pairs[0].governing_companion_record_index = 99;
     native.design_dimension_null_locus_pairs = pairs.try_into().expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn dimension_parameter_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut native = F3dNative::default();
+    native.design_parameters.push(
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: "f3d:test:design-parameter#1".into(),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
+                record_index: 1,
+                source_ordinal: 0,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    "Linear Dimension-2".into(),
+                    Some(2),
+                    Some(crate::records::identity::Located {
+                        value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                        offset: 22,
+                    }),
+                )
+                .unwrap(),
+                expression: "5 mm".into(),
+                expression_offset: 40,
+                source_kind_offset: 60,
+                unit: None,
+                name: "d1".into(),
+                name_offset: 100,
+                evaluated_value: 0.5,
+                evaluated_value_offset: 110,
+            },
+        )
+        .unwrap(),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let error = unresolved_dimension_companion_count(&ctx, &native, &ir).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D dimension parameters"
+    ));
+}
+
+#[test]
+fn container_only_dimension_parameter_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut native = F3dNative::default();
+    native.design_parameters.push(
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("{stream}:design-parameter#28"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
+                record_index: 28,
+                source_ordinal: 0,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    "Linear Dimension-2".into(),
+                    Some(29),
+                    Some(crate::records::identity::Located {
+                        value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                        offset: 22,
+                    }),
+                )
+                .unwrap(),
+                expression: "1 mm".into(),
+                expression_offset: 40,
+                source_kind_offset: 60,
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: "mm".into(),
+                    offset: 90,
+                }),
+                name: "d1".into(),
+                name_offset: 100,
+                evaluated_value: 0.1,
+                evaluated_value_offset: 110,
+            },
+        )
+        .unwrap(),
+    );
+    native.design_parameter_owners.push(
+        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#29"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
+            record_index: 29,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 40,
+            parameter_record_index: 28,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 30,
+        })
+        .unwrap(),
+    );
+    native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair::try_new(
+        crate::records::dimensions::DesignDimensionLocusPairDraft {
+            id: format!("{stream}:design-dimension-locus-pair#31"),
+            companion_record_index: 30,
+            governing_companion_record_index: 99,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned())
+                .unwrap(),
+            record_index: 31,
+            frame_length: 100,
+            opaque_index: None,
+            loci: [
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: None,
+                    geometry_reference_offset: 25,
+                    role: 14,
+                    role_offset: 35,
+                },
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(40),
+                    geometry_reference_offset: 40,
+                    role: 3,
+                    role_offset: 50,
+                },
+            ],
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 100,
+        },
+    )
+    .unwrap()]
+    .try_into()
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(container_only_dimension_parameters(&ctx, &native),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "collect F3D container-only dimension parameters"
+                && failure.dimension == ResourceDimension::CollectionItems));
+    let default_policy = DecodePolicy::default();
+    let (default_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &default_policy).unwrap();
+    assert_eq!(
+        container_only_dimension_parameters(&default_ctx, &native)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -983,7 +1269,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         binding("ambiguous-b", AppearanceTarget::Face(second_face)),
     ];
 
-    apply_appearance_base_colors(&mut ir);
+    apply_appearance_base_colors(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
     assert_eq!(ir.model.bodies[0].color, Some(direct));
     assert_eq!(ir.model.faces[0].color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);

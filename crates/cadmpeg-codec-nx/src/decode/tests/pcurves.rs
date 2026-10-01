@@ -1,24 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
-use cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans;
-use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
-use cadmpeg_test_support::edit;
-
-const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
-const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
-
-const EPS_PCURVE_POINT_MATCH: f64 = 1.0e-12;
-
-use crate::decode::blend::{
-    closest_nurbs_curve_parameter, closest_pcurve_parameters, homogeneous_residual_distance,
-    real_polynomial_roots, surface_contact_direction, surface_offset_lineage,
-};
+use crate::decode::blend::{surface_contact_direction, surface_offset_lineage};
 use crate::decode::build::{
     rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
 };
-use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-
 use crate::decode::emit::orient_edge_range;
 use crate::decode::offset::{
     certified_offset_cache_fit, subdivide_offset_rectangle, translation_net_normal,
@@ -27,11 +13,10 @@ use crate::decode::pcurves::{
     coincident_pcurve_pair, complete_tolerant_intersection_pcurves_from_serialized_branches,
     exact_boundary_pcurve, orient_tolerant_intersection_pcurve, pcurve_matches_edge,
 };
-
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{ResourceDimension, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::{Pcurve, PcurveGeometry},
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -47,8 +32,12 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex,
 };
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_test_support::edit;
 use std::collections::{BTreeMap, BTreeSet};
 
+const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
+const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
+const EPS_PCURVE_POINT_MATCH: f64 = 1.0e-12;
 const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;
 const EPS_BOUNDARY_FIT: f64 = 1.0e-8;
 
@@ -88,7 +77,10 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        select_active_body(ctx, &mut ir, &body_node_ids, &[7])
+    })
+    .unwrap());
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -109,653 +101,684 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
         (second, BTreeSet::from([8, 9])),
     ]);
 
-    let selected = rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
-    assert_eq!(selected, BTreeSet::from([first]));
-    assert_eq!(
-        rmfastload_stream_indices(&selected),
-        Some(BTreeSet::from([3]))
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let selected = rmfastload_selected_bodies(ctx, &body_node_ids, &[7, 8]).unwrap();
+        assert_eq!(selected, BTreeSet::from([first]));
+        assert_eq!(
+            rmfastload_stream_indices(ctx, &selected).unwrap(),
+            Some(BTreeSet::from([3]))
+        );
+    });
 }
 
 #[test]
 fn analytic_closed_isocurves_retain_the_native_full_turn() {
-    let mut ir = CadIr::empty();
-    let cone = SurfaceId::mint("test:model:entity#nx:test:cone").expect("identity grammar");
-    let sphere = SurfaceId::mint("test:model:entity#nx:test:sphere").expect("identity grammar");
-    let torus = SurfaceId::mint("test:model:entity#nx:test:torus").expect("identity grammar");
-    ir.model.surfaces.extend([
-        Surface {
-            id: cone.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    2.0,
-                    0.5,
-                    0.25_f64.atan(),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-        Surface {
-            id: sphere.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    2.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-        Surface {
-            id: torus.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    3.0,
-                    1.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-    ]);
-    let plane = SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        id: plane.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 1.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
-    let cone_ellipse =
-        CurveId::mint("test:model:entity#nx:test:cone-ellipse").expect("identity grammar");
-    let sphere_circle =
-        CurveId::mint("test:model:entity#nx:test:sphere-circle").expect("identity grammar");
-    let torus_circle =
-        CurveId::mint("test:model:entity#nx:test:torus-circle").expect("identity grammar");
-    ir.model.curves.extend([
-        Curve {
-            id: cone_ellipse.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                    Point3::new(0.0, 0.0, 1.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    2.25,
-                    1.125,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-        Curve {
-            id: sphere_circle.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(0.0, 0.0, 1.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    3.0_f64.sqrt(),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-        Curve {
-            id: torus_circle.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(3.0, 0.0, 0.0),
-                    Vector3::new(0.0, -1.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    1.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-    ]);
-
-    let range = [0.0, std::f64::consts::TAU];
-    let cone_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
-        &ir,
-        &cone_ellipse,
-        &cone,
-        range,
-        1.0e-12,
-    )
-    .expect("cone ellipse");
-    let sphere_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
-        &ir,
-        &sphere_circle,
-        &sphere,
-        range,
-        1.0e-12,
-    )
-    .expect("sphere parallel");
-    let torus_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
-        &ir,
-        &torus_circle,
-        &torus,
-        range,
-        1.0e-12,
-    )
-    .expect("torus meridian");
-    assert!(matches!(sphere_pcurve, PcurveGeometry::Line(line_pcurve)
-        if {
-            let origin = line_pcurve.origin().as_raw();
-    let direction = line_pcurve.direction().as_raw();
-            (origin.v - std::f64::consts::FRAC_PI_6).abs() < EPS_PCURVE_PARAMETERS
-                && direction.u == 1.0
-                && direction.v == 0.0
-        }));
-    assert!(matches!(torus_pcurve, PcurveGeometry::Line(line_pcurve)
-        if {
-            let origin = line_pcurve.origin().as_raw();
-    let direction = line_pcurve.direction().as_raw();
-            origin.u.abs() < EPS_PCURVE_PARAMETERS && direction.u == 0.0 && direction.v == 1.0
-        }));
-    assert!(matches!(cone_pcurve, PcurveGeometry::Line(line_pcurve)
-        if {
-            let origin = line_pcurve.origin().as_raw();
-    let direction = line_pcurve.direction().as_raw();
-            (origin.v - 1.0).abs() < EPS_PCURVE_PARAMETERS && direction.u == 1.0 && direction.v == 0.0
-        }));
-    for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
-        for (curve, surface, pcurve) in [
-            (&cone_ellipse, &cone, &cone_pcurve),
-            (&sphere_circle, &sphere, &sphere_pcurve),
-            (&torus_circle, &torus, &torus_pcurve),
-        ] {
-            let curve = ir
-                .model
-                .curves
-                .iter()
-                .find(|candidate| &candidate.id == curve)
-                .unwrap();
-            let expected = cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).unwrap();
-            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)
-                .unwrap()
-                .get();
-            let actual = cadmpeg_ir::eval::model_surface_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
-                surface,
-                uv.u,
-                uv.v,
-            )
-            .unwrap()
-            .get();
-            assert!(Point3::distance(expected.get(), actual) < EPS_PCURVE_POINT_MATCH);
-        }
-    }
-
-    let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
-        .expect("identity grammar");
-    let _attached = ir.model.add_procedural_curve(
-        sphere_circle.clone(),
-        ProceduralCurve::new(
-            construction,
-            ProceduralCurveDefinition::TolerantIntersection {
-                construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
-                    [sphere, plane],
-                    [
-                        Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                        Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                    ],
-                    TOLERANT_INTERSECTION_FIT,
-                )
-                .unwrap(),
-                parameterization: None,
-                cache: None,
+    crate::test_support::with_decode_context(|ctx| {
+        let mut ir = CadIr::empty();
+        let cone = SurfaceId::mint("test:model:entity#nx:test:cone").expect("identity grammar");
+        let sphere = SurfaceId::mint("test:model:entity#nx:test:sphere").expect("identity grammar");
+        let torus = SurfaceId::mint("test:model:entity#nx:test:torus").expect("identity grammar");
+        ir.model.surfaces.extend([
+            Surface {
+                id: cone.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        2.0,
+                        0.5,
+                        0.25_f64.atan(),
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
             },
-        ),
-    );
-    let point = PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
-    let vertex =
-        VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
-    ir.model.points.push(Point::new(
-        point.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0_f64.sqrt(), 0.0, 1.0))
-            .expect("a finite position is a point"),
-        None,
-    ));
-    ir.model.vertices.push(Vertex {
-        id: vertex.clone(),
-        point,
-        tolerance: Some(
-            cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
-                .expect("positive finite tolerance"),
-        ),
-    });
-    ir.model.edges.push(Edge {
-        id: EdgeId::mint("test:model:entity#nx:test:closed-edge").expect("identity grammar"),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(sphere_circle)),
-        start: vertex.clone(),
-        end: vertex,
-        tolerance: Some(
-            cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
-                .expect("positive finite tolerance"),
-        ),
-    });
+            Surface {
+                id: sphere.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        2.0,
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: torus.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        3.0,
+                        1.0,
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+        ]);
+        let plane = SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: plane.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        let cone_ellipse =
+            CurveId::mint("test:model:entity#nx:test:cone-ellipse").expect("identity grammar");
+        let sphere_circle =
+            CurveId::mint("test:model:entity#nx:test:sphere-circle").expect("identity grammar");
+        let torus_circle =
+            CurveId::mint("test:model:entity#nx:test:torus-circle").expect("identity grammar");
+        ir.model.curves.extend([
+            Curve {
+                id: cone_ellipse.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                        Point3::new(0.0, 0.0, 1.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        2.25,
+                        1.125,
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+            Curve {
+                id: sphere_circle.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(0.0, 0.0, 1.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        3.0_f64.sqrt(),
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+            Curve {
+                id: torus_circle.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(3.0, 0.0, 0.0),
+                        Vector3::new(0.0, -1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        1.0,
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+        ]);
 
-    let procedural_start = ir.model.procedural_curves.len();
-    let mut annotations = AnnotationBuilder::new();
-    let transfer_budget = WorkBudget::new(usize::MAX);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
-    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
-        &mut ir,
-        &mut annotations,
-        procedural_start,
-        &transfer_budget,
-        &geometry_budget,
-    )
-    .expect("valid exactness fields");
-    let ProceduralCurveDefinition::TolerantIntersection {
-        parameterization, ..
-    } = ir.model.procedural_curves[0].definition()
-    else {
-        panic!("closed intersection construction");
-    };
-    assert!(parameterization.is_none());
-    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
-        &mut ir,
-        &mut annotations,
-        0,
-        &transfer_budget,
-        &geometry_budget,
-    )
-    .expect("valid exactness fields");
-    let ProceduralCurveDefinition::TolerantIntersection {
-        construction: intersection,
-        parameterization: Some(parameterization),
-        ..
-    } = ir.model.procedural_curves[0].definition()
-    else {
-        panic!("closed intersection parameterization");
-    };
-    let supports = intersection.supports();
-
-    assert_eq!(parameterization.parameter_range().endpoints(), range);
-    assert_eq!(
-        ir.model.edges[0]
-            .param_range()
-            .map(cadmpeg_ir::units::FiniteVector::get),
-        Some(range)
-    );
-    assert!(parameterization
-        .pcurves
-        .iter()
-        .enumerate()
-        .all(|(side, pcurve)| {
-            for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
-                let Ok(uv) = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) else {
-                    return false;
-                };
-                let Ok(point) = cadmpeg_ir::eval::model_surface_point_by_id(
+        let range = [0.0, std::f64::consts::TAU];
+        let cone_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+            ctx,
+            &ir,
+            &cone_ellipse,
+            &cone,
+            range,
+            1.0e-12,
+        )
+        .expect("cone ellipse");
+        let sphere_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+            ctx,
+            &ir,
+            &sphere_circle,
+            &sphere,
+            range,
+            1.0e-12,
+        )
+        .expect("sphere parallel");
+        let torus_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+            ctx,
+            &ir,
+            &torus_circle,
+            &torus,
+            range,
+            1.0e-12,
+        )
+        .expect("torus meridian");
+        assert!(matches!(sphere_pcurve, PcurveGeometry::Line(line_pcurve)
+            if {
+                let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+                (origin.v - std::f64::consts::FRAC_PI_6).abs() < EPS_PCURVE_PARAMETERS
+                    && direction.u == 1.0
+                    && direction.v == 0.0
+            }));
+        assert!(matches!(torus_pcurve, PcurveGeometry::Line(line_pcurve)
+            if {
+                let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+                origin.u.abs() < EPS_PCURVE_PARAMETERS && direction.u == 0.0 && direction.v == 1.0
+            }));
+        assert!(matches!(cone_pcurve, PcurveGeometry::Line(line_pcurve)
+            if {
+                let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+                (origin.v - 1.0).abs() < EPS_PCURVE_PARAMETERS && direction.u == 1.0 && direction.v == 0.0
+            }));
+        for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
+            for (curve, surface, pcurve) in [
+                (&cone_ellipse, &cone, &cone_pcurve),
+                (&sphere_circle, &sphere, &sphere_pcurve),
+                (&torus_circle, &torus, &torus_pcurve),
+            ] {
+                let curve = ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|candidate| &candidate.id == curve)
+                    .unwrap();
+                let expected = cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).unwrap();
+                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)
+                    .unwrap()
+                    .get();
+                let actual = cadmpeg_ir::eval::model_surface_point_by_id(
                     &cadmpeg_ir::index::ModelIndex::new(&ir),
-                    &supports[side],
+                    surface,
                     uv.u,
                     uv.v,
-                ) else {
-                    return false;
-                };
-                if (point.z - 1.0).abs() > 1.0e-8 {
-                    return false;
-                }
+                )
+                .unwrap()
+                .get();
+                assert!(Point3::distance(expected.get(), actual) < EPS_PCURVE_POINT_MATCH);
             }
-            true
-        }));
-    for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
-        let curve = ir
-            .model
-            .procedural_curve_owner(&ir.model.procedural_curves[0].id)
-            .expect("closed intersection owner");
-        let point = cadmpeg_ir::eval::model_curve_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&ir),
-            curve,
-            parameter,
+        }
+
+        let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
+            .expect("identity grammar");
+        let _attached = ir.model.add_procedural_curve(
+            &sphere_circle,
+            ProceduralCurve::new(
+                construction,
+                ProceduralCurveDefinition::TolerantIntersection {
+                    construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                        [sphere, plane],
+                        [
+                            Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                            Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                        ],
+                        TOLERANT_INTERSECTION_FIT,
+                    )
+                    .unwrap(),
+                    parameterization: None,
+                    cache: None,
+                },
+            ),
+        );
+        let point =
+            PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
+        let vertex =
+            VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
+        ir.model.points.push(Point::new(
+            point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0_f64.sqrt(), 0.0, 1.0))
+                .expect("a finite position is a point"),
+            None,
+        ));
+        ir.model.vertices.push(Vertex {
+            id: vertex.clone(),
+            point,
+            tolerance: Some(
+                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                    .expect("positive finite tolerance"),
+            ),
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId::mint("test:model:entity#nx:test:closed-edge").expect("identity grammar"),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(sphere_circle)),
+            start: vertex.clone(),
+            end: vertex,
+            tolerance: Some(
+                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                    .expect("positive finite tolerance"),
+            ),
+        });
+
+        let procedural_start = ir.model.procedural_curves.len();
+        let mut annotations = AnnotationBuilder::new();
+        let transfer_budget = WorkBudget::new(usize::MAX);
+        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            ctx,
+            cadmpeg_core::decode::u64_from_index(usize::MAX),
+        );
+        crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+            ctx,
+            &mut ir,
+            &mut annotations,
+            procedural_start,
+            &transfer_budget,
+            &geometry_budget,
         )
-        .expect("closed intersection evaluates");
-        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-            &cadmpeg_ir::index::ModelIndex::new(&ir),
-            curve,
-            point.get(),
-            parameter,
+        .expect("valid exactness fields");
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization, ..
+        } = ir.model.procedural_curves[0].definition()
+        else {
+            panic!("closed intersection construction");
+        };
+        assert!(parameterization.is_none());
+        crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+            ctx,
+            &mut ir,
+            &mut annotations,
+            0,
+            &transfer_budget,
+            &geometry_budget,
         )
-        .expect("resource allocation did not fail")
-        .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
-        assert!((inverse.get() - parameter).abs() < 1.0e-10);
-    }
+        .expect("valid exactness fields");
+        let ProceduralCurveDefinition::TolerantIntersection {
+            construction: intersection,
+            parameterization: Some(parameterization),
+            ..
+        } = ir.model.procedural_curves[0].definition()
+        else {
+            panic!("closed intersection parameterization");
+        };
+        let supports = intersection.supports();
+
+        assert_eq!(parameterization.parameter_range().endpoints(), range);
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some(range)
+        );
+        assert!(parameterization
+            .pcurves
+            .iter()
+            .enumerate()
+            .all(|(side, pcurve)| {
+                for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
+                    let Ok(uv) = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) else {
+                        return false;
+                    };
+                    let Ok(point) = cadmpeg_ir::eval::model_surface_point_by_id(
+                        &cadmpeg_ir::index::ModelIndex::new(&ir),
+                        &supports[side],
+                        uv.u,
+                        uv.v,
+                    ) else {
+                        return false;
+                    };
+                    if (point.z - 1.0).abs() > 1.0e-8 {
+                        return false;
+                    }
+                }
+                true
+            }));
+        for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
+            let curve = ir
+                .model
+                .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+                .expect("closed intersection owner");
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                curve,
+                parameter,
+            )
+            .expect("closed intersection evaluates");
+            let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                curve,
+                point.get(),
+                parameter,
+            )
+            .expect("resource allocation did not fail")
+            .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
+            assert!((inverse.get() - parameter).abs() < 1.0e-10);
+        }
+    });
 }
 
 #[test]
 fn boundary_pcurve_requires_an_affine_carrier_witness() {
-    let mut ir = CadIr::empty();
-    let curve =
-        CurveId::mint("test:model:entity#nx:test:bowed-boundary-curve").expect("identity grammar");
-    let surface =
-        SurfaceId::mint("test:model:entity#nx:test:boundary-plane").expect("identity grammar");
-    ir.model.curves.push(Curve {
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                2,
-                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                vec![
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let curve = CurveId::mint("test:model:entity#nx:test:bowed-boundary-curve")
+            .expect("identity grammar");
+        let surface =
+            SurfaceId::mint("test:model:entity#nx:test:boundary-plane").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(5.0, 5.0, 0.0),
+                        Point3::new(10.0, 0.0, 0.0),
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(5.0, 5.0, 0.0),
-                    Point3::new(10.0, 0.0, 0.0),
-                ],
-                None,
-                false,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
 
-    assert!(exact_boundary_pcurve(
-        &ir,
-        &curve,
-        &surface,
-        [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-        [0.0, 1.0],
-        NonNegativeReal::new(1.0e-8).expect("nonnegative tolerance"),
-    )
-    .expect("evaluator allocation succeeds")
-    .is_none());
-
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .unwrap(),
-    ));
-    assert!(matches!(
-        exact_boundary_pcurve(
+        assert!(exact_boundary_pcurve(
+            geometry_ctx,
             &ir,
             &curve,
             &surface,
             [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             [0.0, 1.0],
-            NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+            NonNegativeReal::new(1.0e-8).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds"),
-        Some(PcurveGeometry::Line(_))
-    ));
-}
+        .expect("evaluator allocation succeeds")
+        .is_none());
 
-#[test]
-fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
-    let mut ir = CadIr::empty();
-    let curve =
-        CurveId::mint("test:model:entity#nx:test:wide-boundary-curve").expect("identity grammar");
-    let surface =
-        SurfaceId::mint("test:model:entity#nx:test:wide-boundary-plane").expect("identity grammar");
-    ir.model.curves.push(Curve {
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                None,
-                false,
-            )
-            .expect("finite wide boundary curve"),
-        )),
-        source_object: None,
-    });
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("finite plane"),
-        )),
-        source_object: None,
-    });
-
-    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
-        &ir,
-        &curve,
-        &surface,
-        [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        [-f64::MAX, f64::MAX],
-        NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    )
-    .expect("evaluator allocation succeeds") else {
-        panic!("finite NURBS boundary pcurve");
-    };
-    assert_eq!(
-        nurbs.knots().as_slice(),
-        [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
-    );
-    assert_eq!(
-        nurbs.control_points(),
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
-    );
-}
-
-#[test]
-fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
-    let mut ir = CadIr::empty();
-    let curve =
-        CurveId::mint("test:model:entity#nx:test:wide-generator-curve").expect("identity grammar");
-    let surface = SurfaceId::mint("test:model:entity#nx:test:wide-generator-cylinder")
-        .expect("identity grammar");
-    ir.model.curves.push(Curve {
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
-                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
-                None,
-                false,
-            )
-            .expect("finite wide generator"),
-        )),
-        source_object: None,
-    });
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .expect("finite cylinder"),
-        )),
-        source_object: None,
-    });
-    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
-        &ir,
-        &curve,
-        &surface,
-        [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
-        [-f64::MAX, f64::MAX],
-        NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    )
-    .expect("evaluator allocation succeeds") else {
-        panic!("finite generator pcurve");
-    };
-    assert_eq!(
-        nurbs.knots().as_slice(),
-        [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
-    );
-    assert_eq!(
-        nurbs.control_points(),
-        vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)]
-    );
-}
-
-#[test]
-fn rational_generator_does_not_get_an_affine_boundary_certificate() {
-    let mut ir = CadIr::empty();
-    let surface = SurfaceId::mint("test:model:entity#nx:test:rational-generator-cylinder")
-        .expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .expect("finite cylinder"),
-        )),
-        source_object: None,
-    });
-    let rational = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
-            Some(vec![1.0, 2.0]),
-            false,
-        )
-        .expect("rational generator"),
-    };
-    let linear = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 0.0),
-            Point2::new(0.0, 1.0),
-        )
-        .expect("linear generator"),
-    );
-    assert!(!coincident_pcurve_pair(
-        &ir,
-        [&surface, &surface],
-        [&rational, &linear],
-        [0.0, 1.0],
-        NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    )
-    .expect("evaluator allocation succeeds"));
-}
-
-#[test]
-fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
-    let mut ir = CadIr::empty();
-    let curve = CurveId::mint("test:model:entity#nx:test:affine-nurbs-boundary-curve")
-        .expect("identity grammar");
-    let surface = SurfaceId::mint("test:model:entity#nx:test:affine-nurbs-boundary-surface")
-        .expect("identity grammar");
-    ir.model.curves.push(Curve {
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                 None,
                 false,
             )
             .unwrap(),
-        )),
-        source_object: None,
+        ));
+        assert!(matches!(
+            exact_boundary_pcurve(
+                geometry_ctx,
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+            )
+            .expect("evaluator allocation succeeds"),
+            Some(PcurveGeometry::Line(_))
+        ));
     });
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: affine_nurbs_surface(0.0),
-        source_object: None,
-    });
+}
 
-    assert!(matches!(exact_boundary_pcurve(
+#[test]
+fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let curve = CurveId::mint("test:model:entity#nx:test:wide-boundary-curve")
+            .expect("identity grammar");
+        let surface = SurfaceId::mint("test:model:entity#nx:test:wide-boundary-plane")
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("finite wide boundary curve"),
+            )),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("finite plane"),
+            )),
+            source_object: None,
+        });
+
+        let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+            geometry_ctx,
             &ir,
             &curve,
             &surface,
-            [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            [-f64::MAX, f64::MAX],
+            NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+        )
+        .expect("evaluator allocation succeeds") else {
+            panic!("finite NURBS boundary pcurve");
+        };
+        assert_eq!(
+            nurbs.knots().as_slice(),
+            [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
+        );
+        assert_eq!(
+            nurbs.control_points(),
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
+        );
+    });
+}
+
+#[test]
+fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let curve = CurveId::mint("test:model:entity#nx:test:wide-generator-curve")
+            .expect("identity grammar");
+        let surface = SurfaceId::mint("test:model:entity#nx:test:wide-generator-cylinder")
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+                    None,
+                    false,
+                )
+                .expect("finite wide generator"),
+            )),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("finite cylinder"),
+            )),
+            source_object: None,
+        });
+        let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+            geometry_ctx,
+            &ir,
+            &curve,
+            &surface,
+            [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+            [-f64::MAX, f64::MAX],
+            NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+        )
+        .expect("evaluator allocation succeeds") else {
+            panic!("finite generator pcurve");
+        };
+        assert_eq!(
+            nurbs.knots().as_slice(),
+            [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
+        );
+        assert_eq!(
+            nurbs.control_points(),
+            vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)]
+        );
+    });
+}
+
+#[test]
+fn rational_generator_does_not_get_an_affine_boundary_certificate() {
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let surface = SurfaceId::mint("test:model:entity#nx:test:rational-generator-cylinder")
+            .expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("finite cylinder"),
+            )),
+            source_object: None,
+        });
+        let rational = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
+                Some(vec![1.0, 2.0]),
+                false,
+            )
+            .expect("rational generator"),
+        };
+        let linear = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, 1.0),
+            )
+            .expect("linear generator"),
+        );
+        assert!(!coincident_pcurve_pair(
+            geometry_ctx,
+            &ir,
+            [&surface, &surface],
+            [&rational, &linear],
             [0.0, 1.0],
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-        ).expect("evaluator allocation succeeds"), Some(PcurveGeometry::Line(line_pcurve))
-                if {
-                    let origin = line_pcurve.origin().as_raw();
-    let direction = line_pcurve.direction().as_raw();
-                    origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
-                }));
+        )
+        .expect("evaluator allocation succeeds"));
+    });
+}
+
+#[test]
+fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let curve = CurveId::mint("test:model:entity#nx:test:affine-nurbs-boundary-curve")
+            .expect("identity grammar");
+        let surface = SurfaceId::mint("test:model:entity#nx:test:affine-nurbs-boundary-surface")
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+
+        assert!(matches!(exact_boundary_pcurve(geometry_ctx,
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+            ).expect("evaluator allocation succeeds"), Some(PcurveGeometry::Line(line_pcurve))
+                    if {
+                        let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+                        origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
+                    }));
+    });
 }
 
 #[test]
 fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
-    let mut ir = CadIr::empty();
-    let curve = CurveId::mint("test:model:entity#nx:test:wide-nurbs-boundary-curve")
-        .expect("identity grammar");
-    let surface = SurfaceId::mint("test:model:entity#nx:test:wide-nurbs-boundary-surface")
-        .expect("identity grammar");
-    ir.model.curves.push(Curve {
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
-                None,
-                false,
-            )
-            .expect("finite wide boundary curve"),
-        )),
-        source_object: None,
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let curve = CurveId::mint("test:model:entity#nx:test:wide-nurbs-boundary-curve")
+            .expect("identity grammar");
+        let surface = SurfaceId::mint("test:model:entity#nx:test:wide-nurbs-boundary-surface")
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("finite wide boundary curve"),
+            )),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+        let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+            geometry_ctx,
+            &ir,
+            &curve,
+            &surface,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+            [-f64::MAX, f64::MAX],
+            NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+        )
+        .expect("evaluator allocation succeeds") else {
+            panic!("finite wide NURBS boundary pcurve");
+        };
+        assert_eq!(
+            nurbs.control_points(),
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
+        );
+        assert_eq!(
+            nurbs.knots().as_slice(),
+            [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
+        );
     });
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: affine_nurbs_surface(0.0),
-        source_object: None,
-    });
-    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
-        &ir,
-        &curve,
-        &surface,
-        [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
-        [-f64::MAX, f64::MAX],
-        NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    )
-    .expect("evaluator allocation succeeds") else {
-        panic!("finite wide NURBS boundary pcurve");
-    };
-    assert_eq!(
-        nurbs.control_points(),
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
-    );
-    assert_eq!(
-        nurbs.knots().as_slice(),
-        [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
-    );
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
@@ -854,399 +877,486 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
 
 #[test]
 fn planar_offset_cache_fit_is_certified_over_the_control_net() {
-    let support = affine_nurbs_surface(0.0);
-    let mut candidate = affine_nurbs_surface(4.0);
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)) = &mut candidate else {
-        unreachable!();
-    };
-    let mut pole_index = 0usize;
-    candidate
-        .edit_control_points(|pole| {
-            if pole_index == 2 {
-                pole.z += 0.000_5;
-            }
-            pole_index += 1;
-            Ok(())
-        })
-        .unwrap();
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let support = affine_nurbs_surface(0.0);
+        let mut candidate = affine_nurbs_surface(4.0);
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)) = &mut candidate
+        else {
+            unreachable!();
+        };
+        candidate
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == 2 {
+                    pole.z += 0.000_5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
+            .unwrap();
 
-    let fit = certified_offset_cache_fit(
-        &support,
-        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
-        4.0,
-        NonNegativeLength::new(0.001).expect("nonnegative tolerance"),
-    )
-    .expect("whole-patch fit");
-    assert!((fit - 0.000_5).abs() < 1.0e-12);
-    assert!(certified_offset_cache_fit(
-        &support,
-        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
-        4.0,
-        NonNegativeLength::new(0.000_4).expect("nonnegative tolerance")
-    )
-    .is_none());
+        let fit = certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
+            4.0,
+            NonNegativeLength::new(0.001).expect("nonnegative tolerance"),
+        )
+        .expect("whole-patch fit");
+        assert!((fit - 0.000_5).abs() < 1.0e-12);
+        assert!(certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
+            4.0,
+            NonNegativeLength::new(0.000_4).expect("nonnegative tolerance")
+        )
+        .is_none());
+    });
 }
 
 #[test]
 fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
-    let support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) = &support else {
-        unreachable!();
-    };
-    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) = &support else {
+            unreachable!();
+        };
+        let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(0),
+        );
 
-    assert!(
-        crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
+        let refusal = crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
             support, support, 0.01, 0.02, true, &budget,
         )
-        .expect("evaluator allocation succeeds")
-        .is_none()
-    );
-    assert!(budget.exhausted());
+        .expect_err("an empty geometry work slice refuses certification");
+        assert_eq!(
+            refusal.dimension,
+            ResourceDimension::Codec("nx adaptive geometry work")
+        );
+        assert_eq!(refusal.limit, 0);
+        assert!(budget.exhausted());
+    });
 }
 
 #[test]
 fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
-    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
-    let span = crate::decode::blend::ScalarBezierSpan {
-        domain: [0.0, 1.0],
-        controls: vec![-1.0, 1.0],
-    };
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(0),
+        );
+        let span = crate::decode::blend::ScalarBezierSpan {
+            domain: [0.0, 1.0],
+            controls: vec![-1.0, 1.0],
+        };
 
-    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget).is_none());
-    assert!(budget.exhausted());
+        let refusal = crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
+            .err()
+            .expect("an empty geometry work slice refuses root isolation");
+        assert_eq!(
+            refusal.dimension,
+            ResourceDimension::Codec("nx adaptive geometry work")
+        );
+        assert_eq!(refusal.limit, 0);
+        assert!(budget.exhausted());
+    });
 }
 
 #[test]
 fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
-    let surface =
-        SurfaceId::mint("test:model:entity#nx:test:budget-plane").expect("identity grammar");
-    let start_point =
-        PointId::mint("test:model:entity#nx:test:budget-start-point").expect("identity grammar");
-    let end_point =
-        PointId::mint("test:model:entity#nx:test:budget-end-point").expect("identity grammar");
-    let start_vertex =
-        VertexId::mint("test:model:entity#nx:test:budget-start-vertex").expect("identity grammar");
-    let end_vertex =
-        VertexId::mint("test:model:entity#nx:test:budget-end-vertex").expect("identity grammar");
-    let edge = EdgeId::mint("test:model:entity#nx:test:budget-edge").expect("identity grammar");
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let surface =
+            SurfaceId::mint("test:model:entity#nx:test:budget-plane").expect("identity grammar");
+        let start_point = PointId::mint("test:model:entity#nx:test:budget-start-point")
+            .expect("identity grammar");
+        let end_point =
+            PointId::mint("test:model:entity#nx:test:budget-end-point").expect("identity grammar");
+        let start_vertex = VertexId::mint("test:model:entity#nx:test:budget-start-vertex")
+            .expect("identity grammar");
+        let end_vertex = VertexId::mint("test:model:entity#nx:test:budget-end-vertex")
+            .expect("identity grammar");
+        let edge = EdgeId::mint("test:model:entity#nx:test:budget-edge").expect("identity grammar");
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        ir.model.points.extend([
+            Point::new(
+                start_point.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
+                None,
+            ),
+            Point::new(
+                end_point.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
+                None,
+            ),
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: start_vertex.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end_vertex.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+        ir.model.edges.push(Edge {
+            id: edge.clone(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
+            start: start_vertex,
+            end: end_vertex,
+            tolerance: None,
+        });
+        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(0),
+        );
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
             )
             .unwrap(),
-        )),
-        source_object: None,
-    });
-    ir.model.points.extend([
-        Point::new(
-            start_point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("a finite position is a point"),
-            None,
-        ),
-        Point::new(
-            end_point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                .expect("a finite position is a point"),
-            None,
-        ),
-    ]);
-    ir.model.vertices.extend([
-        Vertex {
-            id: start_vertex.clone(),
-            point: start_point,
-            tolerance: None,
-        },
-        Vertex {
-            id: end_vertex.clone(),
-            point: end_point,
-            tolerance: None,
-        },
-    ]);
-    ir.model.edges.push(Edge {
-        id: edge.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: start_vertex,
-        end: end_vertex,
-        tolerance: None,
-    });
-    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
-    let pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 0.0),
-        )
-        .unwrap(),
-    );
+        );
 
-    assert!(
-        !crate::decode::pcurves::pcurve_matches_edge_range_with_index_and_budget(
-            &index,
-            &edge,
-            &surface,
-            &pcurve,
-            Some([0.0, 1.0]),
-            None,
-            &budget,
-        )
-        .expect("evaluator allocation succeeds")
-    );
-    assert!(budget.exhausted());
+        assert!(
+            !crate::decode::pcurves::pcurve_matches_edge_range_with_index_and_budget(
+                &index,
+                &edge,
+                &surface,
+                &pcurve,
+                Some([0.0, 1.0]),
+                None,
+                &budget,
+            )
+            .expect("evaluator allocation succeeds")
+        );
+        assert!(budget.exhausted());
+    });
 }
 
 #[test]
 fn offset_cache_fit_accepts_higher_degree_translation_nets() {
-    assert_eq!(
-        certified_offset_cache_fit(
-            &quadratic_translation_surface(0.0),
-            &quadratic_translation_surface(4.0),
-            4.0,
-            NonNegativeLength::ZERO
-        ),
-        Some(0.0)
-    );
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        assert_eq!(
+            certified_offset_cache_fit(
+                geometry_ctx,
+                &quadratic_translation_surface(0.0),
+                &quadratic_translation_surface(4.0),
+                4.0,
+                NonNegativeLength::ZERO
+            ),
+            Some(0.0)
+        );
+    });
 }
 
 #[test]
 fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
-    let mut support = quadratic_paraboloid_surface();
-    let mut candidate = support.clone();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support_surface)) = &mut support
-    else {
-        unreachable!();
-    };
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate_surface)) = &mut candidate
-    else {
-        unreachable!();
-    };
-    {
-        let replacement = true;
-        edit::replace(support_surface, |previous| {
-            NurbsSurface::new(
-                NurbsSurfaceAxis::new(
-                    previous.u_degree(),
-                    previous.u_knots().to_vec(),
-                    replacement,
-                ),
-                NurbsSurfaceAxis::new(
-                    previous.v_degree(),
-                    previous.v_knots().to_vec(),
-                    previous.v_periodic(),
-                ),
-                previous.pole_grid().clone(),
-                previous.normal_reversed(),
-            )
-        })
-        .unwrap();
-    };
-    {
-        let replacement = true;
-        edit::replace(candidate_surface, |previous| {
-            NurbsSurface::new(
-                NurbsSurfaceAxis::new(
-                    previous.u_degree(),
-                    previous.u_knots().to_vec(),
-                    replacement,
-                ),
-                NurbsSurfaceAxis::new(
-                    previous.v_degree(),
-                    previous.v_knots().to_vec(),
-                    previous.v_periodic(),
-                ),
-                previous.pole_grid().clone(),
-                previous.normal_reversed(),
-            )
-        })
-        .unwrap();
-    };
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut support = quadratic_paraboloid_surface();
+        let mut candidate = support.clone();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support_surface)) = &mut support
+        else {
+            unreachable!();
+        };
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate_surface)) =
+            &mut candidate
+        else {
+            unreachable!();
+        };
+        {
+            let replacement = true;
+            edit::replace(support_surface, |previous| {
+                NurbsSurface::new(
+                    NurbsSurfaceAxis::new(
+                        previous.u_degree(),
+                        previous.u_knots().to_vec(),
+                        replacement,
+                    ),
+                    NurbsSurfaceAxis::new(
+                        previous.v_degree(),
+                        previous.v_knots().to_vec(),
+                        previous.v_periodic(),
+                    ),
+                    previous.pole_grid().clone(),
+                    previous.normal_reversed(),
+                )
+            })
+            .unwrap();
+        };
+        {
+            let replacement = true;
+            edit::replace(candidate_surface, |previous| {
+                NurbsSurface::new(
+                    NurbsSurfaceAxis::new(
+                        previous.u_degree(),
+                        previous.u_knots().to_vec(),
+                        replacement,
+                    ),
+                    NurbsSurfaceAxis::new(
+                        previous.v_degree(),
+                        previous.v_knots().to_vec(),
+                        previous.v_periodic(),
+                    ),
+                    previous.pole_grid().clone(),
+                    previous.normal_reversed(),
+                )
+            })
+            .unwrap();
+        };
 
-    assert_eq!(
-        certified_offset_cache_fit(&support, &candidate, 0.0, NonNegativeLength::ZERO),
-        Some(0.0)
-    );
+        assert_eq!(
+            certified_offset_cache_fit(
+                geometry_ctx,
+                &support,
+                &candidate,
+                0.0,
+                NonNegativeLength::ZERO
+            ),
+            Some(0.0)
+        );
+    });
 }
 
 #[test]
 fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
-    let bound = certified_offset_cache_fit(
-        &affine_nurbs_surface(0.0),
-        &degree_elevated_affine_surface(4.0),
-        4.0,
-        NonNegativeLength::new(0.1).expect("nonnegative tolerance"),
-    )
-    .expect("degree-elevated cache fit");
-    assert!(bound <= 0.1);
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let bound = certified_offset_cache_fit(
+            geometry_ctx,
+            &affine_nurbs_surface(0.0),
+            &degree_elevated_affine_surface(4.0),
+            4.0,
+            NonNegativeLength::new(0.1).expect("nonnegative tolerance"),
+        )
+        .expect("degree-elevated cache fit");
+        assert!(bound <= 0.1);
+    });
 }
 
 #[test]
 fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
-    let support = quadratic_paraboloid_surface();
-    assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
-        Some(0.0)
-    );
-    let bound = certified_offset_cache_fit(
-        &support,
-        &support,
-        0.01,
-        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
-    )
-    .expect("nonzero curved offset certified");
-    assert!((0.01..=0.02).contains(&bound));
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let support = quadratic_paraboloid_surface();
+        assert_eq!(
+            certified_offset_cache_fit(
+                geometry_ctx,
+                &support,
+                &support,
+                0.0,
+                NonNegativeLength::ZERO
+            ),
+            Some(0.0)
+        );
+        let bound = certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &support,
+            0.01,
+            NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+        )
+        .expect("nonzero curved offset certified");
+        assert!((0.01..=0.02).contains(&bound));
+    });
 }
 
 #[test]
 fn offset_cache_fit_decouples_distant_knot_span_scale() {
-    let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
-    let z = [0.0, 0.0, 0.1, 0.2];
-    let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
-            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                (0..4)
-                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-                    .collect::<Vec<_>>()
-                    .chunks(2_usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                None,
-            ),
-            false,
-        )
-        .unwrap(),
-    ));
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
+        let z = [0.0, 0.0, 0.1, 0.2];
+        let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(
+                    (0..4)
+                        .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], f64::from(v), z[u])))
+                        .collect::<Vec<_>>()
+                        .chunks(2_usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    None,
+                ),
+                false,
+            )
+            .unwrap(),
+        ));
 
-    let bound = certified_offset_cache_fit(
-        &support,
-        &support,
-        0.01,
-        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
-    )
-    .expect("each regular knot span certifies independently");
-    assert!((0.01..=0.02).contains(&bound));
+        let bound = certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &support,
+            0.01,
+            NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+        )
+        .expect("each regular knot span certifies independently");
+        assert!((0.01..=0.02).contains(&bound));
+    });
 }
 
 #[test]
 fn offset_cache_fit_certifies_regular_c0_knot_spans() {
-    let x = [0.0, 0.25, 0.5, 1.0, 1.5];
-    let z = [0.0, 0.0, 0.1, 0.1, 0.2];
-    let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
-            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                (0..5)
-                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-                    .collect::<Vec<_>>()
-                    .chunks(2_usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                None,
-            ),
-            false,
-        )
-        .unwrap(),
-    ));
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let x = [0.0, 0.25, 0.5, 1.0, 1.5];
+        let z = [0.0, 0.0, 0.1, 0.1, 0.2];
+        let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(
+                    (0..5)
+                        .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], f64::from(v), z[u])))
+                        .collect::<Vec<_>>()
+                        .chunks(2_usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    None,
+                ),
+                false,
+            )
+            .unwrap(),
+        ));
 
-    let bound = certified_offset_cache_fit(
-        &support,
-        &support,
-        0.01,
-        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
-    )
-    .expect("regular spans certify across the C0 knot break");
-    assert!((0.01..=0.02).contains(&bound));
+        let bound = certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &support,
+            0.01,
+            NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+        )
+        .expect("regular spans certify across the C0 knot break");
+        assert!((0.01..=0.02).contains(&bound));
+    });
 }
 
 #[test]
 fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
-    let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
-        unreachable!();
-    };
-    let replacement = (0..3)
-        .map(|v| surface.control_grid()[1][v])
-        .collect::<Vec<_>>();
-    let mut pole_index = 0usize;
-    surface
-        .edit_control_points(|pole| {
-            if let Some(source) = pole_index.checked_sub(6).and_then(|v| replacement.get(v)) {
-                *pole = source.get();
-            }
-            pole_index += 1;
-            Ok(())
-        })
-        .unwrap();
-    assert!(certified_offset_cache_fit(
-        &support,
-        &support,
-        0.0,
-        NonNegativeLength::new(1.0).expect("nonnegative tolerance")
-    )
-    .is_none());
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
+            unreachable!();
+        };
+        let replacement = (0..3)
+            .map(|v| surface.control_grid()[1][v])
+            .collect::<Vec<_>>();
+        surface
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if let Some(source) = index.checked_sub(6).and_then(|v| replacement.get(v)) {
+                    pole = source.get();
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
+            .unwrap();
+        assert!(certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &support,
+            0.0,
+            NonNegativeLength::new(1.0).expect("nonnegative tolerance")
+        )
+        .is_none());
+    });
 }
 
 #[test]
 fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
-    let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
-        unreachable!();
-    };
-    let mut pole_index = 0usize;
-    surface
-        .edit_control_points(|pole| {
-            if (6..9).contains(&pole_index) {
-                pole.x = 0.0;
-            }
-            pole_index += 1;
-            Ok(())
-        })
-        .unwrap();
-    assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
-        Some(0.0)
-    );
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
+            unreachable!();
+        };
+        surface
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if (6..9).contains(&index) {
+                    pole.x = 0.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
+            .unwrap();
+        assert_eq!(
+            certified_offset_cache_fit(
+                geometry_ctx,
+                &support,
+                &support,
+                0.0,
+                NonNegativeLength::ZERO
+            ),
+            Some(0.0)
+        );
+    });
 }
 
 #[test]
 fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
-    let epsilon = 2.0_f64.powi(-100);
-    let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
-    let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
-    let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
-            NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                (0..4)
-                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-                    .collect::<Vec<_>>()
-                    .chunks(2_usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                None,
-            ),
-            false,
-        )
-        .unwrap(),
-    ));
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &support else {
-        unreachable!();
-    };
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let epsilon = 2.0_f64.powi(-100);
+        let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
+        let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
+        let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(
+                    (0..4)
+                        .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], f64::from(v), z[u])))
+                        .collect::<Vec<_>>()
+                        .chunks(2_usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    None,
+                ),
+                false,
+            )
+            .unwrap(),
+        ));
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &support else {
+            unreachable!();
+        };
 
-    assert!(translation_net_normal(surface).is_none());
-    assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
-        Some(0.0)
-    );
+        assert!(translation_net_normal(surface).is_none());
+        assert_eq!(
+            certified_offset_cache_fit(
+                geometry_ctx,
+                &support,
+                &support,
+                0.0,
+                NonNegativeLength::ZERO
+            ),
+            Some(0.0)
+        );
+    });
 }
 
 #[test]
@@ -1256,108 +1366,132 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let u = u0 + (u1 - u0) * 0.5;
     let mut rectangles = Vec::new();
 
-    assert!(subdivide_offset_rectangle(
-        &mut rectangles,
-        [u0, u1, 0.0, 1.0],
-        [u, 0.5],
-        true,
-    ));
-    assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
+    crate::test_support::with_decode_context(|ctx| {
+        let geometry_budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(ctx, 100);
+
+        assert!(subdivide_offset_rectangle(
+            &mut rectangles,
+            [u0, u1, 0.0, 1.0],
+            [u, 0.5],
+            true,
+            &geometry_budget,
+        )
+        .expect("subdivision allocation"));
+        assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
+    });
 }
 
 #[test]
 fn curved_offset_cache_fit_certifies_varying_positive_weights() {
-    let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
-        unreachable!();
-    };
-    let axis_weights = [1.0, 1.01, 1.02];
-    let weight_grid = (0..3)
-        .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
-        .collect::<Vec<Vec<f64>>>();
-    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
-    {
-        let replacement = poles.unwrap();
-        edit::replace(surface, |previous| {
-            NurbsSurface::new(
-                NurbsSurfaceAxis::new(
-                    previous.u_degree(),
-                    previous.u_knots().to_vec(),
-                    previous.u_periodic(),
-                ),
-                NurbsSurfaceAxis::new(
-                    previous.v_degree(),
-                    previous.v_knots().to_vec(),
-                    previous.v_periodic(),
-                ),
-                replacement,
-                previous.normal_reversed(),
-            )
-        })
-    }
-    .unwrap();
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
+            unreachable!();
+        };
+        let axis_weights = [1.0, 1.01, 1.02];
+        let weight_grid = (0..3)
+            .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
+            .collect::<Vec<Vec<f64>>>();
+        let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
+        {
+            let replacement = poles.unwrap();
+            edit::replace(surface, |previous| {
+                NurbsSurface::new(
+                    NurbsSurfaceAxis::new(
+                        previous.u_degree(),
+                        previous.u_knots().to_vec(),
+                        previous.u_periodic(),
+                    ),
+                    NurbsSurfaceAxis::new(
+                        previous.v_degree(),
+                        previous.v_knots().to_vec(),
+                        previous.v_periodic(),
+                    ),
+                    replacement,
+                    previous.normal_reversed(),
+                )
+            })
+        }
+        .unwrap();
 
-    assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
-        Some(0.0)
-    );
-    assert!(certified_offset_cache_fit(
-        &support,
-        &support,
-        0.01,
-        NonNegativeLength::new(0.02).expect("nonnegative tolerance")
-    )
-    .is_some());
+        assert_eq!(
+            certified_offset_cache_fit(
+                geometry_ctx,
+                &support,
+                &support,
+                0.0,
+                NonNegativeLength::ZERO
+            ),
+            Some(0.0)
+        );
+        assert!(certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &support,
+            0.01,
+            NonNegativeLength::new(0.02).expect("nonnegative tolerance")
+        )
+        .is_some());
+    });
 }
 
 #[test]
 fn rational_offset_cache_bounds_are_translation_invariant() {
-    let mut support = quadratic_paraboloid_surface();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
-        unreachable!();
-    };
-    surface
-        .edit_control_points(|point| {
-            point.x += 1.0e12;
-            point.y -= 2.0e12;
-            point.z += 3.0e12;
-            Ok(())
-        })
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
+            unreachable!();
+        };
+        surface
+            .try_map_control_points(|_, point| {
+                let mut point = point.get();
+                point.x += 1.0e12;
+                point.y -= 2.0e12;
+                point.z += 3.0e12;
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
+            .unwrap();
+        let axis_weights = [1.0, 1.01, 1.02];
+        let weight_grid = (0..3)
+            .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
+            .collect::<Vec<Vec<f64>>>();
+        let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
+        {
+            let replacement = poles.unwrap();
+            edit::replace(surface, |previous| {
+                NurbsSurface::new(
+                    NurbsSurfaceAxis::new(
+                        previous.u_degree(),
+                        previous.u_knots().to_vec(),
+                        previous.u_periodic(),
+                    ),
+                    NurbsSurfaceAxis::new(
+                        previous.v_degree(),
+                        previous.v_knots().to_vec(),
+                        previous.v_periodic(),
+                    ),
+                    replacement,
+                    previous.normal_reversed(),
+                )
+            })
+        }
         .unwrap();
-    let axis_weights = [1.0, 1.01, 1.02];
-    let weight_grid = (0..3)
-        .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
-        .collect::<Vec<Vec<f64>>>();
-    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
-    {
-        let replacement = poles.unwrap();
-        edit::replace(surface, |previous| {
-            NurbsSurface::new(
-                NurbsSurfaceAxis::new(
-                    previous.u_degree(),
-                    previous.u_knots().to_vec(),
-                    previous.u_periodic(),
-                ),
-                NurbsSurfaceAxis::new(
-                    previous.v_degree(),
-                    previous.v_knots().to_vec(),
-                    previous.v_periodic(),
-                ),
-                replacement,
-                previous.normal_reversed(),
-            )
-        })
-    }
-    .unwrap();
 
-    let bound = certified_offset_cache_fit(
-        &support,
-        &support,
-        0.01,
-        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
-    )
-    .expect("absolute placement does not widen rational derivative bounds");
-    assert!(bound <= 0.02);
+        let bound = certified_offset_cache_fit(
+            geometry_ctx,
+            &support,
+            &support,
+            0.01,
+            NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+        )
+        .expect("absolute placement does not widen rational derivative bounds");
+        assert!(bound <= 0.02);
+    });
 }
 
 #[test]
@@ -1384,23 +1518,27 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
 
 #[test]
 fn nurbs_blend_contact_requires_the_declared_radius_shell() {
-    let mut ir = CadIr::empty();
-    let surface =
-        SurfaceId::mint("test:model:entity#nx:test:contact-support").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        id: surface.clone(),
-        geometry: affine_nurbs_surface(0.0),
-        source_object: None,
-    });
-    let center = Point3::new(1.2, 0.7, 2.0);
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let surface =
+            SurfaceId::mint("test:model:entity#nx:test:contact-support").expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+        let center = Point3::new(1.2, 0.7, 2.0);
 
-    let direction = surface_contact_direction(&ir, &surface, center, 2.0, 0)
-        .expect("evaluator allocation succeeds")
-        .expect("the support contains one contact at the blend radius");
-    assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
-    assert!(surface_contact_direction(&ir, &surface, center, 1.0, 0)
-        .expect("evaluator allocation succeeds")
-        .is_none());
+        let direction = surface_contact_direction(geometry_ctx, &ir, &surface, center, 2.0, 0)
+            .expect("evaluator allocation succeeds")
+            .expect("the support contains one contact at the blend radius");
+        assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
+        assert!(
+            surface_contact_direction(geometry_ctx, &ir, &surface, center, 1.0, 0)
+                .expect("evaluator allocation succeeds")
+                .is_none()
+        );
+    });
 }
 
 #[test]
@@ -1440,461 +1578,269 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         ),
         None,
     );
-    ir.model
-        .add_procedural_surface(cache.clone(), procedural)
-        .unwrap();
+    ir.model.add_procedural_surface(&cache, procedural).unwrap();
 
     assert_eq!(surface_offset_lineage(&ir, &cache, 0), Some((support, 4.0)));
 }
 
 #[test]
 fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
-    let mut ir = CadIr::empty();
-    let curve_id = CurveId::mint("nx:test:curve#0").expect("identity grammar");
-    ir.model.curves.push(Curve {
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                None,
-                false,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
-    let procedural = ProceduralCurve::new(
-        ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
-        ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext::try_new(
-                [
-                    IntcurveSupportSide {
-                        surface: None,
-                        pcurve: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: None,
-                        pcurve: None,
-                    },
-                ],
-                [0.0, 1.0],
-                [Vec::new(), Vec::new(), Vec::new()],
-            )
-            .unwrap(),
-            discontinuity_flag: false,
-            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(2.0).expect("fit tolerance")),
-        },
-    );
-    ir.model
-        .add_procedural_curve(curve_id.clone(), procedural)
-        .unwrap();
-
-    let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
-    let end_point = PointId::mint("nx:test:point#1").expect("identity grammar");
-    ir.model.points.extend([
-        Point::new(
-            start_point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0))
-                .expect("a finite position is a point"),
-            None,
-        ),
-        Point::new(
-            end_point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.005, 1.0))
-                .expect("a finite position is a point"),
-            None,
-        ),
-    ]);
-    let start = VertexId::mint("nx:test:vertex#0").expect("identity grammar");
-    let end = VertexId::mint("nx:test:vertex#1").expect("identity grammar");
-    ir.model.vertices.extend([
-        Vertex {
-            id: start.clone(),
-            point: start_point,
-            tolerance: None,
-        },
-        Vertex {
-            id: end.clone(),
-            point: end_point,
-            tolerance: None,
-        },
-    ]);
-    let edge = EdgeId::mint("nx:test:edge#0").expect("identity grammar");
-    ir.model.edges.push(Edge {
-        id: edge.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start.clone(),
-        end: end.clone(),
-        tolerance: None,
-    });
-    let support = SurfaceId::mint("nx:test:surface-support#0").expect("identity grammar");
-    let surface = SurfaceId::mint("nx:test:surface#0").expect("identity grammar");
-    let construction =
-        ProceduralSurfaceId::mint("nx:test:surface-offset#0").expect("identity grammar");
-    ir.model.surfaces.extend([
-        Surface {
-            id: support.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("nx:test:curve#0").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
                 )
                 .unwrap(),
             )),
             source_object: None,
-        },
-        Surface {
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Procedural {
-                construction: construction.clone(),
-                cache: None,
+        });
+        let procedural = ProceduralCurve::new(
+            ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext::try_new(
+                    [
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                        },
+                    ],
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
+                discontinuity_flag: false,
+                cache: Some(
+                    cadmpeg_ir::geometry::LegacyCache::try_new(2.0).expect("fit tolerance"),
+                ),
             },
-            source_object: None,
-        },
-    ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        construction,
-        ProceduralSurfaceDefinition::Offset(
-            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                support,
-                1.0,
-                Some(0),
-                Some(0),
-                false,
-                cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+        );
+        ir.model
+            .add_procedural_curve(&curve_id, procedural)
+            .unwrap();
+
+        let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
+        let end_point = PointId::mint("nx:test:point#1").expect("identity grammar");
+        ir.model.points.extend([
+            Point::new(
+                start_point.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0))
+                    .expect("a finite position is a point"),
+                None,
+            ),
+            Point::new(
+                end_point.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.005, 1.0))
+                    .expect("a finite position is a point"),
+                None,
+            ),
+        ]);
+        let start = VertexId::mint("nx:test:vertex#0").expect("identity grammar");
+        let end = VertexId::mint("nx:test:vertex#1").expect("identity grammar");
+        ir.model.vertices.extend([
+            Vertex {
+                id: start.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+        let edge = EdgeId::mint("nx:test:edge#0").expect("identity grammar");
+        ir.model.edges.push(Edge {
+            id: edge.clone(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
+            start: start.clone(),
+            end: end.clone(),
+            tolerance: None,
+        });
+        let support = SurfaceId::mint("nx:test:surface-support#0").expect("identity grammar");
+        let surface = SurfaceId::mint("nx:test:surface#0").expect("identity grammar");
+        let construction =
+            ProceduralSurfaceId::mint("nx:test:surface-offset#0").expect("identity grammar");
+        ir.model.surfaces.extend([
+            Surface {
+                id: support.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: construction.clone(),
                     cache: None,
                 },
+                source_object: None,
+            },
+        ]);
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support,
+                    1.0,
+                    Some(0),
+                    Some(0),
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .unwrap(),
+            ),
+            None,
+        ));
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+                false,
             )
             .unwrap(),
-        ),
-        None,
-    ));
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-            None,
-            false,
-        )
-        .unwrap(),
-    };
+        };
 
-    assert!(orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
-    assert!(!pcurve_matches_edge(&ir, &edge, &surface, &pcurve, None,));
-    assert!(pcurve_matches_edge(
-        &ir,
-        &edge,
-        &surface,
-        &pcurve,
-        Some(0.01),
-    ));
-    let large_distance = Point3::distance(
-        Point3::new(1.0e200, 1.0e200, 1.0e200),
-        Point3::new(0.0, 0.0, 0.0),
-    );
-    assert!(large_distance.is_finite());
-    assert!((large_distance / 1.0e200 - 3.0_f64.sqrt()).abs() < 1.0e-15);
+        assert!(
+            orient_edge_range(geometry_ctx, &ir, &curve_id, [0.0, 1.0], &start, &end, None)
+                .is_none()
+        );
+        assert!(!pcurve_matches_edge(
+            geometry_ctx,
+            &ir,
+            &edge,
+            &surface,
+            &pcurve,
+            None,
+        ));
+        assert!(pcurve_matches_edge(
+            geometry_ctx,
+            &ir,
+            &edge,
+            &surface,
+            &pcurve,
+            Some(0.01),
+        ));
+        let large_distance = Point3::distance(
+            Point3::new(1.0e200, 1.0e200, 1.0e200),
+            Point3::new(0.0, 0.0, 0.0),
+        );
+        assert!(large_distance.is_finite());
+        assert!((large_distance / 1.0e200 - 3.0_f64.sqrt()).abs() < 1.0e-15);
+    });
 }
 
 #[test]
 fn boundary_coincidence_is_certified_between_uniform_samples() {
-    let mut ir = CadIr::empty();
-    let surfaces = [
-        SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
-        SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
-    ];
-    let surface = || {
-        NurbsSurface::from_lanes(
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                [0.0, 1.0]
-                    .into_iter()
-                    .flat_map(|y| {
-                        [0.0, 0.1, 0.2, 10.0]
-                            .into_iter()
-                            .map(move |x| Point3::new(x, y, 0.0))
-                    })
-                    .collect::<Vec<_>>()
-                    .chunks(4_usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                None,
-            ),
-            false,
-        )
-        .unwrap()
-    };
-    ir.model.surfaces.extend([
-        Surface {
-            id: surfaces[0].clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface())),
-            source_object: None,
-        },
-        Surface {
-            id: surfaces[1].clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface())),
-            source_object: None,
-        },
-    ]);
-    let pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 0.0),
-            Point2::new(0.0, 1.0),
-        )
-        .unwrap(),
-    );
-    assert!(coincident_pcurve_pair(
-        &ir,
-        [&surfaces[0], &surfaces[1]],
-        [&pcurve, &pcurve],
-        [0.0, 1.0],
-        NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
-    )
-    .expect("evaluator allocation succeeds"));
-
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)) =
-        &mut ir.model.surfaces[1].geometry
-    else {
-        unreachable!()
-    };
-    let mut pole_index = 0usize;
-    second
-        .edit_control_points(|pole| {
-            if pole_index == 1 {
-                pole.z = 1.0;
-            }
-            pole_index += 1;
-            Ok(())
-        })
-        .unwrap();
-    assert!(!coincident_pcurve_pair(
-        &ir,
-        [&surfaces[0], &surfaces[1]],
-        [&pcurve, &pcurve],
-        [0.0, 1.0],
-        NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
-    )
-    .expect("evaluator allocation succeeds"));
-}
-
-#[test]
-fn rational_pcurve_incidence_isolates_close_branches() {
-    let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
-    let controls = [
-        0.006_306_3,
-        -0.029_213_45,
-        0.095_295_133_333_333_34,
-        -0.070_192_95,
-        0.024_297_3,
-    ]
-    .into_iter()
-    .zip(weights)
-    .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
-    .collect::<Vec<_>>();
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            4,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            controls,
-            Some(weights.to_vec()),
-            false,
-        )
-        .unwrap(),
-    };
-    let roots = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
-        .expect("evaluator allocation succeeds")
-        .expect("complete homogeneous root isolation");
-
-    assert_eq!(roots.len(), 4);
-    for (actual, expected) in roots.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
-        assert!((actual - expected).abs() < 1.0e-8);
-    }
-}
-
-#[test]
-fn rational_pcurve_closest_search_retains_close_global_branches() {
-    let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
-    let control_points = [
-        0.006_306_3,
-        -0.029_213_45,
-        0.095_295_133_333_333_34,
-        -0.070_192_95,
-        0.024_297_3,
-    ]
-    .into_iter()
-    .zip(weights)
-    .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
-    .collect();
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            4,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            control_points,
-            Some(weights.to_vec()),
-            false,
-        )
-        .unwrap(),
-    };
-    let parameters = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
-        .expect("evaluator allocation succeeds")
-        .expect("complete global closest-point search");
-
-    assert_eq!(parameters.len(), 4, "{parameters:?}");
-    for (actual, expected) in parameters.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
-        assert!((actual - expected).abs() < 1.0e-8);
-    }
-}
-
-#[test]
-fn rational_spine_closest_search_resolves_close_global_branches() {
-    let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
-    let control_points = [
-        0.006_306_3,
-        -0.029_213_45,
-        0.095_295_133_333_333_34,
-        -0.070_192_95,
-        0.024_297_3,
-    ]
-    .into_iter()
-    .zip(weights)
-    .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
-    .collect();
-    let curve = NurbsCurve::from_lanes(
-        4,
-        vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        control_points,
-        Some(weights.to_vec()),
-        false,
-    )
-    .unwrap();
-    let point = Point3::new(0.0, 1.0e-4, 0.0);
-
-    let first = closest_nurbs_curve_parameter(&curve, point, Some(0.099))
-        .expect("evaluator allocation succeeds")
-        .expect("first close branch");
-    let second = closest_nurbs_curve_parameter(&curve, point, Some(0.101))
-        .expect("evaluator allocation succeeds")
-        .expect("second close branch");
-    let remote = closest_nurbs_curve_parameter(&curve, point, Some(0.69))
-        .expect("evaluator allocation succeeds")
-        .expect("remote global branch");
-
-    assert!((first - 0.1).abs() < 1.0e-8);
-    assert!((second - 0.1001).abs() < 1.0e-8);
-    assert!((remote - 0.7).abs() < 1.0e-8);
-}
-
-#[test]
-fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
-    let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            1,
-            knots.clone(),
-            vec![
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let mut ir = CadIr::empty();
+        let surfaces = [
+            SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
+            SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
+        ];
+        let surface = || {
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(
+                    [0.0, 1.0]
+                        .into_iter()
+                        .flat_map(|y| {
+                            [0.0, 0.1, 0.2, 10.0]
+                                .into_iter()
+                                .map(move |x| Point3::new(x, y, 0.0))
+                        })
+                        .collect::<Vec<_>>()
+                        .chunks(4_usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    None,
+                ),
+                false,
+            )
+            .unwrap()
+        };
+        ir.model.surfaces.extend([
+            Surface {
+                id: surfaces[0].clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface())),
+                source_object: None,
+            },
+            Surface {
+                id: surfaces[1].clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface())),
+                source_object: None,
+            },
+        ]);
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(0.0, 0.0),
-                Point2::new(1.0, 0.0),
-                Point2::new(0.0, 0.0),
-            ],
-            None,
-            true,
+                Point2::new(0.0, 1.0),
+            )
+            .unwrap(),
+        );
+        assert!(coincident_pcurve_pair(
+            geometry_ctx,
+            &ir,
+            [&surfaces[0], &surfaces[1]],
+            [&pcurve, &pcurve],
+            [0.0, 1.0],
+            NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
         )
-        .unwrap(),
-    };
-    let curve = NurbsCurve::from_lanes(
-        1,
-        knots,
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-        ],
-        None,
-        true,
-    )
-    .unwrap();
+        .expect("evaluator allocation succeeds"));
 
-    assert_eq!(
-        closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
-            .expect("evaluator allocation succeeds")
-            .expect("periodic pcurve phase"),
-        [4.0]
-    );
-    assert_eq!(
-        closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
-            .expect("evaluator allocation succeeds")
-            .expect("periodic curve phase"),
-        4.0
-    );
-}
-
-#[test]
-fn polynomial_root_isolation_retains_repeated_real_roots() {
-    let roots = real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
-
-    assert_eq!(roots.len(), 3);
-    for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
-        assert!((actual - expected).abs() < 1.0e-10, "{actual}");
-    }
-}
-
-#[test]
-fn coincident_pcurve_interval_retains_seed_and_boundaries() {
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![Point2::new(2.0, -3.0); 3],
-            None,
-            false,
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)) =
+            &mut ir.model.surfaces[1].geometry
+        else {
+            unreachable!()
+        };
+        second
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == 1 {
+                    pole.z = 1.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
+            .unwrap();
+        assert!(!coincident_pcurve_pair(
+            geometry_ctx,
+            &ir,
+            [&surfaces[0], &surfaces[1]],
+            [&pcurve, &pcurve],
+            [0.0, 1.0],
+            NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
         )
-        .unwrap(),
-    };
-    let roots = closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
-        .expect("evaluator allocation succeeds")
-        .expect("coincident interval");
-
-    assert_eq!(roots, [0.3, 0.0, 1.0]);
+        .expect("evaluator allocation succeeds"));
+    });
 }
 
-#[test]
-fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
-    let knots = [0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0];
-    let points = [
-        Point2::new(-1.0, 0.0),
-        Point2::new(0.0, 2.0),
-        Point2::new(1.0, -1.0),
-        Point2::new(2.0, 3.0),
-        Point2::new(4.0, 0.0),
-    ];
-    let weights = [1.0, 1.5, 0.75, 2.0, 1.25];
-    let controls = points
-        .iter()
-        .zip(weights)
-        .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
-        .collect();
-    let spans = homogeneous_spans(2, &knots, controls)
-        .expect("resource allocation did not fail")
-        .expect("valid Bézier extraction");
-
-    assert_eq!(spans.len(), 3);
-    for span in spans {
-        for fraction in [0.0, 0.5, 1.0] {
-            let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
-            let expected =
-                cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
-                    .expect("source NURBS evaluation");
-            let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
-            let expected = expected.as_raw();
-            assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
-        }
-    }
-}
+mod closest_parameters;
 
 mod serialized_intersections;

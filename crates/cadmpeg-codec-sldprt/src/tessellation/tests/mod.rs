@@ -387,9 +387,14 @@ fn test_nurbs_surface() -> NurbsSurface {
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
     surface
-        .edit_control_points(|point| {
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
             point.z = 0.0;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     surface
@@ -605,7 +610,7 @@ fn mesh_from(
     triangles: Vec<[u32; 3]>,
 ) -> Tessellation {
     Tessellation::new(
-        id,
+        cadmpeg_ir::tessellation::TessellationId::mint(id.into()).expect("valid identity"),
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
             triangles,
@@ -1019,7 +1024,8 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(2.25, -0.75, 0.0),
@@ -1065,7 +1071,10 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     set_shell_faces(&mut model, vec![lower.clone(), upper.clone()]);
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#lower-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#lower-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(5.0, 0.0, 0.25),
@@ -1098,7 +1107,10 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     let deflection = 0.1;
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#chordal-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#chordal-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 vec![
                     Point3::new(5.0 - deflection, 0.0, 0.25),
@@ -1136,7 +1148,10 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     let deflection = 0.1;
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#inconsistent-normals-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#inconsistent-normals-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 vec![
                     Point3::new(5.0 - deflection, 0.0, 0.25),
@@ -1173,7 +1188,10 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     set_shell_faces(&mut model, vec![face]);
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#off-surface-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#off-surface-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 vec![
                     Point3::new(0.25, -0.75, 0.1),
@@ -1305,7 +1323,10 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
     let deflection = 0.02;
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#nurbs-cache-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#nurbs-cache-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 samples
                     .iter()
@@ -1352,7 +1373,10 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
     };
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#nurbs-ambiguous-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#nurbs-ambiguous-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                     .map(|(u, v)| {
@@ -1406,7 +1430,10 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
     };
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                     .map(|(u, v)| {
@@ -1888,7 +1915,10 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     set_shell_faces(&mut model, vec![target.clone(), competitor]);
     model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#arc-trim-mesh",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#arc-trim-mesh",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.25, -0.75, 0.0),

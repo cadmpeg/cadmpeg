@@ -16,6 +16,7 @@ fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
 
 mod blend_contact;
 mod emission;
+mod metadata;
 mod parameterization;
 mod pcurves;
 mod selection;

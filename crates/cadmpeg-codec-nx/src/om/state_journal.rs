@@ -91,13 +91,13 @@ impl JournalRow {
             ordinal,
         };
         offset
-            .checked_add(row.byte_len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(row.byte_len()))
             .ok_or("source_offset: journal row extent overflows")?;
         Ok(row)
     }
 
     pub(super) fn end_offset(self) -> u64 {
-        self.offset + self.byte_len() as u64
+        self.offset + cadmpeg_core::decode::u64_from_index(self.byte_len())
     }
 }
 

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design dimension recipe records: loci, annotation frames and presentation frames.
 
+use crate::records::admission::RecordAdmission;
+use cadmpeg_core::decode::u64_from_index;
+
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
 use super::sketch_relations::{
     constraint_kinds_from_state, constraint_kinds_iter, SketchConstraintKind,
-    SKETCH_CONSTRAINT_MASK,
 };
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -226,7 +228,7 @@ impl DesignDimensionLocusPair {
             return Err("opaque_index_offset disagrees with byte_offset".into());
         }
         for (ordinal, locus) in draft.loci.iter().enumerate() {
-            let offset = draft.byte_offset + prefix + ordinal as u64 * 15;
+            let offset = draft.byte_offset + prefix + u64_from_index(ordinal) * 15;
             let field = if ordinal == 0 { "first" } else { "second" };
             if locus.geometry_reference_offset != offset {
                 return Err(format!(
@@ -478,10 +480,10 @@ impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
 }
 
 /// One nullable typed operand in an annotated dimension frame.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct DesignDimensionAnnotationOperand {
     /// Indexed sketch geometry record, absent for the null locus.
-    #[serde(with = "annotation_geometry_index")]
+    #[serde(deserialize_with = "annotation_geometry_index::deserialize")]
     pub(crate) geometry_record_index: Option<NonZeroU32>,
     /// Byte offset of `geometry_record_index`.
     pub(crate) geometry_reference_offset: u64,
@@ -498,23 +500,21 @@ impl DesignDimensionAnnotationOperand {
     }
 }
 
-mod annotation_geometry_index {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::num::NonZeroU32;
-
-    // The wire adapter receives the optional field by reference, including its absence.
-    // Serde passes the field by reference to this wire adapter.
-    #[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)]
-    pub(super) fn serialize<S: Serializer>(
-        index: &Option<NonZeroU32>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        match index {
-            Some(index) => index.get(),
-            None => 0,
-        }
-        .serialize(serializer)
+impl Serialize for DesignDimensionAnnotationOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut row = serializer.serialize_struct("DesignDimensionAnnotationOperand", 4)?;
+        row.serialize_field("geometry_record_index", &self.geometry_index())?;
+        row.serialize_field("geometry_reference_offset", &self.geometry_reference_offset)?;
+        row.serialize_field("role", &self.role)?;
+        row.serialize_field("role_offset", &self.role_offset)?;
+        row.end()
     }
+}
+
+mod annotation_geometry_index {
+    use serde::{Deserialize, Deserializer};
+    use std::num::NonZeroU32;
 
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
@@ -657,9 +657,41 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
     pub(crate) owner_reference_offset: u64,
 }
 
+enum AnnotationFrameBuildError {
+    Invalid(String),
+    Resource(cadmpeg_core::CodecError),
+}
+
+impl From<&'static str> for AnnotationFrameBuildError {
+    fn from(message: &'static str) -> Self {
+        Self::Invalid(message.into())
+    }
+}
+
+impl From<String> for AnnotationFrameBuildError {
+    fn from(message: String) -> Self {
+        Self::Invalid(message)
+    }
+}
+
 impl DesignDimensionAnnotationFrame {
-    /// Admit an annotation frame with representable offsets and matching operand runs.
-    pub(crate) fn try_new(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
+    /// Admit an annotation frame using the source decode budget.
+    pub(crate) fn try_new_charged(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        draft: DesignDimensionAnnotationFrameDraft,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Self::try_new_inner(RecordAdmission::Charged(ctx), draft).map_err(|error| match error {
+            AnnotationFrameBuildError::Invalid(message) => {
+                cadmpeg_core::CodecError::malformed(message)
+            }
+            AnnotationFrameBuildError::Resource(error) => error,
+        })
+    }
+
+    fn try_new_inner(
+        admission: RecordAdmission<'_, '_>,
+        draft: DesignDimensionAnnotationFrameDraft,
+    ) -> Result<Self, AnnotationFrameBuildError> {
         if draft.operands.is_empty() {
             return Err("operands must not be empty".into());
         }
@@ -698,7 +730,7 @@ impl DesignDimensionAnnotationFrame {
             return Err("owner_reference_offset disagrees with frame layout".into());
         }
         for (ordinal, operand) in draft.operands.iter().enumerate() {
-            let start = draft.byte_offset + 24 + ordinal as u64 * 15;
+            let start = draft.byte_offset + 24 + u64_from_index(ordinal) * 15;
             if operand.geometry_reference_offset != start + 1 || operand.role_offset != start + 11 {
                 return Err(
                     "operands geometry_reference_offset or role_offset disagrees with frame layout"
@@ -717,16 +749,21 @@ impl DesignDimensionAnnotationFrame {
                 return Err("return_member_offsets disagree with frame layout".into());
             }
         }
-        let mut operand_members = draft
-            .operands
-            .iter()
-            .filter_map(|operand| operand.geometry_record_index)
-            .collect::<Vec<_>>();
-        let mut return_members = draft
-            .return_members
-            .iter()
-            .map(|member| member.value)
-            .collect::<Vec<_>>();
+        let mut operand_members = admission
+            .collect_vec(
+                draft
+                    .operands
+                    .iter()
+                    .filter_map(|operand| operand.geometry_record_index),
+                "index F3D annotation operands",
+            )
+            .map_err(AnnotationFrameBuildError::Resource)?;
+        let mut return_members = admission
+            .collect_vec(
+                draft.return_members.iter().map(|member| member.value),
+                "index F3D annotation return members",
+            )
+            .map_err(AnnotationFrameBuildError::Resource)?;
         operand_members.sort_unstable();
         return_members.sort_unstable();
         if operand_members != return_members {
@@ -740,22 +777,27 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: draft
-                .operands
-                .into_iter()
-                .map(|operand| DesignDimensionAnnotationLocus {
-                    geometry_record_index: operand.geometry_record_index,
-                    role: operand.role,
-                })
-                .collect(),
+            operands: admission
+                .collect_vec(
+                    draft
+                        .operands
+                        .into_iter()
+                        .map(|operand| DesignDimensionAnnotationLocus {
+                            geometry_record_index: operand.geometry_record_index,
+                            role: operand.role,
+                        }),
+                    "retain F3D annotation operands",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?,
             entity_genesis: draft.entity_genesis,
             annotation_bytes: draft.annotation_bytes,
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: draft
-                .return_members
-                .into_iter()
-                .map(|member| member.value)
-                .collect(),
+            return_members: admission
+                .collect_vec(
+                    draft.return_members.into_iter().map(|member| member.value),
+                    "retain F3D annotation return members",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?,
             paired_class_tag: draft.paired_class_tag,
             owner_reference: draft.owner_reference,
         })
@@ -773,12 +815,12 @@ impl DesignDimensionAnnotationFrame {
 
     /// Derived annotation byte offset.
     pub(crate) fn annotation_byte_offset(&self) -> u64 {
-        self.byte_offset + 24 + self.operands.len() as u64 * 15 + 57
+        self.byte_offset + 24 + u64_from_index(self.operands.len()) * 15 + 57
     }
 
     /// Derived governing owner reference offset.
     fn governing_owner_reference_offset(&self) -> u64 {
-        self.annotation_byte_offset() + self.annotation_bytes.len() as u64 + 1
+        self.annotation_byte_offset() + u64_from_index(self.annotation_bytes.len()) + 1
     }
 
     /// Derived paired byte offset.
@@ -813,8 +855,8 @@ impl DesignDimensionAnnotationFrame {
                 .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
                     geometry_record_index: operand.geometry_record_index,
                     role: operand.role,
-                    geometry_reference_offset: self.byte_offset + 25 + ordinal as u64 * 15,
-                    role_offset: self.byte_offset + 35 + ordinal as u64 * 15,
+                    geometry_reference_offset: self.byte_offset + 25 + u64_from_index(ordinal) * 15,
+                    role_offset: self.byte_offset + 35 + u64_from_index(ordinal) * 15,
                 })
                 .collect(),
             entity_genesis: self.entity_genesis,
@@ -828,7 +870,7 @@ impl DesignDimensionAnnotationFrame {
                 .enumerate()
                 .map(|(ordinal, value)| Located {
                     value,
-                    offset: governing_owner_reference_offset + 15 + ordinal as u64 * 11,
+                    offset: governing_owner_reference_offset + 15 + u64_from_index(ordinal) * 11,
                 })
                 .collect(),
             paired_class_tag: self.paired_class_tag,
@@ -898,9 +940,11 @@ impl Serialize for AnnotationOperands<'_> {
                 .enumerate()
                 .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
                     geometry_record_index: operand.geometry_record_index,
-                    geometry_reference_offset: self.0.byte_offset + 25 + ordinal as u64 * 15,
+                    geometry_reference_offset: self.0.byte_offset
+                        + 25
+                        + u64_from_index(ordinal) * 15,
                     role: operand.role,
-                    role_offset: self.0.byte_offset + 35 + ordinal as u64 * 15,
+                    role_offset: self.0.byte_offset + 35 + u64_from_index(ordinal) * 15,
                 }),
         )
     }
@@ -916,7 +960,7 @@ impl Serialize for AnnotationReturnOffsets<'_> {
                 .return_members
                 .iter()
                 .enumerate()
-                .map(|(ordinal, _)| start + ordinal as u64 * 11),
+                .map(|(ordinal, _)| start + u64_from_index(ordinal) * 11),
         )
     }
 }
@@ -978,34 +1022,46 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
         if wire.return_members.len() != wire.return_member_offsets.len() {
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
-        Self::try_new(DesignDimensionAnnotationFrameDraft {
-            return_members: wire
-                .return_members
-                .into_iter()
-                .zip(wire.return_member_offsets)
-                .map(|(value, offset)| {
-                    let value = NonZeroU32::new(value)
-                        .ok_or("return_members must contain nonzero geometry indices")?;
-                    Ok(Located { value, offset })
-                })
-                .collect::<Result<_, Self::Error>>()?,
-            id: wire.id,
-            companion_record_index: wire.companion_record_index,
-            governing_companion_record_index: wire.governing_companion_record_index,
-            byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag.try_into()?,
-            record_index: wire.record_index,
-            frame_length: wire.frame_length,
-            operands: wire.operands,
-            entity_genesis: wire.entity_genesis,
-            annotation_bytes: wire.annotation_bytes,
-            annotation_byte_offset: wire.annotation_byte_offset,
-            governing_owner_record_index: wire.governing_owner_record_index,
-            governing_owner_reference_offset: wire.governing_owner_reference_offset,
-            paired_class_tag: wire.paired_class_tag.try_into()?,
-            paired_byte_offset: wire.paired_byte_offset,
-            owner_reference: wire.owner_reference,
-            owner_reference_offset: wire.owner_reference_offset,
+        let mut return_members = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.return_members.len(),
+            "reconstruct F3D annotation return members",
+        )
+        .map_err(|error| error.to_string())?;
+        for (value, offset) in wire
+            .return_members
+            .into_iter()
+            .zip(wire.return_member_offsets)
+        {
+            let value = NonZeroU32::new(value)
+                .ok_or("return_members must contain nonzero geometry indices")?;
+            return_members.push(Located { value, offset });
+        }
+        Self::try_new_inner(
+            RecordAdmission::Admitted,
+            DesignDimensionAnnotationFrameDraft {
+                return_members,
+                id: wire.id,
+                companion_record_index: wire.companion_record_index,
+                governing_companion_record_index: wire.governing_companion_record_index,
+                byte_offset: wire.byte_offset,
+                class_tag: wire.class_tag.try_into()?,
+                record_index: wire.record_index,
+                frame_length: wire.frame_length,
+                operands: wire.operands,
+                entity_genesis: wire.entity_genesis,
+                annotation_bytes: wire.annotation_bytes,
+                annotation_byte_offset: wire.annotation_byte_offset,
+                governing_owner_record_index: wire.governing_owner_record_index,
+                governing_owner_reference_offset: wire.governing_owner_reference_offset,
+                paired_class_tag: wire.paired_class_tag.try_into()?,
+                paired_byte_offset: wire.paired_byte_offset,
+                owner_reference: wire.owner_reference,
+                owner_reference_offset: wire.owner_reference_offset,
+            },
+        )
+        .map_err(|error| match error {
+            AnnotationFrameBuildError::Invalid(message) => message,
+            AnnotationFrameBuildError::Resource(error) => error.to_string(),
         })
     }
 }
@@ -1221,6 +1277,8 @@ struct DesignDimensionLocusGroupWire {
     next_byte_offset: u64,
 }
 
+const SKETCH_CONSTRAINT_MASK_U32: u32 = 0xb000_3fff;
+
 impl DesignDimensionLocusGroup {
     /// Constraint kinds selected by the owner mask.
     #[must_use]
@@ -1230,7 +1288,7 @@ impl DesignDimensionLocusGroup {
 
     #[must_use]
     fn unknown_constraint_bits(&self) -> u32 {
-        self.state & !(SKETCH_CONSTRAINT_MASK as u32)
+        self.state & !(SKETCH_CONSTRAINT_MASK_U32)
     }
 }
 
@@ -1314,22 +1372,27 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
         if u64::from(wire.unknown_constraint_bits) != unknown {
             return Err("unknown_constraint_bits must match state".into());
         }
-        let loci = wire
-            .loci
-            .into_iter()
-            .zip(
-                wire.return_members
-                    .into_iter()
-                    .zip(wire.return_member_offsets),
-            )
-            .map(|(locus, (value, offset))| DesignDimensionLocus {
-                geometry_record_index: locus.geometry_record_index,
-                geometry_reference_offset: locus.geometry_reference_offset,
-                role: locus.role,
-                role_offset: locus.role_offset,
-                returned: Located { value, offset },
-            })
-            .collect();
+        let mut loci = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.loci.len(),
+            "reconstruct F3D dimension loci",
+        )
+        .map_err(|error| error.to_string())?;
+        loci.extend(
+            wire.loci
+                .into_iter()
+                .zip(
+                    wire.return_members
+                        .into_iter()
+                        .zip(wire.return_member_offsets),
+                )
+                .map(|(locus, (value, offset))| DesignDimensionLocus {
+                    geometry_record_index: locus.geometry_record_index,
+                    geometry_reference_offset: locus.geometry_reference_offset,
+                    role: locus.role,
+                    role_offset: locus.role_offset,
+                    returned: Located { value, offset },
+                }),
+        );
         Ok(Self {
             loci,
             id: wire.id,

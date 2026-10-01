@@ -103,6 +103,13 @@ impl GeneratedDesignRegistry {
         bindings: DesignBindingsValidated<'_>,
         attributes: &AttributeIndex<'_>,
     ) -> Result<Self, CodecError> {
+        let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
+
         let native = bindings.native();
         let visibility_by_body = native
             .body_visibilities
@@ -182,7 +189,8 @@ impl GeneratedDesignRegistry {
             })
             .transpose()?;
         pending.sort_by_key(|(entity_suffix, _, _)| *entity_suffix);
-        let mut browser_nodes = Vec::with_capacity(pending.len());
+        let mut browser_nodes =
+            ctx.collection_vec(pending.len(), "collect F3D generated browser nodes")?;
         for (entity_suffix, body_id, visible) in pending {
             let record_index =
                 allocate_record_index(&mut used_record_indices, &mut next_record_index)?;

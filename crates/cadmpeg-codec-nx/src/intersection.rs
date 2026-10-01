@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_iter;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
@@ -39,6 +40,24 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
+    pub(crate) fn from_present_values_charged(
+        ctx: &DecodeContext<'_>,
+        values: Vec<[f64; 2]>,
+    ) -> Result<Option<Self>, CodecError> {
+        let count = values.len();
+        let operation = "NX chart support-UV lane";
+        let mut checked = ctx.retained_vec(count, operation)?;
+        for pair in values {
+            let Some(value) = FiniteVector::new(pair) else {
+                return Ok(None);
+            };
+            if pair.contains(&MISSING_PARAMETER) {
+                return Ok(None);
+            }
+            checked.push(value);
+        }
+        Ok(Some(Self(checked)))
+    }
     /// Construct one parameter pair per chart sample.
     #[cfg(test)]
     pub(crate) fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
@@ -334,6 +353,67 @@ pub(crate) struct CurveScan {
     pub(crate) rejected: RejectionCounts,
 }
 
+impl CurveScan {
+    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut curves = Vec::new();
+        ctx.reserve_vec(&mut curves, self.curves.len(), "NX intersection curve copy")?;
+        for curve in &self.curves {
+            ctx.charge_work(1, "copy NX intersection curves")?;
+            let [support_first, support_second] = [0, 1].map(|side| {
+                curve.support_uv[side]
+                    .as_ref()
+                    .map(|lane| {
+                        crate::intersection::SupportUvLane::from_checked(
+                            ctx.copy_retained_slice(
+                                lane.as_slice(),
+                                "NX solved support-UV lane copy",
+                            )?,
+                            lane.as_slice().len(),
+                        )
+                        .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+                    })
+                    .transpose()
+            });
+            let [ext_first, ext_second] = [0, 1].map(|side| {
+                curve.ext_support_uv[side]
+                    .as_ref()
+                    .map(|lane| {
+                        crate::intersection::SupportUvLane::from_checked(
+                            ctx.copy_retained_slice(
+                                lane.as_slice(),
+                                "NX solved support-UV lane copy",
+                            )?,
+                            lane.as_slice().len(),
+                        )
+                        .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+                    })
+                    .transpose()
+            });
+            curves.push(IntersectionCurve {
+                references: curve.references,
+                xmt: curve.xmt,
+                primary_support: curve.primary_support,
+                secondary_support: curve.secondary_support,
+                pos: curve.pos,
+                samples: curve.samples.clone_charged(ctx)?,
+                fit_tolerance: curve.fit_tolerance,
+                support_uv: [support_first?, support_second?],
+                ext_support_uv: [ext_first?, ext_second?],
+            });
+        }
+        Ok(Self {
+            source_constructions: ctx
+                .copy_slice_with_work(&self.source_constructions, "NX source intersection copy")?,
+            constructions: ctx
+                .copy_slice_with_work(&self.constructions, "NX intersection construction copy")?,
+            curves,
+            uncharted: ctx
+                .copy_slice_with_work(&self.uncharted, "NX uncharted intersection copy")?,
+            rejected: self.rejected,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Rejection {
     MissingSupport,
@@ -342,6 +422,23 @@ enum Rejection {
     MissingStartTerm,
     MissingEndTerm,
     EndpointMismatch,
+}
+
+enum EnrichError {
+    Rejected(Rejection),
+    Resource(CodecError),
+}
+
+impl From<Rejection> for EnrichError {
+    fn from(value: Rejection) -> Self {
+        Self::Rejected(value)
+    }
+}
+
+impl From<CodecError> for EnrichError {
+    fn from(value: CodecError) -> Self {
+        Self::Resource(value)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -353,79 +450,142 @@ struct Chart {
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
 /// endpoint witnesses form a complete solved cache.
-pub(crate) fn curves(stream: &[u8], point_layout: ChartPointLayout) -> Vec<IntersectionCurve> {
-    scan(stream, point_layout).curves
+pub(crate) fn curves(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+) -> Result<Vec<IntersectionCurve>, CodecError> {
+    Ok(scan(ctx, stream, point_layout)?.curves)
 }
 
 /// Decode chart-backed constructions and classify every rejected construction.
-fn scan(stream: &[u8], point_layout: ChartPointLayout) -> CurveScan {
-    let graph = topology::Graph::parse(stream);
-    scan_with_graph(stream, &graph, point_layout)
+fn scan(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+) -> Result<CurveScan, CodecError> {
+    let graph = topology::Graph::parse(ctx, stream)?;
+    scan_with_graph(ctx, stream, &graph, point_layout)
 }
 
 pub(crate) fn scan_with_graph(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &topology::Graph,
     point_layout: ChartPointLayout,
-) -> CurveScan {
-    let uv = uv_records(stream);
-    let constructions = graph
-        .composite_curves()
-        .into_iter()
-        .chain(topology::intersection_data_curves(stream))
-        .collect();
+) -> Result<CurveScan, CodecError> {
+    let uv = uv_records(ctx, stream)?;
+    let mut constructions = graph.composite_curves(ctx)?;
+    append_intersection_data_curves(ctx, stream, &mut constructions)?;
     scan_with_auxiliaries(
-        &chart_records(stream, point_layout),
-        &term_records(stream),
-        &uv,
-        &blend_bound_records(stream),
+        ctx,
+        AuxiliaryMaps {
+            charts: &chart_records(ctx, stream, point_layout)?,
+            terms: &term_records(ctx, stream)?,
+            uv: &uv,
+            bridges: &blend_bound_records(ctx, stream)?,
+        },
         graph,
         constructions,
         CrossFormCollision::Reject,
     )
 }
 
+fn append_intersection_data_curves(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    constructions: &mut Vec<CompositeCurve>,
+) -> Result<(), CodecError> {
+    let twins = topology::intersection_data_curves(ctx, stream)?;
+    ctx.reserve_retained_vec(constructions, twins.len(), "NX intersection constructions")?;
+    constructions.extend(twins);
+    Ok(())
+}
+
 /// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
 #[cfg(test)]
 fn scan_with_auxiliary_replacements(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     base_stream: &[u8],
     replacement_streams: &[&[u8]],
-) -> CurveScan {
-    let graph = topology::Graph::parse(stream);
-    scan_with_auxiliary_replacements_and_graph(stream, base_stream, replacement_streams, &graph)
+) -> Result<CurveScan, CodecError> {
+    let graph = topology::Graph::parse(ctx, stream)?;
+    scan_with_auxiliary_replacements_and_graph(
+        ctx,
+        stream,
+        base_stream,
+        replacement_streams,
+        &graph,
+    )
 }
 
 pub(crate) fn scan_with_auxiliary_replacements_and_graph(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     base_stream: &[u8],
     replacement_streams: &[&[u8]],
     graph: &topology::Graph,
-) -> CurveScan {
-    let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
-    let mut terms = term_records(base_stream);
-    let mut uv = uv_records(base_stream);
-    let mut bridges = blend_bound_records(base_stream);
+) -> Result<CurveScan, CodecError> {
+    let mut charts = chart_records(ctx, base_stream, ChartPointLayout::Xyz3)?;
+    let mut terms = term_records(ctx, base_stream)?;
+    let mut uv = uv_records(ctx, base_stream)?;
+    let mut bridges = blend_bound_records(ctx, base_stream)?;
     for replacement_stream in replacement_streams {
-        charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
-        terms.extend(term_records(replacement_stream));
-        uv.extend(uv_records(replacement_stream));
-        bridges.extend(blend_bound_records(replacement_stream));
+        extend_replacement_map(
+            ctx,
+            &mut charts,
+            chart_records(ctx, replacement_stream, ChartPointLayout::Ext11)?,
+            "NX replacement chart keys",
+        )?;
+        extend_replacement_map(
+            ctx,
+            &mut terms,
+            term_records(ctx, replacement_stream)?,
+            "NX replacement term keys",
+        )?;
+        extend_replacement_map(
+            ctx,
+            &mut uv,
+            uv_records(ctx, replacement_stream)?,
+            "NX replacement UV keys",
+        )?;
+        extend_replacement_map(
+            ctx,
+            &mut bridges,
+            blend_bound_records(ctx, replacement_stream)?,
+            "NX replacement bridge keys",
+        )?;
     }
-    let constructions = graph
-        .composite_curves()
-        .into_iter()
-        .chain(topology::intersection_data_curves(stream))
-        .collect();
+    let mut constructions = graph.composite_curves(ctx)?;
+    append_intersection_data_curves(ctx, stream, &mut constructions)?;
     scan_with_auxiliaries(
-        &charts,
-        &terms,
-        &uv,
-        &bridges,
+        ctx,
+        AuxiliaryMaps {
+            charts: &charts,
+            terms: &terms,
+            uv: &uv,
+            bridges: &bridges,
+        },
         graph,
         constructions,
         CrossFormCollision::PreferDeltaTwin,
     )
+}
+
+fn extend_replacement_map<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeMap<u32, T>,
+    replacement: BTreeMap<u32, T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    for (xmt, value) in replacement {
+        if !target.contains_key(&xmt) {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        target.insert(xmt, value);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -434,55 +594,80 @@ enum CrossFormCollision {
     PreferDeltaTwin,
 }
 
+#[derive(Clone, Copy)]
+struct AuxiliaryMaps<'a> {
+    charts: &'a BTreeMap<u32, Chart>,
+    terms: &'a BTreeMap<u32, Point3>,
+    uv: &'a BTreeMap<u32, SupportUvValues>,
+    bridges: &'a BTreeMap<u32, u32>,
+}
+
 fn scan_with_auxiliaries(
-    charts: &BTreeMap<u32, Chart>,
-    terms: &BTreeMap<u32, Point3>,
-    uv: &BTreeMap<u32, SupportUvValues>,
-    bridges: &BTreeMap<u32, u32>,
+    ctx: &DecodeContext<'_>,
+    maps: AuxiliaryMaps<'_>,
     graph: &topology::Graph,
     constructions: Vec<CompositeCurve>,
     cross_form_collision: CrossFormCollision,
-) -> CurveScan {
-    let referenced_curves = graph.referenced_curve_xmts();
+) -> Result<CurveScan, CodecError> {
+    let AuxiliaryMaps {
+        charts,
+        terms,
+        uv,
+        bridges,
+    } = maps;
+    let referenced_curves = graph.referenced_curve_xmts(ctx)?;
     let mut result = CurveScan::default();
     let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
     for construction in &constructions {
-        forms_by_xmt
-            .entry(construction.xmt)
-            .or_default()
-            .insert(construction.delta_twin);
+        if !forms_by_xmt.contains_key(&construction.xmt) {
+            ctx.charge_collection_items(1, "NX intersection form keys")?;
+        }
+        let forms = forms_by_xmt.entry(construction.xmt).or_default();
+        if !forms.contains(&construction.delta_twin) {
+            ctx.charge_collection_items(1, "NX intersection form values")?;
+        }
+        forms.insert(construction.delta_twin);
     }
-    let cross_form_xmts = forms_by_xmt
-        .into_iter()
-        .filter_map(|(xmt, forms)| (forms.len() > 1).then_some(xmt))
-        .collect::<BTreeSet<_>>();
-    let constructions = constructions
-        .into_iter()
-        .filter(|construction| {
-            if !cross_form_xmts.contains(&construction.xmt) {
-                return true;
+    let mut cross_form_xmts = BTreeSet::new();
+    for (xmt, forms) in forms_by_xmt {
+        if forms.len() > 1 {
+            ctx.charge_collection_items(1, "NX intersection cross-form identities")?;
+            cross_form_xmts.insert(xmt);
+        }
+    }
+    let mut constructions = constructions;
+    constructions.retain(|construction| {
+        if !cross_form_xmts.contains(&construction.xmt) {
+            return true;
+        }
+        match cross_form_collision {
+            CrossFormCollision::Reject => {
+                result.rejected.add(Rejection::DuplicateIdentity);
+                false
             }
-            match cross_form_collision {
-                CrossFormCollision::Reject => {
-                    result.rejected.add(Rejection::DuplicateIdentity);
-                    false
-                }
-                CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
-            }
-        })
-        .collect::<Vec<_>>();
+            CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
+        }
+    });
     for construction in constructions.iter().copied() {
-        match enrich(construction, charts, terms, uv, bridges, graph) {
+        match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
-                result.constructions.push(construction);
-                result.curves.push(curve);
+                ctx.push_retained_vec(
+                    &mut result.constructions,
+                    construction,
+                    "NX intersection constructions",
+                )?;
+                ctx.push_retained_vec(&mut result.curves, curve, "NX intersection solved curves")?;
             }
-            Err(rejection)
+            Err(EnrichError::Rejected(rejection))
                 if referenced_curves.contains(&construction.xmt)
                     && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
-                result.constructions.push(construction);
+                ctx.push_retained_vec(
+                    &mut result.constructions,
+                    construction,
+                    "NX intersection constructions",
+                )?;
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some((endpoints, tolerance))) = (
                         construction_supports(construction, uv, bridges, graph).and_then(
@@ -497,34 +682,42 @@ fn scan_with_auxiliaries(
                                 ))
                             }),
                     ) {
-                        result.uncharted.push(UnchartedIntersection {
-                            xmt: construction.xmt,
-                            supports,
-                            endpoints,
-                            tolerance,
-                        });
+                        ctx.push_retained_vec(
+                            &mut result.uncharted,
+                            UnchartedIntersection {
+                                xmt: construction.xmt,
+                                supports,
+                                endpoints,
+                                tolerance,
+                            },
+                            "NX uncharted intersections",
+                        )?;
                     }
                 }
                 result.rejected.add(rejection);
             }
-            Err(Rejection::MissingSupport) if referenced_curves.contains(&construction.xmt) => {
+            Err(EnrichError::Rejected(Rejection::MissingSupport))
+                if referenced_curves.contains(&construction.xmt) =>
+            {
                 result.rejected.add(Rejection::MissingSupport);
             }
-            Err(_) => {}
+            Err(EnrichError::Rejected(_)) => {}
+            Err(EnrichError::Resource(error)) => return Err(error),
         }
     }
     result.source_constructions = constructions;
-    result
+    Ok(result)
 }
 
 fn enrich(
+    ctx: &DecodeContext<'_>,
     construction: CompositeCurve,
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
     uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
-) -> Result<IntersectionCurve, Rejection> {
+) -> Result<IntersectionCurve, EnrichError> {
     let chart = construction.references[2]
         .and_then(|target| charts.get(&u32::from(target)))
         .ok_or(Rejection::MissingChart)?;
@@ -544,7 +737,7 @@ fn enrich(
             term.is_some_and(|term| Point3::distance(term, endpoint) > chart.fit_tolerance.get())
         })
     {
-        return Err(Rejection::EndpointMismatch);
+        return Err(Rejection::EndpointMismatch.into());
     }
     if serialized_terms.iter().any(Option::is_none) {
         let topology_endpoints = graph
@@ -569,30 +762,53 @@ fn enrich(
             })
             .count();
         if matching_permutations != 1 {
-            return Err(if serialized_terms[0].is_none() {
+            return Err((if serialized_terms[0].is_none() {
                 Rejection::MissingStartTerm
             } else {
                 Rejection::MissingEndTerm
-            });
+            })
+            .into());
         }
     }
     let (primary_support, secondary_support) =
         construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
-    let support_uv = construction.references[5]
-        .and_then(|target| uv.get(&u32::from(target)))
-        .map_or([None, None], |values| {
-            values.support_uv(chart.samples.points().len())
-        });
+    let support_uv = match construction.references[5].and_then(|target| uv.get(&u32::from(target)))
+    {
+        Some(values) => values.support_uv_charged(ctx, chart.samples.len())?,
+        None => [None, None],
+    };
+    let ext_support_uv = [
+        chart.ext_support_uv[0]
+            .as_ref()
+            .map(|lane| {
+                crate::intersection::SupportUvLane::from_checked(
+                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    lane.as_slice().len(),
+                )
+                .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+            })
+            .transpose()?,
+        chart.ext_support_uv[1]
+            .as_ref()
+            .map(|lane| {
+                crate::intersection::SupportUvLane::from_checked(
+                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    lane.as_slice().len(),
+                )
+                .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+            })
+            .transpose()?,
+    ];
     Ok(IntersectionCurve {
         references: construction.references,
         xmt: construction.xmt,
         primary_support,
         secondary_support,
         pos: construction.pos,
-        samples: chart.samples.clone(),
+        samples: chart.samples.clone_charged(ctx)?,
         fit_tolerance: chart.fit_tolerance,
         support_uv,
-        ext_support_uv: chart.ext_support_uv.clone(),
+        ext_support_uv,
     })
 }
 
@@ -647,23 +863,70 @@ fn construction_has_endpoint_witnesses(
         || graph.unique_curve_edge_witness(construction.xmt).is_some()
 }
 
-fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
-    blend_bounds(stream)
-        .into_iter()
-        .map(|b| (b.state.xmt(), b.state.blend_surface()))
-        .collect()
+fn blend_bound_records(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<BTreeMap<u32, u32>, CodecError> {
+    let mut records = BTreeMap::new();
+    for bound in blend_bounds(ctx, stream)? {
+        ctx.charge_collection_items(1, "NX blend-bound map keys")?;
+        records.insert(bound.state.xmt(), bound.state.blend_surface());
+    }
+    Ok(records)
 }
 
 /// Decode complete type-59 second-support bridge records.
-pub(crate) fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
+pub(crate) fn blend_bounds(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Vec<BlendBound>, CodecError> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX blend-bound record index")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(stream.len()),
+        "scan NX blend bounds",
+    )?;
     for tag in find_tags(stream, [0, 59]) {
         if let Some((bound, _)) = blend_bound_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, bound.state.xmt(), bound);
+            insert_unique_charged(
+                ctx,
+                &mut reservation,
+                &mut out,
+                &mut duplicates,
+                bound.state.xmt(),
+                bound,
+            )?;
         }
     }
-    out.into_values().collect()
+    ctx.collect_retained_vec(out.into_values(), "NX blend-bound records")
+}
+
+fn insert_unique_charged<'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
+    records: &mut BTreeMap<u32, T>,
+    duplicates: &mut BTreeSet<u32>,
+    xmt: u32,
+    record: T,
+) -> Result<(), CodecError> {
+    if duplicates.contains(&xmt) {
+        return Ok(());
+    }
+    if records.contains_key(&xmt) {
+        ctx.charge_collection_items(1, "NX duplicate intersection identities")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<u32>(),
+        ))?;
+    } else {
+        ctx.charge_collection_items(1, "NX intersection record index")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+            u32,
+            T,
+        )>()))?;
+    }
+    insert_unique(records, duplicates, xmt, record);
+    Ok(())
 }
 
 pub(crate) fn blend_bound_at(stream: &[u8], tag: usize) -> Option<(BlendBound, usize)> {
@@ -758,11 +1021,15 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
     .any(|kind| graph.get(kind, xmt).is_some())
 }
 
-fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32, Chart> {
+fn chart_records(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+) -> Result<BTreeMap<u32, Chart>, CodecError> {
     let mut out = BTreeMap::new();
     let mut complemented = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
-    for source in chart_source_records(stream, point_layout) {
+    for source in chart_source_records(ctx, stream, point_layout)? {
         if duplicates.contains(&source.xmt) {
             continue;
         }
@@ -770,7 +1037,9 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
             continue;
         };
         let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;
-        let Some((samples, ext_support_uv)) = source.data.into_samples(source.preamble) else {
+        let Some((samples, ext_support_uv)) =
+            source.data.into_samples_charged(ctx, source.preamble)?
+        else {
             continue;
         };
         let candidate = Chart {
@@ -780,6 +1049,11 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
         };
         match out.entry(source.xmt) {
             std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX chart identity index")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Chart)>()),
+                    "NX chart identity index",
+                )?;
                 entry.insert(candidate);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -788,11 +1062,10 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                     && entry
                         .get()
                         .samples
-                        .points()
-                        .iter()
-                        .zip(candidate.samples.points().iter())
+                        .iter_points()
+                        .zip(candidate.samples.iter_points())
                         .all(|(first, second)| {
-                            Point3::distance(*first, *second)
+                            Point3::distance(first, second)
                                 <= entry
                                     .get()
                                     .fit_tolerance
@@ -802,30 +1075,38 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                     && entry
                         .get_mut()
                         .samples
-                        .replace_parameters_from(&candidate.samples);
+                        .replace_parameters_from_charged(ctx, &candidate.samples)?;
                 if complements {
                     entry.get_mut().ext_support_uv = candidate.ext_support_uv;
+                    ctx.charge_collection_items(1, "NX complemented chart identities")?;
                     complemented.insert(source.xmt);
                 } else {
                     entry.remove();
+                    ctx.charge_collection_items(1, "NX duplicate chart identities")?;
                     duplicates.insert(source.xmt);
                 }
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// Decode every complete physical direct or escaped `CHART_s` source record.
 pub(crate) fn chart_source_records(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     point_layout: ChartPointLayout,
-) -> Vec<ChartSourceRecord> {
+) -> Result<Vec<ChartSourceRecord>, CodecError> {
     let mut out = Vec::new();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(stream.len()),
+        "scan NX chart records",
+    )?;
     let mut tag = 0usize;
-    while tag.saturating_add(2) <= stream.len() {
+    while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
         if stream.get(tag..tag + 2) == Some(&[0, 40]) {
-            if let Some((record, end)) = chart_source_record_at(stream, tag, point_layout) {
+            if let Some((record, end)) = chart_source_record_at(ctx, stream, tag, point_layout)? {
+                ctx.reserve_retained_vec(&mut out, 1, "NX chart source records")?;
                 out.push(record);
                 // A complete chart owns its counted point lane. Do not rescan
                 // bytes inside that lane as nested chart candidates.
@@ -835,15 +1116,18 @@ pub(crate) fn chart_source_records(
         }
         tag += 1;
     }
-    out
+    Ok(out)
 }
 
 pub(crate) fn chart_source_record_at(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     tag: usize,
     point_layout: ChartPointLayout,
-) -> Option<(ChartSourceRecord, usize)> {
-    (stream.get(tag..tag + 2) == Some(&[0, 40])).then_some(())?;
+) -> Result<Option<(ChartSourceRecord, usize)>, CodecError> {
+    if stream.get(tag..tag + 2) != Some(&[0, 40]) {
+        return Ok(None);
+    }
     for escape in [0usize, 1] {
         if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
             continue;
@@ -872,7 +1156,9 @@ pub(crate) fn chart_source_record_at(
             head.f64_be(), head.f64_be(), head.u32_be(), head.f64_be(), head.f64_be(),
             head.f64_be(), head.f64_be(),
         ) else { continue; };
-        if chart_count as usize != count || [e0, e1] != [MISSING_PARAMETER, MISSING_PARAMETER] {
+        if cadmpeg_core::decode::index_from_u32(chart_count) != count
+            || [e0, e1] != [MISSING_PARAMETER, MISSING_PARAMETER]
+        {
             continue;
         }
         let Ok(preamble_values) =
@@ -881,10 +1167,10 @@ pub(crate) fn chart_source_record_at(
             continue;
         };
         let block = preamble + chart_preamble::LEN;
-        let Some((data, end)) = chart_points(stream, block, count, point_layout) else {
+        let Some((data, end)) = chart_points(ctx, stream, block, count, point_layout)? else {
             continue;
         };
-        return Some((
+        return Ok(Some((
             ChartSourceRecord {
                 xmt,
                 preamble: preamble_values,
@@ -897,35 +1183,73 @@ pub(crate) fn chart_source_record_at(
                 pos: tag,
             },
             end,
-        ));
+        )));
     }
-    None
+    Ok(None)
 }
 
 fn chart_points(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     block: usize,
     count: usize,
     point_layout: ChartPointLayout,
-) -> Option<(SourceChartData, usize)> {
+) -> Result<Option<(SourceChartData, usize)>, CodecError> {
     let point_width = match point_layout {
         ChartPointLayout::Xyz3 => 24,
         ChartPointLayout::Ext11 => 88,
     };
-    let end = block.checked_add(count.checked_mul(point_width)?)?;
-    stream.get(block..end)?;
+    let Some(end) = count
+        .checked_mul(point_width)
+        .and_then(|bytes| block.checked_add(bytes))
+    else {
+        return Ok(None);
+    };
+    if stream.get(block..end).is_none() {
+        return Ok(None);
+    }
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     if point_layout == ChartPointLayout::Xyz3 {
-        let points = (0..count)
-            .map(|index| point_m(stream, block + index * 24).map(|point| Point3::from(point.get())))
-            .collect::<Option<Vec<_>>>()?;
-        return Some((SourceChartData::xyz3(points).ok()?, end));
+        let operation = "NX raw xyz3 chart points";
+        let (mut points, _reservation) = ctx.temporary_vec(count, operation)?;
+        for index in 0..count {
+            let Some(point) = point_m(stream, block + index * 24) else {
+                return Ok(None);
+            };
+            points.push(Point3::from(point.get()));
+        }
+        return Ok(SourceChartData::xyz3_charged(ctx, points)?.map(|data| (data, end)));
     }
 
-    let mut points = Vec::with_capacity(count);
-    let mut native_parameters = Vec::with_capacity(count);
+    let operation = "NX raw ext11 chart fields";
+    let fields = std::mem::size_of::<Point3>() + std::mem::size_of::<f64>();
+    let bytes = count_u64
+        .checked_mul(cadmpeg_core::decode::u64_from_index(fields))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    ctx.charge_collection_items(
+        count_u64
+            .checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
+        operation,
+    )?;
+    let _reservation = ctx.reserve_scoped(bytes, operation)?;
+    let mut points = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, count, operation)?;
+    let mut native_parameters = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut native_parameters,
+        count,
+        operation,
+    )?;
     let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
+    let mut lane_reservations = [
+        ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
+        ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
+    ];
     for index in 0..count {
-        let (point, parameter, lanes) = chart_ext_point_at(stream, block + index * 88)?;
+        let Some((point, parameter, lanes)) = chart_ext_point_at(stream, block + index * 88) else {
+            return Ok(None);
+        };
         points.push(point);
         native_parameters.push(parameter);
         for lane in 0..2 {
@@ -934,6 +1258,12 @@ fn chart_points(
                 .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
             {
                 if let Some(values) = &mut ext_support_uv[lane] {
+                    ctx.reserve_scoped_vec(
+                        &mut lane_reservations[lane],
+                        values,
+                        1,
+                        "NX raw ext11 support-UV lane",
+                    )?;
                     values.push(lanes[lane]);
                 }
             } else {
@@ -941,10 +1271,10 @@ fn chart_points(
             }
         }
     }
-    Some((
-        SourceChartData::ext11(points, native_parameters, ext_support_uv).ok()?,
-        end,
-    ))
+    Ok(
+        SourceChartData::ext11_charged(ctx, points, native_parameters, ext_support_uv)?
+            .map(|data| (data, end)),
+    )
 }
 
 fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2]; 2])> {
@@ -962,20 +1292,40 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
     ))
 }
 
-fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
-    term_use_records(stream)
-        .into_iter()
-        .map(|term| (term.xmt, Point3::from(term.point.get())))
-        .collect()
+fn term_records(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<BTreeMap<u32, Point3>, CodecError> {
+    let mut records = BTreeMap::new();
+    for term in term_use_records(ctx, stream)? {
+        ctx.charge_collection_items(1, "NX term-use map keys")?;
+        records.insert(term.xmt, Point3::from(term.point.get()));
+    }
+    Ok(records)
 }
 
 /// Decode complete direct, escaped, and descriptor-inline `term_use` records.
-pub(crate) fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
+pub(crate) fn term_use_records(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Vec<TermUse>, CodecError> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX term-use record index")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(stream.len()),
+        "scan NX term-use records",
+    )?;
     for tag in find_tags(stream, [0, 41]) {
         if let Some((term, _)) = term_use_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, term.xmt, term);
+            insert_unique_charged(
+                ctx,
+                &mut reservation,
+                &mut out,
+                &mut duplicates,
+                term.xmt,
+                term,
+            )?;
         }
     }
     for label in find_iter(stream, b"term_use") {
@@ -983,11 +1333,18 @@ pub(crate) fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
             if let Some((term, _)) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
-                insert_unique(&mut out, &mut duplicates, term.xmt, term);
+                insert_unique_charged(
+                    ctx,
+                    &mut reservation,
+                    &mut out,
+                    &mut duplicates,
+                    term.xmt,
+                    term,
+                )?;
             }
         }
     }
-    out.into_values().collect()
+    ctx.collect_retained_vec(out.into_values(), "NX term-use records")
 }
 
 pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)> {
@@ -1038,22 +1395,42 @@ fn term_at(
     ))
 }
 
-fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
-    support_uv_records(stream)
-        .into_iter()
-        .map(|record| (record.xmt, record.values))
-        .collect()
+fn uv_records(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<BTreeMap<u32, SupportUvValues>, CodecError> {
+    let mut records = BTreeMap::new();
+    for record in support_uv_records(ctx, stream)? {
+        ctx.charge_collection_items(1, "NX support-UV map keys")?;
+        records.insert(record.xmt, record.values);
+    }
+    Ok(records)
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
-pub(crate) fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
+pub(crate) fn support_uv_records(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Vec<SupportUvRecord>, CodecError> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX support-UV record index")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(stream.len()),
+        "scan NX support-UV records",
+    )?;
     let mut tag = 0usize;
-    while tag.saturating_add(2) <= stream.len() {
+    while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
         if stream.get(tag..tag + 2) == Some(&[0, 204]) {
-            if let Some((record, end)) = support_uv_record_at(stream, tag) {
-                insert_unique(&mut out, &mut duplicates, record.xmt, record);
+            if let Some((record, end)) = support_uv_record_at(ctx, stream, tag)? {
+                insert_unique_charged(
+                    ctx,
+                    &mut reservation,
+                    &mut out,
+                    &mut duplicates,
+                    record.xmt,
+                    record,
+                )?;
                 // A complete counted UV lane owns its scalar payload. Do not
                 // rescan payload bytes as nested support arrays.
                 tag = end;
@@ -1071,20 +1448,34 @@ pub(crate) fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
         let tail = label + b"values".len();
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             let pos = tail + INLINE_UV_TAIL.len();
-            if let Some((record, end)) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos)
+            if let Some((record, end)) =
+                uv_at(ctx, stream, pos, SupportUvFraming::DescriptorInline, pos)?
             {
-                insert_unique(&mut out, &mut duplicates, record.xmt, record);
+                insert_unique_charged(
+                    ctx,
+                    &mut reservation,
+                    &mut out,
+                    &mut duplicates,
+                    record.xmt,
+                    record,
+                )?;
                 label_start = end;
                 continue;
             }
         }
         label_start = label + 1;
     }
-    out.into_values().collect()
+    ctx.collect_retained_vec(out.into_values(), "NX support-UV records")
 }
 
-pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(SupportUvRecord, usize)> {
-    (stream.get(tag..tag + 2) == Some(&[0, 204])).then_some(())?;
+pub(crate) fn support_uv_record_at(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    tag: usize,
+) -> Result<Option<(SupportUvRecord, usize)>, CodecError> {
+    if stream.get(tag..tag + 2) != Some(&[0, 204]) {
+        return Ok(None);
+    }
     for escape in [0usize, 1] {
         if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
             continue;
@@ -1095,39 +1486,86 @@ pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(Support
         } else {
             SupportUvFraming::Escaped
         };
-        if let Some(record) = uv_at(stream, base, framing, tag) {
-            return Some(record);
+        if let Some(record) = uv_at(ctx, stream, base, framing, tag)? {
+            return Ok(Some(record));
         }
     }
-    None
+    Ok(None)
 }
 
 fn uv_at(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     base: usize,
     framing: SupportUvFraming,
     pos: usize,
-) -> Option<(SupportUvRecord, usize)> {
-    let count = View::over_retained(stream)
-        .child(base, stream.len())?
-        .u32_be()?;
-    let count_usize = count as usize;
-    let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
-    let payload = base + 4 + xmt_len;
-    let packing = SupportUvPacking::try_from(*stream.get(payload)?).ok()?;
-    let values = View::over_retained(stream)
-        .child(payload + 1, stream.len())?
-        .read_counted(count as u64, 8, View::f64_be)?;
-    let values = SupportUvValues::new(packing, values).ok()?;
-    Some((
+) -> Result<Option<(SupportUvRecord, usize)>, CodecError> {
+    let Some(count) = View::over_retained(stream)
+        .child(base, stream.len())
+        .and_then(|mut view| view.u32_be())
+    else {
+        return Ok(None);
+    };
+    let Ok(count_usize) = usize::try_from(count) else {
+        return Ok(None);
+    };
+    let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
+        return Ok(None);
+    };
+    let Some(payload) = base.checked_add(4).and_then(|at| at.checked_add(xmt_len)) else {
+        return Ok(None);
+    };
+    let Some(packing) = stream
+        .get(payload)
+        .and_then(|marker| SupportUvPacking::try_from(*marker).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(value_start) = payload.checked_add(1) else {
+        return Ok(None);
+    };
+    let Some(value_end) = count_usize
+        .checked_mul(8)
+        .and_then(|bytes| value_start.checked_add(bytes))
+    else {
+        return Ok(None);
+    };
+    let Some(mut view) = View::over_retained(stream).child(value_start, value_end) else {
+        return Ok(None);
+    };
+    let count_u64 = u64::from(count);
+    let operation = "NX support-UV scalar lane";
+    ctx.charge_collection_items(count_u64, operation)?;
+    let _reservation = ctx.reserve_scoped(
+        count_u64
+            .checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
+        operation,
+    )?;
+    let mut scalars = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut scalars,
+        count_usize,
+        operation,
+    )?;
+    for _ in 0..count_usize {
+        let Some(value) = view.f64_be() else {
+            return Ok(None);
+        };
+        scalars.push(value);
+    }
+    let Some(values) = SupportUvValues::new_charged(ctx, packing, scalars)? else {
+        return Ok(None);
+    };
+    Ok(Some((
         SupportUvRecord {
             xmt,
             values,
             framing,
             pos,
         },
-        payload.checked_add(1 + count_usize.checked_mul(8)?)?,
-    ))
+        value_end,
+    )))
 }
 
 fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {

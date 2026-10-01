@@ -395,8 +395,11 @@ pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
             continue;
         };
         if let Some(record) = entity_51_record_from_frame(bytes, frame) {
+            let Some(next) = frame.next_offset() else {
+                break;
+            };
             records.push(record);
-            offset = frame.next_offset();
+            offset = next;
         } else {
             offset += 1;
         }
@@ -423,11 +426,11 @@ struct Entity51Frame {
 }
 
 impl Entity51Frame {
-    fn next_offset(self) -> usize {
+    fn next_offset(self) -> Option<usize> {
         if self.shared_terminal {
-            self.end.saturating_sub(1)
+            self.end.checked_sub(1)
         } else {
-            self.end
+            Some(self.end)
         }
     }
 }
@@ -604,8 +607,9 @@ pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>
 }
 
 fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {
-    bytes
-        .get(offset..offset.saturating_add(2))
+    offset
+        .checked_add(2)
+        .and_then(|end| bytes.get(offset..end))
         .is_some_and(|tag| tag[0] == 0 && (0x4f..=0x63).contains(&tag[1]))
 }
 
@@ -632,8 +636,8 @@ pub(crate) fn extract_streams<'a>(
     let part_view = ctx.register_slice(
         root,
         ByteRange {
-            start: start as u64,
-            end: end as u64,
+            start: cadmpeg_core::decode::u64_from_index(start),
+            end: cadmpeg_core::decode::u64_from_index(end),
         },
     )?;
     let part = part_view.window();
@@ -646,8 +650,9 @@ pub(crate) fn extract_streams<'a>(
                 continue;
             };
             if !seen.insert(offset)
-                || part
-                    .get(offset..offset.saturating_add(2))
+                || offset
+                    .checked_add(2)
+                    .and_then(|end| part.get(offset..end))
                     .is_none_or(|header| !is_zlib_header(header[0], header[1]))
             {
                 continue;
@@ -696,7 +701,8 @@ fn append_all_zlib_streams<'a>(
                 let body = classify(&inflated);
                 let file_offset = file_start + i;
                 if seen.insert(file_offset)
-                    && (!structural_only || structural_stream_candidate(body.kind(), &inflated))
+                    && (!structural_only
+                        || structural_stream_candidate(ctx, body.kind(), &inflated)?)
                 {
                     streams.push(Stream {
                         file_offset,
@@ -734,19 +740,23 @@ fn append_unindexed_structural_streams<'a>(
     append_all_zlib_streams(ctx, part_view, file_start, streams, true)
 }
 
-fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
+fn structural_stream_candidate(
+    ctx: &DecodeContext<'_>,
+    kind: StreamKind,
+    inflated: &[u8],
+) -> Result<bool, CodecError> {
     if !kind.is_parasolid() {
-        return false;
+        return Ok(false);
     }
-    let census = crate::deltas::census::walk(inflated);
+    let census = crate::deltas::census::walk(ctx, inflated)?;
     if !census.records.is_empty() || !census.tombstones.is_empty() {
-        return true;
+        return Ok(true);
     }
     if kind == StreamKind::Deltas {
-        return false;
+        return Ok(false);
     }
-    let graph = crate::topology::Graph::parse(inflated);
-    [
+    let graph = crate::topology::Graph::parse(ctx, inflated)?;
+    Ok([
         NodeKind::Body,
         NodeKind::Shell,
         NodeKind::Face,
@@ -757,7 +767,7 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
         NodeKind::Region,
     ]
     .into_iter()
-    .any(|kind| graph.of_kind(kind).next().is_some())
+    .any(|kind| graph.of_kind(kind).next().is_some()))
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`
@@ -776,7 +786,9 @@ pub(crate) fn extract_legacy_streams<'a>(
     let mut streams = Vec::new();
     let mut search = 0;
     while let Some(start) = legacy_stream_start(bytes, search) {
-        let next = legacy_stream_start(bytes, start.saturating_add(4));
+        let next = start
+            .checked_add(4)
+            .and_then(|next| legacy_stream_start(bytes, next));
         let end = next.unwrap_or(bytes.len());
         let payload = bytes.get(start..end).ok_or_else(|| {
             CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
@@ -809,13 +821,16 @@ fn legacy_stream_start(bytes: &[u8], mut search: usize) -> Option<usize> {
         if legacy_transmit_header(bytes, start) {
             return Some(start);
         }
-        search = start.saturating_add(4);
+        search = start.checked_add(4)?;
     }
     None
 }
 
 fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
-    let Some(description_len) = View::u32_be_at(bytes, start.saturating_add(2)) else {
+    let Some(description_len) = start
+        .checked_add(2)
+        .and_then(|offset| View::u32_be_at(bytes, offset))
+    else {
         return false;
     };
     let Ok(description_len) = usize::try_from(description_len) else {
@@ -890,7 +905,6 @@ fn inflate_stream<'a>(
 /// 31. NX uses the standard `78 01`, `78 9c`, and `78 da` variants, but the
 /// predicate accepts every standards-conforming FLG byte rather than treating a
 /// compression level as a format discriminator.
-#[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
 fn is_zlib_header(cmf: u8, flg: u8) -> bool {
     cmf & 0x0f == 8 && cmf >> 4 <= 7 && ((u16::from(cmf) << 8) | u16::from(flg)).is_multiple_of(31)
 }

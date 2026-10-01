@@ -18,7 +18,7 @@ fn global_defaults_apply_only_to_omitted_fields() {
     let global =
         b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,,,2HIN,1,1.0,15H20260714.000000,0,1,1Ha,1Ho,,0,0H,0H;";
     let bytes = fixed_ascii_with_global(global);
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let (parsed, losses) = crate::test_support::parse_global(&scan).unwrap();
     let context = parsed.length_context().unwrap();
 
@@ -27,7 +27,7 @@ fn global_defaults_apply_only_to_omitted_fields() {
     assert_eq!(context.minimum_resolution_mm(), 0.0);
     assert_eq!(parsed.real_precision().single_significance, 6);
     assert_eq!(parsed.real_precision().double_significance, 15);
-    assert_eq!(parsed.sender_product().as_deref(), Some("p"));
+    assert_eq!(parsed.sender_product(), Some("p"));
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -192,7 +192,7 @@ fn global_timestamps_and_scalar_ranges_follow_the_specification() {
 fn malformed_global_integer_does_not_select_its_default() {
     let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2.,2HMM,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;";
     let (parsed, losses) = crate::test_support::parse_global(
-        &crate::card::scan(&fixed_ascii_with_global(global)).unwrap(),
+        &crate::test_support::scan(&fixed_ascii_with_global(global)).unwrap(),
     )
     .unwrap();
 
@@ -218,7 +218,7 @@ fn absent_or_nonpositive_significance_fields_substitute_seventeen_digits() {
         ),
     ] {
         let (parsed, losses) =
-            crate::test_support::parse_global(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
+            crate::test_support::parse_global(&crate::test_support::scan(&fixed_ascii_with_global(global)).unwrap())
                 .unwrap();
 
         let precision = parsed.real_precision();

@@ -343,9 +343,86 @@ pub struct Coverage {
 }
 
 impl Coverage {
+    /// Records a static key after admitting its new map node and retained name.
+    pub fn record_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        key: CoverageKey,
+        count: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if let Some(value) = self.entries.get_mut(key.0) {
+            *value = count;
+            return Ok(());
+        }
+        ctx.charge_collection_items(1, "decode coverage nodes")?;
+        let name = ctx.copy_retained_text(key.0, "decode coverage names")?;
+        self.entries.insert(name, count);
+        Ok(())
+    }
+
+    /// Records a decimal-indexed key after admitting its temporary and retained name.
+    pub fn record_indexed_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        key: IndexedCoverageKey,
+        index: u32,
+        count: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let (name, bytes) = ctx.format_scoped(
+            format_args!("{}{index}{}", key.prefix, key.suffix),
+            "decode indexed coverage name",
+        )?;
+        if let Some(value) = self.entries.get_mut(&name) {
+            *value = count;
+            return Ok(());
+        }
+        ctx.charge_collection_items(1, "decode coverage nodes")?;
+        bytes.commit()?;
+        self.entries.insert(name, count);
+        Ok(())
+    }
+
+    /// Records a hexadecimal-byte key after admitting its temporary and retained name.
+    pub fn record_hex_byte_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        key: HexByteCoverageKey,
+        value: u8,
+        count: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let (name, bytes) = ctx.format_scoped(
+            format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
+            "decode hexadecimal coverage name",
+        )?;
+        if let Some(existing) = self.entries.get_mut(&name) {
+            *existing = count;
+            return Ok(());
+        }
+        ctx.charge_collection_items(1, "decode coverage nodes")?;
+        bytes.commit()?;
+        self.entries.insert(name, count);
+        Ok(())
+    }
+
     /// Records an observed count. A repeated key replaces its prior value.
     pub fn record(&mut self, key: CoverageKey, count: usize) {
         self.entries.insert(key.0.to_owned(), count);
+    }
+
+    /// Records an already-copied declared key without allocating another key.
+    ///
+    /// The caller can reserve and charge the copy before calling this method.
+    pub fn record_owned(
+        &mut self,
+        key: CoverageKey,
+        name: String,
+        count: usize,
+    ) -> Result<(), &'static str> {
+        if name != key.0 {
+            return Err("coverage name does not match its declared key");
+        }
+        self.entries.insert(name, count);
+        Ok(())
     }
 
     /// Records an observed count under a declared numeric key template.

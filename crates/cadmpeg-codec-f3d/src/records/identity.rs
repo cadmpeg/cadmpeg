@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record primitives every design-record family states: entity identity, located values, counted runs and the shared affine transform.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 pub(super) const IDENTITY_MATRIX: [[f64; 4]; 4] = [
     [1.0, 0.0, 0.0, 0.0],
     [0.0, 1.0, 0.0, 0.0],
@@ -223,6 +223,7 @@ impl<T, O> ReferenceRun<T, O> {
         ))
     }
 
+    #[cfg(test)]
     pub(super) fn into_wire(self) -> (Vec<T>, Vec<O>) {
         match self.0 {
             ReferenceRunData::Unlocated(values) => (values, Vec::new()),
@@ -347,8 +348,9 @@ impl<T: Copy> MaybeRecordedValue<T> {
 }
 
 // The wire adapter receives the optional field by reference, including its absence.
+#[cfg(test)]
 #[allow(clippy::ref_option)]
-pub(super) fn serialize_absent_u64_offset<S: Serializer>(
+pub(super) fn serialize_absent_u64_offset<S: serde::Serializer>(
     value: &Option<u64>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
@@ -408,8 +410,25 @@ impl NativeRecordId {
         kind: &str,
         key: impl std::fmt::Display,
     ) -> Result<Self, String> {
+        struct MatchText<'a>(&'a str);
+        impl std::fmt::Write for MatchText<'_> {
+            fn write_str(&mut self, value: &str) -> std::fmt::Result {
+                self.0 = self.0.strip_prefix(value).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
         let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
-        if text != format!("{stream}:{kind}#{key}") {
+        let expected_key = text
+            .strip_prefix(stream)
+            .and_then(|suffix| suffix.strip_prefix(':'))
+            .and_then(|suffix| suffix.strip_prefix(kind))
+            .and_then(|suffix| suffix.strip_prefix('#'));
+        let valid = expected_key.is_some_and(|expected_key| {
+            let mut comparison = MatchText(expected_key);
+            std::fmt::Write::write_fmt(&mut comparison, format_args!("{key}")).is_ok()
+                && comparison.0.is_empty()
+        });
+        if !valid {
             return Err(format!("id must identify {kind} at {key}"));
         }
         let stream_end = stream.len();
@@ -417,5 +436,21 @@ impl NativeRecordId {
     }
     pub(super) fn stream(&self) -> &str {
         &self.text[..self.stream_end]
+    }
+}
+
+#[cfg(test)]
+mod native_record_id_tests {
+    use super::NativeRecordId;
+
+    #[test]
+    fn native_record_id_matches_scoped_kind_and_key_without_copying_the_scope() {
+        let id = NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#42".into(), "act-guid", 42)
+            .unwrap();
+        assert_eq!(id.stream(), "f3d:Design%2Fmain");
+        assert!(
+            NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#43".into(), "act-guid", 42,)
+                .is_err()
+        );
     }
 }

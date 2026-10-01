@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse the legacy class-397 symmetric-distance Extrude grammar.
 
-use crate::bytes::{f64s_at, is_guid_relaxed, lp_utf16_bounded};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
+use crate::bytes::f64s_at;
+use crate::design::decode::text::fixed_guid_end;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
 use crate::records::feature::extrude::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
@@ -23,10 +26,10 @@ impl Class397SymmetricFrame {
     ) -> Option<Self> {
         (class_tag == "397"
             && paired_class_tag == "262"
-            && frame_length == symmetric::LEN as u64
-            && reference_count_offset == symmetric::REFERENCE_COUNT as u64
-            && reference_count == symmetric::REFERENCE_COUNT_VALUE as usize)
-            .then_some(Self(()))
+            && frame_length == u64_from_index(symmetric::LEN)
+            && reference_count_offset == u64_from_index(symmetric::REFERENCE_COUNT)
+            && reference_count == index_from_u32(symmetric::REFERENCE_COUNT_VALUE))
+        .then_some(Self(()))
     }
 
     /// The symmetric-distance extent admitted by this frame grammar.
@@ -159,10 +162,9 @@ pub(super) fn exact_symmetric_extrude_prologue(
     }
 
     let guid_offset = start.checked_add(symmetric::GUID)?;
-    let (guid, guid_end) = lp_utf16_bounded(bytes, guid_offset, 36..=36)?;
+    let guid_end = fixed_guid_end(bytes, guid_offset)?;
     let reference_count_offset = start.checked_add(symmetric::REFERENCE_COUNT)?;
-    if !is_guid_relaxed(&guid)
-        || guid_end != guid_offset.checked_add(76)?
+    if guid_end != guid_offset.checked_add(76)?
         || bytes.get(guid_end..reference_count_offset)? != [0; 3]
         || View::u32_le_at(bytes, reference_count_offset)? != symmetric::REFERENCE_COUNT_VALUE
     {

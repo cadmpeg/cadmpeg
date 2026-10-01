@@ -11,7 +11,6 @@ use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::layout::kernel_carrier_header as carrier_header;
-use crate::record_issue::{admit_formatted, admit_issue_detail};
 use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
 };
@@ -86,13 +85,7 @@ fn parse_kernel_header(
     };
     if parsed.is_none() {
         ctx.charge_retained(
-            u64::try_from(absent.len()).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "Inventor absent kernel header detail",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?,
+            cadmpeg_core::decode::u64_from_index(absent.len()),
             "retain Inventor absent kernel header detail",
         )?;
     }
@@ -112,13 +105,7 @@ fn charge_header_copy(
     .into_iter()
     .flatten()
     {
-        let length = u64::try_from(value.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "Inventor kernel header string length",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
+        let length = cadmpeg_core::decode::u64_from_index(value.len());
         ctx.charge_retained(length, operation)?;
     }
     Ok(())
@@ -156,15 +143,14 @@ pub(crate) fn decode_kernel_carrier(
         None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
     }
     .map_err(|failure| {
-        failure.into_codec_error(|error| {
+        failure.into_codec_error(ctx, |error| {
             CodecError::malformed(format_args!(
                 "Inventor {} SAB framing failed: {error}",
                 carrier.family.label()
             ))
         })
     })?;
-    admit_formatted(
-        ctx,
+    ctx.charge_formatted_retained(
         format_args!(
             "RSeStorage/B{}:record:{}",
             carrier.segment_token, carrier.record_ordinal
@@ -270,7 +256,10 @@ pub(crate) fn select_active_carrier<'a>(
         Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            admit_issue_detail(ctx, &error, "retain Inventor carrier unavailable detail")?;
+            ctx.charge_formatted_retained(
+                format_args!("{error}"),
+                "retain Inventor carrier unavailable detail",
+            )?;
             Ok(ActiveCarrierState::Unavailable(error.to_string()))
         }
     }
@@ -280,7 +269,7 @@ fn unavailable<'a>(
     ctx: &DecodeContext<'_>,
     detail: std::fmt::Arguments<'_>,
 ) -> Result<ActiveCarrierState<'a>, CodecError> {
-    admit_formatted(ctx, detail, "retain Inventor carrier unavailable detail")?;
+    ctx.charge_formatted_retained(detail, "retain Inventor carrier unavailable detail")?;
     Ok(ActiveCarrierState::Unavailable(detail.to_string()))
 }
 
@@ -326,9 +315,7 @@ fn parse_carrier<'a>(
     // The carrier window is what the record holds between its header and its
     // footer. Admitting its length here is what gives every reader a nonzero
     // length instead of a check at the point of use.
-    let carrier_len = u64::try_from(carrier.window().len()).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor kernel carrier length", u64::MAX - 1, u64::MAX)
-    })?;
+    let carrier_len = cadmpeg_core::decode::u64_from_index(carrier.window().len());
     let Some(carrier_len) = std::num::NonZeroU64::new(carrier_len) else {
         return Err(CodecError::Malformed(
             "Inventor kernel-carrier record holds no carrier bytes".into(),
@@ -373,9 +360,7 @@ fn parse_carrier<'a>(
             "Inventor kernel-carrier footer is not exactly exhausted".into(),
         ));
     }
-    let token_bytes = u64::try_from(segment_token.as_str().len()).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor carrier token length", u64::MAX - 1, u64::MAX)
-    })?;
+    let token_bytes = cadmpeg_core::decode::u64_from_index(segment_token.as_str().len());
     ctx.charge_retained(token_bytes, "retain Inventor selected carrier token")?;
     Ok(ActiveCarrier {
         segment_token: segment_token.clone(),
@@ -387,7 +372,8 @@ fn parse_carrier<'a>(
         header_kind,
         header_value,
         schema,
-        carrier_offset: record_payload_offset + carrier_header::LEN as u64,
+        carrier_offset: record_payload_offset
+            + cadmpeg_core::decode::u64_from_index(carrier_header::LEN),
         bytes: carrier,
         header,
         selected_key,
@@ -431,7 +417,8 @@ mod tests {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "Inventor".len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("Inventor".len()) - 1;
         let (limited, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -529,7 +516,8 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan Inventor kernel carrier segments"
         ));
-        policy.limits.max_work_units = inventory.segments.len() as u64;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(inventory.segments.len());
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -566,8 +554,9 @@ mod tests {
         .flatten()
         .map(String::len)
         .sum::<usize>();
-        policy.limits.max_retained_bytes =
-            (header_strings + carrier.segment_token.as_str().len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            header_strings + carrier.segment_token.as_str().len() - 1,
+        );
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -921,7 +910,7 @@ mod tests {
         bytes.extend_from_slice(&0_u32.to_le_bytes());
         for value in ["Inventor", "ASM test", "2000-01-01"] {
             bytes.push(0x07);
-            bytes.push(value.len() as u8);
+            bytes.push(u8::try_from(value.len()).expect("fixture value fits u8"));
             bytes.extend_from_slice(value.as_bytes());
         }
         for value in [1.0_f64, 1.0e-6, 1.0e-10] {
@@ -944,7 +933,7 @@ mod tests {
         }
         for value in ["Inventor", "ASM 218 test", "2000-01-01"] {
             bytes.push(0x07);
-            bytes.push(value.len() as u8);
+            bytes.push(u8::try_from(value.len()).expect("fixture value fits u8"));
             bytes.extend_from_slice(value.as_bytes());
         }
         for value in [1.0_f64, 1.0e-6, 1.0e-10] {

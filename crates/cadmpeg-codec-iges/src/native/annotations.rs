@@ -4,7 +4,8 @@
 //! builder, and the pass that fills the `annotations` arena while recording
 //! counted-tail verdicts.
 
-use super::OverdeclaredCounts;
+use super::{collect_native_items, OverdeclaredCounts};
+
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
@@ -13,6 +14,8 @@ use crate::global::GlobalTable;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -185,23 +188,44 @@ pub(super) enum NativeAnnotation {
 /// One admitted directory entry under construction: its record, its
 /// precomputed clamped primary end, and the resolver context the link
 /// builders read.
-struct Subject<'a> {
+struct Subject<'a, 'ctx> {
     sequence: u32,
     form: i64,
     record: Option<&'a ParameterRecord>,
     primary_end: usize,
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
-    parameter_resolver: &'a ParameterResolver<'a>,
+    parameter_resolver: &'a ParameterResolver<'a, 'ctx>,
+    ctx: &'a DecodeContext<'ctx>,
     v5_null_string_rule: bool,
 }
 
-impl Subject<'_> {
-    fn id(&self) -> String {
-        format!("iges:presentation:annotation#D{}", self.sequence)
+impl Subject<'_, '_> {
+    fn id(&self) -> Result<String, CodecError> {
+        self.ctx.format_retained(
+            format_args!("iges:presentation:annotation#D{}", self.sequence),
+            "iges native annotation id",
+        )
     }
 
-    fn source_entity(&self) -> String {
-        format!("iges:entity:directory#{}", self.sequence)
+    fn source_entity(&self) -> Result<String, CodecError> {
+        self.ctx.format_retained(
+            format_args!("iges:entity:directory#{}", self.sequence),
+            "iges native annotation source",
+        )
+    }
+
+    fn annotation_link_id(&self, sequence: u32) -> Result<String, CodecError> {
+        self.ctx.format_retained(
+            format_args!("iges:presentation:annotation#D{sequence}"),
+            "iges native annotation link",
+        )
+    }
+
+    fn entity_link_id(&self, sequence: u32) -> Result<String, CodecError> {
+        self.ctx.format_retained(
+            format_args!("iges:entity:directory#{sequence}"),
+            "iges native annotation entity link",
+        )
     }
 
     fn counted_tail(
@@ -236,7 +260,7 @@ impl Subject<'_> {
         )
     }
 
-    fn text_run(&self, start: usize) -> NativeTextRun {
+    fn text_run(&self, start: usize) -> Result<NativeTextRun, CodecError> {
         let record = self.record;
         let font_code = record.and_then(|record| record.integer(start + 3));
         let text = record.and_then(|record| record.string(start + 11));
@@ -244,31 +268,32 @@ impl Subject<'_> {
             && record.and_then(|record| record.integer(1)) == Some(1)
             && record.and_then(|record| record.integer(start)) == Some(1)
             && text.is_some_and(|value| value == b" ");
-        NativeTextRun {
+        let font_definition = match font_code.filter(|value| *value < 0) {
+            Some(value) => self
+                .parameter_resolver
+                .resolve_negative_type(self.sequence, start + 3, value, 310, &[0])?
+                .map(|sequence| {
+                    self.ctx.format_retained(
+                        format_args!("iges:presentation:text-font#D{sequence}"),
+                        "iges native text run font",
+                    )
+                })
+                .transpose()?,
+            None => None,
+        };
+        Ok(NativeTextRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
             text: (!v5_null_string)
-                .then(|| text.map(<[u8]>::to_vec))
-                .flatten(),
+                .then_some(text)
+                .flatten()
+                .map(|bytes| self.ctx.copy_retained(bytes, "iges native text run bytes"))
+                .transpose()?,
             box_size: [
                 record.and_then(|record| record.number(start + 1)),
                 record.and_then(|record| record.number(start + 2)),
             ],
             font_code,
-            font_definition: font_code
-                .filter(|value| *value < 0)
-                .and_then(|value| {
-                    self.parameter_resolver.resolve_negative(
-                        self.sequence,
-                        start + 3,
-                        value,
-                        ReferenceExpectation::Type {
-                            entity_type: 310,
-                            forms: vec![0],
-                        },
-                        |target| target.entity_type == 310 && target.form == 0,
-                    )
-                })
-                .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
+            font_definition,
             slant_angle: record.and_then(|record| record.number(start + 4)),
             rotation_angle: record.and_then(|record| record.number(start + 5)),
             mirror: record.and_then(|record| record.integer(start + 6)),
@@ -278,32 +303,33 @@ impl Subject<'_> {
                 record.and_then(|record| record.number(start + 9)),
                 record.and_then(|record| record.number(start + 10)),
             ],
-        }
+        })
     }
 
-    fn note_link(&self, index: usize) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver
-                    .resolve_type(self.sequence, index, sequence, 212, &[0])
-            })
-            .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
+    fn note_link(&self, index: usize) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve_type(self.sequence, index, sequence, 212, &[0])?
+            .map(|sequence| self.annotation_link_id(sequence))
+            .transpose()
     }
 
-    fn leader_link(&self, index: usize) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver.resolve(
-                    self.sequence,
-                    index,
-                    sequence,
-                    ReferenceExpectation::Named(ExpectationLabel::Type214Form1Through12),
-                    |target| target.entity_type == 214 && matches!(target.form, 1..=12),
-                )
-            })
-            .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
+    fn leader_link(&self, index: usize) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve(
+                self.sequence,
+                index,
+                sequence,
+                ReferenceExpectation::Named(ExpectationLabel::Type214Form1Through12),
+                |target| target.entity_type == 214 && matches!(target.form, 1..=12),
+            )?
+            .map(|sequence| self.annotation_link_id(sequence))
+            .transpose()
     }
 
     fn leader_list(
@@ -311,151 +337,172 @@ impl Subject<'_> {
         count_index: usize,
         leader_start: usize,
         overdeclared: &mut OverdeclaredCounts,
-    ) -> Vec<Option<String>> {
-        (0..self.counted_tail_at(count_index, leader_start, 1, overdeclared))
-            .map(|offset| self.leader_link(leader_start + offset))
-            .collect()
+    ) -> Result<Vec<Option<String>>, CodecError> {
+        let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared);
+        self.ctx
+            .collect_indexed_vec(count, "iges native annotation leader slots", |offset| {
+                self.leader_link(leader_start + offset)
+            })
     }
 
-    fn witness_link(&self, index: usize) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver
-                    .resolve_type(self.sequence, index, sequence, 106, &[40])
-            })
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    fn witness_link(&self, index: usize) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve_type(self.sequence, index, sequence, 106, &[40])?
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
-    fn curve_link(&self, index: usize, global_table: GlobalTable) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver.resolve(
-                    self.sequence,
-                    index,
-                    sequence,
-                    ReferenceExpectation::Named(ExpectationLabel::ParameterizedCurve),
-                    |target| {
-                        parameterized_curve_type(target)
-                            && target.status.is_physically_dependent()
-                            && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
-                    },
-                )
-            })
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    fn curve_link(
+        &self,
+        index: usize,
+        global_table: GlobalTable,
+    ) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve(
+                self.sequence,
+                index,
+                sequence,
+                ReferenceExpectation::Named(ExpectationLabel::ParameterizedCurve),
+                |target| {
+                    parameterized_curve_type(target)
+                        && target.status.is_physically_dependent()
+                        && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
+                },
+            )?
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
-    fn ordinate_link(&self, index: usize) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver.resolve(
-                    self.sequence,
-                    index,
-                    sequence,
-                    ReferenceExpectation::Named(ExpectationLabel::Type106Form40OrLeader),
-                    |target| {
-                        (target.entity_type == 106 && target.form == 40)
-                            || (target.entity_type == 214 && matches!(target.form, 1..=12))
-                    },
-                )
-            })
+    fn ordinate_link(&self, index: usize) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve(
+                self.sequence,
+                index,
+                sequence,
+                ReferenceExpectation::Named(ExpectationLabel::Type106Form40OrLeader),
+                |target| {
+                    (target.entity_type == 106 && target.form == 40)
+                        || (target.entity_type == 214 && matches!(target.form, 1..=12))
+                },
+            )?
             .map(|sequence| {
                 self.entries
                     .get(&sequence)
                     .filter(|target| target.entity_type == 214)
                     .map_or_else(
-                        || format!("iges:entity:directory#{sequence}"),
-                        |_| format!("iges:presentation:annotation#D{sequence}"),
+                        || self.entity_link_id(sequence),
+                        |_| self.annotation_link_id(sequence),
                     )
             })
+            .transpose()
     }
 
-    fn enclosure_link(&self, index: usize, global_table: GlobalTable) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver.resolve(
-                    self.sequence,
-                    index,
-                    sequence,
-                    ReferenceExpectation::Named(ExpectationLabel::PointDimensionEnclosure),
-                    |target| {
-                        matches!(
-                            (target.entity_type, target.form),
-                            (100 | 102, 0) | (106, 63)
-                        ) && target.status.is_physically_dependent()
-                            && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
-                    },
-                )
-            })
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    fn enclosure_link(
+        &self,
+        index: usize,
+        global_table: GlobalTable,
+    ) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve(
+                self.sequence,
+                index,
+                sequence,
+                ReferenceExpectation::Named(ExpectationLabel::PointDimensionEnclosure),
+                |target| {
+                    matches!(
+                        (target.entity_type, target.form),
+                        (100 | 102, 0) | (106, 63)
+                    ) && target.status.is_physically_dependent()
+                        && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
+                },
+            )?
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
-    fn geometry_link(&self, index: usize, global_table: GlobalTable) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver.resolve(
-                    self.sequence,
-                    index,
-                    sequence,
-                    ReferenceExpectation::Named(ExpectationLabel::SubordinateAnnotationGeometry),
-                    |target| {
-                        target.status.is_physically_dependent()
-                            && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
-                    },
-                )
-            })
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    fn geometry_link(
+        &self,
+        index: usize,
+        global_table: GlobalTable,
+    ) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve(
+                self.sequence,
+                index,
+                sequence,
+                ReferenceExpectation::Named(ExpectationLabel::SubordinateAnnotationGeometry),
+                |target| {
+                    target.status.is_physically_dependent()
+                        && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
+                },
+            )?
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
-    fn section_boundary_link(&self, index: usize) -> Option<String> {
-        self.record
-            .and_then(|record| record.integer(index))
-            .and_then(|sequence| {
-                self.parameter_resolver.resolve(
-                    self.sequence,
-                    index,
-                    sequence,
-                    ReferenceExpectation::Named(ExpectationLabel::SectionBoundaryEntity),
-                    section_boundary_type,
-                )
-            })
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    fn section_boundary_link(&self, index: usize) -> Result<Option<String>, CodecError> {
+        let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
+            return Ok(None);
+        };
+        self.parameter_resolver
+            .resolve(
+                self.sequence,
+                index,
+                sequence,
+                ReferenceExpectation::Named(ExpectationLabel::SectionBoundaryEntity),
+                section_boundary_type,
+            )?
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 }
 
 fn general_note(
-    subject: &Subject<'_>,
+    subject: &Subject<'_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let count = subject.counted_tail(1, 12, overdeclared);
-    NativeAnnotation::GeneralNote {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+    Ok(NativeAnnotation::GeneralNote {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
         declared_string_count: record.and_then(|record| record.integer(1)),
-        strings: (0..count)
-            .map(|index| subject.text_run(2 + index * 12))
-            .collect(),
+        strings: subject.ctx.collect_indexed_vec(
+            count,
+            "iges native general note text run slots",
+            |index| subject.text_run(2 + index * 12),
+        )?,
         transformation,
-    }
+    })
 }
 
 fn new_general_note(
-    subject: &Subject<'_>,
+    subject: &Subject<'_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let count = subject.counted_tail(12, 20, overdeclared);
-    NativeAnnotation::NewGeneralNote {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+    Ok(NativeAnnotation::NewGeneralNote {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         containment_size: [
             record.and_then(|record| record.number(1)),
             record.and_then(|record| record.number(2)),
@@ -474,10 +521,12 @@ fn new_general_note(
         ],
         normal_interline_spacing: record.and_then(|record| record.number(11)),
         declared_string_count: record.and_then(|record| record.integer(12)),
-        strings: (0..count)
-            .map(|index| {
+        strings: subject.ctx.collect_indexed_vec(
+            count,
+            "iges native new note text run slots",
+            |index| -> Result<NativeNewTextRun, CodecError> {
                 let start = 13 + index * 20;
-                NativeNewTextRun {
+                Ok(NativeNewTextRun {
                     fixed_or_variable: record.and_then(|record| record.integer(start)),
                     character_size: [
                         record.and_then(|record| record.number(start + 1)),
@@ -489,28 +538,33 @@ fn new_general_note(
                     character_angle: record.and_then(|record| record.number(start + 6)),
                     control_codes: record
                         .and_then(|record| record.string(start + 7))
-                        .map(<[u8]>::to_vec),
+                        .map(|bytes| {
+                            subject
+                                .ctx
+                                .copy_retained(bytes, "iges native new note control codes")
+                        })
+                        .transpose()?,
                     // A 213 text block is the 212 layout shifted by its
                     // eight-token prefix.
-                    text: subject.text_run(start + 8),
-                }
-            })
-            .collect(),
+                    text: subject.text_run(start + 8)?,
+                })
+            },
+        )?,
         transformation,
-    }
+    })
 }
 
 fn leader(
-    subject: &Subject<'_>,
+    subject: &Subject<'_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let count = subject.counted_tail_at(1, 7, 2, overdeclared);
     let z = record.and_then(|record| record.number(4));
-    NativeAnnotation::Leader {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+    Ok(NativeAnnotation::Leader {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
         declared_segment_count: record.and_then(|record| record.integer(1)),
         arrowhead_size: [
@@ -522,64 +576,66 @@ fn leader(
             record.and_then(|record| record.number(6)),
             z,
         ],
-        segment_tails: (0..count)
-            .map(|index| {
-                [
+        segment_tails: subject.ctx.collect_indexed_vec(
+            count,
+            "iges native leader segment tail slots",
+            |index| {
+                Ok([
                     record.and_then(|record| record.number(7 + index * 2)),
                     record.and_then(|record| record.number(8 + index * 2)),
                     z,
-                ]
-            })
-            .collect(),
+                ])
+            },
+        )?,
         transformation,
-    }
+    })
 }
 
 fn flag_note(
-    subject: &Subject<'_>,
+    subject: &Subject<'_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let leaders = subject.leader_list(6, 7, overdeclared);
-    NativeAnnotation::FlagNote {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+    let leaders = subject.leader_list(6, 7, overdeclared)?;
+    Ok(NativeAnnotation::FlagNote {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         origin: [
             record.and_then(|record| record.number(1)),
             record.and_then(|record| record.number(2)),
             record.and_then(|record| record.number(3)),
         ],
         rotation: record.and_then(|record| record.number(4)),
-        note: subject.note_link(5),
+        note: subject.note_link(5)?,
         declared_leader_count: record.and_then(|record| record.integer(6)),
         leaders,
         transformation,
-    }
+    })
 }
 
 fn general_label(
-    subject: &Subject<'_>,
+    subject: &Subject<'_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let leaders = subject.leader_list(2, 3, overdeclared);
-    NativeAnnotation::GeneralLabel {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
-        note: subject.note_link(1),
+    let leaders = subject.leader_list(2, 3, overdeclared)?;
+    Ok(NativeAnnotation::GeneralLabel {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
+        note: subject.note_link(1)?,
         declared_leader_count: record.and_then(|record| record.integer(2)),
         leaders,
         transformation,
-    }
+    })
 }
 
 fn general_symbol(
-    subject: &Subject<'_>,
+    subject: &Subject<'_, '_>,
     transformation: Option<String>,
     global_table: GlobalTable,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let end = subject.primary_end;
     let declared_geometry_count = record.and_then(|record| record.integer(2));
@@ -605,35 +661,39 @@ fn general_symbol(
             (finish <= end).then_some((geometry_count, leader_count_index, leader_count))
         })
         .unwrap_or_default();
-    NativeAnnotation::GeneralSymbol {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+    Ok(NativeAnnotation::GeneralSymbol {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
-        note: subject.note_link(1),
+        note: subject.note_link(1)?,
         declared_geometry_count,
-        geometry: (0..geometry_count)
-            .map(|offset| subject.geometry_link(3 + offset, global_table))
-            .collect(),
+        geometry: subject.ctx.collect_indexed_vec(
+            geometry_count,
+            "iges native symbol geometry slots",
+            |offset| subject.geometry_link(3 + offset, global_table),
+        )?,
         declared_leader_count,
-        leaders: (0..leader_count)
-            .map(|offset| subject.leader_link(leader_count_index + 1 + offset))
-            .collect(),
+        leaders: subject.ctx.collect_indexed_vec(
+            leader_count,
+            "iges native symbol leader slots",
+            |offset| subject.leader_link(leader_count_index + 1 + offset),
+        )?,
         transformation,
-    }
+    })
 }
 
 fn sectioned_area(
-    subject: &Subject<'_>,
+    subject: &Subject<'_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let island_count = subject.counted_tail_at(8, 9, 1, overdeclared);
-    NativeAnnotation::SectionedArea {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+    Ok(NativeAnnotation::SectionedArea {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
-        boundary: subject.section_boundary_link(1),
+        boundary: subject.section_boundary_link(1)?,
         fill_pattern: record.and_then(|record| record.integer(2)),
         pattern_anchor: [
             record.and_then(|record| record.number(3)),
@@ -643,26 +703,35 @@ fn sectioned_area(
         pattern_spacing: record.and_then(|record| record.number(6)),
         pattern_angle: record.and_then(|record| record.number(7)),
         declared_island_count: record.and_then(|record| record.integer(8)),
-        islands: (0..island_count)
-            .map(|offset| subject.section_boundary_link(9 + offset))
-            .collect(),
+        islands: subject.ctx.collect_indexed_vec(
+            island_count,
+            "iges native section island slots",
+            |offset| subject.section_boundary_link(9 + offset),
+        )?,
         transformation,
-    }
+    })
 }
 
 pub(super) fn build(
     directory: &[DirectoryEntry],
-    by_directory: &BTreeMap<u32, &ParameterRecord>,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    parameter_resolver: &ParameterResolver<'_>,
+    indexes: (
+        &BTreeMap<u32, &ParameterRecord>,
+        &BTreeMap<u32, &DirectoryEntry>,
+    ),
+    parameter_resolver: &ParameterResolver<'_, '_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
     global_table: GlobalTable,
-) -> Vec<NativeAnnotation> {
-    directory
-        .iter()
-        .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
-        .map(|(entry, kind)| {
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<NativeAnnotation>, CodecError> {
+    let (by_directory, entries) = indexes;
+    collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
+        "iges native annotation slots",
+        |(entry, kind)| -> Result<NativeAnnotation, CodecError> {
             let record = by_directory.get(&entry.sequence).copied();
             let subject = Subject {
                 sequence: entry.sequence,
@@ -671,61 +740,68 @@ pub(super) fn build(
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
                 entries,
                 parameter_resolver,
+                ctx,
                 v5_null_string_rule: global_table == GlobalTable::V5_0
                     && matches!(kind, AnnotationKind::GeneralNote),
             };
             let transformation = (entry.transform > 0)
-                .then(|| format!("iges:native:transformation#D{}", entry.transform));
-            match kind {
+                .then(|| {
+                    ctx.format_retained(
+                        format_args!("iges:native:transformation#D{}", entry.transform),
+                        "iges native annotation transformation",
+                    )
+                })
+                .transpose()?;
+            Ok(match kind {
                 AnnotationKind::GeneralNote => {
-                    general_note(&subject, transformation, overdeclared_counts)
+                    general_note(&subject, transformation, overdeclared_counts)?
                 }
                 AnnotationKind::NewGeneralNote => {
-                    new_general_note(&subject, transformation, overdeclared_counts)
+                    new_general_note(&subject, transformation, overdeclared_counts)?
                 }
-                AnnotationKind::Leader => leader(&subject, transformation, overdeclared_counts),
+                AnnotationKind::Leader => leader(&subject, transformation, overdeclared_counts)?,
                 AnnotationKind::FlagNote => {
-                    flag_note(&subject, transformation, overdeclared_counts)
+                    flag_note(&subject, transformation, overdeclared_counts)?
                 }
                 AnnotationKind::GeneralLabel => {
-                    general_label(&subject, transformation, overdeclared_counts)
+                    general_label(&subject, transformation, overdeclared_counts)?
                 }
                 AnnotationKind::GeneralSymbol => {
-                    general_symbol(&subject, transformation, global_table)
+                    general_symbol(&subject, transformation, global_table)?
                 }
                 AnnotationKind::SectionedArea => {
-                    sectioned_area(&subject, transformation, overdeclared_counts)
+                    sectioned_area(&subject, transformation, overdeclared_counts)?
                 }
                 AnnotationKind::AngularDimension => NativeAnnotation::AngularDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
-                    note: subject.note_link(1),
-                    witnesses: [subject.witness_link(2), subject.witness_link(3)],
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
+                    note: subject.note_link(1)?,
+                    witnesses: [subject.witness_link(2)?, subject.witness_link(3)?],
                     vertex: [
                         record.and_then(|record| record.number(4)),
                         record.and_then(|record| record.number(5)),
                     ],
                     radius: record.and_then(|record| record.number(6)),
-                    leaders: [subject.leader_link(7), subject.leader_link(8)],
+                    leaders: [subject.leader_link(7)?, subject.leader_link(8)?],
                     transformation,
                 },
                 AnnotationKind::CurveDimension => NativeAnnotation::CurveDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
-                    note: subject.note_link(1),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
+                    note: subject.note_link(1)?,
                     curves: [
-                        subject.curve_link(2, global_table),
-                        subject.curve_link(3, global_table),
+                        subject.curve_link(2, global_table)?,
+                        subject.curve_link(3, global_table)?,
                     ],
-                    leaders: [subject.leader_link(4), subject.leader_link(5)],
-                    witnesses: [subject.witness_link(6), subject.witness_link(7)],
+                    leaders: [subject.leader_link(4)?, subject.leader_link(5)?],
+                    witnesses: [subject.witness_link(6)?, subject.witness_link(7)?],
                     transformation,
                 },
                 AnnotationKind::DiameterDimension => NativeAnnotation::DiameterDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
-                    note: subject.note_link(1),
-                    leaders: [subject.leader_link(2), subject.leader_link(3)],
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
+                    note: subject.note_link(1)?,
+                    leaders: [subject.leader_link(2)?, subject.leader_link(3)?],
                     center: [
                         record.and_then(|record| record.number(4)),
                         record.and_then(|record| record.number(5)),
@@ -733,43 +809,47 @@ pub(super) fn build(
                     transformation,
                 },
                 AnnotationKind::LinearDimension => NativeAnnotation::LinearDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     form: subject.form,
-                    note: subject.note_link(1),
-                    leaders: [subject.leader_link(2), subject.leader_link(3)],
-                    witnesses: [subject.witness_link(4), subject.witness_link(5)],
+                    note: subject.note_link(1)?,
+                    leaders: [subject.leader_link(2)?, subject.leader_link(3)?],
+                    witnesses: [subject.witness_link(4)?, subject.witness_link(5)?],
                     transformation,
                 },
                 AnnotationKind::OrdinateDimension => NativeAnnotation::OrdinateDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     form: subject.form,
-                    note: subject.note_link(1),
-                    ordinate: subject.ordinate_link(2),
-                    supplemental_leader: (subject.form == 1)
-                        .then(|| subject.leader_link(3))
-                        .flatten(),
+                    note: subject.note_link(1)?,
+                    ordinate: subject.ordinate_link(2)?,
+                    supplemental_leader: if subject.form == 1 {
+                        subject.leader_link(3)?
+                    } else {
+                        None
+                    },
                     transformation,
                 },
                 AnnotationKind::PointDimension => NativeAnnotation::PointDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
-                    note: subject.note_link(1),
-                    leader: subject.leader_link(2),
-                    enclosure: subject.enclosure_link(3, global_table),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
+                    note: subject.note_link(1)?,
+                    leader: subject.leader_link(2)?,
+                    enclosure: subject.enclosure_link(3, global_table)?,
                     transformation,
                 },
                 AnnotationKind::RadiusDimension => NativeAnnotation::RadiusDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     form: subject.form,
-                    note: subject.note_link(1),
+                    note: subject.note_link(1)?,
                     leaders: [
-                        subject.leader_link(2),
-                        (subject.form == 1)
-                            .then(|| subject.leader_link(5))
-                            .flatten(),
+                        subject.leader_link(2)?,
+                        if subject.form == 1 {
+                            subject.leader_link(5)?
+                        } else {
+                            None
+                        },
                     ],
                     center: [
                         record.and_then(|record| record.number(3)),
@@ -777,7 +857,7 @@ pub(super) fn build(
                     ],
                     transformation,
                 },
-            }
-        })
-        .collect()
+            })
+        },
+    )
 }

@@ -3,9 +3,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
@@ -17,6 +17,91 @@ use crate::test_support::test_curves_and_surfaces::{
 };
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
+
+fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used + limit.additional;
+            }
+            other => panic!("expected spline collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("spline collection refusal was not reached: {operation}");
+}
+
+#[test]
+fn spline_identity_copies_refuse_retained_byte_limit() {
+    let bytes = parametric_spline_curve_file();
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges splines identity copy" {
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            Ok(_) => panic!("spline identity refusal was not reached at cap {cap}"),
+            Err(error) => panic!("expected spline identity refusal: {error:?}"),
+        }
+    }
+    panic!("spline identity refusal was not reached within 4096 boundaries");
+}
+
+#[test]
+fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
+    let curve = parametric_spline_curve_file();
+    for operation in [
+        "iges spline curve knots",
+        "iges spline curve admitted knots",
+        "iges spline neutral point slots",
+        "iges spline neutral vertex slots",
+        "iges spline neutral curve slots",
+        "iges spline neutral edge slots",
+        "iges spline wire edge slots",
+        "iges entity loss slots",
+    ] {
+        assert_spline_collection_refusal(&curve, operation);
+    }
+    let surface = parametric_spline_surface_file();
+    for operation in [
+        "iges spline surface u knots",
+        "iges spline surface v knots",
+        "iges spline surface admitted u knots",
+        "iges spline surface admitted v knots",
+        "iges spline surface pole rows",
+        "iges spline surface pole row controls",
+        "iges spline neutral surface slots",
+    ] {
+        assert_spline_collection_refusal(&surface, operation);
+    }
+}
 
 fn type_112_parameters(
     continuity: i64,
@@ -114,7 +199,8 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -154,7 +240,8 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

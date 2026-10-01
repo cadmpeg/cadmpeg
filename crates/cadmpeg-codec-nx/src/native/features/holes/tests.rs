@@ -8,6 +8,55 @@ use crate::native::features::operation_record::FeatureOperationRecord;
 
 use crate::native::features::test_support::check_lane_wire;
 
+fn simple_hole_construction_groups(
+    labels: &[crate::native::features::FeatureOperationLabel],
+    lanes: &[FeatureSimpleHoleRepeatedScalarLane],
+    references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
+) -> Vec<FeatureSimpleHoleConstructionGroup> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_construction_groups(
+            ctx, labels, lanes, references,
+        )
+    })
+    .expect("simple hole construction groups")
+}
+
+fn hole_package_group_uses(
+    lanes: &[crate::native::features::holes::FeatureHolePackageConstructionGroupLane],
+    groups: &[FeatureSimpleHoleConstructionGroup],
+) -> Vec<crate::native::features::holes::FeatureHolePackageConstructionGroupUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_hole_package_construction_group_uses(
+            ctx, lanes, groups,
+        )
+    })
+    .expect("hole package group uses")
+}
+
+fn simple_hole_templates(
+    labels: &[crate::native::features::FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[crate::native::features::FeaturePayloadString],
+) -> Vec<crate::native::features::holes::FeatureSimpleHoleTemplate> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_templates(ctx, labels, records, strings)
+    })
+    .expect("simple hole templates")
+}
+
+fn threaded_hole_templates(
+    labels: &[crate::native::features::FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[crate::native::features::FeaturePayloadString],
+) -> Vec<crate::native::features::holes::FeatureThreadedHoleTemplate> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_threaded_hole_templates(
+            ctx, labels, records, strings,
+        )
+    })
+    .expect("threaded hole templates")
+}
+
 #[test]
 fn symbolic_thread_text_frame_derives_marker() {
     let json = r#"{"id":"frame","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"CUT","source_offset":10}"#;
@@ -30,8 +79,11 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
     let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
-    let frames = crate::native::features::holes::symbolic_thread_text_frames(record)
-        .expect("two text frames");
+    let frames = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::symbolic_thread_text_frames(ctx, record)
+    })
+    .unwrap()
+    .expect("two text frames");
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].marker, crate::om::OperationTextMarker::Text);
     assert_eq!(frames[0].offset, 500);
@@ -48,7 +100,72 @@ fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
     let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
-    assert!(crate::native::features::holes::symbolic_thread_text_frames(record).is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::symbolic_thread_text_frames(ctx, record)
+    })
+    .unwrap()
+    .is_none());
+}
+
+fn symbolic_thread_container() -> crate::container::Container<'static> {
+    let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0".to_vec();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "SYMBOLIC_THREAD", payload)],
+        &[],
+    );
+    let file =
+        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("symbolic thread container")
+}
+
+fn symbolic_thread_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = symbolic_thread_container();
+    let records = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+    })
+    .expect("admitted symbolic thread");
+    assert_eq!(records.len(), 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+                .expect_err("symbolic thread resource limit")
+        },
+    )
+}
+
+#[test]
+fn symbolic_thread_route_refuses_collection_limit() {
+    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn symbolic_thread_route_refuses_retained_limit() {
+    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn symbolic_thread_route_refuses_work_limit() {
+    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -73,8 +190,8 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "record#3".to_string(),
         operation_label: label.id.clone(),
         ordinal: 3,
-        sha256: crate::native::hex::Sha256Hex::digest(b"a"),
-        payload_sha256: crate::native::hex::Sha256Hex::digest(b"b"),
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"a"),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"b"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
             .unwrap(),
@@ -89,7 +206,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let templates = crate::native::features::holes::feature_simple_hole_templates(
+    let templates = simple_hole_templates(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&string),
@@ -172,7 +289,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let counterbored_templates = crate::native::features::holes::feature_simple_hole_templates(
+    let counterbored_templates = simple_hole_templates(
         &[counterbored_label],
         &[counterbored_record],
         &[counterbored_string],
@@ -199,7 +316,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let countersunk_templates = crate::native::features::holes::feature_simple_hole_templates(
+    let countersunk_templates = simple_hole_templates(
         &[countersunk_label],
         &[countersunk_record],
         &[countersunk_string],
@@ -214,14 +331,12 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     duplicate.id = "payload-string#3-1".to_string();
     duplicate.ordinal = 1;
     duplicate.source_offset += 64;
-    assert!(
-        crate::native::features::holes::feature_simple_hole_templates(
-            std::slice::from_ref(&label),
-            std::slice::from_ref(&record),
-            &[string.clone(), duplicate],
-        )
-        .is_empty()
-    );
+    assert!(simple_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &[string.clone(), duplicate],
+    )
+    .is_empty());
 
     let unknown = FeaturePayloadString {
         id: "payload-string#3-1".to_string(),
@@ -230,28 +345,19 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         value: crate::payload_text::PayloadText::new("Hole_Unknown".to_string()).unwrap(),
         source_offset: 194,
     };
-    assert!(
-        crate::native::features::holes::feature_simple_hole_templates(
-            std::slice::from_ref(&label),
-            std::slice::from_ref(&record),
-            &[string.clone(), unknown],
-        )
-        .is_empty()
-    );
+    assert!(simple_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &[string.clone(), unknown],
+    )
+    .is_empty());
 
     let mut malformed = string;
     malformed.value = crate::payload_text::PayloadText::new(
         "Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string(),
     )
     .unwrap();
-    assert!(
-        crate::native::features::holes::feature_simple_hole_templates(
-            &[label],
-            &[record],
-            &[malformed]
-        )
-        .is_empty()
-    );
+    assert!(simple_hole_templates(&[label], &[record], &[malformed]).is_empty());
 }
 
 #[test]
@@ -274,8 +380,8 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         id: "record#threaded".to_string(),
         operation_label: label.id.clone(),
         ordinal: 7,
-        sha256: crate::native::hex::Sha256Hex::digest(b"a"),
-        payload_sha256: crate::native::hex::Sha256Hex::digest(b"b"),
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"a"),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"b"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
             .unwrap(),
@@ -290,7 +396,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let templates = crate::native::features::holes::feature_threaded_hole_templates(
+    let templates = threaded_hole_templates(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&string),
@@ -319,40 +425,464 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
 
     let mut non_simple_label = label.clone();
     non_simple_label.value = "CBORE_HOLE".to_string();
-    assert!(
-        crate::native::features::holes::feature_threaded_hole_templates(
-            &[non_simple_label],
-            std::slice::from_ref(&record),
-            std::slice::from_ref(&string),
-        )
-        .is_empty()
-    );
+    assert!(threaded_hole_templates(
+        &[non_simple_label],
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&string),
+    )
+    .is_empty());
 
     let mut duplicate = string.clone();
     duplicate.id = "payload-string#threaded-1".to_string();
     duplicate.ordinal = 1;
     duplicate.source_offset += 64;
-    assert!(
-        crate::native::features::holes::feature_threaded_hole_templates(
-            std::slice::from_ref(&label),
-            std::slice::from_ref(&record),
-            &[string.clone(), duplicate],
-        )
-        .is_empty()
-    );
+    assert!(threaded_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &[string.clone(), duplicate],
+    )
+    .is_empty());
 
     let mut unknown = string;
     unknown.value = crate::payload_text::PayloadText::new(
         "Hole_ThreadedHole_M Profile_Blind_Extra".to_string(),
     )
     .unwrap();
-    assert!(
-        crate::native::features::holes::feature_threaded_hole_templates(
-            &[label],
-            &[record],
-            &[unknown]
+    assert!(threaded_hole_templates(&[label], &[record], &[unknown]).is_empty());
+}
+
+fn template_inputs(
+    value: &str,
+) -> (
+    crate::native::features::FeatureOperationLabel,
+    FeatureOperationRecord,
+    crate::native::features::FeaturePayloadString,
+) {
+    let label = crate::native::features::FeatureOperationLabel {
+        id: "operation#template".to_string(),
+        section_link: "section#0".to_string(),
+        ordinal: 0,
+        value: "SIMPLE HOLE".to_string(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
+        stable_identity: None,
+        source_offset: 100,
+    };
+    let record = FeatureOperationRecord {
+        id: "record#template".to_string(),
+        operation_label: label.id.clone(),
+        ordinal: 0,
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"a"),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"b"),
+        stable_identity: None,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
+            .unwrap(),
+    };
+    let string = crate::native::features::FeaturePayloadString {
+        id: "payload-string#template-0".to_string(),
+        operation_record: record.id.clone(),
+        ordinal: 0,
+        value: crate::payload_text::PayloadText::new(value.to_string()).unwrap(),
+        source_offset: 130,
+    };
+    (label, record, string)
+}
+
+#[derive(Clone, Copy)]
+enum TemplateRoute {
+    Simple,
+    Threaded,
+}
+
+fn template_route_refusal(
+    value: &str,
+    route: TemplateRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (label, record, string) = template_inputs(value);
+    let call = |ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                labels: &[crate::native::features::FeatureOperationLabel],
+                records: &[FeatureOperationRecord],
+                strings: &[crate::native::features::FeaturePayloadString]| {
+        match route {
+            TemplateRoute::Simple => crate::native::features::holes::feature_simple_hole_templates(
+                ctx, labels, records, strings,
+            )
+            .map(|values| values.len()),
+            TemplateRoute::Threaded => {
+                crate::native::features::holes::feature_threaded_hole_templates(
+                    ctx, labels, records, strings,
+                )
+                .map(|values| values.len())
+            }
+        }
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        call(
+            ctx,
+            std::slice::from_ref(&label),
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&string),
         )
-        .is_empty()
+    })
+    .expect("admitted hole template");
+    assert_eq!(admitted, 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| call(ctx, &[label], &[record], &[string]).expect_err("hole template resource limit"),
+    )
+}
+
+#[test]
+fn simple_hole_template_route_refuses_collection_limit() {
+    let error = template_route_refusal(
+        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        TemplateRoute::Simple,
+        |policy| policy.limits.max_collection_items = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn simple_hole_template_route_refuses_retained_limit() {
+    let error = template_route_refusal(
+        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        TemplateRoute::Simple,
+        |policy| policy.limits.max_retained_bytes = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn simple_hole_template_route_refuses_scoped_limit() {
+    let error = template_route_refusal(
+        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        TemplateRoute::Simple,
+        |policy| policy.limits.max_materialized_bytes = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn simple_hole_template_route_refuses_work_limit() {
+    let error = template_route_refusal(
+        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        TemplateRoute::Simple,
+        |policy| policy.limits.max_work_units = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_collection_limit() {
+    let error = template_route_refusal(
+        "Hole_ThreadedHole_M Profile_Blind",
+        TemplateRoute::Threaded,
+        |policy| policy.limits.max_collection_items = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_retained_limit() {
+    let error = template_route_refusal(
+        "Hole_ThreadedHole_M Profile_Blind",
+        TemplateRoute::Threaded,
+        |policy| policy.limits.max_retained_bytes = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_scoped_limit() {
+    let error = template_route_refusal(
+        "Hole_ThreadedHole_M Profile_Blind",
+        TemplateRoute::Threaded,
+        |policy| policy.limits.max_materialized_bytes = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_work_limit() {
+    let error = template_route_refusal(
+        "Hole_ThreadedHole_M Profile_Blind",
+        TemplateRoute::Threaded,
+        |policy| policy.limits.max_work_units = 0,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn repeated_scalar_lane_container() -> crate::container::Container<'static> {
+    let mut scalar = 25.4f64.to_be_bytes();
+    scalar[0] -= 0x10;
+    let mut payload = scalar.to_vec();
+    payload.push(0x7f);
+    payload.extend_from_slice(&scalar);
+    payload.extend_from_slice(&[0x04, 0x08]);
+    payload.extend_from_slice(b"Hole_X\0");
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "SIMPLE HOLE", payload)],
+        &[],
+    );
+    let file =
+        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("repeated scalar lane container")
+}
+
+fn repeated_scalar_block_reference_container() -> crate::container::Container<'static> {
+    let shifted = |value: f64| {
+        let mut bytes = value.to_be_bytes();
+        bytes[0] -= 0x10;
+        bytes
+    };
+    let mut payload = Vec::new();
+    for _ in 0..2 {
+        payload.extend_from_slice(&shifted(508.0));
+        payload.extend_from_slice(&shifted(38.1));
+        payload.extend_from_slice(&[0xf0, 0x03, 0xf0, 0x04]);
+    }
+    let template = b"Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer";
+    payload.extend_from_slice(&[
+        0x04,
+        u8::try_from(template.len() + 2).expect("fixture value fits u8"),
+    ]);
+    payload.extend_from_slice(template);
+    payload.push(0);
+    let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[3, 0xff, 0xff, 0xff], "SIMPLE HOLE", payload)],
+        &store,
+    );
+    let file =
+        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("repeated scalar block reference container")
+}
+
+fn hole_package_lane_container() -> crate::container::Container<'static> {
+    let payload = vec![
+        0x7e, 0x00, 0x00, 0x01, 0x00, 0x00, 0x46, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcd,
+        0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
+    ];
+    let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "HOLE PACKAGE", payload)],
+        &store,
+    );
+    let file =
+        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("hole package lane container")
+}
+
+fn hole_package_lane_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = hole_package_lane_container();
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_hole_package_construction_group_lanes(
+            ctx, &container,
+        )
+    })
+    .expect("admitted hole package lane");
+    assert_eq!(admitted.len(), 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_hole_package_construction_group_lanes(
+                ctx, &container,
+            )
+            .expect_err("hole package lane resource limit")
+        },
+    )
+}
+
+#[test]
+fn hole_package_lane_route_refuses_collection_limit() {
+    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn hole_package_lane_route_refuses_retained_limit() {
+    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn hole_package_lane_route_refuses_scoped_limit() {
+    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn hole_package_lane_route_refuses_work_limit() {
+    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn repeated_scalar_block_reference_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = repeated_scalar_block_reference_container();
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
+            ctx, &container,
+        )
+    })
+    .expect("admitted repeated scalar block references");
+    assert_eq!(admitted.len(), 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
+        ctx, &container,
+    )
+    .expect_err("repeated scalar block reference resource limit")
+        },
+    )
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_collection_limit() {
+    let error = repeated_scalar_block_reference_route_refusal(|policy| {
+        policy.limits.max_collection_items = 0;
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_retained_limit() {
+    let error = repeated_scalar_block_reference_route_refusal(|policy| {
+        policy.limits.max_retained_bytes = 0;
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
+    let error = repeated_scalar_block_reference_route_refusal(|policy| {
+        policy.limits.max_materialized_bytes = 0;
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_work_limit() {
+    let error =
+        repeated_scalar_block_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn repeated_scalar_lane_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = repeated_scalar_lane_container();
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(ctx, &container)
+    })
+    .expect("admitted repeated scalar lane");
+    assert_eq!(admitted.len(), 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
+                ctx, &container,
+            )
+            .expect_err("repeated scalar lane resource limit")
+        },
+    )
+}
+
+#[test]
+fn repeated_scalar_lane_route_refuses_collection_limit() {
+    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn repeated_scalar_lane_route_refuses_retained_limit() {
+    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn repeated_scalar_lane_route_refuses_work_limit() {
+    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 
@@ -412,9 +942,126 @@ fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
     );
 }
 
+fn simple_group_inputs() -> (
+    Vec<crate::native::features::FeatureOperationLabel>,
+    Vec<FeatureSimpleHoleRepeatedScalarLane>,
+    Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>,
+) {
+    use crate::native::features::holes::{SimpleHoleBlockReference, SimpleHoleReferencePair};
+    let scalar = {
+        let mut raw = 25.4_f64.to_be_bytes();
+        raw[0] -= 0x10;
+        crate::om::scalar::ShiftedBinary64::read(&raw).unwrap()
+    };
+    let labels = (0..2)
+        .map(|index| crate::native::features::FeatureOperationLabel {
+            id: format!("operation#1-{index}"),
+            section_link: "section#1".to_string(),
+            ordinal: index,
+            value: "SIMPLE HOLE".to_string(),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
+            stable_identity: None,
+            source_offset: u64::from(index),
+        })
+        .collect::<Vec<_>>();
+    let lanes = labels
+        .iter()
+        .map(|label| FeatureSimpleHoleRepeatedScalarLane {
+            id: format!("lane-{}", label.id),
+            operation_label: label.id.clone(),
+            values: crate::om::nonempty::NonEmpty::new([crate::om::scalar::RepeatedScalar {
+                scalar,
+                witness_offsets: [1, 2],
+            }])
+            .unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let references = labels
+        .iter()
+        .map(|label| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
+            id: format!("references-{}", label.id),
+            operation_label: label.id.clone(),
+            first: SimpleHoleReferencePair {
+                references: ["a", "b"].map(|data_block| SimpleHoleBlockReference {
+                    data_block: data_block.to_string(),
+                    source_offset: 3,
+                }),
+                wrapped: false,
+            },
+            second: SimpleHoleReferencePair {
+                references: ["c", "d"].map(|data_block| SimpleHoleBlockReference {
+                    data_block: data_block.to_string(),
+                    source_offset: 4,
+                }),
+                wrapped: false,
+            },
+        })
+        .collect::<Vec<_>>();
+    (labels, lanes, references)
+}
+
+fn simple_group_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (labels, lanes, references) = simple_group_inputs();
+    let admitted = simple_hole_construction_groups(&labels, &lanes, &references);
+    assert_eq!(admitted.len(), 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_simple_hole_construction_groups(
+                ctx,
+                &labels,
+                &lanes,
+                &references,
+            )
+            .expect_err("simple hole group resource limit")
+        },
+    )
+}
+
+#[test]
+fn simple_group_route_refuses_collection_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn simple_group_route_refuses_retained_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn simple_group_route_refuses_scoped_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn simple_group_route_refuses_work_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
 #[test]
 fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
-    use crate::native::features::holes::feature_simple_hole_construction_groups;
     use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
     use crate::native::features::holes::{
         FeatureSimpleHoleRepeatedScalarLaneBlockReferences, SimpleHoleBlockReference,
@@ -491,7 +1138,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         label("operation#1-3", 1),
         label("operation#1-4", 2),
     ];
-    let groups = feature_simple_hole_construction_groups(&labels, &lanes, &references);
+    let groups = simple_hole_construction_groups(&labels, &lanes, &references);
     assert_eq!(groups.len(), 1);
     assert_eq!(
         groups[0]
@@ -522,9 +1169,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-2", "block-4"),
         reference("operation#1-2", "block-4"),
     ];
-    assert!(
-        feature_simple_hole_construction_groups(&labels, &lanes, &duplicate_references).is_empty()
-    );
+    assert!(simple_hole_construction_groups(&labels, &lanes, &duplicate_references).is_empty());
 
     let duplicate_lanes = [
         lane("operation#1-2"),
@@ -538,8 +1183,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-4", "block-4"),
     ];
     assert!(
-        feature_simple_hole_construction_groups(&labels, &duplicate_lanes, &shared_references)
-            .is_empty()
+        simple_hole_construction_groups(&labels, &duplicate_lanes, &shared_references).is_empty()
     );
 
     let unknown_lanes = [lane("operation#1-8"), lane("operation#1-9")];
@@ -548,14 +1192,12 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-9", "block-4"),
     ];
     assert!(
-        feature_simple_hole_construction_groups(&labels, &unknown_lanes, &unknown_references)
-            .is_empty()
+        simple_hole_construction_groups(&labels, &unknown_lanes, &unknown_references).is_empty()
     );
 }
 
 #[test]
 fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
-    use crate::native::features::holes::feature_hole_package_construction_group_uses;
     use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
     use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
     let blocks = [
@@ -572,8 +1214,11 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         references: std::array::from_fn(|index| {
             crate::native::features::reference::ConstructionReference {
                 token: crate::om::reference_index::ReferenceIndexToken::from_wire(
-                    index as u32 + 1,
-                    &[0xf0, index as u8 + 1],
+                    u32::try_from(index).expect("fixture value fits u32") + 1,
+                    &[
+                        0xf0,
+                        u8::try_from(index).expect("fixture value fits u8") + 1,
+                    ],
                 )
                 .unwrap(),
                 data_block: blocks[index].clone(),
@@ -602,25 +1247,127 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         .unwrap(),
     };
 
-    let uses = feature_hole_package_construction_group_uses(
-        std::slice::from_ref(&lane),
-        std::slice::from_ref(&group),
-    );
+    let uses = hole_package_group_uses(std::slice::from_ref(&lane), std::slice::from_ref(&group));
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].operation_label, lane.operation_label);
     assert_eq!(uses[0].construction_group_lane, lane.id);
     assert_eq!(uses[0].simple_hole_construction_group, group.id);
 
-    assert!(feature_hole_package_construction_group_uses(
-        &[lane.clone(), lane.clone()],
-        std::slice::from_ref(&group),
+    assert!(
+        hole_package_group_uses(&[lane.clone(), lane.clone()], std::slice::from_ref(&group),)
+            .is_empty()
+    );
+    assert!(
+        hole_package_group_uses(std::slice::from_ref(&lane), &[group.clone(), group],).is_empty()
+    );
+}
+
+fn package_use_inputs() -> (
+    crate::native::features::holes::FeatureHolePackageConstructionGroupLane,
+    FeatureSimpleHoleConstructionGroup,
+) {
+    let blocks = ["a", "b", "c", "d"].map(str::to_string);
+    let lane = crate::native::features::holes::FeatureHolePackageConstructionGroupLane {
+        id: "hole-package-construction-group-lane#1".to_string(),
+        operation_label: "operation#1".to_string(),
+        selector: std::num::NonZeroU8::new(0x46).unwrap(),
+        branch: std::num::NonZeroU8::new(0x11).unwrap(),
+        references: std::array::from_fn(|index| {
+            crate::native::features::reference::ConstructionReference {
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                    u32::try_from(index).expect("fixture value fits u32") + 1,
+                    &[
+                        0xf0,
+                        u8::try_from(index).expect("fixture value fits u8") + 1,
+                    ],
+                )
+                .unwrap(),
+                data_block: blocks[index].clone(),
+                source_offset: [132, 134, 141, 143][index],
+            }
+        }),
+        payload_offset: 20,
+        source_offset: 120,
+    };
+    let group = FeatureSimpleHoleConstructionGroup {
+        id: "simple-hole-group".to_string(),
+        first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
+        second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-1".into(),
+                scalar_lane: "scalar-1".into(),
+                block_reference: "references-1".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-2".into(),
+                scalar_lane: "scalar-2".into(),
+                block_reference: "references-2".into(),
+            },
+        ])
+        .unwrap(),
+    };
+    (lane, group)
+}
+
+fn package_use_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (lane, group) = package_use_inputs();
+    let admitted =
+        hole_package_group_uses(std::slice::from_ref(&lane), std::slice::from_ref(&group));
+    assert_eq!(admitted.len(), 1);
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::features::holes::feature_hole_package_construction_group_uses(
+                ctx,
+                &[lane],
+                &[group],
+            )
+            .expect_err("hole package group use resource limit")
+        },
     )
-    .is_empty());
-    assert!(feature_hole_package_construction_group_uses(
-        std::slice::from_ref(&lane),
-        &[group.clone(), group],
-    )
-    .is_empty());
+}
+
+#[test]
+fn hole_package_use_route_refuses_collection_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn hole_package_use_route_refuses_retained_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn hole_package_use_route_refuses_scoped_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn hole_package_use_route_refuses_work_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]

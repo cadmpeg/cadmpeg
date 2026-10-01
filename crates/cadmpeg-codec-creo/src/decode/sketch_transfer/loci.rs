@@ -8,13 +8,12 @@ use super::super::sketch::skamp::{
     section_skamp_incidence_point, section_skamp_selected_point_id_with_ordinary_segment,
     unique_decoded_section_segment, SectionPointSource,
 };
-use super::super::sketch_ids::sketch_entity_id;
+use super::super::sketch_ids::sketch_entity_id_admitted;
 use crate::decode::sketch_transfer::identity::{
     saved_section_entity_fallback_allowed, semantic_saved_section_entities,
-    unique_section_segment_external_ids,
 };
 use crate::decode::sketch_transfer::profiles::{
-    solver_only_section_entities, solver_only_section_entity_family,
+    solver_only_section_entity_family, solver_only_section_entity_offset,
     unique_section_incidence_curve_family,
     unique_section_incidence_curve_family_without_type35_target, SectionEntityIncidenceFamily,
 };
@@ -27,170 +26,169 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
 
+fn admitted_entity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
+    sketch: &SketchId,
+    external_id: u32,
+) -> Option<SketchEntityId> {
+    match sketch_entity_id_admitted(ctx, sketch, external_id) {
+        Ok(id) => id,
+        Err(error) => {
+            refusal.set(Some(refusal.take().unwrap_or(error)));
+            None
+        }
+    }
+}
+
 const EPS_NONDEGENERATE_LINE: f64 = 0.000_000_000_001_f64;
 const EPS_LOCUS_COORDINATE: f64 = 1.0e-9;
 const EPS_LOCUS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_LOCUS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
+#[derive(Clone, Copy)]
+enum PointLocusKind {
+    Entity,
+    Start,
+    End,
+    Center,
+}
+
 pub(super) fn section_point_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     point_id: u32,
-) -> Option<SketchLocus> {
-    let unique_entities = unique_section_segment_external_ids(definition);
-    let segments = definition.segments.as_ref()?;
-    let mut candidates = segments
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    let Some(segments) = definition.segments.as_ref() else {
+        return Ok(None);
+    };
+    let unique_entities = |external_id| segments.rows.get(external_id).is_some();
+    let candidates = segments
         .rows
         .ordinary()
-        .filter(|segment| unique_entities.contains(&segment.external_id))
+        .filter(|segment| unique_entities(segment.external_id))
         .filter_map(|segment| {
-            let entity = sketch_entity_id(sketch, segment.external_id)?;
-            let locus = match segment.kind {
+            let kind = match segment.kind {
                 crate::feature::definitions::FeatureSegmentKind::Point(id) if id == point_id => {
-                    SketchLocus::Entity(entity)
+                    PointLocusKind::Entity
                 }
                 crate::feature::definitions::FeatureSegmentKind::Line([start, _])
                     if start == point_id =>
                 {
-                    SketchLocus::Start(entity)
+                    PointLocusKind::Start
                 }
                 crate::feature::definitions::FeatureSegmentKind::Line([_, end])
                     if end == point_id =>
                 {
-                    SketchLocus::End(entity)
+                    PointLocusKind::End
                 }
                 crate::feature::definitions::FeatureSegmentKind::Arc([end, _])
                     if end == point_id =>
                 {
-                    SketchLocus::End(entity)
+                    PointLocusKind::End
                 }
                 crate::feature::definitions::FeatureSegmentKind::Arc([_, start])
                     if start == point_id =>
                 {
-                    SketchLocus::Start(entity)
+                    PointLocusKind::Start
                 }
                 _ => return None,
             };
-            Some((segment.offset, locus))
+            Some((segment.external_id, kind))
         })
-        .collect::<Vec<_>>();
-    candidates.extend(
-        segments
-            .rows
-            .ordinary()
-            .filter(|segment| {
-                unique_entities.contains(&segment.external_id)
-                    && matches!(
-                        segment.kind,
-                        crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                    )
-                    && segment.center_id == Some(point_id)
-            })
-            .filter_map(|segment| {
-                Some({
-                    (
-                        segment.offset,
-                        SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)?),
-                    )
+        .chain(
+            segments
+                .rows
+                .ordinary()
+                .filter(|segment| {
+                    unique_entities(segment.external_id)
+                        && matches!(
+                            segment.kind,
+                            crate::feature::definitions::FeatureSegmentKind::Arc(_)
+                        )
+                        && segment.center_id == Some(point_id)
                 })
-            }),
-    );
-    candidates.extend(
-        segments
-            .rows
-            .circles()
-            .filter(|segment| {
-                unique_entities.contains(&segment.external_id) && segment.center_id == point_id
-            })
-            .filter_map(|segment| {
-                Some({
-                    (
-                        segment.offset,
-                        SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)?),
-                    )
+                .map(|segment| (segment.external_id, PointLocusKind::Center)),
+        )
+        .chain(
+            segments
+                .rows
+                .circles()
+                .filter(|segment| {
+                    unique_entities(segment.external_id) && segment.center_id == point_id
                 })
-            }),
-    );
-    candidates.extend(
-        segments
-            .rows
-            .points()
-            .filter(|segment| {
-                segment.point_id == point_id && segments.rows.get(segment.external_id).is_some()
-            })
-            .filter_map(|segment| {
-                Some({
-                    (
-                        segment.offset,
-                        SketchLocus::Entity(sketch_entity_id(sketch, segment.external_id)?),
-                    )
+                .map(|segment| (segment.external_id, PointLocusKind::Center)),
+        )
+        .chain(
+            segments
+                .rows
+                .points()
+                .filter(|segment| {
+                    segment.point_id == point_id && unique_entities(segment.external_id)
                 })
-            }),
-    );
-    candidates.extend(
-        segments
-            .rows
-            .centered_lines()
-            .filter(|segment| unique_entities.contains(&segment.external_id))
-            .filter_map(|segment| {
-                Some({
-                    let entity = sketch_entity_id(sketch, segment.external_id)?;
+                .map(|segment| (segment.external_id, PointLocusKind::Entity)),
+        )
+        .chain(
+            segments
+                .rows
+                .centered_lines()
+                .filter(|segment| unique_entities(segment.external_id))
+                .flat_map(|segment| {
                     [
-                        (0, SketchLocus::Start(entity.clone())),
-                        (1, SketchLocus::End(entity)),
+                        (0 == point_id).then_some((segment.external_id, PointLocusKind::Start)),
+                        (1 == point_id).then_some((segment.external_id, PointLocusKind::End)),
                     ]
                     .into_iter()
-                    .filter_map(move |(candidate, locus)| {
-                        (candidate == point_id).then_some((segment.offset, locus))
-                    })
-                })
-            })
-            .flatten(),
-    );
-    candidates.extend(
-        segments
-            .rows
-            .reference_lines()
-            .filter(|segment| unique_entities.contains(&segment.external_id))
-            .filter_map(|segment| {
-                Some({
-                    let entity = sketch_entity_id(sketch, segment.external_id)?;
+                    .flatten()
+                }),
+        )
+        .chain(
+            segments
+                .rows
+                .reference_lines()
+                .filter(|segment| unique_entities(segment.external_id))
+                .flat_map(|segment| {
                     [
-                        (segment.point_ids[0], SketchLocus::Start(entity.clone())),
-                        (segment.point_ids[1], SketchLocus::End(entity)),
+                        (segment.point_ids[0] == Some(point_id))
+                            .then_some((segment.external_id, PointLocusKind::Start)),
+                        (segment.point_ids[1] == Some(point_id))
+                            .then_some((segment.external_id, PointLocusKind::End)),
                     ]
                     .into_iter()
-                    .filter_map(move |(candidate, locus)| {
-                        (candidate == Some(point_id)).then_some((segment.offset, locus))
-                    })
-                })
-            })
-            .flatten(),
-    );
-    candidates.extend(
-        segments
-            .rows
-            .bounded_curves()
-            .filter(|segment| unique_entities.contains(&segment.external_id))
-            .filter_map(|segment| {
-                Some({
-                    let entity = sketch_entity_id(sketch, segment.external_id)?;
+                    .flatten()
+                }),
+        )
+        .chain(
+            segments
+                .rows
+                .bounded_curves()
+                .filter(|segment| unique_entities(segment.external_id))
+                .flat_map(|segment| {
                     [
-                        (segment.point_ids[0], SketchLocus::Start(entity.clone())),
-                        (segment.point_ids[1], SketchLocus::End(entity)),
+                        (segment.point_ids[0] == point_id)
+                            .then_some((segment.external_id, PointLocusKind::Start)),
+                        (segment.point_ids[1] == point_id)
+                            .then_some((segment.external_id, PointLocusKind::End)),
                     ]
                     .into_iter()
-                    .filter_map(move |(candidate, locus)| {
-                        (candidate == point_id).then_some((segment.offset, locus))
-                    })
-                })
-            })
-            .flatten(),
-    );
-    let [(_, locus)] = candidates.as_slice() else {
-        return None;
+                    .flatten()
+                }),
+        );
+    let Some((external_id, kind)) = crate::decode::uniqueness::exactly_one(candidates) else {
+        return Ok(None);
     };
-    Some(locus.clone())
+    let Some(entity) =
+        super::super::sketch_ids::sketch_entity_id_admitted(ctx, sketch, external_id)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(match kind {
+        PointLocusKind::Entity => SketchLocus::Entity(entity),
+        PointLocusKind::Start => SketchLocus::Start(entity),
+        PointLocusKind::End => SketchLocus::End(entity),
+        PointLocusKind::Center => SketchLocus::Center(entity),
+    }))
 }
 
 pub(in super::super) fn unique_circle_segment(
@@ -244,11 +242,13 @@ pub(in super::super) fn unique_bounded_curve_segment(
 }
 
 pub(in super::super) fn section_skamp_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SketchLocus> {
-    let entity = sketch_entity_id(sketch, item.entity_id)?;
+    let entity = admitted_entity(ctx, refusal, sketch, item.entity_id)?;
     if let Some(family) = solver_only_section_entity_family(definition, item.entity_id) {
         return section_entity_family_locus(family, entity, item.sense);
     }
@@ -385,16 +385,20 @@ fn section_entity_family_locus(
 }
 
 pub(in super::super) fn section_skamp_endpoint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     matches!(item.sense, 2 | 3)
-        .then(|| section_skamp_locus(definition, sketch, item))
+        .then(|| section_skamp_locus(ctx, refusal, definition, sketch, item))
         .flatten()
 }
 
 fn section_skamp_shared_endpoint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     entity: &crate::feature::definitions::FeatureSkampItem,
@@ -421,6 +425,8 @@ fn section_skamp_shared_endpoint(
     let (endpoint, _) = endpoints.next()?;
     endpoints.next().is_none().then_some(())?;
     section_skamp_locus(
+        ctx,
+        refusal,
         definition,
         sketch,
         &crate::feature::definitions::FeatureSkampItem {
@@ -431,18 +437,24 @@ fn section_skamp_shared_endpoint(
 }
 
 pub(super) fn section_skamp_tangent_loci(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-    first: &crate::feature::definitions::FeatureSkampItem,
-    second: &crate::feature::definitions::FeatureSkampItem,
+    items: (
+        &crate::feature::definitions::FeatureSkampItem,
+        &crate::feature::definitions::FeatureSkampItem,
+    ),
     active: bool,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<[SketchLocus; 2]> {
+    let (first, second) = items;
+
     let selected_locus = |item| {
         if active {
-            section_skamp_endpoint(definition, sketch, item)
+            section_skamp_endpoint(ctx, refusal, definition, sketch, item)
         } else if matches!(item.sense, 2 | 3) {
-            section_skamp_incidence_locus(definition, sketch, item, geometry)
+            section_skamp_incidence_locus(ctx, refusal, definition, sketch, item, geometry)
         } else {
             None
         }
@@ -454,7 +466,7 @@ pub(super) fn section_skamp_tangent_loci(
         .into_iter()
         .find_map(|(entity, selected)| {
             Some([
-                section_skamp_shared_endpoint(definition, sketch, entity, selected)?,
+                section_skamp_shared_endpoint(ctx, refusal, definition, sketch, entity, selected)?,
                 selected_locus(selected)?,
             ])
         })
@@ -462,50 +474,57 @@ pub(super) fn section_skamp_tangent_loci(
             if first.sense == 0 {
                 loci
             } else {
-                [loci[1].clone(), loci[0].clone()]
+                let [first, second] = loci;
+                [second, first]
             }
         })
 }
 
 pub(in super::super) fn section_skamp_point_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     if item.sense == 0 && section_skamp_is_point(definition, item) {
-        return section_skamp_locus(definition, sketch, item);
+        return section_skamp_locus(ctx, refusal, definition, sketch, item);
     }
     matches!(item.sense, 2..=4)
-        .then(|| section_skamp_locus(definition, sketch, item))
+        .then(|| section_skamp_locus(ctx, refusal, definition, sketch, item))
         .flatten()
 }
 
 pub(in super::super) fn section_skamp_incidence_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<SketchLocus> {
-    section_skamp_point_locus(definition, sketch, item).or_else(|| {
-        let entity = sketch_entity_id(sketch, item.entity_id)?;
-        let locus = match item.sense {
-            2 => SketchLocus::Start(entity.clone()),
-            3 => SketchLocus::End(entity.clone()),
-            _ => return None,
-        };
-        geometry?
-            .get(&entity)
-            .is_some_and(|geometry| {
-                matches!(
-                    geometry.definition(),
-                    SketchGeometryDefinition::Native { .. }
-                )
-            })
-            .then_some(locus)
+    section_skamp_point_locus(ctx, refusal, definition, sketch, item).or_else(|| {
+        let entity = admitted_entity(ctx, refusal, sketch, item.entity_id)?;
+        let native = geometry?.get(&entity).is_some_and(|geometry| {
+            matches!(
+                geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        });
+        if !native {
+            return None;
+        }
+        match item.sense {
+            2 => Some(SketchLocus::Start(entity)),
+            3 => Some(SketchLocus::End(entity)),
+            _ => None,
+        }
     })
 }
 
 pub(super) fn section_skamp_line_pair(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     first: &crate::feature::definitions::FeatureSkampItem,
@@ -519,19 +538,21 @@ pub(super) fn section_skamp_line_pair(
         return None;
     }
     Some([
-        sketch_entity_id(sketch, first.entity_id)?,
-        sketch_entity_id(sketch, second.entity_id)?,
+        admitted_entity(ctx, refusal, sketch, first.entity_id)?,
+        admitted_entity(ctx, refusal, sketch, second.entity_id)?,
     ])
 }
 
 pub(super) fn section_skamp_oriented_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<SketchEntityId> {
     (item.sense == 0).then_some(())?;
-    let entity = sketch_entity_id(sketch, item.entity_id)?;
+    let entity = admitted_entity(ctx, refusal, sketch, item.entity_id)?;
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
@@ -546,7 +567,7 @@ pub(super) fn section_skamp_oriented_line(
     {
         return None;
     }
-    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+    if solver_only_section_entity_offset(definition, item.entity_id).is_some() {
         return Some(entity);
     }
     let line_role_evidence = complete_section_skamps(definition).any(|skamp| {
@@ -556,10 +577,12 @@ pub(super) fn section_skamp_oriented_line(
             (35, [first, second]) => {
                 (first.entity_id == item.entity_id
                     && first.sense == 0
-                    && section_skamp_point_locus(definition, sketch, second).is_some())
+                    && section_skamp_point_locus(ctx, refusal, definition, sketch, second)
+                        .is_some())
                     || (second.entity_id == item.entity_id
                         && second.sense == 0
-                        && section_skamp_point_locus(definition, sketch, first).is_some())
+                        && section_skamp_point_locus(ctx, refusal, definition, sketch, first)
+                            .is_some())
             }
             _ => false,
         }
@@ -575,6 +598,8 @@ pub(super) fn section_skamp_oriented_line(
 }
 
 pub(super) fn section_skamp_same_coordinate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     skamp: &crate::feature::definitions::FeatureSkamp,
@@ -584,8 +609,8 @@ pub(super) fn section_skamp_same_coordinate(
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
-    let first_locus = section_skamp_point_locus(definition, sketch, first)?;
-    let second_locus = section_skamp_point_locus(definition, sketch, second)?;
+    let first_locus = section_skamp_point_locus(ctx, refusal, definition, sketch, first)?;
+    let second_locus = section_skamp_point_locus(ctx, refusal, definition, sketch, second)?;
     let coordinate = section_skamp_same_coordinate_axis(skamp)?;
     let axis = [SketchCoordinateAxis::U, SketchCoordinateAxis::V][coordinate.index()];
     if require_satisfied {
@@ -773,6 +798,8 @@ pub(super) fn section_skamp_is_arc(
 }
 
 pub(super) fn section_skamp_curve_entity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -808,11 +835,13 @@ pub(super) fn section_skamp_curve_entity(
                 )
             }));
     is_curve
-        .then(|| sketch_entity_id(sketch, item.entity_id))
+        .then(|| admitted_entity(ctx, refusal, sketch, item.entity_id))
         .flatten()
 }
 
 pub(in super::super) fn section_skamp_midpoint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     first: &crate::feature::definitions::FeatureSkampItem,
@@ -821,11 +850,11 @@ pub(in super::super) fn section_skamp_midpoint(
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::definitions::FeatureSkampItem| {
         if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
-            return sketch_entity_id(sketch, item.entity_id);
+            return admitted_entity(ctx, refusal, sketch, item.entity_id);
         }
         (item.sense == 0).then_some(())?;
         if section_skamp_is_arc(definition, item) {
-            return sketch_entity_id(sketch, item.entity_id);
+            return admitted_entity(ctx, refusal, sketch, item.entity_id);
         }
         // A type-25 section-reference line and an axis line anchored at one
         // section point are unbounded, so neither is a midpoint target.
@@ -835,13 +864,15 @@ pub(in super::super) fn section_skamp_midpoint(
         {
             return None;
         }
-        let line = section_skamp_oriented_line(definition, sketch, item, geometry)?;
+        let line = section_skamp_oriented_line(ctx, refusal, definition, sketch, item, geometry)?;
         section_skamp_line_without_type35_target(definition, item).then_some(line)
     };
     let point = |item: &crate::feature::definitions::FeatureSkampItem| {
-        section_skamp_point_locus(definition, sketch, item).or_else(|| {
+        section_skamp_point_locus(ctx, refusal, definition, sketch, item).or_else(|| {
             (item.sense == 0 && section_skamp_is_circular(definition, item))
-                .then(|| sketch_entity_id(sketch, item.entity_id).map(SketchLocus::Center))
+                .then(|| {
+                    admitted_entity(ctx, refusal, sketch, item.entity_id).map(SketchLocus::Center)
+                })
                 .flatten()
         })
     };
@@ -849,17 +880,15 @@ pub(in super::super) fn section_skamp_midpoint(
         item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some()
     };
     if centered_target(first) || centered_target(second) {
-        let candidates = [(first, second), (second, first)]
-            .into_iter()
-            .filter(|(target, point)| centered_target(target) && point.sense == 0)
-            .filter_map(|(target_item, point_item)| {
-                Some((point(point_item)?, target(target_item)?))
-            })
-            .collect::<Vec<_>>();
-        let [candidate] = candidates.as_slice() else {
-            return None;
-        };
-        return Some(candidate.clone());
+        let candidate = crate::decode::uniqueness::exactly_one(
+            [(first, second), (second, first)]
+                .into_iter()
+                .filter(|(target, point)| centered_target(target) && point.sense == 0)
+                .filter_map(|(target_item, point_item)| {
+                    Some((point(point_item)?, target(target_item)?))
+                }),
+        )?;
+        return Some(candidate);
     }
     let candidate = |target, point| Some((point?, target?));
     match (
@@ -924,6 +953,8 @@ pub(in super::super) fn section_saved_entity(
 }
 
 pub(super) fn section_skamp_circular_entity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -932,17 +963,19 @@ pub(super) fn section_skamp_circular_entity(
         return None;
     }
     section_skamp_is_circular(definition, item)
-        .then(|| sketch_entity_id(sketch, item.entity_id))
+        .then(|| admitted_entity(ctx, refusal, sketch, item.entity_id))
         .flatten()
 }
 
 pub(super) fn section_skamp_center_entity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SketchEntityId> {
     (item.sense == 4 && section_skamp_is_circular(definition, item))
-        .then(|| sketch_entity_id(sketch, item.entity_id))
+        .then(|| admitted_entity(ctx, refusal, sketch, item.entity_id))
         .flatten()
 }
 
@@ -950,7 +983,7 @@ pub(in super::super) fn section_skamp_is_circular(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> bool {
-    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+    if solver_only_section_entity_offset(definition, item.entity_id).is_some() {
         return solver_only_section_entity_family(definition, item.entity_id).is_some_and(
             |family| {
                 matches!(
@@ -1044,14 +1077,13 @@ pub(in super::super) fn section_skamp_line_midpoint_sources(
     let point = |item: &crate::feature::definitions::FeatureSkampItem| {
         section_skamp_incidence_point(definition, item)
     };
-    let candidates = [(first, second), (second, first)]
-        .into_iter()
-        .filter_map(|(target_item, point_item)| Some((target(target_item)?, point(point_item)?)))
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    let candidate =
+        crate::decode::uniqueness::exactly_one(
+            [(first, second), (second, first)].into_iter().filter_map(
+                |(target_item, point_item)| Some((target(target_item)?, point(point_item)?)),
+            ),
+        )?;
+    Some(candidate)
 }
 
 pub(in super::super) fn section_skamp_arc_midpoint_source(
@@ -1062,20 +1094,18 @@ pub(in super::super) fn section_skamp_arc_midpoint_source(
     let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
         return None;
     };
-    let candidates = [(first, second), (second, first)]
-        .into_iter()
-        .filter_map(|(target, point)| {
-            (target.sense == 0 && section_skamp_is_arc(definition, target)).then_some(())?;
-            Some((
-                section_skamp_incidence_point(definition, point)?,
-                section_skamp_arc_midpoint(definition, target, coordinates)?,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    let candidate = crate::decode::uniqueness::exactly_one(
+        [(first, second), (second, first)]
+            .into_iter()
+            .filter_map(|(target, point)| {
+                (target.sense == 0 && section_skamp_is_arc(definition, target)).then_some(())?;
+                Some((
+                    section_skamp_incidence_point(definition, point)?,
+                    section_skamp_arc_midpoint(definition, target, coordinates)?,
+                ))
+            }),
+    )?;
+    Some(candidate)
 }
 
 fn section_skamp_arc_midpoint(
@@ -1192,12 +1222,30 @@ pub(in super::super) fn active_complete_section_skamps(
 }
 
 #[cfg(test)]
+pub(in super::super) fn with_test_locus<T>(
+    run: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
+    ) -> T,
+) -> T {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let refusal = std::cell::Cell::new(None);
+        let result = run(ctx, &refusal);
+        assert!(
+            refusal.into_inner().is_none(),
+            "test locus resource refusal"
+        );
+        result
+    })
+}
+
+#[cfg(test)]
 mod tests {
     use super::{
-        oriented_arc_midpoint, section_point_locus, section_skamp_arc_midpoint_source,
-        section_skamp_curve_entity, section_skamp_is_arc, section_skamp_is_line,
-        section_skamp_is_point, section_skamp_line_midpoint_sources, section_skamp_locus,
-        section_skamp_point_locus, section_skamp_same_coordinate_sources,
+        oriented_arc_midpoint, section_point_locus as section_point_locus_admitted,
+        section_skamp_arc_midpoint_source, section_skamp_curve_entity, section_skamp_is_arc,
+        section_skamp_is_line, section_skamp_is_point, section_skamp_line_midpoint_sources,
+        section_skamp_locus, section_skamp_point_locus, section_skamp_same_coordinate_sources,
         section_skamp_tangent_loci,
     };
     use crate::decode::sketch::skamp::SectionPointSource;
@@ -1207,6 +1255,64 @@ mod tests {
     use cadmpeg_ir::sketches::SketchEntityId;
     use cadmpeg_ir::sketches::{SketchId, SketchLocus};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn unresolved_skamp_locus_refuses_below_entity_identity_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId::mint("creo:model:sketch#917").expect("sketch identity");
+        let item = crate::feature::definitions::FeatureSkampItem {
+            entity_id: 7,
+            sense: 0,
+        };
+        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:7".len());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = need - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let refusal = std::cell::Cell::new(None);
+        assert!(section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item).is_none());
+        assert!(
+            matches!(refusal.into_inner(), Some(cadmpeg_core::CodecError::ResourceLimit(resource))
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo sketch entity identity")
+        );
+        policy.limits.max_retained_bytes = need;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let refusal = std::cell::Cell::new(None);
+        assert!(section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item).is_none());
+        assert!(refusal.into_inner().is_none());
+    }
+
+    fn section_point_locus(
+        definition: &crate::feature::definitions::FeatureDefinition,
+        sketch: &SketchId,
+        point_id: u32,
+    ) -> Option<SketchLocus> {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            section_point_locus_admitted(ctx, definition, sketch, point_id)
+        })
+        .expect("point locus admission")
+    }
 
     #[test]
     fn arc_midpoint_overflow_is_not_a_coordinate_source() {
@@ -1263,6 +1369,68 @@ mod tests {
             Some(SketchLocus::Entity(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string(),)
                     .expect("valid test fixture")
+            ))
+        );
+    }
+
+    #[test]
+    fn point_locus_identity_refuses_below_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
+                declared_count: 1,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: [crate::feature::segment_rows::SegmentRow::Point(
+                    crate::feature::definitions::FeaturePointSegment {
+                        point_id: 7,
+                        external_id: 12,
+                        offset: 20,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                offset: 10,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId::mint("creo:model:sketch#917").expect("valid test fixture");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:12".len());
+        policy.limits.max_retained_bytes = need - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = section_point_locus_admitted(&ctx, &definition, &sketch, 7)
+            .expect_err("entity ID exceeds retained limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo sketch entity identity")
+        );
+        policy.limits.max_retained_bytes = need;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert_eq!(
+            section_point_locus_admitted(&ctx, &definition, &sketch, 7)
+                .expect("exact retained limit admits entity ID"),
+            Some(SketchLocus::Entity(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:12")
+                    .expect("valid entity ID")
             ))
         );
     }
@@ -1463,7 +1631,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let skamp = |id, kind, items| crate::feature::definitions::FeatureSkamp {
             id,
@@ -1471,7 +1639,7 @@ mod tests {
             flags: 0,
             status: 0,
             items,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         };
         let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1601,21 +1769,29 @@ mod tests {
             Some(SectionEntityIncidenceFamily::BoundedCurve)
         );
         assert_eq!(
-            section_skamp_curve_entity(&definition, &sketch, &bounded_curve),
+            super::with_test_locus(|ctx, refusal| section_skamp_curve_entity(
+                ctx,
+                refusal,
+                &definition,
+                &sketch,
+                &bounded_curve
+            )),
             Some(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:103".to_string(),)
                     .expect("valid test fixture")
             )
         );
         assert_eq!(
-            section_skamp_locus(
+            super::with_test_locus(|ctx, refusal| section_skamp_locus(
+                ctx,
+                refusal,
                 &definition,
                 &sketch,
                 &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 102,
                     sense: 2,
                 },
-            ),
+            )),
             Some(SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:102".to_string(),)
                     .expect("valid test fixture")
@@ -1778,7 +1954,13 @@ mod tests {
             SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
         assert!(section_skamp_is_point(&definition, &item));
         assert_eq!(
-            section_skamp_point_locus(&definition, &sketch, &item),
+            super::with_test_locus(|ctx, refusal| section_skamp_point_locus(
+                ctx,
+                refusal,
+                &definition,
+                &sketch,
+                &item
+            )),
             Some(SketchLocus::Entity(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string(),)
                     .expect("valid test fixture")
@@ -1798,7 +1980,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1836,20 +2018,24 @@ mod tests {
         let sketch =
             SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
         assert_eq!(
-            section_skamp_tangent_loci(
+            super::with_test_locus(|ctx, refusal| section_skamp_tangent_loci(
+                ctx,
+                refusal,
                 &definition,
                 &sketch,
-                &crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 10,
-                    sense: 0,
-                },
-                &crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 11,
-                    sense: 2,
-                },
+                (
+                    &crate::feature::definitions::FeatureSkampItem {
+                        entity_id: 10,
+                        sense: 0,
+                    },
+                    &crate::feature::definitions::FeatureSkampItem {
+                        entity_id: 11,
+                        sense: 2,
+                    }
+                ),
                 true,
                 None,
-            ),
+            )),
             Some([
                 SketchLocus::Start(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:10".to_string(),)
@@ -1879,7 +2065,7 @@ mod tests {
                 radius2_ref: None,
                 external_id,
                 body: Vec::new(),
-                offset: external_id as usize,
+                offset: usize::try_from(external_id).expect("fixture index fits usize"),
             }
         };
         let item =

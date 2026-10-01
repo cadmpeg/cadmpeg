@@ -4,6 +4,7 @@ mod dump;
 mod inline;
 mod planes;
 mod positional;
+mod resource_cache;
 mod round_envelopes;
 mod rows;
 mod scan;

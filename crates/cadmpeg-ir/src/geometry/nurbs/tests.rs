@@ -6,6 +6,290 @@ use crate::{
 };
 
 #[test]
+fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
+    use crate::geometry::nurbs::NurbsCurve;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("rational curve");
+    for limit in [0, 4] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error = curve
+            .map_control_points_admitted(&ctx, "mapped NURBS fixture", |point| {
+                Point3::new(point.x + 2.0, point.y, point.z)
+            })
+            .expect_err("knot or pole limit refuses the map");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "mapped NURBS fixture"
+                && resource.dimension == ResourceDimension::CollectionItems)
+        );
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let mapped = curve
+        .map_control_points_admitted(&ctx, "mapped NURBS fixture", |point| {
+            Point3::new(point.x + 2.0, point.y, point.z)
+        })
+        .expect("mapping resources")
+        .expect("finite mapped curve");
+    assert_eq!(mapped.knots(), curve.knots());
+    assert_eq!(mapped.weights(), curve.weights());
+    assert_eq!(
+        mapped.control_points(),
+        vec![Point3::new(3.0, 2.0, 3.0), Point3::new(6.0, 5.0, 6.0),]
+    );
+    assert!(curve
+        .map_control_points_admitted(&ctx, "mapped NURBS fixture", |_| Point3::new(
+            f64::INFINITY,
+            0.0,
+            0.0
+        ),)
+        .expect("mapping resources")
+        .is_none());
+    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 3.0));
+}
+
+#[test]
+fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{KnotVector, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    let point = |x, y| FinitePoint3::new(Point3::new(x, y, 0.0)).expect("finite point");
+    let rows = vec![
+        vec![point(0.0, 0.0), point(0.0, 1.0)],
+        vec![point(1.0, 0.0), point(1.0, 1.0)],
+    ];
+    let axis = || {
+        NurbsSurfaceAxis::new(
+            1,
+            KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("finite knots"),
+            false,
+        )
+    };
+    let old = NurbsSurface::new(
+        axis(),
+        axis(),
+        NurbsPoleGrid::Polynomial { rows: rows.clone() },
+        false,
+    )
+    .expect("old surface");
+    let admitted =
+        NurbsSurface::from_admitted_grid(axis(), axis(), NurbsPoleGrid::Polynomial { rows }, false)
+            .expect("admitted surface");
+    assert_eq!(admitted, old);
+    assert_eq!(
+        serde_json::to_vec(&admitted).expect("wire"),
+        serde_json::to_vec(&old).expect("wire")
+    );
+    let short = NurbsSurface::from_admitted_grid(
+        NurbsSurfaceAxis::new(
+            1,
+            KnotVector::new(vec![0.0, 1.0]).expect("finite knots"),
+            false,
+        ),
+        axis(),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![point(0.0, 0.0), point(0.0, 1.0)],
+                vec![point(1.0, 0.0), point(1.0, 1.0)],
+            ],
+        },
+        false,
+    )
+    .expect_err("short knot axis");
+    assert_eq!(short.to_string(), "u_knots must contain 4 values, found 2");
+    let ragged = NurbsSurface::from_admitted_grid(
+        axis(),
+        axis(),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![point(0.0, 0.0), point(0.0, 1.0)],
+                vec![point(1.0, 0.0)],
+            ],
+        },
+        false,
+    )
+    .expect_err("ragged pole grid");
+    assert_eq!(
+        ragged.to_string(),
+        "control_points row must contain 2 values, found 1"
+    );
+}
+
+#[test]
+fn knot_copy_refuses_collection_limit_before_allocation() {
+    let knots = super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("valid knots");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty input");
+    let error = knots
+        .try_clone_for_decode(&ctx, "knot copy")
+        .expect_err("limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "knot copy")
+    );
+}
+
+#[test]
+fn knot_copy_refuses_retained_limit_before_allocation() {
+    let knots = super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("valid knots");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 31;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty input");
+    let error = knots
+        .try_clone_for_decode(&ctx, "knot copy")
+        .expect_err("limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "knot copy")
+    );
+}
+
+#[test]
+fn knot_copy_succeeds_under_service_profile() {
+    let knots = super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("valid knots");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty input");
+    assert_eq!(
+        knots
+            .try_clone_for_decode(&ctx, "knot copy")
+            .expect("service budget"),
+        knots
+    );
+}
+
+#[test]
+fn consumed_nurbs_parts_keep_knot_and_pole_storage() {
+    use crate::geometry::nurbs::NurbsPoles3;
+
+    let curve = curve();
+    let knot_storage = curve.knots().as_slice().as_ptr();
+    let NurbsPoles3::Rational { points } = curve.pole_rows() else {
+        panic!("fixture must be rational");
+    };
+    let pole_storage = points.as_ptr();
+    let (degree, knots, poles, periodic) = curve.into_parts();
+    assert_eq!(degree, 1);
+    assert!(periodic);
+    assert_eq!(knots.as_slice().as_ptr(), knot_storage);
+    let NurbsPoles3::Rational { points } = poles else {
+        panic!("consumed poles must remain rational");
+    };
+    assert_eq!(points.as_ptr(), pole_storage);
+}
+
+#[test]
+fn admitted_nurbs_curve_keeps_pole_storage() {
+    use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+
+    let original = curve();
+    let (degree, knots, poles, periodic) = original.clone().into_parts();
+    let NurbsPoles3::Rational { points } = &poles else {
+        panic!("fixture must be rational");
+    };
+    let pole_storage = points.as_ptr();
+    let rebuilt = NurbsCurve::new(degree, knots, poles, periodic).unwrap();
+    let NurbsPoles3::Rational { points } = rebuilt.pole_rows() else {
+        panic!("rebuilt curve must remain rational");
+    };
+    assert_eq!(points.as_ptr(), pole_storage);
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
+fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
+    use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+
+    let original = surface();
+    let grid = original.pole_grid().clone();
+    let NurbsPoleGrid::Rational { rows } = &grid else {
+        panic!("fixture must be rational");
+    };
+    let outer_storage = rows.as_ptr();
+    let inner_storage = rows.iter().map(Vec::as_ptr).collect::<Vec<_>>();
+    let rebuilt = NurbsSurface::new(
+        NurbsSurfaceAxis::new(
+            original.u_degree(),
+            original.u_knots().clone(),
+            original.u_periodic(),
+        ),
+        NurbsSurfaceAxis::new(
+            original.v_degree(),
+            original.v_knots().clone(),
+            original.v_periodic(),
+        ),
+        grid,
+        original.normal_reversed(),
+    )
+    .unwrap();
+    let NurbsPoleGrid::Rational { rows } = rebuilt.pole_grid() else {
+        panic!("rebuilt surface must remain rational");
+    };
+    assert_eq!(rows.as_ptr(), outer_storage);
+    assert_eq!(
+        rows.iter().map(Vec::as_ptr).collect::<Vec<_>>(),
+        inner_storage
+    );
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
+fn nurbs_curve_copy_refuses_knot_and_pole_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let curve = curve();
+    let knot_count = u64::try_from(curve.knots().len()).unwrap();
+    let pole_count = u64::try_from(curve.pole_count()).unwrap();
+    for (dimension, limit) in [
+        (ResourceDimension::CollectionItems, knot_count - 1),
+        (
+            ResourceDimension::CollectionItems,
+            knot_count + pole_count - 1,
+        ),
+        (ResourceDimension::RetainedBytes, knot_count * 8 - 1),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("unexpected test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error = curve
+            .try_clone_for_decode(&ctx, "copy NURBS curve")
+            .expect_err("copy exceeds resource limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, dimension);
+        assert_eq!(refusal.operation, "copy NURBS curve");
+    }
+}
+
+#[test]
 fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     use crate::geometry::nurbs::{KnotVector, NurbsCurve, NurbsError, NurbsSurfaceAxis};
     use crate::scalar::FiniteReal;
@@ -56,11 +340,65 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
 }
 
 #[test]
+fn admitted_surface_grid_preserves_the_existing_wire() {
+    use crate::geometry::nurbs::NurbsSurfaceAxis;
+
+    let surface = surface();
+    let u = NurbsSurfaceAxis::new(1, surface.u_knots().clone(), true);
+    let v = NurbsSurfaceAxis::new(1, surface.v_knots().clone(), false);
+    let admitted = NurbsSurface::from_admitted_grid(u, v, surface.pole_grid().clone(), true)
+        .expect("admitted fixture grid");
+    assert_eq!(admitted, surface);
+    assert_eq!(
+        serde_json::to_vec(&admitted).expect("admitted surface wire"),
+        serde_json::to_vec(&surface).expect("fixture surface wire")
+    );
+}
+
+#[test]
+fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::NurbsCurve;
+
+    let rational = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("rational fixture curve");
+    for source in [curve(), rational] {
+        let mut actual = source.clone();
+        let weights = actual.weights();
+        actual
+            .try_map_control_points(|_, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("finite map")
+            })
+            .expect("finite point map");
+        assert_eq!(actual.weights(), weights);
+        assert_eq!(actual.control_points().len(), source.control_points().len());
+        assert_eq!(actual.degree(), source.degree());
+        assert_eq!(actual.knots(), source.knots());
+        assert_eq!(actual.periodic(), source.periodic());
+        for (mapped, original) in actual.control_points().iter().zip(source.control_points()) {
+            assert_eq!(mapped.get().x, original.get().x + 1.0);
+            assert_eq!(mapped.get().y, original.get().y);
+            assert_eq!(mapped.get().z, original.get().z);
+        }
+    }
+}
+
+#[test]
 fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
     let mut curve = curve();
     let original = curve.clone();
-    let refusal = curve.edit_control_points(|point| {
-        point.z = 9.0;
+    let refusal = curve.try_map_control_points(|_, _| {
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
             "caller refused this pole".into(),
         ))
@@ -78,8 +416,7 @@ fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
 fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
     let mut surface = surface();
     let original = surface.clone();
-    let refusal = surface.edit_control_points(|point| {
-        point.z = 9.0;
+    let refusal = surface.try_map_control_points(|_, _| {
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
             "caller refused this pole".into(),
         ))
@@ -91,6 +428,124 @@ fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
         ))
     );
     assert_eq!(surface, original);
+}
+
+#[test]
+fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::NurbsCurve;
+
+    let polynomial = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    for mut curve in [polynomial, curve()] {
+        let original = curve.clone();
+        let weights = curve.weights();
+        let last = curve.pole_count() - 1;
+        assert_eq!(
+            curve.try_map_control_points(|index, point| {
+                if index == last {
+                    Err("last pole")
+                } else {
+                    FinitePoint3::new(Point3::new(
+                        point.get().x + 1.0,
+                        point.get().y,
+                        point.get().z,
+                    ))
+                    .ok_or("non-finite point")
+                }
+            }),
+            Err("last pole")
+        );
+        assert_eq!(curve, original);
+        curve
+            .try_map_control_points(|index, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
+            })
+            .unwrap();
+        for (index, (mapped, prior)) in curve
+            .control_points()
+            .iter()
+            .zip(original.control_points())
+            .enumerate()
+        {
+            assert_eq!(
+                mapped.get().x,
+                prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0
+            );
+        }
+        assert_eq!(curve.weights(), weights);
+    }
+}
+
+#[test]
+fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+    let rational = surface();
+    let polynomial = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, rational.u_knots().to_vec(), rational.u_periodic()),
+        NurbsSurfaceAxis::new(1, rational.v_knots().to_vec(), rational.v_periodic()),
+        NurbsSurfaceLanes::new(
+            rational
+                .control_grid()
+                .into_iter()
+                .map(|row| row.into_iter().map(FinitePoint3::get).collect())
+                .collect(),
+            None::<Vec<Vec<f64>>>,
+        ),
+        rational.normal_reversed(),
+    )
+    .unwrap();
+    for mut surface in [polynomial, rational] {
+        let original = surface.clone();
+        let weights = surface.weights();
+        let last = surface.poles().len() - 1;
+        assert_eq!(
+            surface.try_map_control_points(|index, point| {
+                if index == last {
+                    Err("last pole")
+                } else {
+                    FinitePoint3::new(Point3::new(
+                        point.get().x + 1.0,
+                        point.get().y,
+                        point.get().z,
+                    ))
+                    .ok_or("non-finite point")
+                }
+            }),
+            Err("last pole")
+        );
+        assert_eq!(surface, original);
+        surface
+            .try_map_control_points(|index, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
+            })
+            .unwrap();
+        for (index, (mapped, prior)) in surface.poles().iter().zip(original.poles()).enumerate() {
+            assert_eq!(
+                mapped.get().x,
+                prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0
+            );
+        }
+        assert_eq!(surface.weights(), weights);
+    }
 }
 
 /// The control grid states both pole counts, so the surface wire carries no
@@ -173,9 +628,14 @@ fn bspline_surface_edit_refusal_keeps_control_points() {
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
     let original = surface.clone();
-    let refusal = surface.edit_control_points(|point| {
-        point.z = 3.0;
-        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    let refusal = surface.try_map_control_points(|index, point| {
+        if index == 3 {
+            return Err(NurbsError::EditRefused("caller refused this pole".into()));
+        }
+        let mut moved = point.get();
+        moved.z = 3.0;
+        crate::features::FinitePoint3::new(moved)
+            .ok_or_else(|| NurbsError::Structure("non-finite pole".into()))
     });
     assert_eq!(
         refusal,
@@ -201,9 +661,10 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
     let original = surface.clone();
     assert!(surface
-        .edit_control_points(|point| {
-            point.x = f64::NAN;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.x = f64::NAN;
+            crate::features::FinitePoint3::new(moved).ok_or(())
         })
         .is_err());
     assert_eq!(surface, original);
@@ -211,9 +672,10 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
     assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
     surface
-        .edit_control_points(|point| {
-            point.z = 2.0;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.z = 2.0;
+            crate::features::FinitePoint3::new(moved).ok_or(())
         })
         .unwrap();
     assert!(surface
@@ -522,11 +984,11 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
 
     let mut mapped = curve.clone();
-    let refusal = mapped.map_control_points(|_| Err(NurbsError::EditRefused("kept".into())));
+    let refusal = mapped.try_map_control_points(|_, _| Err(NurbsError::EditRefused("kept".into())));
     assert_eq!(refusal, Err(NurbsError::EditRefused("kept".into())));
     assert_eq!(mapped, curve);
     mapped
-        .map_control_points(|point| Ok(point.negated()))
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.control_points(),
@@ -551,23 +1013,27 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
-        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])).expect("resource allocation did not fail"),
+        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0]))
+            .expect("resource allocation did not fail"),
         positive_controls(
             &surface.pole_grid().raw_points().concat(),
             Some(&[1.0, 1.0, 2.0, 2.0])
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
     );
     assert_eq!(
         positive_controls(&surface.poles(), None).expect("resource allocation did not fail"),
-        positive_controls(&surface.poles(), Some(&[1.0; 4])).expect("resource allocation did not fail")
+        positive_controls(&surface.poles(), Some(&[1.0; 4]))
+            .expect("resource allocation did not fail")
     );
     assert_eq!(
-        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])).expect("resource allocation did not fail"),
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0]))
+            .expect("resource allocation did not fail"),
         None
     );
     let mut mapped = surface.clone();
     mapped
-        .map_control_points(|point| Ok(point.negated()))
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.pole(1, 1).map(FinitePoint3::get),
@@ -593,7 +1059,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     let mut mapped = pcurve.clone();
     mapped
-        .map_control_points(|point| Ok(point.negated()))
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.control_points(),

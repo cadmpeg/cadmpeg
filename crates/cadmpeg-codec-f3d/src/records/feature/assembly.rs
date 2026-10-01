@@ -9,6 +9,8 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Deserialize, Serialize};
@@ -413,7 +415,14 @@ impl DesignAssemblyAlignment {
     }
 
     /// Return both occurrence paths when every operand uses that qualifier form.
+    #[cfg(test)]
     pub(crate) fn operand_paths(&self) -> Option<[DesignAssemblyOperandPath; 2]> {
+        self.operand_path_refs()
+            .map(|paths| paths.map(Clone::clone))
+    }
+
+    /// Borrow both occurrence paths when every operand uses that qualifier form.
+    pub(crate) fn operand_path_refs(&self) -> Option<[&DesignAssemblyOperandPath; 2]> {
         match self.form.as_ref()? {
             DesignAssemblyAlignmentForm::Qualified(operands) => {
                 let [Some(first), Some(second)] = operands
@@ -422,7 +431,7 @@ impl DesignAssemblyAlignment {
                 else {
                     return None;
                 };
-                Some([first.clone(), second.clone()])
+                Some([first, second])
             }
             _ => None,
         }
@@ -1350,15 +1359,27 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn identity_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
         &self.identity_guids
     }
-    pub(crate) fn try_append(self, continuation: Self) -> Result<Self, String> {
+    pub(crate) fn try_append(
+        self,
+        continuation: Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<Self>, CodecError> {
         if self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330" {
-            return Err("assembly path continuations require class_tag 330".into());
+            return Ok(None);
         }
         let mut occurrences = self.occurrence_guids;
-        occurrences.extend(continuation.occurrence_guids);
+        ctx.extend_vec(
+            &mut occurrences,
+            continuation.occurrence_guids,
+            "f3d assembly path appended occurrences",
+        )?;
         let mut identities = self.identity_guids;
-        identities.extend(continuation.identity_guids);
-        Self::try_new(
+        ctx.extend_vec(
+            &mut identities,
+            continuation.identity_guids,
+            "f3d assembly path appended identities",
+        )?;
+        Ok(Self::try_new(
             self.link,
             self.record_index,
             self.class_tag,
@@ -1366,6 +1387,7 @@ impl DesignAssemblyOperandPath {
             occurrences,
             identities,
         )
+        .ok())
     }
 }
 

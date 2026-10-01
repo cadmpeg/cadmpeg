@@ -1008,7 +1008,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             },
         ]
     );
-    assert!(crate::validate::validate_native(round_trip.ir()).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, round_trip.ir())
+            .expect("service native validation")
+    })
+    .is_empty());
 
     {
         let point = &mut f3d_native_mut(&mut extended_source_less).sketch_points[0];
@@ -1061,25 +1065,36 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             incident_curves: &[600],
         }
     );
-    assert!(crate::validate::validate_native(extended_round_trip.ir()).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, extended_round_trip.ir())
+            .expect("service native validation")
+    })
+    .is_empty());
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
         .try_edit(|draft| {
-            draft.members.resolve(|record_index| {
-                crate::records::sketch_relations::SketchRelationOperand::Point {
-                    record_index,
-                    persistent_id: Some(u64::MAX),
-                }
-            });
+            draft
+                .members
+                .resolve(
+                    &cadmpeg_test_support::service_decode_context(),
+                    |record_index| crate::records::sketch_relations::SketchRelationOperand::Point {
+                        record_index,
+                        persistent_id: Some(u64::MAX),
+                    },
+                )
+                .unwrap();
         })
         .unwrap();
-    assert!(crate::validate::validate_native(&inconsistent)
-        .iter()
-        .any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && finding.message.contains("typed operands disagree")
-        }));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &inconsistent)
+            .expect("service native validation")
+    })
+    .iter()
+    .any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+            && finding.message.contains("typed operands disagree")
+    }));
 
     let mut points = native.sketch_points.clone();
     let mut curves = native.sketch_curve_identities.clone();
@@ -1104,6 +1119,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     second_owner.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 278);
     entities.push(second_owner);
     let error = crate::design::decode::sketch::bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &entities,
         &mut points,
         &mut curves,

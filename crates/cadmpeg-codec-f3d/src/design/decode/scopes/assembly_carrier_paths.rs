@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode exact carrier-owned assembly operand paths.
 
+use cadmpeg_core::decode::index_from_u32;
+
 use cadmpeg_core::decode::View;
 
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
@@ -10,9 +12,8 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::layout::assembly_class_363_264_frame_360_child as class_363_child;
 use crate::layout::assembly_class_363_264_frame_360_leading as class_363_leading;
 use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
@@ -34,16 +35,12 @@ pub(super) fn exact_variable_reference_operand_qualifiers(
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Option<[DesignAssemblyOperandQualifier; 2]> {
-    frames
-        .iter()
-        .map(|frame| {
-            exact_class_363_operand_path(bytes, records, scope, frame)
-                .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-                .or_else(|| exact_class_307_joint_origin(bytes, records, frame))
-        })
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+    let [first, second] = frames.each_ref().map(|frame| {
+        exact_class_363_operand_path(bytes, records, scope, frame)
+            .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+            .or_else(|| exact_class_307_joint_origin(bytes, records, frame))
+    });
+    Some([first?, second?])
 }
 
 fn exact_class_363_operand_path(
@@ -117,7 +114,10 @@ fn exact_class_363_operand_path(
             carrier_at.checked_add(class_363_carrier::REPEATED_TERMINAL_REFERENCE)?,
         ) != Some(terminal_record_index)
         || scope_backlinks.iter().any(|frame| {
-            marked_record_reference(bytes, frame.start.saturating_add(frame.scope_reference))
+            frame
+                .start
+                .checked_add(frame.scope_reference)
+                .and_then(|at| marked_record_reference(bytes, at))
                 != Some(scope.record_index)
         })
     {
@@ -199,15 +199,14 @@ fn exact_class_307_joint_origin(
         "307",
         class_307_joint_origin::LEN,
     )?;
-    let (identity_guid, identity_end) = lp_utf16_bounded(
+    let identity_end = fixed_guid_end(
         bytes,
         start.checked_add(class_307_joint_origin::IDENTITY_GUID)?,
-        36..=36,
     )?;
-    let (kind, kind_end) = lp_utf16_bounded(
+    let kind_end = fixed_utf16_ascii_eq(
         bytes,
         start.checked_add(class_307_joint_origin::KIND_CODE_UNIT_COUNT)?,
-        11..=11,
+        "JointOrigin",
     )?;
     if paired_at != start.checked_add(class_307_joint_origin::LEN)?
         || marked_record_reference(
@@ -220,12 +219,10 @@ fn exact_class_307_joint_origin(
             start.checked_add(class_307_joint_origin::SECOND_REFERENCE)?,
         )
         .is_none()
-        || !is_guid_relaxed(&identity_guid)
         || identity_end
             != start
                 .checked_add(class_307_joint_origin::REFERENCE_COUNT)?
                 .checked_sub(3)?
-        || kind != "JointOrigin"
         || kind_end != start.checked_add(class_307_joint_origin::FEATURE_ORDINAL)?
         || View::u32_le_at(
             bytes,
@@ -240,7 +237,7 @@ fn exact_class_307_joint_origin(
     {
         return None;
     }
-    for ordinal in 0..class_307_joint_origin::REFERENCE_COUNT_VALUE as usize {
+    for ordinal in 0..index_from_u32(class_307_joint_origin::REFERENCE_COUNT_VALUE) {
         marked_record_reference(
             bytes,
             start
@@ -369,7 +366,7 @@ fn exact_class_264_record_frame(
     frame_length: usize,
 ) -> Option<(usize, usize)> {
     let mut candidates = records.frames(record_index).filter(|(start, paired_at)| {
-        *paired_at == start.saturating_add(frame_length)
+        Some(*paired_at) == start.checked_add(frame_length)
             && exact_indexed_header_at(bytes, *start, record_index).as_deref() == Some(class_tag)
             && exact_indexed_header_at(bytes, *paired_at, record_index).as_deref() == Some("264")
     });
@@ -388,12 +385,8 @@ fn exact_class_363_identity_guids(
 )> {
     let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
     let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
-    let (occurrence_guid, occurrence_end) = lp_utf16_bounded(bytes, occurrence_at, 36..=36)?;
-    let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-    let occurrence_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
-    let identity_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    let (occurrence_guid, occurrence_end) = fixed_relaxed_guid_text(bytes, occurrence_at)?;
+    let (identity_guid, identity_end) = fixed_relaxed_guid_text(bytes, identity_at)?;
     if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
         return None;
     }
@@ -407,13 +400,14 @@ fn exact_class_363_identity_guids(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::index_from_u32;
+
     use super::super::legacy_operand_paths::ASSEMBLY_MARKED_REFERENCE_LEN;
     use super::{
         exact_class_264_record_frame, exact_class_307_joint_origin, exact_class_363_identity_frame,
         exact_class_363_identity_guids, CarrierFrame,
     };
     use crate::bytes::lp_utf16_bounded;
-    use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::layout::{
         assembly_class_307_264_joint_origin_scope as class_307_joint_origin,
         assembly_class_363_264_frame_388_identity as class_363_identity,
@@ -435,7 +429,9 @@ mod tests {
 
     fn write_lp_utf16(bytes: &mut [u8], at: usize, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        bytes[at..at + 4].copy_from_slice(&(units.len() as u32).to_le_bytes());
+        bytes[at..at + 4].copy_from_slice(
+            &(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (ordinal, unit) in units.into_iter().enumerate() {
             let start = at + 4 + ordinal * 2;
             bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());
@@ -468,11 +464,11 @@ mod tests {
         );
         bytes[class_307_joint_origin::REFERENCE_COUNT..class_307_joint_origin::REFERENCE_COUNT + 4]
             .copy_from_slice(&class_307_joint_origin::REFERENCE_COUNT_VALUE.to_le_bytes());
-        for ordinal in 0..class_307_joint_origin::REFERENCE_COUNT_VALUE as usize {
+        for ordinal in 0..index_from_u32(class_307_joint_origin::REFERENCE_COUNT_VALUE) {
             write_marked_reference(
                 &mut bytes,
                 class_307_joint_origin::REFERENCE_ENTRIES + ordinal * ASSEMBLY_MARKED_REFERENCE_LEN,
-                40 + ordinal as u32,
+                40 + u32::try_from(ordinal).expect("fixture value fits u32"),
             );
         }
         bytes[class_307_joint_origin::REFERENCE_TRAILER
@@ -484,7 +480,7 @@ mod tests {
             class_307_joint_origin::KIND_CODE_UNIT_COUNT,
             "JointOrigin",
         );
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: 9,
@@ -524,7 +520,7 @@ mod tests {
         ));
 
         bytes[class_307_joint_origin::REFERENCE_TRAILER] = 0;
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         assert_eq!(exact_class_307_joint_origin(&bytes, &records, &frame), None);
     }
 
@@ -566,7 +562,7 @@ mod tests {
                     bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());
                 }
             }
-            let records = IndexedRecordOffsets::build(&bytes);
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
             assert_eq!(
                 exact_class_363_identity_frame(&bytes, &records, record_index),
                 Some(CarrierFrame {

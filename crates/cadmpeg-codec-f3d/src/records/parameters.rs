@@ -49,7 +49,13 @@ pub(crate) enum DesignParameterDiscriminator {
 
 impl DesignParameterDiscriminator {
     pub(crate) fn code(self) -> u64 {
-        self as u64
+        match self {
+            Self::Code0 => 0,
+            Self::Code3 => 3,
+            Self::Code4 => 4,
+            Self::Code5 => 5,
+            Self::Code6 => 6,
+        }
     }
 }
 
@@ -350,15 +356,6 @@ impl DesignParameter {
         match &self.source {
             DesignParameterSource::User { .. } => USER_PARAMETER_SOURCE_KIND,
             DesignParameterSource::Owned(source) => source.source_kind.as_str(),
-        }
-    }
-
-    pub(crate) fn source_kind_name(&self) -> NonBlankString {
-        match &self.source {
-            DesignParameterSource::User { .. } => {
-                cadmpeg_core::nonblank_literal!("User Parameter")
-            }
-            DesignParameterSource::Owned(source) => source.source_kind.clone(),
         }
     }
 

@@ -13,7 +13,6 @@
 //! The serializer recurses one frame per container of the record it is handed,
 //! and a record field holding a `serde_json::Value` states its own shape, so
 //! the descent is counted against [`MAX_NATIVE_NESTING_DEPTH`].
-#![deny(clippy::disallowed_methods)]
 
 use std::fmt::{Display, Write as _};
 use std::io::{self, Write};

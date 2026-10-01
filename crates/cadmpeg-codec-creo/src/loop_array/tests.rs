@@ -3,7 +3,8 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use super::scan;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -52,6 +53,58 @@ fn row(id: u8, body: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(body);
     bytes.push(0xe3);
     bytes
+}
+
+fn scan_with_limits(
+    payload: &[u8],
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<super::LoopArrayScan, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("loop array fixture admitted");
+    super::scan(&ctx, payload)
+}
+
+fn scan(payload: &[u8]) -> super::LoopArrayScan {
+    scan_with_limits(payload, u64::MAX, u64::MAX).expect("service loop array scan")
+}
+
+fn assert_loop_array_collection_refusal(limit: u64, operation: &'static str) {
+    let payload = frame(1, &row(1, &[0xe2, 0x10]));
+    let error = scan_with_limits(&payload, limit, u64::MAX)
+        .expect_err("loop array exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn loop_array_refuses_frame_record_before_growth() {
+    assert_loop_array_collection_refusal(0, "creo loop array frame records");
+}
+
+#[test]
+fn loop_array_refuses_frame_before_growth() {
+    assert_loop_array_collection_refusal(1, "creo loop array frames");
+}
+
+#[test]
+fn loop_array_refuses_section_record_before_growth() {
+    assert_loop_array_collection_refusal(2, "creo loop array section records");
+}
+
+#[test]
+fn loop_array_refuses_body_before_retained_copy() {
+    let payload = frame(1, &row(1, &[0xe2, 0x10]));
+    let error = scan_with_limits(&payload, u64::MAX, 0)
+        .expect_err("loop array body exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo loop array record body"));
 }
 
 #[test]

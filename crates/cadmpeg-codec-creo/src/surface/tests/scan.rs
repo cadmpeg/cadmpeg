@@ -1007,3 +1007,16 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
         }] if radius.get().to_bits() == 0.199_999_999_999_999_98_f64.to_bits())
     ));
 }
+
+#[test]
+fn spline_scalar_reader_withholds_zero_count_past_end() {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let mut cursor = 1;
+        let cache = crate::scalar::ScalarCache::default();
+        assert!(
+            crate::surface::take_spline_scalars(ctx, &[], &mut cursor, 0, "i_points", &cache)
+                .expect("empty scalar reader stays within resource limits")
+                .is_none()
+        );
+    });
+}

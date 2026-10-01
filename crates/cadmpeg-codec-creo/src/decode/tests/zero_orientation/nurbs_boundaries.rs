@@ -1,16 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS boundary regressions.
 
-use super::{
-    edit, nurbs_plane_boundary_curve, shared_extrusion_generator_curve, CurveGeometry,
-    NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, PlaneEquation, Point3,
-    SolvedCurveGeometry,
-};
+use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::quadratic::Coefficient;
 use crate::decode::surfaces::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots,
 };
+use crate::decode::surfaces::nurbs_boundaries::{
+    nurbs_plane_boundary_curve as decode_nurbs_plane_boundary_curve,
+    shared_extrusion_generator_curve as decode_shared_extrusion_generator_curve,
+};
 use crate::decode::tests::with_decode_ctx;
+use cadmpeg_ir::geometry::nurbs::{
+    NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_test_support::edit;
+
+fn nurbs_plane_boundary_curve(
+    nurbs: &NurbsSurface,
+    surface_id: u32,
+    plane: PlaneEquation,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Option<CurveGeometry> {
+    with_decode_ctx(|ctx| decode_nurbs_plane_boundary_curve(ctx, nurbs, surface_id, plane, refusal))
+        .expect("service profile admits the boundary")
+}
+
+fn shared_extrusion_generator_curve(
+    first: &NurbsSurface,
+    first_surface_id: u32,
+    second: &NurbsSurface,
+    second_surface_id: u32,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Option<CurveGeometry> {
+    with_decode_ctx(|ctx| {
+        decode_shared_extrusion_generator_curve(
+            ctx,
+            first,
+            first_surface_id,
+            second,
+            second_surface_id,
+            refusal,
+        )
+    })
+    .expect("service profile admits the shared boundary")
+}
 
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
@@ -97,9 +133,14 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     .is_none());
     let mut coplanar = surface.clone();
     coplanar
-        .edit_control_points(|point| {
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
             point.z = 0.0;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
@@ -112,13 +153,18 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .is_none());
-    let mut restored = surface.poles().into_iter();
+    let restored = surface.poles();
     coplanar
-        .edit_control_points(|point| {
-            if let Some(value) = restored.next() {
-                *point = value.get();
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if let Some(value) = restored.get(index) {
+                point = value.get();
             }
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .expect("finite fixture geometry preserves NURBS invariants");
     let mut zero_weights = coplanar.pole_grid().weights().expect("rational fixture");

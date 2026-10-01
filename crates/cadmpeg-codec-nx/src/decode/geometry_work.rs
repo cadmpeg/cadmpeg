@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared work accounting for adaptive geometry certification.
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -34,27 +34,46 @@ pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 /// certificates earned within the same accounting scope.
 pub(super) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,
+    pub(super) charges: &'a DecodeContext<'a>,
     blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
 }
 
 impl<'a> GeometryWorkBudget<'a> {
-    #[cfg(test)]
-    pub(super) fn new(limit: usize) -> Self {
-        Self::from_work_budget(WorkBudget::new(limit))
-    }
-
-    pub(super) fn from_work_budget(work: WorkBudget<'a>) -> Self {
+    pub(super) fn from_context(ctx: &'a DecodeContext<'_>, limit: u64) -> Self {
         Self {
-            work,
+            work: ctx.work_budget(limit),
+            charges: ctx,
             blend_frame_cache: Rc::new(RefCell::new(
                 super::blend::BlendSurfaceFrameCache::default(),
             )),
         }
     }
 
-    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'static> {
+    pub(super) fn resource_refusal(&self) -> Option<ResourceLimit> {
+        let charges = self.charges;
+        if let Some(limit) = charges.resource_refusal() {
+            return Some(limit);
+        }
+        if self.work.exhausted() {
+            let limit = cadmpeg_core::decode::u64_from_index(self.work.consumed());
+            let additional = limit + u64::from(limit != u64::MAX);
+            drop(charges.refuse_codec_limit("nx adaptive geometry work", limit, additional));
+        }
+        charges.resource_refusal()
+    }
+
+    pub(super) fn exhausted(&self) -> bool {
+        let exhausted = self.work.exhausted();
+        if exhausted {
+            let _resource_refusal = self.resource_refusal();
+        }
+        exhausted
+    }
+
+    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'_> {
         GeometryWorkBudget {
-            work: self.work.child_slice(limit),
+            work: self.work.session_child_slice(limit),
+            charges: self.charges,
             blend_frame_cache: Rc::clone(&self.blend_frame_cache),
         }
     }

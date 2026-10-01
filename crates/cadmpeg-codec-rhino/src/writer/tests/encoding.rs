@@ -74,8 +74,14 @@ fn admitted_name_with_null_character_is_a_writer_limit() {
 
 #[test]
 fn empty_utf16_string_has_zero_count_and_no_terminator() {
-    assert_eq!(utf16(""), 0_u32.to_le_bytes());
-    assert_eq!(utf16("A"), [2, 0, 0, 0, b'A', 0, 0, 0]);
+    assert_eq!(
+        utf16("").expect("empty string count fits"),
+        0_u32.to_le_bytes()
+    );
+    assert_eq!(
+        utf16("A").expect("string count fits"),
+        [2, 0, 0, 0, b'A', 0, 0, 0]
+    );
 }
 
 #[test]
@@ -101,7 +107,8 @@ fn object_attribute_items_are_written_in_ascending_order() {
         None,
         Some(Color::new(1.0, 0.5, 0.0, 1.0).expect("valid color")),
         Some(false),
-    );
+    )
+    .expect("valid object attributes");
     assert_eq!(&payload[21..], &[6, 255, 128, 0, 0, 11, 0, 13, 1, 0]);
 }
 
@@ -141,7 +148,11 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
             "user_strings".into(),
             serde_json::json!([{ "key": "name", "value": "value" }]),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
+        records[0] = cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            fields,
+        )
+        .expect("valid native identity");
     }
 
     let mut output = vec![0xaa];
@@ -192,7 +203,11 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
             "mesh_modifiers".into(),
             serde_json::json!({ "displacement": { "on": true } }),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
+        records[0] = cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            fields,
+        )
+        .expect("valid native identity");
     }
 
     let mut output = vec![0xaa];
@@ -247,7 +262,11 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
                 "color": [10, 20, 30, 40]
             }]),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
+        records[0] = cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            fields,
+        )
+        .expect("valid native identity");
     }
 
     let mut output = vec![0xaa];

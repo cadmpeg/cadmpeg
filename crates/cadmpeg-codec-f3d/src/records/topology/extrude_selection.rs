@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude selection groups, operand and face roles, and group members.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::fillet::deserialize_historical_binding;
 use super::fillet::HistoricalBinding;
+use crate::records::admission::RecordAdmission;
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
 use crate::records::sketch_relations::SketchRelationOperand;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
@@ -147,21 +152,54 @@ pub(crate) struct DesignExtrudeSelectionGroupWire {
     pub(crate) paired_byte_offset: u64,
 }
 
-impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
-    type Error = String;
-    fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
+enum ExtrudeSelectionWireError {
+    Payload(String),
+    Resource(CodecError),
+}
+
+impl From<String> for ExtrudeSelectionWireError {
+    fn from(value: String) -> Self {
+        Self::Payload(value)
+    }
+}
+
+impl From<&'static str> for ExtrudeSelectionWireError {
+    fn from(value: &'static str) -> Self {
+        Self::Payload(value.into())
+    }
+}
+
+impl DesignExtrudeSelectionGroup {
+    pub(crate) fn from_wire_charged(
+        ctx: &DecodeContext<'_>,
+        wire: DesignExtrudeSelectionGroupWire,
+    ) -> Result<Self, CodecError> {
+        Self::from_wire_inner(RecordAdmission::Charged(ctx), wire).map_err(|error| match error {
+            ExtrudeSelectionWireError::Payload(message) => CodecError::Malformed(message),
+            ExtrudeSelectionWireError::Resource(error) => error,
+        })
+    }
+
+    fn from_wire_inner(
+        admission: RecordAdmission<'_, '_>,
+        wire: DesignExtrudeSelectionGroupWire,
+    ) -> Result<Self, ExtrudeSelectionWireError> {
         if wire.members.len() != wire.member_offsets.len() {
             return Err("members and member_offsets must have equal lengths".into());
         }
         let offsets = DesignExtrudeSelectionGroup::offsets(wire.byte_offset, wire.members.len())?;
-        if wire
-            .members
-            .iter()
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            != wire.members.len()
-        {
-            return Err("members must be distinct".into());
+        let mut unique = std::collections::HashSet::new();
+        for member in &wire.members {
+            if unique.contains(member) {
+                return Err("members must be distinct".into());
+            }
+            {
+                let operation = "index F3D extrude selection members";
+                admission
+                    .reserve_set(&mut unique, 1, operation)
+                    .map_err(ExtrudeSelectionWireError::Resource)?;
+            }
+            unique.insert(member);
         }
         if wire.member_count_offset != offsets[0]
             || wire.opaque_index_offset != offsets[1]
@@ -174,7 +212,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             .member_offsets
             .iter()
             .enumerate()
-            .all(|(index, offset)| *offset == offsets[0] + 5 + index as u64 * 11)
+            .all(|(index, offset)| *offset == offsets[0] + 5 + u64_from_index(index) * 11)
         {
             return Err(
                 "member_offsets must start after member_count_offset and have stride 11".into(),
@@ -184,13 +222,17 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             NonZeroU32::new(wire.opaque_index).ok_or("opaque_index must be nonzero")?;
         let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(wire.opaque_scalar)
             .ok_or("opaque_scalar must be finite")?;
-        Ok(Self {
-            members: wire
-                .members
+        let mut members = admission
+            .collection_vec(wire.members.len(), "admit F3D extrude selection members")
+            .map_err(ExtrudeSelectionWireError::Resource)?;
+        members.extend(
+            wire.members
                 .into_iter()
                 .zip(wire.member_offsets)
-                .map(|(value, offset)| Located { value, offset })
-                .collect(),
+                .map(|(value, offset)| Located { value, offset }),
+        );
+        Ok(Self {
+            members,
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             scope_reference_ordinal: wire.scope_reference_ordinal,
@@ -202,6 +244,17 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             variant: wire.variant,
             paired_class_tag: wire.paired_class_tag.try_into()?,
             offsets,
+        })
+    }
+}
+
+impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
+    type Error = String;
+
+    fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
+        Self::from_wire_inner(RecordAdmission::Admitted, wire).map_err(|error| match error {
+            ExtrudeSelectionWireError::Payload(message) => message,
+            ExtrudeSelectionWireError::Resource(error) => error.to_string(),
         })
     }
 }
@@ -292,7 +345,7 @@ impl DesignExtrudeSelectionGroup {
         let offsets = Self::offsets(self.byte_offset, members.len())?;
         let mut wire = DesignExtrudeSelectionGroupWire::from(self.clone());
         wire.member_offsets = (0..members.len())
-            .map(|index| offsets[0] + 5 + index as u64 * 11)
+            .map(|index| offsets[0] + 5 + u64_from_index(index) * 11)
             .collect();
         wire.members = members;
         [

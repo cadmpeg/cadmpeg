@@ -49,7 +49,7 @@ fn check_order<'a>(
 }
 
 macro_rules! define_model_identity_checks {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn check_model_identity_and_order(
             ir: &CadIr,
             seen: &mut HashSet<String>,

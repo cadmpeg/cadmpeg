@@ -12,7 +12,8 @@ use crate::decode::feature_history::outputs::{
 use crate::decode::sketch::geometry::section_circle_geometry;
 use crate::decode::sketch::radii::resolved_section_radii;
 use crate::decode::sketch_transfer::constraints::{
-    section_segment_radius_constraints, section_segment_radius_constraints_for_emitted,
+    section_segment_radius_constraints as checked_section_segment_radius_constraints,
+    section_segment_radius_constraints_for_emitted as checked_section_segment_radius_constraints_for_emitted,
     section_segment_verhor_definition,
 };
 use crate::decode::sketch_transfer::loci::section_skamp_active;
@@ -33,6 +34,34 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+fn section_segment_radius_constraints(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        checked_section_segment_radius_constraints(ctx, definition, sketch)
+    })
+    .expect("service profile admits segment radius constraints")
+}
+
+fn section_segment_radius_constraints_for_emitted(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+    emitted: &BTreeSet<SketchEntityId>,
+    available_parameters: &BTreeSet<ParameterId>,
+) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        checked_section_segment_radius_constraints_for_emitted(
+            ctx,
+            definition,
+            sketch,
+            emitted,
+            available_parameters,
+        )
+    })
+    .expect("service profile admits emitted segment radius constraints")
+}
 
 #[test]
 fn sketch_curve_references_require_a_materialized_curve() {
@@ -57,13 +86,64 @@ fn sketch_curve_references_require_a_materialized_curve() {
     .expect("valid test fixture");
 
     assert_eq!(
-        placed_sketch_curve_ref(Some(&transform), &sketch, 3, &line),
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
+            ctx,
+            Some(&transform),
+            &sketch,
+            3,
+            &line
+        ))
+        .expect("test curve reference"),
         Some("creo:featdefs:section_curve#5:3".to_string())
     );
-    assert_eq!(placed_sketch_curve_ref(None, &sketch, 3, &line), None);
     assert_eq!(
-        placed_sketch_curve_ref(Some(&transform), &sketch, 4, &point),
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
+            ctx, None, &sketch, 3, &line
+        ))
+        .expect("test absent curve reference"),
         None
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
+            ctx,
+            Some(&transform),
+            &sketch,
+            4,
+            &point
+        ))
+        .expect("test point curve reference"),
+        None
+    );
+}
+
+#[test]
+fn placed_sketch_curve_reference_refuses_before_retained_formatting() {
+    let transform = crate::placement::FeatureSectionTransform::new(
+        5,
+        Some(5),
+        [10.0, 20.0, 30.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        7,
+    )
+    .expect("valid section frame");
+    let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(2.0, 0.0),
+    })
+    .expect("valid line");
+    let expected = "creo:featdefs:section_curve#5:3";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(placed_sketch_curve_ref(&ctx, Some(&transform), &sketch, 3, &line),
+        Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && resource.operation == "creo section curve reference")
     );
 }
 
@@ -153,14 +233,26 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     let entity = SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture");
     let sketch = SketchId::mint("synthetic:test:id#sketch").expect("valid test fixture");
     assert_eq!(
-        section_segment_verhor_definition(&segment, &sketch, entity.clone()),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx,
+            &segment,
+            &sketch,
+            entity.clone()
+        ))
+        .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Vertical {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(1);
     assert_eq!(
-        section_segment_verhor_definition(&segment, &sketch, entity.clone()),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx,
+            &segment,
+            &sketch,
+            entity.clone()
+        ))
+        .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Horizontal {
             entity: entity.clone()
         })
@@ -171,7 +263,10 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         entities,
         operands,
         ..
-    }) = section_segment_verhor_definition(&segment, &sketch, entity.clone())
+    }) = crate::decode::with_test_decode_ctx(|ctx| {
+        section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone())
+    })
+    .expect("service verhor admission")
     else {
         panic!("an undefined line selector must remain native");
     };
@@ -186,16 +281,21 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.kind = crate::feature::definitions::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
-        section_segment_verhor_definition(&segment, &sketch, entity),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx, &segment, &sketch, entity
+        ))
+        .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     segment.vertical_horizontal = None;
     assert_eq!(
-        section_segment_verhor_definition(
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx,
             &segment,
             &sketch,
             SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture")
-        ),
+        ))
+        .expect("service verhor admission"),
         None
     );
 }
@@ -229,12 +329,17 @@ fn dimension_identity_includes_its_feature_definition() {
         "creo:featdefs:parameter#917:3"
     );
     assert_eq!(
-        feature_dimension_parameter_layout(&[
-            (sketch_917.clone(), 3),
-            (sketch_1104.clone(), 3),
-            (sketch_1104.clone(), 4),
-            (sketch_1200, 3),
-        ]),
+        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(
+            ctx,
+            &[
+                (sketch_917.clone(), 3),
+                (sketch_1104.clone(), 3),
+                (sketch_1104.clone(), 4),
+                (sketch_1200, 3),
+            ]
+        )
+        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .expect("layout fits service limits"),
         Some(vec![
             (0, "d3".to_string(), None),
             (0, "d3".to_string(), None),
@@ -243,7 +348,12 @@ fn dimension_identity_includes_its_feature_definition() {
         ])
     );
     assert_eq!(
-        feature_dimension_parameter_layout(&[(sketch_917.clone(), 3), (sketch_917.clone(), 3),]),
+        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(
+            ctx,
+            &[(sketch_917.clone(), 3), (sketch_917.clone(), 3)]
+        )
+        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .expect("layout fits service limits"),
         Some(vec![
             (0, "d917_3_1".to_string(), Some(0)),
             (1, "d917_3_2".to_string(), Some(1)),
@@ -697,7 +807,8 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        evaluated_sweep_output_bodies(&ir, 40),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40))
+            .expect("service profile admits output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),

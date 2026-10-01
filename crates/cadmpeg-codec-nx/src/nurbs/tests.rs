@@ -137,11 +137,28 @@ fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
 }
 
 fn assert_shared_parse_matches_standalone(stream: &[u8]) {
-    let graph = crate::topology::Graph::parse(stream);
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, stream))
+            .unwrap();
     let shared = crate::nurbs::parse_with_graph(stream, &graph);
-    assert_same_surfaces(&shared.surfaces, &crate::nurbs::surfaces(stream).0);
-    assert_same_curves(&shared.curves, &crate::nurbs::curves(stream).0);
-    assert_same_pcurves(&shared.pcurves, &crate::nurbs::pcurves(stream).0);
+    assert_same_surfaces(
+        &shared.surfaces,
+        &crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, stream))
+            .unwrap()
+            .0,
+    );
+    assert_same_curves(
+        &shared.curves,
+        &crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, stream))
+            .unwrap()
+            .0,
+    );
+    assert_same_pcurves(
+        &shared.pcurves,
+        &crate::test_support::with_decode_context(|ctx| crate::nurbs::pcurves(ctx, stream))
+            .unwrap()
+            .0,
+    );
 }
 
 #[test]
@@ -172,7 +189,12 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
         .position(|window| window == [0, 125, 0, 21])
         .expect("surface payload");
     put_f64(&mut surface, payload + 97, f64::MAX);
-    assert!(crate::nurbs::surfaces(&surface).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &surface))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 
     let mut curve = bspline_partition_stream();
     let payload = curve
@@ -180,7 +202,12 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
         .position(|window| window == [0, 135, 0, 41])
         .expect("curve payload");
     put_f64(&mut curve, payload + 15, f64::MAX);
-    assert!(crate::nurbs::curves(&curve).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &curve))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 
     let descriptor = curve
         .windows(4)
@@ -189,7 +216,12 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
     put_ref(&mut curve, descriptor + 10, 2);
     put_f64(&mut curve, payload + 15, f64::MAX);
     put_f64(&mut curve, payload + 31, f64::MIN_POSITIVE);
-    assert!(crate::nurbs::pcurves(&curve).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::pcurves(ctx, &curve))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 }
 
 #[test]
@@ -203,10 +235,12 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     surface[surface_descriptor + 5] = 0;
     surface[surface_descriptor + 18] = 2;
     surface[surface_descriptor + 19] = 3;
-    let [surface] = crate::nurbs::surfaces(&surface)
-        .0
-        .try_into()
-        .expect("one surface");
+    let [surface] =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &surface))
+            .unwrap()
+            .0
+            .try_into()
+            .expect("one surface");
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
         panic!("expected NURBS surface");
     };
@@ -220,10 +254,12 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
         .expect("surface descriptor");
     open_surface[surface_descriptor + 4] = 0;
     open_surface[surface_descriptor + 18] = 6;
-    let [open_surface] = crate::nurbs::surfaces(&open_surface)
-        .0
-        .try_into()
-        .expect("one surface");
+    let [open_surface] =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &open_surface))
+            .unwrap()
+            .0
+            .try_into()
+            .expect("one surface");
     let Some(SolvedSurfaceGeometry::Nurbs(open_surface)) = open_surface.geometry.solved() else {
         panic!("expected NURBS surface");
     };
@@ -236,7 +272,8 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
         .expect("curve descriptor");
     curve[curve_descriptor + 16] = 2;
     curve[curve_descriptor + 17] = 1;
-    let [curve] = crate::nurbs::curves(&curve)
+    let [curve] = crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &curve))
+        .unwrap()
         .0
         .try_into()
         .expect("one curve");
@@ -252,10 +289,12 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
         .expect("curve descriptor");
     open_curve[curve_descriptor + 16] = 6;
     open_curve[curve_descriptor + 17] = 0;
-    let [open_curve] = crate::nurbs::curves(&open_curve)
-        .0
-        .try_into()
-        .expect("one curve");
+    let [open_curve] =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &open_curve))
+            .unwrap()
+            .0
+            .try_into()
+            .expect("one curve");
     let Some(SolvedCurveGeometry::Nurbs(open_curve)) = open_curve.geometry.solved() else {
         panic!("expected NURBS curve");
     };
@@ -276,10 +315,12 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
         put_f64(&mut pcurve, payload + 15 + index * 8, value);
     }
-    let [pcurve] = crate::nurbs::pcurves(&pcurve)
-        .0
-        .try_into()
-        .expect("one pcurve");
+    let [pcurve] =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::pcurves(ctx, &pcurve))
+            .unwrap()
+            .0
+            .try_into()
+            .expect("one pcurve");
     let PcurveGeometry::Nurbs { nurbs } = pcurve.geometry else {
         panic!("expected NURBS pcurve");
     };
@@ -295,10 +336,12 @@ fn nurbs_surface_retains_reversed_carrier_normal() {
         .expect("B_SURFACE record");
     stream[surface + 18] = b'-';
 
-    let [surface] = crate::nurbs::surfaces(&stream)
-        .0
-        .try_into()
-        .expect("one surface");
+    let [surface] =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream))
+            .unwrap()
+            .0
+            .try_into()
+            .expect("one surface");
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
         panic!("expected NURBS surface");
     };
@@ -316,10 +359,12 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
             .expect("surface descriptor");
         surface[surface_descriptor + 18] = knot_type;
         surface[surface_descriptor + 19] = knot_type;
-        let [surface] = crate::nurbs::surfaces(&surface)
-            .0
-            .try_into()
-            .expect("one surface");
+        let [surface] =
+            crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &surface))
+                .unwrap()
+                .0
+                .try_into()
+                .expect("one surface");
         let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
             panic!("expected NURBS surface");
         };
@@ -331,10 +376,12 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
             .position(|window| window == [0, 136, 0, 40])
             .expect("curve descriptor");
         curve[curve_descriptor + 16] = knot_type;
-        let [curve] = crate::nurbs::curves(&curve)
-            .0
-            .try_into()
-            .expect("one curve");
+        let [curve] =
+            crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &curve))
+                .unwrap()
+                .0
+                .try_into()
+                .expect("one curve");
         let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
             panic!("expected NURBS curve");
         };
@@ -355,10 +402,12 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
         for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
             put_f64(&mut pcurve, payload + 15 + index * 8, value);
         }
-        let [pcurve] = crate::nurbs::pcurves(&pcurve)
-            .0
-            .try_into()
-            .expect("one pcurve");
+        let [pcurve] =
+            crate::test_support::with_decode_context(|ctx| crate::nurbs::pcurves(ctx, &pcurve))
+                .unwrap()
+                .0
+                .try_into()
+                .expect("one pcurve");
         let PcurveGeometry::Nurbs { nurbs } = pcurve.geometry else {
             panic!("expected NURBS pcurve");
         };
@@ -370,33 +419,47 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
 #[test]
 fn nurbs_scanners_defer_unreferenced_lane_materialization() {
     const ARRAY_CANDIDATES: usize = 128;
-    const ARRAY_COUNT: usize = u16::MAX as usize;
+    const ARRAY_COUNT: usize = 65_535;
     const PAYLOAD_CANDIDATES: usize = 64;
     const PAYLOAD_COUNT: usize = 32_768;
     let mut arrays = vec![0; ARRAY_CANDIDATES * 8 + 8 + ARRAY_COUNT * 2];
     for index in 0..ARRAY_CANDIDATES {
         let pos = index * 8;
-        let reference = (index + 11) as u16;
+        let reference = u16::try_from(index + 11).expect("fixture value fits u16");
         arrays[pos..pos + 2].copy_from_slice(&[0, 127]);
-        arrays[pos + 4..pos + 6].copy_from_slice(&(ARRAY_COUNT as u16).to_be_bytes());
+        arrays[pos + 4..pos + 6].copy_from_slice(
+            &(u16::try_from(ARRAY_COUNT).expect("fixture value fits u16")).to_be_bytes(),
+        );
         arrays[pos + 6..pos + 8].copy_from_slice(&reference.to_be_bytes());
     }
     let parsed_arrays = crate::nurbs::arrays(&arrays);
     assert_eq!(parsed_arrays.u16s.len(), ARRAY_CANDIDATES);
-    assert!(crate::nurbs::curves(&arrays).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &arrays))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 
     let mut payloads = vec![0; PAYLOAD_CANDIDATES * 16 + 15 + PAYLOAD_COUNT * 8];
     for index in 0..PAYLOAD_CANDIDATES {
         let pos = index * 16;
-        let reference = (index + 11) as u16;
+        let reference = u16::try_from(index + 11).expect("fixture value fits u16");
         payloads[pos..pos + 2].copy_from_slice(&[0, 135]);
         payloads[pos + 2..pos + 4].copy_from_slice(&reference.to_be_bytes());
-        payloads[pos + 9..pos + 13].copy_from_slice(&(PAYLOAD_COUNT as u32).to_be_bytes());
+        payloads[pos + 9..pos + 13].copy_from_slice(
+            &(u32::try_from(PAYLOAD_COUNT).expect("fixture value fits u32")).to_be_bytes(),
+        );
         payloads[pos + 13..pos + 15].copy_from_slice(&1u16.to_be_bytes());
     }
     let parsed_payloads = crate::nurbs::curve_payloads(&payloads);
     assert_eq!(parsed_payloads.len(), PAYLOAD_CANDIDATES);
-    assert!(crate::nurbs::curves(&payloads).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &payloads))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 }
 
 #[test]
@@ -418,7 +481,11 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         put_ref(&mut descriptor, 4, degree);
         put_ref(&mut descriptor, 8, poles);
         put_ref(&mut descriptor, 10, 3);
-        put_ref(&mut descriptor, 14, distinct as u16);
+        put_ref(
+            &mut descriptor,
+            14,
+            u16::try_from(distinct).expect("fixture value fits u16"),
+        );
         descriptor[16] = 2;
         descriptor[20] = 2;
         put_ref(&mut descriptor, 23, 42);
@@ -428,18 +495,28 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         let value_count = usize::from(poles) * 3;
         let mut payload = record(135, 15 + value_count * 8);
         put_ref(&mut payload, 2, 41);
-        payload[9..13].copy_from_slice(&(value_count as u32).to_be_bytes());
+        payload[9..13].copy_from_slice(
+            &(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes(),
+        );
         put_ref(&mut payload, 13, 1);
         for pole in 0..usize::from(poles) {
             let at = 15 + pole * 24;
-            put_f64(&mut payload, at, pole as f64 * 0.01);
+            put_f64(
+                &mut payload,
+                at,
+                cadmpeg_core::convert::f64_from_index(pole)
+                    .expect("fixture integer is exactly representable")
+                    * 0.01,
+            );
             put_f64(&mut payload, at + 8, 0.0);
             put_f64(&mut payload, at + 16, 0.0);
         }
         stream.extend(payload);
 
         let mut multiplicities = record(127, 8 + distinct * 2);
-        multiplicities[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+        multiplicities[4..6].copy_from_slice(
+            &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+        );
         put_ref(&mut multiplicities, 6, 42);
         put_ref(&mut multiplicities, 8, degree + 1);
         for index in 1..distinct {
@@ -448,10 +525,17 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         stream.extend(multiplicities);
 
         let mut knots = record(128, 8 + distinct * 8);
-        knots[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+        knots[4..6].copy_from_slice(
+            &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+        );
         put_ref(&mut knots, 6, 43);
         for index in 0..distinct {
-            put_f64(&mut knots, 8 + index * 8, index as f64);
+            put_f64(
+                &mut knots,
+                8 + index * 8,
+                cadmpeg_core::convert::f64_from_index(index)
+                    .expect("fixture integer is exactly representable"),
+            );
         }
         stream.extend(knots);
         stream
@@ -479,8 +563,12 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         put_ref(&mut descriptor, 16, v_poles);
         descriptor[18] = 2;
         descriptor[19] = 2;
-        descriptor[20..24].copy_from_slice(&(u_distinct as u32).to_be_bytes());
-        descriptor[24..28].copy_from_slice(&(v_distinct as u32).to_be_bytes());
+        descriptor[20..24].copy_from_slice(
+            &(u32::try_from(u_distinct).expect("fixture value fits u32")).to_be_bytes(),
+        );
+        descriptor[24..28].copy_from_slice(
+            &(u32::try_from(v_distinct).expect("fixture value fits u32")).to_be_bytes(),
+        );
         put_ref(&mut descriptor, 36, 30);
         put_ref(&mut descriptor, 38, 31);
         put_ref(&mut descriptor, 40, 32);
@@ -493,13 +581,27 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         let mut payload = record(125, 97 + value_count * 8);
         put_ref(&mut payload, 2, 21);
         payload[90] = b'+';
-        payload[91..95].copy_from_slice(&(value_count as u32).to_be_bytes());
+        payload[91..95].copy_from_slice(
+            &(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes(),
+        );
         put_ref(&mut payload, 95, 1);
         for v in 0..usize::from(v_poles) {
             for u in 0..usize::from(u_poles) {
                 let at = 97 + (v * usize::from(u_poles) + u) * 24;
-                put_f64(&mut payload, at, u as f64 * 0.001);
-                put_f64(&mut payload, at + 8, v as f64 * 0.001);
+                put_f64(
+                    &mut payload,
+                    at,
+                    cadmpeg_core::convert::f64_from_index(u)
+                        .expect("fixture integer is exactly representable")
+                        * 0.001,
+                );
+                put_f64(
+                    &mut payload,
+                    at + 8,
+                    cadmpeg_core::convert::f64_from_index(v)
+                        .expect("fixture integer is exactly representable")
+                        * 0.001,
+                );
                 put_f64(&mut payload, at + 16, 0.0);
             }
         }
@@ -509,7 +611,9 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
             [(30, u_degree, u_distinct), (31, v_degree, v_distinct)]
         {
             let mut multiplicities = record(127, 8 + distinct * 2);
-            multiplicities[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+            multiplicities[4..6].copy_from_slice(
+                &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+            );
             put_ref(&mut multiplicities, 6, reference);
             put_ref(&mut multiplicities, 8, degree + 1);
             for index in 1..distinct {
@@ -519,20 +623,30 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         }
         for (reference, distinct) in [(32, u_distinct), (33, v_distinct)] {
             let mut knots = record(128, 8 + distinct * 8);
-            knots[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+            knots[4..6].copy_from_slice(
+                &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+            );
             put_ref(&mut knots, 6, reference);
             for index in 0..distinct {
-                put_f64(&mut knots, 8 + index * 8, index as f64);
+                put_f64(
+                    &mut knots,
+                    8 + index * 8,
+                    cadmpeg_core::convert::f64_from_index(index)
+                        .expect("fixture integer is exactly representable"),
+                );
             }
             stream.extend(knots);
         }
         stream
     }
 
-    let [high_degree] = crate::nurbs::curves(&curve_stream(11, 12))
-        .0
-        .try_into()
-        .expect("one high-degree curve");
+    let [high_degree] = crate::test_support::with_decode_context(|ctx| {
+        crate::nurbs::curves(ctx, &curve_stream(11, 12))
+    })
+    .unwrap()
+    .0
+    .try_into()
+    .expect("one high-degree curve");
     let Some(SolvedCurveGeometry::Nurbs(high_degree)) = high_degree.geometry.solved() else {
         panic!("expected high-degree NURBS curve");
     };
@@ -540,20 +654,26 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     assert_eq!(high_degree.control_points().len(), 12);
     assert_eq!(high_degree.knots().len(), 24);
 
-    let [wide_curve] = crate::nurbs::curves(&curve_stream(1, 5000))
-        .0
-        .try_into()
-        .expect("one wide curve");
+    let [wide_curve] = crate::test_support::with_decode_context(|ctx| {
+        crate::nurbs::curves(ctx, &curve_stream(1, 5000))
+    })
+    .unwrap()
+    .0
+    .try_into()
+    .expect("one wide curve");
     let Some(SolvedCurveGeometry::Nurbs(wide_curve)) = wide_curve.geometry.solved() else {
         panic!("expected wide NURBS curve");
     };
     assert_eq!(wide_curve.control_points().len(), 5000);
     assert_eq!(wide_curve.knots().len(), 5002);
 
-    let [wide_surface] = crate::nurbs::surfaces(&surface_stream(1, 2001, 1, 2))
-        .0
-        .try_into()
-        .expect("one wide surface");
+    let [wide_surface] = crate::test_support::with_decode_context(|ctx| {
+        crate::nurbs::surfaces(ctx, &surface_stream(1, 2001, 1, 2))
+    })
+    .unwrap()
+    .0
+    .try_into()
+    .expect("one wide surface");
     let Some(SolvedSurfaceGeometry::Nurbs(wide_surface)) = wide_surface.geometry.solved() else {
         panic!("expected wide NURBS surface");
     };
@@ -567,13 +687,27 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
     wide_curve_pole_count[curve_descriptor + 6] = 1;
-    assert!(crate::nurbs::curves(&wide_curve_pole_count).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(
+            ctx,
+            &wide_curve_pole_count
+        ))
+        .unwrap()
+        .0
+        .is_empty()
+    );
 
     let mut wide_curve_distinct_count = curve_stream(1, 12);
     wide_curve_distinct_count[curve_descriptor + 12] = 1;
-    assert!(crate::nurbs::curves(&wide_curve_distinct_count)
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(
+            ctx,
+            &wide_curve_distinct_count
+        ))
+        .unwrap()
         .0
-        .is_empty());
+        .is_empty()
+    );
 
     let mut wide_surface_pole_count = surface_stream(1, 2, 1, 2);
     let surface_descriptor = wide_surface_pole_count
@@ -581,15 +715,27 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         .position(|window| window == [0, 126, 0, 20])
         .expect("surface descriptor");
     wide_surface_pole_count[surface_descriptor + 10] = 1;
-    assert!(crate::nurbs::surfaces(&wide_surface_pole_count)
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(
+            ctx,
+            &wide_surface_pole_count
+        ))
+        .unwrap()
         .0
-        .is_empty());
+        .is_empty()
+    );
 
     let mut wide_surface_distinct_count = surface_stream(1, 2, 1, 2);
     wide_surface_distinct_count[surface_descriptor + 20] = 1;
-    assert!(crate::nurbs::surfaces(&wide_surface_distinct_count)
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(
+            ctx,
+            &wide_surface_distinct_count
+        ))
+        .unwrap()
         .0
-        .is_empty());
+        .is_empty()
+    );
 }
 
 #[test]
@@ -600,7 +746,12 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
         .position(|window| window == [0, 126, 0, 20])
         .expect("surface descriptor");
     put_ref(&mut surface, descriptor + 6, 2);
-    assert!(crate::nurbs::surfaces(&surface).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &surface))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 
     let mut curve = bspline_partition_stream();
     let descriptor = curve
@@ -608,10 +759,20 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
     put_ref(&mut curve, descriptor + 4, 2);
-    assert!(crate::nurbs::curves(&curve).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &curve))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 
     put_ref(&mut curve, descriptor + 10, 2);
-    assert!(crate::nurbs::pcurves(&curve).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::pcurves(ctx, &curve))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 
     let mut short_knots = bspline_partition_stream();
     let multiplicities = short_knots
@@ -619,7 +780,12 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
         .position(|record| record[..2] == [0, 127] && record[6..8] == 42u16.to_be_bytes())
         .expect("curve multiplicities");
     put_ref(&mut short_knots, multiplicities + 10, 1);
-    assert!(crate::nurbs::curves(&short_knots).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &short_knots))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 }
 
 #[test]
@@ -630,7 +796,12 @@ fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
         .position(|window| window == [0, 126, 0, 20])
         .expect("surface descriptor");
     put_ref(&mut stream, descriptor + 46, 22);
-    assert!(crate::nurbs::surfaces(&stream).0.is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream))
+            .unwrap()
+            .0
+            .is_empty()
+    );
 }
 
 #[test]
@@ -655,7 +826,10 @@ fn nurbs_carriers_reject_duplicate_support_identities() {
         let mut stream = bspline_partition_stream();
         duplicate_record(&mut stream, tag, xmt_offset, xmt, len);
         assert!(
-            crate::nurbs::surfaces(&stream).0.is_empty(),
+            crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream))
+                .unwrap()
+                .0
+                .is_empty(),
             "duplicate type {tag}"
         );
     }
@@ -669,7 +843,10 @@ fn nurbs_carriers_reject_duplicate_support_identities() {
         let mut stream = bspline_partition_stream();
         duplicate_record(&mut stream, tag, xmt_offset, xmt, len);
         assert!(
-            crate::nurbs::curves(&stream).0.is_empty(),
+            crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &stream))
+                .unwrap()
+                .0
+                .is_empty(),
             "duplicate type {tag}"
         );
     }
@@ -688,16 +865,32 @@ fn nurbs_decodes_descriptors_at_the_stream_boundary() {
 
     let mut surface = bspline_partition_stream();
     move_record_to_end(&mut surface, 126, 20, 48);
-    assert_eq!(crate::nurbs::surfaces(&surface).0.len(), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &surface))
+            .unwrap()
+            .0
+            .len(),
+        1
+    );
 
     let mut curve = bspline_partition_stream();
     move_record_to_end(&mut curve, 136, 40, 27);
-    assert_eq!(crate::nurbs::curves(&curve).0.len(), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &curve))
+            .unwrap()
+            .0
+            .len(),
+        1
+    );
 }
 
 #[test]
 fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
-    let surfaces = crate::nurbs::surfaces(&extended_bspline_surface_stream()).0;
+    let surfaces = crate::test_support::with_decode_context(|ctx| {
+        crate::nurbs::surfaces(ctx, &extended_bspline_surface_stream())
+    })
+    .unwrap()
+    .0;
     assert_eq!(surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
@@ -718,7 +911,10 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
         .expect("surface payload");
     stream.insert(payload + 2, 0xff);
 
-    let surfaces = crate::nurbs::surfaces(&stream).0;
+    let surfaces =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream))
+            .unwrap()
+            .0;
     assert_eq!(surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
@@ -750,7 +946,10 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
     }
     stream.extend(descriptor);
 
-    let surfaces = crate::nurbs::surfaces(&stream).0;
+    let surfaces =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream))
+            .unwrap()
+            .0;
     assert_eq!(surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
@@ -778,7 +977,9 @@ fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
     }
     stream.extend(descriptor);
 
-    let curves = crate::nurbs::curves(&stream).0;
+    let curves = crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &stream))
+        .unwrap()
+        .0;
     assert_eq!(curves.len(), 1);
     let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
         panic!("expected NURBS curve");
@@ -801,7 +1002,9 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     stream.insert(payload + 2, 0xff);
     stream.insert(payload + 10, 0xff);
 
-    let curves = crate::nurbs::curves(&stream).0;
+    let curves = crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &stream))
+        .unwrap()
+        .0;
     assert_eq!(curves.len(), 1);
     let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
         panic!("expected NURBS curve");
@@ -819,7 +1022,13 @@ fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
         .expect("curve descriptor");
     stream[descriptor + 17..descriptor + 21].copy_from_slice(&[0, 0, 0, 1]);
 
-    assert_eq!(crate::nurbs::curves(&stream).0.len(), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &stream))
+            .unwrap()
+            .0
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -847,7 +1056,9 @@ fn nurbs_decodes_dimension_four_rational_curve() {
     }
     stream.splice(payload..payload + old_payload_len, rational_payload);
 
-    let curves = crate::nurbs::curves(&stream).0;
+    let curves = crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &stream))
+        .unwrap()
+        .0;
     assert_eq!(curves.len(), 1);
     let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
         panic!("expected NURBS curve");
@@ -872,7 +1083,8 @@ fn a_refused_curve_carrier_is_stated_not_dropped() {
     // the right kind and the carrier is the reader that refuses it.
     put_f64(&mut stream, knots + 8, 1.0);
     put_f64(&mut stream, knots + 16, 0.0);
-    let (curves, refusals) = crate::nurbs::curves(&stream);
+    let (curves, refusals) =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &stream)).unwrap();
     assert!(curves.is_empty(), "the refused record states no curve");
     let [refusal] = refusals.as_slice() else {
         panic!("the refusal is stated once, got {refusals:?}");
