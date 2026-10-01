@@ -2674,14 +2674,12 @@ fn parse_constraints(
                     let Some(metadata) = node.attribute("MetaData") else {
                         return Ok(None);
                     };
-                    let _reservation = ctx.reserve_scoped(
-                        cadmpeg_core::decode::u64_from_index(metadata.len()),
-                        "fcstd constraint text metadata parse",
-                    )?;
-                    let Ok(metadata) = serde_json::from_str::<serde_json::Value>(metadata) else {
-                        return Ok(None);
-                    };
-                    let Some(text) = metadata.get("text").and_then(serde_json::Value::as_str)
+                    let (metadata, _reservation) = match ctx.parse_json_value(metadata, "fcstd constraint text metadata parse") {
+                    Ok(tree) => tree,
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => return Ok(None),
+                };
+                let Some(text) = metadata.get("text").and_then(serde_json::Value::as_str)
                     else {
                         return Ok(None);
                     };

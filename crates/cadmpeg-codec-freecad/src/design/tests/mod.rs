@@ -872,16 +872,12 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
         "fcstd constraint locus copies",
         |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(
-        matches!(super::parse_constraints(&ctx, &object, &[&text], &sketch, &entities),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd constraint text metadata parse")
+    let error = crate::test_support::materialized_refusal_at(
+        "fcstd constraint text metadata parse",
+        |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "fcstd constraint text metadata parse"));
     let native = property("<Constrain Type=\"99\" First=\"0\" FirstPos=\"0\"/>");
     crate::test_support::assert_collection_refusal_at(
         &[],
