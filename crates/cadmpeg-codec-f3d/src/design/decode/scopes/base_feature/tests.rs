@@ -226,3 +226,16 @@ fn base_feature_snapshot_bodies_refuse_collection_limit() {
     };
     assert_eq!(bodies.len(), 2);
 }
+
+#[test]
+fn base_feature_snapshot_guid_refusal_is_not_an_absent_candidate() {
+    let (bytes, scope) = snapshot_frame();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(exact_base_feature_construction(&ctx, &bytes, &scope),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain F3D relaxed GUID" && limit.additional == 36));
+}

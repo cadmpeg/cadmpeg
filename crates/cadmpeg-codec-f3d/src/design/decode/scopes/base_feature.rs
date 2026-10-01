@@ -13,14 +13,6 @@ use cadmpeg_core::CodecError;
 
 use super::shared_frames::marked_record_reference;
 
-fn exact_base_feature_body_based_on_faces(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-) -> Option<DesignBaseFeatureConstruction> {
-    exact_base_feature_legacy_body_based_on_faces(bytes, scope)
-        .or_else(|| exact_base_feature_direct_body_based_on_faces(bytes, scope))
-}
-
 fn marked_u64_reference(bytes: &[u8], marker_offset: usize, marker_value: u8) -> Option<u64> {
     if bytes.get(marker_offset) != Some(&marker_value) {
         return None;
@@ -117,26 +109,28 @@ fn exact_base_feature_scope_tail(
 }
 
 fn exact_base_feature_legacy_body_based_on_faces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<DesignBaseFeatureConstruction> {
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
     if scope.class_tag.as_str() != "452" || scope.paired_class_tag.as_str() != "262" {
-        return None;
+        return Ok(None);
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let body_count = View::u32_le_at(bytes, start + class_452_compact::BODY_COUNT)?;
-    match body_count {
-        1 => exact_base_feature_legacy_compact(bytes, scope, start),
-        2 => exact_base_feature_legacy_expanded(bytes, scope, start),
-        _ => None,
+    let Ok(start) = usize::try_from(scope.byte_offset()) else { return Ok(None); };
+    match View::u32_le_at(bytes, start + class_452_compact::BODY_COUNT) {
+        Some(1) => exact_base_feature_legacy_compact(ctx, bytes, scope, start),
+        Some(2) => exact_base_feature_legacy_expanded(ctx, bytes, scope, start),
+        _ => Ok(None),
     }
 }
 
 fn exact_base_feature_legacy_compact(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<DesignBaseFeatureConstruction> {
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
+    (|| {
     if scope.frame_length() != u64::try_from(class_452_compact::LEN).ok()? {
         return None;
     }
@@ -224,10 +218,14 @@ fn exact_base_feature_legacy_compact(
     {
         return None;
     }
-    let (envelope_guid, guid_end) = fixed_relaxed_guid_text(
+    let (envelope_guid, guid_end) = match fixed_relaxed_guid_text(ctx,
         bytes,
         start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT,
-    )?;
+    ) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
     if guid_end != start + class_452_compact::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_compact::ZERO_RUN_AFTER_GUID
@@ -253,7 +251,7 @@ fn exact_base_feature_legacy_compact(
             previous_history_state_id: class_452_compact::PREVIOUS_HISTORY_STATE_ID,
         },
     )?;
-    Some(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
+    Some(Ok(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form: DesignBaseFeatureBodyReferenceForm::CompactOneBody {
             mode: Located {
                 value: mode,
@@ -286,14 +284,17 @@ fn exact_base_feature_legacy_compact(
             + u64::try_from(class_452_compact::ENVELOPE_GUID).ok()?,
         tag_body_based_on_faces_offset: scope.byte_offset()
             + u64::try_from(class_452_compact::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_base_feature_legacy_expanded(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<DesignBaseFeatureConstruction> {
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
+    (|| {
     if scope.frame_length() != u64::try_from(class_452_expanded::LEN).ok()? {
         return None;
     }
@@ -391,10 +392,14 @@ fn exact_base_feature_legacy_expanded(
     {
         return None;
     }
-    let (envelope_guid, guid_end) = fixed_relaxed_guid_text(
+    let (envelope_guid, guid_end) = match fixed_relaxed_guid_text(ctx,
         bytes,
         start + class_452_expanded::ENVELOPE_GUID_CODE_UNIT_COUNT,
-    )?;
+    ) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
     if guid_end != start + class_452_expanded::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_expanded::ZERO_RUN_AFTER_GUID
@@ -420,7 +425,7 @@ fn exact_base_feature_legacy_expanded(
             previous_history_state_id: class_452_expanded::PREVIOUS_HISTORY_STATE_ID,
         },
     )?;
-    Some(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
+    Some(Ok(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form: DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody {
             bodies: [
                 DesignLegacyBaseFeatureBody {
@@ -469,13 +474,16 @@ fn exact_base_feature_legacy_expanded(
             + u64::try_from(class_452_expanded::ENVELOPE_GUID).ok()?,
         tag_body_based_on_faces_offset: scope.byte_offset()
             + u64::try_from(class_452_expanded::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_base_feature_direct_body_based_on_faces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<DesignBaseFeatureConstruction> {
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
+    (|| {
     if !matches!(
         (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
         ("365", "262") | ("377", "259")
@@ -590,7 +598,11 @@ fn exact_base_feature_direct_body_based_on_faces(
         return None;
     }
     let (envelope_guid, guid_end) =
-        fixed_relaxed_guid_text(bytes, start + class_377::ENVELOPE_GUID_CODE_UNIT_COUNT)?;
+        match fixed_relaxed_guid_text(ctx, bytes, start + class_377::ENVELOPE_GUID_CODE_UNIT_COUNT) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
     let previous_history_state_id =
         View::u32_le_at(bytes, start + class_377::PREVIOUS_HISTORY_STATE_ID)?;
     let previous_history_state_matches = match scope.previous_history_state_id() {
@@ -619,7 +631,7 @@ fn exact_base_feature_direct_body_based_on_faces(
     {
         return None;
     }
-    Some(DesignBaseFeatureConstruction::BodyBasedOnFaces {
+    Some(Ok(DesignBaseFeatureConstruction::BodyBasedOnFaces {
         body: crate::records::identity::Located {
             value: body_entity_suffix,
             offset: scope.byte_offset() + u64::try_from(class_377::BODY_ENTITY_SUFFIX).ok()?,
@@ -634,7 +646,8 @@ fn exact_base_feature_direct_body_based_on_faces(
         envelope_guid_offset: scope.byte_offset() + u64::try_from(class_377::ENVELOPE_GUID).ok()?,
         tag_body_based_on_faces_offset: scope.byte_offset()
             + u64::try_from(class_377::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
-    })
+    }))
+    })().transpose()
 }
 
 use crate::layout::base_feature_body_snapshot_body_entry as snapshot_entry;
@@ -689,10 +702,13 @@ pub(super) fn exact_base_feature_construction(
     if let Some(snapshot) = exact_base_feature_body_snapshot(ctx, bytes, scope)? {
         return Ok(Some(snapshot));
     }
+    if let Some(value) = exact_base_feature_legacy_body_based_on_faces(ctx, bytes, scope)? {
+        return Ok(Some(value));
+    }
+    if let Some(value) = exact_base_feature_direct_body_based_on_faces(ctx, bytes, scope)? {
+        return Ok(Some(value));
+    }
     (|| {
-        if let Some(body_based_on_faces) = exact_base_feature_body_based_on_faces(bytes, scope) {
-            return Some(Ok(body_based_on_faces));
-        }
         let start = usize::try_from(scope.byte_offset()).ok()?;
         if scope.frame_length() == 267 {
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
@@ -1114,12 +1130,18 @@ fn exact_base_feature_body_snapshot(
         } else {
             snapshot_compact_preamble::LEN
         };
-        let parse_guid = |at: usize| {
-            let (guid, end) = fixed_relaxed_guid_text(bytes, at)?;
-            Some((guid, end, at + snapshot_guid::GUID_UTF16))
-        };
-        let (first_guid, after_first_guid, first_guid_offset) = parse_guid(cursor)?;
-        let (second_guid, after_second_guid, second_guid_offset) = parse_guid(after_first_guid)?;
+        let first_guid_offset = cursor + snapshot_guid::GUID_UTF16;
+        let (first_guid, after_first_guid) = match fixed_relaxed_guid_text(ctx, bytes, cursor) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let second_guid_offset = after_first_guid + snapshot_guid::GUID_UTF16;
+        let (second_guid, after_second_guid) = match fixed_relaxed_guid_text(ctx, bytes, after_first_guid) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         // The nine-byte preamble carries the linkage anchor in the final zero
         // byte of the second GUID's UTF-16 payload. Keep the full GUID for the
         // native record, but anchor the fixed tail at that shared byte.
@@ -1171,8 +1193,13 @@ fn exact_base_feature_body_snapshot(
         {
             return None;
         }
-        let (third_guid, after_third_guid, third_guid_offset) =
-            parse_guid(after_guids + snapshot_tail::LEN)?;
+        let third_guid_at = after_guids + snapshot_tail::LEN;
+        let third_guid_offset = third_guid_at + snapshot_guid::GUID_UTF16;
+        let (third_guid, after_third_guid) = match fixed_relaxed_guid_text(ctx, bytes, third_guid_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let reference_count_at = after_third_guid.checked_add(snapshot_scope::REFERENCE_COUNT)?;
         let reference_marker = after_third_guid.checked_add(snapshot_scope::REFERENCE_MARKER)?;
         let state_at = after_third_guid.checked_add(snapshot_scope::HISTORY_STATE_ID)?;
