@@ -238,13 +238,17 @@ fn parse_component_reference_data(
         ctx.refuse_codec_limit("preflight F3D component reference JSON", 0, u64::MAX)
     })?;
     let _reservation = ctx.reserve_scoped(length, "preflight F3D component reference JSON")?;
-    crate::json_budget::preflight(
+    if !crate::json_budget::preflight(
         ctx,
         bytes,
         "preflight F3D component reference JSON",
         "scan F3D component reference JSON",
         "parse F3D component reference JSON",
-    )?;
+    )? {
+        return Err(CodecError::malformed(format_args!(
+            "{COMPONENT_REFERENCE_ENTRY} is not valid JSON"
+        )));
+    }
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"

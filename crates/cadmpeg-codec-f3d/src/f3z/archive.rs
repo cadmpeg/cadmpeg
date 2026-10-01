@@ -257,13 +257,17 @@ fn model_root_member(
     })?;
     let _reservation =
         ctx.reserve_scoped(description_len, "preflight F3Z design description JSON")?;
-    crate::json_budget::preflight(
+    if !crate::json_budget::preflight(
         ctx,
         description_bytes,
         "preflight F3Z design description JSON",
         "match F3Z derived model reference",
         "collect F3Z model candidates",
-    )?;
+    )? {
+        return Err(CodecError::malformed(format_args!(
+            "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON"
+        )));
+    }
     let description: DesignDescriptionJson =
         serde_json::from_slice(description_bytes).map_err(|error| {
             CodecError::malformed(format_args!(
