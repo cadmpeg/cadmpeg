@@ -1325,12 +1325,34 @@ fn user_string_entries_refuse_collection_limit() {
 
 #[test]
 fn user_string_key_refuses_retained_limit() {
-    assert_attribute_resource(&user_string_list_refusal(100, 2), "Rhino user-string key");
+    assert_attribute_resource(
+        &user_string_list_refusal(
+            100,
+            crate::test_support::retained_limit_at("Rhino user-string key", 0, |cap| {
+                match user_string_list_refusal(100, cap) {
+                    crate::chunks::FramingError::Resource(limit) => limit,
+                    error => panic!("unexpected resource refusal: {error:?}"),
+                }
+            }),
+        ),
+        "Rhino user-string key",
+    );
 }
 
 #[test]
 fn user_string_value_refuses_retained_limit() {
-    assert_attribute_resource(&user_string_list_refusal(100, 3), "Rhino user-string value");
+    assert_attribute_resource(
+        &user_string_list_refusal(
+            100,
+            crate::test_support::retained_limit_at("Rhino user-string value", 0, |cap| {
+                match user_string_list_refusal(100, cap) {
+                    crate::chunks::FramingError::Resource(limit) => limit,
+                    error => panic!("unexpected resource refusal: {error:?}"),
+                }
+            }),
+        ),
+        "Rhino user-string value",
+    );
 }
 
 #[test]

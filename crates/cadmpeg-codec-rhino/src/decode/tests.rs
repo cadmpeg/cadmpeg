@@ -339,7 +339,9 @@ fn transaction_source_record_bytes_refuse_retained_limit() {
     assert_transaction_refusal(
         &scan,
         100,
-        Some(cadmpeg_core::decode::u64_from_index(length - 1)),
+        Some(cadmpeg_core::decode::u64_from_index(
+            length - 1 + 4 * std::mem::size_of::<cadmpeg_ir::UnknownRecord>(),
+        )),
         "Rhino source record bytes",
     );
     assert!(with_expand(&scan, |expand| DecodeContext::new(

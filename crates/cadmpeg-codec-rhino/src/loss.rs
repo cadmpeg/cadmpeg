@@ -535,7 +535,25 @@ mod tests {
                 if limit.operation == "Rhino diagnostics"
         ));
         let mut retained_policy = cadmpeg_core::decode::DecodePolicy::service();
-        retained_policy.limits.max_retained_bytes = 0;
+        retained_policy.limits.max_retained_bytes =
+            crate::test_support::retained_limit_at("Rhino diagnostic message", 0, |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("empty root");
+                match super::Diagnostics::new()
+                    .push_coded_admitted(
+                        &ctx,
+                        RhinoLossCode::IntegrityFailure,
+                        format_args!("fixture warning"),
+                    )
+                    .expect_err("diagnostic refusal")
+                {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+                    error => panic!("diagnostic refusal: {error:?}"),
+                }
+            });
         let (retained_ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &retained_policy)
                 .expect("empty root admitted");

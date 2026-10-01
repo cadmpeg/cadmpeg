@@ -67,15 +67,14 @@ fn modern_linetype_retained_refusal(limit: u64) -> PatternTransferError {
 #[test]
 fn linetype_id_refuses_retained_limit() {
     assert!(
-        matches!(modern_linetype_retained_refusal(11), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype ID")
+        matches!(modern_linetype_retained_refusal(crate::test_support::retained_limit_at("Rhino linetype ID", 0, |cap| { match modern_linetype_retained_refusal(cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype ID")
     );
 }
 
 #[test]
 fn linetype_source_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:linetype#33333333-3333-3333-3333-333333333333".len();
     assert!(
-        matches!(modern_linetype_retained_refusal(u64::try_from(11 + id_len).expect("budget fits")), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype source UUID")
+        matches!(modern_linetype_retained_refusal(crate::test_support::retained_limit_at("Rhino linetype source UUID", 0, |cap| { match modern_linetype_retained_refusal(cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype source UUID")
     );
 }
 
@@ -308,7 +307,7 @@ macro_rules! hatch_text_limit {
         #[test]
         fn $name() {
             assert!(matches!(
-                hatch_pattern_retained_refusal($archive, $modern, $limit),
+                hatch_pattern_retained_refusal($archive, $modern, crate::test_support::retained_limit_at($operation, 0, |cap| { match hatch_pattern_retained_refusal($archive, $modern, cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(limit)) => limit, error => panic!("unexpected resource refusal: {error:?}") } })),
                 PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
                     if refusal.operation == $operation
             ));
@@ -354,9 +353,8 @@ hatch_text_limit!(
 
 #[test]
 fn legacy_hatch_source_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:hatch_pattern#77777777-7777-7777-7777-777777777777".len();
     assert!(
-        matches!(hatch_pattern_retained_refusal(ArchiveVersion::V5, false, u64::try_from(16 + id_len).expect("budget fits")), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino hatch source UUID")
+        matches!(hatch_pattern_retained_refusal(ArchiveVersion::V5, false, crate::test_support::retained_limit_at("Rhino hatch source UUID", 0, |cap| { match hatch_pattern_retained_refusal(ArchiveVersion::V5, false, cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino hatch source UUID")
     );
 }
 

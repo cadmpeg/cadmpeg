@@ -325,10 +325,16 @@ fn snapshot_instance_links<'a>(
 ) -> Result<InstanceLinkSnapshot<'a>, cadmpeg_core::CodecError> {
     const BYTES: &str = "Rhino instance link snapshot bytes";
     let (links, reservation) = ctx.with_scoped_storage(BYTES, || {
-        ctx.charge_collection_items(u64_from_index(records.len()), "Rhino instance link snapshot rows")?;
+        ctx.charge_collection_items(
+            u64_from_index(records.len()),
+            "Rhino instance link snapshot rows",
+        )?;
         let mut links = ctx.vector_storage(records.len(), BYTES)?;
         for record in records {
-            ctx.charge_collection_items(u64_from_index(record.links().len()), "Rhino instance link snapshot entries")?;
+            ctx.charge_collection_items(
+                u64_from_index(record.links().len()),
+                "Rhino instance link snapshot entries",
+            )?;
             let mut row = ctx.vector_storage(record.links().len(), BYTES)?;
             for link in record.links() {
                 row.push(ctx.copy_retained_text(link, BYTES)?);
@@ -355,7 +361,10 @@ fn snapshot_instance_statuses<'a>(
 > {
     const BYTES: &str = "Rhino instance status snapshot bytes";
     let (copy, reservation) = ctx.with_scoped_storage(BYTES, || {
-        ctx.charge_collection_items(u64_from_index(statuses.len()), "Rhino instance status snapshot")?;
+        ctx.charge_collection_items(
+            u64_from_index(statuses.len()),
+            "Rhino instance status snapshot",
+        )?;
         let mut copy = ctx.vector_storage(statuses.len(), BYTES)?;
         ctx.charge_work(u64_from_index(statuses.len()), BYTES)?;
         copy.extend_from_slice(statuses);
@@ -549,6 +558,7 @@ pub(crate) struct DecodeContext<'a> {
     object_candidates: HashMap<crate::wire::Uuid, Vec<usize>>,
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
+    lookup_storage: std::rc::Rc<std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'a>>>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -558,18 +568,23 @@ impl<'a> DecodeContext<'a> {
         expand: crate::mesh::MeshExpand<'a>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let session = expand.ctx();
+        let mut lookup_storage = session.reserve_scoped(0, "Rhino transaction lookup storage")?;
         let mut object_candidates = HashMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = object.identity() {
                 if !object_candidates.contains_key(&identity.object_id) {
-                    session.reserve_map(
-                        &mut object_candidates,
-                        1,
-                        "Rhino object candidate keys",
-                    )?;
+                    lookup_storage.with_storage(|| {
+                        session.reserve_map(
+                            &mut object_candidates,
+                            1,
+                            "Rhino object candidate keys",
+                        )
+                    })?;
                 }
                 let positions = object_candidates.entry(identity.object_id).or_default();
-                session.reserve_vec(positions, 1, "Rhino object candidate positions")?;
+                lookup_storage.with_storage(|| {
+                    session.reserve_vec(positions, 1, "Rhino object candidate positions")
+                })?;
                 positions.push(source_order);
             }
         }
@@ -577,11 +592,13 @@ impl<'a> DecodeContext<'a> {
         for (index, definition) in scan.definitions.definitions().iter().enumerate() {
             let id = definition.id();
             if !definition_candidates.contains_key(&id) {
-                session.reserve_map(
-                    &mut definition_candidates,
-                    1,
-                    "Rhino definition candidate keys",
-                )?;
+                lookup_storage.with_storage(|| {
+                    session.reserve_map(
+                        &mut definition_candidates,
+                        1,
+                        "Rhino definition candidate keys",
+                    )
+                })?;
             }
             definition_candidates.insert(id, index);
         }
@@ -605,6 +622,7 @@ impl<'a> DecodeContext<'a> {
             object_candidates,
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
+            lookup_storage: std::rc::Rc::new(std::cell::RefCell::new(lookup_storage)),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -3154,11 +3172,13 @@ impl<'a> DecodeContext<'a> {
             self.scan.objects.len(),
             "Rhino object unknown records",
         )?;
-        self.expand.ctx().reserve_vec(
-            &mut self.statuses,
-            self.scan.objects.len(),
-            "Rhino object statuses",
-        )?;
+        self.lookup_storage.borrow_mut().with_storage(|| {
+            self.expand.ctx().reserve_vec(
+                &mut self.statuses,
+                self.scan.objects.len(),
+                "Rhino object statuses",
+            )
+        })?;
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
             let range = object.range();
@@ -3510,11 +3530,7 @@ impl<'a> DecodeContext<'a> {
                     "Rhino point-cloud vertices",
                 )?;
                 let mut vertices = Vec::new();
-                ctx.reserve_capacity(
-                    &mut vertices,
-                    points.len(),
-                    "Rhino point-cloud vertices",
-                )?;
+                ctx.reserve_capacity(&mut vertices, points.len(), "Rhino point-cloud vertices")?;
                 for (index, position) in points.into_iter().enumerate() {
                     let mut point_key_copy_storage =
                         ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -4307,7 +4323,9 @@ impl<'a> DecodeContext<'a> {
         for (object, status) in self.scan.objects.iter().zip(&self.statuses) {
             let class = object.class_uuid().unwrap_or_else(crate::wire::Uuid::nil);
             if !outcomes.contains_key(&class) {
-                ctx.reserve_map(&mut outcomes, 1, "Rhino class outcome keys")?;
+                self.lookup_storage.borrow_mut().with_storage(|| {
+                    ctx.reserve_map(&mut outcomes, 1, "Rhino class outcome keys")
+                })?;
             }
             let outcome = outcomes.entry(class).or_insert_with(|| ClassOutcome {
                 decoded: 0,
@@ -4346,7 +4364,10 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
-        let mut sorted = ctx.collection_vec(outcomes.len(), "Rhino class outcome rows")?;
+        let mut sorted = self
+            .lookup_storage
+            .borrow_mut()
+            .with_storage(|| ctx.collection_vec(outcomes.len(), "Rhino class outcome rows"))?;
         for (class, outcome) in outcomes {
             let label =
                 ctx.format_retained(format_args!("{class}"), "Rhino class outcome label")?;
@@ -4670,16 +4691,11 @@ fn stage_extrusion_caps(
             let nurbs = PcurveNurbs::from_lanes(
                 pcurve.degree,
                 ctx.copy_slice(&pcurve.knots, "Rhino extrusion cap pcurve knots")?,
-                ctx.copy_slice(
-                    &pcurve.control_points,
-                    "Rhino extrusion cap pcurve poles",
-                )?,
+                ctx.copy_slice(&pcurve.control_points, "Rhino extrusion cap pcurve poles")?,
                 pcurve
                     .weights
                     .as_ref()
-                    .map(|weights| {
-                        ctx.copy_slice(weights, "Rhino extrusion cap pcurve weights")
-                    })
+                    .map(|weights| ctx.copy_slice(weights, "Rhino extrusion cap pcurve weights"))
                     .transpose()?,
                 pcurve.periodic,
             )

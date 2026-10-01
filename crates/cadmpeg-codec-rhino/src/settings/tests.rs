@@ -1751,7 +1751,15 @@ fn layer_description_refuses_retained_limit() {
     let mut extension = vec![37];
     extension.extend(utf16_bytes(" description "));
     extension.push(0);
-    let error = layer_text_refusal(&extension, 1);
+    let error = layer_text_refusal(
+        &extension,
+        crate::test_support::retained_limit_at("Rhino layer loss text", 0, |cap| {
+            match layer_text_refusal(&extension, cap) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
+            }
+        }),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino layer loss text")
     );

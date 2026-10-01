@@ -586,11 +586,14 @@ fn revolution_nurbs(
         cadmpeg_core::decode::u64_from_index(temp_items),
         "Rhino revolution temporary lanes",
     )?;
-    let profile_bytes = profile_count.checked_mul(
-        std::mem::size_of::<FinitePoint3>() + std::mem::size_of::<f64>(),
-    ).ok_or_else(|| GeometryError::not_implemented("revolution profile bytes exceed address space"))?;
+    let profile_bytes = profile_count
+        .checked_mul(std::mem::size_of::<FinitePoint3>() + std::mem::size_of::<f64>())
+        .ok_or_else(|| {
+            GeometryError::not_implemented("revolution profile bytes exceed address space")
+        })?;
     let mut temporary = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(profile_bytes), "Rhino revolution temporary lanes",
+        cadmpeg_core::decode::u64_from_index(profile_bytes),
+        "Rhino revolution temporary lanes",
     )?;
     let angle_step = (angle[1] - angle[0])
         / cadmpeg_core::convert::f64_from_index(span_count)
@@ -618,17 +621,15 @@ fn revolution_nurbs(
         .ok_or_else(|| error(offset, "revolution parameter interval is invalid"))
     };
     let mut angular = Vec::new();
-    temporary.with_storage(|| ctx.reserve_capacity(
-        &mut angular,
-        angular_count,
-        "Rhino revolution temporary lanes",
-    ))?;
+    temporary.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut angular,
+            angular_count,
+            "Rhino revolution temporary lanes",
+        )
+    })?;
     let mut knots = Vec::new();
-    ctx.reserve_capacity(
-        &mut knots,
-        knot_count,
-        "Rhino revolution angular knots",
-    )?;
+    ctx.reserve_capacity(&mut knots, knot_count, "Rhino revolution angular knots")?;
     for span in 0..span_count {
         let a0 = angle[0]
             + angle_step
@@ -662,17 +663,21 @@ fn revolution_nurbs(
         None => ctx.alloc_filled(profile_count, 1.0, "Rhino revolution profile weights")?,
     };
     let mut control_points = Vec::new();
-    temporary.with_storage(|| ctx.reserve_capacity(
-        &mut control_points,
-        output_count,
-        "Rhino revolution temporary lanes",
-    ))?;
+    temporary.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut control_points,
+            output_count,
+            "Rhino revolution temporary lanes",
+        )
+    })?;
     let mut weights = Vec::new();
-    temporary.with_storage(|| ctx.reserve_capacity(
-        &mut weights,
-        output_count,
-        "Rhino revolution temporary lanes",
-    ))?;
+    temporary.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut weights,
+            output_count,
+            "Rhino revolution temporary lanes",
+        )
+    })?;
     for (theta, angular_weight) in angular {
         let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in
@@ -756,7 +761,8 @@ fn sum_nurbs(
             GeometryError::not_implemented("sum surface input bytes exceed address space")
         })?;
     let mut temporary = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(input_bytes), "Rhino sum surface temporary lanes",
+        cadmpeg_core::decode::u64_from_index(input_bytes),
+        "Rhino sum surface temporary lanes",
     )?;
     let first_points = first.control_points();
     let second_points = second.control_points();
@@ -769,18 +775,22 @@ fn sum_nurbs(
         None => ctx.alloc_filled(v_count, 1.0, "Rhino sum-surface second weights")?,
     };
     let mut control_points = Vec::new();
-    temporary.with_storage(|| ctx.reserve_capacity(
-        &mut control_points,
-        product_count,
-        "Rhino sum surface temporary lanes",
-    ))?;
-    let mut weights = if rational {
-        let mut values = Vec::new();
-        temporary.with_storage(|| ctx.reserve_capacity(
-            &mut values,
+    temporary.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut control_points,
             product_count,
             "Rhino sum surface temporary lanes",
-        ))?;
+        )
+    })?;
+    let mut weights = if rational {
+        let mut values = Vec::new();
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(
+                &mut values,
+                product_count,
+                "Rhino sum surface temporary lanes",
+            )
+        })?;
         Some(values)
     } else {
         None

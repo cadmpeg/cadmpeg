@@ -250,7 +250,12 @@ pub(crate) fn install(
             ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
             links.push(ctx.copy_retained_text(id, "Rhino definition external link")?);
         }
-        ctx.stable_sort_by(&mut links, Ord::cmp, std::string::String::len, "Rhino definition links sort")?;
+        ctx.stable_sort_by(
+            &mut links,
+            Ord::cmp,
+            std::string::String::len,
+            "Rhino definition links sort",
+        )?;
         links.dedup();
         let mut member_object_ids = Vec::new();
         for id in &definition.members {
@@ -397,7 +402,12 @@ pub(crate) fn install(
             ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
             links.push(definition);
         }
-        ctx.stable_sort_by(&mut links, Ord::cmp, std::string::String::len, "Rhino occurrence links sort")?;
+        ctx.stable_sort_by(
+            &mut links,
+            Ord::cmp,
+            std::string::String::len,
+            "Rhino occurrence links sort",
+        )?;
         ctx.reserve_vec(&mut occurrences, 1, "Rhino product occurrences")?;
         occurrences.push(OccurrenceRecord {
             id: ctx.format_retained(
@@ -639,34 +649,25 @@ mod tests {
         let scan = one_linked_definition_scan(7);
         let link = &scan.definitions.definitions()[0].link;
         assert!(matches!(link, crate::instances::LinkSource::Structured(_)));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        let definition_id_len = format!(
-            "rhino:product:definition#{}",
-            scan.definitions.definitions()[0].id()
-        )
-        .len();
-        let external_id_len = format!(
-            "rhino:product:external#{}",
-            scan.definitions.definitions()[0].id()
-        )
-        .len();
-        let crate::instances::LinkSource::Structured(reference) = link else {
-            return;
+        let run = |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                    .expect("root bytes admitted");
+            let error = super::external_record(&ctx, scan.definitions.definitions()[0].id(), link)
+                .expect_err("name digest exceeds retained limit");
+            error
         };
-        policy.limits.max_retained_bytes = u64::try_from(
-            definition_id_len
-                + external_id_len
-                + 36
-                + reference.full_path.len()
-                + reference.relative_path.len(),
-        )
-        .expect("test budget fits u64");
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                .expect("root bytes admitted");
-        let error = super::external_record(&ctx, scan.definitions.definitions()[0].id(), link)
-            .expect_err("name digest exceeds retained limit");
+        let error = run(crate::test_support::retained_limit_at(
+            "Rhino external name SHA-1",
+            0,
+            |cap| match run(cap) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
+            },
+        ));
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -732,14 +733,25 @@ mod tests {
     #[test]
     fn product_object_id_refuses_retained_limit() {
         let scan = one_reference_scan();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                .expect("root bytes admitted");
-        let error = install(&ctx, &scan, &mut CadIr::empty())
-            .expect_err("object ID exceeds retained limit");
+        let run = |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                    .expect("root bytes admitted");
+            let error = install(&ctx, &scan, &mut CadIr::empty())
+                .expect_err("object ID exceeds retained limit");
+            error
+        };
+        let error = run(crate::test_support::retained_limit_at(
+            "Rhino product object ID",
+            0,
+            |cap| match run(cap) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
+            },
+        ));
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

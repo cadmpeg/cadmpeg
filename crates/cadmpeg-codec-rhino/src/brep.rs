@@ -4155,23 +4155,34 @@ mod tests {
     #[test]
     fn brep_trim_reserved_bytes_refuse_retained_limit() {
         let bytes = packed_array(1, &trim_record(true));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 30;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test input fits service profile");
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = read_trims(
-            &ctx,
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            Some(200_206_180),
-            &mut Diagnostics::new(),
-            &mut Vec::new(),
-        )
-        .expect_err("31 reserved bytes exceed a 30-byte retained limit");
+        let run = |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("test input fits service profile");
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let error = read_trims(
+                &ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                Some(200_206_180),
+                &mut Diagnostics::new(),
+                &mut Vec::new(),
+            )
+            .expect_err("31 reserved bytes exceed a 30-byte retained limit");
+            error
+        };
+        let error = run(crate::test_support::retained_limit_at(
+            "Rhino Brep trim reserved bytes",
+            0,
+            |cap| match run(cap) {
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
+            },
+        ));
         assert!(
             matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "Rhino Brep trim reserved bytes")
