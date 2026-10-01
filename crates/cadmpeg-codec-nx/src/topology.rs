@@ -1326,6 +1326,17 @@ impl Graph {
             .filter_map(|key| self.nodes.get(key))
     }
 
+    /// Admit indexed node traversal before yielding records of one kind.
+    pub(crate) fn of_kind_charged<'graph>(
+        &'graph self, ctx: &DecodeContext<'_>, kind: NodeKind,
+    ) -> Result<impl Iterator<Item = &'graph Node>, CodecError> {
+        let count = self.by_kind.get(&kind).map_or(0, Vec::len);
+        let work = count.checked_mul(self.nodes.len()).ok_or_else(||
+            ctx.refuse_codec_limit("iterate NX topology records", u64::MAX, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "iterate NX topology records")?;
+        Ok(self.of_kind(kind))
+    }
+
     /// Resolve one current XMT identity from a unique kernel node identity.
     pub(crate) fn unique_xmt_by_node_id(&self, kind: NodeKind, node_id: u32) -> Option<u32> {
         let mut matches = self

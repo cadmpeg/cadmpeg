@@ -1138,3 +1138,18 @@ fn nurbs_auxiliary_lane_preserves_work_refusal() {
         assert!(matches!(super::auxiliary_record_at(ctx, &bytes, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "validate NX NURBS floating-point lane"));
     });
 }
+
+#[test]
+fn nurbs_prefix_refuses_scoped_storage_before_materializing() {
+    let bytes = [0, 2];
+    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
+        assert!(matches!(super::ArrayValues::U16(&bytes).u16_prefix(ctx, 1), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS multiplicity prefix"));
+    });
+}
+
+#[test]
+fn nurbs_expanded_knots_refuse_retained_storage() {
+    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_retained_bytes = 0, |ctx| {
+        assert!(matches!(super::expand_knots(ctx, &[0.0, 1.0], &[2, 2], 4), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS expanded knots"));
+    });
+}
