@@ -805,14 +805,15 @@ fn build_plan(
                         .copied(),
                 )
             });
-            if let Err(limit) = orient_b5_supports_to_edge(
+            if let Err(error) = orient_b5_supports_to_edge(
+                ctx,
                 supports,
                 [start, end],
                 tolerances,
                 &surface_plan,
                 &pcurve_plan,
             ) {
-                return Some(Err(limit.into()));
+                return Some(Err(error));
             }
         }
         let mut exact_support_edges = HashSet::new();
@@ -831,6 +832,7 @@ fn build_plan(
                 )
             });
             let follows = match b5_supports_follow_edge(
+                ctx,
                 supports,
                 [start, end],
                 tolerances,
@@ -838,7 +840,7 @@ fn build_plan(
                 &pcurve_plan,
             ) {
                 Ok(follows) => follows,
-                Err(limit) => return Some(Err(limit.into())),
+                Err(error) => return Some(Err(error)),
             };
             if follows {
                 admitted!(ctx.insert_hash_set(
@@ -851,11 +853,11 @@ fn build_plan(
         let mut exact_support_curves = HashSet::new();
         for (&edge, supports) in &edge_support_plan {
             let follows = match edge_curve_plan.get(&edge).map_or_else(
-                || b5_supports_agree(supports, &surface_plan, &pcurve_plan),
-                |plan| b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan),
+                || b5_supports_agree(ctx, supports, &surface_plan, &pcurve_plan),
+                |plan| b5_supports_follow_curve(ctx, supports, plan, &surface_plan, &pcurve_plan),
             ) {
                 Ok(follows) => follows,
-                Err(limit) => return Some(Err(limit.into())),
+                Err(error) => return Some(Err(error)),
             };
             if follows {
                 admitted!(ctx.insert_hash_set(
