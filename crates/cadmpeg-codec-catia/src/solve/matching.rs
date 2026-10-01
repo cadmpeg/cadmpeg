@@ -407,24 +407,19 @@ pub(crate) fn unique_coordinate_bijection(
         let mut owner = ctx.alloc_filled(slot_classes.len(), None, "catia_bijection_owners")?;
         let mut order = Vec::new();
         ctx.reserve_vec(&mut order, domains.len(), "catia_bijection_order")?;
-        order.extend(0..domains.len());
-        let order_key = |vertex: &usize| -> (usize, usize) {
-            let count = forced
-                .filter(|(forced_vertex, _)| forced_vertex == vertex)
-                .map_or_else(
-                    || {
-                        domains[*vertex]
-                            .iter()
-                            .map(|class| slots_by_class[*class].len())
-                            .sum()
-                    },
-                    |(_, class)| slots_by_class[class].len(),
-                );
-            (count, *vertex)
-        };
+        for (vertex, domain) in domains.iter().enumerate() {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(domain.len()), "catia_bijection_order_keys")?;
+            let count = if let Some((_, class)) = forced.filter(|(forced_vertex, _)| *forced_vertex == vertex) {
+                slots_by_class[class].len()
+            } else {
+                domain.iter().try_fold(0usize, |count, class| count.checked_add(slots_by_class[*class].len()))
+                    .ok_or_else(|| ctx.refuse_codec_limit("catia_bijection_order_keys", u64::MAX - 1, u64::MAX))?
+            };
+            order.push((count, vertex));
+        }
         ctx.sort_unstable_by(
             &mut order,
-            |left, right| order_key(left).cmp(&order_key(right)),
+            Ord::cmp,
             |_| 0,
             "catia_bijection_order_sort",
         )?;
@@ -435,7 +430,7 @@ pub(crate) fn unique_coordinate_bijection(
         let mut incoming_slot =
             ctx.alloc_filled(domains.len(), None, "catia_bijection_incoming")?;
         let mut via_vertex = ctx.alloc_filled(slot_classes.len(), None, "catia_bijection_via")?;
-        for (generation, start) in order.into_iter().enumerate() {
+        for (generation, (_, start)) in order.into_iter().enumerate() {
             let generation = generation + 1;
             let mut queue = VecDeque::new();
             ctx.push_back(&mut queue, start, "catia_bijection_queue")?;
@@ -649,9 +644,21 @@ mod tests {
     use std::collections::{BTreeSet, HashSet};
 
     #[test]
+    fn coordinate_bijection_refuses_unadmitted_sort_key_scan() {
+        let domains = [HashSet::from([0_usize])];
+        // One-element domain admission, projection, sort, and dedup precede the key scan.
+        let before_keys = 5 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
+        crate::test_support::with_work_limit(before_keys, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]]).expect_err("keys require work") else { panic!("resource refusal") };
+            assert_eq!(limit.operation, "catia_bijection_order_keys");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
     fn coordinate_bijection_refuses_unadmitted_matching_visits() {
         let domains = [HashSet::from([0_usize])];
-        crate::test_support::with_work_limit(262, |ctx| {
+        crate::test_support::with_work_limit(391, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
                     .expect_err("matching visit must be admitted")

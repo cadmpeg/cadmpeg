@@ -40,7 +40,7 @@ use crate::assemble::{
     link_payload_carriers, neutral_model_is_admissible, ordered_range, preserve_raw_payload,
     quintic_jet_pcurve, rational_pcurve_arc,
 };
-use crate::container::{self, ContainerScan};
+use crate::container::ContainerScan;
 use crate::families::{FamilyEntityAdmission, FamilyOutput};
 use crate::loss::CatiaLossCode;
 use crate::math::{distance, unit_vector};
@@ -88,7 +88,7 @@ pub(in crate::families) fn try_decode_e5(
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
-    let Some(stream_range) = container::e5_record_stream(&scan.data) else {
+    let Some(stream_range) = scan.e5_record_range.clone() else {
         return Ok(None);
     };
     let stream = &scan.data[stream_range];

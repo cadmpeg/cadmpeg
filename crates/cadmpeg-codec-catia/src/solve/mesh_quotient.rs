@@ -5086,30 +5086,37 @@ pub(super) fn propagate_common_boundary_components<'storage>(
         "catia_component_groups_sort",
     )?;
 
+    let face_keys = ctx.try_collect_vec(
+        domains.iter().enumerate().map(|(face, domain)| {
+            Ok::<_, CodecError>(match domain {
+                MeshFaceBoundaryDomain::Ordered(assignments) => {
+                    let mut direction_work = 0usize;
+                    ctx.charge_work(u64_from_index(assignments.len()), "catia_component_face_key_scan")?;
+                    for assignment in assignments {
+                        ctx.charge_work(u64_from_index(assignment.boundaries.len()), "catia_component_face_key_scan")?;
+                        for boundary in &assignment.boundaries {
+                            ctx.charge_work(u64_from_index(boundary.len()), "catia_component_face_key_scan")?;
+                            let unresolved = boundary.iter().filter(|use_| use_.reversed.is_none()).count();
+                            direction_work = direction_work.checked_add(unresolved)
+                                .ok_or_else(|| ctx.refuse_codec_limit("catia_component_face_key_scan", u64::MAX - 1, u64::MAX))?;
+                        }
+                    }
+                    (0, assignments.len(), direction_work, face)
+                }
+                MeshFaceBoundaryDomain::DeferredValidation(domain) => (1, domain.missing_edges.len(), 0, face),
+                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => (2, edges.len(), 0, face),
+            })
+        }),
+        "catia_component_face_keys",
+    )?;
     for (_, mut faces) in face_components {
-        let face_key = |face: usize| match &domains[face] {
-            MeshFaceBoundaryDomain::Ordered(assignments) => {
-                let direction_work = assignments
-                    .iter()
-                    .map(|assignment| {
-                        assignment
-                            .boundaries
-                            .iter()
-                            .flatten()
-                            .filter(|use_| use_.reversed.is_none())
-                            .count()
-                    })
-                    .sum::<usize>();
-                (0, assignments.len(), direction_work, face)
-            }
-            MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                (1, domain.missing_edges.len(), 0, face)
-            }
-            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => (2, edges.len(), 0, face),
-        };
         let mut ordered_faces = Vec::new();
         let mut selected_edges = HashSet::new();
         while !faces.is_empty() {
+            ctx.charge_work(u64_from_index(faces.len()), "catia_component_face_order_scan")?;
+            for &face in &faces {
+                ctx.charge_work(u64_from_index(domain_edges[face].len()), "catia_component_shared_edge_scan")?;
+            }
             let next = faces
                 .iter()
                 .enumerate()
@@ -5118,7 +5125,7 @@ pub(super) fn propagate_common_boundary_components<'storage>(
                         .iter()
                         .filter(|edge| selected_edges.contains(*edge))
                         .count();
-                    let key = face_key(**face);
+                    let key = face_keys[**face];
                     (key.0, usize::MAX - shared, key)
                 })
                 .map(|(index, _)| index);
@@ -13686,4 +13693,20 @@ fn singleton_cycle_signature_refuses_before_storage() {
         Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_singleton_cycle_rows"
     ));
+}
+
+#[cfg(test)]
+#[test]
+fn boundary_component_face_keys_refuse_unadmitted_scan() {
+    let use_ = MeshBoundaryEdgeCandidate { edge: 0, start: 0, end: 1, reversed: None };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment { boundaries: vec![vec![use_]] }])];
+    let candidates = [Vec::new()];
+    // The singleton edge and component sorts precede face-key admission.
+    let before_keys = 2 + 16 * u64::try_from(std::mem::size_of::<usize>() + std::mem::size_of::<(usize, Vec<usize>)>()).expect("sort bytes");
+    crate::test_support::with_work_limit(before_keys, |ctx| {
+        let mut quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0, 1])), Arc::new(HashSet::from([0, 1]))]);
+        let CodecError::ResourceLimit(limit) = propagate_common_boundary_components(ctx, &domains, &candidates, &mut quotient).expect_err("face keys require work") else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "catia_component_face_key_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }
